@@ -164,4 +164,54 @@ mod tests {
         let err = parse_sacred_yaml("schema: cell-one.sacred.v1\noverlays: []").unwrap_err();
         assert!(err.contains("refuse:sacred-schema"));
     }
+
+    #[test]
+    fn overlay_never_drops_locked_ids() {
+        let overlays = [
+            vec![],
+            vec![SacredFileEntry {
+                id: "lab-notebook".into(),
+                aliases: vec!["lab_notebook".into()],
+                reason: Some("additive".into()),
+            }],
+            vec![SacredFileEntry {
+                id: "cyera-ci".into(),
+                aliases: vec![],
+                reason: Some("naming a locked id must not drop it".into()),
+            }],
+            vec![SacredFileEntry {
+                id: "notes".into(),
+                aliases: vec!["cyera".into(), "rust_classroom".into()],
+                reason: Some("alias collision stays additive".into()),
+            }],
+        ];
+        let omit = parse_sacred_yaml(
+            "schema: cell-one.sacred.v0\nlocked: []\noverlays:\n  - id: lab-notebook\n    aliases: [lab_notebook]\n",
+        )
+        .unwrap();
+        assert!(omit.locked.is_empty());
+        for extra in overlays {
+            clear_sacred_overlays();
+            set_sacred_overlays(&extra);
+            for (id, aliases) in LOCKED_SACRED {
+                assert!(is_sacred_name(id), "locked id {id} dropped");
+                assert!(is_sacred_name(&format!("lane:{id}")), "lane:{id} dropped");
+                for alias in *aliases {
+                    assert!(is_sacred_name(alias), "alias {alias} dropped");
+                    assert!(
+                        is_sacred_name(&alias.to_ascii_uppercase()),
+                        "alias {alias} case dropped"
+                    );
+                }
+            }
+            assert!(!is_sacred_name("sanctum"));
+            assert!(!is_sacred_name("horizon"));
+        }
+        clear_sacred_overlays();
+        set_sacred_overlays(&omit.overlays);
+        assert!(is_sacred_name("cyera-ci"));
+        assert!(is_sacred_name("rust-classroom"));
+        assert!(is_sacred_name("lab-notebook"));
+        clear_sacred_overlays();
+    }
 }
