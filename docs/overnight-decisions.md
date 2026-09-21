@@ -81,6 +81,7 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–6 stay.
 45. **Schema freeze note.** `schema/README.md` lists every v0 snapshot. Additive fields ok; renames need v1.
 46. **Day-90 gate doc.** `docs/GATE-90.md` maps A10–A12 + waves to local commands. Not an Actions workflow.
 47. **Operator-day grew Wave 7.** Status one-pager, `--curator jason`, wrong-curator refuse, convey sync keeps extra hops.
+48. **`estate-control` split is push-safe, not a behavior change.** `main.rs` stays clap + `run` + validate. Commands live in `helpers.rs` / `plan_apply.rs` / `watch.rs` / `ops.rs` so GitHub MCP can land full files (no truncation).
 
 ## Assumptions (safe to reopen)
 
