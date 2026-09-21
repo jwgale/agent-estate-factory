@@ -665,12 +665,27 @@ mod tests {
         let p = crate::probe_runtime("ollama", LocalRuntime::Ollama, "any");
         let p = crate::enrich_with_live(p, Some(&server.endpoint()));
         assert!(p.live_probed, "{}", p.note);
+        assert!(p.note.contains("live ok"), "{}", p.note);
+        assert!(p.note.contains("/v1/models"), "{}", p.note);
         let down = crate::enrich_with_live(
             crate::probe_runtime("mlx", LocalRuntime::Mlx, "apple-silicon"),
             Some("http://127.0.0.1:1"),
         );
         assert!(!down.live_probed);
         assert!(down.note.contains("down"));
+    }
+
+    #[test]
+    fn catalog_probes_live_skip_without_endpoint_env() {
+        if crate::live_endpoint(LocalRuntime::Ollama).is_some()
+            || crate::live_endpoint(LocalRuntime::Mlx).is_some()
+            || crate::live_endpoint(LocalRuntime::Vllm).is_some()
+        {
+            return;
+        }
+        let probes = catalog_probes_live();
+        assert!(probes.iter().all(|p| !p.live_probed));
+        assert!(probes.iter().any(|p| p.note.contains("SKIP")));
     }
 
     #[test]

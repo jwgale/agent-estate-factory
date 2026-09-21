@@ -2,6 +2,7 @@
 //! Local hardware is a catalog/route/bind driver choice, not a product fork.
 
 mod actual;
+mod adapter;
 mod catalog;
 mod error;
 mod frontier;
@@ -19,13 +20,16 @@ pub use error::ModelError;
 pub use frontier::{
     frontier_from_binding, FrontierDriver, HttpFrontier, MockFrontier, UnwiredFrontier,
 };
+pub use adapter::{ping_live_endpoint, specialist_via_adapter, LiveFlavor};
 pub use local::{
     apply_live_overlay, builtin_specialist, enrich_with_live, live_endpoint, live_endpoint_envs,
-    live_probe_env_requested, local_from_binding, ping_live_endpoint, probe_runtime, DownLocal,
-    DriverProbe, ExperimentalLocal, HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal,
-    SpecialistJob, SpecialistRequest, SpecialistResult, UnwiredLocal,
+    live_probe_env_requested, local_from_binding, probe_runtime, DownLocal, DriverProbe,
+    ExperimentalLocal, HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal, SpecialistJob,
+    SpecialistRequest, SpecialistResult, UnwiredLocal,
 };
-pub use mock::{serve_specialist_forever, MockFrontierServer, MockLocalServer};
+pub use mock::{
+    serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
+};
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 
 use estate_schema::{Estate, ModelBinding, ModelClass};

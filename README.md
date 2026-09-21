@@ -141,7 +141,7 @@ CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when 
 | Variable | Use |
 | --- | --- |
 | `CELL_LIVE_PROBE` | `1` / `true` / `yes` to opt into live HTTP |
-| `CELL_LOCAL_ENDPOINT` | Ollama / llama.cpp / http-remote specialist (`POST /v0/specialist`) |
+| `CELL_LOCAL_ENDPOINT` | Ollama / llama.cpp / http-remote (`GET /v1/models` or `/api/tags`) |
 | `CELL_RENTED_ENDPOINT` | Alias for a rented (or any) box. Not a SKU. |
 | `CELL_MLX_ENDPOINT` | Apple MLX; falls back to `CELL_LOCAL_ENDPOINT` |
 | `CELL_VLLM_ENDPOINT` | Experimental; unset = SKIP |

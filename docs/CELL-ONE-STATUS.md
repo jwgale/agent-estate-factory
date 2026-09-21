@@ -5,9 +5,9 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
-Live probe hand-off (not green): [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#21 plus this slice)
+## On `main` (PR #1-#22 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -80,17 +80,22 @@ are closed.
 `append_event` (`"{}"`), and `write_placements` serialize or refuse.
 Same class on journals, mesh persist, and accept.
 
+## #22 (runbook + dry shapes)
+
+#22 shipped [`LIVE-PROBES.md`](LIVE-PROBES.md) and dry SKIP / would-live
+fixtures. Live was still blocked: probes spoke factory `/v0/specialist`
+only. `mock-local` was not a Mac/GPU proof.
+
 ## Bug fix this slice
 
 | What was broken | What it does now |
 | --- | --- |
-| `record_bindings` used `unwrap_or_default` and could wipe `model-actual.json` empty. Same class on isolation `session.json`. Mock specialist invented `"{}"` on serialize fail. | Serialize or refuse. Garbage `model-actual.json` is refuse, not "run apply" greenfield. |
-| Accept / import / propose compared estate bytes with `unwrap_or_default`. Unreadable file looked like empty==empty and hid a rewrite. | `read_estate_text` refuses. Missing or unreadable is not unchanged. |
-| Live Mac MLX / Linux GPU had env names in README but no one-page hand-off. | [`LIVE-PROBES.md`](LIVE-PROBES.md) lists exact env + commands. Dry fixtures lock SKIP vs would-live without network. Not a live-box proof. |
+| `estate probes --live` POSTed `/v0/specialist`. A running Ollama looked down. | GET `/v1/models` or Ollama `/api/tags`. Empty models list is up. Garbage / empty body is down. No invent success. |
+| No OpenAI / Ollama specialist adapter. Native MLX `specialist()` is still Stub. | `HttpLocal` tries `/v0/specialist`, then OpenAI chat / Ollama chat, then factory-owned policy. Mac proof is Ollama-on-Mac. |
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#21 (plain English)
+## Bug fixes on #10-#22 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -105,6 +110,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #19 | Lifecycle `.ok()` treated garbage as greenfield. Import audit was `let _ =`. Dry-run skipped curator. Catalog/probes printed first. Status invented expired/proposals. | Parse or refuse. Audit fail-closed. Curator before dry-run. Write/refuse first, then print. |
 | #20 | Plan readers treated garbage JSON as empty. `write_cursor` could write empty. `apply --force` had to restamp estate class, not SKU to `any`. | Present plan JSON parses or refuses. Cursor write refuses empty. `--force` writes `consumer-nvidia`. |
 | #21 | Propose / journal / placements serialize used `unwrap_or_default` or invented `"{}"`. | Serialize or refuse. No empty proposal, journal junk, or wiped actual. |
+| #22 | Live probe runbook + dry SKIP/would-live fixtures. Still `/v0/specialist` only. | Hand-off page. Live still needed a real Ollama adapter. |
 
 ## Known-good local commands
 
@@ -136,6 +142,7 @@ Isolated loops without live boxes:
 - Swallows / journals / redaction / plan / cursor / force-SKU / nonempty placement write: `tests/day90_honesty.rs`
 - model-actual serialize + garbage refuse: `crates/model-estate` actual tests
 - Live probe SKIP vs would-live (no network): `schema/live-probe-shapes.v0.json` + catalog unit test
+- OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
@@ -145,8 +152,8 @@ Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Probe path + [`LIVE-PROBES.md`](LIVE-PROBES.md). No Mac attached. MLX stays stub. |
-| Live consumer / rented GPU | Same page. Specialist protocol, not Ollama chat. Not required for gates. |
+| Live Mac MLX | Native MLX `specialist()` stays stub. Mac proof is Ollama-on-Mac. Copy-paste: [`LIVE-PROBES.md`](LIVE-PROBES.md). No Mac attached here. |
+| Live consumer / rented GPU | Same adapter (`/v1/models` or `/api/tags`). Not required for gates. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |
 | Auto-promote / curator UI | Locked off / not built. Jason pastes pack ids. |
 | Convey hop transport | Lease-bound mesh, not a gateway. |
