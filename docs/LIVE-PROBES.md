@@ -16,6 +16,28 @@ back. Sacred tokens refuse before any HTTP POST. SKU endpoint / model
 ids / prompt / completion refuse. Missing endpoint refuses. Native MLX
 / vLLM / TRT stay stub or experimental.
 
+## Recorded live proof (Jason boxes)
+
+These ran on Jason's boxes. They are **not** native MLX. They are **not**
+required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
+
+| Box | Command | Result |
+| --- | --- | --- |
+| Mac (Apple Silicon) | `estate probes --live` against Ollama-on-Mac | **PASS.** `live ok` on the Ollama HTTP adapter. Native `mlx` `specialist()` stays Stub. |
+| Linux 5090-class (`consumer-nvidia` / `rented-nvidia`) | `estate probes --live` | **PASS.** `live ok (openai /v1/models)`. That GET is not a chat proof. |
+| Linux 5090-class | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`. Empty OpenAI `message.content` fell through to `/api/chat`. |
+
+Not recorded: Mac `estate specialist` chat, native MLX, live Grok / `XAI_API_KEY`.
+
+`READY_FOR_LIVE_TEST` for the rows above: **no**. Do not ping Jason again for them.
+
+Opt-in helper (requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke):
+
+```bash
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+make live-specialist
+```
+
 ## What a live probe actually pings
 
 Not the Ollama chat UI. Not native MLX. Not `POST /v0/specialist`.
@@ -229,9 +251,9 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
   --endpoint http://127.0.0.1:8080 --prompt "Reply with the single word pong."
 ```
 
-`READY_FOR_LIVE_TEST` for this complete verb: **yes**. Mock HTTP locks
-the shape. Jason can run the Mac command above against the Ollama that
-already PASSed `probes --live` and get real text back.
+Mac `estate specialist` chat is **not** recorded yet. Mock HTTP locks
+the shape here. `READY_FOR_LIVE_TEST` for a Mac complete: only if Jason
+must run that command on Apple Silicon. Do not ping for the 5090 rows.
 
 `probes --live` can print `live ok (openai /v1/models)` while
 `/v1/chat/completions` returns empty `message.content`. Specialist now
@@ -265,7 +287,8 @@ Expect exit 0, `"allow": true`, `"job": "complete"`, and a **non-empty
 If both OpenAI and `/api/chat` are empty, the refuse names HTTP status,
 the model id used, and `ollama pull llama3` / `CELL_LOCAL_MODEL`.
 
-`READY_FOR_LIVE_TEST`: **yes**. One retry on the 5090 (and Mac if handy).
+This 5090 retry **PASSed** (`completion` `Pong`). `READY_FOR_LIVE_TEST`
+for that row: **no**.
 
 ## Jason Mac (Apple Silicon) - Ollama-on-Mac
 
@@ -357,4 +380,5 @@ Down local is `local:down` / `model.local.down`. No silent Grok fallback.
 | mlx note `live ok` | Catalog card flipped off stub; native MLX |
 | Empty models list `live ok` | A pulled model; only the HTTP server is up |
 | `estate specialist` `completion` on mock-local (`mock:...`) | A live Ollama chat Jason ran |
-| `estate specialist` `completion` against Ollama | Native MLX, or a 5090-specific path |
+| `estate specialist` `completion` against Ollama | Native MLX |
+| 5090 `completion` `Pong` | Native MLX, or a Mac specialist chat |
