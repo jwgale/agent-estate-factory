@@ -20,10 +20,10 @@ pub use frontier::{
     frontier_from_binding, FrontierDriver, HttpFrontier, MockFrontier, UnwiredFrontier,
 };
 pub use local::{
-    builtin_specialist, enrich_with_live, live_endpoint, live_endpoint_envs, live_probe_env_requested,
-    local_from_binding, ping_live_endpoint, probe_runtime, DownLocal, DriverProbe, ExperimentalLocal,
-    HttpLocal, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
-    SpecialistResult, UnwiredLocal,
+    apply_live_overlay, builtin_specialist, enrich_with_live, live_endpoint, live_endpoint_envs,
+    live_probe_env_requested, local_from_binding, ping_live_endpoint, probe_runtime, DownLocal,
+    DriverProbe, ExperimentalLocal, HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal,
+    SpecialistJob, SpecialistRequest, SpecialistResult, UnwiredLocal,
 };
 pub use mock::{serve_specialist_forever, MockFrontierServer, MockLocalServer};
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
