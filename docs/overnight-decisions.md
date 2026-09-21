@@ -65,11 +65,22 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–4 stay.
 Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–5 stay.
 
 36. **Backup/restore is a local cell archive.** `estate backup` copies durable `.cell/` files (plans history, lifecycle, leases, audits, journals, conveyor mesh) into `backups/cell-backup-unix{secs}/` with `backup.json` (`cell-one.cell-backup.v0`) + `MANIFEST.md`. `estate restore --dry-run` writes nothing. Restore refuses `refuse:sacred-mismatch` when backup sacred ids are not a symmetric match to the current estate (canonical exclusion ids only; aliases omitted so backup-with-estate matches restore-with-estate). Not uploaded.
-37. **Policy pack is a declarative deny/allow stub.** `policy/cell-one.policy.v0.yaml` is checked on apply and convey-call (also backup/restore). Known actions: `apply` / `convey-call` / `backup` / `restore`. Unknown actions fail closed (`refuse:unknown-action`). Missing file allows (crate-cwd tests). Default is deny without a matching allow. Fixtures: `examples/fixtures/policy-{allow,deny,unknown-action}.yaml`. `estate policy check`.
+37. **Policy pack is a declarative deny/allow stub.** `policy/cell-one.policy.v0.yaml` is checked on apply and convey-call (also backup/restore). Known actions: `apply` / `convey-call` / `backup` / `restore`. Unknown actions fail closed (`refuse:unknown-charge`). Missing file allows (crate-cwd tests). Default is deny without a matching allow. Fixtures: `examples/fixtures/policy-{allow,deny,unknown-action}.yaml`. `estate policy check`.
 38. **Catalog cards are flag-complete.** Each driver has `streaming` / `tools` / `vision` / `context_tokens`. `estate catalog` prints them. File SoT `schema/local-catalog.v0.json` stays eq to `catalog_file()`. MLX/vLLM/TRT stay stub/experimental; flags are filled in.
 39. **Pause-kit proof is automated.** `estate pause-proof` / `pause_kit_proof`: apply → suspend → kill-process simulation (`rm -rf sessions/`) → resume. Leases survive on disk. Cloud-agent stays unspawned. Drift in_sync. Operator-day runs it on a separate state dir.
 40. **`make smoke` is local only.** `scripts/smoke.sh` = doctor + fixtures-check + operator-day + `cargo test --workspace`. Operator-day does not call smoke (no recursion). Never add to Actions.
 41. **Operator-day / fixtures-check grew Wave 6.** Catalog flags, policy allow/deny/unknown, backup + dry-run restore + sacred-mismatch, pause-proof. Still fixtures only.
+
+## Wave 7 (same PR #2 — status watch, import gate, sync)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–6 stay.
+
+42. **`estate status` is a desired-state one-pager.** paused?, lease counts (box / cloud-agent / spawned), expired placement+hop counts, last plan hash, last apply, open proposals, policy present?, doctor summary line, in_sync. Still fail-closes if a cloud-agent lease is spawned. `cloud-agent: declared, not spawned` stays in the output for gate-90.
+43. **Import is curator-gated.** `estate packs import` / `estate feed import` / `apply --import-pack` take `--curator` (default `jason`). Must match locked curator **and** `estate.enrich_packs.curator`. Wrong curator → `refuse:curator`. Library `import_pack` still assumes jason. Documented in `packs/README.md`.
+44. **Convey sync upserts from placements.** Matching kinds only (`box` → box hop, `cloud-agent` → cloud-mesh). Unknown kinds skipped. Sacred placement id or agent → `refuse:sacred-id`. Manually declared hops (e.g. ttl-box) survive a later sync.
+45. **Schema freeze note.** `schema/README.md` lists every v0 snapshot. Additive fields ok; renames need v1.
+46. **Day-90 gate doc.** `docs/GATE-90.md` maps A10–A12 + waves to local commands. Not an Actions workflow.
+47. **Operator-day grew Wave 7.** Status one-pager, `--curator jason`, wrong-curator refuse, convey sync keeps extra hops.
 
 ## Assumptions (safe to reopen)
 
@@ -98,6 +109,8 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–5 stay.
 | Missing policy file allows | Crate-cwd CLI tests have no `policy/` | Repo-root operator-day enforces the shipped pack |
 | Backup sacred compare uses canonical ids | Aliases would mismatch backup-with-estate vs locked-only | Do not store alias strings in `backup.json` |
 | `make smoke` is not in operator-day | Recursion / double cargo test | Keep smoke as the outer local wrap |
+| `--curator` defaults to jason | Existing CLI/gate scripts stay green | Require the flag only if Jason wants ceremony |
+| Convey sync skips unknown placement kinds | Not every future kind is a hop | Add a mapping, do not invent a product fork |
 
 ## Anti-shrink (still)
 
