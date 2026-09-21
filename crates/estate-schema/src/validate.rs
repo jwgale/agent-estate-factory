@@ -1,0 +1,350 @@
+use crate::sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
+use crate::types::{Effect, Estate, ModelClass};
+use std::collections::{HashMap, HashSet};
+use std::path::{Component, Path};
+
+#[derive(Debug, Clone)]
+pub struct ValidateOpts {
+    pub cell_one: bool,
+}
+
+impl Default for ValidateOpts {
+    fn default() -> Self {
+        Self { cell_one: true }
+    }
+}
+
+pub fn validate(estate: &Estate) -> Result<(), Vec<String>> {
+    validate_with(estate, ValidateOpts::default())
+}
+
+pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+
+    if estate.version != 0 {
+        errors.push(format!(
+            "unknown estate version {} (Cell One understands v0 only)",
+            estate.version
+        ));
+    }
+    if estate.name.trim().is_empty() {
+        errors.push("estate name must not be empty".into());
+    }
+    if !matches!(estate.default_effect, Effect::Deny) {
+        errors.push("default_effect must be deny (deny-default is locked for Cell One)".into());
+    }
+
+    let mut agent_ids = HashSet::new();
+    let mut desktops = HashSet::new();
+    for agent in &estate.agents {
+        check_slug("agent.id", &agent.id, &mut errors);
+        if !agent_ids.insert(normalize_name(&agent.id)) {
+            errors.push(format!("duplicate agent id '{}'", agent.id));
+        }
+        if agent.display_name.trim().is_empty() {
+            errors.push(format!("agent '{}' display_name must not be empty", agent.id));
+        }
+        check_slug("agent.lane", &agent.lane, &mut errors);
+        if agent.desktop.trim().is_empty() {
+            errors.push(format!("agent '{}' desktop must not be empty", agent.id));
+        } else if !desktops.insert(normalize_name(&agent.desktop)) {
+            errors.push(format!(
+                "duplicate desktop '{}' (each agent needs its own session)",
+                agent.desktop
+            ));
+        }
+        if is_sacred_name(&agent.id) || is_sacred_name(&agent.display_name) {
+            errors.push(format!(
+                "sacred exclusion '{}' cannot be declared as an agent",
+                agent.id
+            ));
+        }
+        check_unique_slugs(
+            &format!("agent '{}' tools", agent.id),
+            agent.tools.iter().map(|t| t.id.as_str()),
+            &mut errors,
+        );
+        check_unique_slugs(
+            &format!("agent '{}' mounts", agent.id),
+            agent.mounts.iter().map(|m| m.id.as_str()),
+            &mut errors,
+        );
+        check_unique_slugs(
+            &format!("agent '{}' mcp", agent.id),
+            agent.mcp.iter().map(|m| m.id.as_str()),
+            &mut errors,
+        );
+        for mount in &agent.mounts {
+            if mount.path.trim().is_empty() {
+                errors.push(format!(
+                    "agent '{}' mount '{}' path must not be empty",
+                    agent.id, mount.id
+                ));
+            }
+            if path_escapes(&mount.path) {
+                errors.push(format!(
+                    "agent '{}' mount '{}' path must be a relative path without '..'",
+                    agent.id, mount.id
+                ));
+            }
+        }
+    }
+
+    let mut lane_ids = HashSet::new();
+    let mut roots = HashSet::new();
+    let mut owners = HashSet::new();
+    for lane in &estate.lanes {
+        check_slug("lane.id", &lane.id, &mut errors);
+        if !lane_ids.insert(normalize_name(&lane.id)) {
+            errors.push(format!("duplicate lane id '{}'", lane.id));
+        }
+        if !roots.insert(normalize_name(&lane.root_path)) {
+            errors.push(format!("duplicate lane root_path '{}'", lane.root_path));
+        }
+        if path_escapes(&lane.root_path) || Path::new(&lane.root_path).is_absolute() {
+            errors.push(format!(
+                "lane '{}' root_path must be a relative path without '..'",
+                lane.id
+            ));
+        }
+        check_slug("lane.owner_agent_id", &lane.owner_agent_id, &mut errors);
+        if !owners.insert(normalize_name(&lane.owner_agent_id)) {
+            errors.push(format!(
+                "lane owner '{}' owns more than one lane (Cell One is 1:1)",
+                lane.owner_agent_id
+            ));
+        }
+        if is_sacred_name(&lane.id) {
+            errors.push(format!("sacred exclusion '{}' cannot be a lane", lane.id));
+        }
+        if estate.agent(&lane.owner_agent_id).is_none() {
+            errors.push(format!(
+                "lane '{}' owner_agent_id '{}' is not an agent",
+                lane.id, lane.owner_agent_id
+            ));
+        }
+    }
+
+    let mut agent_lanes = HashSet::new();
+    for agent in &estate.agents {
+        if estate.lane(&agent.lane).is_none() {
+            errors.push(format!(
+                "agent '{}' lane '{}' does not exist",
+                agent.id, agent.lane
+            ));
+        } else if !agent_lanes.insert(normalize_name(&agent.lane)) {
+            errors.push(format!(
+                "agent '{}' shares lane '{}' (A1 requires separate lanes)",
+                agent.id, agent.lane
+            ));
+        }
+        if let Some(lane) = estate.lane(&agent.lane) {
+            if normalize_name(&lane.owner_agent_id) != normalize_name(&agent.id) {
+                errors.push(format!(
+                    "agent '{}' must own its lane '{}' (owner is '{}')",
+                    agent.id, agent.lane, lane.owner_agent_id
+                ));
+            }
+        }
+    }
+
+    for intention in &estate.intentions {
+        if estate.agent(&intention.subject_agent).is_none() {
+            errors.push(format!(
+                "intention subject_agent '{}' is not an agent",
+                intention.subject_agent
+            ));
+        }
+        if intention.object.trim().is_empty() {
+            errors.push("intention object must not be empty".into());
+        }
+        if matches!(intention.effect, Effect::Allow) && estate.is_sacred(&intention.object) {
+            errors.push(format!(
+                "intention cannot allow sacred exclusion '{}'",
+                intention.object
+            ));
+        }
+    }
+
+    let mut binding_ids = HashSet::new();
+    let mut classes = HashSet::new();
+    for binding in &estate.model_bindings {
+        check_slug("model_binding.id", &binding.id, &mut errors);
+        if !binding_ids.insert(normalize_name(&binding.id)) {
+            errors.push(format!("duplicate model_binding id '{}'", binding.id));
+        }
+        if binding.driver.trim().is_empty() {
+            errors.push(format!("model_binding '{}' driver must not be empty", binding.id));
+        }
+        classes.insert(binding.class);
+        if opts.cell_one && binding.wired {
+            errors.push(format!(
+                "model_binding '{}' has wired=true; Cell One placeholders must stay wired=false",
+                binding.id
+            ));
+        }
+    }
+
+    if opts.cell_one {
+        if estate.agents.len() < 3 {
+            errors.push(format!(
+                "Cell One requires at least 3 agents (found {})",
+                estate.agents.len()
+            ));
+        }
+        if estate.lanes.len() < 3 {
+            errors.push(format!(
+                "Cell One requires at least 3 lanes (found {})",
+                estate.lanes.len()
+            ));
+        }
+        if !classes.contains(&ModelClass::Frontier) || !classes.contains(&ModelClass::Local) {
+            errors.push(
+                "Cell One requires equal-class model_bindings: at least one frontier and one local"
+                    .into(),
+            );
+        }
+        let declared: HashSet<String> = estate
+            .sacred_exclusions
+            .iter()
+            .flat_map(|ex| {
+                std::iter::once(normalize_name(&ex.id))
+                    .chain(ex.aliases.iter().map(|a| normalize_name(a)))
+            })
+            .collect();
+        for id in locked_sacred_ids() {
+            let aliases = LOCKED_SACRED
+                .iter()
+                .find(|(locked, _)| *locked == id)
+                .map(|(_, a)| *a)
+                .unwrap_or(&[]);
+            let present = declared.contains(&normalize_name(id))
+                || aliases.iter().any(|a| declared.contains(&normalize_name(a)));
+            if !present {
+                errors.push(format!(
+                    "sacred exclusion '{id}' must be declared on the estate (locked default)"
+                ));
+            }
+        }
+        let names: HashMap<String, &str> = estate
+            .agents
+            .iter()
+            .map(|a| (normalize_name(&a.id), a.display_name.as_str()))
+            .collect();
+        if names.contains_key("sanctum") {
+            if estate.agents.iter().any(|a| {
+                normalize_name(&a.id) == "sanctum" && is_sacred_name(&a.display_name)
+            }) {
+                errors.push("Sanctum must not be Cyera".into());
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+fn check_slug(field: &str, value: &str, errors: &mut Vec<String>) {
+    if !is_slug(value) {
+        errors.push(format!(
+            "{field} '{value}' must match [a-z][a-z0-9_-]{{0,63}}"
+        ));
+    }
+}
+
+fn is_slug(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    if value.len() > 64 {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+fn check_unique_slugs<'a>(
+    label: &str,
+    ids: impl Iterator<Item = &'a str>,
+    errors: &mut Vec<String>,
+) {
+    let mut seen = HashSet::new();
+    for id in ids {
+        check_slug(label, id, errors);
+        if !seen.insert(normalize_name(id)) {
+            errors.push(format!("{label} has duplicate id '{id}'"));
+        }
+    }
+}
+
+fn path_escapes(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{load_estate_str, parse_estate_yaml};
+
+    fn load_invalid(name: &str) -> Estate {
+        let path = format!("../../examples/invalid/{name}");
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path),
+        )
+        .unwrap_or_else(|e| panic!("fixture {name}: {e}"));
+        parse_estate_yaml(&text).unwrap_or_else(|e| panic!("parse {name}: {e}"))
+    }
+
+    #[test]
+    fn example_ok() {
+        validate(&load_estate_str(crate::tests::example_yaml()).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn too_few_agents_fails() {
+        let err = validate(&load_invalid("too-few-agents.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("at least 3 agents")));
+    }
+
+    #[test]
+    fn shared_lane_fails() {
+        let err = validate(&load_invalid("shared-lane.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("shares lane") || e.contains("more than one lane")));
+    }
+
+    #[test]
+    fn sacred_as_agent_fails() {
+        let err = validate(&load_invalid("sacred-as-agent.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("sacred exclusion")));
+    }
+
+    #[test]
+    fn wired_true_fails() {
+        let err = validate(&load_invalid("wired-true.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("wired=true")));
+    }
+
+    #[test]
+    fn missing_sacred_fails() {
+        let err = validate(&load_invalid("missing-sacred.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("cyera-ci") || e.contains("rust-classroom")));
+    }
+
+    #[test]
+    fn allow_sacred_intention_fails() {
+        let err = validate(&load_invalid("allow-sacred-intention.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("cannot allow sacred")));
+    }
+
+    #[test]
+    fn default_allow_fails() {
+        let err = validate(&load_invalid("default-allow.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("default_effect")));
+    }
+}

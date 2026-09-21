@@ -1,0 +1,19 @@
+[package]
+name = "floor-supervisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Data-plane floor supervisor: bind per-agent sessions via IsolationDriver"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+estate-schema.workspace = true
+isolation-driver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "floor-supervisor"
+path = "src/main.rs"
