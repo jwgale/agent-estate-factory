@@ -44,6 +44,8 @@ fn validate_invalid_fails_closed() {
         "placement-unknown-agent.yaml",
         "placement-sacred-cloud.yaml",
         "host-class-bad.yaml",
+        "api-version-unknown.yaml",
+        "kind-unknown.yaml",
         "not-yaml.txt",
     ] {
         let path = fixture(&format!("examples/invalid/{name}"));
@@ -859,5 +861,247 @@ fn apply_dry_run_expire_and_doctor() {
     let doc = String::from_utf8_lossy(&doctor.stdout);
     assert!(doc.contains("no .github/workflows/*.yml"));
     assert!(doc.contains("specialist-pack.v0.json"));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn wave5_sessions_plan_diff_convey_ttl() {
+    let tmp = repo_root().join(format!("target/test-wave5-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let state = tmp.join("state");
+    let plans = tmp.join("plans");
+
+    let happy = estate_bin()
+        .args(["validate", "--estate", &fixture("examples/fixtures/happy.yaml")])
+        .output()
+        .unwrap();
+    assert!(
+        happy.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&happy.stderr)
+    );
+
+    let api = estate_bin()
+        .args([
+            "validate",
+            "--estate",
+            &fixture("examples/fixtures/refuse-api-version.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(!api.status.success());
+    let api_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&api.stdout),
+        String::from_utf8_lossy(&api.stderr)
+    );
+    assert!(api_err.contains("apiVersion") || api_err.contains("upgrade"));
+
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        planned.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&planned.stderr)
+    );
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert!(state.join("sessions.jsonl").is_file());
+    let listed = estate_bin()
+        .args(["sessions", "list", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(listed.status.success());
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("spawn"));
+
+    let same = estate_bin()
+        .args([
+            "plan",
+            "diff",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        same.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&same.stderr)
+    );
+
+    let narrow = r#"{
+      "schema": "cell-one.plan.v0",
+      "desired_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "against_hash": null,
+      "added": {"agents": [], "lanes": [], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "removed": {"agents": [], "lanes": [], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "changed": {"agents": [], "lanes": [], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "blast_radius_text": "empty",
+      "created_at": "unix:1"
+    }"#;
+    let wide = r#"{
+      "schema": "cell-one.plan.v0",
+      "desired_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "against_hash": null,
+      "added": {"agents": ["horizon", "research"], "lanes": ["horizon"], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "removed": {"agents": [], "lanes": [], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "changed": {"agents": [], "lanes": [], "intentions": [], "model_bindings": [], "placements": [], "enrich_packs": []},
+      "blast_radius_text": "wider",
+      "created_at": "unix:2"
+    }"#;
+    let from_p = tmp.join("from.json");
+    let to_p = tmp.join("to.json");
+    std::fs::write(&from_p, narrow).unwrap();
+    std::fs::write(&to_p, wide).unwrap();
+    let wider = estate_bin()
+        .args([
+            "plan",
+            "diff",
+            "--from",
+            &from_p.display().to_string(),
+            "--to",
+            &to_p.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!wider.status.success());
+    let wider_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&wider.stdout),
+        String::from_utf8_lossy(&wider.stderr)
+    );
+    assert!(wider_err.contains("refuse:wider") || wider_err.contains("WIDER"));
+    let allowed = estate_bin()
+        .args([
+            "plan",
+            "diff",
+            "--from",
+            &from_p.display().to_string(),
+            "--to",
+            &to_p.display().to_string(),
+            "--allow-wider",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        allowed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+
+    let hop = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--ttl-secs",
+            "1",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        hop.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&hop.stderr)
+    );
+    let mut mesh: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap(),
+    )
+    .unwrap();
+    if let Some(leases) = mesh.get_mut("leases").and_then(|v| v.as_array_mut()) {
+        if let Some(lease) = leases.iter_mut().find(|l| l.get("hop_id").and_then(|k| k.as_str()) == Some("ttl-box"))
+        {
+            lease["issued_at"] = serde_json::json!(1);
+            lease["expires_at"] = serde_json::json!(2);
+        }
+    }
+    std::fs::write(
+        state.join("conveyor-mesh.json"),
+        serde_json::to_string_pretty(&mesh).unwrap(),
+    )
+    .unwrap();
+    let call = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!call.status.success());
+    let call_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&call.stdout),
+        String::from_utf8_lossy(&call.stderr)
+    );
+    assert!(call_err.contains("refuse:expired"));
+    let expired = estate_bin()
+        .args([
+            "convey",
+            "expire",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!expired.status.success());
+    let forgot = estate_bin()
+        .args([
+            "convey",
+            "expire",
+            "--forget",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        forgot.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&forgot.stderr)
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
