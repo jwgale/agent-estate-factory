@@ -177,6 +177,19 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         }
     }
 
+    println!("\nFrontier model");
+    println!("--------------");
+    print_doctor_frontier(
+        "schema/local-catalog.v0.json",
+        &root.join("schema/local-catalog.v0.json"),
+        &mut fails,
+    );
+    print_doctor_frontier(
+        "catalog.json",
+        &state_dir.join("catalog.json"),
+        &mut fails,
+    );
+
     println!("\nHealth");
     println!("------");
     if fails.is_empty() {
@@ -276,6 +289,11 @@ pub(crate) fn cmd_status(
         policy.display()
     );
     println!("doctor: {doctor}");
+    for (id, model) in model_estate::estate_frontier_models(&estate) {
+        println!("frontier: {id} model={model}");
+    }
+    print_catalog_frontier("schema", &root.join("schema/local-catalog.v0.json"));
+    print_catalog_frontier("cell", &state_dir.join("catalog.json"));
     println!("in_sync: {}", report.in_sync);
     println!("cloud-agent: declared, not spawned");
     if !report.spawned_cloud_agents.is_empty() {
@@ -285,6 +303,37 @@ pub(crate) fn cmd_status(
         );
     }
     Ok(())
+}
+
+fn print_catalog_frontier(source: &str, path: &Path) {
+    if !path.is_file() {
+        return;
+    }
+    match read_catalog_frontier(path) {
+        Ok(Some(model)) => println!("catalog frontier: {source} model={model}"),
+        Ok(None) => println!("catalog frontier: {source} model=-"),
+        Err(err) => println!("catalog frontier: {source} unreadable ({err})"),
+    }
+}
+
+fn print_doctor_frontier(label: &str, path: &Path, fails: &mut Vec<String>) {
+    if !path.is_file() {
+        return;
+    }
+    match read_catalog_frontier(path) {
+        Ok(Some(model)) if estate_schema::contains_sku(&model) => {
+            println!("  FAIL  {label} model={model} encodes a hardware SKU");
+            fails.push(format!("{label} frontier model encodes a SKU"));
+        }
+        Ok(Some(model)) => println!("  ok    {label} model={model}"),
+        Ok(None) => println!("  note  {label} has no frontier model"),
+        Err(err) => println!("  note  {label} frontier model unreadable ({err})"),
+    }
+}
+
+fn read_catalog_frontier(path: &Path) -> std::result::Result<Option<String>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    model_estate::frontier_model_from_catalog_json(&text)
 }
 
 pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
@@ -311,6 +360,16 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         }
         Ok(None) => {}
         Err(_) => fails += 1,
+    }
+    for path in [
+        root.join("schema/local-catalog.v0.json"),
+        state_dir.join("catalog.json"),
+    ] {
+        if let Ok(Some(model)) = read_catalog_frontier(&path) {
+            if estate_schema::contains_sku(&model) {
+                fails += 1;
+            }
+        }
     }
     if fails == 0 {
         "ok (compile-only CI; schemas present)".into()
