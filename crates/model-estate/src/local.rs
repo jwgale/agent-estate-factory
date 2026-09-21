@@ -12,7 +12,8 @@ pub struct DriverProbe {
     pub status: String,
     pub host_class: String,
     pub bindable: bool,
-    /// Always false overnight. Live ping is data-plane, not control.
+    /// False unless `estate probes --live` / `CELL_LIVE_PROBE` and an endpoint answers.
+    /// CI never sets this. Missing endpoints are SKIP, not a fail.
     pub live_probed: bool,
     pub note: String,
 }
@@ -66,6 +67,78 @@ pub fn probe_runtime(id: &str, runtime: LocalRuntime, host_class: &str) -> Drive
         live_probed: false,
         note: note.into(),
     }
+}
+
+/// `CELL_LIVE_PROBE=1|true|yes` opts into live HTTP. Unset in CI.
+pub fn live_probe_env_requested() -> bool {
+    match std::env::var("CELL_LIVE_PROBE") {
+        Ok(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
+        Err(_) => false,
+    }
+}
+
+/// Env names a Mac / rented box can set. No SKU in the name.
+pub fn live_endpoint_envs(runtime: LocalRuntime) -> &'static [&'static str] {
+    match runtime {
+        LocalRuntime::Mlx => &["CELL_MLX_ENDPOINT", "CELL_LOCAL_ENDPOINT"],
+        LocalRuntime::Vllm => &["CELL_VLLM_ENDPOINT"],
+        LocalRuntime::Trt => &["CELL_TRT_ENDPOINT"],
+        LocalRuntime::Ollama | LocalRuntime::LlamaCpp | LocalRuntime::HttpRemote => {
+            &["CELL_LOCAL_ENDPOINT", "CELL_RENTED_ENDPOINT"]
+        }
+    }
+}
+
+pub fn live_endpoint(runtime: LocalRuntime) -> Option<String> {
+    for key in live_endpoint_envs(runtime) {
+        if let Ok(v) = std::env::var(key) {
+            let v = v.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+pub fn ping_live_endpoint(endpoint: &str) -> Result<(), String> {
+    let url = format!("{}/v0/specialist", endpoint.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "job": "policy-precheck",
+        "agent_id": "probe",
+        "kind": "probe",
+        "text": "ping",
+    });
+    ureq::post(&url)
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_millis(800))
+        .send_json(body)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Overlay a live result. `None` endpoint is SKIP (exit-safe for CI / Mac-less boxes).
+pub fn enrich_with_live(mut probe: DriverProbe, endpoint: Option<&str>) -> DriverProbe {
+    match endpoint {
+        None => {
+            probe.live_probed = false;
+            probe.note = format!(
+                "{} SKIP (no endpoint env; CI never requires a live box)",
+                probe.note
+            );
+        }
+        Some(ep) => match ping_live_endpoint(ep) {
+            Ok(()) => {
+                probe.live_probed = true;
+                probe.note = format!("{} live ok", probe.note);
+            }
+            Err(err) => {
+                probe.live_probed = false;
+                probe.note = format!("{} down: {err}", probe.note);
+            }
+        },
+    }
+    probe
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

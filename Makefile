@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -53,6 +53,9 @@ gate-60:
 
 gate-90:
 	./scripts/day90-gate.sh
+
+day90:
+	./scripts/day90.sh
 
 suspend:
 	cargo run -q -p estate-control -- suspend --state-dir $(STATE)
