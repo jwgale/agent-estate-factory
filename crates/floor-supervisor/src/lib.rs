@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub use lifecycle::{
-    lifecycle_path, load_lifecycle, mark_running, resume, suspend, write_lifecycle, LifecycleRecord,
-    LifecycleState, LIFECYCLE_FILE,
+    append_lifecycle_event, lifecycle_path, list_lifecycle_events, load_lifecycle, mark_running,
+    resume, suspend, write_lifecycle, LifecycleEvent, LifecycleRecord, LifecycleState,
+    LIFECYCLE_FILE, LIFECYCLE_LOG, LIFECYCLE_SCHEMA, LIFECYCLE_VERSION,
 };
 pub use placement::{
     append_apply_audit, driver_for, drift_placements, list_apply_audits, load_placements,
@@ -62,6 +63,8 @@ pub struct DriftReport {
     pub spawned_cloud_agents: Vec<String>,
     #[serde(default)]
     pub lease_kind_mismatch: Vec<String>,
+    #[serde(default)]
+    pub host_class_mismatch: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -186,6 +189,7 @@ pub fn drift_with_roots(
             extra_leases: places.extra_leases,
             spawned_cloud_agents: places.spawned_cloud_agents,
             lease_kind_mismatch: places.lease_kind_mismatch,
+            host_class_mismatch: places.host_class_mismatch,
             notes: vec!["no actual-state.json; run apply".into()],
         });
     };
@@ -273,6 +277,7 @@ pub fn drift_with_roots(
         extra_leases: places.extra_leases,
         spawned_cloud_agents: places.spawned_cloud_agents,
         lease_kind_mismatch: places.lease_kind_mismatch,
+        host_class_mismatch: places.host_class_mismatch,
         notes,
     })
 }

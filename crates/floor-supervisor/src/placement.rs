@@ -25,8 +25,14 @@ pub struct PlacementLease {
     pub note: Option<String>,
 }
 
+fn default_placement_schema() -> String {
+    "cell-one.placement-actual.v0".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlacementActual {
+    #[serde(default = "default_placement_schema")]
+    pub schema: String,
     pub desired_hash: String,
     pub leases: Vec<PlacementLease>,
 }
@@ -44,6 +50,8 @@ pub struct ApplyAudit {
     /// Always false on this beachhead. Cloud-agent is declared, not spawned.
     #[serde(default)]
     pub cloud_agent_spawned: bool,
+    #[serde(default)]
+    pub fresh_plan: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,6 +60,8 @@ pub struct PlacementDrift {
     pub extra_leases: Vec<String>,
     pub spawned_cloud_agents: Vec<String>,
     pub lease_kind_mismatch: Vec<String>,
+    #[serde(default)]
+    pub host_class_mismatch: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -61,6 +71,7 @@ impl PlacementDrift {
             && self.extra_leases.is_empty()
             && self.spawned_cloud_agents.is_empty()
             && self.lease_kind_mismatch.is_empty()
+            && self.host_class_mismatch.is_empty()
     }
 }
 
@@ -68,6 +79,12 @@ impl PlacementDrift {
 pub trait PlacementDriver: Send + Sync {
     fn name(&self) -> &'static str;
     fn claim(&self, placement: &Placement) -> PlacementLease;
+    /// Sessions/PIDs died. Lease file stays; spawned drops.
+    fn release(&self, lease: &PlacementLease) -> PlacementLease {
+        let mut next = lease.clone();
+        next.spawned = false;
+        next
+    }
 }
 
 /// This Cell One box. Floor may mark the lease spawned when wired.
@@ -134,6 +151,7 @@ pub fn driver_for(kind: PlacementKind) -> Box<dyn PlacementDriver> {
 pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
     let actual = PlacementActual {
+        schema: default_placement_schema(),
         desired_hash: estate_hash(estate),
         leases: estate
             .placements
@@ -171,7 +189,12 @@ pub fn mark_leases_unspawned(state_dir: &Path) -> Result<Option<PlacementActual>
         return Ok(None);
     };
     for lease in &mut actual.leases {
-        lease.spawned = false;
+        let kind = if lease.kind == PlacementKind::CloudAgent.as_str() {
+            PlacementKind::CloudAgent
+        } else {
+            PlacementKind::Box
+        };
+        *lease = driver_for(kind).release(lease);
     }
     write_placements(state_dir, &actual)?;
     Ok(Some(actual))
@@ -189,6 +212,7 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
             extra_leases: vec![],
             spawned_cloud_agents: vec![],
             lease_kind_mismatch: vec![],
+            host_class_mismatch: vec![],
             notes: vec!["no placement-actual.json; run apply or resume".into()],
         });
     };
@@ -200,6 +224,7 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
 
     let mut spawned_cloud_agents = Vec::new();
     let mut lease_kind_mismatch = Vec::new();
+    let mut host_class_mismatch = Vec::new();
     for placement in &estate.placements {
         let Some(lease) = actual
             .leases
@@ -210,6 +235,13 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         };
         if lease.kind != placement.kind.as_str() {
             lease_kind_mismatch.push(placement.id.clone());
+        }
+        let desired_host = placement
+            .host_class
+            .as_deref()
+            .unwrap_or("any");
+        if lease.host_class != desired_host {
+            host_class_mismatch.push(placement.id.clone());
         }
         if placement.kind == PlacementKind::CloudAgent && lease.spawned {
             spawned_cloud_agents.push(placement.id.clone());
@@ -240,6 +272,12 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
             lease_kind_mismatch.join(", ")
         ));
     }
+    if !host_class_mismatch.is_empty() {
+        notes.push(format!(
+            "lease host_class mismatch: {}",
+            host_class_mismatch.join(", ")
+        ));
+    }
     if !spawned_cloud_agents.is_empty() {
         notes.push(format!(
             "cloud-agent lease spawned (fail closed): {}",
@@ -255,6 +293,7 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         extra_leases,
         spawned_cloud_agents,
         lease_kind_mismatch,
+        host_class_mismatch,
         notes,
     })
 }
@@ -366,6 +405,33 @@ mod tests {
         assert!(!lease.spawned);
         assert_eq!(lease.driver, "cloud-agent");
         assert!(lease.wired);
+        let released = CloudAgentDriver.release(&lease);
+        assert!(!released.spawned);
+    }
+
+    #[test]
+    fn drift_fail_closes_host_class_mismatch() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-host-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        assert_eq!(actual.schema, "cell-one.placement-actual.v0");
+        for lease in &mut actual.leases {
+            lease.host_class = "consumer-nvidia".into();
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let drift = drift_placements(&estate, &tmp).unwrap();
+        assert!(!drift.in_sync());
+        assert!(!drift.host_class_mismatch.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
@@ -417,6 +483,7 @@ mod tests {
                 note: "nope".into(),
                 covering_plan: None,
                 cloud_agent_spawned: true,
+                fresh_plan: false,
             },
         )
         .unwrap_err();
