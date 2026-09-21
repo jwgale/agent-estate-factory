@@ -216,3 +216,217 @@ fn restore_garbage_estate_file_refuses() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn garbage_lifecycle_json_refuses_suspend_resume_apply() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-life-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let roots = root.join("roots");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = fixture("examples/estate.yaml");
+    apply_cell(
+        &estate,
+        &state.display().to_string(),
+        &roots.display().to_string(),
+        &plans.display().to_string(),
+    );
+    let leases = std::fs::read_to_string(state.join("placement-actual.json")).unwrap();
+    std::fs::write(state.join("lifecycle.json"), "not-json\n").unwrap();
+
+    let suspend = estate_bin()
+        .args(["suspend", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    let body = text(&suspend);
+    assert!(!suspend.status.success(), "{body}");
+    assert!(body.contains("lifecycle.json"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(state.join("lifecycle.json")).unwrap(),
+        "not-json\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+        leases
+    );
+
+    let resume = estate_bin()
+        .args([
+            "resume",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&resume);
+    assert!(!resume.status.success(), "{body}");
+    assert!(body.contains("lifecycle.json"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(state.join("lifecycle.json")).unwrap(),
+        "not-json\n"
+    );
+
+    let apply = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&apply);
+    assert!(!apply.status.success(), "{body}");
+    assert!(body.contains("lifecycle.json"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(state.join("lifecycle.json")).unwrap(),
+        "not-json\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+        leases,
+        "garbage lifecycle must not restamp leases"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn catalog_write_fails_before_print_and_probes_stay_sku_free() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-catalog-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let out = root.join("catalog.json");
+    std::fs::create_dir_all(&out).unwrap();
+    let catalog = estate_bin()
+        .args(["catalog", "--out", &out.display().to_string()])
+        .output()
+        .unwrap();
+    let body = text(&catalog);
+    assert!(!catalog.status.success(), "{body}");
+    assert!(
+        !body.contains("local runtime catalog"),
+        "catalog must write first, then print: {body}"
+    );
+
+    let probes = estate_bin().args(["probes"]).output().unwrap();
+    let body = text(&probes);
+    assert!(probes.status.success(), "{body}");
+    assert!(body.contains("ollama"), "{body}");
+    assert!(!body.contains("refuse:"), "{body}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn apply_import_pack_curator_refuse_writes_no_leases() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-import-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let roots = root.join("roots");
+    let drop = root.join("drop");
+    std::fs::create_dir_all(&drop).unwrap();
+    std::fs::copy(
+        repo_root().join("examples/fixtures/overnight-traces.pack.json"),
+        drop.join("overnight-traces.pack.json"),
+    )
+    .unwrap();
+    let estate = fixture("examples/estate.yaml");
+    apply_cell(
+        &estate,
+        &state.display().to_string(),
+        &roots.display().to_string(),
+        &plans.display().to_string(),
+    );
+    let leases = std::fs::read_to_string(state.join("placement-actual.json")).unwrap();
+    let audit = std::fs::read_to_string(state.join("apply-audit.jsonl")).unwrap();
+
+    let live = estate_bin()
+        .args([
+            "apply",
+            "--import-pack",
+            "overnight-traces",
+            "--curator",
+            "robot",
+            "--packs-dir",
+            &drop.display().to_string(),
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&live);
+    assert!(!live.status.success(), "{body}");
+    assert!(body.contains("refuse:curator"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+        leases,
+        "wrong curator must not restamp leases"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("apply-audit.jsonl")).unwrap(),
+        audit,
+        "wrong curator must not append apply-audit"
+    );
+    assert!(!drop.join("accepted").join("overnight-traces.pack.json").exists());
+    assert!(!drop.join("accepted").join("import-audit.jsonl").exists());
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--import-pack",
+            "overnight-traces",
+            "--curator",
+            "robot",
+            "--packs-dir",
+            &drop.display().to_string(),
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&dry);
+    assert!(!dry.status.success(), "{body}");
+    assert!(body.contains("refuse:curator"), "{body}");
+    assert!(
+        !body.contains("dry-run ok"),
+        "dry-run must not skip curator refuse: {body}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+        leases
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
