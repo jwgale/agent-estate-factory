@@ -1,4 +1,4 @@
-use crate::catalog::LocalRuntime;
+use crate::catalog::{parse_runtime, LocalRuntime};
 use crate::error::ModelError;
 use estate_schema::{is_sacred_name, ModelBinding};
 use serde::{Deserialize, Serialize};
@@ -152,6 +152,8 @@ pub fn enrich_with_live(probe: DriverProbe, endpoint: Option<&str>) -> DriverPro
 pub enum SpecialistJob {
     PolicyPrecheck,
     Redact,
+    /// Return model text through the HTTP adapter. Policy still fail-closes first.
+    Complete,
 }
 
 impl SpecialistJob {
@@ -159,7 +161,19 @@ impl SpecialistJob {
         match self {
             SpecialistJob::PolicyPrecheck => "policy-precheck",
             SpecialistJob::Redact => "redact",
+            SpecialistJob::Complete => "complete",
         }
+    }
+}
+
+pub fn parse_specialist_job(raw: &str) -> Result<SpecialistJob, ModelError> {
+    match raw.trim() {
+        "policy-precheck" => Ok(SpecialistJob::PolicyPrecheck),
+        "redact" => Ok(SpecialistJob::Redact),
+        "complete" | "chat" => Ok(SpecialistJob::Complete),
+        other => Err(ModelError::Refused(format!(
+            "job must be complete|chat|policy-precheck|redact, got {other}"
+        ))),
     }
 }
 
@@ -177,6 +191,9 @@ pub struct SpecialistResult {
     pub redacted_text: String,
     pub reason: String,
     pub job: String,
+    /// Model text for `complete`. Empty (and omitted in JSON) for policy jobs.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub completion: String,
 }
 
 pub struct UnwiredLocal {
@@ -278,7 +295,7 @@ impl LocalDriver for ExperimentalLocal {
 /// Thin HTTP specialist. Used by Ollama, llama.cpp, and http-remote.
 /// Factory `/v0/specialist` first; else OpenAI `/v1/chat/completions` or
 /// Ollama `/api/chat` with the real request text. Policy stays
-/// `builtin_specialist`.
+/// `builtin_specialist`. `complete` keeps the model text.
 pub struct HttpLocal {
     pub id: String,
     pub endpoint: String,
@@ -324,6 +341,7 @@ pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
             redacted_text: String::new(),
             reason: "payload exceeds 16KiB bound".into(),
             job: req.job.as_str().into(),
+            completion: String::new(),
         };
     }
     let lower = req.text.to_ascii_lowercase();
@@ -334,16 +352,87 @@ pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
                 redacted_text: String::new(),
                 reason: format!("policy-precheck denied sacred token '{token}'"),
                 job: req.job.as_str().into(),
+                completion: String::new(),
             };
         }
     }
     let redacted = redact_secrets(&req.text);
+    let completion = match req.job {
+        SpecialistJob::Complete => format!("mock:{redacted}"),
+        _ => String::new(),
+    };
+    let reason = match req.job {
+        SpecialistJob::Complete => "complete allow",
+        _ => "policy-precheck allow",
+    };
     SpecialistResult {
         allow: true,
         redacted_text: redacted,
-        reason: "policy-precheck allow".into(),
+        reason: reason.into(),
         job: req.job.as_str().into(),
+        completion,
     }
+}
+
+/// Shared by `estate specialist` and `model-estate specialist`.
+/// Env-gated, SKU refuse, mlx/vllm/trt refuse. Empty prompt refuses.
+pub fn resolve_specialist_endpoint(explicit: Option<&str>) -> Result<String, ModelError> {
+    let raw = match explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(ep) => ep.to_string(),
+        None => live_endpoint(LocalRuntime::Ollama).ok_or_else(|| {
+            ModelError::MissingEndpoint("CELL_LOCAL_ENDPOINT".into())
+        })?,
+    };
+    if estate_schema::contains_sku(&raw) {
+        return Err(ModelError::Refused(
+            "endpoint encodes a hardware SKU".into(),
+        ));
+    }
+    Ok(raw.trim_end_matches('/').to_string())
+}
+
+pub fn run_http_specialist(
+    endpoint: Option<&str>,
+    job: &str,
+    agent: &str,
+    kind: &str,
+    text: &str,
+    runtime: &str,
+) -> Result<SpecialistResult, ModelError> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(ModelError::Refused("specialist text is empty".into()));
+    }
+    if estate_schema::contains_sku(text) {
+        return Err(ModelError::Refused("prompt encodes a hardware SKU".into()));
+    }
+    let endpoint = resolve_specialist_endpoint(endpoint)?;
+    let runtime = parse_runtime(runtime).ok_or_else(|| {
+        ModelError::Refused(format!(
+            "driver must be ollama|llama.cpp|http-remote, got {runtime}"
+        ))
+    })?;
+    if !matches!(
+        runtime,
+        LocalRuntime::Ollama | LocalRuntime::LlamaCpp | LocalRuntime::HttpRemote
+    ) {
+        return Err(ModelError::Refused(
+            "native mlx / vllm / trt specialist stays stub or experimental; use ollama|llama.cpp|http-remote"
+                .into(),
+        ));
+    }
+    let job = parse_specialist_job(job)?;
+    let local = HttpLocal {
+        id: "cli".into(),
+        endpoint,
+        runtime,
+    };
+    local.specialist(&SpecialistRequest {
+        job,
+        agent_id: agent.to_string(),
+        kind: kind.to_string(),
+        text: text.to_string(),
+    })
 }
 
 fn redact_secrets(text: &str) -> String {
