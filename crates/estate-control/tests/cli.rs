@@ -1369,6 +1369,180 @@ fn wave6_backup_policy_catalog_pause() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+#[test]
+fn wave7_status_curator_sync() {
+    let tmp = repo_root().join(format!("target/test-wave7-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let state = tmp.join("state");
+    let plans = tmp.join("plans");
+    let drop = tmp.join("packs");
+    std::fs::create_dir_all(&drop).unwrap();
+    std::fs::copy(
+        repo_root().join("examples/fixtures/overnight-traces.pack.json"),
+        drop.join("overnight-traces.pack.json"),
+    )
+    .unwrap();
+
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(planned.status.success());
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+
+    let ok_imp = estate_bin()
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &drop.join("accepted").display().to_string(),
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--curator",
+            "jason",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        ok_imp.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&ok_imp.stderr)
+    );
+    let bad_imp = estate_bin()
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &drop.join("accepted").display().to_string(),
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--curator",
+            "not-jason",
+        ])
+        .output()
+        .unwrap();
+    assert!(!bad_imp.status.success());
+    let bad_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&bad_imp.stdout),
+        String::from_utf8_lossy(&bad_imp.stderr)
+    );
+    assert!(bad_err.contains("refuse:curator"));
+
+    estate_bin()
+        .args(["convey", "sync", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    let hop = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(hop.status.success());
+    let synced = estate_bin()
+        .args(["convey", "sync", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(synced.status.success());
+    assert!(String::from_utf8_lossy(&synced.stdout).contains("ttl-box"));
+
+    let status = estate_bin()
+        .args([
+            "status",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--packs-dir",
+            &drop.display().to_string(),
+            "--policy",
+            &fixture("policy/cell-one.policy.v0.yaml"),
+            "--root",
+            &repo_root().display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        status.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let watch = String::from_utf8_lossy(&status.stdout);
+    assert!(watch.contains("paused: no"));
+    assert!(watch.contains("leases:"));
+    assert!(watch.contains("last_plan:"));
+    assert!(watch.contains("last_apply:"));
+    assert!(watch.contains("open_proposals:"));
+    assert!(watch.contains("policy: present"));
+    assert!(watch.contains("doctor: ok"));
+    assert!(watch.contains("cloud-agent"));
+
+    let doctor = estate_bin()
+        .args([
+            "doctor",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(doctor.status.success());
+    let doc = String::from_utf8_lossy(&doctor.stdout);
+    assert!(doc.contains("GATE-90.md"));
+    assert!(doc.contains("schema/README.md"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 fn copy_dir(src: &std::path::Path, dest: &std::path::Path) {
     std::fs::create_dir_all(dest).unwrap();
     for entry in std::fs::read_dir(src).unwrap() {
