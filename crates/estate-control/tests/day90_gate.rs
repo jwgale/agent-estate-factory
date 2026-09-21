@@ -120,7 +120,7 @@ fn a12_plan_reviewable_and_placement_stub_declared() {
     let written = write_plan(&root, &plan).unwrap();
     assert!(written.is_file());
     assert!(root.join("INDEX.md").is_file());
-    assert!(plan_covers_hash(&root, &plan.desired_hash));
+    assert!(plan_covers_hash(&root, &plan.desired_hash).unwrap());
     assert_eq!(plan.schema, "cell-one.plan.v0");
     assert!(estate_schema::plan_against_is_fresh(&plan, None));
     let _ = std::fs::remove_dir_all(&root);
