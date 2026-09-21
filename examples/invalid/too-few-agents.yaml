@@ -1,0 +1,34 @@
+version: 0
+name: too-few
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+intentions: []
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: gpu_5090
+    class: local
+    driver: local-gpu
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    reason: locked
+  - id: rust-classroom
+    reason: locked

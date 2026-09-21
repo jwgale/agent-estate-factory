@@ -1,0 +1,14 @@
+[package]
+name = "estate-schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Agent estate desired-state types, fail-closed validation, compiled intentions, memory firewall"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+chrono.workspace = true

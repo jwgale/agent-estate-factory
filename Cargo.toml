@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/estate-schema",
+    "crates/isolation-driver",
+    "crates/floor-supervisor",
+    "crates/conveyor-proxy",
+    "crates/estate-control",
+    "crates/model-estate",
+    "crates/feed-collector",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+repository = "https://github.com/jwgale/agent-estate-factory"
+
+[workspace.dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "1.0"
+tiny_http = "0.12"
+
+estate-schema = { path = "crates/estate-schema" }
+isolation-driver = { path = "crates/isolation-driver" }
+floor-supervisor = { path = "crates/floor-supervisor" }
+conveyor-proxy = { path = "crates/conveyor-proxy" }
+model-estate = { path = "crates/model-estate" }
+feed-collector = { path = "crates/feed-collector" }

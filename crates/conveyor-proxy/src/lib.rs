@@ -1,0 +1,128 @@
+//! Deny-by-default conveyor. Workers call this; they do not read other lanes.
+
+use estate_schema::{authorize, AccessRequest, Decision, Estate, IntentionKind};
+use feed_collector::{append_event, ScrubbedEvent};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::str::FromStr;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyRequest {
+    pub agent_id: String,
+    pub kind: String,
+    pub object: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyResponse {
+    pub decision: String,
+    pub reason: String,
+}
+
+pub struct WorkerClient<'a> {
+    estate: &'a Estate,
+    feed_dir: Option<&'a Path>,
+}
+
+impl<'a> WorkerClient<'a> {
+    pub fn new(estate: &'a Estate) -> Self {
+        Self {
+            estate,
+            feed_dir: None,
+        }
+    }
+
+    pub fn with_feed(mut self, dir: &'a Path) -> Self {
+        self.feed_dir = Some(dir);
+        self
+    }
+
+    pub fn invoke(&self, agent_id: &str, kind: IntentionKind, object: &str) -> Decision {
+        check(self.estate, agent_id, kind, object, self.feed_dir)
+    }
+}
+
+pub fn check(
+    estate: &Estate,
+    agent_id: &str,
+    kind: IntentionKind,
+    object: &str,
+    feed_dir: Option<&Path>,
+) -> Decision {
+    let decision = authorize(
+        estate,
+        &AccessRequest {
+            subject_agent: agent_id,
+            kind,
+            object,
+        },
+    );
+    if let Some(dir) = feed_dir {
+        let _ = append_event(
+            dir,
+            &ScrubbedEvent {
+                kind: format!("proxy.{}", kind.as_str()),
+                agent_id: Some(agent_id.to_string()),
+                decision: Some(if decision.is_allow() {
+                    "allow".into()
+                } else {
+                    "deny".into()
+                }),
+                object_class: Some(kind.as_str().to_string()),
+                note: None,
+                ts: String::new(),
+            },
+        );
+    }
+    decision
+}
+
+pub fn parse_kind(raw: &str) -> Result<IntentionKind, String> {
+    IntentionKind::from_str(raw)
+}
+
+pub fn response_from(decision: &Decision) -> ProxyResponse {
+    ProxyResponse {
+        decision: if decision.is_allow() {
+            "allow".into()
+        } else {
+            "deny".into()
+        },
+        reason: decision.reason().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn estate() -> Estate {
+        estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
+    }
+
+    #[test]
+    fn worker_cannot_read_other_lane() {
+        let e = estate();
+        let worker = WorkerClient::new(&e);
+        let d = worker.invoke("horizon", IntentionKind::MemoryRead, "lane:sanctum");
+        assert!(!d.is_allow());
+    }
+
+    #[test]
+    fn worker_declared_tool_passes() {
+        let e = estate();
+        let worker = WorkerClient::new(&e);
+        assert!(worker
+            .invoke("research", IntentionKind::Tool, "notes-append")
+            .is_allow());
+    }
+
+    #[test]
+    fn worker_undeclared_mount_fails() {
+        let e = estate();
+        let worker = WorkerClient::new(&e);
+        assert!(!worker
+            .invoke("horizon", IntentionKind::Mount, "undeclared")
+            .is_allow());
+    }
+}

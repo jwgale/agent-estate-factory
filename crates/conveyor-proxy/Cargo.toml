@@ -1,0 +1,20 @@
+[package]
+name = "conveyor-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Deny-by-default conveyor proxy for tool, MCP, mount, and memory"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+estate-schema.workspace = true
+feed-collector.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tiny_http.workspace = true
+
+[[bin]]
+name = "conveyor-proxy"
+path = "src/main.rs"
