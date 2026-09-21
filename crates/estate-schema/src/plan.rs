@@ -143,6 +143,8 @@ pub fn render_plan(plan: &EstatePlan) -> String {
     out.push_str(&plan.blast_radius_text);
     out.push('\n');
     out.push_str("\n");
+    out.push_str(&render_security_iac(plan));
+    out.push_str("\n");
     out.push_str(&render_review_diff(plan));
     out.push_str("\nAdded\n");
     out.push_str(&render_delta(&plan.added));
@@ -194,6 +196,10 @@ pub fn write_plan(plans_dir: &Path, plan: &EstatePlan) -> Result<std::path::Path
     let json_path = plans_dir.join(format!("{stem}.json"));
     std::fs::write(&md_path, render_plan(plan))?;
     std::fs::write(&json_path, serde_json::to_string_pretty(plan).unwrap_or_default())?;
+    std::fs::write(
+        plans_dir.join(format!("{stem}.security.md")),
+        render_security_iac(plan),
+    )?;
     let _ = write_plan_index(plans_dir);
     Ok(md_path)
 }
@@ -220,7 +226,7 @@ pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Erro
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if let Some(stem) = name.strip_suffix(".md") {
-            if stem != "INDEX" && stem != "README" {
+            if stem != "INDEX" && stem != "README" && !stem.ends_with(".security") {
                 stems.insert(stem.to_string());
             }
         } else if let Some(stem) = name.strip_suffix(".json") {
@@ -292,6 +298,84 @@ pub fn plan_against_is_fresh(plan: &EstatePlan, last_applied: Option<&str>) -> b
         (Some(applied), Some(against)) => applied == against,
         _ => true,
     }
+}
+
+/// Strict freshness for `--require-fresh-plan`.
+/// A greenfield plan (`against_hash = None`) after an apply is STALE.
+pub fn plan_against_is_fresh_strict(plan: &EstatePlan, last_applied: Option<&str>) -> bool {
+    match (last_applied, plan.against_hash.as_deref()) {
+        (None, _) => true,
+        (Some(applied), Some(against)) => applied == against,
+        (Some(_), None) => false,
+    }
+}
+
+/// PR-reviewable Security-as-IaC: schema, hashes, and a blast radius a human can read.
+pub fn plan_is_reviewable(plan: &EstatePlan) -> bool {
+    plan.schema == "cell-one.plan.v0"
+        && plan.desired_hash.starts_with("sha256:")
+        && !plan.blast_radius_text.trim().is_empty()
+        && !plan.created_at.trim().is_empty()
+}
+
+/// Blast-radius markdown a human can PR-review before apply.
+pub fn render_security_iac(plan: &EstatePlan) -> String {
+    let mut out = String::from("Security-as-IaC (PR-review this blast radius)\n");
+    out.push_str("----------------------------------------------\n");
+    out.push_str(&format!("schema: {}\n", plan.schema));
+    out.push_str(&format!("reviewable: {}\n", plan_is_reviewable(plan)));
+    out.push_str(&format!("desired_hash: {}\n", plan.desired_hash));
+    match &plan.against_hash {
+        Some(h) => out.push_str(&format!("against_hash: {h}\n")),
+        None => out.push_str("against_hash: (greenfield — stale after the first apply)\n"),
+    }
+    out.push_str(&format!("created_at: {}\n\n", plan.created_at));
+    out.push_str("Blast radius\n");
+    out.push_str(&plan.blast_radius_text);
+    out.push_str("\n\n");
+    out.push_str(&format!("+ agents: {}\n", fmt_list(&plan.added.agents)));
+    out.push_str(&format!("- agents: {}\n", fmt_list(&plan.removed.agents)));
+    out.push_str(&format!("~ agents: {}\n", fmt_list(&plan.changed.agents)));
+    out.push_str(&format!("+ placements: {}\n", fmt_list(&plan.added.placements)));
+    out.push_str(&format!("- placements: {}\n", fmt_list(&plan.removed.placements)));
+    out.push_str(&format!("+ enrich_packs: {}\n", fmt_list(&plan.added.enrich_packs)));
+    out.push_str("\nApply without a covering, reviewable, fresh plan is refuse.\n");
+    out.push_str("Cloud-agent placements stay unspawned. Feed does not auto-promote.\n");
+    out
+}
+
+/// Copy a plan's markdown/json/security files into `reviewed/` for a human PR.
+pub fn mark_plan_reviewed(
+    plans_dir: &Path,
+    reviewed_dir: &Path,
+    stem: Option<&str>,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    std::fs::create_dir_all(reviewed_dir)?;
+    let entries = list_plans(plans_dir)?;
+    let entry = match stem {
+        Some(want) => entries.into_iter().find(|e| e.stem == want),
+        None => entries.into_iter().next(),
+    }
+    .ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "no covering plan to mark reviewed")
+    })?;
+    for ext in ["md", "json", "security.md"] {
+        let src = plans_dir.join(format!("{}.{}", entry.stem, ext));
+        if src.exists() {
+            std::fs::copy(&src, reviewed_dir.join(format!("{}.{}", entry.stem, ext)))?;
+        }
+    }
+    let mut index = String::from(
+        "# Reviewed plans\n\nHuman-copied blast-radius files. Commit these when apply needs a PR review.\n\n",
+    );
+    index.push_str(&format!(
+        "- `{}` hash={} against={}\n",
+        format!("{}.md", entry.stem),
+        entry.desired_hash.as_deref().unwrap_or("-"),
+        entry.against_hash.as_deref().unwrap_or("(greenfield)")
+    ));
+    std::fs::write(reviewed_dir.join("INDEX.md"), index)?;
+    Ok(reviewed_dir.join(format!("{}.md", entry.stem)))
 }
 
 pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io::Error> {
@@ -546,9 +630,30 @@ mod tests {
         assert_eq!(covering.plan.schema, "cell-one.plan.v0");
         assert!(plan_against_is_fresh(&covering.plan, None));
         assert!(plan_against_is_fresh(&covering.plan, Some("sha256:other")));
+        assert!(!plan_against_is_fresh_strict(&covering.plan, Some("sha256:other")));
+        assert!(plan_against_is_fresh_strict(&covering.plan, None));
+        assert!(plan_is_reviewable(&covering.plan));
+        let iac = render_security_iac(&covering.plan);
+        assert!(iac.contains("Security-as-IaC"));
+        assert!(iac.contains("reviewable: true"));
+        assert!(dir.join(format!("{}.security.md", covering.stem)).is_file());
+        let reviewed = mark_plan_reviewed(&dir, &dir.join("reviewed"), Some(&covering.stem)).unwrap();
+        assert!(reviewed.is_file());
         let mut stale = covering.plan.clone();
         stale.against_hash = Some("sha256:old".into());
         assert!(!plan_against_is_fresh(&stale, Some("sha256:new")));
+        assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:new")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_fixture_fails_strict_freshness() {
+        let stale: EstatePlan =
+            serde_json::from_str(include_str!("../../../examples/invalid/stale-plan.json")).unwrap();
+        assert!(!plan_against_is_fresh_strict(
+            &stale,
+            Some("sha256:0000000000000000000000000000000000000000000000000000000000000001")
+        ));
+        assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:other")));
     }
 }
