@@ -1,0 +1,4 @@
+{
+  "name": "Cell One",
+  "install": "rustup toolchain install 1.88.0 --profile minimal && rustup override set 1.88.0 && cargo fetch"
+}

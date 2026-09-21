@@ -1,0 +1,43 @@
+name: gate
+
+on:
+  push:
+    branches:
+      - main
+      - cursor/day31-60-mixed-model-2950
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-gate:
+    name: cargo test + make gate + make gate-60
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust from rust-toolchain.toml
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.88.0
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
+
+      - name: make gate (A1–A4)
+        run: make gate
+
+      - name: make gate-60 (A5–A9)
+        run: make gate-60
+        env:
+          # Live Grok / live local stay SKIP unless the repo secrets exist.
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          CELL_LOCAL_LIVE: ${{ secrets.CELL_LOCAL_LIVE }}
