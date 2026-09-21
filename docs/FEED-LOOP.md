@@ -23,8 +23,11 @@ part of `make smoke` (that gate is already long). Hosted CI never runs it.
    `schema=cell-one.feed-cursor.v0`, `events > 0`, and `packed_id`.
    `source_drivers` lists `frontier` and/or `local` and matches `path_counts`.
    The script asserts the produced pack is exactly `frontier` then `local`,
-   and that propose copies the same tag. `promoted` stays false. Live keys
-   are unset.
+   that `INDEX.md` lists `drivers=frontier,local`, and that propose copies
+   the same tag. An empty pack lists `drivers=-` and does not invent a
+   source. `promoted` stays false. Live keys are unset. There is no
+   `make feed-loop-mixed`; this walk already uses mixed frontier and local
+   traces.
 3. **Propose.** `estate packs propose` writes `packs/proposed/` with
    `auto_apply: false` and copies `source_drivers` onto the diff. The estate
    file is unchanged.

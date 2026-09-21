@@ -200,6 +200,20 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
 
     assert_eq!(before, std::fs::read_to_string(&estate).unwrap());
     assert!(feed.join("feed-cursor.json").is_file());
+    let index = std::fs::read_to_string(drop.join("INDEX.md")).unwrap();
+    assert!(index.contains("drivers=frontier,local"), "{index}");
+    let list = estate_bin()
+        .args(["feed", "list", "--drop-dir", &drop.display().to_string()])
+        .output()
+        .unwrap();
+    let list_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&list.stdout),
+        String::from_utf8_lossy(&list.stderr)
+    );
+    assert!(list.status.success(), "{list_text}");
+    assert!(list_text.contains("drivers=frontier,local"), "{list_text}");
+    assert!(list_text.contains("promoted=false"), "{list_text}");
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -208,6 +222,7 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     let root = repo_root();
     let script = std::fs::read_to_string(root.join("scripts/feed-loop.sh")).unwrap();
     assert!(script.contains("source_drivers"), "{script}");
+    assert!(script.contains("drivers=frontier,local"), "{script}");
     assert!(script.contains("unset XAI_API_KEY"), "{script}");
     assert!(
         script.contains("Do not add to make smoke or GitHub Actions"),
@@ -267,5 +282,7 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
         proposal["diff"]["source_drivers"],
         serde_json::json!(["frontier", "local"])
     );
+    let index = std::fs::read_to_string(work.join("packs/INDEX.md")).unwrap();
+    assert!(index.contains("drivers=frontier,local"), "{index}");
     let _ = std::fs::remove_dir_all(&work);
 }

@@ -17,4 +17,4 @@ Rules:
 
 Generated `*.pack.json` files stay gitignored. Documentary copies live under `examples/enrich-packs/`.
 
-Pack ids must be slugs and must not encode a hardware SKU. `host_class` is `consumer-nvidia|apple-silicon|rented-nvidia|any`. `INDEX.md` is regenerated next to the drop.
+Pack ids must be slugs and must not encode a hardware SKU. `host_class` is `consumer-nvidia|apple-silicon|rented-nvidia|any`. `INDEX.md` is regenerated next to the drop. Each line lists `drivers=frontier,local` when the pack has those tags, or `drivers=-` when it does not. `estate feed list` prints the same tag. A failed index rewrite is an error, not a silent skip.

@@ -90,6 +90,11 @@ if [[ ! -f "$DROP/overnight-traces.pack.json" ]]; then
   exit 1
 fi
 assert_source_drivers "$DROP/overnight-traces.pack.json"
+if ! grep -q 'drivers=frontier,local' "$DROP/INDEX.md"; then
+  echo "FAIL  INDEX.md must list source_drivers"
+  cat "$DROP/INDEX.md"
+  exit 1
+fi
 echo "PASS  pack source_drivers frontier, local"
 
 echo "-- feed cursor (durable watermark) --"
