@@ -2,7 +2,8 @@
 
 A walk Jason can run on this box after Day 90. Fixtures only. It does not
 prove a Mac, a GPU, or a cloud spawn. Those rows stay parked in
-[`DAY90-PLUS.md`](DAY90-PLUS.md). README start-here: [`../README.md`](../README.md).
+[`DAY90-PLUS.md`](DAY90-PLUS.md). Live probe hand-off (not green):
+[`LIVE-PROBES.md`](LIVE-PROBES.md). README start-here: [`../README.md`](../README.md).
 Feed-only walk (this is step 2): [`FEED-LOOP.md`](FEED-LOOP.md).
 `.cell/` paths: [`cell-layout.md`](cell-layout.md).
 

@@ -16,6 +16,8 @@ stays compile-only. Live Grok / GPU / Mac are not required to keep
 | Live consumer / rented GPU | Same specialist protocol (`CELL_LOCAL_ENDPOINT` / `CELL_RENTED_ENDPOINT`). Host class is `consumer-nvidia` or `rented-nvidia`. | No GPU is required for the local gates. A 5090 is one rented (or consumer) box, not a binding id, not a probe id, not a product fork. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
 
+Exact env vars and commands (still not green): [`LIVE-PROBES.md`](LIVE-PROBES.md).
+
 When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path;
 MLX stays a stub until he verifies it. Set `CELL_MLX_ENDPOINT` (or
 `CELL_LOCAL_ENDPOINT`) and run `estate probes --live`. Until then: SKIP.
