@@ -33,8 +33,10 @@ part of `make smoke` (that gate is already long). Hosted CI never runs it.
    file is unchanged.
 4. **Accept.** `estate packs accept --curator jason` writes enrich-pack
    *edit instructions* (`applied_to_estate: false`) and copies
-   `source_drivers` onto them. An empty list stays `-`. A tag that does
-   not match `path_counts` refuses before the edit file is rewritten.
+   `source_drivers` onto them. The script checks the pack, the proposal,
+   and `enrich-edit.json` carry the same list. An empty list stays `-`.
+   A tag that does not match `path_counts` refuses before the edit file
+   is rewritten, and the pack or proposal index is left unchanged.
    Wrong curator refuses. Promote still fails closed.
 
 ## Cursor durability
