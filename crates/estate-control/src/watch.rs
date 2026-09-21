@@ -338,3 +338,4 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         format!("FAIL ({fails})")
     }
 }
+
