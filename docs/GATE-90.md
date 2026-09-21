@@ -86,6 +86,9 @@ estate doctor --strict
 | Frontier specialist (grok-4.7) | green | Live PASS recorded. Mock-locked. No key in CI. `READY_FOR_LIVE_TEST` no |
 | Mixed grok-4.7 + ollama dry-run | green | `validate` + `apply --dry-run` on mixed fixture; no POST; no live key |
 | Local down does not call frontier | green | `--driver ollama` unset or failed local chat; frontier mock gets no POST |
+| Mixed plan + apply | green | `plan` then `apply --require-plan` on mixed fixture; catalog names `grok-4.7`; no POST; no live key |
+| Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
+| Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
