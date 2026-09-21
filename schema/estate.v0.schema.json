@@ -7,6 +7,10 @@
   "required": ["version", "name", "agents", "lanes"],
   "properties": {
     "version": { "type": "integer", "const": 0 },
+    "apiVersion": {
+      "type": "string",
+      "description": "Optional Cell One config version. Absent is legacy v0. Known: cell-one.estate.v0, v0. Unknown fail-closed."
+    },
     "kind": { "type": "string" },
     "name": { "type": "string", "minLength": 1 },
     "schema": { "type": "string" },
