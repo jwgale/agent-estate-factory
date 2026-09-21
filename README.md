@@ -149,7 +149,8 @@ CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when 
 | `CELL_MLX_ENDPOINT` | Apple MLX; falls back to `CELL_LOCAL_ENDPOINT` |
 | `CELL_VLLM_ENDPOINT` | Experimental; unset = SKIP |
 | `CELL_TRT_ENDPOINT` | Experimental; unset = SKIP |
-| `XAI_API_KEY` / `XAI_API_BASE` / `XAI_MODEL` | Frontier live A7. Not used by probes. |
+| `CELL_FRONTIER_ENDPOINT` | `estate specialist --driver frontier` / AI-gateway. Not probes. `XAI_API_KEY` does not unlock. |
+| `XAI_API_KEY` / `XAI_API_BASE` / `XAI_MODEL` | Frontier live A7. Not used by probes or `--driver frontier`. |
 
 ## Day-30 gate demo (A1–A4)
 
