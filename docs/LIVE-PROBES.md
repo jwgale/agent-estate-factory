@@ -70,7 +70,7 @@ host_class on the mlx card is `apple-silicon`. Catalog status stays
 `stub`, `bindable=false`. Ollama-on-Mac is the Supported Apple path
 (same `ollama` card, `CELL_LOCAL_ENDPOINT`).
 
-Terminal 1 - specialist that already speaks `/v0/specialist` (stand-in
+Terminal 1 - specialist that already speaks `/v0/specialist` (stand-in)
 until a real MLX specialist exists):
 
 ```bash
