@@ -1,0 +1,9 @@
+{
+  "schema": "cell-one.plan.v0",
+  "note": "PR-reviewable blast-radius + Security-as-IaC markdown. apply --require-plan is gated on desired_hash. --require-fresh-plan uses plan_against_is_fresh_strict (greenfield after apply is stale).",
+  "desired_hash": "sha256:example",
+  "against_hash": null,
+  "added": {},
+  "removed": {},
+  "changed": {}
+}

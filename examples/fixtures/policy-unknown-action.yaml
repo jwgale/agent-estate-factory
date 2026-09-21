@@ -1,0 +1,8 @@
+apiVersion: cell-one.policy.v0
+kind: estate-policy
+schema: cell-one.policy.v0
+default: deny
+note: Unknown action must fail closed at load.
+rules:
+  - action: spawn-cloud
+    effect: allow

@@ -1,5 +1,7 @@
 # Cell One — Agent Estate Factory
 
+**Start here (21 Sep 2026 morning):** [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local gate `make smoke`. PR #2 paste: [`docs/PR2-DESCRIPTION.md`](docs/PR2-DESCRIPTION.md).
+
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
@@ -10,11 +12,31 @@ cd agent-estate-factory
 cargo test --workspace
 make gate
 make gate-60
+make gate-90    # local only; not in GitHub Actions
+make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
 ```
 
-CI is intentionally thin (one `ubuntu-latest` job, `pull_request` only, `cargo test --workspace`). Run gates locally.
+Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` to Actions.
 
-Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md).
+Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Lease files: [`docs/cell-layout.md`](docs/cell-layout.md).
+
+## What works tonight vs stubs
+
+This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy. Origin is not in the loop. GitHub is SoT.
+
+| Works tonight (local cargo) | Still a stub |
+| --- | --- |
+| `estate validate` on `examples/estate.yaml` + host matrix + `examples/hosts/multi-host.yaml` | Live Mac MLX proof |
+| `estate plan` / `apply --require-plan` / `--require-fresh-plan` + Security-as-IaC markdown | Cloud-agent spawn (declared only) |
+| `estate suspend` / `resume` / `status` / `history` | Multi-box control plane |
+| `estate reconcile` desired vs actual + sacred-id deny on tampered leases | Auto-heal / rewrite of leases |
+| `estate packs list\|import\|propose` — propose writes `packs/proposed/`, never applies | Feed auto-promote (locked off) |
+| `estate convey hop\|call\|leases` — lease-bound; refuse codes prefixed `refuse:` | Real hop transport |
+| `estate audit export` — local folder / optional tarball | Remote audit upload |
+| Ollama + `CELL_LOCAL_ENDPOINT` + llama.cpp swap-proof card | vLLM / TRT until Jason verifies |
+| Isolation profile-dir + placement leases under `.cell/` | Containers / vendor isolation |
+
+Do not turn this into an AI gateway. Do not auto-promote enrich packs. Do not spawn `cursor-cloud`.
 
 ## Day-60 gate demo (A5–A9)
 
@@ -79,7 +101,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Ollama-first | First green local path. llama.cpp is swap-proof. vLLM optional. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work does not silently fall through to frontier. Feed: `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. See [`examples/enrich-packs/`](examples/enrich-packs/). |
+| Enrich packs | Jason curates; `policy: manual`. Live drop zone: [`packs/`](packs/). |
 | Supported | Ollama (+ llama.cpp) green on the box. vLLM / TRT experimental until Jason verifies. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver, not a fork. |
 | Apple | Ollama-on-Mac = Supported. MLX = Stub behind the same catalog / route / bind API. |
@@ -115,23 +137,23 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 
 ## Persist vs disposable
 
-Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`.  
-Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`.
+Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `plans/reviewed/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/feed/feed-cursor.json`, `.cell/conveyor-mesh.json`, `.cell/conveyor-hops.json`, `.cell/conveyor-leases.json`.  
+Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`, `.cell/reconcile.json`, `.cell/reconcile.md`. Local review: `.cell/audit-export/` (not uploaded). See [`docs/cell-layout.md`](docs/cell-layout.md).
 
 ## What is stubbed vs live
 
 | Piece | State |
 | --- | --- |
 | Isolation | Profile dirs (not containers). Trait is swappable. |
-| Conveyor HTTP | `POST /v0/check` only. Not a mesh or gateway. |
+| Conveyor HTTP | `POST /v0/check` only. Capability mesh is a lease-bound stub (`estate convey`). Not a gateway. |
 | Frontier `xai_grok` | Wired driver. Live when `XAI_API_KEY` is set. Tests use mock/HTTP fake. |
 | Local `local_slm` | Wired `ollama` driver + `CELL_LOCAL_ENDPOINT`. `mock-local` speaks the protocol. |
 | llama.cpp | Swap-proof card; same specialist protocol. |
 | MLX | Stub. Same catalog/route/bind. Live Mac proof later. |
 | vLLM / TRT | Experimental. Fail closed until Jason verifies. |
-| Enrich packs | Curator jason, policy manual, packs empty. |
-| Feed | Scrubbed jsonl, both paths. No auto-promote. |
-| A10–A12 | Not built. |
+| Enrich packs | Curator jason, policy manual, packs empty. Live drop zone: `packs/`. Import is explicit and does not rewrite the estate. |
+| Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
+| A10–A12 | Beachhead: feed packs + import, suspend/resume + placement leases, gated/auditable apply, cloud-agent stub. |
 
 ## Sharp choices (Jev bait)
 
@@ -148,4 +170,14 @@ Day 60 additions:
 7. **Hardware SKUs are banned** from binding ids/drivers. Catalog / route / bind picks Ollama, llama.cpp, MLX, vLLM, or TRT.
 8. **Enrich packs stay manual.** Jason curates; feed does not auto-promote.
 
-Anti-shrink list is in the charter.
+Day 61–90 beachhead (local `make gate-90`):
+
+9. **Feed packs are candidates.** `estate feed pack` writes `packs/`; `estate feed import` is explicit apply; `estate feed promote` fails. Jason edits the estate.
+10. **Suspend/resume is the operator lifecycle.** `.cell/lifecycle.json` survives session discard. Placement leases are regenerable on disk.
+11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. `apply --require-plan` is gated and audited. Commit a plan file when apply needs a PR review.
+12. **`placements[]` declares `box` and a `cloud-agent` stub.** `PlacementDriver` records leases; it does not spawn cloud agents. Drift fail-closes a spawned cloud lease or host_class mismatch. `schema/local-catalog.v0.json` is the catalog file SoT.
+13. **Feed cursor + lifecycle history + plan freshness** are file-durable. `apply --require-fresh-plan` checks `against_hash`. Driver `probe()` is catalog-level (`live_probed=false`).
+14. **Wave 2 (same PR):** `estate convey` mesh, Security-as-IaC `{stem}.security.md` + `--require-fresh-plan` strict, `estate packs`, `make operator-day`, host-class aliases + `examples/hosts/`.
+15. **Wave 3 (same PR):** `estate reconcile` + refuse codes + sacred-id tamper deny; `estate packs propose` (never auto-apply); multi-host fixture; `estate audit export`; `.cell/` layout doc.
+
+Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md). Anti-shrink list is in the charter.

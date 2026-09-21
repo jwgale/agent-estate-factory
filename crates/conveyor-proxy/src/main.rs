@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use conveyor_proxy::{check, parse_kind, response_from, ProxyRequest};
+use conveyor_proxy::{
+    call_hop, check, declare_hop, list_hop_leases, list_hops, parse_kind, response_from,
+    sync_from_placements, HopDecl, ProxyRequest,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -34,6 +37,47 @@ enum Command {
         bind: String,
         #[arg(long)]
         feed_dir: Option<PathBuf>,
+    },
+    /// Declare a capability hop (lease written under --state-dir).
+    Hop {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "box")]
+        kind: String,
+        #[arg(long, default_value = "lane-tool")]
+        capability: String,
+        #[arg(long, default_value = "any")]
+        host_class: String,
+        #[arg(long, default_value_t = true)]
+        wired: bool,
+        #[arg(long)]
+        ttl_secs: Option<u64>,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Lease-bound hop call. Refuses without a granted lease.
+    Call {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "lane-tool")]
+        capability: String,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// List declared hops.
+    List {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// List hop leases.
+    Leases {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Derive hops from placement-actual.json (slim parse).
+    Sync {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
     },
 }
 
@@ -87,6 +131,60 @@ fn main() -> Result<()> {
                 response = response.with_header(header);
                 let _ = request.respond(response);
             }
+        }
+        Command::Hop {
+            id,
+            kind,
+            capability,
+            host_class,
+            wired,
+            ttl_secs,
+            state_dir,
+        } => {
+            let lease = declare_hop(
+                &state_dir,
+                HopDecl {
+                    id,
+                    kind,
+                    capability,
+                    host_class,
+                    wired,
+                    note: None,
+                    ttl_secs,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&lease)?);
+        }
+        Command::Call {
+            id,
+            capability,
+            state_dir,
+        } => {
+            let call = call_hop(&state_dir, &id, &capability)?;
+            println!("{}", serde_json::to_string_pretty(&call)?);
+            if !call.allow {
+                bail!("hop call denied");
+            }
+        }
+        Command::List { state_dir } => {
+            let hops = list_hops(&state_dir)?;
+            if hops.is_empty() {
+                println!("no hops under {}", state_dir.display());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&hops)?);
+            }
+        }
+        Command::Leases { state_dir } => {
+            let leases = list_hop_leases(&state_dir)?;
+            if leases.is_empty() {
+                println!("no hop leases under {}", state_dir.display());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&leases)?);
+            }
+        }
+        Command::Sync { state_dir } => {
+            let mesh = sync_from_placements(&state_dir)?;
+            println!("{}", serde_json::to_string_pretty(&mesh)?);
         }
     }
     Ok(())

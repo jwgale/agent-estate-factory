@@ -1,0 +1,20 @@
+{
+  "schema": "cell-one.placement-actual.v0",
+  "desired_hash": "sha256:fixture",
+  "leases": [
+    {
+      "placement_id": "cell-one-box",
+      "kind": "box",
+      "host_class": "any",
+      "agents": ["horizon", "research", "sanctum"],
+      "wired": true,
+      "spawned": true,
+      "durable": true,
+      "driver": "box",
+      "ttl_secs": 60,
+      "issued_at": 1,
+      "expires_at": 2,
+      "note": "Documentary expired lease. apply/resume refuse until estate expire --forget."
+    }
+  ]
+}

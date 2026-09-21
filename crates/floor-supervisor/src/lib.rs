@@ -1,11 +1,40 @@
 //! Floor supervisor: bind per-agent sessions. Does not execute tools or models.
 //! Isolation is a driver. This crate must stay free of vendor identifiers.
 
+mod backup;
+mod lifecycle;
+mod pause;
+mod placement;
+mod sessions;
+
 use estate_schema::{estate_hash, Estate};
 use isolation_driver::{BindRequest, BoundSession, IsolationDriver, ProfileDirDriver};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+pub use lifecycle::{
+    append_lifecycle_event, lifecycle_path, list_lifecycle_events, load_lifecycle, mark_running,
+    resume, suspend, write_lifecycle, LifecycleEvent, LifecycleRecord, LifecycleState,
+    LIFECYCLE_FILE, LIFECYCLE_LOG, LIFECYCLE_SCHEMA, LIFECYCLE_VERSION,
+};
+pub use placement::{
+    append_apply_audit, apply_dry_run, claim_leases, driver_for, drift_placements,
+    forget_expired_leases, lease_is_expired, list_apply_audits, list_expired_leases, load_placements,
+    mark_leases_unspawned, now_unix, reconcile_placements, record_placements, refuse_expired_leases,
+    render_dry_run, render_reconcile, write_placements, write_reconcile, ApplyAudit, ApplyDryRun,
+    BoxDriver, CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
+    ReconcileReport, ReconcileRow, Refuse, DRY_RUN_SCHEMA, RECONCILE_SCHEMA,
+};
+pub use sessions::{
+    append_session_event, journal_session, list_session_events, session_journal_path,
+    tail_session_events, SessionEvent, SESSION_JOURNAL, SESSION_JOURNAL_SCHEMA,
+};
+pub use backup::{
+    backup_cell, render_restore, restore_cell, sacred_id_set, sacred_mismatch, CellBackup,
+    RestoreReport, BACKUP_META, BACKUP_SCHEMA,
+};
+pub use pause::{pause_kit_proof, PauseProof};
 
 #[derive(Debug, Error)]
 pub enum SupervisorError {
@@ -41,6 +70,16 @@ pub struct DriftReport {
     pub missing_session_dirs: Vec<String>,
     #[serde(default)]
     pub missing_lane_roots: Vec<String>,
+    #[serde(default)]
+    pub missing_leases: Vec<String>,
+    #[serde(default)]
+    pub extra_leases: Vec<String>,
+    #[serde(default)]
+    pub spawned_cloud_agents: Vec<String>,
+    #[serde(default)]
+    pub lease_kind_mismatch: Vec<String>,
+    #[serde(default)]
+    pub host_class_mismatch: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -51,6 +90,7 @@ pub fn apply(
     driver: &dyn IsolationDriver,
 ) -> Result<ActualState, SupervisorError> {
     estate_schema::validate(estate).map_err(SupervisorError::Invalid)?;
+    refuse_expired_leases(state_dir)?;
     std::fs::create_dir_all(state_dir)?;
     std::fs::create_dir_all(state_dir.join("sessions"))?;
 
@@ -87,6 +127,18 @@ pub fn apply(
     };
     write_actual(state_dir, &actual)?;
     write_desired_snapshot(state_dir, estate)?;
+    record_placements(estate, state_dir)?;
+    mark_running(estate, state_dir)?;
+    for session in &actual.sessions {
+        journal_session(
+            state_dir,
+            "spawn",
+            Some(session.agent_id.as_str()),
+            Some(estate.name.as_str()),
+            Some(actual.desired_hash.as_str()),
+            "apply bind",
+        )?;
+    }
     Ok(actual)
 }
 
@@ -125,6 +177,37 @@ pub fn load_desired_snapshot(state_dir: &Path) -> Result<Option<Estate>, Supervi
     Ok(Some(estate))
 }
 
+/// How apply should treat the current desired hash vs disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyIdentity {
+    Greenfield,
+    Unchanged,
+    Drift { notes: Vec<String> },
+    DesiredChanged,
+}
+
+/// Identical desired + in_sync → unchanged. Hash match + drift → refuse unless --force.
+pub fn classify_apply(
+    estate: &Estate,
+    state_dir: &Path,
+    roots_base: &Path,
+) -> Result<ApplyIdentity, SupervisorError> {
+    let Some(snap) = load_desired_snapshot(state_dir)? else {
+        return Ok(ApplyIdentity::Greenfield);
+    };
+    if estate_hash(&snap) != estate_hash(estate) {
+        return Ok(ApplyIdentity::DesiredChanged);
+    }
+    let report = drift_with_roots(estate, state_dir, Some(roots_base))?;
+    if report.in_sync {
+        Ok(ApplyIdentity::Unchanged)
+    } else {
+        Ok(ApplyIdentity::Drift {
+            notes: report.notes,
+        })
+    }
+}
+
 pub fn load_actual(state_dir: &Path) -> Result<Option<ActualState>, SupervisorError> {
     let path = state_dir.join("actual-state.json");
     if !path.exists() {
@@ -149,6 +232,7 @@ pub fn drift_with_roots(
     let desired_hash = estate_hash(estate);
     let actual = load_actual(state_dir)?;
     let Some(actual) = actual else {
+        let places = drift_placements(estate, state_dir)?;
         return Ok(DriftReport {
             in_sync: false,
             desired_hash,
@@ -158,6 +242,11 @@ pub fn drift_with_roots(
             mismatched_sessions: vec![],
             missing_session_dirs: vec![],
             missing_lane_roots: vec![],
+            missing_leases: places.missing_leases,
+            extra_leases: places.extra_leases,
+            spawned_cloud_agents: places.spawned_cloud_agents,
+            lease_kind_mismatch: places.lease_kind_mismatch,
+            host_class_mismatch: places.host_class_mismatch,
             notes: vec!["no actual-state.json; run apply".into()],
         });
     };
@@ -220,12 +309,15 @@ pub fn drift_with_roots(
             missing_lane_roots.join(", ")
         ));
     }
+    let places = drift_placements(estate, state_dir)?;
+    notes.extend(places.notes.iter().cloned());
     let in_sync = hash_match
         && missing.is_empty()
         && extra.is_empty()
         && mismatched_sessions.is_empty()
         && missing_session_dirs.is_empty()
-        && missing_lane_roots.is_empty();
+        && missing_lane_roots.is_empty()
+        && places.in_sync();
     if in_sync {
         notes.push("actual-state matches desired estate".into());
     }
@@ -238,11 +330,28 @@ pub fn drift_with_roots(
         mismatched_sessions,
         missing_session_dirs,
         missing_lane_roots,
+        missing_leases: places.missing_leases,
+        extra_leases: places.extra_leases,
+        spawned_cloud_agents: places.spawned_cloud_agents,
+        lease_kind_mismatch: places.lease_kind_mismatch,
+        host_class_mismatch: places.host_class_mismatch,
         notes,
     })
 }
 
 pub fn stop_runtime(state_dir: &Path) -> Result<(), SupervisorError> {
+    if let Ok(Some(actual)) = load_actual(state_dir) {
+        for session in &actual.sessions {
+            let _ = journal_session(
+                state_dir,
+                "unspawn",
+                Some(session.agent_id.as_str()),
+                Some(actual.estate_name.as_str()),
+                Some(actual.desired_hash.as_str()),
+                "runtime discarded",
+            );
+        }
+    }
     let runtime = state_dir.join("runtime");
     if runtime.exists() {
         std::fs::remove_dir_all(&runtime)?;
@@ -312,6 +421,56 @@ mod tests {
         let report = drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap();
         assert!(report.in_sync);
         assert!(tmp.join("desired-snapshot.yaml").is_file());
+        assert!(tmp.join("placement-actual.json").is_file());
+        assert!(report.spawned_cloud_agents.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn classify_apply_unchanged_then_drift() {
+        let estate = example();
+        let tmp = tempfile();
+        let state = tmp.join("state");
+        assert_eq!(
+            classify_apply(&estate, &state, &tmp).unwrap(),
+            ApplyIdentity::Greenfield
+        );
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        assert_eq!(
+            classify_apply(&estate, &state, &tmp).unwrap(),
+            ApplyIdentity::Unchanged
+        );
+        stop_runtime(&state).unwrap();
+        match classify_apply(&estate, &state, &tmp).unwrap() {
+            ApplyIdentity::Drift { notes } => {
+                assert!(!notes.is_empty());
+            }
+            other => panic!("expected drift, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn drift_detects_missing_and_spawned_cloud_leases() {
+        let estate = example();
+        let tmp = tempfile();
+        apply_with_profile_dir(&estate, &tmp, &tmp).unwrap();
+        assert!(drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap().in_sync);
+        std::fs::remove_file(tmp.join("placement-actual.json")).unwrap();
+        let missing = drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap();
+        assert!(!missing.in_sync);
+        assert!(!missing.missing_leases.is_empty());
+        record_placements(&estate, &tmp).unwrap();
+        let mut actual = load_placements(&tmp).unwrap().unwrap();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+            }
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let spawned = drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap();
+        assert!(!spawned.in_sync);
+        assert!(!spawned.spawned_cloud_agents.is_empty());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

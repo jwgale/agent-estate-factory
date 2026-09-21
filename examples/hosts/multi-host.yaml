@@ -1,0 +1,149 @@
+# Multi-host estate fixture. One file spanning frontier http-remote + local ollama
+# + llama.cpp stub + apple/mlx stub + empty box placements per host class.
+# Hardware is a driver choice. Extra unused bindings are valid. Empty box
+# placements are valid. Wired cloud-agent with empty agents is still invalid.
+
+version: 0
+kind: agent-estate
+name: cell-one-multi-host
+schema: schema/estate.v0.schema.json
+default_effect: deny
+
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models:
+      - id: xai_grok
+        description: Frontier complete under the estate (A7)
+      - id: local_slm
+        description: Local specialist in-path (A8)
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+    tools:
+      - id: notes-append
+        description: Append a note inside the Research lane
+    mounts:
+      - id: notes
+        path: notes
+        description: Research notes directory (own lane only)
+    mcp: []
+    models:
+      - id: local_slm
+        description: In-path policy-precheck before notes-append
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models: []
+
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+
+intentions: []
+
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    params:
+      hint: xai-grok
+      api_key_env: XAI_API_KEY
+      api_base_env: XAI_API_BASE
+      model_env: XAI_MODEL
+    wired: true
+  - id: local_slm
+    class: local
+    driver: ollama
+    params:
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      job: policy-precheck
+    wired: true
+  # CELL_LOCAL_ENDPOINT remote pattern. Declared, unused by agents tonight.
+  - id: local_remote
+    class: local
+    driver: http-remote
+    params:
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      job: policy-precheck
+    wired: false
+  # Swap-proof sibling stub. Same catalog/route/bind. Not assigned to agents.
+  - id: local_llamacpp
+    class: local
+    driver: llama.cpp
+    params:
+      host_class: any
+      job: policy-precheck
+    wired: false
+  # Apple Silicon stub. Same API. Live Mac proof later.
+  - id: local_mlx
+    class: local
+    driver: mlx
+    params:
+      host_class: apple-silicon
+      job: policy-precheck
+    wired: false
+
+enrich_packs:
+  curator: jason
+  policy: manual
+  packs: []
+
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: any
+    agents: [horizon, research, sanctum]
+    wired: true
+    note: This machine. Isolation driver is profile-dir today; swappable later.
+  - id: box-rtx
+    kind: box
+    host_class: consumer-nvidia
+    agents: []
+    wired: false
+    note: Empty consumer-nvidia box. Declared so the matrix is one file. Not bound.
+  - id: box-apple
+    kind: box
+    host_class: apple-silicon
+    agents: []
+    wired: false
+    note: Empty Apple Silicon box. MLX stub lives here as a catalog entry, not a spawn.
+  - id: box-rental
+    kind: box
+    host_class: rented-nvidia
+    agents: []
+    wired: false
+    note: Empty rented-nvidia box. Not a SKU. Not bound tonight.
+  - id: cursor-cloud
+    kind: cloud-agent
+    host_class: any
+    agents: []
+    wired: false
+    note: Declared stub. Floor will not spawn this. Assign agents when Jason is ready.
+
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera, cyera_ci]
+    reason: Cyera CI must not be an estate agent. Sanctum is not Cyera.
+  - id: rust-classroom
+    aliases: [rust_classroom]
+    reason: Rust classroom stays outside the estate; it is not an agent lane.

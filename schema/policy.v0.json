@@ -1,0 +1,8 @@
+{
+  "schema": "cell-one.policy.v0",
+  "kind": "estate-policy",
+  "note": "Declarative deny/allow stub. Unknown actions fail closed. Checked on apply and convey-call.",
+  "known_actions": ["apply", "convey-call", "backup", "restore"],
+  "default": "deny",
+  "file": "policy/cell-one.policy.v0.yaml"
+}

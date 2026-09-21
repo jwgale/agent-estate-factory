@@ -42,4 +42,16 @@ mod tests {
         assert_eq!(estate_hash(&a), estate_hash(&b));
         assert!(estate_hash(&a).starts_with("sha256:"));
     }
+
+    /// Locked digest of `examples/estate.yaml`. Comments in the YAML do not
+    /// count; field renames or new required data do. Do not "fix" this by
+    /// rewriting the fixture — update the lock only with Jason.
+    #[test]
+    fn example_estate_hash_is_locked() {
+        let estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        assert_eq!(
+            estate_hash(&estate),
+            "sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930"
+        );
+    }
 }

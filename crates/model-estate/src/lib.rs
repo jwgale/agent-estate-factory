@@ -11,7 +11,8 @@ mod path;
 
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
-    bind_local, card, catalog, parse_host_class, parse_runtime, render_catalog, route, CatalogCard,
+    bind_local, card, catalog, catalog_file, catalog_probes, parse_host_class, parse_runtime,
+    render_catalog, route, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
     HostClass, LocalRuntime, SupportStatus, CATALOG,
 };
 pub use error::ModelError;
@@ -19,8 +20,9 @@ pub use frontier::{
     frontier_from_binding, FrontierDriver, HttpFrontier, MockFrontier, UnwiredFrontier,
 };
 pub use local::{
-    builtin_specialist, local_from_binding, DownLocal, ExperimentalLocal, HttpLocal, LocalDriver,
-    MlxDriver, MockLocal, SpecialistJob, SpecialistRequest, SpecialistResult, UnwiredLocal,
+    builtin_specialist, local_from_binding, probe_runtime, DownLocal, DriverProbe, ExperimentalLocal,
+    HttpLocal, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
+    SpecialistResult, UnwiredLocal,
 };
 pub use mock::{serve_specialist_forever, MockFrontierServer, MockLocalServer};
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};

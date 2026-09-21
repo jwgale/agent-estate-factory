@@ -1,0 +1,7 @@
+{
+  "schema": "cell-one.session-journal.v0",
+  "file": ".cell/sessions.jsonl",
+  "append_only": true,
+  "actions": ["spawn", "unspawn", "suspend", "resume"],
+  "note": "Journal is not SoT. sessions/ profile dirs stay disposable. This file survives suspend. estate sessions list|tail reads it."
+}

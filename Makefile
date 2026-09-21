@@ -1,4 +1,4 @@
-.PHONY: validate plan apply drift models catalog supervisor proxy-check gate gate-60 pause-stop pause-start pause-status test task-mock
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -12,6 +12,12 @@ plan:
 apply:
 	cargo run -q -p estate-control -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base .
 
+apply-gated:
+	cargo run -q -p estate-control -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base . --require-plan
+
+apply-dry-run:
+	cargo run -q -p estate-control -- apply --dry-run --estate $(ESTATE) --state-dir $(STATE) --roots-base .
+
 drift:
 	cargo run -q -p estate-control -- drift --estate $(ESTATE) --state-dir $(STATE)
 
@@ -20,6 +26,9 @@ models:
 
 catalog:
 	cargo run -q -p model-estate -- catalog
+
+catalog-dump:
+	cargo run -q -p estate-control -- catalog --out $(STATE)/catalog.json
 
 supervisor:
 	cargo run -q -p floor-supervisor -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base .
@@ -42,8 +51,111 @@ gate:
 gate-60:
 	./scripts/day60-gate.sh
 
+gate-90:
+	./scripts/day90-gate.sh
+
+suspend:
+	cargo run -q -p estate-control -- suspend --state-dir $(STATE)
+
+resume:
+	cargo run -q -p estate-control -- resume --estate $(ESTATE) --state-dir $(STATE)
+
+status:
+	cargo run -q -p estate-control -- status --estate $(ESTATE) --state-dir $(STATE)
+
+plans:
+	cargo run -q -p estate-control -- plans --plans-dir plans
+
+feed-pack:
+	cargo run -q -p estate-control -- feed pack --feed-dir $(STATE)/feed --drop-dir packs
+
+feed-list:
+	cargo run -q -p estate-control -- feed list --drop-dir packs
+
+feed-import:
+	cargo run -q -p estate-control -- feed import --id overnight-traces --drop-dir packs --accepted-dir packs/accepted --estate $(ESTATE)
+
+leases:
+	cargo run -q -p estate-control -- leases --state-dir $(STATE)
+
+audits:
+	cargo run -q -p estate-control -- audits --state-dir $(STATE)
+
+floor-suspend:
+	cargo run -q -p floor-supervisor -- suspend --state-dir $(STATE)
+
+floor-resume:
+	cargo run -q -p floor-supervisor -- resume --estate $(ESTATE) --state-dir $(STATE) --roots-base .
+
+history:
+	cargo run -q -p estate-control -- history --state-dir $(STATE)
+
+probes:
+	cargo run -q -p estate-control -- probes
+
+feed-cursor:
+	cargo run -q -p estate-control -- feed cursor --feed-dir $(STATE)/feed
+
+floor-history:
+	cargo run -q -p floor-supervisor -- history --state-dir $(STATE)
+
+operator-day:
+	./scripts/operator-day.sh
+
+convey:
+	cargo run -q -p estate-control -- convey sync --state-dir $(STATE)
+	cargo run -q -p estate-control -- convey list --state-dir $(STATE)
+
+packs-list:
+	cargo run -q -p estate-control -- packs list --drop-dir packs
+
+packs-index:
+	cargo run -q -p estate-control -- packs index --drop-dir packs
+
+reconcile:
+	cargo run -q -p estate-control -- reconcile --estate $(ESTATE) --state-dir $(STATE)
+
+packs-propose:
+	cargo run -q -p estate-control -- packs propose --id overnight-traces --drop-dir packs --accepted-dir packs/accepted --proposed-dir packs/proposed --estate $(ESTATE)
+
+audit-export:
+	cargo run -q -p estate-control -- audit export --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --packs-dir packs --out $(STATE)/audit-export --tar
+
+expire:
+	cargo run -q -p estate-control -- expire --state-dir $(STATE)
+
+doctor:
+	cargo run -q -p estate-control -- doctor --root . --state-dir $(STATE)
+
+fixtures-check:
+	./scripts/fixtures-check.sh
+
+sessions:
+	cargo run -q -p estate-control -- sessions list --state-dir $(STATE)
+
+plan-diff:
+	cargo run -q -p estate-control -- plan diff --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans
+
 task-mock:
 	cargo run -q -p model-estate -- task --estate $(ESTATE) --agent horizon --act model --object xai_grok --mock
 
+smoke:
+	./scripts/smoke.sh
+
+backup:
+	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
+
+restore:
+	cargo run -q -p estate-control -- restore --from $(FROM) --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --dry-run
+
+pause-proof:
+	cargo run -q -p estate-control -- pause-proof --estate $(ESTATE) --state-dir $(STATE) --roots-base .
+
+policy-check:
+	cargo run -q -p estate-control -- policy check --policy policy/cell-one.policy.v0.yaml --action apply
+
 test:
 	cargo test --workspace
+
+check:
+	cargo check --workspace --locked

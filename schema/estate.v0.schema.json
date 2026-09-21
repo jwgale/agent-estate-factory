@@ -7,6 +7,10 @@
   "required": ["version", "name", "agents", "lanes"],
   "properties": {
     "version": { "type": "integer", "const": 0 },
+    "apiVersion": {
+      "type": "string",
+      "description": "Optional Cell One config version. Absent is legacy v0. Known: cell-one.estate.v0, v0. Unknown fail-closed."
+    },
     "kind": { "type": "string" },
     "name": { "type": "string", "minLength": 1 },
     "schema": { "type": "string" },
@@ -31,7 +35,11 @@
       "type": "array",
       "items": { "$ref": "#/definitions/sacred_exclusion" }
     },
-    "enrich_packs": { "$ref": "#/definitions/enrich_packs" }
+    "enrich_packs": { "$ref": "#/definitions/enrich_packs" },
+    "placements": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/placement" }
+    }
   },
   "definitions": {
     "slug": {
@@ -144,6 +152,26 @@
             }
           }
         }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "description": "Where agents run. box = this Cell One. cloud-agent is declared, not spawned by floor.",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/definitions/slug" },
+        "kind": { "type": "string", "enum": ["box", "cloud-agent"] },
+        "host_class": {
+          "type": "string",
+          "enum": ["consumer-nvidia", "apple-silicon", "rented-nvidia", "any"]
+        },
+        "agents": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/slug" }
+        },
+        "wired": { "type": "boolean" },
+        "params": { "type": "object" },
+        "note": { "type": "string" }
       }
     },
     "sacred_exclusion": {

@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use floor_supervisor::{apply_with_profile_dir, spawn_runtime_heartbeats, stop_runtime};
+use floor_supervisor::{
+    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements, resume,
+    spawn_runtime_heartbeats, stop_runtime, suspend,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
-    name = "floor-supervisor",
+    name = "floor",
     about = "Bind per-agent sessions from an estate file. Does not call models."
 )]
 struct Cli {
@@ -32,6 +35,30 @@ enum Command {
         state_dir: PathBuf,
     },
     Stop {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Drop sessions/PIDs; keep lifecycle.json and unspawned leases.
+    Suspend {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Rebind from the estate file. Cloud-agent leases stay unspawned.
+    Resume {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
+    },
+    /// Print durable placement-actual leases.
+    Leases {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print append-only lifecycle.jsonl.
+    History {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -64,6 +91,14 @@ fn main() -> Result<()> {
                     session.isolation_handle.as_token()
                 );
             }
+            if let Some(places) = load_placements(&state_dir)? {
+                for lease in &places.leases {
+                    println!(
+                        "  lease {} kind={} driver={} spawned={}",
+                        lease.placement_id, lease.kind, lease.driver, lease.spawned
+                    );
+                }
+            }
             if spawn {
                 let pids = spawn_runtime_heartbeats(&actual, &state_dir)?;
                 println!("wrote disposable runtime {}", pids.display());
@@ -72,8 +107,13 @@ fn main() -> Result<()> {
         Command::Status { estate, state_dir } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
+            let life = load_lifecycle(&state_dir)?;
             let report = floor_supervisor::drift_with_roots(&loaded, &state_dir, None)?;
+            println!("lifecycle: {} durable={}", life.state.as_str(), life.durable);
             println!("{}", serde_json::to_string_pretty(&report)?);
+            if let Some(places) = load_placements(&state_dir)? {
+                println!("{}", serde_json::to_string_pretty(&places)?);
+            }
             if !report.in_sync {
                 std::process::exit(2);
             }
@@ -84,6 +124,66 @@ fn main() -> Result<()> {
                 "stopped runtime under {} (lane roots and estate file untouched)",
                 state_dir.display()
             );
+        }
+        Command::Suspend { state_dir } => {
+            let record = suspend(&state_dir)?;
+            println!("lifecycle: {}", record.state.as_str());
+            println!("{}", record.note);
+        }
+        Command::Resume {
+            estate,
+            state_dir,
+            roots_base,
+        } => {
+            let loaded = estate_schema::load_estate(&estate)
+                .with_context(|| format!("load {}", estate.display()))?;
+            let (actual, record) = resume(&loaded, &state_dir, &roots_base)?;
+            println!(
+                "resumed {} sessions; lifecycle {}",
+                actual.sessions.len(),
+                record.state.as_str()
+            );
+            if let Some(places) = load_placements(&state_dir)? {
+                for lease in &places.leases {
+                    println!(
+                        "  lease {} kind={} spawned={}",
+                        lease.placement_id, lease.kind, lease.spawned
+                    );
+                }
+            }
+        }
+        Command::Leases { state_dir } => {
+            match load_placements(&state_dir)? {
+                None => {
+                    println!("no placement-actual.json under {}", state_dir.display());
+                    println!("run apply or resume to record leases");
+                }
+                Some(places) => {
+                    println!("{}", serde_json::to_string_pretty(&places)?);
+                    for lease in &places.leases {
+                        if lease.kind == "cloud-agent" && lease.spawned {
+                            anyhow::bail!("cloud-agent lease spawned (fail closed)");
+                        }
+                    }
+                }
+            }
+        }
+        Command::History { state_dir } => {
+            let events = list_lifecycle_events(&state_dir)?;
+            if events.is_empty() {
+                println!("no lifecycle.jsonl under {}", state_dir.display());
+            } else {
+                println!("lifecycle history ({})", events.len());
+                for ev in events {
+                    println!(
+                        "  {} {} -> {} hash={}",
+                        ev.action,
+                        ev.from.as_deref().unwrap_or("-"),
+                        ev.to,
+                        ev.desired_hash.as_deref().unwrap_or("-")
+                    );
+                }
+            }
         }
     }
     Ok(())

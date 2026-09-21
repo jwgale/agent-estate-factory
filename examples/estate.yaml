@@ -2,6 +2,11 @@
 # Desired-state file is the control API. Runtime is not SoT.
 # Day 31–60: both model bindings wired; still deny-default + sacred dual-layer.
 # Hardware is a driver choice. Do not put SKUs in binding ids.
+#
+# Hash-stable (serde of the parsed Estate, not this YAML text):
+#   sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930
+# YAML comments are allowed. Renames / required-field changes need a new hash
+# and a test update. `estate-schema` locks this digest.
 
 version: 0
 kind: agent-estate
@@ -86,6 +91,22 @@ enrich_packs:
   curator: jason
   policy: manual
   packs: []
+
+# Day 61–90: declared placements. Floor binds box sessions only.
+# cloud-agent is a stub so Day-90 operator day is not blocked. Not spawned.
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: any
+    agents: [horizon, research, sanctum]
+    wired: true
+    note: This machine. Isolation driver is profile-dir today; swappable later.
+  - id: cursor-cloud
+    kind: cloud-agent
+    host_class: any
+    agents: []
+    wired: false
+    note: Declared stub. Floor will not spawn this. Assign agents when Jason is ready.
 
 sacred_exclusions:
   - id: cyera-ci

@@ -22,7 +22,8 @@
 use crate::error::ModelError;
 use crate::frontier::param_str;
 use crate::local::{
-    DownLocal, ExperimentalLocal, HttpLocal, LocalDriver, MlxDriver, UnwiredLocal,
+    probe_runtime, DownLocal, DriverProbe, ExperimentalLocal, HttpLocal, LocalDriver, MlxDriver,
+    UnwiredLocal,
 };
 use estate_schema::ModelBinding;
 
@@ -92,12 +93,22 @@ impl HostClass {
     }
 }
 
+/// Per-driver capability flags. Stub drivers stay flag-complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DriverCaps {
+    pub streaming: bool,
+    pub tools: bool,
+    pub vision: bool,
+    pub context_tokens: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CatalogCard {
     pub runtime: LocalRuntime,
     pub driver_id: &'static str,
     pub status: SupportStatus,
     pub hosts: &'static [HostClass],
+    pub caps: DriverCaps,
     pub notes: &'static str,
 }
 
@@ -112,6 +123,12 @@ pub const CATALOG: &[CatalogCard] = &[
             HostClass::RentedNvidia,
             HostClass::Any,
         ],
+        caps: DriverCaps {
+            streaming: true,
+            tools: true,
+            vision: true,
+            context_tokens: 8192,
+        },
         notes: "First green local path. Ollama-on-Linux and Ollama-on-Mac share this card.",
     },
     CatalogCard {
@@ -124,6 +141,12 @@ pub const CATALOG: &[CatalogCard] = &[
             HostClass::RentedNvidia,
             HostClass::Any,
         ],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 4096,
+        },
         notes: "Swap-proof sibling of Ollama. Same /v0/specialist protocol, not a second product.",
     },
     CatalogCard {
@@ -131,6 +154,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "mlx",
         status: SupportStatus::Stub,
         hosts: &[HostClass::AppleSilicon],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "Apple Silicon stub. Same catalog/route/bind API; live Mac proof later.",
     },
     CatalogCard {
@@ -138,6 +167,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "vllm",
         status: SupportStatus::Experimental,
         hosts: &[HostClass::ConsumerNvidia, HostClass::RentedNvidia],
+        caps: DriverCaps {
+            streaming: true,
+            tools: true,
+            vision: false,
+            context_tokens: 32768,
+        },
         notes: "Optional. Not required for the first green demo. Experimental until Jason verifies.",
     },
     CatalogCard {
@@ -145,6 +180,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "trt",
         status: SupportStatus::Experimental,
         hosts: &[HostClass::ConsumerNvidia, HostClass::RentedNvidia],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "TensorRT-LLM. Experimental until Jason verifies.",
     },
     CatalogCard {
@@ -152,12 +193,33 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "http-remote",
         status: SupportStatus::Supported,
         hosts: &[HostClass::Any],
+        caps: DriverCaps {
+            streaming: false,
+            tools: true,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "CELL_LOCAL_ENDPOINT remote pattern. Same protocol on any host class.",
     },
 ];
 
 pub fn catalog() -> &'static [CatalogCard] {
     CATALOG
+}
+
+/// Catalog-level probes. Not live pings. Control may print these.
+pub fn catalog_probes() -> Vec<DriverProbe> {
+    CATALOG
+        .iter()
+        .map(|c| {
+            let host = if c.hosts.len() == 1 {
+                c.hosts[0].as_str()
+            } else {
+                "any"
+            };
+            probe_runtime(c.driver_id, c.runtime, host)
+        })
+        .collect()
 }
 
 pub fn card(runtime: LocalRuntime) -> &'static CatalogCard {
@@ -180,10 +242,10 @@ pub fn parse_runtime(driver: &str) -> Option<LocalRuntime> {
 }
 
 pub fn parse_host_class(raw: &str) -> Option<HostClass> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "consumer-nvidia" | "consumer_nvidia" => Some(HostClass::ConsumerNvidia),
-        "apple-silicon" | "apple_silicon" => Some(HostClass::AppleSilicon),
-        "rented-nvidia" | "rented_nvidia" => Some(HostClass::RentedNvidia),
+    match estate_schema::normalize_host_class(raw)? {
+        "consumer-nvidia" => Some(HostClass::ConsumerNvidia),
+        "apple-silicon" => Some(HostClass::AppleSilicon),
+        "rented-nvidia" => Some(HostClass::RentedNvidia),
         "any" => Some(HostClass::Any),
         _ => None,
     }
@@ -208,6 +270,28 @@ pub fn bind_local(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelE
         }));
     }
     let card = route(binding)?;
+    if let Some(raw) = param_str(binding, "host_class") {
+        let host = parse_host_class(&raw).ok_or_else(|| {
+            ModelError::Other(format!(
+                "unknown host_class '{raw}'; use consumer-nvidia|apple-silicon|rented-nvidia|any"
+            ))
+        })?;
+        if host != HostClass::Any
+            && !card.hosts.contains(&host)
+            && !card.hosts.contains(&HostClass::Any)
+        {
+            return Err(ModelError::Other(format!(
+                "host_class {} is not on catalog card {} (hosts: {})",
+                host.as_str(),
+                card.driver_id,
+                card.hosts
+                    .iter()
+                    .map(|h| h.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )));
+        }
+    }
     match card.runtime {
         LocalRuntime::Mlx => Ok(Box::new(MlxDriver {
             id: binding.id.clone(),
@@ -238,6 +322,62 @@ pub fn bind_local(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelE
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CatalogFileCard {
+    pub driver_id: String,
+    pub runtime: String,
+    pub status: String,
+    pub hosts: Vec<String>,
+    pub caps: DriverCaps,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CatalogFile {
+    pub schema: String,
+    pub note: String,
+    pub hosts: Vec<String>,
+    pub cards: Vec<CatalogFileCard>,
+}
+
+/// File SoT for the portable local catalog. Hardware is a driver choice.
+pub fn catalog_file() -> CatalogFile {
+    CatalogFile {
+        schema: "cell-one.local-catalog.v0".into(),
+        note: "Hardware is a driver choice, not a product fork. Not an LM Studio. supported = Ollama (+ llama.cpp) green on the box.".into(),
+        hosts: vec![
+            HostClass::ConsumerNvidia.as_str().into(),
+            HostClass::AppleSilicon.as_str().into(),
+            HostClass::RentedNvidia.as_str().into(),
+            HostClass::Any.as_str().into(),
+        ],
+        cards: CATALOG
+            .iter()
+            .map(|card| CatalogFileCard {
+                driver_id: card.driver_id.to_string(),
+                runtime: card.runtime.as_str().to_string(),
+                status: card.status.as_str().to_string(),
+                hosts: card.hosts.iter().map(|h| h.as_str().to_string()).collect(),
+                caps: card.caps,
+                notes: card.notes.to_string(),
+            })
+            .collect(),
+    }
+}
+
+pub fn write_catalog(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(&catalog_file()).unwrap_or_default(),
+    )?;
+    Ok(path.to_path_buf())
+}
+
 pub fn render_catalog() -> String {
     let mut lines = vec![
         "local runtime catalog (hardware is a driver choice, not a product fork):".to_string(),
@@ -252,9 +392,13 @@ pub fn render_catalog() -> String {
             .collect::<Vec<_>>()
             .join(",");
         lines.push(format!(
-            "  {:<12} status={:<12} hosts={:<48} {}",
+            "  {:<12} status={:<12} streaming={} tools={} vision={} context={} hosts={:<32} {}",
             card.driver_id,
             card.status.as_str(),
+            card.caps.streaming,
+            card.caps.tools,
+            card.caps.vision,
+            card.caps.context_tokens,
             hosts,
             card.notes
         ));
@@ -294,6 +438,35 @@ mod tests {
             .hosts
             .contains(&HostClass::RentedNvidia));
         assert_eq!(card(LocalRuntime::Mlx).hosts, &[HostClass::AppleSilicon]);
+        for c in CATALOG {
+            assert!(c.caps.context_tokens > 0, "{}", c.driver_id);
+        }
+        assert!(card(LocalRuntime::Ollama).caps.tools);
+        assert!(card(LocalRuntime::Mlx).caps.streaming);
+        assert!(card(LocalRuntime::Vllm).caps.tools);
+        assert_eq!(card(LocalRuntime::Trt).status, SupportStatus::Experimental);
+    }
+
+    #[test]
+    fn parse_host_class_aliases() {
+        assert_eq!(
+            parse_host_class("rtx_consumer"),
+            Some(HostClass::ConsumerNvidia)
+        );
+        assert_eq!(
+            parse_host_class("rtx-consumer"),
+            Some(HostClass::ConsumerNvidia)
+        );
+        assert_eq!(
+            parse_host_class("nvidia_rental"),
+            Some(HostClass::RentedNvidia)
+        );
+        assert_eq!(
+            parse_host_class("apple_silicon"),
+            Some(HostClass::AppleSilicon)
+        );
+        assert!(parse_host_class("not-a-host").is_none());
+        assert!(parse_host_class("rtx-5090").is_none());
     }
 
     #[test]
@@ -338,6 +511,68 @@ mod tests {
         assert!(matches!(err, ModelError::Stub(_)));
         assert!(err.is_local_down());
         assert_eq!(driver.runtime(), LocalRuntime::Mlx);
+        let probe = driver.probe();
+        assert!(!probe.bindable);
+        assert!(!probe.live_probed);
+        assert_eq!(probe.host_class, "apple-silicon");
+    }
+
+    #[test]
+    fn bind_http_remote_uses_cell_local_endpoint() {
+        let binding = ModelBinding {
+            id: "local_slm".into(),
+            class: ModelClass::Local,
+            driver: "http-remote".into(),
+            params: serde_json::json!({
+                "endpoint_env": "CELL_LOCAL_ENDPOINT_ABSENT_FOR_TEST",
+                "host_class": "any"
+            }),
+            wired: true,
+        };
+        let driver = bind_local(&binding).unwrap();
+        assert_eq!(driver.runtime(), LocalRuntime::HttpRemote);
+        assert!(driver.specialist(&req()).unwrap_err().is_local_down());
+    }
+
+    #[test]
+    fn bind_mlx_rejects_consumer_nvidia_host() {
+        let binding = ModelBinding {
+            id: "local_slm".into(),
+            class: ModelClass::Local,
+            driver: "mlx".into(),
+            params: serde_json::json!({"host_class": "consumer-nvidia"}),
+            wired: true,
+        };
+        let err = match bind_local(&binding) {
+            Ok(_) => panic!("mlx + consumer-nvidia should fail closed"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("host_class"));
+    }
+
+    #[test]
+    fn catalog_probes_are_not_live_pings() {
+        let probes = catalog_probes();
+        assert_eq!(probes.len(), CATALOG.len());
+        assert!(probes.iter().all(|p| !p.live_probed));
+        let mlx = probes.iter().find(|p| p.driver == "mlx").unwrap();
+        assert!(!mlx.bindable);
+        assert_eq!(mlx.status, "stub");
+        let ollama = probes.iter().find(|p| p.driver == "ollama").unwrap();
+        assert!(ollama.bindable);
+        assert_eq!(ollama.status, "supported");
+    }
+
+    #[test]
+    fn catalog_file_is_committed_sot() {
+        let snap = catalog_file();
+        assert_eq!(snap.schema, "cell-one.local-catalog.v0");
+        assert_eq!(snap.cards.len(), CATALOG.len());
+        assert!(snap.cards.iter().any(|c| c.driver_id == "ollama" && c.status == "supported"));
+        assert!(snap.cards.iter().any(|c| c.driver_id == "mlx" && c.status == "stub"));
+        let committed = include_str!("../../../schema/local-catalog.v0.json");
+        let file: CatalogFile = serde_json::from_str(committed).unwrap();
+        assert_eq!(file, snap);
     }
 
     #[test]

@@ -1,0 +1,7 @@
+{
+  "schema": "cell-one.lifecycle.v0",
+  "version": 1,
+  "note": "Operator lifecycle. Durable across pause. Not estate SoT. Transitions append to lifecycle.jsonl.",
+  "states": ["running", "suspended"],
+  "actions": ["apply", "suspend", "resume"]
+}

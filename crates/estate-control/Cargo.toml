@@ -8,7 +8,9 @@ description = "Control-plane CLI: validate, plan, apply, drift"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+conveyor-proxy.workspace = true
 estate-schema.workspace = true
+feed-collector.workspace = true
 floor-supervisor.workspace = true
 model-estate.workspace = true
 serde_json.workspace = true
@@ -18,6 +20,8 @@ name = "estate"
 path = "src/main.rs"
 
 [dev-dependencies]
+conveyor-proxy.workspace = true
 estate-schema.workspace = true
+feed-collector.workspace = true
 floor-supervisor.workspace = true
 model-estate.workspace = true

@@ -1,0 +1,28 @@
+{
+  "schema": "cell-one.enrich-proposal.v0",
+  "id": "overnight-traces",
+  "curator": "jason",
+  "policy": "manual",
+  "auto_apply": false,
+  "source_pack": "overnight-traces.pack.json",
+  "estate_name": "cell-one-synthetic",
+  "estate_hash": "sha256:documentary",
+  "current_estate_packs": [],
+  "proposed_estate_packs": ["overnight-traces"],
+  "diff": {
+    "pack_id": "overnight-traces",
+    "estate_bound": false,
+    "would_add_to_estate": true,
+    "kinds": [],
+    "agents": [],
+    "paths": [],
+    "path_counts": {
+      "frontier": 0,
+      "local": 0,
+      "proxy": 0,
+      "other": 0
+    },
+    "note": "Jason must add this pack id to estate.enrich_packs by hand. This file is not applied."
+  },
+  "note": "Proposal only. auto_apply=false. Feed never applies this file. Control will not rewrite the estate."
+}

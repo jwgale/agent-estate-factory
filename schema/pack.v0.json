@@ -1,0 +1,18 @@
+{
+  "schema": "cell-one.pack.v0",
+  "id": "overnight-traces",
+  "curator": "jason",
+  "policy": "manual",
+  "promoted": false,
+  "host_class": "any",
+  "path_counts": {
+    "frontier": 0,
+    "local": 0,
+    "proxy": 0,
+    "other": 0
+  },
+  "source_paths": ["feed/events.jsonl"],
+  "model_hint": null,
+  "host_class_affinity": "any",
+  "note": "Candidate only. Import is explicit apply. Feed never auto-promotes. Specialist fields optional; cell-one.specialist-pack.v0 is also valid."
+}

@@ -6,6 +6,7 @@ mod error;
 mod firewall;
 mod hash;
 mod plan;
+mod policy;
 mod sacred;
 mod types;
 mod validate;
@@ -14,13 +15,30 @@ pub use compile::{compile_intentions, CompiledIntention};
 pub use error::EstateError;
 pub use firewall::{authorize, read_lane_file, AccessRequest, Decision, Deny};
 pub use hash::estate_hash;
-pub use plan::{diff_estates, render_plan, write_plan, EstatePlan, PlanDelta};
-pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
-pub use types::{
-    Agent, Effect, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
-    ModelBinding, ModelClass, ModelUseDecl, MountDecl, ObjectRef, SacredExclusion, ToolDecl,
+pub use plan::{
+    blast_grows, covering_plan, covering_plan_stem, diff_estates, latest_plan, list_plans,
+    load_plan_json, mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict,
+    plan_blast_width, plan_covers_hash, plan_is_reviewable, render_plan, render_plan_diff,
+    render_plan_pr, render_review_diff, render_security_iac, write_plan, write_plan_index,
+    CoveringPlan, EstatePlan, PlanDelta, PlanIndexEntry,
 };
-pub use validate::{validate, ValidateOpts};
+pub use policy::{
+    check_policy_file, is_known_policy_action, load_policy, load_policy_optional, parse_policy_yaml,
+    policy_allows, refuse_policy, PolicyPack, PolicyRule, KNOWN_POLICY_ACTIONS, POLICY_KIND,
+    POLICY_SCHEMA,
+};
+pub use sacred::{
+    clear_sacred_overlays, is_sacred_name, load_and_install_sacred_file, load_sacred_file,
+    locked_sacred_ids, overlay_sacred_ids, parse_sacred_yaml, set_sacred_overlays, normalize_name,
+    SacredFile, SacredFileEntry, LOCKED_SACRED,
+};
+pub use types::{
+    canonical_host_class, host_class_eq, is_host_class, normalize_host_class, Agent, Effect,
+    EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding,
+    ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,
+    ToolDecl,
+};
+pub use validate::{contains_sku, is_slug, validate, ValidateOpts, SKU_NEEDLES};
 
 use std::path::Path;
 
@@ -80,7 +98,7 @@ pub fn describe(estate: &Estate) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}\nenrich_packs: {} / {} ({} packs)",
+        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}\nenrich_packs: {} / {} ({} packs)\nplacements: {}",
         estate.name,
         estate_hash(estate),
         estate.agents.len(),
@@ -93,8 +111,34 @@ pub fn describe(estate: &Estate) -> String {
         sacred,
         estate.enrich_packs.curator,
         estate.enrich_packs.policy,
-        estate.enrich_packs.packs.len()
+        estate.enrich_packs.packs.len(),
+        estate.placements.len()
     )
+}
+
+pub fn describe_placements(estate: &Estate) -> String {
+    if estate.placements.is_empty() {
+        return "placements: (none declared; default is this box)".into();
+    }
+    let mut lines = vec!["placements (declared; floor does not spawn cloud-agent):".to_string()];
+    for p in &estate.placements {
+        lines.push(format!(
+            "  {:<16} kind={:<12} host_class={} wired={} agents={}",
+            p.id,
+            p.kind.as_str(),
+            p.host_class.as_deref().unwrap_or("any"),
+            p.wired,
+            if p.agents.is_empty() {
+                "(none)".into()
+            } else {
+                p.agents.join(",")
+            }
+        ));
+        if p.kind == PlacementKind::CloudAgent {
+            lines.push("    stub: Day-90 operator day. Not a session. Not a gateway.".into());
+        }
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -116,5 +160,25 @@ mod tests {
         assert!(estate.agent("horizon").unwrap().has_model("local_slm"));
         assert_eq!(estate.enrich_packs.curator, "jason");
         assert_eq!(estate.enrich_packs.policy, "manual");
+        assert!(estate
+            .placements
+            .iter()
+            .any(|p| p.id == "cursor-cloud" && p.kind == PlacementKind::CloudAgent && !p.wired));
+    }
+
+    #[test]
+    fn host_class_aliases_map_to_locked_names() {
+        assert_eq!(normalize_host_class("rtx_consumer"), Some("consumer-nvidia"));
+        assert_eq!(normalize_host_class("rtx-consumer"), Some("consumer-nvidia"));
+        assert_eq!(normalize_host_class("nvidia_rental"), Some("rented-nvidia"));
+        assert_eq!(normalize_host_class("nvidia-rental"), Some("rented-nvidia"));
+        assert_eq!(normalize_host_class("apple_silicon"), Some("apple-silicon"));
+        assert_eq!(normalize_host_class("any"), Some("any"));
+        assert!(normalize_host_class("rtx-5090").is_none());
+        assert!(normalize_host_class("not-a-host").is_none());
+        assert!(host_class_eq("rtx_consumer", "consumer-nvidia"));
+        assert!(!host_class_eq("apple-silicon", "consumer-nvidia"));
+        assert_eq!(canonical_host_class(Some("rtx_consumer")), "consumer-nvidia");
+        assert_eq!(canonical_host_class(None), "any");
     }
 }

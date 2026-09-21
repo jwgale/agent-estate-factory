@@ -1,0 +1,42 @@
+# Invalid once policy/sacred.yaml (or sacred-overlay.yaml) is loaded:
+# overlay id lab-notebook cannot be an agent.
+version: 0
+name: sacred-overlay-as-agent
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+  - id: lab-notebook
+    display_name: Lab notebook
+    lane: lab-notebook
+    desktop: lab-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: lab-notebook
+    root_path: lanes/lab
+    owner_agent_id: lab-notebook
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: local_slm
+    class: local
+    driver: ollama
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    reason: locked
+  - id: rust-classroom
+    reason: locked

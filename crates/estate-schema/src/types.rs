@@ -5,6 +5,14 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Estate {
     pub version: u32,
+    /// Cell One config version. Absent = legacy `version: 0`.
+    #[serde(
+        default,
+        rename = "apiVersion",
+        alias = "api_version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub api_version: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
     pub name: String,
@@ -23,6 +31,9 @@ pub struct Estate {
     /// First specialist enrich packs. Jason curates; policy is manual. Not auto-promote.
     #[serde(default)]
     pub enrich_packs: EnrichPacks,
+    /// Where agents run. `box` is Cell One today. `cloud-agent` is declared, not spawned.
+    #[serde(default)]
+    pub placements: Vec<Placement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,6 +216,76 @@ impl Default for EnrichPacks {
             policy: default_enrich_policy(),
             packs: Vec::new(),
         }
+    }
+}
+
+/// Day-90 operator placement. Declared on the estate; floor does not spawn cloud agents.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlacementKind {
+    Box,
+    CloudAgent,
+}
+
+impl PlacementKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlacementKind::Box => "box",
+            PlacementKind::CloudAgent => "cloud-agent",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Placement {
+    pub id: String,
+    pub kind: PlacementKind,
+    #[serde(default)]
+    pub host_class: Option<String>,
+    #[serde(default)]
+    pub agents: Vec<String>,
+    #[serde(default)]
+    pub wired: bool,
+    #[serde(default)]
+    pub params: serde_json::Value,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Optional lease lifetime in seconds. Absent = no expiry.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
+}
+
+/// Locked host_class names: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`.
+/// Aliases (`rtx-consumer` / `rtx_consumer`, `nvidia-rental` / `nvidia_rental`) map onto
+/// those names. Do not reopen the contract.
+pub fn normalize_host_class(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "consumer-nvidia" | "rtx-consumer" => Some("consumer-nvidia"),
+        "apple-silicon" => Some("apple-silicon"),
+        "rented-nvidia" | "nvidia-rental" => Some("rented-nvidia"),
+        "any" => Some("any"),
+        _ => None,
+    }
+}
+
+/// Portable host class. Hardware is a driver choice, not a SKU.
+pub fn is_host_class(raw: &str) -> bool {
+    normalize_host_class(raw).is_some()
+}
+
+/// True when both sides normalize to the same locked host_class.
+pub fn host_class_eq(a: &str, b: &str) -> bool {
+    match (normalize_host_class(a), normalize_host_class(b)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// Canonical locked name, or `"any"` when unset/empty.
+pub fn canonical_host_class(raw: Option<&str>) -> &'static str {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(value) => normalize_host_class(value).unwrap_or("any"),
+        None => "any",
     }
 }
 

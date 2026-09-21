@@ -1,0 +1,21 @@
+# Cell One policy pack v0. Jason curates. Fail closed on unknown actions.
+# Not a gateway. Cloud-agent spawn is not a known action.
+
+apiVersion: cell-one.policy.v0
+kind: estate-policy
+schema: cell-one.policy.v0
+default: deny
+note: Allow the factory control surface. Deny everything else.
+rules:
+  - action: apply
+    effect: allow
+    note: Desired-state apply / dry-run.
+  - action: convey-call
+    effect: allow
+    note: Lease-bound hop call. Cloud-mesh still refuses at the mesh.
+  - action: backup
+    effect: allow
+    note: Local .cell archive.
+  - action: restore
+    effect: allow
+    note: Restore still refuses sacred mismatch.

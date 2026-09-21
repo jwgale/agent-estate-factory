@@ -1,5 +1,5 @@
 use crate::hash::estate_hash;
-use crate::types::Estate;
+use crate::types::{Estate, PlacementKind};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -11,10 +11,16 @@ pub struct PlanDelta {
     pub lanes: Vec<String>,
     pub intentions: Vec<String>,
     pub model_bindings: Vec<String>,
+    #[serde(default)]
+    pub placements: Vec<String>,
+    #[serde(default)]
+    pub enrich_packs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EstatePlan {
+    #[serde(default = "default_plan_schema")]
+    pub schema: String,
     pub desired_hash: String,
     pub against_hash: Option<String>,
     pub added: PlanDelta,
@@ -22,6 +28,16 @@ pub struct EstatePlan {
     pub changed: PlanDelta,
     pub blast_radius_text: String,
     pub created_at: String,
+}
+
+fn default_plan_schema() -> String {
+    "cell-one.plan.v0".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CoveringPlan {
+    pub stem: String,
+    pub plan: EstatePlan,
 }
 
 pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
@@ -34,6 +50,8 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                 lanes: names(desired.lanes.iter().map(|l| l.id.as_str())),
                 intentions: intention_keys(desired),
                 model_bindings: names(desired.model_bindings.iter().map(|b| b.id.as_str())),
+                placements: names(desired.placements.iter().map(|p| p.id.as_str())),
+                enrich_packs: names(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())),
             },
             PlanDelta::default(),
             PlanDelta::default(),
@@ -47,6 +65,10 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
             let rem_int = set_diff(intention_key_set(prev), intention_key_set(desired));
             let add_bind = set_diff(ids(desired.model_bindings.iter().map(|b| b.id.as_str())), ids(prev.model_bindings.iter().map(|b| b.id.as_str())));
             let rem_bind = set_diff(ids(prev.model_bindings.iter().map(|b| b.id.as_str())), ids(desired.model_bindings.iter().map(|b| b.id.as_str())));
+            let add_place = set_diff(ids(desired.placements.iter().map(|p| p.id.as_str())), ids(prev.placements.iter().map(|p| p.id.as_str())));
+            let rem_place = set_diff(ids(prev.placements.iter().map(|p| p.id.as_str())), ids(desired.placements.iter().map(|p| p.id.as_str())));
+            let add_packs = set_diff(ids(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())), ids(prev.enrich_packs.packs.iter().map(|p| p.id.as_str())));
+            let rem_packs = set_diff(ids(prev.enrich_packs.packs.iter().map(|p| p.id.as_str())), ids(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())));
             let changed = PlanDelta {
                 agents: changed_ids(
                     desired.agents.iter().map(|a| (a.id.as_str(), fingerprint(a))),
@@ -66,6 +88,11 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                         .iter()
                         .map(|b| (b.id.as_str(), fingerprint(b))),
                 ),
+                placements: changed_ids(
+                    desired.placements.iter().map(|p| (p.id.as_str(), fingerprint(p))),
+                    prev.placements.iter().map(|p| (p.id.as_str(), fingerprint(p))),
+                ),
+                enrich_packs: vec![],
             };
             (
                 PlanDelta {
@@ -73,12 +100,16 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                     lanes: add_lanes,
                     intentions: add_int,
                     model_bindings: add_bind,
+                    placements: add_place,
+                    enrich_packs: add_packs,
                 },
                 PlanDelta {
                     agents: rem_agents,
                     lanes: rem_lanes,
                     intentions: rem_int,
                     model_bindings: rem_bind,
+                    placements: rem_place,
+                    enrich_packs: rem_packs,
                 },
                 changed,
             )
@@ -88,6 +119,7 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
     let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let blast_radius_text = blast_radius(desired, &added, &removed, &changed, against.is_none());
     EstatePlan {
+        schema: default_plan_schema(),
         desired_hash,
         against_hash,
         added,
@@ -110,12 +142,40 @@ pub fn render_plan(plan: &EstatePlan) -> String {
     out.push_str("Blast radius\n------------\n");
     out.push_str(&plan.blast_radius_text);
     out.push('\n');
+    out.push_str("\n");
+    out.push_str(&render_security_iac(plan));
+    out.push_str("\n");
+    out.push_str(&render_review_diff(plan));
     out.push_str("\nAdded\n");
     out.push_str(&render_delta(&plan.added));
     out.push_str("Removed\n");
     out.push_str(&render_delta(&plan.removed));
     out.push_str("Changed\n");
     out.push_str(&render_delta(&plan.changed));
+    out
+}
+
+/// PR-reviewable markdown: what apply will touch. Not a gateway changelog.
+pub fn render_review_diff(plan: &EstatePlan) -> String {
+    let mut out = String::from("Reviewable diff (commit this file to review apply)\n");
+    out.push_str("----------------------------------------------------\n");
+    out.push_str(&format!("+ agents:          {}\n", fmt_list(&plan.added.agents)));
+    out.push_str(&format!("- agents:          {}\n", fmt_list(&plan.removed.agents)));
+    out.push_str(&format!("~ agents:          {}\n", fmt_list(&plan.changed.agents)));
+    out.push_str(&format!("+ lanes:           {}\n", fmt_list(&plan.added.lanes)));
+    out.push_str(&format!("- lanes:           {}\n", fmt_list(&plan.removed.lanes)));
+    out.push_str(&format!("~ lanes:           {}\n", fmt_list(&plan.changed.lanes)));
+    out.push_str(&format!("+ intentions:      {}\n", fmt_list(&plan.added.intentions)));
+    out.push_str(&format!("- intentions:      {}\n", fmt_list(&plan.removed.intentions)));
+    out.push_str(&format!("+ model_bindings:  {}\n", fmt_list(&plan.added.model_bindings)));
+    out.push_str(&format!("- model_bindings:  {}\n", fmt_list(&plan.removed.model_bindings)));
+    out.push_str(&format!("~ model_bindings:  {}\n", fmt_list(&plan.changed.model_bindings)));
+    out.push_str(&format!("+ placements:      {}\n", fmt_list(&plan.added.placements)));
+    out.push_str(&format!("- placements:      {}\n", fmt_list(&plan.removed.placements)));
+    out.push_str(&format!("~ placements:      {}\n", fmt_list(&plan.changed.placements)));
+    out.push_str(&format!("+ enrich_packs:    {}\n", fmt_list(&plan.added.enrich_packs)));
+    out.push_str(&format!("- enrich_packs:    {}\n", fmt_list(&plan.removed.enrich_packs)));
+    out.push_str("Control does not invoke models. Cloud-agent placements are not spawned.\n");
     out
 }
 
@@ -136,7 +196,310 @@ pub fn write_plan(plans_dir: &Path, plan: &EstatePlan) -> Result<std::path::Path
     let json_path = plans_dir.join(format!("{stem}.json"));
     std::fs::write(&md_path, render_plan(plan))?;
     std::fs::write(&json_path, serde_json::to_string_pretty(plan).unwrap_or_default())?;
+    std::fs::write(
+        plans_dir.join(format!("{stem}.security.md")),
+        render_security_iac(plan),
+    )?;
+    let _ = write_plan_index(plans_dir);
     Ok(md_path)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlanIndexEntry {
+    pub stem: String,
+    pub markdown: String,
+    pub json: Option<String>,
+    #[serde(default)]
+    pub desired_hash: Option<String>,
+    #[serde(default)]
+    pub against_hash: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Error> {
+    if !plans_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut stems: BTreeSet<String> = BTreeSet::new();
+    for entry in std::fs::read_dir(plans_dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if let Some(stem) = name.strip_suffix(".md") {
+            if stem != "INDEX" && stem != "README" && !stem.ends_with(".security") {
+                stems.insert(stem.to_string());
+            }
+        } else if let Some(stem) = name.strip_suffix(".json") {
+            stems.insert(stem.to_string());
+        }
+    }
+    Ok(stems
+        .into_iter()
+        .rev()
+        .map(|stem| {
+            let json = if plans_dir.join(format!("{stem}.json")).exists() {
+                Some(format!("{stem}.json"))
+            } else {
+                None
+            };
+            let loaded = json
+                .as_ref()
+                .and_then(|name| std::fs::read_to_string(plans_dir.join(name)).ok())
+                .and_then(|text| serde_json::from_str::<EstatePlan>(&text).ok());
+            PlanIndexEntry {
+                markdown: format!("{stem}.md"),
+                json,
+                desired_hash: loaded.as_ref().map(|p| p.desired_hash.clone()),
+                against_hash: loaded.as_ref().and_then(|p| p.against_hash.clone()),
+                created_at: loaded.as_ref().map(|p| p.created_at.clone()),
+                stem,
+            }
+        })
+        .collect())
+}
+
+pub fn load_plan_json(path: &Path) -> Result<EstatePlan, std::io::Error> {
+    let text = std::fs::read_to_string(path)?;
+    serde_json::from_str(&text)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+pub fn covering_plan(plans_dir: &Path, hash: &str) -> Option<CoveringPlan> {
+    let entries = list_plans(plans_dir).ok()?;
+    for entry in entries {
+        let Some(json_name) = entry.json.clone() else {
+            continue;
+        };
+        let Ok(plan) = load_plan_json(&plans_dir.join(json_name)) else {
+            continue;
+        };
+        if plan.desired_hash == hash {
+            return Some(CoveringPlan {
+                stem: entry.stem,
+                plan,
+            });
+        }
+    }
+    None
+}
+
+pub fn covering_plan_stem(plans_dir: &Path, hash: &str) -> Option<String> {
+    covering_plan(plans_dir, hash).map(|c| c.stem)
+}
+
+pub fn plan_covers_hash(plans_dir: &Path, hash: &str) -> bool {
+    covering_plan_stem(plans_dir, hash).is_some()
+}
+
+/// Fresh when there is no last apply, or the plan was taken against that apply.
+/// A greenfield covering plan (`against_hash = None`) of the current desired hash still counts.
+pub fn plan_against_is_fresh(plan: &EstatePlan, last_applied: Option<&str>) -> bool {
+    match (last_applied, plan.against_hash.as_deref()) {
+        (Some(applied), Some(against)) => applied == against,
+        _ => true,
+    }
+}
+
+/// Strict freshness for `--require-fresh-plan`.
+/// A greenfield plan (`against_hash = None`) after an apply is STALE.
+pub fn plan_against_is_fresh_strict(plan: &EstatePlan, last_applied: Option<&str>) -> bool {
+    match (last_applied, plan.against_hash.as_deref()) {
+        (None, _) => true,
+        (Some(applied), Some(against)) => applied == against,
+        (Some(_), None) => false,
+    }
+}
+
+/// PR-reviewable Security-as-IaC: schema, hashes, and a blast radius a human can read.
+pub fn plan_is_reviewable(plan: &EstatePlan) -> bool {
+    plan.schema == "cell-one.plan.v0"
+        && plan.desired_hash.starts_with("sha256:")
+        && !plan.blast_radius_text.trim().is_empty()
+        && !plan.created_at.trim().is_empty()
+}
+
+/// Count of added + removed + changed ids. Used by `estate plan diff --allow-wider`.
+pub fn plan_blast_width(plan: &EstatePlan) -> usize {
+    plan.added.item_count() + plan.removed.item_count() + plan.changed.item_count()
+}
+
+pub fn blast_grows(from: &EstatePlan, to: &EstatePlan) -> bool {
+    plan_blast_width(to) > plan_blast_width(from)
+}
+
+/// Newest plan JSON in `plans_dir` (list_plans is newest-first).
+pub fn latest_plan(plans_dir: &Path) -> Option<EstatePlan> {
+    let entries = list_plans(plans_dir).ok()?;
+    for entry in entries {
+        let Some(name) = entry.json else {
+            continue;
+        };
+        if let Ok(plan) = load_plan_json(&plans_dir.join(name)) {
+            return Some(plan);
+        }
+    }
+    None
+}
+
+/// Human-readable plan-vs-plan blast compare. Not a gateway changelog.
+pub fn render_plan_diff(from: &EstatePlan, to: &EstatePlan) -> String {
+    let from_w = plan_blast_width(from);
+    let to_w = plan_blast_width(to);
+    let verdict = if to_w > from_w {
+        "WIDER"
+    } else if to_w < from_w {
+        "narrower"
+    } else {
+        "same"
+    };
+    let mut out = String::from("Estate plan diff\n================\n");
+    out.push_str(&format!("from hash: {}\n", from.desired_hash));
+    out.push_str(&format!("to hash:   {}\n", to.desired_hash));
+    out.push_str(&format!(
+        "blast width: {from_w} -> {to_w} ({verdict})\n\n"
+    ));
+    out.push_str("From\n----\n");
+    out.push_str(&render_review_diff(from));
+    out.push('\n');
+    out.push_str("To\n--\n");
+    out.push_str(&render_review_diff(to));
+    out.push('\n');
+    if to_w > from_w {
+        out.push_str("refuse:wider unless --allow-wider\n");
+    }
+    out
+}
+
+/// Single markdown ready to paste into a GitHub PR body. Does not open a PR.
+pub fn render_plan_pr(
+    plan: &EstatePlan,
+    covering_stem: Option<&str>,
+    reviewed: bool,
+    refuse_risks: &[String],
+) -> String {
+    let mut out = String::from("# Cell One plan (paste into PR body)\n\n");
+    out.push_str("Not a gateway. Cloud-agent stays unspawned. Feed does not auto-promote.\n\n");
+    out.push_str(&format!("- **Desired hash:** {}\n", plan.desired_hash));
+    match &plan.against_hash {
+        Some(h) => out.push_str(&format!("- **Against hash:** {h}\n")),
+        None => out.push_str("- **Against hash:** (greenfield)\n"),
+    }
+    out.push_str(&format!(
+        "- **Covering plan:** {}\n",
+        covering_stem.unwrap_or("(none — run `estate plan` first)")
+    ));
+    out.push_str(&format!(
+        "- **Reviewed:** {}\n",
+        if reviewed { "yes" } else { "no" }
+    ));
+    out.push_str(&format!(
+        "- **Reviewable:** {}\n",
+        if plan_is_reviewable(plan) { "yes" } else { "no" }
+    ));
+    out.push_str(&format!(
+        "- **Blast width:** {}\n\n",
+        plan_blast_width(plan)
+    ));
+    out.push_str("## Blast radius\n\n");
+    out.push_str(&plan.blast_radius_text);
+    out.push_str("\n\n");
+    out.push_str(&render_security_iac(plan));
+    out.push('\n');
+    out.push_str(&render_review_diff(plan));
+    out.push_str("\n## Refuse risks\n\n");
+    if refuse_risks.is_empty() {
+        out.push_str("- (none recorded)\n");
+    } else {
+        for risk in refuse_risks {
+            out.push_str(&format!("- {risk}\n"));
+        }
+    }
+    out.push_str("\n## Rails\n\n");
+    out.push_str("- GitHub is source of truth. No Origin. No auto-promote.\n");
+    out.push_str("- Cloud-agent: declared, not spawned.\n");
+    out.push_str("- Apply is pause-safe disk. Sacred dual-layer stays.\n");
+    out
+}
+
+/// Blast-radius markdown a human can PR-review before apply.
+pub fn render_security_iac(plan: &EstatePlan) -> String {
+    let mut out = String::from("Security-as-IaC (PR-review this blast radius)\n");
+    out.push_str("----------------------------------------------\n");
+    out.push_str(&format!("schema: {}\n", plan.schema));
+    out.push_str(&format!("reviewable: {}\n", plan_is_reviewable(plan)));
+    out.push_str(&format!("desired_hash: {}\n", plan.desired_hash));
+    match &plan.against_hash {
+        Some(h) => out.push_str(&format!("against_hash: {h}\n")),
+        None => out.push_str("against_hash: (greenfield — stale after the first apply)\n"),
+    }
+    out.push_str(&format!("created_at: {}\n\n", plan.created_at));
+    out.push_str("Blast radius\n");
+    out.push_str(&plan.blast_radius_text);
+    out.push_str("\n\n");
+    out.push_str(&format!("+ agents: {}\n", fmt_list(&plan.added.agents)));
+    out.push_str(&format!("- agents: {}\n", fmt_list(&plan.removed.agents)));
+    out.push_str(&format!("~ agents: {}\n", fmt_list(&plan.changed.agents)));
+    out.push_str(&format!("+ placements: {}\n", fmt_list(&plan.added.placements)));
+    out.push_str(&format!("- placements: {}\n", fmt_list(&plan.removed.placements)));
+    out.push_str(&format!("+ enrich_packs: {}\n", fmt_list(&plan.added.enrich_packs)));
+    out.push_str("\nApply without a covering, reviewable, fresh plan is refuse.\n");
+    out.push_str("Cloud-agent placements stay unspawned. Feed does not auto-promote.\n");
+    out
+}
+
+/// Copy a plan's markdown/json/security files into `reviewed/` for a human PR.
+pub fn mark_plan_reviewed(
+    plans_dir: &Path,
+    reviewed_dir: &Path,
+    stem: Option<&str>,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    std::fs::create_dir_all(reviewed_dir)?;
+    let entries = list_plans(plans_dir)?;
+    let entry = match stem {
+        Some(want) => entries.into_iter().find(|e| e.stem == want),
+        None => entries.into_iter().next(),
+    }
+    .ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "no covering plan to mark reviewed")
+    })?;
+    for ext in ["md", "json", "security.md"] {
+        let src = plans_dir.join(format!("{}.{}", entry.stem, ext));
+        if src.exists() {
+            std::fs::copy(&src, reviewed_dir.join(format!("{}.{}", entry.stem, ext)))?;
+        }
+    }
+    let mut index = String::from(
+        "# Reviewed plans\n\nHuman-copied blast-radius files. Commit these when apply needs a PR review.\n\n",
+    );
+    index.push_str(&format!(
+        "- `{}` hash={} against={}\n",
+        format!("{}.md", entry.stem),
+        entry.desired_hash.as_deref().unwrap_or("-"),
+        entry.against_hash.as_deref().unwrap_or("(greenfield)")
+    ));
+    std::fs::write(reviewed_dir.join("INDEX.md"), index)?;
+    Ok(reviewed_dir.join(format!("{}.md", entry.stem)))
+}
+
+pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io::Error> {
+    std::fs::create_dir_all(plans_dir)?;
+    let entries = list_plans(plans_dir)?;
+    let mut md = String::from("# Plan history\n\nAppend-only blast-radius files. Commit a plan markdown into a PR when you want Jason to review apply.\n\n");
+    if entries.is_empty() {
+        md.push_str("(no plans yet)\n");
+    } else {
+        for entry in &entries {
+            md.push_str(&format!(
+                "- `{}` hash={} against={}\n",
+                entry.markdown,
+                entry.desired_hash.as_deref().unwrap_or("-"),
+                entry.against_hash.as_deref().unwrap_or("(greenfield)")
+            ));
+        }
+    }
+    let path = plans_dir.join("INDEX.md");
+    std::fs::write(&path, md)?;
+    Ok(path)
 }
 
 fn blast_radius(
@@ -197,6 +560,33 @@ fn blast_radius(
             .collect::<Vec<_>>()
             .join(", ")
     ));
+    let boxes = estate
+        .placements
+        .iter()
+        .filter(|p| p.kind == PlacementKind::Box)
+        .count();
+    let cloud = estate
+        .placements
+        .iter()
+        .filter(|p| p.kind == PlacementKind::CloudAgent)
+        .count();
+    lines.push(format!(
+        "Placements declared: {boxes} box, {cloud} cloud-agent stub(s). Floor does not spawn cloud agents."
+    ));
+    if estate.enrich_packs.packs.is_empty() {
+        lines.push("Enrich packs stay empty until Jason curates (manual; no auto-promote).".into());
+    } else {
+        lines.push(format!(
+            "Enrich packs listed (still manual): {}.",
+            estate
+                .enrich_packs
+                .packs
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
     if !added.agents.is_empty() {
         lines.push(format!("Adding agents {} expands session count.", added.agents.join(", ")));
     }
@@ -211,11 +601,13 @@ fn blast_radius(
 
 fn render_delta(delta: &PlanDelta) -> String {
     format!(
-        "  agents: {}\n  lanes: {}\n  intentions: {}\n  model_bindings: {}\n",
+        "  agents: {}\n  lanes: {}\n  intentions: {}\n  model_bindings: {}\n  placements: {}\n  enrich_packs: {}\n",
         fmt_list(&delta.agents),
         fmt_list(&delta.lanes),
         fmt_list(&delta.intentions),
-        fmt_list(&delta.model_bindings)
+        fmt_list(&delta.model_bindings),
+        fmt_list(&delta.placements),
+        fmt_list(&delta.enrich_packs)
     )
 }
 
@@ -229,10 +621,16 @@ fn fmt_list(items: &[String]) -> String {
 
 impl PlanDelta {
     fn is_empty(&self) -> bool {
-        self.agents.is_empty()
-            && self.lanes.is_empty()
-            && self.intentions.is_empty()
-            && self.model_bindings.is_empty()
+        self.item_count() == 0
+    }
+
+    pub fn item_count(&self) -> usize {
+        self.agents.len()
+            + self.lanes.len()
+            + self.intentions.len()
+            + self.model_bindings.len()
+            + self.placements.len()
+            + self.enrich_packs.len()
     }
 }
 
@@ -306,5 +704,87 @@ mod tests {
         let plan = diff_estates(&e, Some(&e));
         assert!(plan.added.agents.is_empty());
         assert!(plan.blast_radius_text.contains("empty"));
+    }
+
+    #[test]
+    fn review_diff_names_placements() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let plan = diff_estates(&e, None);
+        let review = render_review_diff(&plan);
+        assert!(review.contains("+ placements:"));
+        assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
+        assert!(plan.blast_radius_text.contains("cloud-agent stub"));
+    }
+
+    #[test]
+    fn plan_covers_hash_reads_json_history() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let plan = diff_estates(&e, None);
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-plan-cover-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_plan(&dir, &plan).unwrap();
+        assert!(plan_covers_hash(&dir, &plan.desired_hash));
+        assert!(!plan_covers_hash(&dir, "sha256:deadbeef"));
+        assert!(covering_plan_stem(&dir, &plan.desired_hash).is_some());
+        let covering = covering_plan(&dir, &plan.desired_hash).unwrap();
+        assert_eq!(covering.plan.schema, "cell-one.plan.v0");
+        assert!(plan_against_is_fresh(&covering.plan, None));
+        assert!(plan_against_is_fresh(&covering.plan, Some("sha256:other")));
+        assert!(!plan_against_is_fresh_strict(&covering.plan, Some("sha256:other")));
+        assert!(plan_against_is_fresh_strict(&covering.plan, None));
+        assert!(plan_is_reviewable(&covering.plan));
+        let iac = render_security_iac(&covering.plan);
+        assert!(iac.contains("Security-as-IaC"));
+        assert!(iac.contains("reviewable: true"));
+        let pr = render_plan_pr(
+            &covering.plan,
+            Some(&covering.stem),
+            true,
+            &["cloud-agent: declared, not spawned".into()],
+        );
+        assert!(pr.contains("paste into PR body"));
+        assert!(pr.contains("Blast radius"));
+        assert!(pr.contains("Refuse risks"));
+        assert!(pr.contains("Reviewed:** yes"));
+        assert!(dir.join(format!("{}.security.md", covering.stem)).is_file());
+        let reviewed = mark_plan_reviewed(&dir, &dir.join("reviewed"), Some(&covering.stem)).unwrap();
+        assert!(reviewed.is_file());
+        let mut stale = covering.plan.clone();
+        stale.against_hash = Some("sha256:old".into());
+        assert!(!plan_against_is_fresh(&stale, Some("sha256:new")));
+        assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:new")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_fixture_fails_strict_freshness() {
+        let stale: EstatePlan =
+            serde_json::from_str(include_str!("../../../examples/invalid/stale-plan.json")).unwrap();
+        assert!(!plan_against_is_fresh_strict(
+            &stale,
+            Some("sha256:0000000000000000000000000000000000000000000000000000000000000001")
+        ));
+        assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:other")));
+    }
+
+    #[test]
+    fn blast_width_grows_when_new_plan_adds_more() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let narrow = diff_estates(&e, Some(&e));
+        let wide = diff_estates(&e, None);
+        assert_eq!(plan_blast_width(&narrow), 0);
+        assert!(plan_blast_width(&wide) > 0);
+        assert!(blast_grows(&narrow, &wide));
+        assert!(!blast_grows(&wide, &narrow));
+        let report = render_plan_diff(&narrow, &wide);
+        assert!(report.contains("WIDER"));
+        assert!(report.contains("refuse:wider"));
     }
 }

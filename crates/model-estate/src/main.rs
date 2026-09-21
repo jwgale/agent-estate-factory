@@ -42,11 +42,17 @@ enum Command {
         bind: String,
     },
     /// Print the portable local-runtime catalog. Not a model library.
-    Catalog,
+    Catalog {
+        /// Optional file SoT dump (JSON). Regenerable.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     Ready {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
+    /// Catalog-level driver probes. Not live pings.
+    Probe,
 }
 
 fn main() {
@@ -77,14 +83,27 @@ fn run() -> Result<()> {
             mock,
         ),
         Command::MockLocal { bind } => serve_specialist_forever(&bind).map_err(anyhow::Error::msg),
-        Command::Catalog => {
+        Command::Catalog { out } => {
             println!("{}", render_catalog());
+            if let Some(path) = out {
+                let written = model_estate::write_catalog(&path)?;
+                println!("wrote catalog file {}", written.display());
+            }
             Ok(())
         }
         Command::Ready { estate } => {
             let loaded = estate_schema::load_estate(&estate)?;
             println!("{}", model_estate::describe_bindings(&loaded));
             println!("{}", readiness(&loaded));
+            Ok(())
+        }
+        Command::Probe => {
+            for probe in model_estate::catalog_probes() {
+                println!(
+                    "  {:<12} status={:<12} bindable={} live_probed={} host={}",
+                    probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
+                );
+            }
             Ok(())
         }
     }
@@ -159,7 +178,6 @@ fn cmd_task(
         match frontier_from_binding(binding) {
             Ok(driver) => Some(driver),
             Err(err) => {
-                // Local may still fail-closed; audit that before surfacing missing frontier creds.
                 if local_box.is_some() {
                     None
                 } else {

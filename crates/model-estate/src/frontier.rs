@@ -81,6 +81,16 @@ pub fn frontier_from_binding(binding: &ModelBinding) -> Result<Box<dyn FrontierD
             id: binding.id.clone(),
         }));
     }
+    let driver = binding.driver.trim().to_ascii_lowercase();
+    if !matches!(
+        driver.as_str(),
+        "frontier-http" | "openai-compat" | "http-remote" | "openai" | "grok"
+    ) {
+        return Err(ModelError::Other(format!(
+            "unknown frontier driver '{}'; use frontier-http or openai-compat",
+            binding.driver
+        )));
+    }
     let key_env = param_str(binding, "api_key_env").unwrap_or_else(|| "XAI_API_KEY".into());
     let key = std::env::var(&key_env).map_err(|_| ModelError::MissingCreds(key_env))?;
     let base_env = param_str(binding, "api_base_env").unwrap_or_else(|| "XAI_API_BASE".into());

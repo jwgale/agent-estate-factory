@@ -1,6 +1,7 @@
 /target
 **/*.rs.bk
 .cell/
+backups/
 uploads/
 agent-tools/
 .DS_Store
@@ -9,7 +10,16 @@ agent-tools/
 .env.*
 plans/*
 !plans/.gitkeep
+!plans/README.md
+!plans/reviewed/
+plans/reviewed/*
+!plans/reviewed/README.md
 gate-reports/*
 !gate-reports/.gitkeep
 **/.lane-owner
 /tmp
+packs/*.pack.json
+packs/accepted/
+packs/proposed/
+!packs/INDEX.md
+!packs/README.md

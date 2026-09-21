@@ -1,5 +1,5 @@
 use crate::sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
-use crate::types::{Effect, Estate, ModelClass};
+use crate::types::{is_host_class, Effect, Estate, ModelClass, PlacementKind};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path};
 
@@ -23,9 +23,37 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
 
     if estate.version != 0 {
         errors.push(format!(
-            "unknown estate version {} (Cell One understands v0 only)",
+            "unknown estate version {} (Cell One understands v0 only; upgrade estate-control or keep version: 0)",
             estate.version
         ));
+    }
+    match estate
+        .api_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => {}
+        Some("cell-one.estate.v0") | Some("v0") => {}
+        Some(other) => {
+            errors.push(format!(
+                "unknown apiVersion '{other}' (Cell One understands cell-one.estate.v0 / v0; upgrade estate-control or set apiVersion: cell-one.estate.v0)"
+            ));
+        }
+    }
+    match estate
+        .kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => {}
+        Some(k) if k.eq_ignore_ascii_case("agent-estate") => {}
+        Some(other) => {
+            errors.push(format!(
+                "unknown kind '{other}' (Cell One understands kind: agent-estate; upgrade estate-control or set kind: agent-estate)"
+            ));
+        }
     }
     if estate.name.trim().is_empty() {
         errors.push("estate name must not be empty".into());
@@ -197,7 +225,57 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         reject_sku("model_binding.id", &binding.id, &mut errors);
         reject_sku("model_binding.driver", &binding.driver, &mut errors);
         reject_sku_in_params(&binding.id, &binding.params, &mut errors);
+        if let Some(hc) = binding.params.get("host_class").and_then(|v| v.as_str()) {
+            if !is_host_class(hc) {
+                errors.push(format!(
+                    "model_binding '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any (aliases: rtx-consumer, nvidia-rental)",
+                    binding.id, hc
+                ));
+            }
+        }
         classes.insert(binding.class);
+    }
+
+    let mut placement_ids = HashSet::new();
+    for placement in &estate.placements {
+        check_slug("placement.id", &placement.id, &mut errors);
+        if !placement_ids.insert(normalize_name(&placement.id)) {
+            errors.push(format!("duplicate placement id '{}'", placement.id));
+        }
+        reject_sku("placement.id", &placement.id, &mut errors);
+        if let Some(hc) = &placement.host_class {
+            if !is_host_class(hc) {
+                errors.push(format!(
+                    "placement '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any (aliases: rtx-consumer, nvidia-rental)",
+                    placement.id, hc
+                ));
+            }
+        }
+        for agent_id in &placement.agents {
+            if estate.agent(agent_id).is_none() {
+                errors.push(format!(
+                    "placement '{}' agent '{}' is not an agent",
+                    placement.id, agent_id
+                ));
+            }
+        }
+        if placement.kind == PlacementKind::CloudAgent {
+            for agent_id in &placement.agents {
+                if is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
+                    errors.push(format!(
+                        "placement '{}' cannot assign sacred exclusion '{}' to a cloud-agent",
+                        placement.id, agent_id
+                    ));
+                }
+            }
+            // Declared stub is valid even when wired:true. Floor still does not spawn it.
+            if placement.agents.is_empty() && placement.wired {
+                errors.push(format!(
+                    "placement '{}' is a wired cloud-agent with no agents; leave wired:false until Day-90 assigns it",
+                    placement.id
+                ));
+            }
+        }
     }
 
     if estate.enrich_packs.policy.trim().to_ascii_lowercase() != "manual" {
@@ -302,18 +380,6 @@ fn check_slug(field: &str, value: &str, errors: &mut Vec<String>) {
     }
 }
 
-fn is_slug(value: &str) -> bool {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_lowercase() => {}
-        _ => return false,
-    }
-    if value.len() > 64 {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-}
-
 fn check_unique_slugs<'a>(
     label: &str,
     ids: impl Iterator<Item = &'a str>,
@@ -329,14 +395,26 @@ fn check_unique_slugs<'a>(
 }
 
 /// Hardware SKUs must not appear in estate contracts. Hardware is a driver choice.
-const SKU_NEEDLES: &[&str] = &[
+pub const SKU_NEEDLES: &[&str] = &[
     "5090", "4090", "4080", "3090", "a100", "h100", "b200", "m3-max", "m3max", "m2-max", "m2max",
     "m1-max", "m1max", "m4-max", "m4max",
 ];
 
-fn contains_sku(value: &str) -> bool {
+pub fn contains_sku(value: &str) -> bool {
     let n = value.to_ascii_lowercase();
     SKU_NEEDLES.iter().any(|needle| n.contains(needle))
+}
+
+pub fn is_slug(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    if value.len() > 64 {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
 fn reject_sku(field: &str, value: &str, errors: &mut Vec<String>) {
@@ -448,5 +526,57 @@ mod tests {
         estate.enrich_packs.policy = "auto".into();
         let err = validate(&estate).unwrap_err();
         assert!(err.iter().any(|e| e.contains("manual")));
+    }
+
+    #[test]
+    fn placement_sku_fails() {
+        let err = validate(&load_invalid("placement-sku.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("hardware SKU")));
+    }
+
+    #[test]
+    fn placement_unknown_agent_fails() {
+        let err = validate(&load_invalid("placement-unknown-agent.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("not an agent")));
+    }
+
+    #[test]
+    fn example_declares_cloud_agent_stub() {
+        let estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        assert!(estate
+            .placements
+            .iter()
+            .any(|p| p.kind == PlacementKind::CloudAgent && !p.wired));
+        validate(&estate).unwrap();
+    }
+
+    #[test]
+    fn cloud_placement_refuses_sacred_agent() {
+        let err = validate(&load_invalid("placement-sacred-cloud.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("sacred")));
+    }
+
+    #[test]
+    fn unknown_api_version_fails_closed_with_upgrade_hint() {
+        let err = validate(&load_invalid("api-version-unknown.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("unknown apiVersion")));
+        assert!(err.iter().any(|e| e.contains("upgrade estate-control")));
+        assert!(err.iter().any(|e| e.contains("cell-one.estate.v0")));
+    }
+
+    #[test]
+    fn unknown_kind_fails_closed_with_upgrade_hint() {
+        let err = validate(&load_invalid("kind-unknown.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("unknown kind")));
+        assert!(err.iter().any(|e| e.contains("agent-estate")));
+    }
+
+    #[test]
+    fn known_api_version_is_ok() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate.api_version = Some("cell-one.estate.v0".into());
+        validate(&estate).unwrap();
+        estate.api_version = Some("v0".into());
+        validate(&estate).unwrap();
     }
 }

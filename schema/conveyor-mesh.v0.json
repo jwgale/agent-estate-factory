@@ -1,0 +1,44 @@
+{
+  "schema": "cell-one.conveyor-mesh.v0",
+  "note": "Capability mesh beachhead. Declare a hop, lease-bound call, refuse without a granted lease. Optional hop ttl_secs stamps issued_at/expires_at. Call refuses expired. Cloud-mesh hops are declared, not spawned. Not a gateway.",
+  "kinds": ["box", "cloud-mesh"],
+  "durable": [".cell/conveyor-mesh.json", ".cell/conveyor-hops.json", ".cell/conveyor-leases.json"],
+  "hops": [
+    {
+      "id": "cell-one-box",
+      "kind": "box",
+      "capability": "lane-tool",
+      "host_class": "any",
+      "wired": true
+    },
+    {
+      "id": "cursor-cloud",
+      "kind": "cloud-mesh",
+      "capability": "mesh-stub",
+      "host_class": "any",
+      "wired": false
+    }
+  ],
+  "leases": [
+    {
+      "hop_id": "cell-one-box",
+      "kind": "box",
+      "capability": "lane-tool",
+      "host_class": "any",
+      "granted": true,
+      "spawned": true,
+      "durable": true,
+      "driver": "box"
+    },
+    {
+      "hop_id": "cursor-cloud",
+      "kind": "cloud-mesh",
+      "capability": "mesh-stub",
+      "host_class": "any",
+      "granted": false,
+      "spawned": false,
+      "durable": true,
+      "driver": "cloud-mesh"
+    }
+  ]
+}
