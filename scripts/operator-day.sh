@@ -36,6 +36,17 @@ if [[ "$bad_host" -eq 0 ]]; then
 fi
 echo "PASS  invalid host_class refused"
 
+echo "-- doctor (quiet hours + schemas) --"
+cargo run -q -p estate-control -- doctor --root "$ROOT" --state-dir "$STATE"
+
+echo "-- apply --dry-run (no writes) --"
+cargo run -q -p estate-control -- apply --dry-run --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS"
+if [[ -f "$STATE/placement-actual.json" ]]; then
+  echo "FAIL  dry-run wrote placement-actual.json"
+  exit 1
+fi
+echo "PASS  apply --dry-run"
+
 echo "-- first apply (greenfield plan + require-plan) --"
 cargo run -q -p estate-control -- plan --estate "$ESTATE" --plans-dir "$PLANS" --state-dir "$STATE"
 cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --require-plan
@@ -81,6 +92,10 @@ promo=$?
 set -e
 if [[ "$promo" -eq 0 ]]; then
   echo "FAIL  packs promote must refuse"
+  exit 1
+fi
+if [[ ! -f "$DROP/accepted/overnight-traces.redaction.json" ]]; then
+  echo "FAIL  redaction report missing after import"
   exit 1
 fi
 echo "PASS  packs list/import/refuse-promote"
@@ -143,6 +158,11 @@ if [[ ! -f "$WORKDIR/audit-export/MANIFEST.md" ]]; then
   exit 1
 fi
 echo "PASS  audit export"
+
+echo "-- expire + doctor --"
+cargo run -q -p estate-control -- expire --state-dir "$STATE"
+cargo run -q -p estate-control -- doctor --root "$ROOT" --state-dir "$STATE"
+echo "PASS  expire/doctor"
 
 echo
 echo "OPERATOR-DAY GREEN (fixtures only; no live Grok / GPU)"
