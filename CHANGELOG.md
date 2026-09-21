@@ -65,6 +65,14 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #40 (this slice)
+
+- `make day90-mixed` validates `examples/hosts/frontier-http.yaml` and prints status (`frontier: frontier_http model=grok-4.7`). No apply. No live key. A greenfield status does not invent a cell catalog. `examples/estate.yaml` cksum is unchanged.
+- The host file stays off `scripts/fixtures-check.sh`, smoke, and gate-90.
+- `estate models` prints `model=` from `params.model` when set, and `model=-` when it is not. The default estate does not invent `model=grok-4.7`.
+- No new CLI.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #39 (this slice)
 
 - `examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, with a local `ollama` card. It is not a host-class alias and it is not on smoke or gate-90. `examples/estate.yaml` stays hash-locked.

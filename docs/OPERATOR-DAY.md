@@ -51,7 +51,7 @@ make day90-mixed
 
 `estate help frontier` names the grok-4.7 specialist. `XAI_API_KEY` is required. A prompt that mentions Cyera or Rust classroom refuses before any POST, the same way a local specialist does. Local down does not call frontier.
 
-`make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml` on an isolated cell: status, plan, apply with a plan, status, doctor. That fixture already sets `model: grok-4.7` on the frontier `http-remote` binding. The same binding is in `examples/hosts/frontier-http.yaml`. That file is not a host-class alias and is not on this walk. `examples/estate.yaml` stays hash-locked and does not invent a binding model. No live key. A sacred prompt still refuses when `CELL_FRONTIER_MODEL` is a hardware SKU; the SKU model path is not the refusal.
+`make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml` on an isolated cell: status, plan, apply with a plan, status, doctor. It then validates `examples/hosts/frontier-http.yaml` and prints status. Both name `model: grok-4.7` on the frontier `http-remote` binding. The host file is not applied and is not a host-class alias. It is not on `make smoke` or fixtures-check. `examples/estate.yaml` stays hash-locked and does not invent a binding model. No live key. A sacred prompt still refuses when `CELL_FRONTIER_MODEL` is a hardware SKU; the SKU model path is not the refusal.
 
 ## 4. Backup rotate
 

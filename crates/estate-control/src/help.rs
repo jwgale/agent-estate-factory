@@ -190,6 +190,8 @@ Opt-in. Not part of make smoke, make gate-90, or Actions.
 
 Walks examples/fixtures/mixed-frontier-local.yaml on an isolated cell:
 status → plan → apply --require-plan → status → doctor.
-The frontier binding names model grok-4.7. No live key. No frontier POST.
+Then validates examples/hosts/frontier-http.yaml and prints status.
+That host binding names model grok-4.7 on http-remote. No apply. No live key.
 The script unsets XAI_API_KEY and CELL_*_ENDPOINT.
+examples/estate.yaml stays hash-locked. Not part of fixtures-check.
 ";
