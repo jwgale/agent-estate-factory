@@ -1,8 +1,8 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#21 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#22 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
-`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md). Hand-off page (not green): [`LIVE-PROBES.md`](LIVE-PROBES.md).
+`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md). Hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ```bash
 make gate-90    # Day-90 operator entrypoint (local)
@@ -76,6 +76,7 @@ estate doctor --strict
 | model-actual / session.json serialize | green | refuse empty blob; garbage model-actual is not greenfield |
 | Estate compare-read | green | accept / import / propose refuse unreadable estate bytes |
 | Live probe runbook + dry shapes | green | [`LIVE-PROBES.md`](LIVE-PROBES.md); SKIP vs would-live fixture, no network |
+| OpenAI / Ollama live adapter | green | GET `/v1/models` or `/api/tags`; in-process mock; SKIP without env |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
