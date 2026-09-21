@@ -372,6 +372,22 @@ pub fn refuse_raw_secrets(text: &str) -> Result<(), FeedError> {
     Ok(())
 }
 
+/// Kind counts only. Refuses if the serialized report itself contains a raw secret.
+pub fn write_redaction_report(path: &Path, report: &RedactionReport) -> Result<(), FeedError> {
+    let blob = serde_json::to_string_pretty(report).unwrap_or_default();
+    refuse_raw_secrets(&blob)?;
+    for kind in report.kinds.keys() {
+        if looks_pii_token(kind) {
+            return Err(FeedError::RawSecret);
+        }
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, blob)?;
+    Ok(())
+}
+
 pub fn is_pack_schema(schema: &str) -> bool {
     schema == "cell-one.pack.v0" || schema == "cell-one.specialist-pack.v0"
 }
@@ -704,10 +720,10 @@ pub fn import_pack_for(
     let written = serde_json::to_string_pretty(&imported).unwrap_or_default();
     refuse_raw_secrets(&written)?;
     std::fs::write(&path, written)?;
-    let _ = std::fs::write(
-        accepted_dir.join(format!("{id}.redaction.json")),
-        serde_json::to_string_pretty(&report).unwrap_or_default(),
-    );
+    write_redaction_report(
+        &accepted_dir.join(format!("{id}.redaction.json")),
+        &report,
+    )?;
     let _ = append_import_audit(
         accepted_dir,
         &ImportAudit {
@@ -1289,6 +1305,13 @@ mod tests {
         let (imported, _) = import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
         assert_eq!(imported.pack.model_hint.as_deref(), Some("local_slm"));
         assert!(accepted.join("overnight-traces.redaction.json").is_file());
+        let accepted_pack =
+            std::fs::read_to_string(accepted.join("overnight-traces.pack.json")).unwrap();
+        let accepted_report =
+            std::fs::read_to_string(accepted.join("overnight-traces.redaction.json")).unwrap();
+        assert!(!accepted_pack.contains("sk-"));
+        assert!(!accepted_report.contains("sk-"));
+        assert!(accepted_report.contains("Kind counts only"));
         let mut dirty = pack.clone();
         dirty.id = "dirty-pack".into();
         dirty.note = "key=sk-abcdefghijklmnopqrstuv".into();
@@ -1340,6 +1363,34 @@ mod tests {
         assert!(apply.to_string().starts_with("refuse:no-auto-apply"));
         let raw = refuse_raw_secrets("token=sk-abcdefghijklmnopqrstuv").unwrap_err();
         assert!(raw.to_string().starts_with("refuse:raw-secret"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn redaction_report_json_never_contains_raw_secret() {
+        let secret = "sk-abcdefghijklmnopqrstuv";
+        let raw = format!("note key={secret} password=hunter2");
+        let report = redaction_report(&raw);
+        assert!(report.raw_secrets_found > 0);
+        let blob = serde_json::to_string_pretty(&report).unwrap();
+        assert!(!blob.contains(secret), "{blob}");
+        assert!(!blob.contains("hunter2"), "{blob}");
+        write_redaction_report(&tmp().join("ok.redaction.json"), &report).unwrap();
+        let dir = tmp();
+        let drop = dir.join("drop");
+        std::fs::create_dir_all(&drop).unwrap();
+        std::fs::write(
+            drop.join("dirty-pack.pack.json"),
+            format!(
+                "{{\n  \"id\": \"dirty-pack\",\n  \"version\": 0,\n  \"schema\": \"cell-one.pack.v0\",\n  \"curator\": \"jason\",\n  \"policy\": \"manual\",\n  \"promoted\": false,\n  \"source\": \"feed\",\n  \"from_events\": 0,\n  \"kinds\": [],\n  \"paths\": [],\n  \"agents\": [],\n  \"host_class\": \"any\",\n  \"path_counts\": {{\"kinds\": 0, \"paths\": 0, \"agents\": 0}},\n  \"source_paths\": [],\n  \"created_at\": \"unix:1\",\n  \"note\": \"key={secret}\"\n}}\n"
+            ),
+        )
+        .unwrap();
+        let accepted = dir.join("accepted");
+        let err = import_pack(&drop, &accepted, "dirty-pack", &[]).unwrap_err();
+        assert!(matches!(err, FeedError::RawSecret), "{err}");
+        assert!(!accepted.join("dirty-pack.pack.json").exists());
+        assert!(!accepted.join("dirty-pack.redaction.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
