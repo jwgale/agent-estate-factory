@@ -1,9 +1,12 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use conveyor_proxy::{
+    call_hop, declare_hop, list_hop_leases, list_hops, sync_from_placements, HopDecl,
+};
 use estate_schema::{
-    covering_plan, describe, describe_placements, diff_estates, estate_hash,
-    list_plans, load_estate, load_estate_unvalidated, plan_against_is_fresh, render_plan, validate,
-    write_plan,
+    covering_plan, describe, describe_placements, diff_estates, estate_hash, list_plans,
+    load_estate, load_estate_unvalidated, mark_plan_reviewed, plan_against_is_fresh,
+    plan_against_is_fresh_strict, plan_is_reviewable, render_plan, validate, write_plan,
 };
 use feed_collector::{
     import_pack, list_drop_packs, load_cursor, materialize_from_feed, refuse_promote,
@@ -44,6 +47,11 @@ enum Command {
         plans_dir: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        /// Copy the new plan into plans/reviewed/ for a human PR.
+        #[arg(long, default_value_t = false)]
+        reviewed: bool,
+        #[arg(long, default_value = "plans/reviewed")]
+        reviewed_dir: PathBuf,
     },
     /// Converge isolation (Control→Data apply seam). Stretch: included, thin.
     Apply {
@@ -136,6 +144,89 @@ enum Command {
     },
     /// Catalog-level driver probes. Not live pings. Does not invoke models.
     Probes,
+    /// Capability mesh: declare hop, lease-bound call. Not a gateway.
+    Convey {
+        #[command(subcommand)]
+        command: ConveyCommand,
+    },
+    /// Pack curator path: list / import / refuse promote + INDEX.
+    Packs {
+        #[command(subcommand)]
+        command: PacksCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConveyCommand {
+    /// Declare a hop and write a durable lease.
+    Hop {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "box")]
+        kind: String,
+        #[arg(long, default_value = "lane-tool")]
+        capability: String,
+        #[arg(long, default_value = "any")]
+        host_class: String,
+        #[arg(long, default_value_t = true)]
+        wired: bool,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Lease-bound call. Refuses without a granted lease.
+    Call {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "lane-tool")]
+        capability: String,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// List declared hops.
+    List {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print hop leases.
+    Leases {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Derive hops from placement-actual.json (slim parse).
+    Sync {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum PacksCommand {
+    /// List candidate packs and rewrite INDEX.md.
+    List {
+        #[arg(long, default_value = "packs")]
+        drop_dir: PathBuf,
+    },
+    /// Explicit apply of a pack artifact. Does not rewrite the estate file.
+    Import {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "packs")]
+        drop_dir: PathBuf,
+        #[arg(long, default_value = "packs/accepted")]
+        accepted_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Always fails. Auto-promote is locked off.
+    Promote {
+        #[arg(long)]
+        id: String,
+    },
+    /// Rewrite packs/INDEX.md.
+    Index {
+        #[arg(long, default_value = "packs")]
+        drop_dir: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -193,7 +284,16 @@ fn run() -> Result<()> {
             against,
             plans_dir,
             state_dir,
-        } => cmd_plan(&estate, against.as_deref(), &plans_dir, &state_dir),
+            reviewed,
+            reviewed_dir,
+        } => cmd_plan(
+            &estate,
+            against.as_deref(),
+            &plans_dir,
+            &state_dir,
+            reviewed,
+            &reviewed_dir,
+        ),
         Command::Apply {
             estate,
             state_dir,
@@ -252,6 +352,35 @@ fn run() -> Result<()> {
         Command::Audits { state_dir } => cmd_audits(&state_dir),
         Command::History { state_dir } => cmd_history(&state_dir),
         Command::Probes => cmd_probes(),
+        Command::Convey { command } => match command {
+            ConveyCommand::Hop {
+                id,
+                kind,
+                capability,
+                host_class,
+                wired,
+                state_dir,
+            } => cmd_convey_hop(&id, &kind, &capability, &host_class, wired, &state_dir),
+            ConveyCommand::Call {
+                id,
+                capability,
+                state_dir,
+            } => cmd_convey_call(&id, &capability, &state_dir),
+            ConveyCommand::List { state_dir } => cmd_convey_list(&state_dir),
+            ConveyCommand::Leases { state_dir } => cmd_convey_leases(&state_dir),
+            ConveyCommand::Sync { state_dir } => cmd_convey_sync(&state_dir),
+        },
+        Command::Packs { command } => match command {
+            PacksCommand::List { drop_dir } => cmd_feed_list(&drop_dir),
+            PacksCommand::Import {
+                id,
+                drop_dir,
+                accepted_dir,
+                estate,
+            } => cmd_feed_import(&id, &drop_dir, &accepted_dir, &estate),
+            PacksCommand::Promote { id } => cmd_feed_promote(&id),
+            PacksCommand::Index { drop_dir } => cmd_packs_index(&drop_dir),
+        },
     }
 }
 
@@ -283,7 +412,14 @@ fn cmd_validate(path: &Path) -> Result<()> {
     }
 }
 
-fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path, state_dir: &Path) -> Result<()> {
+fn cmd_plan(
+    path: &Path,
+    against: Option<&Path>,
+    plans_dir: &Path,
+    state_dir: &Path,
+    reviewed: bool,
+    reviewed_dir: &Path,
+) -> Result<()> {
     let desired = load_estate(path).with_context(|| format!("desired {}", path.display()))?;
     let previous = match against {
         Some(p) => Some(load_estate(p).with_context(|| format!("against {}", p.display()))?),
@@ -293,6 +429,17 @@ fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path, state_dir: &P
     let written = write_plan(plans_dir, &plan)?;
     print!("{}", render_plan(&plan));
     println!("Wrote {}", written.display());
+    if !plan_is_reviewable(&plan) {
+        bail!("plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
+    }
+    if reviewed {
+        let stem = written
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let dest = mark_plan_reviewed(plans_dir, reviewed_dir, Some(stem))?;
+        println!("reviewed copy {}", dest.display());
+    }
     Ok(())
 }
 
@@ -316,13 +463,24 @@ fn cmd_apply(
     let last_applied = load_desired_snapshot(state_dir)?
         .as_ref()
         .map(estate_hash);
+    if let Some(c) = covering.as_ref() {
+        if (require_plan || require_fresh_plan) && !plan_is_reviewable(&c.plan) {
+            bail!("apply gated: covering plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
+        }
+    }
     let fresh = covering
         .as_ref()
-        .map(|c| plan_against_is_fresh(&c.plan, last_applied.as_deref()))
+        .map(|c| {
+            if require_fresh_plan {
+                plan_against_is_fresh_strict(&c.plan, last_applied.as_deref())
+            } else {
+                plan_against_is_fresh(&c.plan, last_applied.as_deref())
+            }
+        })
         .unwrap_or(true);
     if require_fresh_plan && !fresh {
         bail!(
-            "apply gated: covering plan against_hash does not match last apply {}",
+            "apply gated: covering plan is stale; against_hash does not match last apply {} (greenfield after apply is refuse)",
             last_applied.unwrap_or_else(|| "-".into())
         );
     }
@@ -613,6 +771,70 @@ fn cmd_history(state_dir: &Path) -> Result<()> {
             ev.desired_hash.as_deref().unwrap_or("-")
         );
     }
+    Ok(())
+}
+
+fn cmd_convey_hop(
+    id: &str,
+    kind: &str,
+    capability: &str,
+    host_class: &str,
+    wired: bool,
+    state_dir: &Path,
+) -> Result<()> {
+    let lease = declare_hop(
+        state_dir,
+        HopDecl {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            capability: capability.to_string(),
+            host_class: host_class.to_string(),
+            wired,
+            note: None,
+        },
+    )?;
+    println!("{}", serde_json::to_string_pretty(&lease)?);
+    Ok(())
+}
+
+fn cmd_convey_call(id: &str, capability: &str, state_dir: &Path) -> Result<()> {
+    let call = call_hop(state_dir, id, capability)?;
+    println!("{}", serde_json::to_string_pretty(&call)?);
+    if !call.allow {
+        bail!("hop call denied");
+    }
+    Ok(())
+}
+
+fn cmd_convey_list(state_dir: &Path) -> Result<()> {
+    let hops = list_hops(state_dir)?;
+    if hops.is_empty() {
+        println!("no hops under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("{}", serde_json::to_string_pretty(&hops)?);
+    Ok(())
+}
+
+fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
+    let leases = list_hop_leases(state_dir)?;
+    if leases.is_empty() {
+        println!("no hop leases under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("{}", serde_json::to_string_pretty(&leases)?);
+    Ok(())
+}
+
+fn cmd_convey_sync(state_dir: &Path) -> Result<()> {
+    let mesh = sync_from_placements(state_dir)?;
+    println!("{}", serde_json::to_string_pretty(&mesh)?);
+    Ok(())
+}
+
+fn cmd_packs_index(drop_dir: &Path) -> Result<()> {
+    let path = write_pack_index(drop_dir)?;
+    println!("wrote {}", path.display());
     Ok(())
 }
 
