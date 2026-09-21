@@ -23,9 +23,37 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
 
     if estate.version != 0 {
         errors.push(format!(
-            "unknown estate version {} (Cell One understands v0 only)",
+            "unknown estate version {} (Cell One understands v0 only; upgrade estate-control or keep version: 0)",
             estate.version
         ));
+    }
+    match estate
+        .api_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => {}
+        Some("cell-one.estate.v0") | Some("v0") => {}
+        Some(other) => {
+            errors.push(format!(
+                "unknown apiVersion '{other}' (Cell One understands cell-one.estate.v0 / v0; upgrade estate-control or set apiVersion: cell-one.estate.v0)"
+            ));
+        }
+    }
+    match estate
+        .kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => {}
+        Some(k) if k.eq_ignore_ascii_case("agent-estate") => {}
+        Some(other) => {
+            errors.push(format!(
+                "unknown kind '{other}' (Cell One understands kind: agent-estate; upgrade estate-control or set kind: agent-estate)"
+            ));
+        }
     }
     if estate.name.trim().is_empty() {
         errors.push("estate name must not be empty".into());
@@ -526,5 +554,29 @@ mod tests {
     fn cloud_placement_refuses_sacred_agent() {
         let err = validate(&load_invalid("placement-sacred-cloud.yaml")).unwrap_err();
         assert!(err.iter().any(|e| e.contains("sacred")));
+    }
+
+    #[test]
+    fn unknown_api_version_fails_closed_with_upgrade_hint() {
+        let err = validate(&load_invalid("api-version-unknown.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("unknown apiVersion")));
+        assert!(err.iter().any(|e| e.contains("upgrade estate-control")));
+        assert!(err.iter().any(|e| e.contains("cell-one.estate.v0")));
+    }
+
+    #[test]
+    fn unknown_kind_fails_closed_with_upgrade_hint() {
+        let err = validate(&load_invalid("kind-unknown.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("unknown kind")));
+        assert!(err.iter().any(|e| e.contains("agent-estate")));
+    }
+
+    #[test]
+    fn known_api_version_is_ok() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate.api_version = Some("cell-one.estate.v0".into());
+        validate(&estate).unwrap();
+        estate.api_version = Some("v0".into());
+        validate(&estate).unwrap();
     }
 }
