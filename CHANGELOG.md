@@ -65,6 +65,22 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## #35–#37 in plain English
+
+#35. Frontier refuse text names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT`. A hardware SKU in the model id says which setting it came from and still refuses before any POST. GATE-90 and DAY90-PLUS keep green factory checks, recorded live proofs, and parked rows separate. Mac specialist stays optional. Native MLX and cloud-spawn stay parked.
+
+#36. Pack INDEX and `estate feed list` print `drivers=` when `source_drivers` is present, and `drivers=-` when it is empty. A failed INDEX rewrite is an error. `make feed-loop` greps that line. There is no `make feed-loop-mixed`.
+
+#37. `packs accept` copies that tag into the enrich-edit instructions. An empty list stays `-`. A tag that does not match `path_counts` refuses before the edit file is rewritten. A failed proposal INDEX rewrite is an error. `source_drivers` stays an additive v0 field.
+
+## After PR #37 (this slice)
+
+- `make feed-loop` checks the pack, the proposal, and `enrich-edit.json` carry the same `source_drivers` (`frontier` then `local`).
+- Hole: a pack or proposal that omitted `source_drivers` while frontier or local counts were nonzero was indexed as `drivers=-`. The index rewrite now refuses and leaves the previous INDEX in place.
+- Accept serializes the enrich-edit JSON before it writes either file, so a serialize failure does not leave a new markdown next to a stale JSON.
+- No new CLI. Smoke and gate-90 unchanged.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #36 (this slice)
 
 - `packs accept` copies `source_drivers` from the proposal into the enrich-edit markdown, JSON, and paste comment. Empty stays `-` and is not invented as frontier. A tag that does not match `path_counts` refuses before the edit file is rewritten.
