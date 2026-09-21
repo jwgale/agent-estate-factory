@@ -10,6 +10,7 @@ cd agent-estate-factory
 cargo test --workspace
 make gate
 make gate-60
+make gate-90    # local only; not in GitHub Actions
 ```
 
 CI is intentionally thin (one `ubuntu-latest` job, `pull_request` only, `cargo test --workspace`). Run gates locally.
@@ -129,9 +130,9 @@ Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actua
 | llama.cpp | Swap-proof card; same specialist protocol. |
 | MLX | Stub. Same catalog/route/bind. Live Mac proof later. |
 | vLLM / TRT | Experimental. Fail closed until Jason verifies. |
-| Enrich packs | Curator jason, policy manual, packs empty. |
-| Feed | Scrubbed jsonl, both paths. No auto-promote. |
-| A10–A12 | Not built. |
+| Enrich packs | Curator jason, policy manual, packs empty. Drop zone: `examples/enrich-packs/drop/`. |
+| Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
+| A10–A12 | Beachhead: feed packs, suspend/resume, reviewable plans, cloud-agent placement stub. |
 
 ## Sharp choices (Jev bait)
 
@@ -148,4 +149,11 @@ Day 60 additions:
 7. **Hardware SKUs are banned** from binding ids/drivers. Catalog / route / bind picks Ollama, llama.cpp, MLX, vLLM, or TRT.
 8. **Enrich packs stay manual.** Jason curates; feed does not auto-promote.
 
-Anti-shrink list is in the charter.
+Day 61–90 beachhead (local `make gate-90`):
+
+9. **Feed packs are candidates.** `estate feed pack` writes the drop zone; `estate feed promote` fails. Jason edits the estate.
+10. **Suspend/resume is the operator lifecycle.** `.cell/lifecycle.json` survives session discard.
+11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. Commit a plan file when apply needs a PR review.
+12. **`placements[]` declares `box` and a `cloud-agent` stub.** Floor does not spawn cloud agents.
+
+Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md). Anti-shrink list is in the charter.

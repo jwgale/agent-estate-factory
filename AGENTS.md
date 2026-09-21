@@ -10,6 +10,7 @@ Launch Cursor cloud agents with `repo: https://github.com/jwgale/agent-estate-fa
 cargo test --workspace
 make gate
 make gate-60
+make gate-90    # local Day 61–90 beachhead; do not add to GHA
 ```
 
 Primary gate is local (or this cloud-agent VM). GitHub Actions is one `pull_request` job: `cargo test --workspace` only. Do not add matrices, cron, or `make gate-60` on hosted CI.

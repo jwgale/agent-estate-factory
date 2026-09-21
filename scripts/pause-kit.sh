@@ -8,42 +8,28 @@ ESTATE="${ESTATE:-examples/estate.yaml}"
 
 usage() {
   echo "usage: $0 {stop|start|status}"
-  echo "  stop    drop .cell/runtime and .cell/sessions (lane roots stay)"
-  echo "  start   validate + apply from persisted estate file"
-  echo "  status  show what is persisted vs disposable"
+  echo "  stop    estate suspend: drop sessions/PIDs; keep lifecycle.json"
+  echo "  start   estate resume: validate + apply from persisted estate file"
+  echo "  status  estate status: persisted vs disposable + placements"
 }
 
 stop() {
-  cargo run -q -p floor-supervisor -- stop --state-dir "$STATE"
-  echo "pause-kit stop: runtime discarded"
-  echo "persisted: charter.md $ESTATE schema/ lanes/ plans/ gate-reports/"
+  cargo run -q -p estate-control -- suspend --state-dir "$STATE"
+  echo "pause-kit stop: runtime discarded; lifecycle.json durable"
+  echo "persisted: charter.md $ESTATE schema/ lanes/ plans/ gate-reports/ $STATE/lifecycle.json"
 }
 
 start() {
-  cargo run -q -p estate-control -- validate --estate "$ESTATE"
-  cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"
+  cargo run -q -p estate-control -- resume --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"
   echo "pause-kit start: rebound from $ESTATE"
 }
 
 status() {
-  echo "persisted estate: $ESTATE"
-  if [[ -f "$ESTATE" ]]; then
-    cargo run -q -p estate-control -- validate --estate "$ESTATE" || true
-  fi
+  cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT" || true
   echo "lane roots:"
-  find lanes -type f | sort
+  find lanes -type f 2>/dev/null | sort || true
   echo "plans:"
-  find plans -type f | sort
-  if [[ -d "$STATE/runtime" ]]; then
-    echo "runtime present (disposable): $STATE/runtime"
-  else
-    echo "runtime absent (paused or never spawned)"
-  fi
-  if [[ -f "$STATE/actual-state.json" ]]; then
-    echo "actual-state present (regenerable): $STATE/actual-state.json"
-  else
-    echo "actual-state absent"
-  fi
+  find plans -type f 2>/dev/null | sort || true
 }
 
 cmd="${1:-status}"

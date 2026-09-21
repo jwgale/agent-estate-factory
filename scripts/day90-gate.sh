@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Day 61–90 beachhead (toward A10–A12). Local only. Do not add to GitHub Actions.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+ESTATE="${ESTATE:-examples/estate.yaml}"
+STATE="${STATE_DIR:-.cell}"
+FEED="${FEED_DIR:-.cell/feed}"
+DROP="${DROP_DIR:-examples/enrich-packs/drop}"
+REPORT="gate-reports/day90.md"
+PASS=0
+FAIL=0
+
+ok() { echo "PASS  $*"; PASS=$((PASS + 1)); }
+bad() { echo "FAIL  $*"; FAIL=$((FAIL + 1)); }
+
+note() { echo "$*"; }
+
+note "== Cell One Day-90 beachhead (A10–A12 toward) =="
+
+cargo run -q -p estate-control -- validate --estate "$ESTATE"
+ok "estate validates (placements declared)"
+
+note "-- A12 plan as human control surface --"
+cargo run -q -p estate-control -- plan --estate "$ESTATE" --plans-dir plans --state-dir "$STATE" | tee /tmp/cell90-plan.txt
+if grep -q "Reviewable diff" /tmp/cell90-plan.txt && grep -q "cloud-agent stub" /tmp/cell90-plan.txt; then
+  ok "A12 plan is PR-reviewable and names cloud-agent stub"
+else
+  bad "A12 reviewable plan"
+fi
+cargo run -q -p estate-control -- plans --plans-dir plans >/tmp/cell90-plans.txt
+ok "A12 plan history lists"
+
+note "-- A11 suspend / resume --"
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"
+cargo run -q -p estate-control -- suspend --state-dir "$STATE"
+if [[ -f "$STATE/lifecycle.json" ]]; then
+  ok "A11 lifecycle.json durable after suspend"
+else
+  bad "A11 lifecycle.json missing"
+fi
+if [[ -d "$STATE/sessions" ]]; then
+  bad "A11 sessions should be discarded"
+else
+  ok "A11 sessions discarded; lanes stay"
+fi
+cargo run -q -p estate-control -- resume --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"
+if cargo run -q -p estate-control -- drift --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"; then
+  ok "A11 resume converges"
+else
+  bad "A11 resume converges"
+fi
+cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT" | tee /tmp/cell90-status.txt
+if grep -q "cloud-agent" /tmp/cell90-status.txt; then
+  ok "A12 status shows cloud-agent stub"
+else
+  bad "A12 status shows cloud-agent stub"
+fi
+
+note "-- A10 feed pack drop zone --"
+mkdir -p "$FEED"
+cargo run -q -p model-estate -- task --estate "$ESTATE" --agent horizon --act model --object xai_grok --mock --feed-dir "$FEED"
+cargo run -q -p model-estate -- task --estate "$ESTATE" --agent research --act tool --object notes-append --payload "append a note" --mock --feed-dir "$FEED"
+cargo run -q -p estate-control -- feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id overnight-traces
+if [[ -f "$DROP/overnight-traces.pack.json" ]]; then
+  ok "A10 candidate pack written"
+else
+  bad "A10 candidate pack written"
+fi
+set +e
+cargo run -q -p estate-control -- feed promote --id overnight-traces >/tmp/cell90-promote.out 2>/tmp/cell90-promote.err
+promo=$?
+set -e
+if [[ "$promo" -ne 0 ]]; then
+  ok "A10 promote refused (manual curator)"
+else
+  bad "A10 promote must fail"
+fi
+
+note "-- cargo test (workspace) --"
+cargo test --workspace --quiet
+ok "cargo test --workspace"
+
+mkdir -p gate-reports
+{
+  echo "# Cell One Day-90 beachhead report"
+  echo
+  echo "generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "pass: $PASS"
+  echo "fail: $FAIL"
+  echo
+  echo "A10 feed pack (no auto-promote), A11 suspend/resume, A12 reviewable plan + placement stub."
+  echo "Live Grok / GPU not required. CI stays thin."
+} > "$REPORT"
+
+echo
+echo "report: $REPORT  pass=$PASS fail=$FAIL"
+if [[ "$FAIL" -ne 0 ]]; then
+  exit 1
+fi
+echo "A10–A12 BEACHHEAD GREEN"

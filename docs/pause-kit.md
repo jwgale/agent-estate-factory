@@ -12,6 +12,7 @@ Cell One is pause-safe when desired-state lives on disk and runtime is disposabl
 | Lane roots | `lanes/{horizon,research,sanctum}/` |
 | Plans | `plans/` (append-only) |
 | Gate reports | `gate-reports/` |
+| Operator lifecycle | `.cell/lifecycle.json` (durable, not estate SoT) |
 
 ## Disposable
 
@@ -26,9 +27,9 @@ Cell One is pause-safe when desired-state lives on disk and runtime is disposabl
 ## Commands
 
 ```bash
-make pause-stop    # drop runtime + session dirs; leave estate/lanes/plans
-make pause-start   # validate + apply from files
-./scripts/pause-kit.sh status
+make pause-stop    # estate suspend: drop sessions/PIDs; keep lifecycle.json
+make pause-start   # estate resume from the estate file
+make status
 ```
 
-Stop does not delete `lanes/`. Start does not call frontier or local models.
+Stop does not delete `lanes/` or `lifecycle.json`. Start does not call frontier or local models. Cloud-agent placements are not spawned.

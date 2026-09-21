@@ -9,6 +9,7 @@ agent-tools/
 .env.*
 plans/*
 !plans/.gitkeep
+!plans/README.md
 gate-reports/*
 !gate-reports/.gitkeep
 **/.lane-owner

@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory charter
 
-Status: Day 0–30 **A1–A4 locked**. Day 31–60 **A5–A9** (this file). Edits to this file are how defaults change. Factory altitude, not a product spine.
+Status: Day 0–30 **A1–A4 locked**. Day 31–60 **A5–A9 locked**. Day 61–90 **beachhead toward A10–A12** (this file). Edits to this file are how defaults change. Factory altitude, not a product spine.
 
 Schema (desired-state shape): [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json)  
 Example estate: [`examples/estate.yaml`](examples/estate.yaml)  
@@ -22,9 +22,9 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 7. **Intentions:** Deny-default for tool, MCP, mount, model, and cross-lane memory. Own-lane memory read is allowed. Model use is a declared allow-list on the agent (`models:`), same class as tools.
 8. **Mixed path:** authorize (A3–A4) → local specialist (A8, policy-precheck) → tool or frontier (A7). Data plane (`model-estate`) only. Control does not complete. Keep A7–A9 thin: Grok + local endpoint drivers in the estate registry. Do not turn Cell One into LM Studio.
 9. **Isolation:** Swappable `IsolationDriver`. Cell One ships a profile-dir driver. Floor core does not hard-code vendor ids.
-10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`.
+10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`. Operator lifecycle (`estate suspend` / `resume`) writes durable `.cell/lifecycle.json` — not estate SoT.
 11. **Language:** Rust default on the hot path (conveyor allow/deny, isolation, supervisor core, mixed-path authorize). Escape hatches allowed. Not forever-Rust. Model drivers are traits; the local specialist process may be any language.
-12. **Day-90 horizon (not this cell):** full multi-agent workday + cloud agents. Do not build A10–A12 here.
+12. **Day 61–90 beachhead (toward A10–A12, not a full workday):** feed materializes candidate enrich packs (manual, no auto-promote). Operator suspend/resume is file-durable. Plans are the human control surface (PR-reviewable blast-radius). `placements[]` declares `box` and a `cloud-agent` stub so Day-90 operator day is not schema-blocked. Floor does not spawn cloud agents. Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md).
 
 ## Flexibility (must survive)
 
@@ -58,7 +58,7 @@ Those may exist later as *consumers* of the factory. They are not the factory.
 - Dual PE, vault, multi-box control plane
 - AI-gateway / MCP-catalog product surface (conveyor does not complete)
 - Mesh, Kubernetes, frozen public API
-- Feed auto-promote (feed is one-way scrubbed traces from both model paths)
+- Feed auto-promote (feed is one-way scrubbed traces + candidate packs; Jason edits the estate)
 - Treating PIDs or warm desktops as source of truth
 - Cyera CI or Rust classroom as agents
 - Tool slug taxonomy (still deferred)
@@ -71,7 +71,7 @@ Those may exist later as *consumers* of the factory. They are not the factory.
 | --- | --- | --- |
 | Control (`estate-control`) | validate, plan, apply, drift, compile intentions | execute tools/models; own agent memory |
 | Data (`floor-supervisor`, `model-estate`, `conveyor-proxy`, workers) | spawn/bind, deny-default, mixed model path | rewrite the estate file as SoT; silently learn policy; silently fall back to frontier when local is down |
-| Feed (`feed-collector`) | append scrubbed traces | block the data plane; auto-promote |
+| Feed (`feed-collector`) | append scrubbed traces; materialize candidate packs | block the data plane; auto-promote |
 
 Boundaries: Control→Data = apply; Data→Control = drift/acks; Data→Feed = scrubbed events; Feed→Control = pack manifests later (never silent); Feed→Data = nothing in Cell One.
 
