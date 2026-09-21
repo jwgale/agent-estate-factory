@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory
 
-**Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
+**Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
@@ -18,7 +18,7 @@ make operator-day   # fixtures only: suspend → plan → apply → feed import 
 estate help     # Day-90 topic pages (status / plan / apply / reconcile / feed-loop / backup)
 ```
 
-Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` to Actions.
+Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` or `make gate-90` to Actions — gate-90 wraps the local test suite. Walk without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md). `.cell/` paths: [`docs/cell-layout.md`](docs/cell-layout.md).
 
 ## Day-90 operator entrypoint
 
@@ -175,8 +175,8 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 
 ## Persist vs disposable
 
-Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `plans/reviewed/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/feed/feed-cursor.json`, `.cell/conveyor-mesh.json`, `.cell/conveyor-hops.json`, `.cell/conveyor-leases.json`.  
-Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`, `.cell/reconcile.json`, `.cell/reconcile.md`. Local review: `.cell/audit-export/` (not uploaded). See [`docs/cell-layout.md`](docs/cell-layout.md).
+Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `plans/reviewed/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/sessions.jsonl`, `.cell/feed/feed-cursor.json`, `.cell/conveyor-mesh.json`, `.cell/conveyor-hops.json`, `.cell/conveyor-leases.json`.  
+Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`, `.cell/reconcile.json`, `.cell/reconcile.md`. Patch file only: `.cell/reconcile-suggest.md`. Local review: `.cell/audit-export/` (not uploaded). Cell archives live under `backups/`, not `.cell/`. See [`docs/cell-layout.md`](docs/cell-layout.md).
 
 ## What is stubbed vs live
 
