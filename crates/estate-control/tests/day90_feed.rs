@@ -191,6 +191,25 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
     assert!(accept.status.success(), "{accept_text}");
     assert!(accept_text.contains("auto_apply: false"));
     assert!(accept_text.contains("applied_to_estate: false"));
+    assert!(
+        accept_text.contains("source_drivers: frontier, local"),
+        "{accept_text}"
+    );
+    let edit: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(accepted.join("overnight-traces.enrich-edit.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(edit["auto_apply"], false);
+    assert_eq!(edit["applied_to_estate"], false);
+    assert_eq!(
+        edit["source_drivers"],
+        serde_json::json!(["frontier", "local"])
+    );
+    let edit_md = std::fs::read_to_string(accepted.join("overnight-traces.enrich-edit.md")).unwrap();
+    assert!(
+        edit_md.contains("source_drivers: frontier, local"),
+        "{edit_md}"
+    );
 
     let promote = estate_bin()
         .args(["packs", "promote", "--id", "overnight-traces"])
@@ -284,5 +303,15 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     );
     let index = std::fs::read_to_string(work.join("packs/INDEX.md")).unwrap();
     assert!(index.contains("drivers=frontier,local"), "{index}");
+    let edit: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(work.join("packs/accepted/overnight-traces.enrich-edit.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        edit["source_drivers"],
+        serde_json::json!(["frontier", "local"])
+    );
+    assert_eq!(edit["applied_to_estate"], false);
     let _ = std::fs::remove_dir_all(&work);
 }

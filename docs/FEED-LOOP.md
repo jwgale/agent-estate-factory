@@ -32,8 +32,10 @@ part of `make smoke` (that gate is already long). Hosted CI never runs it.
    `auto_apply: false` and copies `source_drivers` onto the diff. The estate
    file is unchanged.
 4. **Accept.** `estate packs accept --curator jason` writes enrich-pack
-   *edit instructions* (`applied_to_estate: false`). Wrong curator refuses.
-   Promote still fails closed.
+   *edit instructions* (`applied_to_estate: false`) and copies
+   `source_drivers` onto them. An empty list stays `-`. A tag that does
+   not match `path_counts` refuses before the edit file is rewritten.
+   Wrong curator refuses. Promote still fails closed.
 
 ## Cursor durability
 

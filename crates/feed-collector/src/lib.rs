@@ -648,8 +648,17 @@ pub fn refuse_pack(pack: &PackManifest) -> Result<(), FeedError> {
 }
 
 fn refuse_source_drivers(pack: &PackManifest) -> Result<(), FeedError> {
+    refuse_source_driver_list(&pack.source_drivers, &pack.path_counts)
+}
+
+/// `frontier` / `local` only, sorted, unique, and matched to `path_counts`.
+/// Empty is valid when both counts are zero. Does not invent a class.
+pub fn refuse_source_driver_list(
+    drivers: &[String],
+    counts: &PathCounts,
+) -> Result<(), FeedError> {
     let mut prev = "";
-    for driver in &pack.source_drivers {
+    for driver in drivers {
         if driver != "frontier" && driver != "local" {
             return Err(FeedError::BadSourceDriver(format!(
                 "{driver} must be frontier or local"
@@ -662,22 +671,22 @@ fn refuse_source_drivers(pack: &PackManifest) -> Result<(), FeedError> {
         }
         prev = driver.as_str();
     }
-    if pack.path_counts.frontier > 0 && !pack.source_drivers.iter().any(|d| d == "frontier") {
+    if counts.frontier > 0 && !drivers.iter().any(|d| d == "frontier") {
         return Err(FeedError::BadSourceDriver(
             "frontier events are missing from source_drivers".into(),
         ));
     }
-    if pack.path_counts.local > 0 && !pack.source_drivers.iter().any(|d| d == "local") {
+    if counts.local > 0 && !drivers.iter().any(|d| d == "local") {
         return Err(FeedError::BadSourceDriver(
             "local events are missing from source_drivers".into(),
         ));
     }
-    if pack.source_drivers.iter().any(|d| d == "frontier") && pack.path_counts.frontier == 0 {
+    if drivers.iter().any(|d| d == "frontier") && counts.frontier == 0 {
         return Err(FeedError::BadSourceDriver(
             "frontier tag has no frontier events".into(),
         ));
     }
-    if pack.source_drivers.iter().any(|d| d == "local") && pack.path_counts.local == 0 {
+    if drivers.iter().any(|d| d == "local") && counts.local == 0 {
         return Err(FeedError::BadSourceDriver(
             "local tag has no local events".into(),
         ));
@@ -1053,15 +1062,24 @@ pub fn write_proposal_index(proposed_dir: &Path) -> Result<PathBuf, FeedError> {
         md.push_str("(no proposals)\n");
     } else {
         for path in &names {
-            let text = std::fs::read_to_string(path).unwrap_or_default();
-            if let Ok(p) = serde_json::from_str::<EnrichProposal>(&text) {
-                md.push_str(&format!(
-                    "- `{}.proposal.json` estate_bound={} would_add={} auto_apply={} source={}\n",
-                    p.id, p.diff.estate_bound, p.diff.would_add_to_estate, p.auto_apply, p.source_pack
-                ));
-            } else if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                md.push_str(&format!("- `{name}`\n"));
-            }
+            let text = std::fs::read_to_string(path)?;
+            let p: EnrichProposal = serde_json::from_str(&text).map_err(|e| {
+                FeedError::Parse(format!("{}: {e}", path.display()))
+            })?;
+            let drivers = if p.diff.source_drivers.is_empty() {
+                "-".to_string()
+            } else {
+                p.diff.source_drivers.join(",")
+            };
+            md.push_str(&format!(
+                "- `{}.proposal.json` estate_bound={} would_add={} auto_apply={} drivers={} source={}\n",
+                p.id,
+                p.diff.estate_bound,
+                p.diff.would_add_to_estate,
+                p.auto_apply,
+                drivers,
+                p.source_pack
+            ));
         }
     }
     let path = proposed_dir.join("INDEX.md");
@@ -1137,7 +1155,7 @@ pub fn propose_enrich(
         proposed_dir.join(format!("{}.proposal.md", pack.id)),
         render_proposal(&proposal),
     )?;
-    let _ = write_proposal_index(proposed_dir);
+    write_proposal_index(proposed_dir)?;
     Ok((proposal, path))
 }
 
@@ -1546,7 +1564,12 @@ mod tests {
         assert!(!proposal.diff.estate_bound);
         assert!(path.ends_with("overnight-traces.proposal.json"));
         assert!(proposed.join("overnight-traces.proposal.md").is_file());
-        assert!(proposed.join("INDEX.md").is_file());
+        let index = std::fs::read_to_string(proposed.join("INDEX.md")).unwrap();
+        assert!(index.contains("drivers=local"), "{index}");
+        assert!(
+            !index.contains("drivers=frontier"),
+            "local-only proposal must not invent frontier: {index}"
+        );
         let blob = std::fs::read_to_string(&path).unwrap();
         assert!(!blob.trim().is_empty(), "propose_enrich must not write empty");
         assert!(blob.contains(PROPOSAL_SCHEMA), "{blob}");
