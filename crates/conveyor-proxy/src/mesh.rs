@@ -7,7 +7,8 @@
 //! on floor-supervisor.
 
 use estate_schema::{
-    canonical_host_class, contains_sku, is_sacred_name, is_slug, normalize_host_class,
+    canonical_host_class, canonical_host_class_opt, contains_sku, is_sacred_name, is_slug,
+    normalize_host_class,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -314,19 +315,23 @@ pub fn slim_parse_placement_actual(path: &Path) -> Result<Vec<SlimPlacement>, Me
     let text = std::fs::read_to_string(path)?;
     let actual: SlimActual = serde_json::from_str(&text)
         .map_err(|e| MeshError::Parse(format!("placement-actual.json: {e}")))?;
-    Ok(actual
-        .leases
-        .into_iter()
-        .map(|row| SlimPlacement {
+    let mut out = Vec::new();
+    for row in actual.leases {
+        let host_class = match canonical_host_class_opt(Some(row.host_class.as_str())) {
+            Some(host) => host.to_string(),
+            None => return Err(MeshError::BadHostClass(row.host_class)),
+        };
+        out.push(SlimPlacement {
             placement_id: row.placement_id,
             kind: row.kind,
-            host_class: canonical_host_class(Some(row.host_class.as_str())).into(),
+            host_class,
             spawned: row.spawned,
             wired: row.wired,
             ttl_secs: row.ttl_secs,
             agents: row.agents,
-        })
-        .collect())
+        });
+    }
+    Ok(out)
 }
 
 /// Placement kind → hop kind. Unmatched kinds are not seeded.
@@ -361,7 +366,9 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
         } else {
             "lane-tool".into()
         },
-        host_class: canonical_host_class(Some(place.host_class.as_str())).into(),
+        host_class: canonical_host_class_opt(Some(place.host_class.as_str()))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| place.host_class.clone()),
         wired: place.wired,
         note: Some("derived from placement-actual (slim parse)".into()),
         ttl_secs: place.ttl_secs,
@@ -728,6 +735,55 @@ mod tests {
         assert!(dir.join(LEASES_FILE).is_file());
         let call = call_hop(&dir, "cell-one-box", "lane-tool").unwrap();
         assert!(call.allow);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tampered_sku_host_class_does_not_become_any() {
+        let dir = tmp();
+        let actual = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "desired_hash": "sha256:test",
+            "leases": [
+                {
+                    "placement_id": "cell-one-box",
+                    "kind": "box",
+                    "host_class": "rtx-5090",
+                    "spawned": true,
+                    "wired": true
+                }
+            ]
+        });
+        std::fs::write(dir.join("placement-actual.json"), actual.to_string()).unwrap();
+        let err = sync_from_placements(&dir).unwrap_err();
+        assert!(
+            matches!(err, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
+            "{err}"
+        );
+        assert!(
+            err.to_string().contains("refuse:bad-host-class"),
+            "{err}"
+        );
+        assert!(
+            !dir.join(MESH_FILE).is_file(),
+            "sync must not write hops after a host_class refuse"
+        );
+        let garbage = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "desired_hash": "sha256:test",
+            "leases": [
+                {
+                    "placement_id": "cell-one-box",
+                    "kind": "box",
+                    "host_class": "not-a-host",
+                    "spawned": true,
+                    "wired": true
+                }
+            ]
+        });
+        std::fs::write(dir.join("placement-actual.json"), garbage.to_string()).unwrap();
+        let err = slim_parse_placement_actual(&dir.join("placement-actual.json")).unwrap_err();
+        assert!(matches!(err, MeshError::BadHostClass(ref h) if h == "not-a-host"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
