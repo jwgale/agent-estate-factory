@@ -105,7 +105,13 @@ fn handle_specialist(body: &str) -> String {
             .to_string(),
     };
     let result: SpecialistResult = builtin_specialist(&req);
-    serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".into())
+    match serde_json::to_string_pretty(&result) {
+        Ok(s) if !s.trim().is_empty() && s.trim() != "{}" => s,
+        _ => {
+            r#"{"allow":false,"redacted_text":"","reason":"serialize","job":"policy-precheck"}"#
+                .into()
+        }
+    }
 }
 
 pub struct MockFrontierServer {

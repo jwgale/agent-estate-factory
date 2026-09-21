@@ -2,6 +2,12 @@ use anyhow::{bail, Context, Result};
 use estate_schema::{check_policy_file, load_and_install_sacred_file, load_estate, Estate};
 use std::path::Path;
 
+/// Present estate file must read. Empty-on-error would hide a rewrite
+/// (before == after == "").
+pub(crate) fn read_estate_text(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))
+}
+
 /// Missing estate file is optional. A file that exists but does not parse
 /// is refuse — backup/restore must not invent a locked-only sacred set.
 pub(crate) fn load_estate_if_present(path: &Path) -> Result<Option<Estate>> {
@@ -94,4 +100,28 @@ pub(crate) fn copy_tree_files(src: &Path, dest: &Path, copied: &mut Vec<String>)
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_estate_text;
+    use std::io::Write;
+
+    #[test]
+    fn read_estate_text_refuses_missing_instead_of_empty() {
+        let path = std::env::temp_dir().join(format!(
+            "cell-one-missing-estate-{}.yaml",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let err = read_estate_text(&path).unwrap_err();
+        assert!(
+            !err.to_string().is_empty(),
+            "missing estate must not look like empty==empty"
+        );
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, "name: keep").unwrap();
+        assert_eq!(read_estate_text(&path).unwrap().trim(), "name: keep");
+        let _ = std::fs::remove_file(&path);
+    }
 }
