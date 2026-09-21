@@ -124,6 +124,8 @@ pub enum CompatScript {
     V0Unparseable,
     /// OpenAI chat with choices but no message.content.
     OpenAiNoContent { models: Vec<String> },
+    /// OpenAI chat with empty message.content.
+    OpenAiEmptyContent { models: Vec<String> },
 }
 
 pub struct CompatServer {
@@ -239,6 +241,15 @@ fn compat_reply(
             }
             json_status(404, r#"{"error":"not found"}"#)
         }
+        CompatScript::OpenAiEmptyContent { models } => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(models));
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(r#"{"choices":[{"message":{"content":""}}]}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
     }
 }
 
@@ -262,6 +273,7 @@ fn handle_specialist(body: &str) -> String {
     let v: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::json!({}));
     let job = match v.get("job").and_then(|j| j.as_str()).unwrap_or("policy-precheck") {
         "redact" => SpecialistJob::Redact,
+        "complete" | "chat" => SpecialistJob::Complete,
         _ => SpecialistJob::PolicyPrecheck,
     };
     let req = SpecialistRequest {

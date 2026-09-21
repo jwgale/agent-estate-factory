@@ -97,7 +97,8 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 cargo run -p model-estate -- mock-local --bind 127.0.0.1:47831
 # other terminal:
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:47831
-cargo run -p model-estate -- specialist --text "hello from the factory"
+cargo run -p estate-control -- specialist --driver ollama --prompt "hello from the factory"
+cargo run -p model-estate -- specialist --job complete --prompt "hello from the factory"
 cargo run -p model-estate -- task --estate examples/estate.yaml \
   --agent research --act tool --object notes-append --payload "append a note"
 
@@ -109,7 +110,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
   --payload "Reply with the single word pong."
 ```
 
-`estate-control` lists bindings and env *names* only. It does not complete. See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
+`estate-control` lists bindings and env *names* only. The exception is the thin `estate specialist` complete delegate (`HttpLocal`, not a gateway). See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
 
 | Gate | What you should see |
 | --- | --- |

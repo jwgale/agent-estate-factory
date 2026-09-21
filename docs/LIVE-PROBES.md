@@ -10,9 +10,11 @@ Parked status: [`DAY90-PLUS.md`](DAY90-PLUS.md). Dry shapes (no network):
 Do not put `5090`, `4090`, or `m3-max` in estate binding ids or probe ids.
 A 5090 is one `consumer-nvidia` or `rented-nvidia` host.
 
-There is no `estate specialist`. Control does not execute tools or models.
-The equivalent is `model-estate specialist` (data plane). Mock-locked here;
-do not ping Jason to run it live.
+`estate specialist` is a thin data-plane delegate (`HttpLocal`). It is
+not a gateway. Default job is `complete`: Jason gets real model text
+back. Sacred tokens refuse before any HTTP POST. SKU endpoint / model
+ids / prompt / completion refuse. Missing endpoint refuses. Native MLX
+/ vLLM / TRT stay stub or experimental.
 
 ## What a live probe actually pings
 
@@ -124,22 +126,48 @@ cargo test -q -p model-estate --test specialist_cli
 cargo test -q -p estate-control --test day90_heal probes_live_skip
 ```
 
-## Specialist chat (not `estate specialist`)
+## Specialist complete (new live surface)
 
-Control does not have this verb. Data-plane equivalent:
+Default job is `complete`. Jason gets a non-empty `completion` field
+from the model. Control does not become a gateway; this is the same
+`HttpLocal` adapter as `model-estate specialist --job complete`.
+
+### Mock HTTP (this box / CI)
+
+Factory protocol (`mock-local` / `/v0/specialist`):
 
 ```bash
-# Terminal 1 - factory protocol, no GPU
+# Terminal 1
 cargo run -q -p model-estate -- mock-local --bind 127.0.0.1:47831
 ```
 
 ```bash
 # Terminal 2
-cargo run -q -p model-estate -- specialist --endpoint http://127.0.0.1:47831 \
-  --text "hello from the factory"
+cargo run -q -p estate-control -- specialist --endpoint http://127.0.0.1:47831 \
+  --driver ollama --prompt "hello from the factory"
 ```
 
 Expect exit 0:
+
+```
+{
+  "allow": true,
+  "redacted_text": "hello from the factory",
+  "reason": "complete allow",
+  "job": "complete",
+  "completion": "mock:hello from the factory"
+}
+```
+
+OpenAI-compatible mock (`CompatServer`) returns `"completion": "ok"`.
+Same adapter, `--driver llama.cpp`, posts `/v1/chat/completions`.
+
+Policy-precheck (no model text) still works:
+
+```bash
+cargo run -q -p model-estate -- specialist --endpoint http://127.0.0.1:47831 \
+  --job policy-precheck --text "hello from the factory"
+```
 
 ```
 {
@@ -150,11 +178,11 @@ Expect exit 0:
 }
 ```
 
-Sacred refuse (exit 1):
+Sacred refuse (exit 1, no HTTP POST):
 
 ```bash
-cargo run -q -p model-estate -- specialist --endpoint http://127.0.0.1:47831 \
-  --text "please mention cyera"
+cargo run -q -p estate-control -- specialist --endpoint http://127.0.0.1:47831 \
+  --prompt "please mention cyera"
 ```
 
 ```
@@ -162,39 +190,48 @@ cargo run -q -p model-estate -- specialist --endpoint http://127.0.0.1:47831 \
   "allow": false,
   "redacted_text": "",
   "reason": "policy-precheck denied sacred token 'cyera'",
-  "job": "policy-precheck"
+  "job": "complete"
 }
 specialist denied
 ```
 
 Missing `--endpoint` and unset `CELL_LOCAL_ENDPOINT` refuses (exit 1).
-No silent allow.
+SKU endpoint / `CELL_LOCAL_MODEL` / listed model id / prompt /
+completion refuses. No silent allow.
 
-Compat chat (OpenAI / Ollama / llama.cpp server) posts the **request
-text**, not a dummy `ping`. Policy stays `builtin_specialist`. In-process
-lock: `HttpLocal` + `CompatServer` (including `llama.cpp` runtime against
-OpenAI `/v1/chat/completions`).
+### Jason Mac (Ollama already PASSed probes --live)
 
-Optional later, on a box that already has Ollama from the #23 probe
-(not a new Jason ping):
+This is the one new command. Same `CELL_LOCAL_ENDPOINT` as the #23 probe.
 
 ```bash
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
-# after `ollama pull llama3`, or set CELL_LOCAL_MODEL=llama3
-cargo run -q -p model-estate -- specialist --text "hello from the factory"
+# after `ollama pull llama3`, or: export CELL_LOCAL_MODEL=llama3
+cargo run -q -p estate-control -- specialist --driver ollama \
+  --prompt "Reply with the single word pong."
 ```
 
-llama.cpp server (same OpenAI adapter; mock-locked here):
+Equivalent:
 
 ```bash
-cargo run -q -p model-estate -- specialist --runtime llama.cpp \
-  --endpoint http://127.0.0.1:8080 --text "hello from the factory"
+cargo run -q -p model-estate -- specialist --job complete \
+  --prompt "Reply with the single word pong."
 ```
 
-`READY_FOR_LIVE_TEST` for this chat verb: **no**. Mock HTTP is the proof.
-Do not ping Jason unless a new surface needs a box (native MLX, a real
-live specialist round-trip he has not already been asked for, or a
-5090-specific path).
+Expect exit 0, `"allow": true`, `"job": "complete"`, and a **non-empty
+`completion`**. Wording varies by model (often `pong` / `Pong.`). It
+must not be the prompt echoed as policy `redacted_text` only. Empty
+`completion` is refuse.
+
+llama.cpp server (same OpenAI adapter):
+
+```bash
+cargo run -q -p estate-control -- specialist --driver llama.cpp \
+  --endpoint http://127.0.0.1:8080 --prompt "Reply with the single word pong."
+```
+
+`READY_FOR_LIVE_TEST` for this complete verb: **yes**. Mock HTTP locks
+the shape. Jason can run the Mac command above against the Ollama that
+already PASSed `probes --live` and get real text back.
 
 ## Jason Mac (Apple Silicon) - Ollama-on-Mac
 
@@ -285,4 +322,5 @@ Down local is `local:down` / `model.local.down`. No silent Grok fallback.
 | `live_probed=true` from `mock-local` | MLX Supported, or weights green |
 | mlx note `live ok` | Catalog card flipped off stub; native MLX |
 | Empty models list `live ok` | A pulled model; only the HTTP server is up |
-| `model-estate specialist` allow on mock-local | A live Ollama chat Jason ran |
+| `estate specialist` `completion` on mock-local (`mock:...`) | A live Ollama chat Jason ran |
+| `estate specialist` `completion` against Ollama | Native MLX, or a 5090-specific path |

@@ -1,5 +1,4 @@
-//! `model-estate specialist` is the control-plane equivalent of
-//! `estate specialist` (which does not exist: control does not execute models).
+//! `model-estate specialist` shares `run_http_specialist` with `estate specialist`.
 
 use std::process::Command;
 
@@ -79,10 +78,41 @@ fn specialist_cli_llama_cpp_openai_path() {
 }
 
 #[test]
+fn specialist_cli_complete_returns_model_text() {
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::Ollama {
+        models: vec!["llama3".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--job",
+            "complete",
+            "--runtime",
+            "ollama",
+            "--endpoint",
+            &srv.endpoint(),
+            "--prompt",
+            "ping",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"completion\": \"ok\""), "{stdout}");
+    assert!(stdout.contains("\"job\": \"complete\""), "{stdout}");
+}
+
+#[test]
 fn specialist_cli_refuses_missing_endpoint() {
     let out = bin()
         .args(["specialist", "--text", "hello"])
         .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_RENTED_ENDPOINT")
         .output()
         .unwrap();
     assert!(!out.status.success());
