@@ -15,8 +15,9 @@ pub use error::EstateError;
 pub use firewall::{authorize, read_lane_file, AccessRequest, Decision, Deny};
 pub use hash::estate_hash;
 pub use plan::{
-    covering_plan_stem, diff_estates, list_plans, plan_covers_hash, render_plan, render_review_diff,
-    write_plan, write_plan_index, EstatePlan, PlanDelta, PlanIndexEntry,
+    covering_plan, covering_plan_stem, diff_estates, list_plans, load_plan_json,
+    plan_against_is_fresh, plan_covers_hash, render_plan, render_review_diff, write_plan,
+    write_plan_index, CoveringPlan, EstatePlan, PlanDelta, PlanIndexEntry,
 };
 pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
 pub use types::{
