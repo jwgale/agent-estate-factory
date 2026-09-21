@@ -38,6 +38,8 @@ not invent a spawn driver.
 | `estate packs accept` | Enrich-pack edit instructions. Does not rewrite `estate.yaml`. Needs `--curator jason`. |
 | Compile-only CI | One `pull_request` job. `cargo check --workspace --locked`. No `cargo test` on Actions. |
 | Dual-layer sacred | Locked Cyera CI + Rust classroom. Sanctum is not Cyera. |
+| `estate help` | Topic pages for the Day-90 loop. Not a studio. |
+| `estate backup --prune N` | Local rotate. Not a remote vault. |
 
 ## Rails
 

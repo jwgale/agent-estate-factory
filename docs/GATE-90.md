@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1 Day 0–60, PR #2 Day 61–90, PR #3 live probes + `make day90`, PR #4 heal/accept, PR #5 doctor --strict / `make gate-90`). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local.
+A10–A12 plus overnight waves are **on `main`** (PR #1–#6). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local.
 
 `make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
@@ -9,6 +9,7 @@ make gate-90    # Day-90 operator entrypoint (local)
 make smoke      # doctor + fixtures-check + operator-day + cargo test + day90
 make day90      # status → plan → dry-run → apply → reconcile → --suggest
 make feed-loop  # scrubbed trace → pack → propose → accept (not in smoke)
+estate help     # Day-90 topic pages
 estate doctor --strict
 ```
 
@@ -35,6 +36,9 @@ estate doctor --strict
 | Feed cursor durability | green | schema + packed_id + rematerialize keeps cursor |
 | Placement-actual refuse round-trip | green | every reconcile refuse code, schema preserved |
 | Honest live-box parking lot | green | [`DAY90-PLUS.md`](DAY90-PLUS.md) |
+| `estate help` topic pages | green | `estate help status` / `plan` / `apply` / `reconcile` / `feed-loop` / `backup` |
+| `estate backup --prune N` | green | keep newest N cell archives; `N=0` refuses |
+| Convey call policy deny | green | `policy-deny.yaml` refuses `convey-call` |
 
 ## Remaining Day-90+ (honest; parked, not green)
 
