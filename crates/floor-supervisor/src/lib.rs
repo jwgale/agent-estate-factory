@@ -84,6 +84,23 @@ pub struct DriftReport {
     pub notes: Vec<String>,
 }
 
+impl DriftReport {
+    /// Sessions still match. Only placement leases are missing (post
+    /// `expire --forget`). Apply restamps; this is not `--force` drift.
+    pub fn lease_refresh_only(&self) -> bool {
+        !self.missing_leases.is_empty()
+            && self.extra_leases.is_empty()
+            && self.spawned_cloud_agents.is_empty()
+            && self.lease_kind_mismatch.is_empty()
+            && self.host_class_mismatch.is_empty()
+            && self.missing_agents.is_empty()
+            && self.extra_agents.is_empty()
+            && self.mismatched_sessions.is_empty()
+            && self.missing_session_dirs.is_empty()
+            && self.missing_lane_roots.is_empty()
+    }
+}
+
 pub fn apply(
     estate: &Estate,
     state_dir: &Path,
@@ -185,6 +202,8 @@ pub enum ApplyIdentity {
     Unchanged,
     Drift { notes: Vec<String> },
     DesiredChanged,
+    /// Expired rows were forgotten. Apply restamps leases. Not `--force`.
+    LeaseRefresh { missing: Vec<String> },
 }
 
 /// Identical desired + in_sync → unchanged. Hash match + drift → refuse unless --force.
@@ -202,6 +221,10 @@ pub fn classify_apply(
     let report = drift_with_roots(estate, state_dir, Some(roots_base))?;
     if report.in_sync {
         Ok(ApplyIdentity::Unchanged)
+    } else if report.lease_refresh_only() {
+        Ok(ApplyIdentity::LeaseRefresh {
+            missing: report.missing_leases,
+        })
     } else {
         Ok(ApplyIdentity::Drift {
             notes: report.notes,
@@ -448,6 +471,35 @@ mod tests {
             }
             other => panic!("expected drift, got {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn classify_apply_lease_refresh_after_forget() {
+        let estate = example();
+        let tmp = tempfile();
+        let state = tmp.join("state");
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        let mut actual = load_placements(&state).unwrap().unwrap();
+        for lease in &mut actual.leases {
+            lease.ttl_secs = Some(1);
+            lease.issued_at = Some(1);
+            lease.expires_at = Some(1);
+        }
+        write_placements(&state, &actual).unwrap();
+        let forgotten = forget_expired_leases(&state).unwrap();
+        assert!(!forgotten.is_empty());
+        match classify_apply(&estate, &state, &tmp).unwrap() {
+            ApplyIdentity::LeaseRefresh { missing } => {
+                assert!(missing.contains(&"cell-one-box".into()));
+            }
+            other => panic!("expected lease-refresh, got {other:?}"),
+        }
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        assert_eq!(
+            classify_apply(&estate, &state, &tmp).unwrap(),
+            ApplyIdentity::Unchanged
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
