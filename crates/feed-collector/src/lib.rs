@@ -37,6 +37,29 @@ pub enum FeedError {
     BadModelHint(String),
     #[error("refuse:source-path: '{0}' is not a relative path (or encodes a SKU)")]
     BadSourcePath(String),
+    #[error("refuse:curator: curator '{provided}' does not match locked curator '{want}'")]
+    WrongCurator { provided: String, want: String },
+}
+
+/// Overnight lock. Jason curates. Do not reopen.
+pub const LOCKED_CURATOR: &str = "jason";
+
+pub fn refuse_curator(provided: &str, estate_curator: &str) -> Result<(), FeedError> {
+    let have = provided.trim().to_ascii_lowercase();
+    let estate = estate_curator.trim().to_ascii_lowercase();
+    if have != LOCKED_CURATOR {
+        return Err(FeedError::WrongCurator {
+            provided: provided.to_string(),
+            want: LOCKED_CURATOR.into(),
+        });
+    }
+    if !estate.is_empty() && estate != LOCKED_CURATOR {
+        return Err(FeedError::WrongCurator {
+            provided: estate_curator.to_string(),
+            want: LOCKED_CURATOR.into(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -634,6 +657,26 @@ pub fn import_pack(
     id: &str,
     estate_pack_ids: &[String],
 ) -> Result<(ImportedPack, PathBuf), FeedError> {
+    import_pack_for(
+        drop_dir,
+        accepted_dir,
+        id,
+        estate_pack_ids,
+        LOCKED_CURATOR,
+        LOCKED_CURATOR,
+    )
+}
+
+/// Explicit Feed→Control import gated on the locked curator.
+pub fn import_pack_for(
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    id: &str,
+    estate_pack_ids: &[String],
+    curator: &str,
+    estate_curator: &str,
+) -> Result<(ImportedPack, PathBuf), FeedError> {
+    refuse_curator(curator, estate_curator)?;
     refuse_pack_id(id)?;
     let source = drop_dir.join(format!("{id}.pack.json"));
     let raw = std::fs::read_to_string(&source)
@@ -677,6 +720,36 @@ pub fn import_pack(
     );
     let _ = write_pack_index(drop_dir);
     Ok((imported, path))
+}
+
+/// Open enrich proposals. Never auto-applied.
+pub fn list_open_proposals(proposed_dir: &Path) -> Result<Vec<String>, FeedError> {
+    if !proposed_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut ids = Vec::new();
+    let mut names: Vec<PathBuf> = std::fs::read_dir(proposed_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .map(|n| n.ends_with(".proposal.json"))
+                .unwrap_or(false)
+        })
+        .collect();
+    names.sort();
+    for path in names {
+        let stem = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .trim_end_matches(".proposal.json");
+        if !stem.is_empty() {
+            ids.push(stem.to_string());
+        }
+    }
+    Ok(ids)
 }
 
 pub const PROPOSAL_SCHEMA: &str = "cell-one.enrich-proposal.v0";
@@ -1231,6 +1304,27 @@ mod tests {
             write_drop_pack(&drop, &sku_hint),
             Err(FeedError::BadModelHint(_))
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_refuses_wrong_curator() {
+        refuse_curator("jason", "jason").unwrap();
+        let err = refuse_curator("not-jason", "jason").unwrap_err();
+        assert!(err.to_string().contains("refuse:curator"));
+        let dir = tmp();
+        let drop = dir.join("drop");
+        materialize_from_feed(&dir.join("feed"), &drop, "overnight-traces").unwrap();
+        let err = import_pack_for(
+            &drop,
+            &dir.join("accepted"),
+            "overnight-traces",
+            &[],
+            "robot",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(matches!(err, FeedError::WrongCurator { .. }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
