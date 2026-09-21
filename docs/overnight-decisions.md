@@ -60,6 +60,17 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–4 stay.
 34. **`apiVersion` / `kind` fail closed.** Absent `apiVersion` is legacy `version: 0`. Known: `cell-one.estate.v0` / `v0` and `kind: agent-estate`. Unknown values refuse with an upgrade hint. `examples/estate.yaml` is unchanged (hash-stable).
 35. **Operator-day grew sessions / plan-diff / hop expire / fixtures-check.** Still fixtures only.
 
+## Wave 6 (same PR #2 — backup, policy, catalog caps)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–5 stay.
+
+36. **Backup/restore is a local cell archive.** `estate backup` copies durable `.cell/` files (plans history, lifecycle, leases, audits, journals, conveyor mesh) into `backups/cell-backup-unix{secs}/` with `backup.json` (`cell-one.cell-backup.v0`) + `MANIFEST.md`. `estate restore --dry-run` writes nothing. Restore refuses `refuse:sacred-mismatch` when backup sacred ids are not a symmetric match to the current estate (canonical exclusion ids only; aliases omitted so backup-with-estate matches restore-with-estate). Not uploaded.
+37. **Policy pack is a declarative deny/allow stub.** `policy/cell-one.policy.v0.yaml` is checked on apply and convey-call (also backup/restore). Known actions: `apply` / `convey-call` / `backup` / `restore`. Unknown actions fail closed (`refuse:unknown-action`). Missing file allows (crate-cwd tests). Default is deny without a matching allow. Fixtures: `examples/fixtures/policy-{allow,deny,unknown-action}.yaml`. `estate policy check`.
+38. **Catalog cards are flag-complete.** Each driver has `streaming` / `tools` / `vision` / `context_tokens`. `estate catalog` prints them. File SoT `schema/local-catalog.v0.json` stays eq to `catalog_file()`. MLX/vLLM/TRT stay stub/experimental; flags are filled in.
+39. **Pause-kit proof is automated.** `estate pause-proof` / `pause_kit_proof`: apply → suspend → kill-process simulation (`rm -rf sessions/`) → resume. Leases survive on disk. Cloud-agent stays unspawned. Drift in_sync. Operator-day runs it on a separate state dir.
+40. **`make smoke` is local only.** `scripts/smoke.sh` = doctor + fixtures-check + operator-day + `cargo test --workspace`. Operator-day does not call smoke (no recursion). Never add to Actions.
+41. **Operator-day / fixtures-check grew Wave 6.** Catalog flags, policy allow/deny/unknown, backup + dry-run restore + sacred-mismatch, pause-proof. Still fixtures only.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -84,6 +95,9 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–4 stay.
 | Session journal is not SoT | Same class as lifecycle.jsonl | Do not treat it as desired-state |
 | Plan blast width is added+removed+changed counts | Human gate, not a session-count heuristic | Revisit if Jason wants session-count width |
 | `apiVersion` is optional | Legacy `version: 0` estates stay valid | Require it only after a hash-stable cut |
+| Missing policy file allows | Crate-cwd CLI tests have no `policy/` | Repo-root operator-day enforces the shipped pack |
+| Backup sacred compare uses canonical ids | Aliases would mismatch backup-with-estate vs locked-only | Do not store alias strings in `backup.json` |
+| `make smoke` is not in operator-day | Recursion / double cargo test | Keep smoke as the outer local wrap |
 
 ## Anti-shrink (still)
 
@@ -95,7 +109,7 @@ Jason’s inbox was filling with Actions failure mail. Until ~7am America/Chicag
 
 - No GitHub Actions workflows. `ci.yml` is gone on `main` and on `cursor/day61-90-beachhead-2950`.
 - Do not add a workflow file overnight. Do not open extra PRs that would retrigger CI.
-- Gate is local only: `cargo check --workspace --locked`, `cargo test --workspace`, `make gate` / `make gate-60` / `make gate-90`.
+- Gate is local only: `cargo check --workspace --locked`, `cargo test --workspace`, `make gate` / `make gate-60` / `make gate-90` / `make smoke`.
 - Tomorrow, if Jason wants hosted CI back: one `pull_request` job, `cargo check --workspace --locked` only, timeout ≤ 10. Never `cargo test` on Actions overnight.
 
 ## Origin
