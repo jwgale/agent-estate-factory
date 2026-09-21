@@ -244,18 +244,38 @@ pub struct Placement {
     pub note: Option<String>,
 }
 
+/// Locked host_class names: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`.
+/// Aliases (`rtx-consumer` / `rtx_consumer`, `nvidia-rental` / `nvidia_rental`) map onto
+/// those names. Do not reopen the contract.
+pub fn normalize_host_class(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "consumer-nvidia" | "rtx-consumer" => Some("consumer-nvidia"),
+        "apple-silicon" => Some("apple-silicon"),
+        "rented-nvidia" | "nvidia-rental" => Some("rented-nvidia"),
+        "any" => Some("any"),
+        _ => None,
+    }
+}
+
 /// Portable host class. Hardware is a driver choice, not a SKU.
 pub fn is_host_class(raw: &str) -> bool {
-    matches!(
-        raw.trim().to_ascii_lowercase().as_str(),
-        "consumer-nvidia"
-            | "consumer_nvidia"
-            | "apple-silicon"
-            | "apple_silicon"
-            | "rented-nvidia"
-            | "rented_nvidia"
-            | "any"
-    )
+    normalize_host_class(raw).is_some()
+}
+
+/// True when both sides normalize to the same locked host_class.
+pub fn host_class_eq(a: &str, b: &str) -> bool {
+    match (normalize_host_class(a), normalize_host_class(b)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// Canonical locked name, or `"any"` when unset/empty.
+pub fn canonical_host_class(raw: Option<&str>) -> &'static str {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(value) => normalize_host_class(value).unwrap_or("any"),
+        None => "any",
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

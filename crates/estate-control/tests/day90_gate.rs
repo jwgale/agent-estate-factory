@@ -1,7 +1,8 @@
 //! Day 61–90 beachhead toward A10–A12. No live Grok / GPU required.
 
 use estate_schema::{
-    diff_estates, load_estate_str, plan_covers_hash, render_review_diff, write_plan,
+    diff_estates, load_estate_str, load_plan_json, plan_against_is_fresh_strict, plan_covers_hash,
+    plan_is_reviewable, render_review_diff, render_security_iac, write_plan,
 };
 use feed_collector::{
     append_event, import_pack, materialize_from_feed, refuse_promote, ScrubbedEvent,
@@ -152,4 +153,63 @@ fn a12_cloud_driver_never_spawns() {
     let lease = CloudAgentDriver.claim(&placement);
     assert!(!lease.spawned);
     assert_eq!(lease.driver, "cloud-agent");
+}
+
+#[test]
+fn wave2_security_iac_and_strict_fresh_plan() {
+    let e = example();
+    let plan = diff_estates(&e, None);
+    assert!(plan_is_reviewable(&plan));
+    assert!(render_security_iac(&plan).contains("Security-as-IaC"));
+    assert!(!plan_against_is_fresh_strict(&plan, Some(&plan.desired_hash)));
+    let fixture = load_plan_json(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/valid/covering-plan.json"
+    )))
+    .unwrap();
+    assert!(plan_is_reviewable(&fixture));
+    let stale = load_plan_json(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/invalid/stale-plan.json"
+    )))
+    .unwrap();
+    assert!(!plan_against_is_fresh_strict(
+        &stale,
+        Some("sha256:0000000000000000000000000000000000000000000000000000000000000001")
+    ));
+}
+
+#[test]
+fn wave2_host_matrix_and_convey_mesh() {
+    for rel in [
+        "hosts/rtx-consumer.yaml",
+        "hosts/apple-silicon.yaml",
+        "hosts/nvidia-rental.yaml",
+    ] {
+        let path = format!(
+            "{}/../../examples/{rel}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let estate = estate_schema::load_estate(std::path::Path::new(&path)).unwrap();
+        assert!(estate.placements.iter().any(|p| p.id == "cell-one-box"));
+    }
+    let root = tmp();
+    let lease = conveyor_proxy::declare_hop(
+        &root,
+        conveyor_proxy::HopDecl {
+            id: "box-notes".into(),
+            kind: "box".into(),
+            capability: "notes-append".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+        },
+    )
+    .unwrap();
+    assert!(lease.granted);
+    assert!(conveyor_proxy::call_hop(&root, "box-notes", "notes-append")
+        .unwrap()
+        .allow);
+    assert!(conveyor_proxy::call_hop(&root, "missing", "lane-tool").is_err());
+    let _ = std::fs::remove_dir_all(&root);
 }
