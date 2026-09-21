@@ -1,0 +1,73 @@
+# Cell One synthetic estate — Horizon / Research / Sanctum
+# Desired-state file is the control API. Runtime is not SoT.
+
+version: 0
+kind: agent-estate
+name: cell-one-synthetic
+schema: schema/estate.v0.schema.json
+default_effect: deny
+
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+    tools: []
+    mounts: []
+    mcp: []
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+    tools:
+      - id: notes-append
+        description: Append a note inside the Research lane
+    mounts:
+      - id: notes
+        path: notes
+        description: Research notes directory (own lane only)
+    mcp: []
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+    tools: []
+    mounts: []
+    mcp: []
+
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+
+# Deny-default: no cross-lane memory, no extra tools, no MCP.
+intentions: []
+
+# Equal-class placeholders. Floor core must not hard-code these vendor hints.
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    params:
+      hint: xai-grok
+    wired: false
+  - id: gpu_5090
+    class: local
+    driver: local-gpu
+    params:
+      hint: nvidia-5090
+    wired: false
+
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera, cyera_ci]
+    reason: Cyera CI must not be an estate agent. Sanctum is not Cyera.
+  - id: rust-classroom
+    aliases: [rust_classroom]
+    reason: Rust classroom stays outside the estate; it is not an agent lane.
