@@ -50,6 +50,65 @@ pub enum SupervisorError {
     Other(String),
 }
 
+pub(crate) fn refuse_empty_blob(body: &str) -> Result<(), SupervisorError> {
+    if body.trim().is_empty() {
+        return Err(SupervisorError::Other("serialize: empty".into()));
+    }
+    Ok(())
+}
+
+pub(crate) fn serialize_pretty<T: Serialize>(value: &T) -> Result<String, SupervisorError> {
+    let body = serde_json::to_string_pretty(value)
+        .map_err(|e| SupervisorError::Other(format!("serialize: {e}")))?;
+    refuse_empty_blob(&body)?;
+    Ok(body)
+}
+
+pub(crate) fn serialize_line<T: Serialize>(value: &T) -> Result<String, SupervisorError> {
+    let line = serde_json::to_string(value)
+        .map_err(|e| SupervisorError::Other(format!("serialize: {e}")))?;
+    refuse_empty_blob(&line)?;
+    if line.trim() == "{}" {
+        return Err(SupervisorError::Other("serialize: empty object".into()));
+    }
+    Ok(line)
+}
+
+pub(crate) fn write_pretty_json<T: Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<(), SupervisorError> {
+    let body = serialize_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(path, body)?;
+    Ok(())
+}
+
+pub(crate) fn append_json_line<T: Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<(), SupervisorError> {
+    let line = serialize_line(value)?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .write(true)
+        .truncate(false)
+        .open(path)?;
+    use std::io::Write;
+    writeln!(file, "{line}")?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ActualState {
     pub desired_hash: String,
@@ -172,9 +231,7 @@ pub fn apply_with_profile_dir(
 
 pub fn write_actual(state_dir: &Path, actual: &ActualState) -> Result<(), SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
-    let path = state_dir.join("actual-state.json");
-    std::fs::write(path, serde_json::to_string_pretty(actual).unwrap_or_default())?;
-    Ok(())
+    write_pretty_json(&state_dir.join("actual-state.json"), actual)
 }
 
 pub fn write_desired_snapshot(state_dir: &Path, estate: &Estate) -> Result<(), SupervisorError> {
@@ -409,7 +466,7 @@ pub fn spawn_runtime_heartbeats(
         "heartbeats": heartbeats
     });
     let path = runtime.join("pids.json");
-    std::fs::write(&path, serde_json::to_string_pretty(&pids).unwrap_or_default())?;
+    write_pretty_json(&path, &pids)?;
     Ok(path)
 }
 
@@ -426,6 +483,35 @@ fn now_stamp() -> String {
 mod tests {
     use super::*;
     use isolation_driver::MemoryDriver;
+    use serde::ser::Error;
+
+    struct Boom;
+    impl Serialize for Boom {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(S::Error::custom("boom"))
+        }
+    }
+
+    #[test]
+    fn serialize_then_write_refuses_boom_and_leaves_sentinel() {
+        assert!(serialize_pretty(&Boom).is_err());
+        assert!(serialize_line(&Boom).is_err());
+        assert!(refuse_empty_blob("").is_err());
+        assert!(refuse_empty_blob("  \n").is_err());
+        assert!(serialize_line(&serde_json::json!({})).is_err());
+
+        let dir = tempfile();
+        let path = dir.join("placement-actual.json");
+        std::fs::write(&path, "sentinel\n").unwrap();
+        assert!(write_pretty_json(&path, &Boom).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "sentinel\n");
+
+        let log = dir.join("apply-audit.jsonl");
+        std::fs::write(&log, "keep\n").unwrap();
+        assert!(append_json_line(&log, &Boom).is_err());
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "keep\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn example() -> Estate {
         estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
