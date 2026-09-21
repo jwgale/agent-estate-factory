@@ -195,7 +195,10 @@ pub fn write_plan(plans_dir: &Path, plan: &EstatePlan) -> Result<std::path::Path
     let md_path = plans_dir.join(format!("{stem}.md"));
     let json_path = plans_dir.join(format!("{stem}.json"));
     std::fs::write(&md_path, render_plan(plan))?;
-    std::fs::write(&json_path, serde_json::to_string_pretty(plan).unwrap_or_default())?;
+    let json_body = serde_json::to_string_pretty(plan).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("serialize plan: {e}"))
+    })?;
+    std::fs::write(&json_path, json_body)?;
     std::fs::write(
         plans_dir.join(format!("{stem}.security.md")),
         render_security_iac(plan),
@@ -225,37 +228,45 @@ pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Erro
     for entry in std::fs::read_dir(plans_dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
+        // Only `plan-*` blast-radius files. `apply-*.json` audits share this dir
+        // and are a different schema — do not skip-parse them as empty plans.
         if let Some(stem) = name.strip_suffix(".md") {
-            if stem != "INDEX" && stem != "README" && !stem.ends_with(".security") {
+            if stem.starts_with("plan-") && !stem.ends_with(".security") {
                 stems.insert(stem.to_string());
             }
         } else if let Some(stem) = name.strip_suffix(".json") {
-            stems.insert(stem.to_string());
+            if stem.starts_with("plan-") {
+                stems.insert(stem.to_string());
+            }
         }
     }
-    Ok(stems
-        .into_iter()
-        .rev()
-        .map(|stem| {
-            let json = if plans_dir.join(format!("{stem}.json")).exists() {
-                Some(format!("{stem}.json"))
-            } else {
-                None
-            };
-            let loaded = json
-                .as_ref()
-                .and_then(|name| std::fs::read_to_string(plans_dir.join(name)).ok())
-                .and_then(|text| serde_json::from_str::<EstatePlan>(&text).ok());
-            PlanIndexEntry {
-                markdown: format!("{stem}.md"),
-                json,
-                desired_hash: loaded.as_ref().map(|p| p.desired_hash.clone()),
-                against_hash: loaded.as_ref().and_then(|p| p.against_hash.clone()),
-                created_at: loaded.as_ref().map(|p| p.created_at.clone()),
-                stem,
-            }
-        })
-        .collect())
+    let mut out = Vec::new();
+    for stem in stems.into_iter().rev() {
+        let json_path = plans_dir.join(format!("{stem}.json"));
+        let json = if json_path.is_file() {
+            Some(format!("{stem}.json"))
+        } else if json_path.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{} is not a file", json_path.display()),
+            ));
+        } else {
+            None
+        };
+        let loaded = match &json {
+            Some(name) => Some(load_plan_json(&plans_dir.join(name))?),
+            None => None,
+        };
+        out.push(PlanIndexEntry {
+            markdown: format!("{stem}.md"),
+            json,
+            desired_hash: loaded.as_ref().map(|p| p.desired_hash.clone()),
+            against_hash: loaded.as_ref().and_then(|p| p.against_hash.clone()),
+            created_at: loaded.as_ref().map(|p| p.created_at.clone()),
+            stem,
+        });
+    }
+    Ok(out)
 }
 
 pub fn load_plan_json(path: &Path) -> Result<EstatePlan, std::io::Error> {
@@ -264,31 +275,35 @@ pub fn load_plan_json(path: &Path) -> Result<EstatePlan, std::io::Error> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
 }
 
-pub fn covering_plan(plans_dir: &Path, hash: &str) -> Option<CoveringPlan> {
-    let entries = list_plans(plans_dir).ok()?;
+pub fn covering_plan(
+    plans_dir: &Path,
+    hash: &str,
+) -> Result<Option<CoveringPlan>, std::io::Error> {
+    let entries = list_plans(plans_dir)?;
     for entry in entries {
         let Some(json_name) = entry.json.clone() else {
             continue;
         };
-        let Ok(plan) = load_plan_json(&plans_dir.join(json_name)) else {
-            continue;
-        };
+        let plan = load_plan_json(&plans_dir.join(json_name))?;
         if plan.desired_hash == hash {
-            return Some(CoveringPlan {
+            return Ok(Some(CoveringPlan {
                 stem: entry.stem,
                 plan,
-            });
+            }));
         }
     }
-    None
+    Ok(None)
 }
 
-pub fn covering_plan_stem(plans_dir: &Path, hash: &str) -> Option<String> {
-    covering_plan(plans_dir, hash).map(|c| c.stem)
+pub fn covering_plan_stem(
+    plans_dir: &Path,
+    hash: &str,
+) -> Result<Option<String>, std::io::Error> {
+    Ok(covering_plan(plans_dir, hash)?.map(|c| c.stem))
 }
 
-pub fn plan_covers_hash(plans_dir: &Path, hash: &str) -> bool {
-    covering_plan_stem(plans_dir, hash).is_some()
+pub fn plan_covers_hash(plans_dir: &Path, hash: &str) -> Result<bool, std::io::Error> {
+    Ok(covering_plan_stem(plans_dir, hash)?.is_some())
 }
 
 /// Fresh when there is no last apply, or the plan was taken against that apply.
@@ -328,17 +343,16 @@ pub fn blast_grows(from: &EstatePlan, to: &EstatePlan) -> bool {
 }
 
 /// Newest plan JSON in `plans_dir` (list_plans is newest-first).
-pub fn latest_plan(plans_dir: &Path) -> Option<EstatePlan> {
-    let entries = list_plans(plans_dir).ok()?;
+/// A present plan JSON that does not parse is refuse, not "no plan".
+pub fn latest_plan(plans_dir: &Path) -> Result<Option<EstatePlan>, std::io::Error> {
+    let entries = list_plans(plans_dir)?;
     for entry in entries {
         let Some(name) = entry.json else {
             continue;
         };
-        if let Ok(plan) = load_plan_json(&plans_dir.join(name)) {
-            return Some(plan);
-        }
+        return Ok(Some(load_plan_json(&plans_dir.join(name))?));
     }
-    None
+    Ok(None)
 }
 
 /// Human-readable plan-vs-plan blast compare. Not a gateway changelog.
@@ -730,10 +744,16 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         write_plan(&dir, &plan).unwrap();
-        assert!(plan_covers_hash(&dir, &plan.desired_hash));
-        assert!(!plan_covers_hash(&dir, "sha256:deadbeef"));
-        assert!(covering_plan_stem(&dir, &plan.desired_hash).is_some());
-        let covering = covering_plan(&dir, &plan.desired_hash).unwrap();
+        std::fs::write(dir.join("apply-unix1-deadbeef.json"), "{\"note\":\"not a plan\"}\n")
+            .unwrap();
+        assert!(plan_covers_hash(&dir, &plan.desired_hash).unwrap());
+        assert!(!plan_covers_hash(&dir, "sha256:deadbeef").unwrap());
+        assert!(covering_plan_stem(&dir, &plan.desired_hash)
+            .unwrap()
+            .is_some());
+        let covering = covering_plan(&dir, &plan.desired_hash)
+            .unwrap()
+            .expect("covering plan");
         assert_eq!(covering.plan.schema, "cell-one.plan.v0");
         assert!(plan_against_is_fresh(&covering.plan, None));
         assert!(plan_against_is_fresh(&covering.plan, Some("sha256:other")));
@@ -760,6 +780,47 @@ mod tests {
         stale.against_hash = Some("sha256:old".into());
         assert!(!plan_against_is_fresh(&stale, Some("sha256:new")));
         assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:new")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unreadable_plan_json_is_refuse_not_empty() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-plan-garbage-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("plan-unix1-deadbeef.json"), "not-json\n").unwrap();
+        let list = list_plans(&dir).unwrap_err();
+        assert!(
+            list.to_string().contains("plan-unix1-deadbeef.json")
+                || list.to_string().contains("Invalid")
+                || list.to_string().contains("expected"),
+            "{list}"
+        );
+        let cover = covering_plan(&dir, "sha256:deadbeef").unwrap_err();
+        assert!(
+            cover.to_string().contains("plan-unix1-deadbeef.json")
+                || cover.to_string().contains("Invalid")
+                || cover.to_string().contains("expected"),
+            "{cover}"
+        );
+        let latest = latest_plan(&dir).unwrap_err();
+        assert!(
+            latest.to_string().contains("plan-unix1-deadbeef.json")
+                || latest.to_string().contains("Invalid")
+                || latest.to_string().contains("expected"),
+            "{latest}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("plan-unix1-deadbeef.json")).unwrap(),
+            "not-json\n"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
