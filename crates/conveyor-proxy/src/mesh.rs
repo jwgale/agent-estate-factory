@@ -133,9 +133,9 @@ struct SlimLeaseRow {
     #[serde(default = "default_host_class")]
     host_class: String,
     #[serde(default)]
-    pub spawned: bool,
+    spawned: bool,
     #[serde(default)]
-    pub wired: bool,
+    wired: bool,
 }
 
 /// Swappable hop backend. Conveyor talks to this trait only.
