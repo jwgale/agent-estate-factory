@@ -1,0 +1,112 @@
+# Cell One synthetic estate — Horizon / Research / Sanctum
+# Desired-state file is the control API. Runtime is not SoT.
+# Day 31–60: both model bindings wired; still deny-default + sacred dual-layer.
+# Hardware is a driver choice. Do not put SKUs in binding ids.
+
+version: 99
+kind: agent-estate
+name: cell-one-synthetic
+schema: schema/estate.v0.schema.json
+default_effect: deny
+
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models:
+      - id: xai_grok
+        description: Frontier complete under the estate (A7)
+      - id: local_slm
+        description: Local specialist in-path (A8)
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+    tools:
+      - id: notes-append
+        description: Append a note inside the Research lane
+    mounts:
+      - id: notes
+        path: notes
+        description: Research notes directory (own lane only)
+    mcp: []
+    models:
+      - id: local_slm
+        description: In-path policy-precheck before notes-append
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models: []
+
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+
+# Deny-default: no cross-lane memory, no extra tools, no MCP.
+intentions: []
+
+# Equal-class live bindings. Floor core must not hard-code vendor or SKU hints.
+# Secrets stay in env (XAI_API_KEY, CELL_LOCAL_ENDPOINT). Never in this file.
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    params:
+      hint: xai-grok
+      api_key_env: XAI_API_KEY
+      api_base_env: XAI_API_BASE
+      model_env: XAI_MODEL
+    wired: true
+  - id: local_slm
+    class: local
+    driver: ollama
+    params:
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      job: policy-precheck
+    wired: true
+
+# Jason curates the first specialist enrich packs by hand. No auto-promote.
+enrich_packs:
+  curator: jason
+  policy: manual
+  packs: []
+
+# Day 61–90: declared placements. Floor binds box sessions only.
+# cloud-agent is a stub so Day-90 operator day is not blocked. Not spawned.
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: any
+    agents: [horizon, research, sanctum]
+    wired: true
+    note: This machine. Isolation driver is profile-dir today; swappable later.
+  - id: cursor-cloud
+    kind: cloud-agent
+    host_class: any
+    agents: []
+    wired: false
+    note: Declared stub. Floor will not spawn this. Assign agents when Jason is ready.
+
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera, cyera_ci]
+    reason: Cyera CI must not be an estate agent. Sanctum is not Cyera.
+  - id: rust-classroom
+    aliases: [rust_classroom]
+    reason: Rust classroom stays outside the estate; it is not an agent lane.

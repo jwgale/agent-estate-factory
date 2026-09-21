@@ -10,12 +10,13 @@ Durable operator state lives under `.cell/`. Runtime is regenerable. The estate 
 | `reconcile.json` / `reconcile.md` | regenerable report | `estate reconcile` desired-vs-actual. Refuse codes: `missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`. |
 | `lifecycle.json` | durable | Operator intent (`running` / `suspended`). Not estate SoT. |
 | `lifecycle.jsonl` | durable history | Append-only suspend / resume / apply. |
+| `sessions.jsonl` | durable journal | Append-only spawn / unspawn / suspend / resume. Not SoT. Survives pause. |
 | `apply-audit.jsonl` | durable | Gated apply history. Cloud-agent spawned is always refuse. |
 | `catalog.json` | regenerable | Portable local catalog dump. File SoT is `schema/local-catalog.v0.json`. |
 | `model-actual.json` | regenerable | Binding actual after apply. |
 | `conveyor-mesh.json` | durable | Capability mesh (not a gateway). |
 | `conveyor-hops.json` | durable | Declared hops. |
-| `conveyor-leases.json` | durable | Hop leases. Call refuses without a granted lease. |
+| `conveyor-leases.json` | durable | Hop leases. Call refuses without a granted lease. Optional hop `ttl_secs` / `issued_at` / `expires_at`. |
 | `feed/events.jsonl` | durable | Scrubbed traces. No prompts, no keys. |
 | `feed/feed-cursor.json` | durable watermark | Survives rematerialize. |
 | `sessions/` | disposable | Profile-dir desktops. Discarded on suspend. |
