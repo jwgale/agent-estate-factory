@@ -31,8 +31,9 @@ pub use sessions::{
     tail_session_events, SessionEvent, SESSION_JOURNAL, SESSION_JOURNAL_SCHEMA,
 };
 pub use backup::{
-    backup_cell, render_restore, restore_cell, sacred_id_set, sacred_mismatch, CellBackup,
-    RestoreReport, BACKUP_META, BACKUP_SCHEMA,
+    backup_cell, list_cell_backups, prune_cell_backups, render_restore, restore_cell,
+    sacred_id_set, sacred_mismatch, CellBackup, PruneReport, RestoreReport, BACKUP_META,
+    BACKUP_SCHEMA,
 };
 pub use pause::{pause_kit_proof, PauseProof};
 

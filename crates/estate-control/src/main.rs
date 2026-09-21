@@ -3,6 +3,7 @@ mod cli;
 mod dispatch;
 mod doctor_strict;
 mod heal;
+mod help;
 mod helpers;
 mod ops;
 mod plan_apply;

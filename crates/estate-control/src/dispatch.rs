@@ -12,6 +12,7 @@ pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     crate::helpers::install_sacred(&cli.sacred)?;
     match cli.command {
+        Command::Help { topic } => crate::help::cmd_help(topic.as_deref()),
         Command::Validate { estate } => cmd_validate(&estate),
         Command::Plan {
             action,
@@ -216,7 +217,8 @@ pub(crate) fn run() -> Result<()> {
             out,
             estate,
             policy,
-        } => cmd_backup(&state_dir, &plans_dir, &out, &estate, &policy),
+            prune,
+        } => cmd_backup(&state_dir, &plans_dir, &out, &estate, &policy, prune),
         Command::Restore {
             from,
             state_dir,
