@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#12 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#13 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
@@ -54,6 +54,9 @@ estate doctor --strict
 | Pack propose→accept→promote leftover | green | no `promoted=true`; estate unchanged; promote writes nothing |
 | `reconcile --suggest` on drift | green | patch only; `placement-actual.json` bytes unchanged |
 | Vanilla doctor vs `--strict` | green | vanilla stays schema+CI; `--strict` is the pre-merge extras |
+| Plan diff / export-pr exits | green | wider refuses unless `--allow-wider`; export-pr exits 0 with risks; no `.cell` write |
+| Dry-run refuse writes nothing | green | `--require-plan`, policy-deny, expired; snapshot includes conveyor/sessions |
+| Curator clap vs `refuse:curator` | green | wrong curator refuses on import/accept/apply-import; accept missing flag is clap |
 
 ## Remaining Day-90+ (honest; parked, not green)
 
