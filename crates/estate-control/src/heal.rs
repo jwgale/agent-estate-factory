@@ -51,6 +51,34 @@ pub(crate) fn cmd_probes(live: bool) -> Result<()> {
     Ok(())
 }
 
+/// Thin data-plane delegate. Env-gated. Fail-closed. Not a gateway.
+pub(crate) fn cmd_specialist(
+    endpoint: Option<String>,
+    driver: &str,
+    job: &str,
+    agent: &str,
+    kind: &str,
+    prompt: Option<String>,
+    text: Option<String>,
+) -> Result<()> {
+    let text = prompt
+        .or(text)
+        .ok_or_else(|| anyhow::anyhow!("set --prompt or --text"))?;
+    let result = model_estate::run_http_specialist(
+        endpoint.as_deref(),
+        job,
+        agent,
+        kind,
+        &text,
+        driver,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    if !result.allow {
+        bail!("specialist denied");
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path, suggest: bool) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let before = load_placements(state_dir)?;
