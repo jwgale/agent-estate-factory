@@ -49,6 +49,17 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–3 stay.
 28. **`estate doctor` is one page.** Schema files present, `.github/workflows/*.yml` absent (quiet hours), `.cell` layout notes, expired/cloud-spawned fail. Greenfield `.cell` is a note, not a fail.
 29. **Operator-day grew dry-run / doctor / expire / redaction.** Still fixtures only.
 
+## Wave 5 (same PR #2 — journal, hop ttl, plan diff)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–4 stay.
+
+30. **Session journal is append-only.** Apply/suspend/resume write `.cell/sessions.jsonl` (`cell-one.session-journal.v0`) for spawn / unspawn / suspend / resume. `estate sessions list|tail`. Journal is not SoT. `sessions/` profiles stay disposable. Pause-safe: the journal survives suspend.
+31. **Convey hop TTL mirrors placement TTL.** Optional `ttl_secs` on `HopDecl` stamps `issued_at` / `expires_at` on the hop lease. `estate convey call` refuses expired (`refuse:expired`). `estate convey expire` lists (exit 1); `--forget` drops rows (does not spawn).
+32. **`estate plan` still generates.** `estate plan --estate` is unchanged. `estate plan diff` compares two plan JSON files or last-applied vs new. Human-readable width. Exit 1 if blast radius grows without `--allow-wider`.
+33. **Fixture library is a thin gate.** `examples/fixtures/happy.yaml` plus `refuse-*.yaml` for each validate refuse code. `make fixtures-check` / `scripts/fixtures-check.sh` runs `estate validate` (ok / fail-closed) and `estate doctor`.
+34. **`apiVersion` / `kind` fail closed.** Absent `apiVersion` is legacy `version: 0`. Known: `cell-one.estate.v0` / `v0` and `kind: agent-estate`. Unknown values refuse with an upgrade hint. `examples/estate.yaml` is unchanged (hash-stable).
+35. **Operator-day grew sessions / plan-diff / hop expire / fixtures-check.** Still fixtures only.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -70,6 +81,9 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–3 stay.
 | Apply dry-run never writes | Preview is the control surface next to plan | Keep it that way |
 | Expired leases refuse apply/resume | Fail closed; `--forget` is the refresh | Auto-renew only if Jason asks |
 | Specialist pack fields are optional | Existing `cell-one.pack.v0` fixtures stay valid | Do not require model_hint |
+| Session journal is not SoT | Same class as lifecycle.jsonl | Do not treat it as desired-state |
+| Plan blast width is added+removed+changed counts | Human gate, not a session-count heuristic | Revisit if Jason wants session-count width |
+| `apiVersion` is optional | Legacy `version: 0` estates stay valid | Require it only after a hash-stable cut |
 
 ## Anti-shrink (still)
 
