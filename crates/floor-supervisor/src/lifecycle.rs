@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub const LIFECYCLE_FILE: &str = "lifecycle.json";
+pub const LIFECYCLE_LOG: &str = "lifecycle.jsonl";
+pub const LIFECYCLE_SCHEMA: &str = "cell-one.lifecycle.v0";
+pub const LIFECYCLE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -26,6 +29,8 @@ impl LifecycleState {
 /// Survives `stop_runtime` (sessions/PIDs die; this file stays).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LifecycleRecord {
+    #[serde(default = "default_lifecycle_schema")]
+    pub schema: String,
     pub version: u32,
     pub state: LifecycleState,
     pub desired_hash: Option<String>,
@@ -36,10 +41,26 @@ pub struct LifecycleRecord {
     pub note: String,
 }
 
+fn default_lifecycle_schema() -> String {
+    LIFECYCLE_SCHEMA.to_string()
+}
+
+/// Append-only transition log. Durable. Not estate SoT.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LifecycleEvent {
+    pub ts: String,
+    pub from: Option<String>,
+    pub to: String,
+    pub action: String,
+    pub desired_hash: Option<String>,
+    pub note: String,
+}
+
 impl Default for LifecycleRecord {
     fn default() -> Self {
         Self {
-            version: 0,
+            schema: default_lifecycle_schema(),
+            version: LIFECYCLE_VERSION,
             state: LifecycleState::Suspended,
             desired_hash: None,
             estate_name: None,
@@ -74,39 +95,100 @@ pub fn write_lifecycle(state_dir: &Path, record: &LifecycleRecord) -> Result<(),
     Ok(())
 }
 
+pub fn append_lifecycle_event(
+    state_dir: &Path,
+    event: &LifecycleEvent,
+) -> Result<(), SupervisorError> {
+    std::fs::create_dir_all(state_dir)?;
+    let path = state_dir.join(LIFECYCLE_LOG);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    use std::io::Write;
+    writeln!(
+        file,
+        "{}",
+        serde_json::to_string(event).unwrap_or_default()
+    )?;
+    Ok(())
+}
+
+pub fn list_lifecycle_events(state_dir: &Path) -> Result<Vec<LifecycleEvent>, SupervisorError> {
+    let path = state_dir.join(LIFECYCLE_LOG);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let mut out = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let ev: LifecycleEvent = serde_json::from_str(line).map_err(|e| {
+            SupervisorError::Other(format!("lifecycle.jsonl line {}: {e}", i + 1))
+        })?;
+        out.push(ev);
+    }
+    Ok(out)
+}
+
+fn persist_transition(
+    state_dir: &Path,
+    prev: Option<&LifecycleRecord>,
+    record: &LifecycleRecord,
+    action: &str,
+) -> Result<(), SupervisorError> {
+    write_lifecycle(state_dir, record)?;
+    append_lifecycle_event(
+        state_dir,
+        &LifecycleEvent {
+            ts: now_rfc3339(),
+            from: prev.map(|p| p.state.as_str().to_string()),
+            to: record.state.as_str().to_string(),
+            action: action.to_string(),
+            desired_hash: record.desired_hash.clone(),
+            note: record.note.clone(),
+        },
+    )
+}
+
 pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
     let prev = load_lifecycle(state_dir).ok();
     stop_runtime(state_dir)?;
     crate::mark_leases_unspawned(state_dir)?;
     let record = LifecycleRecord {
-        version: 0,
+        schema: default_lifecycle_schema(),
+        version: LIFECYCLE_VERSION,
         state: LifecycleState::Suspended,
         desired_hash: prev.as_ref().and_then(|p| p.desired_hash.clone()),
         estate_name: prev.as_ref().and_then(|p| p.estate_name.clone()),
         suspended_at: Some(now_rfc3339()),
-        resumed_at: prev.and_then(|p| p.resumed_at),
+        resumed_at: prev.as_ref().and_then(|p| p.resumed_at.clone()),
         durable: true,
         note: "Suspended. Sessions and PIDs discarded. Estate, lanes, plans, lifecycle.json stay."
             .into(),
     };
-    write_lifecycle(state_dir, &record)?;
+    persist_transition(state_dir, prev.as_ref(), &record, "suspend")?;
     Ok(record)
 }
 
 pub fn mark_running(estate: &Estate, state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
     let prev = load_lifecycle(state_dir).ok();
     let record = LifecycleRecord {
-        version: 0,
+        schema: default_lifecycle_schema(),
+        version: LIFECYCLE_VERSION,
         state: LifecycleState::Running,
         desired_hash: Some(estate_hash(estate)),
         estate_name: Some(estate.name.clone()),
-        suspended_at: prev.and_then(|p| p.suspended_at),
+        suspended_at: prev.as_ref().and_then(|p| p.suspended_at.clone()),
         resumed_at: Some(now_rfc3339()),
         durable: true,
         note: "Applied from estate file. Runtime regenerable. Cloud-agent placements not spawned."
             .into(),
     };
-    write_lifecycle(state_dir, &record)?;
+    persist_transition(state_dir, prev.as_ref(), &record, "apply")?;
     Ok(record)
 }
 
@@ -115,22 +197,22 @@ pub fn resume(
     state_dir: &Path,
     roots_base: &Path,
 ) -> Result<(ActualState, LifecycleRecord), SupervisorError> {
+    let prev = load_lifecycle(state_dir).ok();
     let actual = apply_with_profile_dir(estate, state_dir, roots_base)?;
     crate::record_placements(estate, state_dir)?;
     let record = LifecycleRecord {
-        version: 0,
+        schema: default_lifecycle_schema(),
+        version: LIFECYCLE_VERSION,
         state: LifecycleState::Running,
         desired_hash: Some(estate_hash(estate)),
         estate_name: Some(estate.name.clone()),
-        suspended_at: load_lifecycle(state_dir)
-            .ok()
-            .and_then(|p| p.suspended_at),
+        suspended_at: prev.as_ref().and_then(|p| p.suspended_at.clone()),
         resumed_at: Some(now_rfc3339()),
         durable: true,
         note: "Resumed from estate file. Runtime is regenerable. Cloud-agent placements not spawned."
             .into(),
     };
-    write_lifecycle(state_dir, &record)?;
+    persist_transition(state_dir, prev.as_ref(), &record, "resume")?;
     Ok((actual, record))
 }
 
@@ -185,6 +267,8 @@ mod tests {
             load_lifecycle(&state).unwrap().state,
             LifecycleState::Suspended
         );
+        assert!(state.join(LIFECYCLE_LOG).is_file());
+        assert!(!list_lifecycle_events(&state).unwrap().is_empty());
         assert!(!drift_with_roots(&estate, &state, Some(&root)).unwrap().in_sync);
         resume(&estate, &state, &root).unwrap();
         assert!(drift_with_roots(&estate, &state, Some(&root)).unwrap().in_sync);
