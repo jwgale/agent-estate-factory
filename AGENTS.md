@@ -13,7 +13,7 @@ make gate-60
 make gate-90    # local Day 61–90 beachhead; do not add to GHA
 ```
 
-Primary gate is local (or this cloud-agent VM). GitHub Actions is **off overnight** — do not add a workflow file. Real `cargo test` stays local. Tomorrow, if Jason wants CI back: one `pull_request` `cargo check --workspace --locked` job only.
+Primary gate is local (or this cloud-agent VM). Hosted CI is one `pull_request` `cargo check --workspace --locked` job (rustc 1.88, timeout ≤ 10). Real `cargo test` stays local. Do not add more workflows.
 
 `make gate-60` skips live Grok and live local when `XAI_API_KEY` / `CELL_LOCAL_LIVE` are unset. Never bake secrets.
 

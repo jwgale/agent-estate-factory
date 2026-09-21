@@ -84,25 +84,22 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         }
     }
 
-    println!("\nQuiet hours");
-    println!("-----------");
-    let wf = root.join(".github/workflows");
-    let mut yml = 0usize;
-    if wf.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&wf) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.ends_with(".yml") || name.ends_with(".yaml") {
-                    yml += 1;
-                    println!("  FAIL  .github/workflows/{name}");
-                    fails.push(format!("workflow present: {name}"));
-                }
+    println!("\nHosted CI");
+    println!("---------");
+    match hosted_ci_status(root) {
+        HostedCiStatus::CompileOnly => {
+            println!("  ok    .github/workflows/ci.yml (compile-only)");
+        }
+        HostedCiStatus::Missing => {
+            println!("  FAIL  missing .github/workflows/ci.yml");
+            fails.push("missing compile-only ci.yml".into());
+        }
+        HostedCiStatus::Extra(extra) => {
+            for name in extra {
+                println!("  FAIL  .github/workflows/{name}");
+                fails.push(format!("extra workflow: {name}"));
             }
         }
-    }
-    if yml == 0 {
-        println!("  ok    no .github/workflows/*.yml (quiet hours)");
     }
 
     println!("\n.cell layout");
@@ -183,7 +180,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     println!("\nHealth");
     println!("------");
     if fails.is_empty() {
-        println!("  ok    factory ready (no workflow yml; schemas present)");
+        println!("  ok    factory ready (compile-only CI; schemas present)");
         for note in notes {
             println!("  note  {note}");
         }
@@ -297,17 +294,10 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
             fails += 1;
         }
     }
-    let wf = root.join(".github/workflows");
-    if wf.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&wf) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.ends_with(".yml") || name.ends_with(".yaml") {
-                    fails += 1;
-                }
-            }
-        }
+    match hosted_ci_status(root) {
+        HostedCiStatus::CompileOnly => {}
+        HostedCiStatus::Missing => fails += 1,
+        HostedCiStatus::Extra(extra) => fails += extra.len(),
     }
     if let Ok(Some(places)) = load_placements(state_dir) {
         if places
@@ -319,9 +309,84 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         }
     }
     if fails == 0 {
-        "ok (no workflow yml; schemas present)".into()
+        "ok (compile-only CI; schemas present)".into()
     } else {
         format!("FAIL ({fails})")
     }
 }
 
+const ALLOWED_WORKFLOW: &str = "ci.yml";
+
+#[derive(Debug, PartialEq, Eq)]
+enum HostedCiStatus {
+    CompileOnly,
+    Missing,
+    Extra(Vec<String>),
+}
+
+fn list_workflow_files(root: &Path) -> Vec<String> {
+    let wf = root.join(".github/workflows");
+    let mut names = Vec::new();
+    if wf.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&wf) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy().into_owned();
+                if name.ends_with(".yml") || name.ends_with(".yaml") {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
+fn hosted_ci_status(root: &Path) -> HostedCiStatus {
+    let names = list_workflow_files(root);
+    let extra: Vec<String> = names
+        .iter()
+        .filter(|n| n.as_str() != ALLOWED_WORKFLOW)
+        .cloned()
+        .collect();
+    if !extra.is_empty() {
+        return HostedCiStatus::Extra(extra);
+    }
+    if names.iter().any(|n| n == ALLOWED_WORKFLOW) {
+        HostedCiStatus::CompileOnly
+    } else {
+        HostedCiStatus::Missing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn tmp_root() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env.temp_dir().join(format!("cell-doctor-ci-{nanos}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".github/workflows")).unwrap();
+        root
+    }
+
+    #[test]
+    fn hosted_ci_allows_only_compile_only_yml() {
+        let root = tmp_root();
+        assert_eq!(hosted_ci_status(&root), HostedCiStatus::Missing);
+        fs::write(root.join(".github/workflows/ci.yml"), "name: check\n").unwrap();
+        assert_eq!(hosted_ci_status(&root), HostedCiStatus::CompileOnly);
+        fs::write(root.join(".github/workflows/extra.yml"), "name: extra\n").unwrap();
+        match hosted_ci_status(&root) {
+            HostedCiStatus::Extra(extra) => assert_eq!(extra, vec!["extra.yml".to_string()]),
+            other => panic!("{other:?}"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+}
