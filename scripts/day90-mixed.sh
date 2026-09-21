@@ -69,5 +69,39 @@ if printf '%s\n' "$before" "$after" "$doc" | grep -Eiq 'sk-|Bearer |XAI_API_KEY=
   exit 1
 fi
 
+# Host fixture only. Validate + status. No apply, no keys.
+# Not added to fixtures-check: that script is inside make smoke.
+HOST="$ROOT/examples/hosts/frontier-http.yaml"
+LOCKED="$ROOT/examples/estate.yaml"
+lock_before="$(cksum "$LOCKED")"
+HOST_STATE="${STATE}-frontier-http"
+HOST_PLANS="${PLANS}-frontier-http"
+rm -rf "$HOST_STATE" "$HOST_PLANS"
+mkdir -p "$HOST_STATE" "$HOST_PLANS"
+
+echo "-- frontier-http host fixture (validate + status, no keys) --"
+estate validate --estate "$HOST"
+host_status="$(estate status --estate "$HOST" --state-dir "$HOST_STATE" --roots-base "$ROOT" --plans-dir "$HOST_PLANS")"
+printf '%s\n' "$host_status"
+printf '%s\n' "$host_status" | grep -q 'estate: cell-one-frontier-http'
+printf '%s\n' "$host_status" | grep -q 'frontier: frontier_http model=grok-4.7'
+if printf '%s\n' "$host_status" | grep -q 'catalog frontier: cell'; then
+  echo "FAIL  frontier-http status invented a cell catalog"
+  exit 1
+fi
+if [[ -f "$HOST_STATE/placement-actual.json" || -f "$HOST_STATE/catalog.json" ]]; then
+  echo "FAIL  frontier-http status wrote cell files"
+  exit 1
+fi
+lock_after="$(cksum "$LOCKED")"
+if [[ "$lock_before" != "$lock_after" ]]; then
+  echo "FAIL  examples/estate.yaml changed"
+  exit 1
+fi
+if printf '%s\n' "$host_status" | grep -Eiq 'sk-|Bearer |XAI_API_KEY=.+'; then
+  echo "FAIL  frontier-http status printed a key"
+  exit 1
+fi
+
 echo
 echo "DAY90-MIXED GREEN (fixtures only)"
