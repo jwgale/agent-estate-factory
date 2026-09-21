@@ -9,13 +9,14 @@ use estate_schema::{
     plan_against_is_fresh_strict, plan_is_reviewable, render_plan, validate, write_plan,
 };
 use feed_collector::{
-    import_pack, list_drop_packs, load_cursor, materialize_from_feed, refuse_promote,
-    write_pack_index,
+    import_pack, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
+    refuse_promote, write_pack_index,
 };
 use floor_supervisor::{
     append_apply_audit, apply_with_profile_dir, drift_with_roots, list_apply_audits,
     list_lifecycle_events, load_desired_snapshot, load_lifecycle, load_placements, mark_running,
-    record_placements, resume, suspend, ApplyAudit,
+    reconcile_placements, record_placements, render_reconcile, resume, suspend, write_reconcile,
+    ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -137,6 +138,18 @@ enum Command {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
+    /// Desired vs actual placement reconcile. Sacred-id deny stays.
+    Reconcile {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Bundle local review artifacts. Not a remote upload.
+    Audit {
+        #[command(subcommand)]
+        command: AuditCommand,
+    },
     /// Print append-only lifecycle.jsonl (suspend/resume/apply).
     History {
         #[arg(long, default_value = ".cell")]
@@ -226,6 +239,39 @@ enum PacksCommand {
     Index {
         #[arg(long, default_value = "packs")]
         drop_dir: PathBuf,
+    },
+    /// Write a proposal pack. Never auto-applies. Jason reviews the diff.
+    Propose {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "packs")]
+        drop_dir: PathBuf,
+        #[arg(long, default_value = "packs/accepted")]
+        accepted_dir: PathBuf,
+        #[arg(long, default_value = "packs/proposed")]
+        proposed_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuditCommand {
+    /// Write a reviewable folder (and optional tarball) of local audit files.
+    Export {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        #[arg(long, default_value = "packs")]
+        packs_dir: PathBuf,
+        #[arg(long, default_value = ".cell/audit-export")]
+        out: PathBuf,
+        /// Also write `{out}.tar.gz` when `tar` is on PATH.
+        #[arg(long, default_value_t = false)]
+        tar: bool,
     },
 }
 
@@ -350,6 +396,17 @@ fn run() -> Result<()> {
         Command::Catalog { out } => cmd_catalog(&out),
         Command::Leases { state_dir } => cmd_leases(&state_dir),
         Command::Audits { state_dir } => cmd_audits(&state_dir),
+        Command::Reconcile { estate, state_dir } => cmd_reconcile(&estate, &state_dir),
+        Command::Audit { command } => match command {
+            AuditCommand::Export {
+                estate,
+                state_dir,
+                plans_dir,
+                packs_dir,
+                out,
+                tar,
+            } => cmd_audit_export(&estate, &state_dir, &plans_dir, &packs_dir, &out, tar),
+        },
         Command::History { state_dir } => cmd_history(&state_dir),
         Command::Probes => cmd_probes(),
         Command::Convey { command } => match command {
@@ -380,6 +437,13 @@ fn run() -> Result<()> {
             } => cmd_feed_import(&id, &drop_dir, &accepted_dir, &estate),
             PacksCommand::Promote { id } => cmd_feed_promote(&id),
             PacksCommand::Index { drop_dir } => cmd_packs_index(&drop_dir),
+            PacksCommand::Propose {
+                id,
+                drop_dir,
+                accepted_dir,
+                proposed_dir,
+                estate,
+            } => cmd_packs_propose(&id, &drop_dir, &accepted_dir, &proposed_dir, &estate),
         },
     }
 }
@@ -859,6 +923,184 @@ fn chrono_stamp() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     format!("unix:{secs}")
+}
+
+fn cmd_reconcile(path: &Path, state_dir: &Path) -> Result<()> {
+    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let report = reconcile_placements(&estate, state_dir)?;
+    let written = write_reconcile(state_dir, &report)?;
+    print!("{}", render_reconcile(&report));
+    println!("Wrote {}", written.display());
+    if !report.in_sync {
+        bail!("reconcile drift (fail closed)");
+    }
+    Ok(())
+}
+
+fn cmd_packs_propose(
+    id: &str,
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    proposed_dir: &Path,
+    estate_path: &Path,
+) -> Result<()> {
+    let estate = load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let before = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let (proposal, dest) = propose_enrich(drop_dir, accepted_dir, proposed_dir, id, &estate)?;
+    let after = std::fs::read_to_string(estate_path).unwrap_or_default();
+    if before != after {
+        bail!("propose must not rewrite the estate file");
+    }
+    if proposal.auto_apply {
+        bail!("proposal must not auto-apply");
+    }
+    print!("{}", feed_collector::render_proposal(&proposal));
+    println!("Wrote {}", dest.display());
+    println!("proposal only; Jason edits the estate by hand. auto_apply=false.");
+    Ok(())
+}
+
+fn copy_if_exists(src: &Path, dest: &Path, copied: &mut Vec<String>) -> Result<bool> {
+    if !src.is_file() {
+        return Ok(false);
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(src, dest)?;
+    copied.push(src.display().to_string());
+    Ok(true)
+}
+
+fn copy_tree_files(src: &Path, dest: &Path, copied: &mut Vec<String>) -> Result<()> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dest)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            let name = path.file_name().unwrap_or_default();
+            std::fs::copy(&path, dest.join(name))?;
+            copied.push(path.display().to_string());
+        } else if path.is_dir() {
+            copy_tree_files(&path, &dest.join(path.file_name().unwrap_or_default()), copied)?;
+        }
+    }
+    Ok(())
+}
+
+fn cmd_audit_export(
+    estate_path: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+    packs_dir: &Path,
+    out: &Path,
+    tar: bool,
+) -> Result<()> {
+    let estate = load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let report = reconcile_placements(&estate, state_dir)?;
+    write_reconcile(state_dir, &report)?;
+    if out.exists() {
+        std::fs::remove_dir_all(out)?;
+    }
+    std::fs::create_dir_all(out)?;
+    let mut copied = Vec::new();
+    let mut missing = Vec::new();
+    let files = [
+        (state_dir.join("lifecycle.json"), out.join("lifecycle.json")),
+        (state_dir.join("lifecycle.jsonl"), out.join("lifecycle.jsonl")),
+        (
+            state_dir.join("apply-audit.jsonl"),
+            out.join("apply-audit.jsonl"),
+        ),
+        (
+            state_dir.join("placement-actual.json"),
+            out.join("placement-actual.json"),
+        ),
+        (state_dir.join("reconcile.json"), out.join("reconcile.json")),
+        (state_dir.join("reconcile.md"), out.join("reconcile.md")),
+        (
+            state_dir.join("conveyor-leases.json"),
+            out.join("conveyor-leases.json"),
+        ),
+        (
+            packs_dir.join("accepted").join("import-audit.jsonl"),
+            out.join("import-audit.jsonl"),
+        ),
+    ];
+    for (src, dest) in &files {
+        if !copy_if_exists(src, dest, &mut copied)? {
+            missing.push(src.display().to_string());
+        }
+    }
+    copy_tree_files(plans_dir, &out.join("plans"), &mut copied)?;
+    let proposed = packs_dir.join("proposed");
+    if proposed.is_dir() {
+        copy_tree_files(&proposed, &out.join("proposed"), &mut copied)?;
+    }
+    let mut manifest = String::from("Cell One audit export (local only)\n");
+    manifest.push_str("===================================\n");
+    manifest.push_str("Not a remote upload. Not a gateway dump. Review on this box.\n\n");
+    manifest.push_str(&format!("estate: {}\n", estate.name));
+    manifest.push_str(&format!("estate_file: {}\n", estate_path.display()));
+    manifest.push_str(&format!("estate_hash: {}\n", estate_hash(&estate)));
+    manifest.push_str(&format!("reconcile_in_sync: {}\n", report.in_sync));
+    manifest.push_str(&format!("refuses: {}\n\n", report.refuses.len()));
+    manifest.push_str("Copied\n------\n");
+    if copied.is_empty() {
+        manifest.push_str("(none)\n");
+    } else {
+        for item in &copied {
+            manifest.push_str(&format!("  {item}\n"));
+        }
+    }
+    manifest.push_str("\nMissing (ok if never applied)\n----------------------------\n");
+    if missing.is_empty() {
+        manifest.push_str("(none)\n");
+    } else {
+        for item in &missing {
+            manifest.push_str(&format!("  {item}\n"));
+        }
+    }
+    std::fs::write(out.join("MANIFEST.md"), &manifest)?;
+    let meta = serde_json::json!({
+        "schema": "cell-one.audit-export.v0",
+        "estate": estate.name,
+        "estate_hash": estate_hash(&estate),
+        "reconcile_in_sync": report.in_sync,
+        "refuses": report.refuses.len(),
+        "copied": copied.len(),
+        "missing": missing.len(),
+        "remote": false,
+    });
+    std::fs::write(out.join("audit-export.json"), serde_json::to_string_pretty(&meta)?)?;
+    println!("{manifest}");
+    println!("Wrote {}", out.display());
+    if tar {
+        let parent = out.parent().unwrap_or_else(|| Path::new("."));
+        let name = out.file_name().and_then(|s| s.to_str()).unwrap_or("audit-export");
+        let tarball = PathBuf::from(format!("{}.tar.gz", out.display()));
+        match std::process::Command::new("tar")
+            .arg("-czf")
+            .arg(&tarball)
+            .arg("-C")
+            .arg(parent)
+            .arg(name)
+            .status()
+        {
+            Ok(status) if status.success() && tarball.is_file() => {
+                println!("Wrote {}", tarball.display());
+            }
+            Ok(_) | Err(_) => {
+                println!("tar not available or failed; folder is the review artifact");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
