@@ -5,7 +5,7 @@
 
 use crate::SupervisorError;
 use estate_schema::{
-    canonical_host_class, estate_hash, host_class_eq, is_sacred_name, Estate, Placement,
+    canonical_host_class_opt, estate_hash, host_class_eq, is_sacred_name, Estate, Placement,
     PlacementKind,
 };
 use serde::{Deserialize, Serialize};
@@ -115,7 +115,7 @@ impl PlacementDriver for BoxDriver {
         PlacementLease {
             placement_id: placement.id.clone(),
             kind: PlacementKind::Box.as_str().to_string(),
-            host_class: canonical_host_class(placement.host_class.as_deref()).into(),
+            host_class: lease_host_class(placement),
             agents: placement.agents.clone(),
             wired: placement.wired,
             spawned: placement.wired,
@@ -141,7 +141,7 @@ impl PlacementDriver for CloudAgentDriver {
         PlacementLease {
             placement_id: placement.id.clone(),
             kind: PlacementKind::CloudAgent.as_str().to_string(),
-            host_class: canonical_host_class(placement.host_class.as_deref()).into(),
+            host_class: lease_host_class(placement),
             agents: placement.agents.clone(),
             wired: placement.wired,
             spawned: false,
@@ -170,6 +170,45 @@ pub fn now_unix() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Locked name, or the raw string when unknown. Never invent `any` for a SKU.
+fn lease_host_class(placement: &Placement) -> String {
+    canonical_host_class_opt(placement.host_class.as_deref())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            placement
+                .host_class
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "any".into())
+        })
+}
+
+fn refuse_desired_host_class(estate: &Estate) -> Result<(), SupervisorError> {
+    for placement in &estate.placements {
+        if canonical_host_class_opt(placement.host_class.as_deref()).is_none() {
+            return Err(SupervisorError::Other(format!(
+                "refuse:bad-host-class: placement '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                placement.id,
+                placement.host_class.as_deref().unwrap_or(""),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Tampered `placement-actual.json` host_class must not be read as portable.
+pub fn refuse_lease_host_classes(actual: &PlacementActual) -> Result<(), SupervisorError> {
+    for lease in &actual.leases {
+        if canonical_host_class_opt(Some(lease.host_class.as_str())).is_none() {
+            return Err(SupervisorError::Other(format!(
+                "refuse:bad-host-class: lease '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                lease.placement_id, lease.host_class
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn stamp_ttl(lease: &mut PlacementLease, placement: &Placement, now: u64) {
@@ -253,6 +292,7 @@ pub fn forget_expired_leases(state_dir: &Path) -> Result<Vec<String>, Supervisor
 }
 
 pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
+    refuse_desired_host_class(estate)?;
     std::fs::create_dir_all(state_dir)?;
     let actual = claim_leases(estate);
     write_placements(state_dir, &actual)?;
@@ -332,9 +372,13 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         if lease.kind != placement.kind.as_str() {
             lease_kind_mismatch.push(placement.id.clone());
         }
-        let desired_host = canonical_host_class(placement.host_class.as_deref());
-        if !host_class_eq(&lease.host_class, desired_host) {
-            host_class_mismatch.push(placement.id.clone());
+        match canonical_host_class_opt(placement.host_class.as_deref()) {
+            Some(desired_host) => {
+                if !host_class_eq(&lease.host_class, desired_host) {
+                    host_class_mismatch.push(placement.id.clone());
+                }
+            }
+            None => host_class_mismatch.push(placement.id.clone()),
         }
         if placement.kind == PlacementKind::CloudAgent && lease.spawned {
             spawned_cloud_agents.push(placement.id.clone());
@@ -446,7 +490,9 @@ pub fn reconcile_placements(
             id: p.id.clone(),
             side: "desired".into(),
             kind: p.kind.as_str().into(),
-            host_class: canonical_host_class(p.host_class.as_deref()).into(),
+            host_class: canonical_host_class_opt(p.host_class.as_deref())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| p.host_class.clone().unwrap_or_default()),
             agents: p.agents.clone(),
             wired: p.wired,
             spawned: None,
@@ -461,7 +507,7 @@ pub fn reconcile_placements(
                     id: l.placement_id.clone(),
                     side: "actual".into(),
                     kind: l.kind.clone(),
-                    host_class: canonical_host_class(Some(&l.host_class)).into(),
+                    host_class: l.host_class.clone(),
                     agents: l.agents.clone(),
                     wired: l.wired,
                     spawned: Some(l.spawned),
@@ -532,19 +578,32 @@ pub fn reconcile_placements(
                     ),
                 });
             }
+            if canonical_host_class_opt(Some(lease.host_class.as_str())).is_none() {
+                refuses.push(Refuse {
+                    code: "bad-host-class".into(),
+                    subject: lease.placement_id.clone(),
+                    reason: format!(
+                        "refuse:bad-host-class: lease '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                        lease.placement_id, lease.host_class
+                    ),
+                });
+            }
         }
     }
 
     let in_sync = drift.in_sync()
-        && refuses
-            .iter()
-            .all(|r| r.code != "sacred-id" && r.code != "expired");
+        && refuses.iter().all(|r| {
+            r.code != "sacred-id" && r.code != "expired" && r.code != "bad-host-class"
+        });
     let mut notes = drift.notes;
     if refuses.iter().any(|r| r.code == "sacred-id") {
         notes.push("refuse:sacred-id: actual lease binds a sacred exclusion".into());
     }
     if refuses.iter().any(|r| r.code == "expired") {
         notes.push("refuse:expired: one or more leases have elapsed ttl".into());
+    }
+    if refuses.iter().any(|r| r.code == "bad-host-class") {
+        notes.push("refuse:bad-host-class: actual lease host_class is not a locked name".into());
     }
     Ok(ReconcileReport {
         schema: RECONCILE_SCHEMA.into(),
@@ -668,7 +727,10 @@ pub fn apply_dry_run(estate: &Estate, state_dir: &Path) -> Result<ApplyDryRun, S
 
     let mut refuses = Vec::new();
     for r in &recon.refuses {
-        if matches!(r.code.as_str(), "sacred-id" | "cloud-spawned" | "expired") {
+        if matches!(
+            r.code.as_str(),
+            "sacred-id" | "cloud-spawned" | "expired" | "bad-host-class"
+        ) {
             refuses.push(r.clone());
         }
     }
