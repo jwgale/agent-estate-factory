@@ -96,23 +96,16 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 | What was broken | What it does now |
 | --- | --- |
-| 5090 `estate specialist` took OpenAI chat, got a 200 with empty `message.content`, and died. Probes were still `live ok (openai /v1/models)`. | Empty / missing / whitespace OpenAI content falls through to Ollama `/api/chat`. Content-array / `text` / reasoning-only accepted only when clearly non-empty. |
-| Both chat paths failing said only `empty message.content`. | Refuse names HTTP status, the model id used, and `ollama pull llama3` / `CELL_LOCAL_MODEL`. |
-| Unset `CELL_LOCAL_MODEL` preferred `/v1/models` first. | First portable id from `/api/tags`, then `/v1/models`. No hardcoded empty name. |
+| Live proof lived only in chat. Easy to forget Mac probes and 5090 `Pong` already ran. | [`LIVE-PROBES.md`](LIVE-PROBES.md) records Mac probes PASS, 5090 probes PASS, 5090 specialist `Pong`. Native MLX stays stub. |
+| No Makefile helper for the specialist command Jason already ran. | `make live-specialist` requires `CELL_LOCAL_ENDPOINT`. Not in smoke / Actions. |
+| Mixed fixture dry-run never bound `HttpLocal` against mock. | Isolated test: apply `--dry-run` writes nothing; `local_slm` posts factory `/v0/specialist`. |
+| Apply / resume swallowed `catalog.json` write failure. | Catalog write fail-closed (`?`). |
 
-`READY_FOR_LIVE_TEST`: **yes**. Retry on the 5090:
-
-```
-export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
-cargo run -q -p estate-control -- specialist --driver ollama \
-  --prompt "Reply with the single word pong."
-```
-
-Expect exit 0, `allow` true, `job` complete, non-empty `completion`.
+`READY_FOR_LIVE_TEST`: **no**. Recorded boxes already ran. Do not ping for Mac probes or 5090 specialist. Mac specialist chat and live Grok stay unrecorded.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#25 (plain English)
+## Bug fixes on #10-#26 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -132,6 +125,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #24 | Chat posted dummy ping. v0 200 garbage fell through. OpenAI choices without content counted as up. SKU model ids bound. | Request text round-trip. v0 / content / SKU refuse. `model-estate specialist` + llama.cpp OpenAI smoke. |
 | #25 | Complete discarded model text. No `estate specialist`. Sacred text still POSTed. | `estate specialist --prompt` returns `completion`. Sacred refuse first. READY_FOR_LIVE_TEST yes. |
 | #26 | 5090 OpenAI chat 200 with empty `message.content` hard-failed. | Fall through to `/api/chat`. Both-fail names status + model + pull. READY yes. |
+| #27 | Live proof was chat-only. Mixed dry-run never hit HttpLocal. Apply swallowed catalog write. | Recorded Mac/5090 proof. `make live-specialist`. Mixed mock dry-run. Catalog write `?`. READY no. |
 
 ## Known-good local commands
 
@@ -166,6 +160,7 @@ Isolated loops without live boxes:
 - OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
 - Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
 - Live specialist complete (`estate specialist`): `crates/estate-control/tests/specialist_cli.rs` + adapter complete tests
+- Mixed estate dry-run + HttpLocal mock: `crates/estate-control/tests/day90_mixed.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
