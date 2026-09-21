@@ -11,4 +11,4 @@ These fixtures use the operator aliases (`rtx_consumer`, `apple_silicon`, `nvidi
 
 MLX stays a catalog stub (Apple card). These estates still bind `ollama` — Ollama-on-Mac is the Supported Apple path. Hardware is a driver choice, not a product fork.
 
-`frontier-http.yaml` is not a fourth host class. It names `model: grok-4.7` on a frontier `http-remote` binding, with a local `ollama` card so the estate is not frontier-only. `examples/estate.yaml` stays hash-locked and does not gain that field. The file is not on the smoke or gate-90 walks.
+`frontier-http.yaml` is not a fourth host class. It names `model: grok-4.7` on a frontier `http-remote` binding, with a local `ollama` card so the estate is not frontier-only. `examples/estate.yaml` stays hash-locked and does not gain that field. `make day90-mixed` validates it and prints that model on status. The file is not on smoke, fixtures-check, or gate-90.
