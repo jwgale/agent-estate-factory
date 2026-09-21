@@ -19,15 +19,19 @@ pub use plan::{
     blast_grows, covering_plan, covering_plan_stem, diff_estates, latest_plan, list_plans,
     load_plan_json, mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict,
     plan_blast_width, plan_covers_hash, plan_is_reviewable, render_plan, render_plan_diff,
-    render_review_diff, render_security_iac, write_plan, write_plan_index, CoveringPlan,
-    EstatePlan, PlanDelta, PlanIndexEntry,
+    render_plan_pr, render_review_diff, render_security_iac, write_plan, write_plan_index,
+    CoveringPlan, EstatePlan, PlanDelta, PlanIndexEntry,
 };
 pub use policy::{
     check_policy_file, is_known_policy_action, load_policy, load_policy_optional, parse_policy_yaml,
     policy_allows, refuse_policy, PolicyPack, PolicyRule, KNOWN_POLICY_ACTIONS, POLICY_KIND,
     POLICY_SCHEMA,
 };
-pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
+pub use sacred::{
+    clear_sacred_overlays, is_sacred_name, load_and_install_sacred_file, load_sacred_file,
+    locked_sacred_ids, overlay_sacred_ids, parse_sacred_yaml, set_sacred_overlays, normalize_name,
+    SacredFile, SacredFileEntry, LOCKED_SACRED,
+};
 pub use types::{
     canonical_host_class, host_class_eq, is_host_class, normalize_host_class, Agent, Effect,
     EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding,

@@ -1,6 +1,13 @@
 use anyhow::{bail, Result};
-use estate_schema::check_policy_file;
+use estate_schema::{check_policy_file, load_and_install_sacred_file};
 use std::path::Path;
+
+pub(crate) fn install_sacred(path: &Path) -> Result<()> {
+    match load_and_install_sacred_file(path) {
+        Ok(_) => Ok(()),
+        Err(err) => bail!("{err}"),
+    }
+}
 
 pub(crate) fn snapshot_state_files(state_dir: &Path) -> Vec<String> {
     let names = [
@@ -72,4 +79,3 @@ pub(crate) fn copy_tree_files(src: &Path, dest: &Path, copied: &mut Vec<String>)
     }
     Ok(())
 }
-
