@@ -391,6 +391,37 @@ pub fn resolve_specialist_endpoint(explicit: Option<&str>) -> Result<String, Mod
     Ok(raw.trim_end_matches('/').to_string())
 }
 
+/// Frontier specialist is a separate env (`CELL_FRONTIER_ENDPOINT`).
+/// Not `CELL_LOCAL_ENDPOINT`. Not `XAI_API_KEY`. CI never sets this.
+pub fn is_frontier_specialist_driver(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "frontier" | "frontier-http" | "grok" | "xai"
+    )
+}
+
+fn resolve_frontier_endpoint(explicit: Option<&str>) -> Result<String, ModelError> {
+    let raw = match explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(ep) => ep.to_string(),
+        None => std::env::var("CELL_FRONTIER_ENDPOINT")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                ModelError::Refused(
+                    "frontier specialist is stubbed; set CELL_FRONTIER_ENDPOINT or --endpoint (never required in CI; XAI_API_KEY is not used)"
+                        .into(),
+                )
+            })?,
+    };
+    if estate_schema::contains_sku(&raw) {
+        return Err(ModelError::Refused(
+            "endpoint encodes a hardware SKU".into(),
+        ));
+    }
+    Ok(raw.trim_end_matches('/').to_string())
+}
+
 pub fn run_http_specialist(
     endpoint: Option<&str>,
     job: &str,
@@ -406,10 +437,25 @@ pub fn run_http_specialist(
     if estate_schema::contains_sku(text) {
         return Err(ModelError::Refused("prompt encodes a hardware SKU".into()));
     }
+    if is_frontier_specialist_driver(runtime) {
+        let endpoint = resolve_frontier_endpoint(endpoint)?;
+        let job = parse_specialist_job(job)?;
+        let local = HttpLocal {
+            id: "cli-frontier".into(),
+            endpoint,
+            runtime: LocalRuntime::HttpRemote,
+        };
+        return local.specialist(&SpecialistRequest {
+            job,
+            agent_id: agent.to_string(),
+            kind: kind.to_string(),
+            text: text.to_string(),
+        });
+    }
     let endpoint = resolve_specialist_endpoint(endpoint)?;
     let runtime = parse_runtime(runtime).ok_or_else(|| {
         ModelError::Refused(format!(
-            "driver must be ollama|llama.cpp|http-remote, got {runtime}"
+            "driver must be ollama|llama.cpp|http-remote|frontier, got {runtime}"
         ))
     })?;
     if !matches!(
@@ -450,7 +496,7 @@ fn redact_secrets(text: &str) -> String {
     out
 }
 
-fn looks_secret(token: &str) -> bool {
+fn looks_secret(token: &str) -> String {
     let t = token.trim();
     (t.starts_with("sk-") || t.starts_with("xai-") || t.starts_with("xai_")) && t.len() >= 12
 }
