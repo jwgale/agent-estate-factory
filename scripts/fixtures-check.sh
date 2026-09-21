@@ -58,5 +58,41 @@ done
 echo "-- doctor --"
 "${ESTATE[@]}" doctor --root "$ROOT" --state-dir "$STATE"
 
+echo "-- policy allow --"
+"${ESTATE[@]}" policy check --policy "$ROOT/examples/fixtures/policy-allow.yaml" --action apply
+"${ESTATE[@]}" policy check --policy "$ROOT/examples/fixtures/policy-allow.yaml" --action convey-call
+"${ESTATE[@]}" policy check --policy "$ROOT/policy/cell-one.policy.v0.yaml" --action backup
+echo "PASS  policy allow"
+
+echo "-- policy deny --"
+set +e
+"${ESTATE[@]}" policy check --policy "$ROOT/examples/fixtures/policy-deny.yaml" --action apply >/tmp/fixtures-policy-deny.out 2>/tmp/fixtures-policy-deny.err
+deny_rc=$?
+set -e
+if [[ "$deny_rc" -eq 0 ]]; then
+  echo "FAIL  policy-deny.yaml must refuse apply"
+  exit 1
+fi
+if ! grep -q "refuse:policy" /tmp/fixtures-policy-deny.out /tmp/fixtures-policy-deny.err; then
+  echo "FAIL  policy deny must print refuse:policy"
+  exit 1
+fi
+echo "PASS  policy deny"
+
+echo "-- policy unknown action --"
+set +e
+"${ESTATE[@]}" policy check --policy "$ROOT/examples/fixtures/policy-unknown-action.yaml" --action apply >/tmp/fixtures-policy-unknown.out 2>/tmp/fixtures-policy-unknown.err
+unknown_rc=$?
+set -e
+if [[ "$unknown_rc" -eq 0 ]]; then
+  echo "FAIL  policy-unknown-action.yaml must fail closed"
+  exit 1
+fi
+if ! grep -q "refuse:unknown-action" /tmp/fixtures-policy-unknown.out /tmp/fixtures-policy-unknown.err; then
+  echo "FAIL  unknown action must print refuse:unknown-action"
+  exit 1
+fi
+echo "PASS  policy unknown-action"
+
 echo
 echo "FIXTURES-CHECK GREEN"

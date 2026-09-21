@@ -18,6 +18,12 @@
         "rented-nvidia",
         "any"
       ],
+      "caps": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "context_tokens": 8192
+      },
       "notes": "First green local path. Ollama-on-Linux and Ollama-on-Mac share this card."
     },
     {
@@ -30,6 +36,12 @@
         "rented-nvidia",
         "any"
       ],
+      "caps": {
+        "streaming": true,
+        "tools": false,
+        "vision": false,
+        "context_tokens": 4096
+      },
       "notes": "Swap-proof sibling of Ollama. Same /v0/specialist protocol, not a second product."
     },
     {
@@ -39,6 +51,12 @@
       "hosts": [
         "apple-silicon"
       ],
+      "caps": {
+        "streaming": true,
+        "tools": false,
+        "vision": false,
+        "context_tokens": 8192
+      },
       "notes": "Apple Silicon stub. Same catalog/route/bind API; live Mac proof later."
     },
     {
@@ -49,6 +67,12 @@
         "consumer-nvidia",
         "rented-nvidia"
       ],
+      "caps": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "context_tokens": 32768
+      },
       "notes": "Optional. Not required for the first green demo. Experimental until Jason verifies."
     },
     {
@@ -59,6 +83,12 @@
         "consumer-nvidia",
         "rented-nvidia"
       ],
+      "caps": {
+        "streaming": true,
+        "tools": false,
+        "vision": false,
+        "context_tokens": 8192
+      },
       "notes": "TensorRT-LLM. Experimental until Jason verifies."
     },
     {
@@ -68,6 +98,12 @@
       "hosts": [
         "any"
       ],
+      "caps": {
+        "streaming": false,
+        "tools": true,
+        "vision": false,
+        "context_tokens": 8192
+      },
       "notes": "CELL_LOCAL_ENDPOINT remote pattern. Same protocol on any host class."
     }
   ]

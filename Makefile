@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor fixtures-check sessions plan-diff
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -138,6 +138,21 @@ plan-diff:
 
 task-mock:
 	cargo run -q -p model-estate -- task --estate $(ESTATE) --agent horizon --act model --object xai_grok --mock
+
+smoke:
+	./scripts/smoke.sh
+
+backup:
+	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
+
+restore:
+	cargo run -q -p estate-control -- restore --from $(FROM) --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --dry-run
+
+pause-proof:
+	cargo run -q -p estate-control -- pause-proof --estate $(ESTATE) --state-dir $(STATE) --roots-base .
+
+policy-check:
+	cargo run -q -p estate-control -- policy check --policy policy/cell-one.policy.v0.yaml --action apply
 
 test:
 	cargo test --workspace
