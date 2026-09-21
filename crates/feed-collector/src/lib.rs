@@ -431,6 +431,12 @@ pub fn load_cursor(dir: &Path) -> Result<Option<FeedCursor>, FeedError> {
     if !path.exists() {
         return Ok(None);
     }
+    if !path.is_file() {
+        return Err(FeedError::Parse(format!(
+            "feed-cursor.json: {} is not a file",
+            path.display()
+        )));
+    }
     let text = std::fs::read_to_string(&path)?;
     let cursor = serde_json::from_str(&text)
         .map_err(|e| FeedError::Parse(format!("feed-cursor.json: {e}")))?;
@@ -440,7 +446,11 @@ pub fn load_cursor(dir: &Path) -> Result<Option<FeedCursor>, FeedError> {
 pub fn write_cursor(dir: &Path, cursor: &FeedCursor) -> Result<PathBuf, FeedError> {
     std::fs::create_dir_all(dir)?;
     let path = cursor_path(dir);
-    std::fs::write(&path, serde_json::to_string_pretty(cursor).unwrap_or_default())?;
+    let body = to_pretty_json(cursor)?;
+    if body.trim().is_empty() {
+        return Err(FeedError::Parse("serialize: empty feed cursor".into()));
+    }
+    std::fs::write(&path, body)?;
     Ok(path)
 }
 
