@@ -15,15 +15,19 @@ Cell One ships:
 
 1. `LocalDriver` trait (`specialist()` + `runtime()`)
 2. catalog / route / bind (`model-estate catalog`)
-3. `HttpLocal` talking to `$CELL_LOCAL_ENDPOINT`
-4. `model-estate mock-local` — same protocol, no GPU
+3. `HttpLocal` talking to `$CELL_LOCAL_ENDPOINT` (`/v0/specialist` or OpenAI / Ollama)
+4. `model-estate mock-local` - factory protocol stand-in, no GPU
 5. Fail-closed audited deny when local is down (`model.local.down`; frontier hits 0)
 
 This is not LM Studio. No weight browser. No chat UI.
 
+Live probes (up/down only): `GET /v1/models` or Ollama `GET /api/tags`. See [`LIVE-PROBES.md`](LIVE-PROBES.md).
+
 ## Protocol
 
-`POST {CELL_LOCAL_ENDPOINT}/v0/specialist`
+Factory stand-in: `POST {CELL_LOCAL_ENDPOINT}/v0/specialist`
+
+OpenAI-compatible / Ollama: the adapter speaks `/v1/chat/completions` or `/api/chat` after a models list answers. Policy stays factory-owned.
 
 ```json
 {"job":"policy-precheck","agent_id":"horizon","kind":"model","text":"..."}
