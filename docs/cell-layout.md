@@ -50,7 +50,7 @@ Optional TTL: absent means no expiry. `estate expire` lists elapsed leases.
 apply/resume refuse them. `estate expire --forget` drops expired rows (does
 not spawn) so apply can record fresh leases.
 
-host_class` on disk is the canonical name (`consumer-nvidia` |
+`host_class` on disk is the canonical name (`consumer-nvidia` |
 `apple-silicon` | `rented-nvidia` | `any`). Aliases are normalize-only.
 
 Sacred-id deny stays: an actual lease that binds a sacred exclusion
