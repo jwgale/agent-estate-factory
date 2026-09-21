@@ -50,6 +50,8 @@ enum Command {
         host_class: String,
         #[arg(long, default_value_t = true)]
         wired: bool,
+        #[arg(long)]
+        ttl_secs: Option<u64>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -136,6 +138,7 @@ fn main() -> Result<()> {
             capability,
             host_class,
             wired,
+            ttl_secs,
             state_dir,
         } => {
             let lease = declare_hop(
@@ -147,6 +150,7 @@ fn main() -> Result<()> {
                     host_class,
                     wired,
                     note: None,
+                    ttl_secs,
                 },
             )?;
             println!("{}", serde_json::to_string_pretty(&lease)?);

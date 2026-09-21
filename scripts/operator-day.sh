@@ -47,9 +47,19 @@ if [[ -f "$STATE/placement-actual.json" ]]; then
 fi
 echo "PASS  apply --dry-run"
 
+echo "-- fixtures-check (happy + each refuse) --"
+bash "$ROOT/scripts/fixtures-check.sh"
+echo "PASS  fixtures-check"
+
 echo "-- first apply (greenfield plan + require-plan) --"
 cargo run -q -p estate-control -- plan --estate "$ESTATE" --plans-dir "$PLANS" --state-dir "$STATE"
 cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --require-plan
+cargo run -q -p estate-control -- sessions list --state-dir "$STATE"
+if [[ ! -f "$STATE/sessions.jsonl" ]]; then
+  echo "FAIL  sessions.jsonl missing after apply"
+  exit 1
+fi
+echo "PASS  session journal"
 
 echo "-- suspend --"
 cargo run -q -p estate-control -- suspend --state-dir "$STATE"
@@ -75,6 +85,10 @@ fi
 
 echo "-- apply --require-plan --require-fresh-plan --"
 cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --require-plan --require-fresh-plan
+
+echo "-- plan diff (last-applied vs same estate; must not grow) --"
+cargo run -q -p estate-control -- plan diff --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS"
+echo "PASS  plan diff"
 
 echo "-- feed import (fixture pack, no live models) --"
 cp "$ROOT/examples/fixtures/overnight-traces.pack.json" "$DROP/overnight-traces.pack.json"
@@ -137,6 +151,11 @@ if ! grep -q "refuse:" /tmp/opday-cloud.err /tmp/opday-nolease.err; then
 fi
 echo "PASS  convey hop/call/refuse"
 
+echo "-- convey hop TTL + expire --"
+cargo run -q -p estate-control -- convey hop --id ttl-box --capability lane-tool --ttl-secs 3600 --state-dir "$STATE"
+cargo run -q -p estate-control -- convey expire --state-dir "$STATE"
+echo "PASS  convey expire"
+
 echo "-- resume --"
 cargo run -q -p estate-control -- resume --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR"
 cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR"
@@ -159,10 +178,11 @@ if [[ ! -f "$WORKDIR/audit-export/MANIFEST.md" ]]; then
 fi
 echo "PASS  audit export"
 
-echo "-- expire + doctor --"
+echo "-- expire + doctor + sessions tail --"
 cargo run -q -p estate-control -- expire --state-dir "$STATE"
 cargo run -q -p estate-control -- doctor --root "$ROOT" --state-dir "$STATE"
-echo "PASS  expire/doctor"
+cargo run -q -p estate-control -- sessions tail --state-dir "$STATE" --n 8
+echo "PASS  expire/doctor/sessions"
 
 echo
 echo "OPERATOR-DAY GREEN (fixtures only; no live Grok / GPU)"
