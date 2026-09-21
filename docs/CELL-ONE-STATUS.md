@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#22 plus this slice)
+## On `main` (PR #1-#23 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -86,19 +86,30 @@ Same class on journals, mesh persist, and accept.
 fixtures. Live was still blocked: probes spoke factory `/v0/specialist`
 only. `mock-local` was not a Mac/GPU proof.
 
+## #23 (live adapter)
+
+#23 shipped the OpenAI / Ollama HTTP adapter. Probes GET `/v1/models`
+or `/api/tags`. Jason was pinged for live Ollama probes.
+`READY_FOR_LIVE_TEST` for that surface: yes (already handed off).
+
 ## Bug fix this slice
 
 | What was broken | What it does now |
 | --- | --- |
-| `estate probes --live` POSTed `/v0/specialist`. A running Ollama looked down. | GET `/v1/models` or Ollama `/api/tags`. Empty models list is up. Garbage / empty body is down. No invent success. |
-| No OpenAI / Ollama specialist adapter. Native MLX `specialist()` is still Stub. | `HttpLocal` tries `/v0/specialist`, then OpenAI chat / Ollama chat, then factory-owned policy. Mac proof is Ollama-on-Mac. |
+| Compat chat posted dummy `"ping"` and ignored the request text. Probes were the only live-shaped surface. | Chat posts the real `SpecialistRequest` text. `model-estate specialist` is the `estate specialist` equivalent. Mock HTTP locks the round-trip. |
+| `POST /v0/specialist` 200 that was not a specialist result fell through to OpenAI. | Unparseable / empty v0 200 refuses. No silent compat fallback. |
+| OpenAI `choices` without `message.content` counted as up. | Missing content refuses. A bad OpenAI body does not try Ollama. |
+| `CELL_LOCAL_MODEL` / listed model ids could be a SKU. | SKU model ids refuse. Listed SKU names are skipped. |
+
+`READY_FOR_LIVE_TEST` for the new chat verb: **no**. Mock is the proof.
+Do not ping Jason.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#22 (plain English)
+## Bug fixes on #10-#23 (plain English)
 
 | PR | What was broken | What it does now |
-| --- | --- | --- |
+| --- | --- |
 | #10 | After a placement lease expired, `expire --forget` dropped the row. The next `apply` treated that as drift and demanded `--force`. | Same desired estate restamps the lease (`lease-refresh`). No `--force`. Isolated TTL e2e on `ttl-short.yaml`. |
 | #11 | Overlay e2e was missing. Easy to believe `locked: []` in a sacred file would drop Cyera CI / Rust classroom. | Isolated sacred overlay e2e: omit-locked file still refuses those two on convey. `lab-notebook` refuses only with the overlay installed. |
 | #12 | `convey expire --forget` deleted hop *declarations* with the leases. The next `call` said `refuse:no-lease`. | Forget keeps the hop decl. `call` restamps (`lease-refresh`), same idea as #10. Expired still refuses until forget. |
@@ -111,6 +122,8 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #20 | Plan readers treated garbage JSON as empty. `write_cursor` could write empty. `apply --force` had to restamp estate class, not SKU to `any`. | Present plan JSON parses or refuses. Cursor write refuses empty. `--force` writes `consumer-nvidia`. |
 | #21 | Propose / journal / placements serialize used `unwrap_or_default` or invented `"{}"`. | Serialize or refuse. No empty proposal, journal junk, or wiped actual. |
 | #22 | Live probe runbook + dry SKIP/would-live fixtures. Still `/v0/specialist` only. | Hand-off page. Live still needed a real Ollama adapter. |
+| #23 | Probes POSTed factory `/v0/specialist`. A running Ollama looked down. | GET `/v1/models` or `/api/tags`. `HttpLocal` adapter. Jason pinged for live Ollama. |
+| #24 | Chat posted dummy ping. v0 200 garbage fell through. OpenAI choices without content counted as up. SKU model ids bound. | Request text round-trip. v0 / content / SKU refuse. `model-estate specialist` + llama.cpp OpenAI smoke. |
 
 ## Known-good local commands
 
@@ -143,6 +156,7 @@ Isolated loops without live boxes:
 - model-actual serialize + garbage refuse: `crates/model-estate` actual tests
 - Live probe SKIP vs would-live (no network): `schema/live-probe-shapes.v0.json` + catalog unit test
 - OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
+- Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
