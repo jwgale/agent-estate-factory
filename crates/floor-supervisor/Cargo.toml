@@ -16,5 +16,5 @@ serde_yaml.workspace = true
 thiserror.workspace = true
 
 [[bin]]
-name = "floor-supervisor"
+name = "floor"
 path = "src/main.rs"

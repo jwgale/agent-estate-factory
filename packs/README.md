@@ -13,3 +13,5 @@ Rules:
 - Jason still lists a pack id on `enrich_packs.packs` by hand before it is estate-bound
 
 Generated `*.pack.json` files stay gitignored. Documentary copies live under `examples/enrich-packs/`.
+
+Pack ids must be slugs and must not encode a hardware SKU. `host_class` is `consumer-nvidia|apple-silicon|rented-nvidia|any`. `INDEX.md` is regenerated next to the drop.
