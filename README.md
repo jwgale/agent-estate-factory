@@ -2,6 +2,8 @@
 
 **Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → feed-loop → backup prune) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
+Opt-in, not in the gate: `estate help frontier` and `make day90-mixed` (same page). The mixed fixture already names `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
+
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
