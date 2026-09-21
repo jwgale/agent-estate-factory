@@ -539,7 +539,7 @@ mod tests {
         apply_with_profile_dir(&estate, &state, &root).unwrap();
         let (archive, _) =
             backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
-        tamper_archive_box_host_class(&archive, "rtx-5090");
+        tamper_archive_box_host_class(&archive, "not-a-host");
         let dest = root.join("restored");
         std::fs::create_dir_all(&dest).unwrap();
         std::fs::write(dest.join("placement-actual.json"), "sentinel\n").unwrap();
@@ -549,7 +549,7 @@ mod tests {
         assert!(
             dry.refuses
                 .iter()
-                .any(|r| r.contains("refuse:bad-host-class") && r.contains("rtx-5090")),
+                .any(|r| r.contains("refuse:bad-host-class") && r.contains("not-a-host")),
             "{:?}",
             dry.refuses
         );
@@ -562,7 +562,7 @@ mod tests {
         );
         let archived = std::fs::read_to_string(archive.join("cell").join("placement-actual.json"))
             .unwrap();
-        assert!(archived.contains("rtx-5090"));
+        assert!(archived.contains("not-a-host"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -580,14 +580,14 @@ mod tests {
                 "id": "cell-one-box",
                 "kind": "box",
                 "capability": "lane-tool",
-                "host_class": "rtx-5090",
+                "host_class": "not-a-host",
                 "wired": true
             }],
             "leases": [{
                 "hop_id": "cell-one-box",
                 "kind": "box",
                 "capability": "lane-tool",
-                "host_class": "rtx-5090",
+                "host_class": "not-a-host",
                 "granted": true,
                 "spawned": true,
                 "durable": true,
@@ -609,9 +609,65 @@ mod tests {
             report
                 .refuses
                 .iter()
-                .any(|r| r.contains("refuse:bad-host-class") && r.contains("rtx-5090")),
+                .any(|r| r.contains("refuse:bad-host-class") && r.contains("not-a-host")),
             "{:?}",
             report.refuses
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("conveyor-mesh.json")).unwrap(),
+            "sentinel\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn restore_refuses_garbage_placement_actual_json() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        let (archive, _) =
+            backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
+        std::fs::write(
+            archive.join("cell").join("placement-actual.json"),
+            "{not-json\n",
+        )
+        .unwrap();
+        let dest = root.join("restored");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("placement-actual.json"), "sentinel\n").unwrap();
+        let err = restore_cell(&archive, &dest, None, Some(&estate), false).unwrap_err();
+        assert!(
+            err.to_string().contains("placement-actual"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("placement-actual.json")).unwrap(),
+            "sentinel\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn restore_refuses_garbage_mesh_json() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        let (archive, _) =
+            backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
+        std::fs::write(
+            archive.join("cell").join("conveyor-mesh.json"),
+            "{not-json\n",
+        )
+        .unwrap();
+        let dest = root.join("restored");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("conveyor-mesh.json"), "sentinel\n").unwrap();
+        let err = restore_cell(&archive, &dest, None, Some(&estate), false).unwrap_err();
+        assert!(
+            err.to_string().contains("conveyor-mesh") || err.to_string().contains("expected"),
+            "{err}"
         );
         assert_eq!(
             std::fs::read_to_string(dest.join("conveyor-mesh.json")).unwrap(),

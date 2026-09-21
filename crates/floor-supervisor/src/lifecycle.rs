@@ -104,6 +104,8 @@ pub fn append_lifecycle_event(
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
+        .write(true)
+        .truncate(false)
         .open(path)?;
     use std::io::Write;
     writeln!(
@@ -301,6 +303,34 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e.action == "resume"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn lifecycle_jsonl_is_append_only_across_suspend_resume() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        resume(&estate, &state, &root).unwrap();
+        let after_resume = std::fs::read_to_string(state.join(LIFECYCLE_LOG)).unwrap();
+        assert!(!after_resume.is_empty());
+        suspend(&state).unwrap();
+        let after_suspend = std::fs::read_to_string(state.join(LIFECYCLE_LOG)).unwrap();
+        assert!(
+            after_suspend.starts_with(&after_resume),
+            "suspend must append, not truncate lifecycle.jsonl"
+        );
+        assert!(after_suspend.len() > after_resume.len());
+        resume(&estate, &state, &root).unwrap();
+        let again = std::fs::read_to_string(state.join(LIFECYCLE_LOG)).unwrap();
+        assert!(
+            again.starts_with(&after_suspend),
+            "resume must append, not truncate lifecycle.jsonl"
+        );
+        let events = list_lifecycle_events(&state).unwrap();
+        assert!(events.iter().any(|e| e.action == "resume"));
+        assert!(events.iter().any(|e| e.action == "suspend"));
+        assert_eq!(events.len(), again.lines().filter(|l| !l.is_empty()).count());
         let _ = std::fs::remove_dir_all(&root);
     }
 

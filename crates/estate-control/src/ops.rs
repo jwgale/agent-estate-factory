@@ -102,7 +102,7 @@ pub(crate) fn cmd_backup(
     prune: Option<usize>,
 ) -> Result<()> {
     enforce_policy(policy, "backup", None)?;
-    let estate = load_estate(estate_path).ok();
+    let estate = crate::helpers::load_estate_if_present(estate_path)?;
     let (dest, meta) = backup_cell(
         state_dir,
         Some(plans_dir),
@@ -133,7 +133,7 @@ pub(crate) fn cmd_restore(
     policy: &Path,
 ) -> Result<()> {
     enforce_policy(policy, "restore", None)?;
-    let estate = load_estate(estate_path).ok();
+    let estate = crate::helpers::load_estate_if_present(estate_path)?;
     let before = if dry_run {
         snapshot_state_files(state_dir)
     } else {
@@ -174,8 +174,8 @@ pub(crate) fn cmd_leases(state_dir: &Path) -> Result<()> {
             Ok(())
         }
         Some(places) => {
-            println!("{}", serde_json::to_string_pretty(&places)?);
             refuse_lease_host_classes(&places)?;
+            println!("{}", serde_json::to_string_pretty(&places)?);
             for lease in &places.leases {
                 if lease.kind == "cloud-agent" && lease.spawned {
                     bail!("cloud-agent lease spawned (fail closed)");

@@ -53,6 +53,8 @@ pub fn append_session_event(
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
+        .write(true)
+        .truncate(false)
         .open(path)?;
     writeln!(
         file,
@@ -147,6 +149,14 @@ mod tests {
         let tail = tail_session_events(&dir, 2).unwrap();
         assert_eq!(tail.len(), 2);
         assert_eq!(tail[0].action, "suspend");
+        let before = std::fs::read_to_string(dir.join(SESSION_JOURNAL)).unwrap();
+        journal_session(&dir, "expire-forget", None, None, None, "keep prior lines").unwrap();
+        let after = std::fs::read_to_string(dir.join(SESSION_JOURNAL)).unwrap();
+        assert!(
+            after.starts_with(&before),
+            "later journal writes must append, not truncate sessions.jsonl"
+        );
+        assert_eq!(list_session_events(&dir).unwrap().len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
