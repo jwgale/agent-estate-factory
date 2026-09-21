@@ -17,7 +17,8 @@ Cell One ships:
 2. catalog / route / bind (`model-estate catalog`)
 3. `HttpLocal` talking to `$CELL_LOCAL_ENDPOINT` (`/v0/specialist` or OpenAI / Ollama)
 4. `model-estate mock-local` - factory protocol stand-in, no GPU
-5. Fail-closed audited deny when local is down (`model.local.down`; frontier hits 0)
+5. `model-estate specialist` - data-plane equivalent of `estate specialist` (control does not execute models)
+6. Fail-closed audited deny when local is down (`model.local.down`; frontier hits 0)
 
 This is not LM Studio. No weight browser. No chat UI.
 
@@ -27,7 +28,7 @@ Live probes (up/down only): `GET /v1/models` or Ollama `GET /api/tags`. See [`LI
 
 Factory stand-in: `POST {CELL_LOCAL_ENDPOINT}/v0/specialist`
 
-OpenAI-compatible / Ollama: the adapter speaks `/v1/chat/completions` or `/api/chat` after a models list answers. Policy stays factory-owned.
+OpenAI-compatible / Ollama / llama.cpp server: the adapter posts the real request text to `/v1/chat/completions` or `/api/chat` after a models list answers. Policy stays factory-owned. A dummy ping is not a round-trip.
 
 ```json
 {"job":"policy-precheck","agent_id":"horizon","kind":"model","text":"..."}
