@@ -26,9 +26,10 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 | Mac (Apple Silicon) | `estate probes --live` against Ollama-on-Mac | **PASS.** `live ok` on the Ollama HTTP adapter. Native `mlx` `specialist()` stays Stub. |
 | Linux 5090-class (`consumer-nvidia` / `rented-nvidia`) | `estate probes --live` | **PASS.** `live ok (openai /v1/models)`. That GET is not a chat proof. |
 | Linux 5090-class | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`. Empty OpenAI `message.content` fell through to `/api/chat`. |
+| Env-gated key (no box name) | `estate specialist --driver frontier` model `grok-4.7` | **PASS.** `"completion": "pong"`, `"reason": "frontier completion"`. Key never printed. Ran with env-gated `XAI_API_KEY`. |
 
 Not recorded: Mac `estate specialist` chat (same command as the 5090 PASS),
-native MLX, live Grok / `XAI_API_KEY`.
+native MLX. Frontier `grok-4.7` specialist is recorded above.
 
 `READY_FOR_LIVE_TEST` for the rows above: **no**. Mac complete is the same
 `estate specialist --driver ollama` verb already proven on 5090. Do not ping.
@@ -288,8 +289,11 @@ cargo run -q -p estate-control -- specialist --driver frontier \
 Expect exit 0, `"allow": true`, `"job": "complete"`, `"reason": "frontier completion"`,
 and a non-empty `"completion"`. The key must not appear in stdout.
 
-`READY_FOR_LIVE_TEST`: **yes**. One command, real `XAI_API_KEY`, model `grok-4.7`.
-Not the 5090 Ollama path.
+This command **PASSed** (`completion` `pong`, reason `frontier completion`,
+model `grok-4.7`). The key was not printed. `reasoning_effort` xhigh stays
+the cloud-agent standing default and was not part of this factory POST.
+
+`READY_FOR_LIVE_TEST`: **no**. That surface is recorded.
 
 `probes --live` can print `live ok (openai /v1/models)` while
 `/v1/chat/completions` returns empty `message.content`. Specialist now
