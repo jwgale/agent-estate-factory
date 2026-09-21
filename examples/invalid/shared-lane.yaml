@@ -1,0 +1,37 @@
+version: 0
+name: shared-lane
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: shared
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: shared
+    desktop: research-desktop
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+lanes:
+  - id: shared
+    root_path: lanes/shared
+    owner_agent_id: horizon
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: gpu_5090
+    class: local
+    driver: local-gpu
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    reason: locked
+  - id: rust-classroom
+    reason: locked
