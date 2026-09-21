@@ -17,8 +17,10 @@ stays compile-only. Live Grok / GPU / Mac are not required to keep
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
-Adapter is on `main`. This factory still has no Mac and no GPU. Native MLX
-`specialist()` stays stub. Mac proof is Ollama-on-Mac.
+Adapter is on `main`. Specialist chat is mock-locked via
+`model-estate specialist` (not `estate specialist`). This factory still
+has no Mac and no GPU. Native MLX `specialist()` stays stub. Mac proof
+is Ollama-on-Mac. Do not ping Jason for the mock chat path.
 
 When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path;
 MLX stays a stub until he verifies it. Set `CELL_MLX_ENDPOINT` (or

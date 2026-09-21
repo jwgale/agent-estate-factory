@@ -277,7 +277,8 @@ impl LocalDriver for ExperimentalLocal {
 
 /// Thin HTTP specialist. Used by Ollama, llama.cpp, and http-remote.
 /// Factory `/v0/specialist` first; else OpenAI `/v1/chat/completions` or
-/// Ollama `/api/chat`. Policy stays `builtin_specialist`.
+/// Ollama `/api/chat` with the real request text. Policy stays
+/// `builtin_specialist`.
 pub struct HttpLocal {
     pub id: String,
     pub endpoint: String,
