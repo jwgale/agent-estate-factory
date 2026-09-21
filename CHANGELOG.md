@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #29 (this slice)
+
+- Recorded frontier specialist live PASS: `--driver frontier`, model `grok-4.7`, `completion` `pong`, reason `frontier completion`. Key never printed. Env-gated `XAI_API_KEY`. No box hostname.
+- `READY_FOR_LIVE_TEST`: no for that surface.
+- Mixed fixture `frontier_http` (`http-remote`, model `grok-4.7`) + local `ollama`: `validate` and `apply --dry-run` stay green with no live key and no POST.
+- Local specialist (`--driver ollama`) down or unset does not POST to frontier even when `XAI_API_KEY` and `CELL_FRONTIER_ENDPOINT` are set.
+
 ## After PR #28 (this slice)
 
 - Frontier model id is **`grok-4.7`** (`CELL_FRONTIER_MODEL` or `XAI_MODEL`). The old `grok-3-mini` default is gone.
