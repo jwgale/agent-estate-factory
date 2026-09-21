@@ -3,12 +3,12 @@
 Snapshot of **what is on `main` after this merge**. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
-Read with [`../README.md`](../README.md) → [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
-→ [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
+Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
+-> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1–#14 plus this slice)
+## On `main` (PR #1-#14 plus this slice)
 
-Day 0–90 factory is merged. Horizon / Research / Sanctum on separate lanes.
+Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
 Sanctum is first-class and is not Cyera.
 
@@ -27,7 +27,7 @@ Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 | --- | --- |
 | `convey sync` slim-parsed `placement-actual.json` through `canonical_host_class`, which rewrote unknown / SKU `host_class` (example: `rtx-5090`) to `any`. A tampered lease could seed a portable hop. | Unknown host class is `refuse:bad-host-class`. No hop files written. Aliases (`rtx_consumer`, `nvidia-rental`, case/underscore) still round-trip to the locked names. Overlay files with `locked: []` still cannot drop Cyera CI / Rust classroom. |
 
-## Bug fixes on #10–#13 (plain English)
+## Bug fixes on #10-#13 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- |
@@ -44,7 +44,7 @@ Hosted CI is compile-only. These stay on the box:
 make gate-90          # smoke + day90 + doctor --strict + checklist (local)
 make smoke            # doctor + fixtures-check + operator-day + cargo test + day90
 make day90            # isolated operator loop
-make feed-loop        # scrubbed trace → pack → propose → accept (not in smoke)
+make feed-loop        # scrubbed trace -> pack -> propose -> accept (not in smoke)
 make fixtures-check   # fixture files only
 make doctor-strict    # pre-merge extras
 make check            # cargo check --workspace --locked (same as Actions)
