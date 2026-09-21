@@ -66,17 +66,17 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         );
         check_unique_slugs(
             &format!("agent '{}' mounts", agent.id),
-            agent.mounts.iter().map(|m| m.id.as_str()),
+            agent.mounts.iter().map(|t| t.id.as_str()),
             &mut errors,
         );
         check_unique_slugs(
             &format!("agent '{}' mcp", agent.id),
-            agent.mcp.iter().map(|m| m.id.as_str()),
+            agent.mcp.iter().map(|t| t.id.as_str()),
             &mut errors,
         );
         check_unique_slugs(
             &format!("agent '{}' models", agent.id),
-            agent.models.iter().map(|m| m.id.as_str()),
+            agent.models.iter().map(|t| t.id.as_str()),
             &mut errors,
         );
         for model in &agent.models {
@@ -232,7 +232,6 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
             }
         }
         if placement.kind == PlacementKind::CloudAgent {
-            // Declared stub is valid even when wired:true. Floor still does not spawn it.
             if placement.agents.is_empty() && placement.wired {
                 errors.push(format!(
                     "placement '{}' is a wired cloud-agent with no agents; leave wired:false until Day-90 assigns it",
@@ -344,18 +343,6 @@ fn check_slug(field: &str, value: &str, errors: &mut Vec<String>) {
     }
 }
 
-fn is_slug(value: &str) -> bool {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_lowercase() => {}
-        _ => return false,
-    }
-    if value.len() > 64 {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-}
-
 fn check_unique_slugs<'a>(
     label: &str,
     ids: impl Iterator<Item = &'a str>,
@@ -371,14 +358,26 @@ fn check_unique_slugs<'a>(
 }
 
 /// Hardware SKUs must not appear in estate contracts. Hardware is a driver choice.
-const SKU_NEEDLES: &[&str] = &[
+pub const SKU_NEEDLES: &[&str] = &[
     "5090", "4090", "4080", "3090", "a100", "h100", "b200", "m3-max", "m3max", "m2-max", "m2max",
     "m1-max", "m1max", "m4-max", "m4max",
 ];
 
-fn contains_sku(value: &str) -> bool {
+pub fn contains_sku(value: &str) -> bool {
     let n = value.to_ascii_lowercase();
     SKU_NEEDLES.iter().any(|needle| n.contains(needle))
+}
+
+pub fn is_slug(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    if value.len() > 64 {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
 fn reject_sku(field: &str, value: &str, errors: &mut Vec<String>) {
