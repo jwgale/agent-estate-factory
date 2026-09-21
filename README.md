@@ -11,6 +11,7 @@ cargo test --workspace
 make gate
 make gate-60
 make gate-90    # local only; not in GitHub Actions
+make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
 ```
 
 Hosted CI is **disabled overnight** (no Actions workflows; no failure emails). Real `cargo test --workspace` and `make gate*` stay local. Re-enable tomorrow as compile-only if Jason wants.
@@ -116,7 +117,7 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 
 ## Persist vs disposable
 
-Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/feed/feed-cursor.json`.  
+Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `plans/reviewed/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/feed/feed-cursor.json`, `.cell/conveyor-mesh.json`, `.cell/conveyor-hops.json`, `.cell/conveyor-leases.json`.  
 Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`.
 
 ## What is stubbed vs live
@@ -124,7 +125,7 @@ Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actua
 | Piece | State |
 | --- | --- |
 | Isolation | Profile dirs (not containers). Trait is swappable. |
-| Conveyor HTTP | `POST /v0/check` only. Not a mesh or gateway. |
+| Conveyor HTTP | `POST /v0/check` only. Capability mesh is a lease-bound stub (`estate convey`). Not a gateway. |
 | Frontier `xai_grok` | Wired driver. Live when `XAI_API_KEY` is set. Tests use mock/HTTP fake. |
 | Local `local_slm` | Wired `ollama` driver + `CELL_LOCAL_ENDPOINT`. `mock-local` speaks the protocol. |
 | llama.cpp | Swap-proof card; same specialist protocol. |
@@ -156,5 +157,6 @@ Day 61–90 beachhead (local `make gate-90`):
 11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. `apply --require-plan` is gated and audited. Commit a plan file when apply needs a PR review.
 12. **`placements[]` declares `box` and a `cloud-agent` stub.** `PlacementDriver` records leases; it does not spawn cloud agents. Drift fail-closes a spawned cloud lease or host_class mismatch. `schema/local-catalog.v0.json` is the catalog file SoT.
 13. **Feed cursor + lifecycle history + plan freshness** are file-durable. `apply --require-fresh-plan` checks `against_hash`. Driver `probe()` is catalog-level (`live_probed=false`).
+14. **Wave 2 (same PR):** `estate convey` mesh, Security-as-IaC `{stem}.security.md` + `--require-fresh-plan` strict, `estate packs`, `make operator-day`, host-class aliases + `examples/hosts/`.
 
 Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md). Anti-shrink list is in the charter.
