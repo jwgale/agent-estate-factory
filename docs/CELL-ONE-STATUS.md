@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#34 plus this slice)
+## On `main` (PR #1-#35 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -108,17 +108,25 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 #34. `make feed-loop` checks that tag on the pack it just wrote, and checks the proposal copies it. Live keys are unset. `estate help frontier` and `estate help day90-mixed` explain those paths. If writing a feed event fails, the task stops before it calls frontier.
 
-## This slice
+## #35 in plain English
 
-`estate specialist --driver frontier` already refused without `XAI_API_KEY`. The error now stays explicit: stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT` for a missing key and for a hardware SKU in the model id. The SKU still refuses before any POST, and the message says which setting the bad id came from.
+`estate specialist --driver frontier` already refused without `XAI_API_KEY`. The error stays explicit: stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT` for a missing key and for a hardware SKU in the model id. The SKU still refuses before any POST, and the message says which setting the bad id came from.
 
 `docs/GATE-90.md` and `docs/DAY90-PLUS.md` separate three states. Green means the factory check passes with no box. Recorded means a live proof already ran and is not required again. Parked means it is not green: Mac specialist complete is optional and not recorded, native MLX stays a stub, and cloud-agent spawn stays off.
+
+## This slice
+
+Pack `INDEX.md` already wrote `drivers=` when a pack had `source_drivers`. `estate feed list` and `estate packs list` omitted the tag. They now print `drivers=frontier,local` when the pack has both, and `drivers=-` when the pack has none. An empty pack does not invent `frontier`.
+
+Writing a drop pack, importing one, and listing the drop used to ignore a failed INDEX rewrite. Those three paths now return the error. A stale index is not a successful write.
+
+`make feed-loop` greps the drop `INDEX.md` for `drivers=frontier,local`. There is no `make feed-loop-mixed`: the existing walk already uses mixed frontier and local traces on the default estate. It stays off smoke and `make gate-90`. No new CLI.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#35 (plain English)
+## Bug fixes on #10-#36 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -147,6 +155,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #33 | Packs counted frontier and local events but did not name the source. A kind mentioning frontier could override `object_class: local`. | `source_drivers` is `frontier` and/or `local` and must match `path_counts`. Local class wins. Propose shows the tag. Promote stays off. READY no. |
 | #34 | `make feed-loop` never checked the new tag. A failed feed append still let the task succeed. Help had no frontier or day90-mixed page. | The fixture walk asserts `source_drivers` frontier then local, with no live keys. Task feed failures refuse before frontier. `estate help frontier` and `estate help day90-mixed`. READY no. |
 | #35 | A SKU frontier model id refused without saying which env set it. Gate pages called recorded GPU proof parked. | Frontier refuse stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT`. Green, recorded, and parked are separate. Mac specialist stays optional. Native MLX and cloud-spawn stay parked. READY no. |
+| #36 | INDEX wrote `drivers=` but `estate feed list` hid them. A failed INDEX rewrite was swallowed. | List prints `drivers=frontier,local` when present and `drivers=-` when empty. Pack write, import, and list fail if the index rewrite fails. `make feed-loop` greps INDEX. No `make feed-loop-mixed`. No new CLI. READY no. |
 
 ## Known-good local commands
 
