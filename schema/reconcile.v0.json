@@ -1,0 +1,50 @@
+{
+  "schema": "cell-one.reconcile.v0",
+  "in_sync": true,
+  "desired_hash": "sha256:documentary",
+  "actual_hash": "sha256:documentary",
+  "desired": [
+    {
+      "id": "cell-one-box",
+      "side": "desired",
+      "kind": "box",
+      "host_class": "any",
+      "agents": ["horizon", "research", "sanctum"],
+      "wired": true,
+      "spawned": null
+    },
+    {
+      "id": "cursor-cloud",
+      "side": "desired",
+      "kind": "cloud-agent",
+      "host_class": "any",
+      "agents": [],
+      "wired": false,
+      "spawned": null
+    }
+  ],
+  "actual": [
+    {
+      "id": "cell-one-box",
+      "side": "actual",
+      "kind": "box",
+      "host_class": "any",
+      "agents": ["horizon", "research", "sanctum"],
+      "wired": true,
+      "spawned": true
+    },
+    {
+      "id": "cursor-cloud",
+      "side": "actual",
+      "kind": "cloud-agent",
+      "host_class": "any",
+      "agents": [],
+      "wired": false,
+      "spawned": false
+    }
+  ],
+  "refuses": [],
+  "notes": [
+    "placement leases match desired estate; cloud-agent not spawned"
+  ]
+}

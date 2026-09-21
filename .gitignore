@@ -19,5 +19,6 @@ gate-reports/*
 /tmp
 packs/*.pack.json
 packs/accepted/
+packs/proposed/
 !packs/INDEX.md
 !packs/README.md
