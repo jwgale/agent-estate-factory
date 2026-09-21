@@ -31,7 +31,7 @@ Jason still asleep. Same branch. No Actions. Local cargo only.
 
 Jason still asleep. Same branch. No Actions. Local cargo only. Wave 2 stays.
 
-18. **Placement reconcile is a report, not a fixer.** `estate reconcile` writes `.cell/reconcile.json` + `reconcile.md` (`cell-one.reconcile.v0`). Desired vs actual rows, refuse codes (`missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`). Drift notes use the same `refuse:` prefix. Sacred-id is scanned on *actual* lease agents even if `estate.yaml` is clean (tamper fail-closed). Conveyor `MeshError` Display is now `refuse:no-lease` / `refuse:ungranted` / `refuse:cloud-not-spawned` / … Variant matching is unchanged.
+18. **Placement reconcile is a report, not a fixer.** `estate reconcile` writes `.cell/reconcile.json` + `reconcile.md` (`cell-one.reconcile.v0`). Desired vs actual expanded rows, refuse codes (`missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`). Drift notes use the same `refuse:` prefix. Sacred-id is scanned on *actual* lease agents even if `estate.yaml` is clean (tamper fail-closed). Conveyor `MeshError` Display is now `refuse:no-lease` / `refuse:ungranted` / `refuse:cloud-not-spawned` / … Variant matching is unchanged.
 19. **Enrich propose never applies.** After an explicit pack import, `estate packs propose` writes `packs/proposed/{id}.proposal.json` + `.md` (`cell-one.enrich-proposal.v0`). `auto_apply` is always false. Diff summary is for curator Jason. Estate file is not rewritten. `refuse_apply_proposal` exists only to fail closed.
 20. **Multi-host fixture is one estate.** `examples/hosts/multi-host.yaml` spans frontier-http + ollama + http-remote + llama.cpp stub + mlx stub, plus empty unwired box placements (`box-rtx` / `box-apple` / `box-rental`) and the cloud-agent stub. `estate validate` is green. Extra unused bindings are valid. Empty box placements are valid. Wired cloud-agent + empty agents is still invalid.
 21. **Audit export is local-only.** `estate audit export` bundles plan history, `lifecycle.jsonl`, `apply-audit.jsonl`, `import-audit.jsonl`, convey leases, placement-actual, and reconcile into a folder (`MANIFEST.md`). `--tar` writes `{out}.tar.gz` when `tar` exists. Not uploaded. Not a gateway dump.
@@ -46,7 +46,7 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–3 stay.
 25. **Lease TTL is optional.** `ttl_secs` on a placement stamps `issued_at` / `expires_at` on the lease. `estate expire` lists elapsed rows (exit 1). apply/resume refuse expired. `estate expire --forget` drops expired rows so apply can record fresh leases. Does not spawn. Reconcile reports `refuse:expired`.
 26. **Scrub is wider; import writes a redaction report.** `scrub_pii` covers GitHub/HF/AWS/Slack/PEM/`password=` plus the Wave 2 keys. Import refuses raw secrets (never stored in accepted packs) and writes `{id}.redaction.json` (kind counts only).
 27. **Specialist pack v0 is additive.** `source_paths`, `model_hint`, `host_class_affinity` validate on import/propose. `cell-one.pack.v0` and `cell-one.specialist-pack.v0` both load. SKU / absolute source paths / bad host affinity fail closed.
-28. **`estate doctor` is one page.** Schema files present, `.github/workflows/*.yml` absent (quiet hours), `.cell` layout notes, expired/cloud-spawned fail. Greenfield `.cell` is a note, not a fail.
+28. **`estate doctor` is one page.** Schema files present, only compile-only `ci.yml` allowed, `.cell` layout notes, expired/cloud-spawned fail. Greenfield `.cell` is a note, not a fail.
 29. **Operator-day grew dry-run / doctor / expire / redaction.** Still fixtures only.
 
 ## Wave 5 (same PR #2 — journal, hop ttl, plan diff)
@@ -145,6 +145,14 @@ Jason’s inbox was filling with Actions failure mail. Until ~7am America/Chicag
 - Do not add a workflow file overnight. Do not open extra PRs that would retrigger CI.
 - Gate is local only: `cargo check --workspace --locked`, `cargo test --workspace`, `make gate` / `make gate-60` / `make gate-90` / `make smoke`.
 - Tomorrow, if Jason wants hosted CI back: one `pull_request` job, `cargo check --workspace --locked` only, timeout ≤ 10. Never `cargo test` on Actions overnight.
+
+## CI (21 Sep morning — Jason re-enable)
+
+Jason asked to merge PR #2 when compile-only CI is green.
+
+- `.github/workflows/ci.yml` is back: `pull_request` → `main`, concurrency cancel-in-progress, one job `cargo check --workspace --locked`, rustc 1.88, timeout 10.
+- No `cargo test` on Actions. No matrix. No push-to-main jobs. One workflow only.
+- `estate doctor` allows that file and fails extra `*.yml`.
 
 ## Origin
 
