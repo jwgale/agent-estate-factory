@@ -73,9 +73,9 @@ That is HTTP, not native MLX. The catalog card stays stub.
 | `CELL_VLLM_ENDPOINT` | experimental; unset = SKIP | experimental `/v1/models` |
 | `CELL_TRT_ENDPOINT` | experimental; unset = SKIP | experimental; unset = SKIP |
 | `CELL_LOCAL_MODEL` | optional model id for `specialist()`; SKU ids refuse. Unset = first `/api/tags` id, then `/v1/models`. | same |
-| `CELL_FRONTIER_ENDPOINT` | unused by probes and Ollama specialist | `--driver frontier` / AI-gateway only. `XAI_API_KEY` does not unlock. |
+| `CELL_FRONTIER_ENDPOINT` | unused by probes and Ollama specialist | optional base for `--driver frontier`. Default `https://api.x.ai/v1`. |
 
-`XAI_*` is frontier A7. Probes and `--driver frontier` do not use it.
+`XAI_API_KEY` is required for `--driver frontier` (model `grok-4.7`). Probes do not use it. Local specialist does not use it.
 
 ## Sample output (exact lines)
 
@@ -257,29 +257,39 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
 Mac `estate specialist` chat is the same command as the 5090 PASS.
 `READY_FOR_LIVE_TEST`: **no**.
 
-## Frontier / AI-gateway specialist (not Ollama live)
+## Frontier (grok-4.7)
 
-Separate from `CELL_LOCAL_ENDPOINT`. `--driver frontier` (aliases:
-`frontier-http`, `ai-gateway`, `openai-compat`) uses
-`CELL_FRONTIER_ENDPOINT` or `--endpoint` only. `CELL_LOCAL_ENDPOINT` and
-`XAI_API_KEY` do not unlock it. SKU endpoints refuse. Mock-locked.
-Never required in CI. Not a Jason live ping.
+Separate from Ollama / `CELL_LOCAL_ENDPOINT`. `--driver frontier`
+(aliases `frontier-http`, `ai-gateway`, `openai-compat`) posts
+`/v1/chat/completions` to xAI. Model id is **`grok-4.7`** unless
+`CELL_FRONTIER_MODEL` or `XAI_MODEL` is set. SKU model ids and SKU
+endpoints refuse before POST. Sacred text refuses before POST.
+
+`--driver http-remote` stays the **local** remote card
+(`CELL_LOCAL_ENDPOINT`). It is not this path. Local down still does not
+fall through to frontier.
+
+Cloud agents use `reasoning_effort` **xhigh** as Jason's standing
+default. The factory specialist sends a normal chat completion for
+`grok-4.7` and does not require that field.
+
+Unset `XAI_API_KEY` refuses (no invented completion). CI never sets the
+key. A fake key plus `--endpoint` against in-process mock returns
+`"completion": "ok"` and the POST body contains `"model":"grok-4.7"`.
 
 ```bash
-# mock / any OpenAI-compatible gateway
-export CELL_FRONTIER_ENDPOINT=http://127.0.0.1:47832
+export XAI_API_KEY=...
+# optional: export CELL_FRONTIER_ENDPOINT=https://api.x.ai/v1
+# optional: export CELL_FRONTIER_MODEL=grok-4.7
 cargo run -q -p estate-control -- specialist --driver frontier \
   --prompt "Reply with the single word pong."
 ```
 
-Unset `CELL_FRONTIER_ENDPOINT` (even if `XAI_API_KEY` is set) refuses:
+Expect exit 0, `"allow": true`, `"job": "complete"`, `"reason": "frontier completion"`,
+and a non-empty `"completion"`. The key must not appear in stdout.
 
-```
-frontier specialist endpoint unset; set CELL_FRONTIER_ENDPOINT (XAI_API_KEY is not used)
-```
-
-In-process mock (`CompatServer`) returns `"completion": "ok"` on
-`/v1/chat/completions`. This is not live Grok and not the 5090 Ollama path.
+`READY_FOR_LIVE_TEST`: **yes**. One command, real `XAI_API_KEY`, model `grok-4.7`.
+Not the 5090 Ollama path.
 
 `probes --live` can print `live ok (openai /v1/models)` while
 `/v1/chat/completions` returns empty `message.content`. Specialist now
@@ -395,7 +405,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
   --agent research --act tool --object notes-append --payload "append a note"
 ```
 
-Down local is `local:down` / `model.local.down`. No silent Grok fallback.
+Down local is `local:down` / `model.local.down`. No silent `grok-4.7` fallback.
 
 ## What green is not
 
