@@ -127,7 +127,7 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 ## After PR #31 (this slice)
 
 - `make day90-mixed` walks the mixed fixture: status → plan → `apply --require-plan` → status → doctor. Isolated cell. No live key. Not in smoke or Actions.
-- `estate status` prints `frontier: \u003cid\u003e model=…` only when the binding sets `params.model`. Catalog lines print `grok-4.7` when `frontier.model` is in the schema catalog or the cell `catalog.json`. Doctor prints the same. A SKU model fails doctor.
+- `estate status` prints `frontier: <id> model=…` only when the binding sets `params.model`. Catalog lines print `grok-4.7` when `frontier.model` is in the schema catalog or the cell `catalog.json`. Doctor prints the same. A SKU model fails doctor.
 - The default estate binding has no model param, so status does not invent `frontier: xai_grok model=grok-4.7`.
 - `READY_FOR_LIVE_TEST`: no.
 
