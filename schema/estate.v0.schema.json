@@ -171,7 +171,12 @@
         },
         "wired": { "type": "boolean" },
         "params": { "type": "object" },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "ttl_secs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Optional lease lifetime. Absent = no expiry. expire --forget then apply restamps."
+        }
       }
     },
     "sacred_exclusion": {
