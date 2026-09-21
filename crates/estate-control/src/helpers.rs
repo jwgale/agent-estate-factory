@@ -79,3 +79,4 @@ pub(crate) fn copy_tree_files(src: &Path, dest: &Path, copied: &mut Vec<String>)
     }
     Ok(())
 }
+
