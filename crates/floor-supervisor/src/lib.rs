@@ -22,6 +22,7 @@ pub use placement::{
     append_apply_audit, apply_dry_run, claim_leases, driver_for, drift_placements,
     forget_expired_leases, lease_is_expired, list_apply_audits, list_expired_leases, load_placements,
     mark_leases_unspawned, now_unix, reconcile_placements, record_placements, refuse_expired_leases,
+    refuse_lease_host_classes,
     render_dry_run, render_reconcile, write_placements, write_reconcile, ApplyAudit, ApplyDryRun,
     BoxDriver, CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
     ReconcileReport, ReconcileRow, Refuse, DRY_RUN_SCHEMA, RECONCILE_SCHEMA,
