@@ -42,10 +42,13 @@ README leads with `make gate-90` as the Day-90 operator entrypoint. `make feed-l
 
 Isolated dual-layer-demo loop: validate → plan → dry-run → apply → status → reconcile → backup → prune. README cross-links OPERATOR-DAY and FEED-LOOP. Dead leftover `ops.rs` wrappers removed. Snapshot: `docs/CELL-ONE-STATUS.md`.
 
-## After PR #9 (this slice)
+## PR #10 — lease-refresh after expire --forget
 
-- Hole: `estate expire --forget` dropped leases, then apply treated that as `refuse:drift` and demanded `--force`. Apply now restamps (`lease-refresh`). Not a new verb.
-- Isolated TTL e2e on `examples/fixtures/ttl-short.yaml`: apply stamps `ttl_secs: 1` → expire lists → apply refuses → expire `--forget` → re-apply fresh. No JSON mutation. Cloud never spawned.
+Hole: `estate expire --forget` dropped leases, then apply treated that as `refuse:drift` and demanded `--force`. Apply now restamps (`lease-refresh`). Isolated TTL e2e on `examples/fixtures/ttl-short.yaml`. Not a new verb.
+
+## After PR #10 (this slice)
+
+- Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refuses `cyera-ci` / `rust-classroom` on convey hop. `lab-notebook` refuses only with the overlay installed. Dual-layer-demo still validates. No new verb.
 
 ## Still stubbed
 
