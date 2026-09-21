@@ -1327,4 +1327,19 @@ mod tests {
         assert!(matches!(err, FeedError::WrongCurator { .. }));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn refuse_codes_missing_pack_and_no_auto_apply() {
+        let dir = tmp();
+        let err = import_pack(&dir.join("drop"), &dir.join("accepted"), "no-such", &[])
+            .unwrap_err();
+        assert!(matches!(err, FeedError::MissingPack(_)));
+        assert!(err.to_string().starts_with("refuse:missing-pack"));
+        let apply = refuse_apply_proposal("overnight-traces").unwrap_err();
+        assert!(matches!(apply, FeedError::NoAutoApply));
+        assert!(apply.to_string().starts_with("refuse:no-auto-apply"));
+        let raw = refuse_raw_secrets("token=sk-abcdefghijklmnopqrstuv").unwrap_err();
+        assert!(raw.to_string().starts_with("refuse:raw-secret"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
