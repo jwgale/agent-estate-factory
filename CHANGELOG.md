@@ -49,10 +49,16 @@ Session journal. Convey hop TTL. `estate plan diff` (`refuse:wider`). Fixture li
 - `policy/sacred.yaml` overlays on hardcoded sacred ids. Apply / convey / cloud refuse on hit.
 - Mixed fixture: http-remote frontier + local ollama; validate + dry-run, no live calls.
 
-## Day 90+ (PR after #2)
+## Day 90+ (PR #3 on `main`)
 
 - `estate probes --live` / `CELL_LIVE_PROBE=1`: optional HTTP ping. Unset endpoints print SKIP. CI does not require a Mac or a rented GPU. Rented box uses `CELL_LOCAL_ENDPOINT` or `CELL_RENTED_ENDPOINT` (no SKU in the id). MLX uses `CELL_MLX_ENDPOINT`.
 - `make day90`: status → plan → dry-run → apply → reconcile, then catalog + live probes.
+
+## After PR #3
+
+- Probe env vars documented in README. `probes --live` SKIP fixture. Probe ids refuse SKUs.
+- `estate reconcile --suggest` writes a patch file only (never auto-apply).
+- `estate packs accept --curator jason` writes enrich_packs edit instructions (no estate rewrite).
 
 ## Still stubbed
 

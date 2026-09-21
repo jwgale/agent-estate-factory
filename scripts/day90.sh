@@ -29,6 +29,9 @@ cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" 
 echo "-- reconcile --"
 cargo run -q -p estate-control -- reconcile --estate "$ESTATE" --state-dir "$STATE"
 
+echo "-- reconcile --suggest (not applied) --"
+cargo run -q -p estate-control -- reconcile --suggest --estate "$ESTATE" --state-dir "$STATE"
+
 echo "-- status (after apply) --"
 cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT" --plans-dir "$PLANS"
 

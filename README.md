@@ -106,7 +106,21 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver, not a fork. |
 | Apple | Ollama-on-Mac = Supported. MLX = Stub behind the same catalog / route / bind API. |
 
-Do not put `5090`, `4090`, or `m3-max` in estate binding ids. A 5090 box is one `rented-nvidia` host.
+Do not put `5090`, `4090`, or `m3-max` in estate binding ids **or probe ids**. A 5090 box is one `rented-nvidia` host.
+
+## Live probe env (optional)
+
+CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when the endpoint is unset and exits 0.
+
+| Variable | Use |
+| --- | --- |
+| `CELL_LIVE_PROBE` | `1` / `true` / `yes` to opt into live HTTP |
+| `CELL_LOCAL_ENDPOINT` | Ollama / llama.cpp / http-remote specialist (`POST /v0/specialist`) |
+| `CELL_RENTED_ENDPOINT` | Alias for a rented (or any) box. Not a SKU. |
+| `CELL_MLX_ENDPOINT` | Apple MLX; falls back to `CELL_LOCAL_ENDPOINT` |
+| `CELL_VLLM_ENDPOINT` | Experimental; unset = SKIP |
+| `CELL_TRT_ENDPOINT` | Experimental; unset = SKIP |
+| `XAI_API_KEY` / `XAI_API_BASE` / `XAI_MODEL` | Frontier live A7. Not used by probes. |
 
 ## Day-30 gate demo (A1–A4)
 

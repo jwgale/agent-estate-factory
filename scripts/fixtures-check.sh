@@ -72,6 +72,18 @@ if ! grep -q "http-remote" /tmp/fixtures-catalog.out || ! grep -q "ollama" /tmp/
 fi
 echo "PASS  mixed-frontier-local validate + dry-run + catalog"
 
+echo "-- probes --live SKIP (no endpoints) --"
+"${ESTATE[@]}" probes --live >/tmp/fixtures-probes-live.out
+if ! grep -q "SKIP" /tmp/fixtures-probes-live.out; then
+  echo "FAIL  probes --live must SKIP without endpoints"
+  exit 1
+fi
+if grep -qE "5090|4090|m3-max" /tmp/fixtures-probes-live.out; then
+  echo "FAIL  probe ids must not encode a hardware SKU"
+  exit 1
+fi
+echo "PASS  probes --live SKIP"
+
 echo "-- doctor --"
 "${ESTATE[@]}" doctor --root "$ROOT" --state-dir "$STATE"
 
