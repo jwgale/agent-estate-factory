@@ -5,11 +5,11 @@ use estate_schema::{
     plan_against_is_fresh, plan_against_is_fresh_strict, plan_blast_width, plan_is_reviewable,
     render_plan, render_plan_diff, render_plan_pr, write_plan,
 };
-use feed_collector::import_pack_for;
+use feed_collector::{import_pack_for, refuse_import_pack};
 use floor_supervisor::{
     append_apply_audit, apply_dry_run, apply_with_profile_dir, classify_apply, list_expired_leases,
-    load_desired_snapshot, mark_running, now_unix, record_placements, refuse_expired_leases,
-    render_dry_run, ApplyAudit, ApplyIdentity,
+    load_desired_snapshot, load_lifecycle, mark_running, now_unix, record_placements,
+    refuse_expired_leases, render_dry_run, ApplyAudit, ApplyIdentity,
 };
 use std::path::Path;
 
@@ -121,7 +121,7 @@ pub(crate) fn cmd_plan_export_pr(
     if !reviewed {
         risks.push("plan is not marked reviewed".into());
     }
-    let expired = list_expired_leases(state_dir, now_unix()).unwrap_or_default();
+    let expired = list_expired_leases(state_dir, now_unix())?;
     if !expired.is_empty() {
         risks.push(format!(
             "expired placement leases: {}",
@@ -240,6 +240,16 @@ pub(crate) fn cmd_apply(
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     enforce_policy(policy, "apply", None)?;
+    if let Some(id) = import_pack_id {
+        refuse_import_pack(
+            packs_dir,
+            id,
+            curator,
+            &estate.enrich_packs.curator,
+        )
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
+    load_lifecycle(state_dir)?;
     if dry_run {
         return cmd_apply_dry_run(
             &estate,
