@@ -40,6 +40,10 @@ impl FrontierDriver for MockFrontier {
 /// Frontier chat model. Override with `CELL_FRONTIER_MODEL` or `XAI_MODEL`.
 pub const DEFAULT_FRONTIER_MODEL: &str = "grok-4.7";
 
+/// Factory specialist completion budget. Not a context-window claim.
+/// `reasoning_effort` xhigh is the cloud-agent standing default and is not sent.
+pub const FRONTIER_COMPLETION_TOKENS: u32 = 64;
+
 /// xAI OpenAI-compatible base. Override with `CELL_FRONTIER_ENDPOINT` or `XAI_API_BASE`.
 pub const DEFAULT_FRONTIER_BASE: &str = "https://api.x.ai/v1";
 
@@ -69,7 +73,7 @@ pub fn frontier_chat(base: &str, key: &str, model: &str, text: &str) -> Result<S
         "model": model,
         "messages": [{"role": "user", "content": text}],
         "temperature": 0,
-        "max_tokens": 64
+        "max_tokens": FRONTIER_COMPLETION_TOKENS
     });
     let resp = ureq::post(&url)
         .set("Authorization", &format!("Bearer {key}"))

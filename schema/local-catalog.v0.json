@@ -106,5 +106,17 @@
       },
       "notes": "CELL_LOCAL_ENDPOINT remote pattern. Same protocol on any host class."
     }
-  ]
+  ],
+  "frontier": {
+    "driver_id": "frontier",
+    "model": "grok-4.7",
+    "status": "equal-class",
+    "caps": {
+      "streaming": false,
+      "tools": false,
+      "vision": false,
+      "completion_tokens": 64
+    },
+    "notes": "A7 chat. Model grok-4.7. Needs XAI_API_KEY. No stream, tools, or vision. reasoning_effort xhigh is the cloud-agent standing default and is not sent. Local down does not fall through."
+  }
 }
