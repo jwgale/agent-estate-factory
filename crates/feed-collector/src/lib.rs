@@ -27,6 +27,10 @@ pub enum FeedError {
     BadSchema(String),
     #[error("pack host_class '{0}' must be consumer-nvidia|apple-silicon|rented-nvidia|any")]
     BadHostClass(String),
+    #[error("refuse:missing-pack: no pack '{0}' in drop or accepted")]
+    MissingPack(String),
+    #[error("refuse:no-auto-apply: enrich proposals are curator-only; Jason reviews and edits the estate")]
+    NoAutoApply,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -485,6 +489,252 @@ pub fn import_pack(
     Ok((imported, path))
 }
 
+pub const PROPOSAL_SCHEMA: &str = "cell-one.enrich-proposal.v0";
+
+/// Diff Jason reviews. Never applied by the factory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnrichDiff {
+    pub pack_id: String,
+    pub estate_bound: bool,
+    pub would_add_to_estate: bool,
+    pub kinds: Vec<String>,
+    pub agents: Vec<String>,
+    pub paths: Vec<String>,
+    pub path_counts: PathCounts,
+    pub note: String,
+}
+
+/// Proposal pack. `auto_apply` is always false. Not estate SoT.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnrichProposal {
+    #[serde(default = "default_proposal_schema")]
+    pub schema: String,
+    pub id: String,
+    pub curator: String,
+    pub policy: String,
+    pub auto_apply: bool,
+    pub source_pack: String,
+    pub estate_name: String,
+    pub estate_hash: String,
+    pub current_estate_packs: Vec<String>,
+    pub proposed_estate_packs: Vec<String>,
+    pub diff: EnrichDiff,
+    pub created_at: String,
+    pub note: String,
+}
+
+fn default_proposal_schema() -> String {
+    PROPOSAL_SCHEMA.into()
+}
+
+/// Always fails. Proposals are never applied.
+pub fn refuse_apply_proposal(_id: &str) -> Result<(), FeedError> {
+    Err(FeedError::NoAutoApply)
+}
+
+fn load_pack_loose(dir: &Path, id: &str) -> Result<PackManifest, FeedError> {
+    let path = dir.join(format!("{id}.pack.json"));
+    if !path.exists() {
+        return Err(FeedError::MissingPack(id.to_string()));
+    }
+    let text = std::fs::read_to_string(&path)?;
+    if let Ok(pack) = serde_json::from_str::<PackManifest>(&text) {
+        if !pack.id.is_empty() {
+            return Ok(pack);
+        }
+    }
+    if let Ok(imported) = serde_json::from_str::<ImportedPack>(&text) {
+        return Ok(imported.pack);
+    }
+    Err(FeedError::Parse(format!(
+        "{}: not a pack or imported pack",
+        path.display()
+    )))
+}
+
+pub fn render_proposal(proposal: &EnrichProposal) -> String {
+    let mut out = String::from("Enrich proposal (curator Jason)\n");
+    out.push_str("==============================\n");
+    out.push_str(&format!("schema: {}\n", proposal.schema));
+    out.push_str(&format!("id: {}\n", proposal.id));
+    out.push_str(&format!("auto_apply: {}\n", proposal.auto_apply));
+    out.push_str(&format!("source_pack: {}\n", proposal.source_pack));
+    out.push_str(&format!(
+        "estate: {} ({})\n",
+        proposal.estate_name, proposal.estate_hash
+    ));
+    out.push_str(&format!(
+        "current packs: {}\n",
+        if proposal.current_estate_packs.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.current_estate_packs.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "proposed packs: {}\n\n",
+        if proposal.proposed_estate_packs.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.proposed_estate_packs.join(", ")
+        }
+    ));
+    out.push_str("Diff summary\n------------\n");
+    out.push_str(&format!("  pack: {}\n", proposal.diff.pack_id));
+    out.push_str(&format!("  estate_bound: {}\n", proposal.diff.estate_bound));
+    out.push_str(&format!(
+        "  would_add_to_estate: {}\n",
+        proposal.diff.would_add_to_estate
+    ));
+    out.push_str(&format!(
+        "  kinds: {}\n",
+        if proposal.diff.kinds.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.diff.kinds.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "  agents: {}\n",
+        if proposal.diff.agents.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.diff.agents.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "  paths: {}\n",
+        if proposal.diff.paths.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.diff.paths.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "  path_counts: frontier={} local={} proxy={} other={}\n",
+        proposal.diff.path_counts.frontier,
+        proposal.diff.path_counts.local,
+        proposal.diff.path_counts.proxy,
+        proposal.diff.path_counts.other
+    ));
+    out.push_str(&format!("\n{}\n", proposal.note));
+    out.push_str(&format!("{}\n", proposal.diff.note));
+    out
+}
+
+pub fn write_proposal_index(proposed_dir: &Path) -> Result<PathBuf, FeedError> {
+    std::fs::create_dir_all(proposed_dir)?;
+    let mut names: Vec<PathBuf> = if proposed_dir.exists() {
+        std::fs::read_dir(proposed_dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|n| n.ends_with(".proposal.json"))
+                    .unwrap_or(false)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    names.sort();
+    let mut md = String::from(
+        "# Enrich proposals\n\nNever auto-applied. curator=jason policy=manual. Jason reviews the diff and edits `estate.enrich_packs` by hand. The factory will not apply these files.\n\n",
+    );
+    if names.is_empty() {
+        md.push_str("(no proposals)\n");
+    } else {
+        for path in &names {
+            let text = std::fs::read_to_string(path).unwrap_or_default();
+            if let Ok(p) = serde_json::from_str::<EnrichProposal>(&text) {
+                md.push_str(&format!(
+                    "- `{}.proposal.json` estate_bound={} would_add={} auto_apply={} source={}\n",
+                    p.id, p.diff.estate_bound, p.diff.would_add_to_estate, p.auto_apply, p.source_pack
+                ));
+            } else if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                md.push_str(&format!("- `{name}`\n"));
+            }
+        }
+    }
+    let path = proposed_dir.join("INDEX.md");
+    std::fs::write(&path, md)?;
+    Ok(path)
+}
+
+/// After an explicit pack import: write a proposal pack. Never applies. Never rewrites the estate.
+pub fn propose_enrich(
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    proposed_dir: &Path,
+    id: &str,
+    estate: &estate_schema::Estate,
+) -> Result<(EnrichProposal, PathBuf), FeedError> {
+    refuse_pack_id(id)?;
+    let pack = match load_pack_loose(accepted_dir, id) {
+        Ok(p) => p,
+        Err(FeedError::MissingPack(_)) => load_pack_loose(drop_dir, id)?,
+        Err(e) => return Err(e),
+    };
+    refuse_pack(&pack)?;
+    if pack.promoted {
+        return Err(FeedError::NoAutoPromote);
+    }
+    let current: Vec<String> = estate
+        .enrich_packs
+        .packs
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    let estate_bound = current.iter().any(|p| p == &pack.id);
+    let mut proposed_estate_packs = current.clone();
+    if !estate_bound {
+        proposed_estate_packs.push(pack.id.clone());
+        proposed_estate_packs.sort();
+    }
+    let proposal = EnrichProposal {
+        schema: PROPOSAL_SCHEMA.into(),
+        id: pack.id.clone(),
+        curator: "jason".into(),
+        policy: "manual".into(),
+        auto_apply: false,
+        source_pack: format!("{}.pack.json", pack.id),
+        estate_name: estate.name.clone(),
+        estate_hash: estate_schema::estate_hash(estate),
+        current_estate_packs: current,
+        proposed_estate_packs,
+        diff: EnrichDiff {
+            pack_id: pack.id.clone(),
+            estate_bound,
+            would_add_to_estate: !estate_bound,
+            kinds: pack.kinds.clone(),
+            agents: pack.agents.clone(),
+            paths: pack.paths.clone(),
+            path_counts: pack.path_counts.clone(),
+            note: if estate_bound {
+                "Already listed on estate.enrich_packs. No estate edit required.".into()
+            } else {
+                "Jason must add this pack id to estate.enrich_packs by hand. This file is not applied."
+                    .into()
+            },
+        },
+        created_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        note: "Proposal only. auto_apply=false. Feed never applies this file. Control will not rewrite the estate.".into(),
+    };
+    std::fs::create_dir_all(proposed_dir)?;
+    let path = proposed_dir.join(format!("{}.proposal.json", pack.id));
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&proposal).unwrap_or_default(),
+    )?;
+    std::fs::write(
+        proposed_dir.join(format!("{}.proposal.md", pack.id)),
+        render_proposal(&proposal),
+    )?;
+    let _ = write_proposal_index(proposed_dir);
+    Ok((proposal, path))
+}
+
 pub fn materialize_from_feed(
     feed_dir: &Path,
     drop_dir: &Path,
@@ -689,6 +939,56 @@ mod tests {
         let text = std::fs::read_to_string(&index).unwrap();
         assert!(text.contains("overnight-traces"));
         assert!(text.contains("promoted=false"));
+        let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn propose_enrich_never_auto_applies() {
+        let feed = tmp();
+        let drop = feed.join("drop");
+        let accepted = feed.join("accepted");
+        let proposed = feed.join("proposed");
+        append_event(
+            &feed,
+            &ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        materialize_from_feed(&feed, &drop, "overnight-traces").unwrap();
+        import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let estate_yaml = serde_json::to_string(&estate.enrich_packs).unwrap();
+        let (proposal, path) =
+            propose_enrich(&drop, &accepted, &proposed, "overnight-traces", &estate).unwrap();
+        assert!(!proposal.auto_apply);
+        assert_eq!(proposal.schema, PROPOSAL_SCHEMA);
+        assert_eq!(proposal.curator, "jason");
+        assert_eq!(proposal.policy, "manual");
+        assert!(proposal.diff.would_add_to_estate);
+        assert!(!proposal.diff.estate_bound);
+        assert!(path.ends_with("overnight-traces.proposal.json"));
+        assert!(proposed.join("overnight-traces.proposal.md").is_file());
+        assert!(proposed.join("INDEX.md").is_file());
+        let md = render_proposal(&proposal);
+        assert!(md.contains("auto_apply: false"));
+        assert!(md.contains("would_add_to_estate: true"));
+        assert!(matches!(
+            refuse_apply_proposal("overnight-traces"),
+            Err(FeedError::NoAutoApply)
+        ));
+        assert_eq!(
+            estate_yaml,
+            serde_json::to_string(&estate.enrich_packs).unwrap()
+        );
+        let sku = propose_enrich(&drop, &accepted, &proposed, "local-5090", &estate).unwrap_err();
+        assert!(matches!(sku, FeedError::SkuBanned(_)));
         let _ = std::fs::remove_dir_all(&feed);
     }
 }
