@@ -1105,3 +1105,280 @@ fn wave5_sessions_plan_diff_convey_ttl() {
     );
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn wave6_backup_policy_catalog_pause() {
+    let tmp = repo_root().join(format!("target/test-wave6-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let state = tmp.join("state");
+    let plans = tmp.join("plans");
+    let backups = tmp.join("backups");
+
+    let allow = estate_bin()
+        .args([
+            "policy",
+            "check",
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+            "--action",
+            "apply",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        allow.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&allow.stderr)
+    );
+
+    let deny = estate_bin()
+        .args([
+            "policy",
+            "check",
+            "--policy",
+            &fixture("examples/fixtures/policy-deny.yaml"),
+            "--action",
+            "apply",
+        ])
+        .output()
+        .unwrap();
+    assert!(!deny.status.success());
+    let deny_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&deny.stdout),
+        String::from_utf8_lossy(&deny.stderr)
+    );
+    assert!(deny_err.contains("refuse:policy"));
+
+    let unknown = estate_bin()
+        .args([
+            "policy",
+            "check",
+            "--policy",
+            &fixture("examples/fixtures/policy-unknown-action.yaml"),
+            "--action",
+            "apply",
+        ])
+        .output()
+        .unwrap();
+    assert!(!unknown.status.success());
+    let unknown_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&unknown.stdout),
+        String::from_utf8_lossy(&unknown.stderr)
+    );
+    assert!(unknown_err.contains("refuse:unknown-action"));
+
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+
+    let apply_deny = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--policy",
+            &fixture("examples/fixtures/policy-deny.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(!apply_deny.status.success());
+
+    let catalog = estate_bin()
+        .args([
+            "catalog",
+            "--out",
+            &tmp.join("catalog.json").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(catalog.status.success());
+    let cat = String::from_utf8_lossy(&catalog.stdout);
+    assert!(cat.contains("streaming="));
+    assert!(cat.contains("tools="));
+    assert!(cat.contains("vision="));
+    assert!(cat.contains("context="));
+    let dumped = std::fs::read_to_string(tmp.join("catalog.json")).unwrap();
+    assert!(dumped.contains("context_tokens"));
+    assert!(dumped.contains("\"mlx\""));
+
+    let backed = estate_bin()
+        .args([
+            "backup",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--out",
+            &backups.display().to_string(),
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        backed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&backed.stderr)
+    );
+    let archive = std::fs::read_dir(&backups)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("cell-backup-"))
+                .unwrap_or(false)
+        })
+        .expect("timestamped archive");
+    assert!(archive.join("backup.json").is_file());
+    assert!(archive.join("cell").join("placement-actual.json").is_file());
+
+    let empty = tmp.join("empty-restore");
+    std::fs::create_dir_all(&empty).unwrap();
+    let dry = estate_bin()
+        .args([
+            "restore",
+            "--from",
+            &archive.display().to_string(),
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &empty.display().to_string(),
+            "--plans-dir",
+            &tmp.join("empty-plans").display().to_string(),
+            "--dry-run",
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        dry.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert!(!empty.join("placement-actual.json").exists());
+
+    let tamper = tmp.join("tampered-backup");
+    copy_dir(&archive, &tamper);
+    std::fs::write(
+        tamper.join("backup.json"),
+        r#"{
+  "schema": "cell-one.cell-backup.v0",
+  "created_at": "unix:1",
+  "state_dir": "tamper",
+  "files": [],
+  "sacred_ids": ["not-the-locked-set"],
+  "writes": true,
+  "cloud_agent_spawned": false,
+  "note": "tampered sacred set"
+}"#,
+    )
+    .unwrap();
+    let mismatch = estate_bin()
+        .args([
+            "restore",
+            "--from",
+            &tamper.display().to_string(),
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &empty.display().to_string(),
+            "--dry-run",
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(!mismatch.status.success());
+    let mismatch_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&mismatch.stdout),
+        String::from_utf8_lossy(&mismatch.stderr)
+    );
+    assert!(mismatch_err.contains("refuse:sacred-mismatch"));
+    assert!(!empty.join("placement-actual.json").exists());
+
+    let proof = estate_bin()
+        .args([
+            "pause-proof",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &tmp.join("pause").display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        proof.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&proof.stderr)
+    );
+    let body = String::from_utf8_lossy(&proof.stdout);
+    assert!(body.contains("\"leases_survived\": true"));
+    assert!(body.contains("\"cloud_spawned\": false"));
+
+    let doctor = estate_bin()
+        .args([
+            "doctor",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(doctor.status.success());
+    let doc = String::from_utf8_lossy(&doctor.stdout);
+    assert!(doc.contains("policy.v0.json"));
+    assert!(doc.contains("cell-backup.v0.json"));
+    assert!(doc.contains("cell-one.policy.v0.yaml"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+fn copy_dir(src: &std::path::Path, dest: &std::path::Path) {
+    std::fs::create_dir_all(dest).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let to = dest.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir(&path, &to);
+        } else {
+            std::fs::copy(&path, &to).unwrap();
+        }
+    }
+}
