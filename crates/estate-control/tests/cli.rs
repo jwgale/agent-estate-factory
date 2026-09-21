@@ -859,7 +859,7 @@ fn apply_dry_run_expire_and_doctor() {
         String::from_utf8_lossy(&doctor.stdout)
     );
     let doc = String::from_utf8_lossy(&doctor.stdout);
-    assert!(doc.contains("no .github/workflows/*.yml"));
+    assert!(doc.contains("compile-only"));
     assert!(doc.contains("specialist-pack.v0.json"));
     let _ = std::fs::remove_dir_all(&tmp);
 }
