@@ -1,0 +1,10 @@
+apiVersion: cell-one.policy.v0
+kind: estate-policy
+schema: cell-one.policy.v0
+default: deny
+note: Deny-apply fixture. Apply and convey-call must refuse.
+rules:
+  - action: backup
+    effect: allow
+  - action: restore
+    effect: allow

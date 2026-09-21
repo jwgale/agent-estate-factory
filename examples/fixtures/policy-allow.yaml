@@ -1,0 +1,14 @@
+apiVersion: cell-one.policy.v0
+kind: estate-policy
+schema: cell-one.policy.v0
+default: deny
+note: Happy-path allow fixture.
+rules:
+  - action: apply
+    effect: allow
+  - action: convey-call
+    effect: allow
+  - action: backup
+    effect: allow
+  - action: restore
+    effect: allow

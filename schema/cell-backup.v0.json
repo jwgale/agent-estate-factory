@@ -1,0 +1,14 @@
+{
+  "schema": "cell-one.cell-backup.v0",
+  "note": "Timestamped local archive of durable .cell/ files plus optional plans. Restore refuses sacred mismatch. Dry-run writes nothing. Not a remote upload.",
+  "durable": [
+    "placement-actual.json",
+    "lifecycle.json",
+    "lifecycle.jsonl",
+    "apply-audit.jsonl",
+    "sessions.jsonl",
+    "conveyor-mesh.json",
+    "conveyor-leases.json",
+    "desired-snapshot.yaml"
+  ]
+}

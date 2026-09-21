@@ -1,6 +1,7 @@
 /target
 **/*.rs.bk
 .cell/
+backups/
 uploads/
 agent-tools/
 .DS_Store
