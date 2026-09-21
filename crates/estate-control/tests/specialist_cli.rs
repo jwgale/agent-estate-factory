@@ -155,6 +155,8 @@ fn estate_specialist_frontier_refuses_without_key() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("XAI_API_KEY"), "{err}");
     assert!(err.contains("grok-4.7"), "{err}");
+    assert!(err.contains("CELL_FRONTIER_ENDPOINT"), "{err}");
+    assert!(err.contains("CELL_FRONTIER_MODEL"), "{err}");
     assert!(!err.contains("xai-"), "{err}");
 }
 
@@ -274,6 +276,8 @@ fn estate_specialist_frontier_sku_model_refuses_before_post() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("SKU") || err.contains("sku"), "{err}");
+    assert!(err.contains("CELL_FRONTIER_MODEL"), "{err}");
+    assert!(err.contains("CELL_FRONTIER_ENDPOINT"), "{err}");
     assert!(srv.last_post().is_none(), "SKU model must not POST");
 }
 
