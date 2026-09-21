@@ -6,6 +6,7 @@ mod error;
 mod firewall;
 mod hash;
 mod plan;
+mod policy;
 mod sacred;
 mod types;
 mod validate;
@@ -20,6 +21,11 @@ pub use plan::{
     plan_blast_width, plan_covers_hash, plan_is_reviewable, render_plan, render_plan_diff,
     render_review_diff, render_security_iac, write_plan, write_plan_index, CoveringPlan,
     EstatePlan, PlanDelta, PlanIndexEntry,
+};
+pub use policy::{
+    check_policy_file, is_known_policy_action, load_policy, load_policy_optional, parse_policy_yaml,
+    policy_allows, refuse_policy, PolicyPack, PolicyRule, KNOWN_POLICY_ACTIONS, POLICY_KIND,
+    POLICY_SCHEMA,
 };
 pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
 pub use types::{
