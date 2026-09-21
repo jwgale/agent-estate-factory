@@ -1,12 +1,14 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use conveyor_proxy::{
-    call_hop, declare_hop, list_hop_leases, list_hops, sync_from_placements, HopDecl,
+    call_hop, declare_hop, forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases,
+    list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    covering_plan, describe, describe_placements, diff_estates, estate_hash, list_plans,
-    load_estate, load_estate_unvalidated, mark_plan_reviewed, plan_against_is_fresh,
-    plan_against_is_fresh_strict, plan_is_reviewable, render_plan, validate, write_plan,
+    blast_grows, covering_plan, describe, describe_placements, diff_estates, estate_hash,
+    latest_plan, list_plans, load_estate, load_estate_unvalidated, load_plan_json,
+    mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict, plan_blast_width,
+    plan_is_reviewable, render_plan, render_plan_diff, validate, write_plan,
 };
 use feed_collector::{
     import_pack, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -15,9 +17,9 @@ use feed_collector::{
 use floor_supervisor::{
     append_apply_audit, apply_dry_run, apply_with_profile_dir, drift_with_roots,
     forget_expired_leases, list_apply_audits, list_expired_leases, list_lifecycle_events,
-    load_desired_snapshot, load_lifecycle, load_placements, mark_running, now_unix,
-    reconcile_placements, record_placements, refuse_expired_leases, render_dry_run,
-    render_reconcile, resume, suspend, write_reconcile, ApplyAudit,
+    list_session_events, load_desired_snapshot, load_lifecycle, load_placements, mark_running,
+    now_unix, reconcile_placements, record_placements, refuse_expired_leases, render_dry_run,
+    render_reconcile, resume, suspend, tail_session_events, write_reconcile, ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -40,6 +42,8 @@ enum Command {
     },
     /// Human-readable blast-radius plan; append-only write to plans/.
     Plan {
+        #[command(subcommand)]
+        action: Option<PlanAction>,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
         /// Previous estate YAML to diff against. Default: last apply snapshot, else greenfield.
@@ -186,6 +190,11 @@ enum Command {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
+    /// Append-only `.cell/sessions.jsonl` (spawn/unspawn/suspend/resume).
+    Sessions {
+        #[command(subcommand)]
+        command: SessionsCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -202,6 +211,8 @@ enum ConveyCommand {
         host_class: String,
         #[arg(long, default_value_t = true)]
         wired: bool,
+        #[arg(long)]
+        ttl_secs: Option<u64>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -228,6 +239,51 @@ enum ConveyCommand {
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+    },
+    /// List expired hop leases. Call refuses them. `--forget` drops rows.
+    Expire {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value_t = false)]
+        forget: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PlanAction {
+    /// Compare two plans or last-applied vs new. Exit 1 if blast grows.
+    Diff {
+        /// Previous plan JSON or estate YAML.
+        #[arg(long)]
+        from: Option<PathBuf>,
+        /// New plan JSON or estate YAML.
+        #[arg(long)]
+        to: Option<PathBuf>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        /// Allow a wider blast radius (otherwise refuse:wider).
+        #[arg(long, default_value_t = false)]
+        allow_wider: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionsCommand {
+    /// Print the full session journal.
+    List {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print the last N journal events.
+    Tail {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value_t = 20)]
+        n: usize,
     },
 }
 
@@ -345,20 +401,38 @@ fn run() -> Result<()> {
     match cli.command {
         Command::Validate { estate } => cmd_validate(&estate),
         Command::Plan {
+            action,
             estate,
             against,
             plans_dir,
             state_dir,
             reviewed,
             reviewed_dir,
-        } => cmd_plan(
-            &estate,
-            against.as_deref(),
-            &plans_dir,
-            &state_dir,
-            reviewed,
-            &reviewed_dir,
-        ),
+        } => match action {
+            Some(PlanAction::Diff {
+                from,
+                to,
+                estate: diff_estate,
+                state_dir: diff_state,
+                plans_dir: diff_plans,
+                allow_wider,
+            }) => cmd_plan_diff(
+                from.as_deref(),
+                to.as_deref(),
+                &diff_estate,
+                &diff_state,
+                &diff_plans,
+                allow_wider,
+            ),
+            None => cmd_plan(
+                &estate,
+                against.as_deref(),
+                &plans_dir,
+                &state_dir,
+                reviewed,
+                &reviewed_dir,
+            ),
+        },
         Command::Apply {
             estate,
             state_dir,
@@ -437,8 +511,9 @@ fn run() -> Result<()> {
                 capability,
                 host_class,
                 wired,
+                ttl_secs,
                 state_dir,
-            } => cmd_convey_hop(&id, &kind, &capability, &host_class, wired, &state_dir),
+            } => cmd_convey_hop(&id, &kind, &capability, &host_class, wired, ttl_secs, &state_dir),
             ConveyCommand::Call {
                 id,
                 capability,
@@ -447,6 +522,7 @@ fn run() -> Result<()> {
             ConveyCommand::List { state_dir } => cmd_convey_list(&state_dir),
             ConveyCommand::Leases { state_dir } => cmd_convey_leases(&state_dir),
             ConveyCommand::Sync { state_dir } => cmd_convey_sync(&state_dir),
+            ConveyCommand::Expire { state_dir, forget } => cmd_convey_expire(&state_dir, forget),
         },
         Command::Packs { command } => match command {
             PacksCommand::List { drop_dir } => cmd_feed_list(&drop_dir),
@@ -468,6 +544,10 @@ fn run() -> Result<()> {
         },
         Command::Expire { state_dir, forget } => cmd_expire(&state_dir, forget),
         Command::Doctor { root, state_dir } => cmd_doctor(&root, &state_dir),
+        Command::Sessions { command } => match command {
+            SessionsCommand::List { state_dir } => cmd_sessions_list(&state_dir),
+            SessionsCommand::Tail { state_dir, n } => cmd_sessions_tail(&state_dir, n),
+        },
     }
 }
 
@@ -528,6 +608,109 @@ fn cmd_plan(
         println!("reviewed copy {}", dest.display());
     }
     Ok(())
+}
+
+fn cmd_plan_diff(
+    from: Option<&Path>,
+    to: Option<&Path>,
+    estate: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+    allow_wider: bool,
+) -> Result<()> {
+    let (from_plan, to_plan) = resolve_plan_pair(from, to, estate, state_dir, plans_dir)?;
+    print!("{}", render_plan_diff(&from_plan, &to_plan));
+    let from_w = plan_blast_width(&from_plan);
+    let to_w = plan_blast_width(&to_plan);
+    if blast_grows(&from_plan, &to_plan) && !allow_wider {
+        bail!("refuse:wider: blast radius grew {from_w} -> {to_w} (pass --allow-wider)");
+    }
+    if blast_grows(&from_plan, &to_plan) && allow_wider {
+        println!("wider allowed (--allow-wider)");
+    } else {
+        println!("plan diff ok (width {from_w} -> {to_w})");
+    }
+    Ok(())
+}
+
+fn looks_plan_json(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("json"))
+        .unwrap_or(false)
+}
+
+fn resolve_plan_pair(
+    from: Option<&Path>,
+    to: Option<&Path>,
+    estate: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+) -> Result<(estate_schema::EstatePlan, estate_schema::EstatePlan)> {
+    match (from, to) {
+        (Some(a), Some(b)) if looks_plan_json(a) && looks_plan_json(b) => {
+            Ok((load_plan_json(a)?, load_plan_json(b)?))
+        }
+        (Some(a), Some(b)) if !looks_plan_json(a) && !looks_plan_json(b) => {
+            let old_e = load_estate(a).with_context(|| format!("from {}", a.display()))?;
+            let new_e = load_estate(b).with_context(|| format!("to {}", b.display()))?;
+            Ok((diff_estates(&old_e, None), diff_estates(&new_e, Some(&old_e))))
+        }
+        (Some(a), Some(b)) if looks_plan_json(a) && !looks_plan_json(b) => {
+            let old_p = load_plan_json(a)?;
+            let new_e = load_estate(b).with_context(|| format!("to {}", b.display()))?;
+            let against = load_desired_snapshot(state_dir)?;
+            Ok((old_p, diff_estates(&new_e, against.as_ref())))
+        }
+        (Some(a), Some(b)) => {
+            let old_e = load_estate(a).with_context(|| format!("from {}", a.display()))?;
+            let to_p = load_plan_json(b)?;
+            Ok((diff_estates(&old_e, None), to_p))
+        }
+        (Some(a), None) if looks_plan_json(a) => {
+            let old_p = load_plan_json(a)?;
+            let new_e = load_estate(estate).with_context(|| format!("estate {}", estate.display()))?;
+            let against = load_desired_snapshot(state_dir)?;
+            Ok((old_p, diff_estates(&new_e, against.as_ref())))
+        }
+        (Some(a), None) => {
+            let old_e = load_estate(a).with_context(|| format!("from {}", a.display()))?;
+            let new_e = load_estate(estate).with_context(|| format!("estate {}", estate.display()))?;
+            Ok((diff_estates(&old_e, None), diff_estates(&new_e, Some(&old_e))))
+        }
+        (None, Some(b)) if looks_plan_json(b) => {
+            let to_p = load_plan_json(b)?;
+            let from_p = last_applied_plan(state_dir, plans_dir)?
+                .ok_or_else(|| anyhow::anyhow!("no last-applied plan; pass --from"))?;
+            Ok((from_p, to_p))
+        }
+        (None, to_path) => {
+            let new_path = to_path.unwrap_or(estate);
+            let new_e = load_estate(new_path)
+                .with_context(|| format!("desired {}", new_path.display()))?;
+            let last = load_desired_snapshot(state_dir)?;
+            let from_p = last_applied_plan(state_dir, plans_dir)?.ok_or_else(|| {
+                anyhow::anyhow!("no last-applied snapshot or plan; pass --from")
+            })?;
+            Ok((from_p, diff_estates(&new_e, last.as_ref())))
+        }
+    }
+}
+
+fn last_applied_plan(
+    state_dir: &Path,
+    plans_dir: &Path,
+) -> Result<Option<estate_schema::EstatePlan>> {
+    if let Some(snap) = load_desired_snapshot(state_dir)? {
+        if let Some(covering) = covering_plan(plans_dir, &estate_hash(&snap)) {
+            return Ok(Some(covering.plan));
+        }
+        if let Some(latest) = latest_plan(plans_dir) {
+            return Ok(Some(latest));
+        }
+        return Ok(Some(diff_estates(&snap, None)));
+    }
+    Ok(latest_plan(plans_dir))
 }
 
 fn cmd_apply(
@@ -752,6 +935,7 @@ fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         "schema/feed-cursor.v0.json",
         "schema/enrich-proposal.v0.json",
         "schema/apply-dry-run.v0.json",
+        "schema/session-journal.v0.json",
     ];
     for rel in required {
         let path = root.join(rel);
@@ -791,6 +975,7 @@ fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         ("lifecycle.json", "durable"),
         ("lifecycle.jsonl", "durable history"),
         ("apply-audit.jsonl", "durable"),
+        ("sessions.jsonl", "durable journal"),
         ("conveyor-leases.json", "durable"),
         ("reconcile.json", "regenerable"),
         ("actual-state.json", "regenerable"),
@@ -836,6 +1021,18 @@ fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
                 for lease in &expired {
                     println!("  FAIL  refuse:expired: {}", lease.placement_id);
                     fails.push(format!("expired {}", lease.placement_id));
+                }
+            }
+            match list_expired_hop_leases(state_dir, hop_now_unix()) {
+                Ok(hops) if hops.is_empty() => println!("  ok    no expired hop leases"),
+                Ok(hops) => {
+                    for hop in hops {
+                        println!("  FAIL  refuse:expired: hop {}", hop.hop_id);
+                        fails.push(format!("expired hop {}", hop.hop_id));
+                    }
+                }
+                Err(err) => {
+                    println!("  note  hop leases: {err}");
                 }
             }
         }
@@ -1121,6 +1318,7 @@ fn cmd_convey_hop(
     capability: &str,
     host_class: &str,
     wired: bool,
+    ttl_secs: Option<u64>,
     state_dir: &Path,
 ) -> Result<()> {
     let lease = declare_hop(
@@ -1132,6 +1330,7 @@ fn cmd_convey_hop(
             host_class: host_class.to_string(),
             wired,
             note: None,
+            ttl_secs,
         },
     )?;
     println!("{}", serde_json::to_string_pretty(&lease)?);
@@ -1170,6 +1369,73 @@ fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
 fn cmd_convey_sync(state_dir: &Path) -> Result<()> {
     let mesh = sync_from_placements(state_dir)?;
     println!("{}", serde_json::to_string_pretty(&mesh)?);
+    Ok(())
+}
+
+fn cmd_convey_expire(state_dir: &Path, forget: bool) -> Result<()> {
+    let expired = list_expired_hop_leases(state_dir, hop_now_unix())?;
+    if expired.is_empty() {
+        println!("no expired hop leases under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("expired hop leases ({})", expired.len());
+    for lease in &expired {
+        println!(
+            "  refuse:expired: {} kind={} expires_at={}",
+            lease.hop_id,
+            lease.kind,
+            lease
+                .expires_at
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "-".into())
+        );
+    }
+    if forget {
+        let forgotten = forget_expired_hop_leases(state_dir)?;
+        println!(
+            "forgot {} expired hop lease(s); declare may record fresh rows",
+            forgotten.len()
+        );
+        return Ok(());
+    }
+    bail!("refuse:expired: convey call refuses until estate convey expire --forget");
+}
+
+fn cmd_sessions_list(state_dir: &Path) -> Result<()> {
+    let events = list_session_events(state_dir)?;
+    if events.is_empty() {
+        println!("no sessions.jsonl under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("session journal ({})", events.len());
+    for ev in events {
+        println!(
+            "  {} {} agent={} hash={}",
+            ev.ts,
+            ev.action,
+            ev.agent_id.as_deref().unwrap_or("-"),
+            ev.desired_hash.as_deref().unwrap_or("-")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_sessions_tail(state_dir: &Path, n: usize) -> Result<()> {
+    let events = tail_session_events(state_dir, n)?;
+    if events.is_empty() {
+        println!("no sessions.jsonl under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("session journal tail ({}/{})", events.len(), n);
+    for ev in events {
+        println!(
+            "  {} {} agent={} hash={}",
+            ev.ts,
+            ev.action,
+            ev.agent_id.as_deref().unwrap_or("-"),
+            ev.desired_hash.as_deref().unwrap_or("-")
+        );
+    }
     Ok(())
 }
 
@@ -1304,6 +1570,7 @@ fn cmd_audit_export(
             state_dir.join("conveyor-leases.json"),
             out.join("conveyor-leases.json"),
         ),
+        (state_dir.join("sessions.jsonl"), out.join("sessions.jsonl")),
         (
             packs_dir.join("accepted").join("import-audit.jsonl"),
             out.join("import-audit.jsonl"),
