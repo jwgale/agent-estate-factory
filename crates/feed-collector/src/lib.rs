@@ -23,7 +23,7 @@ pub enum FeedError {
     SkuBanned(String),
     #[error("pack id '{0}' must match [a-z][a-z0-9_-]{{0,63}}")]
     BadId(String),
-    #[error("pack schema must be cell-one.pack.v0 (got {0})")]
+    #[error("pack schema must be cell-one.pack.v0 or cell-one.specialist-pack.v0 (got {0})")]
     BadSchema(String),
     #[error("pack host_class '{0}' must be consumer-nvidia|apple-silicon|rented-nvidia|any")]
     BadHostClass(String),
@@ -31,6 +31,12 @@ pub enum FeedError {
     MissingPack(String),
     #[error("refuse:no-auto-apply: enrich proposals are curator-only; Jason reviews and edits the estate")]
     NoAutoApply,
+    #[error("refuse:raw-secret: pack must not store raw secrets")]
+    RawSecret,
+    #[error("refuse:model-hint: '{0}' must be a slug and must not encode a hardware SKU")]
+    BadModelHint(String),
+    #[error("refuse:source-path: '{0}' is not a relative path (or encodes a SKU)")]
+    BadSourcePath(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -67,6 +73,15 @@ pub struct PackManifest {
     pub adapter: Option<String>,
     #[serde(default)]
     pub path_counts: PathCounts,
+    /// Relative paths the specialist pack was built from. Never secrets.
+    #[serde(default)]
+    pub source_paths: Vec<String>,
+    /// Binding or driver hint (`ollama`, `local_slm`). Not a SKU.
+    #[serde(default)]
+    pub model_hint: Option<String>,
+    /// Portable host affinity. Defaults to `host_class` / `any`.
+    #[serde(default)]
+    pub host_class_affinity: Option<String>,
     pub created_at: String,
     pub note: String,
 }
@@ -154,36 +169,139 @@ pub fn refuse_event(ev: &ScrubbedEvent) -> Result<(), FeedError> {
     Ok(())
 }
 
-/// Redact PII-ish tokens: `sk-` / `xai-` keys, bearer tokens, emails.
-pub fn looks_pii_token(token: &str) -> bool {
-    token.split(['=', ':', '/']).any(looks_pii_part)
+pub const REDACTION_SCHEMA: &str = "cell-one.redaction.v0";
+
+/// Kind counts only. Never includes the raw secret.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RedactionReport {
+    #[serde(default = "default_redaction_schema")]
+    pub schema: String,
+    pub redacted: usize,
+    pub kinds: std::collections::BTreeMap<String, usize>,
+    pub raw_secrets_found: usize,
+    pub note: String,
 }
 
-fn looks_pii_part(part: &str) -> bool {
+fn default_redaction_schema() -> String {
+    REDACTION_SCHEMA.into()
+}
+
+fn is_secret_key_name(part: &str) -> bool {
+    matches!(
+        part.trim().to_ascii_lowercase().as_str(),
+        "password"
+            | "secret"
+            | "token"
+            | "api_key"
+            | "apikey"
+            | "authorization"
+            | "auth"
+            | "access_key"
+            | "private_key"
+    )
+}
+
+/// Classify a token part. Returns a kind label, never the secret.
+pub fn classify_secret_part(part: &str) -> Option<&'static str> {
     let t = part.trim_matches(|c: char| {
         !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.' && c != '@' && c != '+'
     });
     if t.is_empty() {
-        return false;
+        return None;
     }
     let lower = t.to_ascii_lowercase();
-    if (lower.starts_with("sk-") || lower.starts_with("xai-") || lower.starts_with("xai_"))
+    if (lower.starts_with("sk-")
+        || lower.starts_with("sk_ant")
+        || lower.starts_with("xai-")
+        || lower.starts_with("xai_"))
         && t.len() >= 12
     {
-        return true;
+        return Some("api-key");
+    }
+    if lower.starts_with("ghp_")
+        || lower.starts_with("gho_")
+        || lower.starts_with("ghu_")
+        || lower.starts_with("ghs_")
+        || lower.starts_with("github_pat_")
+    {
+        return Some("github-token");
+    }
+    if lower.starts_with("hf_") && t.len() >= 12 {
+        return Some("hf-token");
+    }
+    if lower.starts_with("aiza") && t.len() >= 20 {
+        return Some("google-key");
+    }
+    if t.starts_with("AKIA") && t.len() >= 16 {
+        return Some("aws-key");
+    }
+    if lower.starts_with("xoxb-") || lower.starts_with("xoxp-") || lower.starts_with("xoxa-") {
+        return Some("slack-token");
+    }
+    if lower.starts_with("nvapi-") && t.len() >= 12 {
+        return Some("nv-key");
     }
     if lower.starts_with("bearer") && t.len() >= 12 {
-        return true;
+        return Some("bearer");
+    }
+    if t.starts_with("eyJ") && t.len() >= 20 {
+        return Some("jwt");
+    }
+    if lower.contains("begin") && lower.contains("private") && lower.contains("key") {
+        return Some("pem");
     }
     if let Some((user, host)) = t.split_once('@') {
         if !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.') {
+            return Some("email");
+        }
+    }
+    None
+}
+
+/// Redact PII-ish tokens: keys, bearer, emails, PEM, cloud tokens.
+pub fn looks_pii_token(token: &str) -> bool {
+    let parts: Vec<&str> = token
+        .split(['=', ':', '/', '&', '?', '"', '\''])
+        .filter(|p| !p.is_empty())
+        .collect();
+    for (i, part) in parts.iter().enumerate() {
+        if classify_secret_part(part).is_some() {
             return true;
+        }
+        if is_secret_key_name(part) {
+            if parts.get(i + 1).map(|v| v.len() >= 4).unwrap_or(false) {
+                return true;
+            }
         }
     }
     false
 }
 
+fn redact_pem(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("-----BEGIN") {
+        out.push_str(&rest[..start]);
+        out.push_str("[redacted]");
+        if let Some(end_rel) = rest[start..].find("-----END") {
+            let after = start + end_rel + "-----END".len();
+            if let Some(nl) = rest[after..].find('\n') {
+                rest = &rest[after + nl + 1..];
+            } else if let Some(dash) = rest[after..].find("-----") {
+                rest = &rest[after + dash + 5..];
+            } else {
+                rest = "";
+            }
+        } else {
+            rest = "";
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 pub fn scrub_pii(text: &str) -> String {
+    let text = redact_pem(text);
     let mut out = String::new();
     for word in text.split_inclusive([' ', '\n', '\t', ',', ';', '|']) {
         let core = word.trim_end_matches([' ', '\n', '\t', ',', ';', '|']);
@@ -196,6 +314,43 @@ pub fn scrub_pii(text: &str) -> String {
         }
     }
     out
+}
+
+pub fn redaction_report(text: &str) -> RedactionReport {
+    let mut kinds = std::collections::BTreeMap::new();
+    let mut redacted = 0usize;
+    if text.contains("-----BEGIN") && text.to_ascii_uppercase().contains("PRIVATE KEY") {
+        *kinds.entry("pem".to_string()).or_insert(0) += 1;
+        redacted += 1;
+    }
+    for word in text.split([' ', '\n', '\t', ',', ';', '|', '"', '\'']) {
+        if looks_pii_token(word) {
+            redacted += 1;
+            let kind = word
+                .split(['=', ':', '/', '&', '?'])
+                .find_map(classify_secret_part)
+                .unwrap_or("secret-key");
+            *kinds.entry(kind.to_string()).or_insert(0) += 1;
+        }
+    }
+    RedactionReport {
+        schema: REDACTION_SCHEMA.into(),
+        redacted,
+        kinds,
+        raw_secrets_found: redacted,
+        note: "Kind counts only. Raw secrets are never stored in this report.".into(),
+    }
+}
+
+pub fn refuse_raw_secrets(text: &str) -> Result<(), FeedError> {
+    if redaction_report(text).raw_secrets_found > 0 {
+        return Err(FeedError::RawSecret);
+    }
+    Ok(())
+}
+
+pub fn is_pack_schema(schema: &str) -> bool {
+    schema == "cell-one.pack.v0" || schema == "cell-one.specialist-pack.v0"
 }
 
 pub fn append_event(dir: &Path, event: &ScrubbedEvent) -> Result<(), FeedError> {
@@ -335,6 +490,9 @@ pub fn pack_from_events(id: &str, events: &[ScrubbedEvent]) -> PackManifest {
         job: Some("policy-precheck".into()),
         adapter: None,
         path_counts,
+        source_paths: vec!["feed/events.jsonl".into()],
+        model_hint: None,
+        host_class_affinity: Some(default_host_class()),
         created_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         note: "Candidate only. Import is explicit apply. Jason still adds the id to estate.enrich_packs by hand. Feed never auto-promotes.".into(),
     }
@@ -358,12 +516,35 @@ pub fn refuse_pack(pack: &PackManifest) -> Result<(), FeedError> {
     if pack.policy != "manual" || pack.curator != "jason" {
         return Err(FeedError::NoAutoPromote);
     }
-    if pack.schema != "cell-one.pack.v0" {
+    if !is_pack_schema(&pack.schema) {
         return Err(FeedError::BadSchema(pack.schema.clone()));
     }
     if !estate_schema::is_host_class(&pack.host_class) {
         return Err(FeedError::BadHostClass(pack.host_class.clone()));
     }
+    if let Some(hint) = pack.model_hint.as_deref() {
+        if !hint.is_empty()
+            && (!estate_schema::is_slug(hint) || estate_schema::contains_sku(hint))
+        {
+            return Err(FeedError::BadModelHint(hint.to_string()));
+        }
+    }
+    if let Some(affinity) = pack.host_class_affinity.as_deref() {
+        if !affinity.is_empty() && !estate_schema::is_host_class(affinity) {
+            return Err(FeedError::BadHostClass(affinity.to_string()));
+        }
+    }
+    for path in &pack.source_paths {
+        if path.is_empty() {
+            continue;
+        }
+        if path.starts_with('/') || path.contains("..") || estate_schema::contains_sku(path) {
+            return Err(FeedError::BadSourcePath(path.clone()));
+        }
+    }
+    let blob = serde_json::to_string(pack).unwrap_or_default();
+    refuse_raw_secrets(&blob)?;
+    refuse_raw_secrets(&pack.note)?;
     Ok(())
 }
 
@@ -454,6 +635,10 @@ pub fn import_pack(
     estate_pack_ids: &[String],
 ) -> Result<(ImportedPack, PathBuf), FeedError> {
     refuse_pack_id(id)?;
+    let source = drop_dir.join(format!("{id}.pack.json"));
+    let raw = std::fs::read_to_string(&source)
+        .map_err(|_| FeedError::MissingPack(id.to_string()))?;
+    refuse_raw_secrets(&raw)?;
     let mut pack = load_pack(drop_dir, id)?;
     refuse_pack(&pack)?;
     if pack.promoted {
@@ -462,19 +647,24 @@ pub fn import_pack(
     pack.promoted = false;
     pack.policy = "manual".into();
     pack.curator = "jason".into();
+    pack.note = scrub_pii(&pack.note);
+    let report = redaction_report(&raw);
     let estate_bound = estate_pack_ids.iter().any(|p| p == &pack.id);
     let imported = ImportedPack {
         pack: pack.clone(),
         estate_bound,
         imported_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        source_path: drop_dir.join(format!("{id}.pack.json")).display().to_string(),
+        source_path: source.display().to_string(),
     };
     std::fs::create_dir_all(accepted_dir)?;
     let path = accepted_dir.join(format!("{id}.pack.json"));
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&imported).unwrap_or_default(),
-    )?;
+    let written = serde_json::to_string_pretty(&imported).unwrap_or_default();
+    refuse_raw_secrets(&written)?;
+    std::fs::write(&path, written)?;
+    let _ = std::fs::write(
+        accepted_dir.join(format!("{id}.redaction.json")),
+        serde_json::to_string_pretty(&report).unwrap_or_default(),
+    );
     let _ = append_import_audit(
         accepted_dir,
         &ImportAudit {
@@ -990,5 +1180,57 @@ mod tests {
         let sku = propose_enrich(&drop, &accepted, &proposed, "local-5090", &estate).unwrap_err();
         assert!(matches!(sku, FeedError::SkuBanned(_)));
         let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn scrub_pii_covers_cloud_tokens_pem_and_password() {
+        let raw = "ghp_abcdefghijklmnopqrstuv hf_abcdefghijklmnopqrstuv AKIAIOSFODNN7EXAMPLE xoxb-1234567890-token password=hunter2 -----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY----- keep";
+        let scrubbed = scrub_pii(raw);
+        assert!(!scrubbed.contains("ghp_"));
+        assert!(!scrubbed.contains("hf_"));
+        assert!(!scrubbed.contains("AKIA"));
+        assert!(!scrubbed.contains("xoxb-"));
+        assert!(!scrubbed.contains("hunter2"));
+        assert!(!scrubbed.contains("BEGIN PRIVATE"));
+        assert!(scrubbed.contains("[redacted]"));
+        assert!(scrubbed.contains("keep"));
+        let report = redaction_report(raw);
+        assert!(report.raw_secrets_found > 0);
+        assert_eq!(report.schema, REDACTION_SCHEMA);
+        assert!(refuse_raw_secrets(raw).is_err());
+        assert!(refuse_raw_secrets("plain notes only").is_ok());
+    }
+
+    #[test]
+    fn import_refuses_raw_secrets_and_accepts_specialist_fields() {
+        let dir = tmp();
+        let drop = dir.join("drop");
+        std::fs::create_dir_all(&drop).unwrap();
+        let mut pack = pack_from_events("overnight-traces", &[]);
+        pack.source_paths = vec!["feed/events.jsonl".into()];
+        pack.model_hint = Some("local_slm".into());
+        pack.host_class_affinity = Some("any".into());
+        pack.schema = "cell-one.specialist-pack.v0".into();
+        write_drop_pack(&drop, &pack).unwrap();
+        let accepted = dir.join("accepted");
+        let (imported, _) = import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+        assert_eq!(imported.pack.model_hint.as_deref(), Some("local_slm"));
+        assert!(accepted.join("overnight-traces.redaction.json").is_file());
+        let mut dirty = pack.clone();
+        dirty.id = "dirty-pack".into();
+        dirty.note = "key=sk-abcdefghijklmnopqrstuv".into();
+        assert!(matches!(
+            write_drop_pack(&drop, &dirty),
+            Err(FeedError::RawSecret)
+        ));
+        let mut sku_hint = pack.clone();
+        sku_hint.id = "hint-pack".into();
+        sku_hint.model_hint = Some("local-5090".into());
+        sku_hint.note = "clean".into();
+        assert!(matches!(
+            write_drop_pack(&drop, &sku_hint),
+            Err(FeedError::BadModelHint(_))
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
