@@ -34,6 +34,8 @@ fn doctor_strict_passes_on_repo() {
     assert!(text.contains("pre-merge operator checks"));
     assert!(text.contains("compile-only"));
     assert!(text.contains("Sanctum is not Cyera"));
+    assert!(text.contains("feed-loop"));
+    assert!(text.contains("DAY90-PLUS"));
 }
 
 #[test]

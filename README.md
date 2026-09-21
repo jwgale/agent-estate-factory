@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory
 
-**Start here:** [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local `make smoke` / `make day90` / `make gate-90`. Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
+**Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
@@ -12,11 +12,30 @@ cd agent-estate-factory
 cargo test --workspace
 make gate
 make gate-60
-make gate-90    # smoke + day90 + doctor --strict + checklist; local only
+make gate-90    # Day-90 operator entrypoint: smoke + day90 + doctor --strict + checklist
+make feed-loop  # fixtures only: scrubbed trace → pack → propose → accept
 make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
 ```
 
 Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` to Actions.
+
+## Day-90 operator entrypoint
+
+Local only. Hosted CI stays compile-only. This is the command Jason runs after Day 90:
+
+```bash
+make gate-90
+```
+
+That alias runs `make smoke` (doctor + fixtures-check + operator-day + `cargo test --workspace` + `make day90`), then `estate doctor --strict`, then prints the GATE-90 checklist. It does not spawn cloud agents. It does not auto-promote packs. It does not require a Mac, a GPU, or live Grok.
+
+Live Mac MLX, live consumer/rented GPU (including a 5090-class box), and cloud-agent spawn are parked in [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) until Jason has boxes ready. Those rows are not green. Do not fake them.
+
+```bash
+make feed-loop   # isolated fixture walk: scrubbed trace → pack → propose → accept
+```
+
+See [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) and [`docs/GATE-90.md`](docs/GATE-90.md).
 
 Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Lease files: [`docs/cell-layout.md`](docs/cell-layout.md).
 
@@ -25,13 +44,15 @@ Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate
 This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy. Origin is not in the loop. GitHub is SoT.
 
 | Works tonight (local cargo) | Still a stub |
-| --- | --- |
+| --- | --- | --- |
 | `estate validate` on `examples/estate.yaml` + host matrix + `examples/hosts/multi-host.yaml` | Live Mac MLX proof |
 | `estate plan` / `apply --require-plan` / `--require-fresh-plan` + Security-as-IaC markdown | Cloud-agent spawn (declared only) |
 | `estate suspend` / `resume` / `status` / `history` | Multi-box control plane |
 | `estate reconcile` desired vs actual + sacred-id deny on tampered leases | Auto-heal / rewrite of leases |
 | `estate packs list\|import\|propose` — propose writes `packs/proposed/`, never applies | Feed auto-promote (locked off) |
-| `estate doctor --strict` — pre-merge operator checks (compile-only CI, locked sacred, demo estate) | Actions expansion (Jason lock) |
+| `make gate-90` — Day-90 operator entrypoint (local) | Live Mac MLX / GPU / cloud-spawn ([`DAY90-PLUS.md`](docs/DAY90-PLUS.md)) |
+| `make feed-loop` — scrubbed trace → pack → propose → accept | Actions expansion (Jason lock) |
+| `estate doctor --strict` — pre-merge operator checks (compile-only CI, locked sacred, demo estate) | Curator UI (not built) |
 | Dual-layer sacred demo `examples/fixtures/dual-layer-demo.yaml` (Sanctum is not Cyera) | Dual PE product (out of altitude) |
 | `estate convey hop\|call\|leases` — lease-bound; refuse codes prefixed `refuse:` | Real hop transport |
 | `estate audit export` — local folder / optional tarball | Remote audit upload |
@@ -140,7 +161,7 @@ make gate
 ## Layout
 
 | Crate | Plane | Role |
-| --- | --- |
+| --- | --- | --- |
 | `estate-schema` | shared | types, validate, hash, compiled intentions, plan, firewall, SKU ban |
 | `estate-control` | control | `estate` CLI: validate, plan, apply, drift, models (no complete) |
 | `isolation-driver` | data | `IsolationDriver` trait + profile-dir + in-memory |

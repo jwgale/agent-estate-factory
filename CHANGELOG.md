@@ -67,14 +67,22 @@ Session journal. Convey hop TTL. `estate plan diff` (`refuse:wider`). Fixture li
 - Refuse fixtures: Sanctum-as-Cyera display-name bleed; omit-locked sacred file still refuses Cyera CI as an agent.
 - `make gate-90` is a thin local alias: smoke (includes day90) + `doctor --strict` + GATE-90 checklist print.
 
+## After PR #5
+
+- README: `make gate-90` is the Day-90 operator entrypoint. Live Mac / GPU / cloud-spawn wait in `docs/DAY90-PLUS.md` — parking lot, not fake progress.
+- `make feed-loop`: fixture walk of scrubbed trace → pack → propose → accept. Cursor stays on disk; rematerialize does not auto-promote; `estate.yaml` is unchanged.
+- Placement-actual schema round-trip tests for every reconcile refuse code still thin (`missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`, `expired`).
+- `estate doctor --strict` now requires `DAY90-PLUS.md` + the feed-loop fixture walk.
+
 ## Still stubbed
 
-MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI.
+MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI. See `docs/DAY90-PLUS.md`.
 
 ## How to run
 
 ```bash
+make gate-90    # Day-90 operator entrypoint (local)
 make smoke      # doctor + fixtures-check + operator-day + cargo test + make day90
 make day90      # operator loop only
-make gate-90    # smoke + doctor --strict + GATE-90 checklist
+make feed-loop  # scrubbed trace → pack → propose → accept (fixtures only)
 ```

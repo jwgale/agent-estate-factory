@@ -1,11 +1,14 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1 Day 0–60, PR #2 Day 61–90, PR #3 live probes + `make day90`, PR #4 heal/accept). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local.
+A10–A12 plus overnight waves are **on `main`** (PR #1 Day 0–60, PR #2 Day 61–90, PR #3 live probes + `make day90`, PR #4 heal/accept, PR #5 doctor --strict / `make gate-90`). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local.
+
+`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
 ```bash
+make gate-90    # Day-90 operator entrypoint (local)
 make smoke      # doctor + fixtures-check + operator-day + cargo test + day90
 make day90      # status → plan → dry-run → apply → reconcile → --suggest
-make gate-90    # smoke (includes day90) + doctor --strict + this checklist
+make feed-loop  # scrubbed trace → pack → propose → accept (not in smoke)
 estate doctor --strict
 ```
 
@@ -27,16 +30,21 @@ estate doctor --strict
 | Omit-locked sacred file still refuses Cyera CI | green | `--sacred sacred-omit-locked.yaml` |
 | Sanctum-as-Cyera display-name bleed | green | `refuse-sanctum-as-cyera.yaml` |
 | Thin `make gate-90` | green | smoke + day90 + checklist print |
+| README Day-90 operator entrypoint | green | leads with `make gate-90` |
+| `make feed-loop` | green | scrubbed trace → pack → propose → accept |
+| Feed cursor durability | green | schema + packed_id + rematerialize keeps cursor |
+| Placement-actual refuse round-trip | green | every reconcile refuse code, schema preserved |
+| Honest live-box parking lot | green | [`DAY90-PLUS.md`](DAY90-PLUS.md) |
 
-## Remaining Day-90+ (honest; needs live box or a lock)
+## Remaining Day-90+ (honest; parked, not green)
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Probe path exists (`CELL_MLX_ENDPOINT`). No Mac in CI. Still a stub runtime. |
-| Live rented / consumer GPU | Same specialist protocol (`CELL_LOCAL_ENDPOINT` / `CELL_RENTED_ENDPOINT`). Not required in CI. |
+| Live Mac MLX | Parked. See [`DAY90-PLUS.md`](DAY90-PLUS.md). Probe path exists. No Mac in CI. |
+| Live rented / consumer GPU | Parked. Same specialist protocol. Not required in CI. |
+| Cloud-agent spawn | Parked / locked off. Declared only. Floor does not spawn. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. Not an auto-heal. |
 | `estate packs accept` | Writes enrich_packs **edit instructions**. Does not rewrite `estate.yaml`. Needs `--curator jason`. |
-| Cloud-agent spawn | Locked off. Declared only. |
 | Convey hop transport | Lease-bound mesh, not a gateway. |
 | Auto-promote / curator UI | Locked off / not built. |
 | vLLM / TRT | Experimental catalog cards until Jason verifies. |
