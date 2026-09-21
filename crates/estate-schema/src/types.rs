@@ -281,12 +281,20 @@ pub fn host_class_eq(a: &str, b: &str) -> bool {
     }
 }
 
-/// Canonical locked name, or `"any"` when unset/empty.
-pub fn canonical_host_class(raw: Option<&str>) -> &'static str {
+/// Map a raw host_class to the locked name.
+/// Empty/unset → `Some("any")`. Unknown (SKU, garbage) → `None` (do not invent `any`).
+pub fn canonical_host_class_opt(raw: Option<&str>) -> Option<&'static str> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
-        Some(value) => normalize_host_class(value).unwrap_or("any"),
-        None => "any",
+        None => Some("any"),
+        Some(value) => normalize_host_class(value),
     }
+}
+
+/// Canonical locked name, or `"any"` when unset/empty.
+/// Trusted post-validate stamps only. Untrusted disk must use
+/// [`canonical_host_class_opt`] so unknown names can refuse.
+pub fn canonical_host_class(raw: Option<&str>) -> &'static str {
+    canonical_host_class_opt(raw).unwrap_or("any")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

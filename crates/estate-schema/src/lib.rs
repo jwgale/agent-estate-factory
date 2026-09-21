@@ -33,7 +33,8 @@ pub use sacred::{
     SacredFile, SacredFileEntry, LOCKED_SACRED,
 };
 pub use types::{
-    canonical_host_class, host_class_eq, is_host_class, normalize_host_class, Agent, Effect,
+    canonical_host_class, canonical_host_class_opt, host_class_eq, is_host_class,
+    normalize_host_class, Agent, Effect,
     EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding,
     ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,
     ToolDecl,
@@ -180,5 +181,61 @@ mod tests {
         assert!(!host_class_eq("apple-silicon", "consumer-nvidia"));
         assert_eq!(canonical_host_class(Some("rtx_consumer")), "consumer-nvidia");
         assert_eq!(canonical_host_class(None), "any");
+        assert_eq!(canonical_host_class_opt(Some("rtx-5090")), None);
+        assert_eq!(canonical_host_class_opt(Some("not-a-host")), None);
+        assert_eq!(canonical_host_class_opt(Some("")), Some("any"));
+        assert_eq!(canonical_host_class_opt(None), Some("any"));
+    }
+
+    #[test]
+    fn host_class_alias_round_trips_fuzz_light() {
+        const PAIRS: &[(&str, &str)] = &[
+            ("consumer-nvidia", "consumer-nvidia"),
+            ("consumer_nvidia", "consumer-nvidia"),
+            ("rtx-consumer", "consumer-nvidia"),
+            ("rtx_consumer", "consumer-nvidia"),
+            ("apple-silicon", "apple-silicon"),
+            ("apple_silicon", "apple-silicon"),
+            ("rented-nvidia", "rented-nvidia"),
+            ("rented_nvidia", "rented-nvidia"),
+            ("nvidia-rental", "rented-nvidia"),
+            ("nvidia_rental", "rented-nvidia"),
+            ("any", "any"),
+        ];
+        let mut seed: u64 = 0xc0ff_ee90;
+        for i in 0..64 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let (raw, want) = PAIRS[(seed as usize) % PAIRS.len()];
+            let sample = match i % 4 {
+                0 => raw.to_string(),
+                1 => raw.to_ascii_uppercase(),
+                2 => format!("  {raw}  "),
+                _ => raw.replace('-', "_"),
+            };
+            assert_eq!(
+                normalize_host_class(&sample),
+                Some(want),
+                "normalize {sample:?}"
+            );
+            assert_eq!(
+                canonical_host_class_opt(Some(&sample)),
+                Some(want),
+                "opt {sample:?}"
+            );
+            assert_eq!(canonical_host_class(Some(&sample)), want, "canon {sample:?}");
+            assert!(host_class_eq(&sample, want), "eq {sample:?} vs {want}");
+            assert_eq!(normalize_host_class(want), Some(want));
+        }
+        for bad in ["rtx-5090", "not-a-host", "mlx", "studio", "4090", "macbook"] {
+            assert!(
+                normalize_host_class(bad).is_none(),
+                "{bad} must not be a host_class"
+            );
+            assert_eq!(
+                canonical_host_class_opt(Some(bad)),
+                None,
+                "{bad} must not become any"
+            );
+        }
     }
 }
