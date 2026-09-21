@@ -82,7 +82,7 @@ pub(crate) fn cmd_packs_accept(
 ) -> Result<()> {
     let estate = load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
-    let before = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let before = crate::helpers::read_estate_text(estate_path)?;
     let (accept, dest) = accept_proposal(
         proposed_dir,
         accepted_dir,
@@ -91,7 +91,7 @@ pub(crate) fn cmd_packs_accept(
         &estate.enrich_packs.curator,
         &estate,
     )?;
-    let after = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let after = crate::helpers::read_estate_text(estate_path)?;
     if before != after {
         bail!("packs accept must not rewrite the estate file");
     }
