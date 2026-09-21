@@ -65,6 +65,19 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #39 (this slice)
+
+- `examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, with a local `ollama` card. It is not a host-class alias and it is not on smoke or gate-90. `examples/estate.yaml` stays hash-locked.
+- A frontier specialist prompt that mentions Cyera or Rust classroom still refuses as sacred when `CELL_FRONTIER_MODEL` is a hardware SKU. No POST. No invented completion. The SKU model path is not the refusal.
+- No new CLI. Smoke and gate-90 unchanged.
+- `READY_FOR_LIVE_TEST`: no.
+
+## #38–#39 in plain English
+
+#38. `make feed-loop` checks that the pack, the proposal, and `enrich-edit.json` carry the same `source_drivers`. A missing tag with a nonzero frontier or local count refuses the index rewrite and leaves the previous INDEX. Accept serializes the enrich-edit JSON before it writes either file.
+
+#39. Frontier and local `estate specialist` both refuse a Cyera or Rust classroom prompt before POST, and do not invent a completion. README and OPERATOR-DAY point at `estate help frontier` and `make day90-mixed`. Those stay off smoke and gate-90.
+
 ## After PR #38 (this slice)
 
 - Frontier `estate specialist` refuses a Cyera or Rust classroom prompt before POST, and does not invent `"completion": "ok"`. The local specialist test locks the same two prompts.

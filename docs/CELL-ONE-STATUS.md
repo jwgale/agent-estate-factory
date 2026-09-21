@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#38 plus this slice)
+## On `main` (PR #1-#39 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -116,15 +116,17 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 #37. `packs accept` copies `source_drivers` into the enrich-edit instructions. An empty list stays `source_drivers: -`. A tag that does not match `path_counts` refuses before that file is rewritten. A failed proposal INDEX rewrite is an error. `source_drivers` stays an additive v0 field. Only `frontier` and `local`. A missing field defaults to `[]`.
 
-## #38 in plain English
+## #38–#39 in plain English
 
-`make feed-loop` checks that the pack, the proposal, and `enrich-edit.json` carry the same `source_drivers`. A pack or proposal that omitted the tag while the frontier or local count was nonzero is no longer indexed as `drivers=-`. The index rewrite refuses and leaves the previous INDEX. Accept serializes the enrich-edit JSON before it writes either file.
+#38. `make feed-loop` checks that the pack, the proposal, and `enrich-edit.json` carry the same `source_drivers`. A pack or proposal that omitted the tag while the frontier or local count was nonzero is no longer indexed as `drivers=-`. The index rewrite refuses and leaves the previous INDEX. Accept serializes the enrich-edit JSON before it writes either file.
+
+#39. Frontier specialist sacred refuse matches local. A prompt that mentions Cyera or Rust classroom refuses before any POST, and the output does not invent `"completion": "ok"`. The README start-here and [`OPERATOR-DAY.md`](OPERATOR-DAY.md) point at `estate help frontier` and `make day90-mixed`. Those stay off smoke and `make gate-90`.
 
 ## This slice
 
-Frontier specialist sacred refuse now matches local. A prompt that mentions Cyera or Rust classroom refuses before any POST, and the output does not invent `"completion": "ok"`.
+`examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, next to a local `ollama` card. It is not a host-class alias and it is not on smoke or `make gate-90`. `examples/estate.yaml` stays hash-locked.
 
-The README start-here and [`OPERATOR-DAY.md`](OPERATOR-DAY.md) point at `estate help frontier` and `make day90-mixed`. Those stay off smoke and `make gate-90`. The mixed fixture already names `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
+A frontier specialist request that mentions Cyera or Rust classroom and also sets `CELL_FRONTIER_MODEL` to a hardware SKU still refuses as sacred. It does not POST, does not invent a completion, and does not take the SKU model path.
 
 No new CLI.
 
@@ -132,7 +134,7 @@ No new CLI.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#39 (plain English)
+## Bug fixes on #10-#40 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -165,6 +167,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #37 | Propose copied `source_drivers` and accept dropped them. A failed proposal INDEX rewrite was swallowed. | Enrich-edit instructions keep the same list. Empty stays `-`. A tag that does not match `path_counts` refuses before the edit file is rewritten. Proposal index lists `drivers=` and fails closed. Schema freeze notes the additive v0 field. READY no. |
 | #38 | The feed walk checked each file on its own. A missing `source_drivers` with a nonzero count was indexed as `drivers=-`. Accept wrote the markdown before the JSON existed. | Pack, proposal, and `enrich-edit.json` must carry the same tag. The index rewrite refuses that mismatch and leaves the old INDEX. Accept serializes both edit files before it writes either. READY no. |
 | #39 | Frontier sacred refuse did not lock the same no-invented-completion check as local, and Rust classroom was not in that prompt test. The operator start page did not point at frontier help or `make day90-mixed`. | Both drivers refuse Cyera and Rust classroom before POST and do not invent a completion. README and OPERATOR-DAY point at the opt-in help and mixed walk. The mixed fixture already names `grok-4.7`. The hash-locked estate file is unchanged. READY no. |
+| #40 | Host estates did not name `model: grok-4.7` on frontier `http-remote`. A sacred prompt plus a SKU `CELL_FRONTIER_MODEL` was not locked as sacred-first. | `examples/hosts/frontier-http.yaml` names that binding. The hash-locked estate file is unchanged. Sacred refuse still wins over the SKU model id, with no POST and no invented completion. READY no. |
 
 ## Known-good local commands
 

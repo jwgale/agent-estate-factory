@@ -83,7 +83,7 @@ estate doctor --strict
 | Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
 | Mixed estate mock dry-run | green | apply `--dry-run` write-free; `HttpLocal` posts `/v0/specialist` |
-| Frontier specialist (grok-4.7) | green | Live PASS recorded. Mock-locked. Sacred Cyera and Rust classroom refuse before POST, same as local, with no invented completion. No key in CI. `READY_FOR_LIVE_TEST` no |
+| Frontier specialist (grok-4.7) | green | Live PASS recorded. Mock-locked. Sacred Cyera and Rust classroom refuse before POST, same as local, with no invented completion. A SKU `CELL_FRONTIER_MODEL` in that same request still refuses as sacred. No key in CI. `READY_FOR_LIVE_TEST` no |
 | Mixed grok-4.7 + ollama dry-run | green | `validate` + `apply --dry-run` on mixed fixture; no POST; no live key |
 | Local down does not call frontier | green | `--driver ollama` unset or failed local chat; frontier mock gets no POST |
 | Mixed plan + apply | green | `plan` then `apply --require-plan` on mixed fixture; catalog names `grok-4.7`; no POST; no live key |
