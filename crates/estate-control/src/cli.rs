@@ -318,7 +318,7 @@ pub(crate) enum ConveyCommand {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
-    /// List expired hop leases. Call refuses them. `--forget` drops rows.
+    /// List expired hop leases. Call refuses them. `--forget` drops leases; hop decls stay so call can restamp.
     Expire {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

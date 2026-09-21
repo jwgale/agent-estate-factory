@@ -410,14 +410,29 @@ pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError
     Ok(lease)
 }
 
+/// Restamp a hop lease from the remaining hop decl. Does not spawn.
+fn restamp_hop_from_decl(state_dir: &Path, hop: &HopDecl) -> Result<HopLease, MeshError> {
+    refuse_hop(hop)?;
+    let mut lease = hop_driver(&hop.kind)?.declare(hop);
+    stamp_hop_ttl(&mut lease, hop, hop_now_unix());
+    let mut mesh = load_mesh(state_dir)?;
+    mesh.leases.retain(|l| l.hop_id != hop.id);
+    mesh.leases.push(lease.clone());
+    persist_mesh(state_dir, &mesh)?;
+    Ok(lease)
+}
+
 pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopCall, MeshError> {
     let mesh = load_mesh(state_dir)?;
-    let lease = mesh
-        .leases
-        .iter()
-        .find(|l| l.hop_id == hop_id)
-        .cloned()
-        .ok_or_else(|| MeshError::NoLease(hop_id.to_string()))?;
+    let mut refreshed = false;
+    let lease = if let Some(lease) = mesh.leases.iter().find(|l| l.hop_id == hop_id).cloned() {
+        lease
+    } else if let Some(hop) = mesh.hops.iter().find(|h| h.id == hop_id).cloned() {
+        refreshed = true;
+        restamp_hop_from_decl(state_dir, &hop)?
+    } else {
+        return Err(MeshError::NoLease(hop_id.to_string()));
+    };
     if lease.kind == "cloud-mesh" {
         return Err(MeshError::CloudNotSpawned(hop_id.to_string()));
     }
@@ -434,7 +449,11 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
             }
         }
     }
-    hop_driver(&lease.kind)?.call(&lease, capability)
+    let mut call = hop_driver(&lease.kind)?.call(&lease, capability)?;
+    if refreshed {
+        call.reason = format!("lease-refresh; {}", call.reason);
+    }
+    Ok(call)
 }
 
 pub fn list_hops(state_dir: &Path) -> Result<Vec<HopDecl>, MeshError> {
@@ -476,7 +495,7 @@ pub fn list_expired_hop_leases(
         .collect())
 }
 
-/// Drop expired hop leases so a later declare can record a fresh row. Does not spawn.
+/// Drop expired hop leases. Hop decls stay so call can restamp. Does not spawn.
 pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshError> {
     let mut mesh = load_mesh(state_dir)?;
     let now = hop_now_unix();
@@ -489,7 +508,6 @@ pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshEr
             true
         }
     });
-    mesh.hops.retain(|h| !forgotten.iter().any(|id| id == &h.id));
     if !forgotten.is_empty() {
         persist_mesh(state_dir, &mesh)?;
     }
@@ -754,8 +772,27 @@ mod tests {
         assert_eq!(listed.len(), 1);
         let forgotten = forget_expired_hop_leases(&dir).unwrap();
         assert_eq!(forgotten, vec!["short-hop".to_string()]);
-        let err = call_hop(&dir, "short-hop", "lane-tool").unwrap_err();
-        assert!(matches!(err, MeshError::NoLease(_)));
+        let after = load_mesh(&dir).unwrap();
+        assert!(
+            after.hops.iter().any(|h| h.id == "short-hop"),
+            "forget must keep hop decls"
+        );
+        assert!(after.leases.is_empty());
+        let fresh = call_hop(&dir, "short-hop", "lane-tool").unwrap();
+        assert!(fresh.allow);
+        assert!(
+            fresh.reason.contains("lease-refresh"),
+            "{}",
+            fresh.reason
+        );
+        let restamped = load_mesh(&dir).unwrap();
+        let lease = restamped
+            .leases
+            .iter()
+            .find(|l| l.hop_id == "short-hop")
+            .unwrap();
+        assert_eq!(lease.ttl_secs, Some(1));
+        assert!(lease.expires_at.is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

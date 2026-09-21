@@ -111,4 +111,34 @@ mod tests {
         assert!(proof.in_sync);
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn unchanged_apply_then_suspend_resume_stays_in_sync() {
+        use crate::{apply_with_profile_dir, classify_apply, drift_with_roots, ApplyIdentity};
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "cell-one-pause-idem-{n}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let state = root.join("state");
+        let estate = example();
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        assert_eq!(
+            classify_apply(&estate, &state, &root).unwrap(),
+            ApplyIdentity::Unchanged
+        );
+        suspend(&state).unwrap();
+        let (actual, _) = resume(&estate, &state, &root).unwrap();
+        assert!(!actual.sessions.is_empty());
+        assert!(drift_with_roots(&estate, &state, Some(&root)).unwrap().in_sync);
+        let proof = pause_kit_proof(&estate, &state, &root).unwrap();
+        assert!(proof.leases_survived);
+        assert!(!proof.cloud_spawned);
+        assert!(proof.in_sync);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
