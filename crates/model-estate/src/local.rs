@@ -386,8 +386,10 @@ pub fn resolve_specialist_endpoint(explicit: Option<&str>) -> Result<String, Mod
     accepted_specialist_endpoint(&raw)
 }
 
-/// `--driver frontier` / `ai-gateway`. `CELL_FRONTIER_ENDPOINT` only.
-/// `CELL_LOCAL_ENDPOINT` and `XAI_API_KEY` do not unlock this path.
+/// `--driver frontier` / `frontier-http` / `ai-gateway`.
+/// Requires `XAI_API_KEY`. Optional `CELL_FRONTIER_ENDPOINT` (default xAI)
+/// and `CELL_FRONTIER_MODEL` (default `grok-4.7`).
+/// Local `--driver http-remote` stays on `CELL_LOCAL_ENDPOINT`.
 pub fn is_frontier_specialist_driver(raw: &str) -> bool {
     matches!(
         raw.trim().to_ascii_lowercase().as_str(),
@@ -402,9 +404,22 @@ pub fn resolve_frontier_specialist_endpoint(explicit: Option<&str>) -> Result<St
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .ok_or(ModelError::MissingFrontierEndpoint)?,
+            .unwrap_or_else(|| crate::frontier::DEFAULT_FRONTIER_BASE.to_string()),
     };
     accepted_specialist_endpoint(&raw)
+}
+
+fn require_frontier_key() -> Result<String, ModelError> {
+    match std::env::var("XAI_API_KEY") {
+        Ok(key) if !key.trim().is_empty() => Ok(key),
+        _ => Err(ModelError::MissingFrontierKey),
+    }
+}
+
+fn frontier_model_id() -> Result<String, ModelError> {
+    let cell = std::env::var("CELL_FRONTIER_MODEL").ok();
+    let xai = std::env::var("XAI_MODEL").ok();
+    crate::frontier::pick_frontier_model(cell.as_deref(), xai.as_deref())
 }
 
 fn accepted_specialist_endpoint(raw: &str) -> Result<String, ModelError> {
@@ -433,17 +448,34 @@ pub fn run_http_specialist(
     }
     let job = parse_specialist_job(job)?;
     if is_frontier_specialist_driver(runtime) {
-        let endpoint = resolve_frontier_specialist_endpoint(endpoint)?;
-        return HttpLocal {
-            id: "cli-frontier".into(),
-            endpoint,
-            runtime: LocalRuntime::HttpRemote,
-        }
-        .specialist(&SpecialistRequest {
-            job,
+        let policy = builtin_specialist(&SpecialistRequest {
+            job: SpecialistJob::PolicyPrecheck,
             agent_id: agent.to_string(),
             kind: kind.to_string(),
             text: text.to_string(),
+        });
+        if !policy.allow {
+            return Ok(SpecialistResult {
+                job: job.as_str().into(),
+                completion: String::new(),
+                ..policy
+            });
+        }
+        let key = require_frontier_key()?;
+        let endpoint = resolve_frontier_specialist_endpoint(endpoint)?;
+        let model = frontier_model_id()?;
+        let completion = crate::frontier::frontier_chat(&endpoint, &key, &model, text)?;
+        if estate_schema::contains_sku(&completion) {
+            return Err(ModelError::Refused(
+                "completion encodes a hardware SKU".into(),
+            ));
+        }
+        return Ok(SpecialistResult {
+            allow: true,
+            redacted_text: policy.redacted_text,
+            reason: "frontier completion".into(),
+            job: job.as_str().into(),
+            completion,
         });
     }
     let endpoint = resolve_specialist_endpoint(endpoint)?;
@@ -508,11 +540,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_frontier_endpoint_is_not_local_down() {
-        let err = ModelError::MissingFrontierEndpoint;
+    fn missing_frontier_key_is_not_local_down() {
+        let err = ModelError::MissingFrontierKey;
         assert!(!err.is_local_down(), "{err}");
-        assert!(err.to_string().contains("CELL_FRONTIER_ENDPOINT"), "{err}");
         assert!(err.to_string().contains("XAI_API_KEY"), "{err}");
+        assert!(err.to_string().contains("grok-4.7"), "{err}");
     }
 
     #[test]
