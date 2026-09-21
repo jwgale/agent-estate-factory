@@ -14,7 +14,8 @@ pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
     bind_local, card, catalog, catalog_file, catalog_probes, catalog_probes_live, parse_host_class, parse_runtime,
     render_catalog, route, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
-    HostClass, LocalRuntime, SupportStatus, CATALOG,
+    FrontierCaps, FrontierCard, FrontierCatalogCard, HostClass, LocalRuntime, SupportStatus,
+    CATALOG, FRONTIER_CARD,
 };
 pub use error::ModelError;
 pub use frontier::{
@@ -373,6 +374,59 @@ mod tests {
         assert!(result.denied.unwrap().contains("fail-closed"));
         assert_eq!(frontier.hits.load(Ordering::SeqCst), 0);
         assert_eq!(local.runtime(), LocalRuntime::Mlx);
+    }
+
+    #[test]
+    fn local_down_http_frontier_does_not_post() {
+        let e = estate();
+        let live = CompatServer::spawn(CompatScript::OpenAi {
+            models: vec!["grok-4.7".into()],
+        })
+        .unwrap();
+        let frontier = HttpFrontier {
+            id: "xai_grok".into(),
+            base: live.endpoint(),
+            key: "test-not-a-secret".into(),
+            model: "grok-4.7".into(),
+        };
+        let local = DownLocal {
+            id: "local_slm".into(),
+            reason: ModelError::Unreachable("specialist unreachable".into()),
+            runtime: LocalRuntime::Ollama,
+        };
+        for act in [TaskAct::Model, TaskAct::Tool] {
+            let object = match act {
+                TaskAct::Model => "xai_grok",
+                TaskAct::Tool => "notes-append",
+            };
+            let agent = match act {
+                TaskAct::Model => "horizon",
+                TaskAct::Tool => "research",
+            };
+            let result = run_task(
+                &e,
+                &TaskRequest {
+                    agent_id: agent.into(),
+                    act,
+                    object: object.into(),
+                    payload: "Reply with the single word pong.".into(),
+                },
+                Some(&frontier),
+                Some(&local),
+                None,
+            )
+            .unwrap();
+            assert!(
+                result.denied.unwrap().contains("fail-closed"),
+                "{act:?}"
+            );
+            assert!(result.path.iter().any(|s| s == "local:down"));
+            assert!(!result.path.iter().any(|s| s == "frontier:complete"));
+        }
+        assert!(
+            live.last_post().is_none(),
+            "local down must not POST grok-4.7"
+        );
     }
 
     #[test]

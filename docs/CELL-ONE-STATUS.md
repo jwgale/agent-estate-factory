@@ -94,17 +94,17 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 ## This slice
 
-Frontier specialist live PASS is recorded: `--driver frontier`, model `grok-4.7`, `completion` `pong`, reason `frontier completion`. The key was not printed. Env-gated `XAI_API_KEY`. No box hostname.
+Operator path on `examples/fixtures/mixed-frontier-local.yaml`: `estate plan` then `estate apply --require-plan` writes `model-actual.json` (`frontier_http` / `http-remote`, `local_slm` / `ollama`), `placement-actual.json`, and `catalog.json`. No live key. Plan and apply do not POST. The next `estate specialist --driver ollama` completes on the local mock and still does not POST frontier.
 
-Mixed estate `examples/fixtures/mixed-frontier-local.yaml` is frontier `http-remote` model `grok-4.7` plus local `ollama`. `validate` and `apply --dry-run` stay green with no live key and no POST.
+Catalog file SoT lists frontier as a sibling card: model `grok-4.7`, streaming/tools/vision false, completion budget 64. Not a local probe and not a context window. `reasoning_effort` xhigh stays docs-only and is not sent.
 
-Local `--driver ollama` does not call frontier when the local endpoint is unset or the local chat fails, even if `XAI_API_KEY` and `CELL_FRONTIER_ENDPOINT` are set.
+Requested local specialist does not fall through: `ollama` up, `http-remote` up, `llama.cpp` down, and `mlx` / `vllm` / `trt` refuse. `XAI_API_KEY` and `CELL_FRONTIER_ENDPOINT` set still means no frontier POST.
 
-`READY_FOR_LIVE_TEST`: **no**. Frontier `grok-4.7` specialist is recorded.
+`READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#30 (plain English)
+## Bug fixes on #10-#31 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -128,6 +128,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #28 | No frontier specialist env. Apply and complete were separate. | `CELL_FRONTIER_ENDPOINT` mock path. Apply+specialist fixture. READY no. |
 | #29 | Frontier default was `grok-3-mini`. Key did not unlock specialist. | Model `grok-4.7`. `XAI_API_KEY` required. READY yes (handed off). |
 | #30 | Frontier live PASS was not on the hand-off page. | Recorded `pong` / `frontier completion`. READY no. Mixed `grok-4.7` dry-run. Local down does not POST frontier. |
+| #31 | Mixed fixture stopped at dry-run. Catalog did not name `grok-4.7`. Stub local drivers were not locked off frontier. | `plan` + `apply --require-plan` on the mixed fixture (mock, no key, no POST). Frontier catalog card lists `grok-4.7` and completion caps. `ollama` / `http-remote` / `llama.cpp` / `mlx` / `vllm` / `trt` do not POST frontier. READY no. |
 
 ## Known-good local commands
 
@@ -162,7 +163,7 @@ Isolated loops without live boxes:
 - OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
 - Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
 - Live specialist complete (`estate specialist`): `crates/estate-control/tests/specialist_cli.rs` + adapter complete tests
-- Mixed estate dry-run + HttpLocal mock: `crates/estate-control/tests/day90_mixed.rs`
+- Mixed estate dry-run + plan/apply + local specialist skips frontier: `crates/estate-control/tests/day90_mixed.rs`
 - Apply records `local_slm` then specialist complete: `crates/estate-control/tests/day90_apply_specialist.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 

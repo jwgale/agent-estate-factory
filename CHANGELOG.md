@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #30 (this slice)
+
+- Mixed fixture operator path: `estate plan` then `estate apply --require-plan` writes model-actual, placement-actual, and catalog. Mock only. No `XAI_API_KEY`. No frontier POST. Local `ollama` specialist after apply still skips frontier.
+- Catalog file SoT sibling card: model `grok-4.7`, streaming/tools/vision false, completion budget 64. Not a local probe. Not a context window.
+- Requested local specialist does not POST frontier: `ollama` up, `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #29 (this slice)
 
 - Recorded frontier specialist live PASS: `--driver frontier`, model `grok-4.7`, `completion` `pong`, reason `frontier completion`. Key never printed. Env-gated `XAI_API_KEY`. No box hostname.

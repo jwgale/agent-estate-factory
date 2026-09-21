@@ -15,7 +15,7 @@ stays compile-only. Live `grok-4.7` / GPU / Mac are not required to keep
 | Live Mac MLX | Probe path (`CELL_MLX_ENDPOINT`, falls back to `CELL_LOCAL_ENDPOINT`). Catalog card is a stub behind the same catalog / route / bind API. | No Mac in CI. No Mac attached to this factory. MLX is not Supported. Do not mark it live. |
 | Live consumer / rented GPU | Same specialist protocol. 5090 `probes --live` and `estate specialist` `Pong` are recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Host class is `consumer-nvidia` or `rented-nvidia`. | Not required for local gates. Not native MLX. A 5090 is one host, not a binding id or product fork. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
-| Frontier specialist (`grok-4.7`) | Live PASS recorded (`completion` `pong`, reason `frontier completion`). Key never printed. | Not required in CI. `READY_FOR_LIVE_TEST` no. Local down does not fall through. |
+| Frontier specialist (`grok-4.7`) | Live PASS recorded (`completion` `pong`, reason `frontier completion`). Key never printed. Mixed plan + apply is mock-locked. Catalog card names `grok-4.7`. | Not required in CI. `READY_FOR_LIVE_TEST` no. Local specialist does not fall through. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 Adapter is on `main`. `estate specialist --driver ollama --prompt` is

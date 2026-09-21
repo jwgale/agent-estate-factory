@@ -17,6 +17,26 @@ fn mixed_estate() -> estate_schema::Estate {
     load_estate(&repo_root().join("examples/fixtures/mixed-frontier-local.yaml")).unwrap()
 }
 
+fn spawn_compat(script: model_estate::CompatScript) -> model_estate::CompatServer {
+    for _ in 0..40 {
+        let srv = model_estate::CompatServer::spawn(script.clone()).unwrap();
+        if !estate_schema::contains_sku(&srv.endpoint()) {
+            return srv;
+        }
+    }
+    panic!("ephemeral port kept encoding a hardware SKU");
+}
+
+fn spawn_mock_local() -> MockLocalServer {
+    for _ in 0..40 {
+        let srv = MockLocalServer::spawn().unwrap();
+        if !estate_schema::contains_sku(&srv.endpoint()) {
+            return srv;
+        }
+    }
+    panic!("ephemeral port kept encoding a hardware SKU");
+}
+
 fn tmp(name: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!(
         "cell-one-mixed-{}-{}",
@@ -178,6 +198,136 @@ fn mixed_grok_4_7_validate_and_dry_run_does_not_post() {
         "dry-run must not POST to frontier"
     );
     let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
+fn mixed_plan_apply_then_local_specialist_skips_frontier() {
+    let frontier = spawn_compat(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    });
+    let local = spawn_mock_local();
+    let root = repo_root().join(format!(
+        "target/test-mixed-operator-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let estate = repo_root()
+        .join("examples/fixtures/mixed-frontier-local.yaml")
+        .display()
+        .to_string();
+    let sacred = repo_root()
+        .join("policy/sacred.yaml")
+        .display()
+        .to_string();
+    let state_s = state.display().to_string();
+    let plans_s = plans.display().to_string();
+    let roots_s = root.display().to_string();
+
+    let plan = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "plan",
+            "--estate",
+            &estate,
+            "--sacred",
+            &sacred,
+            "--plans-dir",
+            &plans_s,
+            "--state-dir",
+            &state_s,
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_ENDPOINT", &frontier.endpoint())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    assert!(
+        plan.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    assert!(
+        std::fs::read_dir(&plans)
+            .unwrap()
+            .any(|e| e.unwrap().path().extension().and_then(|s| s.to_str()) == Some("json")),
+        "plan must write json"
+    );
+
+    let apply = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "apply",
+            "--require-plan",
+            "--estate",
+            &estate,
+            "--sacred",
+            &sacred,
+            "--state-dir",
+            &state_s,
+            "--roots-base",
+            &roots_s,
+            "--plans-dir",
+            &plans_s,
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_ENDPOINT", &frontier.endpoint())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    let apply_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&apply.stdout),
+        String::from_utf8_lossy(&apply.stderr)
+    );
+    assert!(apply.status.success(), "{apply_text}");
+    assert!(!apply_text.contains("test-not-a-secret"));
+
+    let actual = std::fs::read_to_string(state.join("model-actual.json")).unwrap();
+    assert!(actual.contains("frontier_http"), "{actual}");
+    assert!(actual.contains("\"driver\": \"http-remote\""), "{actual}");
+    assert!(actual.contains("local_slm"), "{actual}");
+    assert!(actual.contains("\"driver\": \"ollama\""), "{actual}");
+    let catalog = std::fs::read_to_string(state.join("catalog.json")).unwrap();
+    assert!(catalog.contains("\"model\": \"grok-4.7\""), "{catalog}");
+    assert!(catalog.contains("completion_tokens"), "{catalog}");
+    assert!(state.join("placement-actual.json").is_file());
+    assert!(
+        frontier.last_post().is_none(),
+        "plan/apply must not POST frontier"
+    );
+
+    let spec = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "specialist",
+            "--driver",
+            "ollama",
+            "--endpoint",
+            &local.endpoint(),
+            "--prompt",
+            "hello from mixed apply",
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_ENDPOINT", &frontier.endpoint())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    assert!(
+        spec.status.success(),
+        "{}",
+        String::from_utf8_lossy(&spec.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&spec.stdout);
+    assert!(
+        stdout.contains("\"completion\": \"mock:hello from mixed apply\""),
+        "{stdout}"
+    );
+    assert!(local.last_post().is_some());
+    assert!(
+        frontier.last_post().is_none(),
+        "local specialist after apply must not POST frontier"
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
