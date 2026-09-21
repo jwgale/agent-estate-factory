@@ -267,6 +267,82 @@ fn estate_specialist_frontier_sku_model_refuses_before_post() {
 }
 
 #[test]
+fn estate_specialist_local_down_does_not_call_frontier() {
+    let frontier = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let local = model_estate::CompatServer::spawn(
+        model_estate::CompatScript::OpenAiEmptyAndOllamaEmpty {
+            models: vec!["llama3".into()],
+        },
+    )
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "ollama",
+            "--endpoint",
+            &local.endpoint(),
+            "--prompt",
+            "Reply with the single word pong.",
+        ])
+        .env("XAI_API_KEY", "test-not-a-secret")
+        .env("CELL_FRONTIER_ENDPOINT", &frontier.endpoint())
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let mix = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!mix.contains("frontier completion"), "{mix}");
+    assert!(!mix.contains("test-not-a-secret"), "{mix}");
+    assert!(local.last_post().is_some(), "local chat must be attempted");
+    assert!(
+        frontier.last_post().is_none(),
+        "local down must not POST frontier"
+    );
+}
+
+#[test]
+fn estate_specialist_missing_local_does_not_call_frontier() {
+    let frontier = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "http-remote",
+            "--prompt",
+            "Reply with the single word pong.",
+        ])
+        .env("XAI_API_KEY", "test-not-a-secret")
+        .env("CELL_FRONTIER_ENDPOINT", &frontier.endpoint())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_RENTED_ENDPOINT")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("CELL_LOCAL_ENDPOINT") || err.contains("endpoint"),
+        "{err}"
+    );
+    assert!(!err.contains("test-not-a-secret"), "{err}");
+    assert!(
+        frontier.last_post().is_none(),
+        "missing local endpoint must not POST frontier"
+    );
+}
+
+#[test]
 fn estate_specialist_sacred_denies_without_inventing_text() {
     let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
         models: vec!["llama3".into()],

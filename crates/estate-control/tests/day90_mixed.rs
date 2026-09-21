@@ -7,6 +7,7 @@ use model_estate::{
     bind_local, LocalRuntime, MockLocalServer, SpecialistJob, SpecialistRequest,
 };
 use std::path::PathBuf;
+use std::process::Command;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -102,6 +103,79 @@ fn mixed_estate_dry_run_http_local_against_mock() {
     assert!(
         !state.join("placement-actual.json").exists(),
         "specialist must not write apply actual"
+    );
+    let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
+fn mixed_grok_4_7_validate_and_dry_run_does_not_post() {
+    let path = repo_root().join("examples/fixtures/mixed-frontier-local.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap();
+    assert!(yaml.contains("grok-4.7"), "fixture must name the frontier model");
+    let estate = mixed_estate();
+    let frontier = estate
+        .model_bindings
+        .iter()
+        .find(|b| b.id == "frontier_http")
+        .unwrap();
+    assert_eq!(frontier.class, ModelClass::Frontier);
+    assert_eq!(frontier.driver, "http-remote");
+    assert_eq!(frontier.params["model"].as_str(), Some("grok-4.7"));
+    assert!(estate
+        .model_bindings
+        .iter()
+        .any(|b| b.id == "local_slm" && b.driver == "ollama"));
+
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let state = tmp("cli-dry");
+    let estate_path = path.display().to_string();
+    let validate = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args(["validate", "--estate", &estate_path])
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_RENTED_ENDPOINT")
+        .env("CELL_FRONTIER_ENDPOINT", &srv.endpoint())
+        .output()
+        .unwrap();
+    assert!(
+        validate.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&validate.stderr)
+    );
+
+    let dry = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "apply",
+            "--dry-run",
+            "--estate",
+            &estate_path,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &state.display().to_string(),
+            "--plans-dir",
+            &state.join("plans").display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env("CELL_FRONTIER_ENDPOINT", &srv.endpoint())
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let mix = format!(
+        "{}{}",
+        String::from_utf8_lossy(&dry.stdout),
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert!(dry.status.success(), "{mix}");
+    assert!(!state.join("placement-actual.json").exists(), "{mix}");
+    assert!(!state.join("catalog.json").exists(), "{mix}");
+    assert!(
+        srv.last_post().is_none(),
+        "dry-run must not POST to frontier"
     );
     let _ = std::fs::remove_dir_all(&state);
 }
