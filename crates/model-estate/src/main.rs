@@ -2,16 +2,15 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use estate_schema::ModelClass;
 use model_estate::{
-    frontier_from_binding, local_bindings, local_from_binding, parse_runtime, readiness,
-    render_catalog, run_task, serve_specialist_forever, HttpLocal, LocalDriver, LocalRuntime,
-    SpecialistJob, SpecialistRequest, TaskAct, TaskRequest,
+    frontier_from_binding, local_bindings, local_from_binding, readiness, render_catalog, run_task,
+    serve_specialist_forever, TaskAct, TaskRequest,
 };
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     name = "model-estate",
-    about = "Data-plane mixed model path. Not an AI gateway. Control does not call this."
+    about = "Data-plane mixed model path. Not an AI gateway. `estate specialist` is a thin delegate to this helper."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -54,8 +53,8 @@ enum Command {
     },
     /// Catalog-level driver probes. Not live pings.
     Probe,
-    /// Policy-precheck / redact through HttpLocal. Not `estate specialist`
-    /// (control does not execute tools or models).
+    /// Policy-precheck / redact / complete through HttpLocal.
+    /// `estate specialist` is the same helper with `--job complete`.
     Specialist {
         /// Override. Default: CELL_LOCAL_ENDPOINT.
         #[arg(long)]
@@ -67,7 +66,10 @@ enum Command {
         #[arg(long, default_value = "model")]
         kind: String,
         #[arg(long)]
-        text: String,
+        text: Option<String>,
+        /// Alias for `--text`.
+        #[arg(long)]
+        prompt: Option<String>,
         /// ollama | llama.cpp | http-remote (same adapter). Default ollama.
         #[arg(long, default_value = "ollama")]
         runtime: String,
@@ -82,7 +84,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli.parse();
     match cli.command {
         Command::Task {
             estate,
@@ -131,8 +133,9 @@ fn run() -> Result<()> {
             agent,
             kind,
             text,
+            prompt,
             runtime,
-        } => cmd_specialist(endpoint, &job, &agent, &kind, &text, &runtime),
+        } => cmd_specialist(endpoint, &job, &agent, &kind, prompt, text, &runtime),
     }
 }
 
@@ -141,45 +144,21 @@ fn cmd_specialist(
     job: &str,
     agent: &str,
     kind: &str,
-    text: &str,
+    prompt: Option<String>,
+    text: Option<String>,
     runtime: &str,
 ) -> Result<()> {
-    let endpoint = endpoint
-        .or_else(|| {
-            std::env::var("CELL_LOCAL_ENDPOINT")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .ok_or_else(|| anyhow::anyhow!("set --endpoint or CELL_LOCAL_ENDPOINT"))?;
-    if estate_schema::contains_sku(&endpoint) {
-        bail!("refuse:sku-banned: endpoint encodes a hardware SKU");
-    }
-    let runtime = parse_runtime(runtime).ok_or_else(|| {
-        anyhow::anyhow!("runtime must be ollama|llama.cpp|http-remote, got {runtime}")
-    })?;
-    if !matches!(
-        runtime,
-        LocalRuntime::Ollama | LocalRuntime::LlamaCpp | LocalRuntime::HttpRemote
-    ) {
-        bail!("native mlx / vllm / trt specialist stays stub or experimental; use ollama|llama.cpp|http-remote");
-    }
-    let job = match job {
-        "policy-precheck" => SpecialistJob::PolicyPrecheck,
-        "redact" => SpecialistJob::Redact,
-        other => bail!("job must be policy-precheck or redact, got {other}"),
-    };
-    let local = HttpLocal {
-        id: "cli".into(),
-        endpoint,
-        runtime,
-    };
-    let result = local.specialist(&SpecialistRequest {
+    let text = prompt
+        .or(text)
+        .ok_or_else(|| anyhow::anyhow!("set --prompt or --text"))?;
+    let result = model_estate::run_http_specialist(
+        endpoint.as_deref(),
         job,
-        agent_id: agent.to_string(),
-        kind: kind.to_string(),
-        text: text.to_string(),
-    })?;
+        agent,
+        kind,
+        &text,
+        runtime,
+    )?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     if !result.allow {
         bail!("specialist denied");
