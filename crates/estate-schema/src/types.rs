@@ -20,6 +20,9 @@ pub struct Estate {
     pub model_bindings: Vec<ModelBinding>,
     #[serde(default)]
     pub sacred_exclusions: Vec<SacredExclusion>,
+    /// First specialist enrich packs. Jason curates; policy is manual. Not auto-promote.
+    #[serde(default)]
+    pub enrich_packs: EnrichPacks,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +37,9 @@ pub struct Agent {
     pub mounts: Vec<MountDecl>,
     #[serde(default)]
     pub mcp: Vec<McpDecl>,
+    /// Declared model-binding allow-list (deny-default, same class as tools).
+    #[serde(default)]
+    pub models: Vec<ModelUseDecl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,6 +66,7 @@ pub enum IntentionKind {
     Tool,
     Mcp,
     Mount,
+    Model,
 }
 
 impl IntentionKind {
@@ -69,6 +76,7 @@ impl IntentionKind {
             IntentionKind::Tool => "tool",
             IntentionKind::Mcp => "mcp",
             IntentionKind::Mount => "mount",
+            IntentionKind::Model => "model",
         }
     }
 }
@@ -82,6 +90,7 @@ impl FromStr for IntentionKind {
             "tool" => Ok(IntentionKind::Tool),
             "mcp" => Ok(IntentionKind::Mcp),
             "mount" => Ok(IntentionKind::Mount),
+            "model" | "binding" => Ok(IntentionKind::Model),
             other => Err(format!("unknown intention kind '{other}'")),
         }
     }
@@ -107,6 +116,13 @@ impl Effect {
             Effect::Allow => "allow",
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelUseDecl {
+    pub id: String,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -158,6 +174,41 @@ impl ModelClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnrichPack {
+    pub id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnrichPacks {
+    #[serde(default = "default_enrich_curator")]
+    pub curator: String,
+    #[serde(default = "default_enrich_policy")]
+    pub policy: String,
+    #[serde(default)]
+    pub packs: Vec<EnrichPack>,
+}
+
+fn default_enrich_curator() -> String {
+    "jason".into()
+}
+
+fn default_enrich_policy() -> String {
+    "manual".into()
+}
+
+impl Default for EnrichPacks {
+    fn default() -> Self {
+        Self {
+            curator: default_enrich_curator(),
+            policy: default_enrich_policy(),
+            packs: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SacredExclusion {
     pub id: String,
     #[serde(default)]
@@ -171,6 +222,7 @@ pub enum ObjectRef {
     Tool(String),
     Mcp(String),
     Mount(String),
+    Binding(String),
     Exclusion(String),
     Bare(String),
 }
@@ -186,6 +238,8 @@ impl ObjectRef {
             ObjectRef::Mcp(rest.to_string())
         } else if let Some(rest) = raw.strip_prefix("mount:") {
             ObjectRef::Mount(rest.to_string())
+        } else if let Some(rest) = raw.strip_prefix("binding:") {
+            ObjectRef::Binding(rest.to_string())
         } else if let Some(rest) = raw.strip_prefix("exclusion:") {
             ObjectRef::Exclusion(rest.to_string())
         } else {
@@ -199,6 +253,7 @@ impl ObjectRef {
             | ObjectRef::Tool(s)
             | ObjectRef::Mcp(s)
             | ObjectRef::Mount(s)
+            | ObjectRef::Binding(s)
             | ObjectRef::Exclusion(s)
             | ObjectRef::Bare(s) => s,
         }
@@ -258,5 +313,10 @@ impl Agent {
     pub fn has_mcp(&self, id: &str) -> bool {
         let n = normalize_name(id);
         self.mcp.iter().any(|m| normalize_name(&m.id) == n)
+    }
+
+    pub fn has_model(&self, id: &str) -> bool {
+        let n = normalize_name(id);
+        self.models.iter().any(|m| normalize_name(&m.id) == n)
     }
 }
