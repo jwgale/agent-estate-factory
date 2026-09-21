@@ -1103,6 +1103,44 @@ fn wave5_sessions_plan_diff_convey_ttl() {
         "stderr={}",
         String::from_utf8_lossy(&forgot.stderr)
     );
+    let forgot_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&forgot.stdout),
+        String::from_utf8_lossy(&forgot.stderr)
+    );
+    assert!(forgot_text.contains("restamp"), "{forgot_text}");
+    let mesh_after: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        mesh_after["hops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["id"] == "ttl-box"),
+        "forget must keep hop decls: {mesh_after}"
+    );
+    let fresh = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let fresh_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&fresh.stdout),
+        String::from_utf8_lossy(&fresh.stderr)
+    );
+    assert!(fresh.status.success(), "{fresh_text}");
+    assert!(fresh_text.contains("lease-refresh"), "{fresh_text}");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
