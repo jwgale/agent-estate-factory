@@ -6,26 +6,31 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) → [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 → [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main`
+## On `main` (PR #1–#9 plus this slice)
 
-Day 0–90 factory is merged (PR #1–#8 plus this slice). Horizon / Research /
-Sanctum on separate lanes. Sacred dual-layer KEEP: Cyera CI and Rust
-classroom stay out of the estate. Sanctum is first-class and is not Cyera.
+Day 0–90 factory is merged. Horizon / Research / Sanctum on separate lanes.
+Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
+Sanctum is first-class and is not Cyera.
 
-Operator entrypoint is local `make gate-90` (smoke + `day90` +
-`estate doctor --strict` + GATE-90 print). Hosted Actions stays one
+| PR | What landed |
+| --- | --- |
+| #7 | `estate help` topics; `backup --prune N`; convey policy deny |
+| #8 | cell-layout sync; `OPERATOR-DAY.md`; gate-90 stays off Actions |
+| #9 | Dual-layer-demo e2e (validate → prune); README ↔ operator/feed links; `CELL-ONE-STATUS.md` |
+| this | Placement TTL e2e. `expire --forget` then apply restamps (was `refuse:drift`) |
+
+Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 `pull_request` job: `cargo check --workspace --locked`. Do not put
-`cargo test` or `make gate-90` on Actions — gate-90 wraps the local suite.
+`cargo test` or `make gate-90` on Actions.
 
-This slice adds an isolated dual-layer-demo loop
-(`crates/estate-control/tests/day90_e2e.rs`): validate → plan → dry-run →
-apply → status → reconcile → backup → prune. Dry-run writes no leases.
-Cloud-agent stays declared, not spawned. The demo estate file is not
-rewritten. No live Grok / Mac / GPU.
+Isolated loops without live boxes:
 
-Walk the same loops by hand: [`OPERATOR-DAY.md`](OPERATOR-DAY.md) and
-[`FEED-LOOP.md`](FEED-LOOP.md). Feed never auto-promotes. `estate.yaml`
-is never rewritten by rematerialize.
+- Dual-layer-demo: `crates/estate-control/tests/day90_e2e.rs`
+- Short TTL: `examples/fixtures/ttl-short.yaml` + `tests/day90_ttl.rs`
+- Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
+
+Cloud-agent stays declared, not spawned. Feed never auto-promotes.
+`estate.yaml` is never rewritten by rematerialize.
 
 ## Still parked (not green)
 
