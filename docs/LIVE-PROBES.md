@@ -27,9 +27,11 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 | Linux 5090-class (`consumer-nvidia` / `rented-nvidia`) | `estate probes --live` | **PASS.** `live ok (openai /v1/models)`. That GET is not a chat proof. |
 | Linux 5090-class | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`. Empty OpenAI `message.content` fell through to `/api/chat`. |
 
-Not recorded: Mac `estate specialist` chat, native MLX, live Grok / `XAI_API_KEY`.
+Not recorded: Mac `estate specialist` chat (same command as the 5090 PASS),
+native MLX, live Grok / `XAI_API_KEY`.
 
-`READY_FOR_LIVE_TEST` for the rows above: **no**. Do not ping Jason again for them.
+`READY_FOR_LIVE_TEST` for the rows above: **no**. Mac complete is the same
+`estate specialist --driver ollama` verb already proven on 5090. Do not ping.
 
 Opt-in helper (requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke):
 
@@ -71,8 +73,9 @@ That is HTTP, not native MLX. The catalog card stays stub.
 | `CELL_VLLM_ENDPOINT` | experimental; unset = SKIP | experimental `/v1/models` |
 | `CELL_TRT_ENDPOINT` | experimental; unset = SKIP | experimental; unset = SKIP |
 | `CELL_LOCAL_MODEL` | optional model id for `specialist()`; SKU ids refuse. Unset = first `/api/tags` id, then `/v1/models`. | same |
+| `CELL_FRONTIER_ENDPOINT` | unused by probes and Ollama specialist | `--driver frontier` / AI-gateway only. `XAI_API_KEY` does not unlock. |
 
-`XAI_*` is frontier A7. Probes do not use it.
+`XAI_*` is frontier A7. Probes and `--driver frontier` do not use it.
 
 ## Sample output (exact lines)
 
@@ -251,9 +254,32 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
   --endpoint http://127.0.0.1:8080 --prompt "Reply with the single word pong."
 ```
 
-Mac `estate specialist` chat is **not** recorded yet. Mock HTTP locks
-the shape here. `READY_FOR_LIVE_TEST` for a Mac complete: only if Jason
-must run that command on Apple Silicon. Do not ping for the 5090 rows.
+Mac `estate specialist` chat is the same command as the 5090 PASS.
+`READY_FOR_LIVE_TEST`: **no**.
+
+## Frontier / AI-gateway specialist (not Ollama live)
+
+Separate from `CELL_LOCAL_ENDPOINT`. `--driver frontier` (aliases:
+`frontier-http`, `ai-gateway`, `openai-compat`) uses
+`CELL_FRONTIER_ENDPOINT` or `--endpoint` only. `CELL_LOCAL_ENDPOINT` and
+`XAI_API_KEY` do not unlock it. SKU endpoints refuse. Mock-locked.
+Never required in CI. Not a Jason live ping.
+
+```bash
+# mock / any OpenAI-compatible gateway
+export CELL_FRONTIER_ENDPOINT=http://127.0.0.1:47832
+cargo run -q -p estate-control -- specialist --driver frontier \
+  --prompt "Reply with the single word pong."
+```
+
+Unset `CELL_FRONTIER_ENDPOINT` (even if `XAI_API_KEY` is set) refuses:
+
+```
+frontier specialist endpoint unset; set CELL_FRONTIER_ENDPOINT (XAI_API_KEY is not used)
+```
+
+In-process mock (`CompatServer`) returns `"completion": "ok"` on
+`/v1/chat/completions`. This is not live Grok and not the 5090 Ollama path.
 
 `probes --live` can print `live ok (openai /v1/models)` while
 `/v1/chat/completions` returns empty `message.content`. Specialist now
