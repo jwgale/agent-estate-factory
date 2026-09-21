@@ -1539,6 +1539,215 @@ fn wave7_status_curator_sync() {
     let doc = String::from_utf8_lossy(&doctor.stdout);
     assert!(doc.contains("GATE-90.md"));
     assert!(doc.contains("schema/README.md"));
+    assert!(doc.contains("CHANGELOG.md"));
+    assert!(doc.contains("sacred.yaml"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn wave8_idempotent_export_pr_sacred_mixed() {
+    let tmp = repo_root().join(format!("target/test-wave8-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let state = tmp.join("state");
+    let plans = tmp.join("plans");
+    let sacred = fixture("examples/fixtures/sacred-overlay.yaml");
+
+    let mixed = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "validate",
+            "--estate",
+            &fixture("examples/fixtures/mixed-frontier-local.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        mixed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&mixed.stderr)
+    );
+
+    let overlay_estate = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "validate",
+            "--estate",
+            &fixture("examples/fixtures/refuse-sacred-overlay.yaml"),
+        ])
+        .output()
+        .unwrap();
+    assert!(!overlay_estate.status.success());
+
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(planned.status.success());
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+
+    let again = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(again.status.success());
+    let again_out = String::from_utf8_lossy(&again.stdout);
+    assert!(again_out.contains("unchanged"));
+
+    let _ = std::fs::remove_dir_all(state.join("sessions").join("horizon"));
+    let drifted = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!drifted.status.success());
+    let drift_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&drifted.stdout),
+        String::from_utf8_lossy(&drifted.stderr)
+    );
+    assert!(drift_err.contains("refuse:drift"));
+
+    let forced = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--force",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        forced.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&forced.stderr)
+    );
+
+    let pr_out = tmp.join("PR.md");
+    let exported = estate_bin()
+        .args([
+            "plan",
+            "export-pr",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--out",
+            &pr_out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        exported.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let body = std::fs::read_to_string(&pr_out).unwrap();
+    assert!(body.contains("Blast radius"));
+    assert!(body.contains("Refuse risks"));
+    assert!(body.contains("Reviewed"));
+    assert!(body.contains("covering"));
+
+    let hop = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "convey",
+            "hop",
+            "--id",
+            "lab-notebook",
+            "--capability",
+            "lane-tool",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!hop.status.success());
+    let hop_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&hop.stdout),
+        String::from_utf8_lossy(&hop.stderr)
+    );
+    assert!(hop_err.contains("refuse:sacred-id"));
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--estate",
+            &fixture("examples/fixtures/mixed-frontier-local.yaml"),
+            "--state-dir",
+            &tmp.join("mixed-state").display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &tmp.join("mixed-plans").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        dry.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert!(!tmp.join("mixed-state").join("placement-actual.json").exists());
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
