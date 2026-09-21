@@ -312,6 +312,12 @@ pub(crate) fn cmd_apply(
                 }
                 bail!("refuse:drift: pass --force to reconverge (clear reason required)");
             }
+            ApplyIdentity::LeaseRefresh { missing } => {
+                println!(
+                    "apply lease-refresh (forgot expired; restamping {})",
+                    missing.join(", ")
+                );
+            }
             _ => {}
         }
     }
@@ -446,4 +452,3 @@ pub(crate) fn cmd_apply_dry_run(
     println!("dry-run ok (no writes)");
     Ok(())
 }
-

@@ -38,12 +38,14 @@ README leads with `make gate-90` as the Day-90 operator entrypoint. `make feed-l
 
 `docs/cell-layout.md` matches the paths the code writes. `docs/OPERATOR-DAY.md` walks `make gate-90` → `make feed-loop` → `estate backup --prune` on isolated cells. A hardening test locks `make gate-90` off Actions (it wraps `cargo test --workspace`). No leftover Origin URLs. No new `estate version` command.
 
-## After PR #8 (this slice)
+## PR #9 — dual-layer-demo e2e and Cell One snapshot
 
-- Isolated dual-layer-demo e2e: validate → plan → dry-run → apply → status → reconcile → backup → prune. No live boxes. Cloud never spawned.
-- README start-here points at OPERATOR-DAY and FEED-LOOP; those docs point back.
-- Dead leftover `cmd_probes` / `cmd_reconcile` wrappers removed from `ops.rs` (live copies stay in `heal.rs`) so `cargo run -q` stays quiet.
-- Snapshot for Jason: `docs/CELL-ONE-STATUS.md`. Not a live-box report.
+Isolated dual-layer-demo loop: validate → plan → dry-run → apply → status → reconcile → backup → prune. README cross-links OPERATOR-DAY and FEED-LOOP. Dead leftover `ops.rs` wrappers removed. Snapshot: `docs/CELL-ONE-STATUS.md`.
+
+## After PR #9 (this slice)
+
+- Hole: `estate expire --forget` dropped leases, then apply treated that as `refuse:drift` and demanded `--force`. Apply now restamps (`lease-refresh`). Not a new verb.
+- Isolated TTL e2e on `examples/fixtures/ttl-short.yaml`: apply stamps `ttl_secs: 1` → expire lists → apply refuses → expire `--forget` → re-apply fresh. No JSON mutation. Cloud never spawned.
 
 ## Still stubbed
 

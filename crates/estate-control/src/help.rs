@@ -97,6 +97,7 @@ Binds box sessions. Records placement leases. Does not spawn cursor-cloud.
   estate apply --force          # only when drift refuses
 
 Second identical apply is a no-op (unchanged). Expired leases refuse.
+After `estate expire --forget`, apply restamps leases. That is not `--force`.
 ";
 
 const RECONCILE: &str = "\
