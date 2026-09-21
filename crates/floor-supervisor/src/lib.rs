@@ -365,16 +365,16 @@ pub fn drift_with_roots(
 }
 
 pub fn stop_runtime(state_dir: &Path) -> Result<(), SupervisorError> {
-    if let Ok(Some(actual)) = load_actual(state_dir) {
+    if let Some(actual) = load_actual(state_dir)? {
         for session in &actual.sessions {
-            let _ = journal_session(
+            journal_session(
                 state_dir,
                 "unspawn",
                 Some(session.agent_id.as_str()),
                 Some(actual.estate_name.as_str()),
                 Some(actual.desired_hash.as_str()),
                 "runtime discarded",
-            );
+            )?;
         }
     }
     let runtime = state_dir.join("runtime");
