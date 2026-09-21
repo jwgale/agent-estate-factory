@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#33 plus this slice)
+## On `main` (PR #1-#34 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -100,25 +100,25 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 #31 plans and applies that fixture (`--require-plan`) on a mock cell. The catalog sibling card names `grok-4.7` with streaming/tools/vision false and completion budget 64. `ollama`, `http-remote`, `llama.cpp`, `mlx`, `vllm`, and `trt` do not POST frontier. `reasoning_effort` xhigh stays docs-only.
 
-## Day-90 mixed and feed tags (#32–#33)
+## #32–#34 in plain English
 
-#32 added `make day90-mixed`: status → plan → `apply --require-plan` → status → doctor on an isolated cell. No live key. Not in smoke or Actions. Status and doctor print `grok-4.7` when the catalog or an estate binding names it. The default estate binding has no model param, so status does not invent one.
+#32. `make day90-mixed` walks the mixed fixture on a throwaway cell: status, plan, apply with a plan, status, doctor. No live key. It is not part of `make smoke` or Actions. Status and doctor print `grok-4.7` only when a catalog file or an estate binding actually has that model. The default estate binding does not, so status does not invent one.
 
-#33 tags packs with `source_drivers` (`frontier` and/or `local`). The tag must match `path_counts`. An explicit `object_class: local` stays local even when the kind mentions frontier. Propose copies the tag. Promote stays off.
+#33. A feed pack now says whether its events were frontier, local, or both (`source_drivers`). The tag has to match the counts. An event marked local stays local even if the event name mentions frontier. A proposal shows the same tag. Promote stays off.
+
+#34. `make feed-loop` checks that tag on the pack it just wrote, and checks the proposal copies it. Live keys are unset. `estate help frontier` and `estate help day90-mixed` explain those paths. If writing a feed event fails, the task stops before it calls frontier.
 
 ## This slice
 
-`make feed-loop` now asserts those tags on the pack it produces: `source_drivers` is `frontier` then `local`, counts are non-zero, and the proposal copies the tag. Live keys are unset. The walk stays off smoke and Actions.
+`estate specialist --driver frontier` already refused without `XAI_API_KEY`. The error now stays explicit: stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT` for a missing key and for a hardware SKU in the model id. The SKU still refuses before any POST, and the message says which setting the bad id came from.
 
-`estate help frontier` and `estate help day90-mixed` are topic pages. Frontier help names `grok-4.7` and the key gate. `day90-mixed` stays opt-in.
-
-A failed feed append on `model-estate` task no longer disappears. The task refuses before frontier. `conveyor-proxy` `check` still ignores an append error and returns the decision.
+`docs/GATE-90.md` and `docs/DAY90-PLUS.md` separate three states. Green means the factory check passes with no box. Recorded means a live proof already ran and is not required again. Parked means it is not green: Mac specialist complete is optional and not recorded, native MLX stays a stub, and cloud-agent spawn stays off.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#34 (plain English)
+## Bug fixes on #10-#35 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -146,6 +146,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #32 | Mixed plan/apply was only a crate test. Status and doctor never named the frontier model. | `make day90-mixed` walks the fixture on an isolated cell. Status/doctor print `grok-4.7` when the catalog or estate binding has it. Default estate does not invent a binding model. READY no. |
 | #33 | Packs counted frontier and local events but did not name the source. A kind mentioning frontier could override `object_class: local`. | `source_drivers` is `frontier` and/or `local` and must match `path_counts`. Local class wins. Propose shows the tag. Promote stays off. READY no. |
 | #34 | `make feed-loop` never checked the new tag. A failed feed append still let the task succeed. Help had no frontier or day90-mixed page. | The fixture walk asserts `source_drivers` frontier then local, with no live keys. Task feed failures refuse before frontier. `estate help frontier` and `estate help day90-mixed`. READY no. |
+| #35 | A SKU frontier model id refused without saying which env set it. Gate pages called recorded GPU proof parked. | Frontier refuse stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT`. Green, recorded, and parked are separate. Mac specialist stays optional. Native MLX and cloud-spawn stay parked. READY no. |
 
 ## Known-good local commands
 
@@ -192,8 +193,9 @@ Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Native MLX `specialist()` stays stub. Mac proof is Ollama-on-Mac. Copy-paste: [`LIVE-PROBES.md`](LIVE-PROBES.md). No Mac attached here. |
-| Live consumer / rented GPU | Same adapter (`/v1/models` or `/api/tags`). Not required for gates. |
+| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
+| Native MLX | `specialist()` stays stub. Not the Ollama-on-Mac probe. |
+| Live consumer / rented GPU | 5090 probes and specialist `Pong` are recorded. Not required to re-run for gates. Not native MLX. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |
 | Auto-promote / curator UI | Locked off / not built. Jason pastes pack ids. |
 | Convey hop transport | Lease-bound mesh, not a gateway. |
