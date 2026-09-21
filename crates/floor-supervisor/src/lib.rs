@@ -1,7 +1,9 @@
 //! Floor supervisor: bind per-agent sessions. Does not execute tools or models.
 //! Isolation is a driver. This crate must stay free of vendor identifiers.
 
+mod backup;
 mod lifecycle;
+mod pause;
 mod placement;
 mod sessions;
 
@@ -28,6 +30,11 @@ pub use sessions::{
     append_session_event, journal_session, list_session_events, session_journal_path,
     tail_session_events, SessionEvent, SESSION_JOURNAL, SESSION_JOURNAL_SCHEMA,
 };
+pub use backup::{
+    backup_cell, render_restore, restore_cell, sacred_id_set, sacred_mismatch, CellBackup,
+    RestoreReport, BACKUP_META, BACKUP_SCHEMA,
+};
+pub use pause::{pause_kit_proof, PauseProof};
 
 #[derive(Debug, Error)]
 pub enum SupervisorError {
