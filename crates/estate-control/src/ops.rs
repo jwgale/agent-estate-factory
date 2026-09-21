@@ -399,7 +399,7 @@ pub(crate) fn cmd_convey_expire(state_dir: &Path, forget: bool) -> Result<()> {
     if forget {
         let forgotten = forget_expired_hop_leases(state_dir)?;
         println!(
-            "forgot {} expired hop lease(s); declare may record fresh rows",
+            "forgot {} expired hop lease(s); call restamps from remaining hop decls",
             forgotten.len()
         );
         return Ok(());
