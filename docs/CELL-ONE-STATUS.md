@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#39 plus this slice)
+## On `main` (PR #1-#40 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -122,11 +122,15 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 #39. Frontier specialist sacred refuse matches local. A prompt that mentions Cyera or Rust classroom refuses before any POST, and the output does not invent `"completion": "ok"`. The README start-here and [`OPERATOR-DAY.md`](OPERATOR-DAY.md) point at `estate help frontier` and `make day90-mixed`. Those stay off smoke and `make gate-90`.
 
+## #40 in plain English
+
+`examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, next to a local `ollama` card. It is not a host-class alias. `examples/estate.yaml` stays hash-locked. A frontier specialist prompt that mentions Cyera or Rust classroom still refuses as sacred when `CELL_FRONTIER_MODEL` is a hardware SKU.
+
 ## This slice
 
-`examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, next to a local `ollama` card. It is not a host-class alias and it is not on smoke or `make gate-90`. `examples/estate.yaml` stays hash-locked.
+`make day90-mixed` validates `examples/hosts/frontier-http.yaml` and prints status. The frontier line is `frontier: frontier_http model=grok-4.7`. A greenfield status does not invent a cell catalog. The walk does not apply that file and does not rewrite `examples/estate.yaml`. The file stays off fixtures-check, smoke, and `make gate-90`.
 
-A frontier specialist request that mentions Cyera or Rust classroom and also sets `CELL_FRONTIER_MODEL` to a hardware SKU still refuses as sacred. It does not POST, does not invent a completion, and does not take the SKU model path.
+`estate models` prints `model=grok-4.7` when the binding sets it, and `model=-` when it does not. The default estate does not gain a binding model.
 
 No new CLI.
 
@@ -134,7 +138,7 @@ No new CLI.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#40 (plain English)
+## Bug fixes on #10-#41 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -168,6 +172,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #38 | The feed walk checked each file on its own. A missing `source_drivers` with a nonzero count was indexed as `drivers=-`. Accept wrote the markdown before the JSON existed. | Pack, proposal, and `enrich-edit.json` must carry the same tag. The index rewrite refuses that mismatch and leaves the old INDEX. Accept serializes both edit files before it writes either. READY no. |
 | #39 | Frontier sacred refuse did not lock the same no-invented-completion check as local, and Rust classroom was not in that prompt test. The operator start page did not point at frontier help or `make day90-mixed`. | Both drivers refuse Cyera and Rust classroom before POST and do not invent a completion. README and OPERATOR-DAY point at the opt-in help and mixed walk. The mixed fixture already names `grok-4.7`. The hash-locked estate file is unchanged. READY no. |
 | #40 | Host estates did not name `model: grok-4.7` on frontier `http-remote`. A sacred prompt plus a SKU `CELL_FRONTIER_MODEL` was not locked as sacred-first. | `examples/hosts/frontier-http.yaml` names that binding. The hash-locked estate file is unchanged. Sacred refuse still wins over the SKU model id, with no POST and no invented completion. READY no. |
+| #41 | The host fixture was not on an opt-in walk. `estate models` hid `params.model`, so a catalog card could be read as the binding. | `make day90-mixed` validates the host file and status prints `frontier: frontier_http model=grok-4.7`. No apply, no cell catalog, hash-locked estate unchanged. `estate models` prints `model=grok-4.7` or `model=-`. Not in smoke or fixtures-check. READY no. |
 
 ## Known-good local commands
 
