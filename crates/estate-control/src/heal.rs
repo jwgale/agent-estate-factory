@@ -11,16 +11,7 @@ use std::path::Path;
 use crate::accept::{accept_proposal, render_accept};
 use crate::suggest::{render_suggest, write_suggest};
 
-pub(crate) fn cmd_probes(live: bool) -> Result<()> {
-    let live = live || model_estate::live_probe_env_requested();
-    if live {
-        println!("live probe (SKIP without endpoints; not used in CI)");
-    }
-    let probes = if live {
-        model_estate::catalog_probes_live()
-    } else {
-        model_estate::catalog_probes()
-    };
+fn refuse_catalog_probes(probes: &[model_estate::DriverProbe]) -> Result<()> {
     for probe in probes {
         if estate_schema::contains_sku(&probe.driver) {
             bail!(
@@ -35,6 +26,22 @@ pub(crate) fn cmd_probes(live: bool) -> Result<()> {
                 probe.host_class
             );
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_probes(live: bool) -> Result<()> {
+    let live = live || model_estate::live_probe_env_requested();
+    let probes = if live {
+        model_estate::catalog_probes_live()
+    } else {
+        model_estate::catalog_probes()
+    };
+    refuse_catalog_probes(&probes)?;
+    if live {
+        println!("live probe (SKIP without endpoints; not used in CI)");
+    }
+    for probe in probes {
         println!(
             "  {:<12} status={:<12} bindable={} live_probed={} host_class={}",
             probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
@@ -98,4 +105,37 @@ pub(crate) fn cmd_packs_accept(
         curator, LOCKED_CURATOR
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refuse_catalog_probes;
+    use model_estate::DriverProbe;
+
+    fn probe(driver: &str, host_class: &str) -> DriverProbe {
+        DriverProbe {
+            driver: driver.into(),
+            runtime: "ollama".into(),
+            status: "supported".into(),
+            host_class: host_class.into(),
+            bindable: true,
+            live_probed: false,
+            note: "test".into(),
+        }
+    }
+
+    #[test]
+    fn refuse_catalog_probes_checks_all_before_any_print() {
+        refuse_catalog_probes(&model_estate::catalog_probes()).unwrap();
+        let mixed = vec![
+            probe("ollama", "any"),
+            probe("not-a-host", "not-a-host"),
+        ];
+        let err = refuse_catalog_probes(&mixed).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("refuse:bad-host-class"),
+            "{text}"
+        );
+    }
 }
