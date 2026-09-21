@@ -14,8 +14,9 @@ use feed_collector::{
 };
 use floor_supervisor::{
     backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events,
-    list_session_events, load_placements, pause_kit_proof, reconcile_placements, record_placements, render_reconcile, render_restore, restore_cell, resume, suspend,
-    tail_session_events, write_reconcile,
+    list_session_events, load_placements, pause_kit_proof, prune_cell_backups,
+    reconcile_placements, record_placements, render_reconcile, render_restore, restore_cell,
+    resume, suspend, tail_session_events, write_reconcile,
 };
 use std::path::{Path, PathBuf};
 
@@ -97,6 +98,7 @@ pub(crate) fn cmd_backup(
     out: &Path,
     estate_path: &Path,
     policy: &Path,
+    prune: Option<usize>,
 ) -> Result<()> {
     enforce_policy(policy, "backup", None)?;
     let estate = load_estate(estate_path).ok();
@@ -108,6 +110,16 @@ pub(crate) fn cmd_backup(
     )?;
     println!("{}", serde_json::to_string_pretty(&meta)?);
     println!("Wrote {}", dest.display());
+    if let Some(keep) = prune {
+        let report = prune_cell_backups(out, keep)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        println!(
+            "prune keep={} kept={} removed={}",
+            report.keep,
+            report.kept.len(),
+            report.removed.len()
+        );
+    }
     Ok(())
 }
 
