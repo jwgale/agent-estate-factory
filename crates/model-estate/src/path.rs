@@ -62,7 +62,7 @@ pub fn run_task(
         if decision.is_allow() { "allow" } else { "deny" },
         kind.as_str(),
         None,
-    );
+    )?;
     if !decision.is_allow() {
         return Ok(TaskResult {
             authorized: false,
@@ -95,7 +95,7 @@ pub fn run_task(
             if spec.allow { "allow" } else { "deny" },
             "local",
             Some(&format!("job={}", spec.job)),
-        );
+        )?;
         path.push(if spec.allow {
             "local:allow".into()
         } else {
@@ -134,7 +134,7 @@ pub fn run_task(
                 "allow",
                 "tool",
                 None,
-            );
+            )?;
             Ok(TaskResult {
                 authorized: true,
                 precheck,
@@ -163,7 +163,7 @@ pub fn run_task(
                 "allow",
                 "frontier",
                 Some(&format!("bytes={}", output.len())),
-            );
+            )?;
             path.push("frontier:complete".into());
             Ok(TaskResult {
                 authorized: true,
@@ -189,7 +189,7 @@ fn fail_closed_local(
         "deny",
         "local",
         Some("fail-closed; no frontier fallback"),
-    );
+    )?;
     path.push("local:down".into());
     Ok(TaskResult {
         authorized: true,
@@ -209,11 +209,11 @@ fn feed(
     decision: &str,
     object_class: &str,
     note: Option<&str>,
-) {
+) -> Result<(), ModelError> {
     let Some(dir) = dir else {
-        return;
+        return Ok(());
     };
-    let _ = append_event(
+    append_event(
         dir,
         &ScrubbedEvent {
             kind: kind.into(),
@@ -223,5 +223,6 @@ fn feed(
             note: note.map(|s| s.to_string()),
             ts: String::new(),
         },
-    );
+    )
+    .map_err(|err| ModelError::Other(format!("feed: {err}")))
 }
