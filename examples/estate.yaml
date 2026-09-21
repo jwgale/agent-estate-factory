@@ -67,6 +67,7 @@ intentions: []
 
 # Equal-class live bindings. Floor core must not hard-code vendor or SKU hints.
 # Secrets stay in env (XAI_API_KEY, CELL_LOCAL_ENDPOINT). Never in this file.
+# Frontier model id default is grok-4.7 (CELL_FRONTIER_MODEL or XAI_MODEL).
 model_bindings:
   - id: xai_grok
     class: frontier
