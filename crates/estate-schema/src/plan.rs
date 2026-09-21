@@ -370,6 +370,57 @@ pub fn render_plan_diff(from: &EstatePlan, to: &EstatePlan) -> String {
     out
 }
 
+/// Single markdown ready to paste into a GitHub PR body. Does not open a PR.
+pub fn render_plan_pr(
+    plan: &EstatePlan,
+    covering_stem: Option<&str>,
+    reviewed: bool,
+    refuse_risks: &[String],
+) -> String {
+    let mut out = String::from("# Cell One plan (paste into PR body)\n\n");
+    out.push_str("Not a gateway. Cloud-agent stays unspawned. Feed does not auto-promote.\n\n");
+    out.push_str(&format!("- **Desired hash:** {}\n", plan.desired_hash));
+    match &plan.against_hash {
+        Some(h) => out.push_str(&format!("- **Against hash:** {h}\n")),
+        None => out.push_str("- **Against hash:** (greenfield)\n"),
+    }
+    out.push_str(&format!(
+        "- **Covering plan:** {}\n",
+        covering_stem.unwrap_or("(none — run `estate plan` first)")
+    ));
+    out.push_str(&format!(
+        "- **Reviewed:** {}\n",
+        if reviewed { "yes" } else { "no" }
+    ));
+    out.push_str(&format!(
+        "- **Reviewable:** {}\n",
+        if plan_is_reviewable(plan) { "yes" } else { "no" }
+    ));
+    out.push_str(&format!(
+        "- **Blast width:** {}\n\n",
+        plan_blast_width(plan)
+    ));
+    out.push_str("## Blast radius\n\n");
+    out.push_str(&plan.blast_radius_text);
+    out.push_str("\n\n");
+    out.push_str(&render_security_iac(plan));
+    out.push('\n');
+    out.push_str(&render_review_diff(plan));
+    out.push_str("\n## Refuse risks\n\n");
+    if refuse_risks.is_empty() {
+        out.push_str("- (none recorded)\n");
+    } else {
+        for risk in refuse_risks {
+            out.push_str(&format!("- {risk}\n"));
+        }
+    }
+    out.push_str("\n## Rails\n\n");
+    out.push_str("- GitHub is source of truth. No Origin. No auto-promote.\n");
+    out.push_str("- Cloud-agent: declared, not spawned.\n");
+    out.push_str("- Apply is pause-safe disk. Sacred dual-layer stays.\n");
+    out
+}
+
 /// Blast-radius markdown a human can PR-review before apply.
 pub fn render_security_iac(plan: &EstatePlan) -> String {
     let mut out = String::from("Security-as-IaC (PR-review this blast radius)\n");
@@ -692,6 +743,16 @@ mod tests {
         let iac = render_security_iac(&covering.plan);
         assert!(iac.contains("Security-as-IaC"));
         assert!(iac.contains("reviewable: true"));
+        let pr = render_plan_pr(
+            &covering.plan,
+            Some(&covering.stem),
+            true,
+            &["cloud-agent: declared, not spawned".into()],
+        );
+        assert!(pr.contains("paste into PR body"));
+        assert!(pr.contains("Blast radius"));
+        assert!(pr.contains("Refuse risks"));
+        assert!(pr.contains("Reviewed:** yes"));
         assert!(dir.join(format!("{}.security.md", covering.stem)).is_file());
         let reviewed = mark_plan_reviewed(&dir, &dir.join("reviewed"), Some(&covering.stem)).unwrap();
         assert!(reviewed.is_file());
