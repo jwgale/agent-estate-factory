@@ -94,6 +94,11 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–7 stay.
 53. **`CHANGELOG.md` is the morning read.** Day 0–30, 31–60, waves 1–8. Not a product essay.
 54. **Operator-day / fixtures-check / doctor grew Wave 8.** Unchanged apply, drift/`--force`, export-pr, overlay hop refuse, mixed dry-run. Doctor requires `policy/sacred.yaml`, `schema/sacred.v0.json`, `CHANGELOG.md`.
 
+## Wave 9 (hardening / morning-prep)
+
+55. **Refuse-code tests, not new CLIs.** Mesh: kind / bad-id / host-class / capability / not-live / sku display. Feed: missing-pack / no-auto-apply / raw-secret. Reconcile: extra-lease + kind-mismatch. `examples/estate.yaml` hash locked (`sha256:dcd7164f…`); YAML comments allowed. Doctor required-file lists are one const.
+56. **Morning artifacts.** `docs/MORNING-BRIEF-2026-09-21.md` + `docs/PR2-DESCRIPTION.md`. README start-here. `gh` not logged in; PR body via GitHub MCP + paste file. No extra PRs.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -137,7 +142,7 @@ This is not a gateway, not LM Studio, not an auto-promote feed, not a cloud-agen
 Jason’s inbox was filling with Actions failure mail. Until ~7am America/Chicago:
 
 - No GitHub Actions workflows. `ci.yml` is gone on `main` and on `cursor/day61-90-beachhead-2950`.
-- Do not add a workflow file overnight. Do not open extra PRs that would retrigger CI.
+- Do not add .workflow file overnight. Do not open extra PRs that would retrigger CI.
 - Gate is local only: `cargo check --workspace --locked`, `cargo test --workspace`, `make gate` / `make gate-60` / `make gate-90` / `make smoke`.
 - Tomorrow, if Jason wants hosted CI back: one `pull_request` job, `cargo check --workspace --locked` only, timeout ≤ 10. Never `cargo test` on Actions overnight.
 
