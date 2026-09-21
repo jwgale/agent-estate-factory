@@ -65,6 +65,39 @@ pub fn ping(estate: &Estate, binding_id: &str) -> Result<(), ModelError> {
     Ok(())
 }
 
+/// Frontier binding ids whose `params.model` is set. No catalog default.
+pub fn estate_frontier_models(estate: &Estate) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for binding in &estate.model_bindings {
+        if binding.class != ModelClass::Frontier {
+            continue;
+        }
+        let Some(model) = binding
+            .params
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        out.push((binding.id.clone(), model.to_string()));
+    }
+    out
+}
+
+/// `frontier.model` from a catalog JSON blob. Missing field is `Ok(None)`.
+pub fn frontier_model_from_catalog_json(text: &str) -> Result<Option<String>, String> {
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    Ok(value
+        .get("frontier")
+        .and_then(|f| f.get("model"))
+        .and_then(|m| m.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string()))
+}
+
 pub fn describe_bindings(estate: &Estate) -> String {
     let mut lines = vec![
         "model bindings (equal class; invoke via model-estate, not estate-control):".to_string(),
@@ -182,6 +215,28 @@ mod tests {
             self.hits.fetch_add(1, Ordering::SeqCst);
             self.inner.complete(prompt)
         }
+    }
+
+    #[test]
+    fn frontier_model_follows_the_binding_not_the_catalog_default() {
+        let named = load_estate_str(include_str!(
+            "../../../examples/fixtures/mixed-frontier-local.yaml"
+        ))
+        .unwrap();
+        assert_eq!(
+            estate_frontier_models(&named),
+            vec![("frontier_http".into(), "grok-4.7".into())]
+        );
+        assert!(estate_frontier_models(&estate()).is_empty());
+        let parsed = frontier_model_from_catalog_json(include_str!(
+            "../../../schema/local-catalog.v0.json"
+        ))
+        .unwrap();
+        assert_eq!(parsed.as_deref(), Some("grok-4.7"));
+        assert!(frontier_model_from_catalog_json(r#"{"cards":[]}"#)
+            .unwrap()
+            .is_none());
+        assert!(frontier_model_from_catalog_json("not-json").is_err());
     }
 
     #[test]
