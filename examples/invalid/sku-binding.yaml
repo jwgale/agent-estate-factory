@@ -1,23 +1,32 @@
+# Fail closed: hardware SKUs must not appear in estate contracts.
 version: 0
-name: shared-lane
+name: sku-binding
 default_effect: deny
 agents:
   - id: horizon
     display_name: Horizon
-    lane: shared
+    lane: horizon
     desktop: horizon-desktop
+    models:
+      - id: xai_grok
+      - id: gpu_5090
   - id: research
     display_name: Research
-    lane: shared
+    lane: research
     desktop: research-desktop
+    models:
+      - id: gpu_5090
   - id: sanctum
     display_name: Sanctum
     lane: sanctum
     desktop: sanctum-desktop
 lanes:
-  - id: shared
-    root_path: lanes/shared
+  - id: horizon
+    root_path: lanes/horizon
     owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
   - id: sanctum
     root_path: lanes/sanctum
     owner_agent_id: sanctum
@@ -25,11 +34,13 @@ model_bindings:
   - id: xai_grok
     class: frontier
     driver: frontier-http
-    wired: false
-  - id: local_slm
+    wired: true
+  - id: gpu_5090
     class: local
     driver: ollama
-    wired: false
+    params:
+      hint: nvidia-5090
+    wired: true
 sacred_exclusions:
   - id: cyera-ci
     reason: locked
