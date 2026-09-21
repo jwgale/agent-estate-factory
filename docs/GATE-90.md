@@ -1,6 +1,6 @@
 # Day-90 beachhead gate (local only)
 
-Checklist for A10–A12 plus overnight waves. **No GitHub Actions.** Run from the repo root.
+Checklist for A10–A12 plus overnight waves. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Real cargo test stays local. Run from the repo root.
 
 Primary wrap:
 
@@ -34,7 +34,7 @@ make gate-90
 | Wave 3 propose | `auto_apply=false` | `estate packs propose` |
 | Wave 4 dry-run | No writes; would-refuse exit 1 | `estate apply --dry-run` |
 | Wave 4 lease TTL | expire / refuse / `--forget` | `estate expire` |
-| Wave 4 doctor | Schemas present; no workflow yml | `estate doctor` |
+| Wave 4 doctor | Schemas present; only compile-only `ci.yml` | `estate doctor` |
 | Wave 5 journal | `.cell/sessions.jsonl` | `estate sessions list` |
 | Wave 5 hop TTL | expired call refuses | `estate convey expire` |
 | Wave 5 plan diff | Wider blast without `--allow-wider` refuses | `estate plan diff` |

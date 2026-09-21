@@ -41,7 +41,7 @@ if [[ "$bad_host" -eq 0 ]]; then
 fi
 echo "PASS  invalid host_class refused"
 
-echo "-- doctor (quiet hours + schemas) --"
+echo "-- doctor (compile-only CI + schemas) --"
 cargo run -q -p estate-control -- doctor --root "$ROOT" --state-dir "$STATE"
 
 echo "-- apply --dry-run (no writes) --"
