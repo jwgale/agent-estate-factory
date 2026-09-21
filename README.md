@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory
 
-**Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
+**Start here:** `make gate-90` (Day-90 operator entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → feed-loop → backup prune) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`CHANGELOG.md`](CHANGELOG.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
@@ -36,7 +36,7 @@ Live Mac MLX, live consumer/rented GPU (including a 5090-class box), and cloud-a
 make feed-loop   # isolated fixture walk: scrubbed trace → pack → propose → accept
 ```
 
-See [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) and [`docs/GATE-90.md`](docs/GATE-90.md).
+Walk both loops without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md). Checklist: [`docs/GATE-90.md`](docs/GATE-90.md).
 
 Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Lease files: [`docs/cell-layout.md`](docs/cell-layout.md).
 
@@ -45,7 +45,7 @@ Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate
 This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy. Origin is not in the loop. GitHub is SoT.
 
 | Works tonight (local cargo) | Still a stub |
-| --- | --- | --- |
+| --- | --- |
 | `estate validate` on `examples/estate.yaml` + host matrix + `examples/hosts/multi-host.yaml` | Live Mac MLX proof |
 | `estate plan` / `apply --require-plan` / `--require-fresh-plan` + Security-as-IaC markdown | Cloud-agent spawn (declared only) |
 | `estate suspend` / `resume` / `status` / `history` | Multi-box control plane |
