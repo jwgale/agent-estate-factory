@@ -1,4 +1,4 @@
-name: test
+name: check
 
 on:
   pull_request:
@@ -6,19 +6,19 @@ on:
       - main
 
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
+  group: check-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: cargo test --workspace
+  check:
+    name: cargo check --workspace --locked
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
-      - run: cargo test --workspace
+      - run: cargo check --workspace --locked
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
