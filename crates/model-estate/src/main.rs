@@ -2,8 +2,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use estate_schema::ModelClass;
 use model_estate::{
-    frontier_from_binding, local_bindings, local_from_binding, readiness, render_catalog, run_task,
-    serve_specialist_forever, TaskAct, TaskRequest,
+    frontier_from_binding, local_bindings, local_from_binding, parse_runtime, readiness,
+    render_catalog, run_task, serve_specialist_forever, HttpLocal, LocalDriver, LocalRuntime,
+    SpecialistJob, SpecialistRequest, TaskAct, TaskRequest,
 };
 use std::path::PathBuf;
 
@@ -53,6 +54,24 @@ enum Command {
     },
     /// Catalog-level driver probes. Not live pings.
     Probe,
+    /// Policy-precheck / redact through HttpLocal. Not `estate specialist`
+    /// (control does not execute tools or models).
+    Specialist {
+        /// Override. Default: CELL_LOCAL_ENDPOINT.
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value = "policy-precheck")]
+        job: String,
+        #[arg(long, default_value = "cli")]
+        agent: String,
+        #[arg(long, default_value = "model")]
+        kind: String,
+        #[arg(long)]
+        text: String,
+        /// ollama | llama.cpp | http-remote (same adapter). Default ollama.
+        #[arg(long, default_value = "ollama")]
+        runtime: String,
+    },
 }
 
 fn main() {
@@ -106,7 +125,66 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
+        Command::Specialist {
+            endpoint,
+            job,
+            agent,
+            kind,
+            text,
+            runtime,
+        } => cmd_specialist(endpoint, &job, &agent, &kind, &text, &runtime),
     }
+}
+
+fn cmd_specialist(
+    endpoint: Option<String>,
+    job: &str,
+    agent: &str,
+    kind: &str,
+    text: &str,
+    runtime: &str,
+) -> Result<()> {
+    let endpoint = endpoint
+        .or_else(|| {
+            std::env::var("CELL_LOCAL_ENDPOINT")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .ok_or_else(|| anyhow::anyhow!("set --endpoint or CELL_LOCAL_ENDPOINT"))?;
+    if estate_schema::contains_sku(&endpoint) {
+        bail!("refuse:sku-banned: endpoint encodes a hardware SKU");
+    }
+    let runtime = parse_runtime(runtime).ok_or_else(|| {
+        anyhow::anyhow!("runtime must be ollama|llama.cpp|http-remote, got {runtime}")
+    })?;
+    if !matches!(
+        runtime,
+        LocalRuntime::Ollama | LocalRuntime::LlamaCpp | LocalRuntime::HttpRemote
+    ) {
+        bail!("native mlx / vllm / trt specialist stays stub or experimental; use ollama|llama.cpp|http-remote");
+    }
+    let job = match job {
+        "policy-precheck" => SpecialistJob::PolicyPrecheck,
+        "redact" => SpecialistJob::Redact,
+        other => bail!("job must be policy-precheck or redact, got {other}"),
+    };
+    let local = HttpLocal {
+        id: "cli".into(),
+        endpoint,
+        runtime,
+    };
+    let result = local.specialist(&SpecialistRequest {
+        job,
+        agent_id: agent.to_string(),
+        kind: kind.to_string(),
+        text: text.to_string(),
+    })?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    if !result.allow {
+        bail!("specialist denied");
+    }
+    Ok(())
 }
 
 fn cmd_task(
@@ -178,6 +256,7 @@ fn cmd_task(
         match frontier_from_binding(binding) {
             Ok(driver) => Some(driver),
             Err(err) => {
+                // Local may still fail-closed; audit that before surfacing missing frontier creds.
                 if local_box.is_some() {
                     None
                 } else {
