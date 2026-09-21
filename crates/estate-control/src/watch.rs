@@ -287,7 +287,7 @@ pub(crate) fn cmd_status(
     Ok(())
 }
 
-pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
+pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> Result<()> {
     let mut fails = 0usize;
     for rel in DOCTOR_REQUIRED {
         if !root.join(rel).is_file() {
@@ -370,7 +370,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env.temp_dir().join(format!("cell-doctor-ci-{nanos}"));
+        let root = std::env::temp_dir().join(format!("cell-doctor-ci-{nanos}"));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join(".github/workflows")).unwrap();
         root
