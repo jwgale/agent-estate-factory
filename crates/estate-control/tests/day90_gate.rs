@@ -205,6 +205,7 @@ fn wave2_host_matrix_and_convey_mesh() {
             host_class: "any".into(),
             wired: true,
             note: None,
+            ttl_secs: None,
         },
     )
     .unwrap();
@@ -292,5 +293,46 @@ fn wave4_dry_run_ttl_scrub_specialist() {
     assert_eq!(pack.model_hint.as_deref(), Some("local_slm"));
     assert!(!pack.source_paths.is_empty());
     feed_collector::refuse_pack(&pack).unwrap();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn wave5_journal_hop_ttl_plan_diff_apiver() {
+    let e = example();
+    assert!(e.api_version.is_none());
+    let happy = estate_schema::load_estate(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/fixtures/happy.yaml"
+    )))
+    .unwrap();
+    assert_eq!(happy.api_version.as_deref(), Some("cell-one.estate.v0"));
+
+    let root = tmp();
+    let state = root.join("state");
+    apply_with_profile_dir(&e, &state, &root).unwrap();
+    let journal = floor_supervisor::list_session_events(&state).unwrap();
+    assert!(journal.iter().any(|ev| ev.action == "spawn"));
+    assert!(state.join(floor_supervisor::SESSION_JOURNAL).is_file());
+
+    let lease = conveyor_proxy::declare_hop(
+        &state,
+        conveyor_proxy::HopDecl {
+            id: "ttl-box".into(),
+            kind: "box".into(),
+            capability: "lane-tool".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+            ttl_secs: Some(30),
+        },
+    )
+    .unwrap();
+    assert_eq!(lease.ttl_secs, Some(30));
+    assert!(lease.expires_at.is_some());
+
+    let empty = estate_schema::diff_estates(&e, Some(&e));
+    let green = estate_schema::diff_estates(&e, None);
+    assert!(estate_schema::blast_grows(&empty, &green));
+    assert!(!estate_schema::blast_grows(&green, &empty));
     let _ = std::fs::remove_dir_all(&root);
 }
