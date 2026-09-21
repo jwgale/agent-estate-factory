@@ -584,6 +584,82 @@ mod tests {
     }
 
     #[test]
+    fn live_probe_shapes_skip_vs_would_live_without_network() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../schema/live-probe-shapes.v0.json"))
+                .unwrap();
+        assert_eq!(fixture["schema"], "cell-one.live-probe-shape.v0");
+
+        let mlx = catalog_probes()
+            .into_iter()
+            .find(|p| p.driver == fixture["mac_mlx"]["driver"])
+            .unwrap();
+        assert_eq!(mlx.host_class, fixture["mac_mlx"]["host_class"]);
+        assert_eq!(mlx.status, fixture["mac_mlx"]["status"]);
+        assert_eq!(mlx.bindable, fixture["mac_mlx"]["bindable"]);
+        let mlx_envs: Vec<&str> = fixture["mac_mlx"]["endpoint_envs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(crate::live_endpoint_envs(LocalRuntime::Mlx), mlx_envs.as_slice());
+
+        let ollama = catalog_probes()
+            .into_iter()
+            .find(|p| p.driver == fixture["linux_gpu"]["driver"])
+            .unwrap();
+        assert_eq!(ollama.host_class, fixture["linux_gpu"]["host_class"]);
+        assert_eq!(ollama.status, fixture["linux_gpu"]["status"]);
+        assert!(ollama.bindable);
+        let gpu_envs: Vec<&str> = fixture["linux_gpu"]["endpoint_envs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            crate::live_endpoint_envs(LocalRuntime::Ollama),
+            gpu_envs.as_slice()
+        );
+
+        let skip = crate::apply_live_overlay(mlx.clone(), crate::LiveOverlay::Skip);
+        assert_eq!(skip.live_probed, fixture["skip"]["live_probed"]);
+        for needle in fixture["skip"]["note_must_contain"].as_array().unwrap() {
+            assert!(
+                skip.note.contains(needle.as_str().unwrap()),
+                "SKIP note missing {}: {}",
+                needle,
+                skip.note
+            );
+        }
+
+        let would = crate::apply_live_overlay(ollama.clone(), crate::LiveOverlay::WouldLive);
+        assert_eq!(would.live_probed, fixture["would_live"]["live_probed"]);
+        for needle in fixture["would_live"]["note_must_contain"].as_array().unwrap() {
+            assert!(
+                would.note.contains(needle.as_str().unwrap()),
+                "would-live note missing {}: {}",
+                needle,
+                would.note
+            );
+        }
+
+        let down = crate::apply_live_overlay(mlx, crate::LiveOverlay::Down("fixture"));
+        assert_eq!(down.live_probed, fixture["down"]["live_probed"]);
+        for needle in fixture["down"]["note_must_contain"].as_array().unwrap() {
+            assert!(
+                down.note.contains(needle.as_str().unwrap()),
+                "down note missing {}: {}",
+                needle,
+                down.note
+            );
+        }
+        assert!(!would.note.contains("SKIP"));
+        assert!(!skip.live_probed);
+    }
+
+    #[test]
     fn live_probe_ok_against_mock_and_down_is_safe() {
         let server = crate::MockLocalServer::spawn().unwrap();
         let p = crate::probe_runtime("ollama", LocalRuntime::Ollama, "any");
