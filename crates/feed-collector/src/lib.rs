@@ -690,7 +690,7 @@ pub fn write_drop_pack(drop_dir: &Path, pack: &PackManifest) -> Result<PathBuf, 
     std::fs::create_dir_all(drop_dir)?;
     let path = drop_dir.join(format!("{}.pack.json", pack.id));
     std::fs::write(&path, to_pretty_json(pack)?)?;
-    let _ = write_pack_index(drop_dir);
+    write_pack_index(drop_dir)?;
     Ok(path)
 }
 
@@ -851,7 +851,7 @@ pub fn import_pack_for(
             promoted: imported.pack.promoted,
         },
     )?;
-    let _ = write_pack_index(drop_dir);
+    write_pack_index(drop_dir)?;
     Ok((imported, path))
 }
 
@@ -1452,6 +1452,64 @@ mod tests {
         let text = std::fs::read_to_string(&index).unwrap();
         assert!(text.contains("overnight-traces"));
         assert!(text.contains("promoted=false"));
+        assert!(text.contains("drivers=-"), "{text}");
+        assert!(
+            !text.contains("drivers=frontier"),
+            "empty pack must not invent a source driver: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn index_lists_source_drivers_when_present_and_round_trips() {
+        let feed = tmp();
+        append_event(
+            &feed,
+            &ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        append_event(
+            &feed,
+            &ScrubbedEvent {
+                kind: "model.frontier.complete".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("allow".into()),
+                object_class: Some("frontier".into()),
+                note: Some("bytes=4".into()),
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        let drop = feed.join("drop");
+        materialize_from_feed(&feed, &drop, "overnight-traces").unwrap();
+        let index = std::fs::read_to_string(drop.join("INDEX.md")).unwrap();
+        assert!(index.contains("drivers=frontier,local"), "{index}");
+        assert!(index.contains("promoted=false"), "{index}");
+        let listed = list_drop_packs(&drop).unwrap();
+        assert_eq!(
+            listed[0].source_drivers,
+            vec!["frontier".to_string(), "local".to_string()]
+        );
+        let blob = std::fs::read_to_string(drop.join("overnight-traces.pack.json")).unwrap();
+        let back: PackManifest = serde_json::from_str(&blob).unwrap();
+        assert_eq!(back.source_drivers, listed[0].source_drivers);
+        let mut old: serde_json::Value = serde_json::from_str(&blob).unwrap();
+        old.as_object_mut().unwrap().remove("source_drivers");
+        let legacy: PackManifest = serde_json::from_value(old).unwrap();
+        assert!(legacy.source_drivers.is_empty());
+        let schema = include_str!("../../../schema/pack.v0.json");
+        assert!(schema.contains("\"source_drivers\""));
+        let specialist = include_str!("../../../schema/specialist-pack.v0.json");
+        assert!(specialist.contains("\"source_drivers\""));
+        let proposal = include_str!("../../../schema/enrich-proposal.v0.json");
+        assert!(proposal.contains("\"source_drivers\""));
         let _ = std::fs::remove_dir_all(&feed);
     }
 
