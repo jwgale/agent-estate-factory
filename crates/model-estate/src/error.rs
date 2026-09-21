@@ -33,6 +33,7 @@ impl ModelError {
                 | ModelError::MissingEndpoint(_)
                 | ModelError::Stub(_)
                 | ModelError::Experimental(_)
+                | ModelError::Refused(_)
         )
     }
 }
