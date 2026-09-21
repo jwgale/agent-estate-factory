@@ -58,7 +58,7 @@ pub(crate) fn enforce_policy(path: &Path, action: &str, hop: Option<&str>) -> Re
 
 pub(crate) fn chrono_stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime.now()
+    let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
