@@ -287,7 +287,7 @@ pub(crate) fn cmd_status(
     Ok(())
 }
 
-pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> Result<()> {
+pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
     let mut fails = 0usize;
     for rel in DOCTOR_REQUIRED {
         if !root.join(rel).is_file() {
