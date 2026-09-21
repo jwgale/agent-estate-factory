@@ -291,8 +291,9 @@ pub fn canonical_host_class_opt(raw: Option<&str>) -> Option<&'static str> {
 }
 
 /// Canonical locked name, or `"any"` when unset/empty.
-/// Trusted post-validate stamps only. Untrusted disk must use
-/// [`canonical_host_class_opt`] so unknown names can refuse.
+/// Trusted post-validate stamps only. Untrusted disk (placement-actual,
+/// conveyor-mesh) must use [`canonical_host_class_opt`] and refuse.
+/// Hop `declare` stamps via opt after `refuse_hop` and never invents `any`.
 pub fn canonical_host_class(raw: Option<&str>) -> &'static str {
     canonical_host_class_opt(raw).unwrap_or("any")
 }

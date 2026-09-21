@@ -6,8 +6,8 @@ mod mesh;
 pub use mesh::{
     call_hop, declare_hop, forget_expired_hop_leases, hop_driver, hop_from_placement,
     hop_kind_for_placement, hop_lease_is_expired, hop_now_unix, list_expired_hop_leases,
-    list_hop_leases, list_hops, load_mesh, mesh_file_sot, persist_mesh, slim_parse_placement_actual,
-    sync_from_placements,
+    list_hop_leases, list_hops, load_mesh, mesh_file_sot, persist_mesh, refuse_mesh_host_classes,
+    slim_parse_placement_actual, sync_from_placements,
     BoxHop, CloudMeshHop, ConveyorHop, ConveyorMesh, HopCall, HopDecl, HopLease, MeshError,
     MESH_FILE, MESH_SCHEMA,
 };
