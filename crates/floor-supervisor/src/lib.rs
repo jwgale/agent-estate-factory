@@ -177,6 +177,37 @@ pub fn load_desired_snapshot(state_dir: &Path) -> Result<Option<Estate>, Supervi
     Ok(Some(estate))
 }
 
+/// How apply should treat the current desired hash vs disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyIdentity {
+    Greenfield,
+    Unchanged,
+    Drift { notes: Vec<String> },
+    DesiredChanged,
+}
+
+/// Identical desired + in_sync → unchanged. Hash match + drift → refuse unless --force.
+pub fn classify_apply(
+    estate: &Estate,
+    state_dir: &Path,
+    roots_base: &Path,
+) -> Result<ApplyIdentity, SupervisorError> {
+    let Some(snap) = load_desired_snapshot(state_dir)? else {
+        return Ok(ApplyIdentity::Greenfield);
+    };
+    if estate_hash(&snap) != estate_hash(estate) {
+        return Ok(ApplyIdentity::DesiredChanged);
+    }
+    let report = drift_with_roots(estate, state_dir, Some(roots_base))?;
+    if report.in_sync {
+        Ok(ApplyIdentity::Unchanged)
+    } else {
+        Ok(ApplyIdentity::Drift {
+            notes: report.notes,
+        })
+    }
+}
+
 pub fn load_actual(state_dir: &Path) -> Result<Option<ActualState>, SupervisorError> {
     let path = state_dir.join("actual-state.json");
     if !path.exists() {
@@ -392,6 +423,30 @@ mod tests {
         assert!(tmp.join("desired-snapshot.yaml").is_file());
         assert!(tmp.join("placement-actual.json").is_file());
         assert!(report.spawned_cloud_agents.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn classify_apply_unchanged_then_drift() {
+        let estate = example();
+        let tmp = tempfile();
+        let state = tmp.join("state");
+        assert_eq!(
+            classify_apply(&estate, &state, &tmp).unwrap(),
+            ApplyIdentity::Greenfield
+        );
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        assert_eq!(
+            classify_apply(&estate, &state, &tmp).unwrap(),
+            ApplyIdentity::Unchanged
+        );
+        stop_runtime(&state).unwrap();
+        match classify_apply(&estate, &state, &tmp).unwrap() {
+            ApplyIdentity::Drift { notes } => {
+                assert!(!notes.is_empty());
+            }
+            other => panic!("expected drift, got {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
