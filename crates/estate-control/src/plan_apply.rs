@@ -8,8 +8,9 @@ use estate_schema::{
 use feed_collector::{import_pack_for, refuse_import_pack};
 use floor_supervisor::{
     append_apply_audit, apply_dry_run, apply_with_profile_dir, classify_apply, list_expired_leases,
-    load_desired_snapshot, load_lifecycle, mark_running, now_unix, record_placements,
-    refuse_expired_leases, render_dry_run, ApplyAudit, ApplyIdentity,
+    load_desired_snapshot, load_lifecycle, load_placements, mark_running, now_unix,
+    record_placements, refuse_expired_leases, refuse_lease_host_classes, render_dry_run,
+    ApplyAudit, ApplyIdentity,
 };
 use std::path::Path;
 
@@ -81,7 +82,7 @@ pub(crate) fn cmd_plan_export_pr(
     let previous = load_desired_snapshot(state_dir)?;
     let plan = diff_estates(&desired, previous.as_ref());
     let hash = estate_hash(&desired);
-    let covering = covering_plan(plans_dir, &hash);
+    let covering = covering_plan(plans_dir, &hash)?;
     let covering_stem = covering.as_ref().map(|c| c.stem.clone());
     let reviewed = covering_stem.as_ref().is_some_and(|stem| {
         reviewed_dir.join(format!("{stem}.md")).is_file()
@@ -213,15 +214,15 @@ pub(crate) fn last_applied_plan(
     plans_dir: &Path,
 ) -> Result<Option<estate_schema::EstatePlan>> {
     if let Some(snap) = load_desired_snapshot(state_dir)? {
-        if let Some(covering) = covering_plan(plans_dir, &estate_hash(&snap)) {
+        if let Some(covering) = covering_plan(plans_dir, &estate_hash(&snap))? {
             return Ok(Some(covering.plan));
         }
-        if let Some(latest) = latest_plan(plans_dir) {
+        if let Some(latest) = latest_plan(plans_dir)? {
             return Ok(Some(latest));
         }
         return Ok(Some(diff_estates(&snap, None)));
     }
-    Ok(latest_plan(plans_dir))
+    Ok(latest_plan(plans_dir)?)
 }
 
 pub(crate) fn cmd_apply(
@@ -250,6 +251,11 @@ pub(crate) fn cmd_apply(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     load_lifecycle(state_dir)?;
+    if !force {
+        if let Some(places) = load_placements(state_dir)? {
+            refuse_lease_host_classes(&places)?;
+        }
+    }
     if dry_run {
         return cmd_apply_dry_run(
             &estate,
@@ -264,7 +270,7 @@ pub(crate) fn cmd_apply(
     }
     refuse_expired_leases(state_dir)?;
     let hash = estate_hash(&estate);
-    let covering = covering_plan(plans_dir, &hash);
+    let covering = covering_plan(plans_dir, &hash)?;
     let covering_stem = covering.as_ref().map(|c| c.stem.clone());
     if (require_plan || require_fresh_plan) && covering.is_none() {
         bail!("apply gated: no plan on disk for {hash}; run estate plan first");
@@ -406,7 +412,7 @@ pub(crate) fn cmd_apply_dry_run(
     force: bool,
 ) -> Result<()> {
     let hash = estate_hash(estate);
-    let covering = covering_plan(plans_dir, &hash);
+    let covering = covering_plan(plans_dir, &hash)?;
     let last_applied = load_desired_snapshot(state_dir)?
         .as_ref()
         .map(estate_hash);
