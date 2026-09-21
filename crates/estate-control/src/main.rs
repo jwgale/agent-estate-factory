@@ -1,9 +1,14 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use estate_schema::{
-    describe, diff_estates, load_estate, load_estate_unvalidated, render_plan, validate, write_plan,
+    describe, describe_placements, diff_estates, list_plans, load_estate, load_estate_unvalidated,
+    render_plan, validate, write_plan,
 };
-use floor_supervisor::{apply_with_profile_dir, drift_with_roots, load_desired_snapshot};
+use feed_collector::{list_drop_packs, materialize_from_feed, refuse_promote};
+use floor_supervisor::{
+    apply_with_profile_dir, drift_with_roots, load_desired_snapshot, load_lifecycle, mark_running,
+    resume, suspend,
+};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -58,6 +63,62 @@ enum Command {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
+    /// Append-only plan history (human control surface).
+    Plans {
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+    },
+    /// Drop runtime; write durable lifecycle=suspended. Lane roots stay.
+    Suspend {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Re-apply from estate files; lifecycle=running.
+    Resume {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
+    },
+    /// Persisted estate + durable lifecycle + disposable runtime.
+    Status {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
+    },
+    /// Feed plane: materialize packs, list drop zone, refuse promote.
+    Feed {
+        #[command(subcommand)]
+        command: FeedCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum FeedCommand {
+    /// Read scrubbed events and write a candidate pack (not in the estate).
+    Pack {
+        #[arg(long, default_value = ".cell/feed")]
+        feed_dir: PathBuf,
+        #[arg(long, default_value = "examples/enrich-packs/drop")]
+        drop_dir: PathBuf,
+        #[arg(long, default_value = "overnight-traces")]
+        id: String,
+    },
+    /// List candidate packs in the drop zone.
+    List {
+        #[arg(long, default_value = "examples/enrich-packs/drop")]
+        drop_dir: PathBuf,
+    },
+    /// Always fails. Jason edits estate.yaml by hand.
+    Promote {
+        #[arg(long)]
+        id: String,
+    },
 }
 
 fn main() {
@@ -88,6 +149,27 @@ fn run() -> Result<()> {
             roots_base,
         } => cmd_drift(&estate, &state_dir, &roots_base),
         Command::Models { estate } => cmd_models(&estate),
+        Command::Plans { plans_dir } => cmd_plans(&plans_dir),
+        Command::Suspend { state_dir } => cmd_suspend(&state_dir),
+        Command::Resume {
+            estate,
+            state_dir,
+            roots_base,
+        } => cmd_resume(&estate, &state_dir, &roots_base),
+        Command::Status {
+            estate,
+            state_dir,
+            roots_base,
+        } => cmd_status(&estate, &state_dir, &roots_base),
+        Command::Feed { command } => match command {
+            FeedCommand::Pack {
+                feed_dir,
+                drop_dir,
+                id,
+            } => cmd_feed_pack(&feed_dir, &drop_dir, &id),
+            FeedCommand::List { drop_dir } => cmd_feed_list(&drop_dir),
+            FeedCommand::Promote { id } => cmd_feed_promote(&id),
+        },
     }
 }
 
@@ -136,6 +218,7 @@ fn cmd_apply(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let actual = apply_with_profile_dir(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
+    mark_running(&estate, state_dir)?;
     println!(
         "applied {} sessions; actual-state {}",
         actual.sessions.len(),
@@ -149,7 +232,93 @@ fn cmd_apply(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
             session.isolation_handle.as_token()
         );
     }
+    println!("{}", describe_placements(&estate));
     Ok(())
+}
+
+fn cmd_plans(plans_dir: &Path) -> Result<()> {
+    let entries = list_plans(plans_dir)?;
+    if entries.is_empty() {
+        println!("no plans in {}", plans_dir.display());
+        return Ok(());
+    }
+    println!("plan history ({})", plans_dir.display());
+    for entry in entries {
+        println!("  {}", entry.markdown);
+    }
+    Ok(())
+}
+
+fn cmd_suspend(state_dir: &Path) -> Result<()> {
+    let record = suspend(state_dir)?;
+    println!("lifecycle: {}", record.state.as_str());
+    println!("{}", record.note);
+    Ok(())
+}
+
+fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
+    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let (actual, record) = resume(&estate, state_dir, roots_base)?;
+    model_estate::record_bindings(&estate, state_dir)?;
+    println!(
+        "resumed {} sessions; lifecycle {}",
+        actual.sessions.len(),
+        record.state.as_str()
+    );
+    println!("{}", describe_placements(&estate));
+    Ok(())
+}
+
+fn cmd_status(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
+    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let life = load_lifecycle(state_dir)?;
+    let report = drift_with_roots(&estate, state_dir, Some(roots_base))?;
+    println!("estate: {} ({})", estate.name, path.display());
+    println!("lifecycle: {} (durable={})", life.state.as_str(), life.durable);
+    println!("{}", life.note);
+    println!("{}", describe_placements(&estate));
+    println!("floor in_sync: {}", report.in_sync);
+    if !report.notes.is_empty() {
+        for note in &report.notes {
+            println!("  {note}");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_feed_pack(feed_dir: &Path, drop_dir: &Path, id: &str) -> Result<()> {
+    let (pack, path) = materialize_from_feed(feed_dir, drop_dir, id)?;
+    println!(
+        "wrote candidate pack {} (promoted={}, events={}) -> {}",
+        pack.id,
+        pack.promoted,
+        pack.from_events,
+        path.display()
+    );
+    println!("{}", pack.note);
+    Ok(())
+}
+
+fn cmd_feed_list(drop_dir: &Path) -> Result<()> {
+    let packs = list_drop_packs(drop_dir)?;
+    if packs.is_empty() {
+        println!("no candidate packs in {}", drop_dir.display());
+        return Ok(());
+    }
+    for pack in packs {
+        println!(
+            "  {} events={} promoted={} policy={}/{}",
+            pack.id, pack.from_events, pack.promoted, pack.curator, pack.policy
+        );
+    }
+    Ok(())
+}
+
+fn cmd_feed_promote(id: &str) -> Result<()> {
+    match refuse_promote(id) {
+        Ok(()) => unreachable!("promote has no success path"),
+        Err(err) => bail!("{err}"),
+    }
 }
 
 fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {

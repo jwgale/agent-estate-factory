@@ -208,6 +208,28 @@ pub fn bind_local(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelE
         }));
     }
     let card = route(binding)?;
+    if let Some(raw) = param_str(binding, "host_class") {
+        let host = parse_host_class(&raw).ok_or_else(|| {
+            ModelError::Other(format!(
+                "unknown host_class '{raw}'; use consumer-nvidia|apple-silicon|rented-nvidia|any"
+            ))
+        })?;
+        if host != HostClass::Any
+            && !card.hosts.contains(&host)
+            && !card.hosts.contains(&HostClass::Any)
+        {
+            return Err(ModelError::Other(format!(
+                "host_class {} is not on catalog card {} (hosts: {})",
+                host.as_str(),
+                card.driver_id,
+                card.hosts
+                    .iter()
+                    .map(|h| h.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )));
+        }
+    }
     match card.runtime {
         LocalRuntime::Mlx => Ok(Box::new(MlxDriver {
             id: binding.id.clone(),
@@ -338,6 +360,39 @@ mod tests {
         assert!(matches!(err, ModelError::Stub(_)));
         assert!(err.is_local_down());
         assert_eq!(driver.runtime(), LocalRuntime::Mlx);
+    }
+
+    #[test]
+    fn bind_http_remote_uses_cell_local_endpoint() {
+        let binding = ModelBinding {
+            id: "local_slm".into(),
+            class: ModelClass::Local,
+            driver: "http-remote".into(),
+            params: serde_json::json!({
+                "endpoint_env": "CELL_LOCAL_ENDPOINT_ABSENT_FOR_TEST",
+                "host_class": "any"
+            }),
+            wired: true,
+        };
+        let driver = bind_local(&binding).unwrap();
+        assert_eq!(driver.runtime(), LocalRuntime::HttpRemote);
+        assert!(driver.specialist(&req()).unwrap_err().is_local_down());
+    }
+
+    #[test]
+    fn bind_mlx_rejects_consumer_nvidia_host() {
+        let binding = ModelBinding {
+            id: "local_slm".into(),
+            class: ModelClass::Local,
+            driver: "mlx".into(),
+            params: serde_json::json!({"host_class": "consumer-nvidia"}),
+            wired: true,
+        };
+        let err = match bind_local(&binding) {
+            Ok(_) => panic!("mlx + consumer-nvidia should fail closed"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("host_class"));
     }
 
     #[test]
