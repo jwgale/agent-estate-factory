@@ -45,7 +45,7 @@ Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate
 This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy. Origin is not in the loop. GitHub is SoT.
 
 | Works tonight (local cargo) | Still a stub |
-| --- | --- |
+| --- | --- | --- |
 | `estate validate` on `examples/estate.yaml` + host matrix + `examples/hosts/multi-host.yaml` | Live Mac MLX proof |
 | `estate plan` / `apply --require-plan` / `--require-fresh-plan` + Security-as-IaC markdown | Cloud-agent spawn (declared only) |
 | `estate suspend` / `resume` / `status` / `history` | Multi-box control plane |
