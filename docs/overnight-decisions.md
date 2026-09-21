@@ -27,6 +27,17 @@ Jason still asleep. Same branch. No Actions. Local cargo only.
 16. **Operator day is a local dry-run.** `make operator-day` / `scripts/operator-day.sh` walks validate-hosts → plan → apply → suspend → plan --reviewed → apply --require-fresh-plan → packs import → convey sync/call/refuse → resume. Fixtures only. No live Grok, no 5090, no Actions.
 17. **Host aliases map; locked names stay.** `rtx_consumer` / `rtx-consumer` → `consumer-nvidia`; `nvidia_rental` / `nvidia-rental` → `rented-nvidia`. Placement leases store the canonical name. Drift compares via `host_class_eq` (alias vs canonical is in-sync; apple vs consumer fail-closes). Matrix: `examples/hosts/{rtx-consumer,apple-silicon,nvidia-rental}.yaml`. MLX stays stub, catalog-complete.
 
+## Wave 3 (same PR #2 — factory hardening)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Wave 2 stays.
+
+18. **Placement reconcile is a report, not a fixer.** `estate reconcile` writes `.cell/reconcile.json` + `reconcile.md` (`cell-one.reconcile.v0`). Desired vs actual rows, refuse codes (`missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`). Drift notes use the same `refuse:` prefix. Sacred-id is scanned on *actual* lease agents even if `estate.yaml` is clean (tamper fail-closed). Conveyor `MeshError` Display is now `refuse:no-lease` / `refuse:ungranted` / `refuse:cloud-not-spawned` / … Variant matching is unchanged.
+19. **Enrich propose never applies.** After an explicit pack import, `estate packs propose` writes `packs/proposed/{id}.proposal.json` + `.md` (`cell-one.enrich-proposal.v0`). `auto_apply` is always false. Diff summary is for curator Jason. Estate file is not rewritten. `refuse_apply_proposal` exists only to fail closed.
+20. **Multi-host fixture is one estate.** `examples/hosts/multi-host.yaml` spans frontier-http + ollama + http-remote + llama.cpp stub + mlx stub, plus empty unwired box placements (`box-rtx` / `box-apple` / `box-rental`) and the cloud-agent stub. `estate validate` is green. Extra unused bindings are valid. Empty box placements are valid. Wired cloud-agent + empty agents is still invalid.
+21. **Audit export is local-only.** `estate audit export` bundles plan history, `lifecycle.jsonl`, `apply-audit.jsonl`, `import-audit.jsonl`, convey leases, placement-actual, and reconcile into a folder (`MANIFEST.md`). `--tar` writes `{out}.tar.gz` when `tar` exists. Not uploaded. Not a gateway dump.
+22. **`.cell/` lease layout is documented.** [`docs/cell-layout.md`](cell-layout.md). Leases store canonical `host_class`. Reconcile does not rewrite them.
+23. **Operator-day grew one notch.** Validate multi-host, packs propose, refuse-prefix check, reconcile, audit export. Still fixtures only. Still no live Grok / GPU / Actions.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -41,6 +52,10 @@ Jason still asleep. Same branch. No Actions. Local cargo only.
 | Wave 2 mesh is lease-bound, not a hop runtime | Same class as cloud-agent placement stub | Real hop transport later behind `ConveyorHop` |
 | `plan_against_is_fresh` stays greenfield-friendly | Existing tests / `--require-plan` | `--require-fresh-plan` is the strict path |
 | Host aliases are normalize-only | Do not reopen locked `host_class` names | Add aliases, not new product forks |
+| Reconcile reports; it does not heal | Operator reads refuse codes and applies/edits | Auto-heal only if Jason asks |
+| Enrich proposals never apply | Same lock as no auto-promote | Curator UI is still forbidden |
+| Audit export stays on the box | Quiet hours + no remote dump | Zip-to-PR later if Jason wants a review pack |
+| Extra unused bindings / empty box placements are valid | Multi-host fixture needs them | Do not require every binding to be assigned |
 
 ## Anti-shrink (still)
 
