@@ -4,7 +4,9 @@
 //! `cloud-agent` is declared and never spawned.
 
 use crate::SupervisorError;
-use estate_schema::{estate_hash, Estate, Placement, PlacementKind};
+use estate_schema::{
+    canonical_host_class, estate_hash, host_class_eq, Estate, Placement, PlacementKind,
+};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -99,10 +101,7 @@ impl PlacementDriver for BoxDriver {
         PlacementLease {
             placement_id: placement.id.clone(),
             kind: PlacementKind::Box.as_str().to_string(),
-            host_class: placement
-                .host_class
-                .clone()
-                .unwrap_or_else(|| "any".into()),
+            host_class: canonical_host_class(placement.host_class.as_deref()).into(),
             agents: placement.agents.clone(),
             wired: placement.wired,
             spawned: placement.wired,
@@ -125,10 +124,7 @@ impl PlacementDriver for CloudAgentDriver {
         PlacementLease {
             placement_id: placement.id.clone(),
             kind: PlacementKind::CloudAgent.as_str().to_string(),
-            host_class: placement
-                .host_class
-                .clone()
-                .unwrap_or_else(|| "any".into()),
+            host_class: canonical_host_class(placement.host_class.as_deref()).into(),
             agents: placement.agents.clone(),
             wired: placement.wired,
             spawned: false,
@@ -236,11 +232,8 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         if lease.kind != placement.kind.as_str() {
             lease_kind_mismatch.push(placement.id.clone());
         }
-        let desired_host = placement
-            .host_class
-            .as_deref()
-            .unwrap_or("any");
-        if lease.host_class != desired_host {
+        let desired_host = canonical_host_class(placement.host_class.as_deref());
+        if !host_class_eq(&lease.host_class, desired_host) {
             host_class_mismatch.push(placement.id.clone());
         }
         if placement.kind == PlacementKind::CloudAgent && lease.spawned {
@@ -457,6 +450,59 @@ mod tests {
         let drift = drift_placements(&estate, &tmp).unwrap();
         assert!(!drift.in_sync());
         assert!(!drift.spawned_cloud_agents.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn drift_alias_host_class_is_in_sync() {
+        let estate = estate_schema::load_estate_str(include_str!(
+            "../../../examples/hosts/rtx-consumer.yaml"
+        ))
+        .unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-alias-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let actual = record_placements(&estate, &tmp).unwrap();
+        let box_lease = actual
+            .leases
+            .iter()
+            .find(|l| l.kind == "box")
+            .expect("box lease");
+        assert_eq!(box_lease.host_class, "consumer-nvidia");
+        let drift = drift_placements(&estate, &tmp).unwrap();
+        assert!(drift.in_sync(), "{:?}", drift.notes);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn drift_fail_closes_cross_matrix_host_class() {
+        let estate = estate_schema::load_estate_str(include_str!(
+            "../../../examples/hosts/rtx-consumer.yaml"
+        ))
+        .unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-cross-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        for lease in &mut actual.leases {
+            lease.host_class = "apple-silicon".into();
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let drift = drift_placements(&estate, &tmp).unwrap();
+        assert!(!drift.in_sync());
+        assert!(!drift.host_class_mismatch.is_empty());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
