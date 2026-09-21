@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "estate",
-    about = "Cell One estate-control: validate, plan, apply, drift. Does not execute tools or models.",
+    about = "Cell One estate-control: validate, plan, apply, drift. Specialist complete is a thin HttpLocal delegate, not a gateway.",
     after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
     disable_help_subcommand = true
 )]
@@ -180,6 +180,27 @@ pub(crate) enum Command {
         /// Optional live HTTP. SKIP when endpoints are unset. Never required in CI.
         #[arg(long, default_value_t = false)]
         live: bool,
+    },
+    /// Env-gated data-plane chat via HttpLocal. Not a gateway.
+    Specialist {
+        /// Override. Default: CELL_LOCAL_ENDPOINT / CELL_RENTED_ENDPOINT.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// ollama | llama.cpp | http-remote. Visible alias: --runtime.
+        #[arg(long, visible_alias = "runtime", default_value = "ollama")]
+        driver: String,
+        /// complete (default) | chat | policy-precheck | redact
+        #[arg(long, default_value = "complete")]
+        job: String,
+        #[arg(long, default_value = "cli")]
+        agent: String,
+        #[arg(long, default_value = "model")]
+        kind: String,
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Alias for `--prompt`.
+        #[arg(long)]
+        text: Option<String>,
     },
     /// Capability mesh: declare hop, lease-bound call. Not a gateway.
     Convey {
