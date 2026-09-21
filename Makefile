@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist-smoke
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -25,7 +25,7 @@ models:
 	cargo run -q -p estate-control -- models --estate $(ESTATE)
 
 catalog:
-	cargo run -q -p model-estate -- catalog
+	cargo run -p model-estate -- catalog
 
 catalog-dump:
 	cargo run -q -p estate-control -- catalog --out $(STATE)/catalog.json
@@ -154,6 +154,12 @@ task-mock:
 
 smoke:
 	./scripts/smoke.sh
+
+# Opt-in live specialist complete. SKIP unless CELL_LIVE_PROBE=1.
+# Not in smoke. Not in GitHub Actions. Never requires XAI_API_KEY.
+# Model id: CELL_LOCAL_MODEL (or first portable /v1/models / /api/tags id).
+live-specialist-smoke:
+	bash ./scripts/live-specialist-smoke.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
