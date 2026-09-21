@@ -1,0 +1,10 @@
+[package]
+name = "model-estate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Equal-class frontier and local model bindings (Cell One: placeholders, wired false)"
+
+[dependencies]
+estate-schema.workspace = true
+thiserror.workspace = true
