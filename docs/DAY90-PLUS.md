@@ -13,15 +13,15 @@ stays compile-only. Live Grok / GPU / Mac are not required to keep
 | Item | What exists today | What is not true |
 | --- | --- | --- |
 | Live Mac MLX | Probe path (`CELL_MLX_ENDPOINT`, falls back to `CELL_LOCAL_ENDPOINT`). Catalog card is a stub behind the same catalog / route / bind API. | No Mac in CI. No Mac attached to this factory. MLX is not Supported. Do not mark it live. |
-| Live consumer / rented GPU | Same specialist protocol (`CELL_LOCAL_ENDPOINT` / `CELL_RENTED_ENDPOINT`). Host class is `consumer-nvidia` or `rented-nvidia`. | No GPU is required for the local gates. A 5090 is one rented (or consumer) box, not a binding id, not a probe id, not a product fork. |
+| Live consumer / rented GPU | Same specialist protocol. 5090 `probes --live` and `estate specialist` `Pong` are recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Host class is `consumer-nvidia` or `rented-nvidia`. | Not required for local gates. Not native MLX. A 5090 is one host, not a binding id or product fork. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 Adapter is on `main`. `estate specialist --driver ollama --prompt` is
-the live complete verb (same `HttpLocal` helper). This factory still
-has no Mac and no GPU. Native MLX `specialist()` stays stub. Mac proof
-is Ollama-on-Mac. Jason already PASSed `probes --live`; the new surface
-is one complete command that returns model text.
+the live complete verb (same `HttpLocal` helper). This factory VM still
+has no Mac and no GPU. Jason's Mac PASSed Ollama `probes --live`. His
+5090 PASSed probes and specialist `Pong`. Native MLX `specialist()`
+stays stub. Mac specialist chat is not recorded.
 
 When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path;
 MLX stays a stub until he verifies it. Set `CELL_MLX_ENDPOINT` (or

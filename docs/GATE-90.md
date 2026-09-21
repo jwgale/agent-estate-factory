@@ -80,6 +80,9 @@ estate doctor --strict
 | Specialist chat round-trip | green | `HttpLocal` posts request text; `model-estate specialist`; llama.cpp OpenAI smoke; mock HTTP |
 | Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion`; mock-locked + ready for Ollama |
 | OpenAI empty content fallthrough | green | empty/missing OpenAI content tries `/api/chat`; both-fail names status + model + pull |
+| Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
+| `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
+| Mixed estate mock dry-run | green | apply `--dry-run` write-free; `HttpLocal` posts `/v0/specialist` |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |

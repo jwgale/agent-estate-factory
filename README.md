@@ -98,6 +98,7 @@ cargo run -p model-estate -- mock-local --bind 127.0.0.1:47831
 # other terminal:
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:47831
 cargo run -p estate-control -- specialist --driver ollama --prompt "hello from the factory"
+# live box (opt-in; not in smoke): make live-specialist
 cargo run -p model-estate -- specialist --job complete --prompt "hello from the factory"
 cargo run -p model-estate -- task --estate examples/estate.yaml \
   --agent research --act tool --object notes-append --payload "append a note"
