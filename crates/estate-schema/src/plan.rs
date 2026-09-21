@@ -318,6 +318,58 @@ pub fn plan_is_reviewable(plan: &EstatePlan) -> bool {
         && !plan.created_at.trim().is_empty()
 }
 
+/// Count of added + removed + changed ids. Used by `estate plan diff --allow-wider`.
+pub fn plan_blast_width(plan: &EstatePlan) -> usize {
+    plan.added.item_count() + plan.removed.item_count() + plan.changed.item_count()
+}
+
+pub fn blast_grows(from: &EstatePlan, to: &EstatePlan) -> bool {
+    plan_blast_width(to) > plan_blast_width(from)
+}
+
+/// Newest plan JSON in `plans_dir` (list_plans is newest-first).
+pub fn latest_plan(plans_dir: &Path) -> Option<EstatePlan> {
+    let entries = list_plans(plans_dir).ok()?;
+    for entry in entries {
+        let Some(name) = entry.json else {
+            continue;
+        };
+        if let Ok(plan) = load_plan_json(&plans_dir.join(name)) {
+            return Some(plan);
+        }
+    }
+    None
+}
+
+/// Human-readable plan-vs-plan blast compare. Not a gateway changelog.
+pub fn render_plan_diff(from: &EstatePlan, to: &EstatePlan) -> String {
+    let from_w = plan_blast_width(from);
+    let to_w = plan_blast_width(to);
+    let verdict = if to_w > from_w {
+        "WIDER"
+    } else if to_w < from_w {
+        "narrower"
+    } else {
+        "same"
+    };
+    let mut out = String::from("Estate plan diff\n================\n");
+    out.push_str(&format!("from hash: {}\n", from.desired_hash));
+    out.push_str(&format!("to hash:   {}\n", to.desired_hash));
+    out.push_str(&format!(
+        "blast width: {from_w} -> {to_w} ({verdict})\n\n"
+    ));
+    out.push_str("From\n----\n");
+    out.push_str(&render_review_diff(from));
+    out.push('\n');
+    out.push_str("To\n--\n");
+    out.push_str(&render_review_diff(to));
+    out.push('\n');
+    if to_w > from_w {
+        out.push_str("refuse:wider unless --allow-wider\n");
+    }
+    out
+}
+
 /// Blast-radius markdown a human can PR-review before apply.
 pub fn render_security_iac(plan: &EstatePlan) -> String {
     let mut out = String::from("Security-as-IaC (PR-review this blast radius)\n");
@@ -518,12 +570,16 @@ fn fmt_list(items: &[String]) -> String {
 
 impl PlanDelta {
     fn is_empty(&self) -> bool {
-        self.agents.is_empty()
-            && self.lanes.is_empty()
-            && self.intentions.is_empty()
-            && self.model_bindings.is_empty()
-            && self.placements.is_empty()
-            && self.enrich_packs.is_empty()
+        self.item_count() == 0
+    }
+
+    pub fn item_count(&self) -> usize {
+        self.agents.len()
+            + self.lanes.len()
+            + self.intentions.len()
+            + self.model_bindings.len()
+            + self.placements.len()
+            + self.enrich_packs.len()
     }
 }
 
@@ -655,5 +711,19 @@ mod tests {
             Some("sha256:0000000000000000000000000000000000000000000000000000000000000001")
         ));
         assert!(!plan_against_is_fresh_strict(&stale, Some("sha256:other")));
+    }
+
+    #[test]
+    fn blast_width_grows_when_new_plan_adds_more() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let narrow = diff_estates(&e, Some(&e));
+        let wide = diff_estates(&e, None);
+        assert_eq!(plan_blast_width(&narrow), 0);
+        assert!(plan_blast_width(&wide) > 0);
+        assert!(blast_grows(&narrow, &wide));
+        assert!(!blast_grows(&wide, &narrow));
+        let report = render_plan_diff(&narrow, &wide);
+        assert!(report.contains("WIDER"));
+        assert!(report.contains("refuse:wider"));
     }
 }
