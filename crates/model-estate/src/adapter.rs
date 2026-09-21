@@ -3,9 +3,11 @@
 //! Live probes hit `GET /v1/models` or Ollama `GET /api/tags`. They do not
 //! invent success on an empty or garbage body. Specialist chat posts the
 //! real request text (not a dummy ping) to `/v1/chat/completions` or
-//! `/api/chat`. Policy jobs then use factory-owned `builtin_specialist`.
-//! `complete` keeps the model text. Sacred refuse happens before the chat
-//! POST. Native MLX `specialist()` stays stubbed; Mac proof is Ollama-on-Mac
+//! `/api/chat`. Empty / missing / whitespace OpenAI `message.content`
+//! falls through to Ollama `/api/chat` (probes already try both shapes).
+//! Policy jobs then use factory-owned `builtin_specialist`. `complete`
+//! keeps the model text. Sacred refuse happens before the chat POST.
+//! Native MLX `specialist()` stays stubbed; Mac proof is Ollama-on-Mac
 //! (or any OpenAI-compatible server, including llama.cpp) on this adapter.
 
 use crate::error::ModelError;
@@ -133,14 +135,21 @@ fn prove_compat_runtime(endpoint: &str, text: &str) -> Result<(), ModelError> {
 fn compat_chat(endpoint: &str, text: &str) -> Result<String, ModelError> {
     let model = resolve_model(endpoint)?;
     match post_openai_chat(endpoint, &model, text) {
-        Ok(content) => return accepted_completion(&content),
-        Err(e) if openai_answered_badly(&e) => {
-            return Err(ModelError::Unreachable(e));
-        }
-        Err(_) => {}
+        Ok(content) => accepted_completion(&content),
+        Err(openai_err) => match post_ollama_chat(endpoint, &model, text) {
+            Ok(content) => accepted_completion(&content),
+            Err(ollama_err) => Err(ModelError::Unreachable(both_chat_fail(
+                &openai_err,
+                &ollama_err,
+                &model,
+            ))),
+        },
     }
-    accepted_completion(
-        &post_ollama_chat(endpoint, &model, text).map_err(ModelError::Unreachable)?,
+}
+
+fn both_chat_fail(openai_err: &str, ollama_err: &str, model: &str) -> String {
+    format!(
+        "compat adapter: openai={openai_err}; ollama={ollama_err}; model={model}. Pull a model (`ollama pull llama3`) or set CELL_LOCAL_MODEL"
     )
 }
 
@@ -159,17 +168,6 @@ fn accepted_completion(raw: &str) -> Result<String, ModelError> {
     Ok(v.to_string())
 }
 
-/// 200-shaped OpenAI garbage is this flavor, not a reason to try Ollama.
-fn openai_answered_badly(err: &str) -> bool {
-    err.contains("missing choices")
-        || err.contains("empty choices")
-        || err.contains("missing message.content")
-        || err.contains("empty message.content")
-        || err.contains("empty body")
-        || err.contains("json:")
-        || err.contains("not a JSON object")
-}
-
 fn resolve_model(endpoint: &str) -> Result<String, ModelError> {
     if let Ok(v) = std::env::var("CELL_LOCAL_MODEL") {
         let v = v.trim();
@@ -178,18 +176,44 @@ fn resolve_model(endpoint: &str) -> Result<String, ModelError> {
         }
     }
     let base = endpoint.trim().trim_end_matches('/');
-    if let Ok(v) = get_json(&format!("{base}/v1/models"), PING_TIMEOUT) {
-        if let Some(id) = first_openai_model(&v) {
-            return Ok(id);
+    let mut saw_empty = false;
+    if let Ok(v) = get_json(&format!("{base}/api/tags"), PING_TIMEOUT) {
+        if is_ollama_tags(&v) {
+            if let Some(name) = first_ollama_model(&v) {
+                return Ok(name);
+            }
+            if v.get("models")
+                .and_then(|m| m.as_array())
+                .map(|a| a.is_empty())
+                .unwrap_or(false)
+            {
+                saw_empty = true;
+            }
         }
     }
-    if let Ok(v) = get_json(&format!("{base}/api/tags"), PING_TIMEOUT) {
-        if let Some(name) = first_ollama_model(&v) {
-            return Ok(name);
+    if let Ok(v) = get_json(&format!("{base}/v1/models"), PING_TIMEOUT) {
+        if is_openai_models(&v) {
+            if let Some(id) = first_openai_model(&v) {
+                return Ok(id);
+            }
+            if v.get("data")
+                .and_then(|m| m.as_array())
+                .map(|a| a.is_empty())
+                .unwrap_or(false)
+            {
+                saw_empty = true;
+            }
         }
+    }
+    if saw_empty {
+        return Err(ModelError::Unreachable(
+            "compat adapter: listed no models (server is up, no weights). Pull one (`ollama pull llama3`) or set CELL_LOCAL_MODEL"
+                .into(),
+        ));
     }
     Err(ModelError::Unreachable(
-        "compat adapter: no model id (pull a model or set CELL_LOCAL_MODEL)".into(),
+        "compat adapter: no model id. Pull a model (`ollama pull llama3`) or set CELL_LOCAL_MODEL"
+            .into(),
     ))
 }
 
@@ -256,25 +280,15 @@ fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<String, S
         .set("Content-Type", "application/json")
         .timeout(SPECIALIST_TIMEOUT)
         .send_json(body)
-        .map_err(|e| e.to_string())?;
-    let raw = resp.into_string().map_err(|e| e.to_string())?;
-    let v = parse_json_object(&raw)?;
-    let choices = v
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .ok_or_else(|| "openai chat: missing choices".to_string())?;
-    if choices.is_empty() {
-        return Err("openai chat: empty choices".into());
-    }
-    let content = choices[0]
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .ok_or_else(|| "openai chat: missing message.content".to_string())?;
-    if content.trim().is_empty() {
-        return Err("openai chat: empty message.content".into());
-    }
-    Ok(content.to_string())
+        .map_err(|e| format!("openai chat: {e}"))?;
+    let status = resp.status();
+    let raw = resp
+        .into_string()
+        .map_err(|e| format!("openai chat: {e} (status {status})"))?;
+    let v = parse_json_object(&raw)
+        .map_err(|e| format!("openai chat: {e} (status {status})"))?;
+    extract_openai_text(&v)
+        .ok_or_else(|| format!("openai chat: empty message.content (status {status})"))
 }
 
 fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<String, String> {
@@ -289,26 +303,84 @@ fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<String, S
         .set("Content-Type", "application/json")
         .timeout(SPECIALIST_TIMEOUT)
         .send_json(body)
-        .map_err(|e| e.to_string())?;
-    let raw = resp.into_string().map_err(|e| e.to_string())?;
-    let v = parse_json_object(&raw)?;
-    if let Some(content) = v
+        .map_err(|e| format!("ollama chat: {e}"))?;
+    let status = resp.status();
+    let raw = resp
+        .into_string()
+        .map_err(|e| format!("ollama chat: {e} (status {status})"))?;
+    let v = parse_json_object(&raw)
+        .map_err(|e| format!("ollama chat: {e} (status {status})"))?;
+    extract_ollama_text(&v)
+        .ok_or_else(|| format!("ollama chat: empty message.content (status {status})"))
+}
+
+fn nonempty_text(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+fn extract_text_value(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => nonempty_text(s),
+        Value::Array(parts) => {
+            let mut out = String::new();
+            for part in parts {
+                let chunk = match part {
+                    Value::String(s) => nonempty_text(s),
+                    Value::Object(_) => part
+                        .get("text")
+                        .or_else(|| part.get("content"))
+                        .and_then(extract_text_value),
+                    _ => None,
+                };
+                if let Some(chunk) = chunk {
+                    if !out.is_empty() {
+                        out.push(' ');
+                    }
+                    out.push_str(&chunk);
+                }
+            }
+            nonempty_text(&out)
+        }
+        _ => None,
+    }
+}
+
+/// String `content`, content-part arrays, `text`, or reasoning-only when
+/// the text is clearly non-empty. Whitespace / missing is None (fall through).
+fn extract_openai_text(v: &Value) -> Option<String> {
+    let choice = v.get("choices")?.as_array()?.first()?;
+    if let Some(msg) = choice.get("message") {
+        if let Some(text) = msg.get("content").and_then(extract_text_value) {
+            return Some(text);
+        }
+        if let Some(text) = msg.get("text").and_then(extract_text_value) {
+            return Some(text);
+        }
+        if let Some(text) = msg
+            .get("reasoning_content")
+            .or_else(|| msg.get("reasoning"))
+            .and_then(extract_text_value)
+        {
+            return Some(text);
+        }
+    }
+    choice.get("text").and_then(extract_text_value)
+}
+
+fn extract_ollama_text(v: &Value) -> Option<String> {
+    if let Some(text) = v
         .get("message")
         .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
+        .and_then(extract_text_value)
     {
-        if content.trim().is_empty() {
-            return Err("ollama chat: empty message.content".into());
-        }
-        return Ok(content.to_string());
+        return Some(text);
     }
-    if let Some(content) = v.get("response").and_then(|c| c.as_str()) {
-        if content.trim().is_empty() {
-            return Err("ollama chat: empty message.content".into());
-        }
-        return Ok(content.to_string());
-    }
-    Err("ollama chat: missing message.content".into())
+    v.get("response").and_then(extract_text_value)
 }
 
 fn get_json(url: &str, timeout: Duration) -> Result<Value, Transport> {
@@ -483,17 +555,19 @@ mod tests {
     }
 
     #[test]
-    fn specialist_openai_missing_content_fail_closed() {
+    fn specialist_openai_missing_content_tries_ollama_then_refuses() {
         let srv = CompatServer::spawn(CompatScript::OpenAiNoContent {
             models: vec!["llama3".into()],
         })
         .unwrap();
         let err = specialist_via_adapter(&srv.endpoint(), &req("hello")).unwrap_err();
         assert!(err.is_local_down(), "{err}");
-        assert!(
-            err.to_string().contains("message.content"),
-            "{err}"
-        );
+        let msg = err.to_string();
+        assert!(msg.contains("message.content"), "{err}");
+        assert!(msg.contains("ollama"), "{err}");
+        assert!(msg.contains("llama3"), "{err}");
+        assert!(msg.contains("CELL_LOCAL_MODEL"), "{err}");
+        assert!(msg.contains("ollama pull"), "{err}");
     }
 
     #[test]
@@ -625,18 +699,50 @@ mod tests {
     }
 
     #[test]
-    fn specialist_complete_empty_content_fail_closed() {
-        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyContent {
+    fn specialist_openai_empty_falls_through_to_ollama() {
+        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyThenOllama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let marker = "empty-openai-then-ollama";
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker)).unwrap();
+        assert!(result.allow, "{}", result.reason);
+        assert_eq!(result.completion, "ok");
+        let (path, body) = srv.last_post().expect("ollama chat POST");
+        assert_eq!(path, "/api/chat");
+        assert!(body.contains(marker), "{body}");
+    }
+
+    #[test]
+    fn specialist_openai_and_ollama_empty_refuses_clearly() {
+        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyAndOllamaEmpty {
             models: vec!["llama3".into()],
         })
         .unwrap();
         let err = specialist_via_adapter(&srv.endpoint(), &complete_req("hello")).unwrap_err();
         assert!(err.is_local_down(), "{err}");
-        assert!(
-            err.to_string().contains("empty message.content")
-                || err.to_string().contains("empty completion"),
-            "{err}"
-        );
+        let msg = err.to_string();
+        assert!(msg.contains("openai="), "{err}");
+        assert!(msg.contains("ollama="), "{err}");
+        assert!(msg.contains("empty message.content"), "{err}");
+        assert!(msg.contains("status 200"), "{err}");
+        assert!(msg.contains("model=llama3"), "{err}");
+        assert!(msg.contains("CELL_LOCAL_MODEL"), "{err}");
+        assert!(msg.contains("ollama pull"), "{err}");
+        let (path, _) = srv.last_post().expect("tried ollama after empty openai");
+        assert_eq!(path, "/api/chat");
+    }
+
+    #[test]
+    fn specialist_openai_content_parts_accepted() {
+        let srv = CompatServer::spawn(CompatScript::OpenAiContentParts {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("parts")).unwrap();
+        assert_eq!(result.completion, "ok");
+        let (path, _) = srv.last_post().expect("openai chat POST");
+        assert_eq!(path, "/v1/chat/completions");
     }
 
     #[test]
@@ -662,5 +768,25 @@ mod tests {
         let err = accepted_completion("llama3-rtx-5090").unwrap_err();
         assert!(err.to_string().contains("SKU"), "{err}");
         assert!(err.is_local_down(), "{err}");
+    }
+
+    #[test]
+    fn extract_openai_text_accepts_string_parts_text_reasoning() {
+        let string = serde_json::json!({"choices":[{"message":{"content":"pong"}}]});
+        assert_eq!(extract_openai_text(&string).as_deref(), Some("pong"));
+        let parts = serde_json::json!({
+            "choices":[{"message":{"content":[{"type":"text","text":"pong"}]}}]
+        });
+        assert_eq!(extract_openai_text(&parts).as_deref(), Some("pong"));
+        let text = serde_json::json!({"choices":[{"message":{"text":"pong"}}]});
+        assert_eq!(extract_openai_text(&text).as_deref(), Some("pong"));
+        let reason = serde_json::json!({
+            "choices":[{"message":{"content":"","reasoning_content":"pong"}}]
+        });
+        assert_eq!(extract_openai_text(&reason).as_deref(), Some("pong"));
+        let empty = serde_json::json!({"choices":[{"message":{"content":"   "}}]});
+        assert!(extract_openai_text(&empty).is_none());
+        let missing = serde_json::json!({"choices":[{"index":0}]});
+        assert!(extract_openai_text(&missing).is_none());
     }
 }
