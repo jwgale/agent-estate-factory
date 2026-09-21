@@ -1,0 +1,6 @@
+{
+  "schema": "cell-one.apply-dry-run.v0",
+  "writes": false,
+  "would_refuse": false,
+  "note": "Apply dry-run preview. Prints blast radius + lease preview. Does not write leases, sessions, or audits."
+}

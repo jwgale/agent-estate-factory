@@ -11,5 +11,8 @@
     "proxy": 0,
     "other": 0
   },
-  "note": "Candidate only. Import is explicit apply. Feed never auto-promotes."
+  "source_paths": ["feed/events.jsonl"],
+  "model_hint": null,
+  "host_class_affinity": "any",
+  "note": "Candidate only. Import is explicit apply. Feed never auto-promotes. Specialist fields optional; cell-one.specialist-pack.v0 is also valid."
 }

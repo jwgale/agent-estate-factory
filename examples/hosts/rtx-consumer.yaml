@@ -87,7 +87,8 @@ placements:
     host_class: rtx_consumer
     agents: [horizon, research, sanctum]
     wired: true
-    note: Consumer RTX. Alias maps to consumer-nvidia. Isolation driver is profile-dir.
+    ttl_secs: 604800
+    note: Consumer RTX. Alias maps to consumer-nvidia. Optional 7-day lease ttl.
   - id: cursor-cloud
     kind: cloud-agent
     host_class: any
