@@ -9,6 +9,8 @@ Documentary snapshots. Fail-closed SoT is the Rust validator, not these files.
 
 Unknown `apiVersion` / `kind` / pack schema fail closed.
 
+`source_drivers` is an additive v0 field on `pack.v0.json`, `specialist-pack.v0.json`, and `enrich-proposal.v0.json`. Values are only `frontier` and `local`, sorted and unique, and they must match `path_counts`. A missing field deserializes to `[]`, so older packs stay valid. A rename, a new driver string, or a required non-empty list is a v1. `cell-one.enrich-accept.v0` copies that same list into the edit instructions. It does not invent a class and it does not rewrite the estate.
+
 `examples/estate.yaml` hash is locked at `sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930` (see `estate-schema` `example_estate_hash_is_locked`). YAML comments are ok. Renames need a new hash.
 
 ## v0 files
