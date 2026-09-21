@@ -98,7 +98,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let root = std::env.temp_dir().join(format!("cell-one-pause-{n}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("cell-one-pause-{n}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let proof = pause_kit_proof(&example(), &root.join("state"), &root).unwrap();
