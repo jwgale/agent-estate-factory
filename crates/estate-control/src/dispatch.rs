@@ -148,6 +148,15 @@ pub(crate) fn run() -> Result<()> {
         },
         Command::History { state_dir } => cmd_history(&state_dir),
         Command::Probes { live } => crate::heal::cmd_probes(live),
+        Command::Specialist {
+            endpoint,
+            driver,
+            job,
+            agent,
+            kind,
+            prompt,
+            text,
+        } => crate::heal::cmd_specialist(endpoint, &driver, &job, &agent, &kind, prompt, text),
         Command::Convey { command } => match command {
             ConveyCommand::Hop {
                 id,
