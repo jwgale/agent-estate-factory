@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -134,6 +134,11 @@ doctor:
 
 doctor-strict:
 	cargo run -q -p estate-control -- doctor --strict --root . --state-dir $(STATE)
+
+# Fixtures only: scrubbed trace → pack → propose → accept.
+# Local only. Do not add to smoke or GitHub Actions.
+feed-loop:
+	./scripts/feed-loop.sh
 
 fixtures-check:
 	./scripts/fixtures-check.sh
