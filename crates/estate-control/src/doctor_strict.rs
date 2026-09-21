@@ -25,6 +25,8 @@ pub(crate) fn cmd_doctor_strict(root: &Path, state_dir: &Path) -> Result<()> {
     check_dual_layer_demo(root, &mut fails);
     check_refuse_fixtures(root, &mut fails);
     check_gate90_alias(root, &mut fails);
+    check_feed_loop(root, &mut fails);
+    check_day90_plus(root, &mut fails);
     check_estate_hash_lock(root, &mut fails);
     check_floor_no_vendor(root, &mut fails);
 
@@ -159,6 +161,39 @@ fn check_gate90_alias(root: &Path, fails: &mut Vec<String>) {
         println!("  ok    make gate-90 → smoke + day90 + checklist");
     } else {
         let err = "make gate-90 must be a thin alias (smoke + checklist)".into();
+        println!("  FAIL  {err}");
+        fails.push(err);
+    }
+}
+
+fn check_feed_loop(root: &Path, fails: &mut Vec<String>) {
+    let makefile = fs::read_to_string(root.join("Makefile")).unwrap_or_default();
+    let script = root.join("scripts/feed-loop.sh");
+    let doc = root.join("docs/FEED-LOOP.md");
+    let ok = makefile.contains("feed-loop")
+        && makefile.contains("scripts/feed-loop.sh")
+        && script.is_file()
+        && doc.is_file();
+    if ok {
+        println!("  ok    make feed-loop → scrubbed trace → pack → propose → accept");
+    } else {
+        let err = "make feed-loop fixture walk missing (script + docs + Makefile)".into();
+        println!("  FAIL  {err}");
+        fails.push(err);
+    }
+}
+
+fn check_day90_plus(root: &Path, fails: &mut Vec<String>) {
+    let rel = "docs/DAY90-PLUS.md";
+    let text = fs::read_to_string(root.join(rel)).unwrap_or_default();
+    let parked = text.contains("MLX")
+        && (text.contains("GPU") || text.contains("rented"))
+        && text.contains("cloud")
+        && (text.contains("park") || text.contains("until Jason"));
+    if root.join(rel).is_file() && parked {
+        println!("  ok    {rel} parks live Mac / GPU / cloud-spawn");
+    } else {
+        let err = format!("{rel} must honestly park live Mac / GPU / cloud-spawn");
         println!("  FAIL  {err}");
         fails.push(err);
     }
