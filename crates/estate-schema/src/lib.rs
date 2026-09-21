@@ -16,14 +16,16 @@ pub use firewall::{authorize, read_lane_file, AccessRequest, Decision, Deny};
 pub use hash::estate_hash;
 pub use plan::{
     covering_plan, covering_plan_stem, diff_estates, list_plans, load_plan_json,
-    plan_against_is_fresh, plan_covers_hash, render_plan, render_review_diff, write_plan,
+    mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict, plan_covers_hash,
+    plan_is_reviewable, render_plan, render_review_diff, render_security_iac, write_plan,
     write_plan_index, CoveringPlan, EstatePlan, PlanDelta, PlanIndexEntry,
 };
 pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
 pub use types::{
-    is_host_class, Agent, Effect, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane,
-    McpDecl, ModelBinding, ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind,
-    SacredExclusion, ToolDecl,
+    canonical_host_class, host_class_eq, is_host_class, normalize_host_class, Agent, Effect,
+    EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding,
+    ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,
+    ToolDecl,
 };
 pub use validate::{contains_sku, is_slug, validate, ValidateOpts, SKU_NEEDLES};
 
@@ -151,5 +153,21 @@ mod tests {
             .placements
             .iter()
             .any(|p| p.id == "cursor-cloud" && p.kind == PlacementKind::CloudAgent && !p.wired));
+    }
+
+    #[test]
+    fn host_class_aliases_map_to_locked_names() {
+        assert_eq!(normalize_host_class("rtx_consumer"), Some("consumer-nvidia"));
+        assert_eq!(normalize_host_class("rtx-consumer"), Some("consumer-nvidia"));
+        assert_eq!(normalize_host_class("nvidia_rental"), Some("rented-nvidia"));
+        assert_eq!(normalize_host_class("nvidia-rental"), Some("rented-nvidia"));
+        assert_eq!(normalize_host_class("apple_silicon"), Some("apple-silicon"));
+        assert_eq!(normalize_host_class("any"), Some("any"));
+        assert!(normalize_host_class("rtx-5090").is_none());
+        assert!(normalize_host_class("not-a-host").is_none());
+        assert!(host_class_eq("rtx_consumer", "consumer-nvidia"));
+        assert!(!host_class_eq("apple-silicon", "consumer-nvidia"));
+        assert_eq!(canonical_host_class(Some("rtx_consumer")), "consumer-nvidia");
+        assert_eq!(canonical_host_class(None), "any");
     }
 }
