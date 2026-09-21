@@ -5,21 +5,23 @@ use conveyor_proxy::{
     list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    blast_grows, covering_plan, describe, describe_placements, diff_estates, estate_hash,
-    latest_plan, list_plans, load_estate, load_estate_unvalidated, load_plan_json,
-    mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict, plan_blast_width,
-    plan_is_reviewable, render_plan, render_plan_diff, validate, write_plan,
+    blast_grows, check_policy_file, covering_plan, describe, describe_placements, diff_estates,
+    estate_hash, latest_plan, list_plans, load_estate, load_estate_unvalidated, load_plan_json,
+    load_policy, mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict,
+    plan_blast_width, plan_is_reviewable, policy_allows, render_plan, render_plan_diff, validate,
+    write_plan,
 };
 use feed_collector::{
     import_pack, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
     refuse_promote, write_pack_index,
 };
 use floor_supervisor::{
-    append_apply_audit, apply_dry_run, apply_with_profile_dir, drift_with_roots,
+    append_apply_audit, apply_dry_run, apply_with_profile_dir, backup_cell, drift_with_roots,
     forget_expired_leases, list_apply_audits, list_expired_leases, list_lifecycle_events,
     list_session_events, load_desired_snapshot, load_lifecycle, load_placements, mark_running,
-    now_unix, reconcile_placements, record_placements, refuse_expired_leases, render_dry_run,
-    render_reconcile, resume, suspend, tail_session_events, write_reconcile, ApplyAudit,
+    now_unix, pause_kit_proof, reconcile_placements, record_placements, refuse_expired_leases,
+    render_dry_run, render_reconcile, render_restore, restore_cell, resume, suspend,
+    tail_session_events, write_reconcile, ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -83,6 +85,8 @@ enum Command {
         /// Print blast radius + reconcile preview. Does not write leases.
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
     },
     /// Compare desired estate to regenerable actual-state.
     Drift {
@@ -195,6 +199,60 @@ enum Command {
         #[command(subcommand)]
         command: SessionsCommand,
     },
+    /// Timestamped local archive of durable `.cell/` files.
+    Backup {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        #[arg(long, default_value = "backups")]
+        out: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
+    },
+    /// Restore a cell archive. Refuses sacred mismatch. `--dry-run` writes nothing.
+    Restore {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
+    },
+    /// Check a policy pack against a known action.
+    Policy {
+        #[command(subcommand)]
+        command: PolicyCommand,
+    },
+    /// Apply → suspend → drop sessions → resume. Leases stay on disk.
+    PauseProof {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum PolicyCommand {
+    Check {
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
+        #[arg(long, default_value = "apply")]
+        action: String,
+        #[arg(long)]
+        hop: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -224,6 +282,8 @@ enum ConveyCommand {
         capability: String,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
     },
     /// List declared hops.
     List {
@@ -443,6 +503,7 @@ fn run() -> Result<()> {
             packs_dir,
             require_fresh_plan,
             dry_run,
+            policy,
         } => cmd_apply(
             &estate,
             &state_dir,
@@ -453,6 +514,7 @@ fn run() -> Result<()> {
             &packs_dir,
             require_fresh_plan,
             dry_run,
+            &policy,
         ),
         Command::Drift {
             estate,
@@ -518,7 +580,8 @@ fn run() -> Result<()> {
                 id,
                 capability,
                 state_dir,
-            } => cmd_convey_call(&id, &capability, &state_dir),
+                policy,
+            } => cmd_convey_call(&id, &capability, &state_dir, &policy),
             ConveyCommand::List { state_dir } => cmd_convey_list(&state_dir),
             ConveyCommand::Leases { state_dir } => cmd_convey_leases(&state_dir),
             ConveyCommand::Sync { state_dir } => cmd_convey_sync(&state_dir),
@@ -548,6 +611,33 @@ fn run() -> Result<()> {
             SessionsCommand::List { state_dir } => cmd_sessions_list(&state_dir),
             SessionsCommand::Tail { state_dir, n } => cmd_sessions_tail(&state_dir, n),
         },
+        Command::Backup {
+            state_dir,
+            plans_dir,
+            out,
+            estate,
+            policy,
+        } => cmd_backup(&state_dir, &plans_dir, &out, &estate, &policy),
+        Command::Restore {
+            from,
+            state_dir,
+            plans_dir,
+            estate,
+            dry_run,
+            policy,
+        } => cmd_restore(&from, &state_dir, &plans_dir, &estate, dry_run, &policy),
+        Command::Policy { command } => match command {
+            PolicyCommand::Check {
+                policy,
+                action,
+                hop,
+            } => cmd_policy_check(&policy, &action, hop.as_deref()),
+        },
+        Command::PauseProof {
+            estate,
+            state_dir,
+            roots_base,
+        } => cmd_pause_proof(&estate, &state_dir, &roots_base),
     }
 }
 
@@ -723,10 +813,19 @@ fn cmd_apply(
     packs_dir: &Path,
     require_fresh_plan: bool,
     dry_run: bool,
+    policy: &Path,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    enforce_policy(policy, "apply", None)?;
     if dry_run {
-        return cmd_apply_dry_run(&estate, path, state_dir, plans_dir, require_plan, require_fresh_plan);
+        return cmd_apply_dry_run(
+            &estate,
+            path,
+            state_dir,
+            plans_dir,
+            require_plan,
+            require_fresh_plan,
+        );
     }
     refuse_expired_leases(state_dir)?;
     let hash = estate_hash(&estate);
@@ -936,6 +1035,9 @@ fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         "schema/enrich-proposal.v0.json",
         "schema/apply-dry-run.v0.json",
         "schema/session-journal.v0.json",
+        "schema/policy.v0.json",
+        "schema/cell-backup.v0.json",
+        "policy/cell-one.policy.v0.yaml",
     ];
     for rel in required {
         let path = root.join(rel);
@@ -1170,6 +1272,85 @@ fn cmd_catalog(out: &Path) -> Result<()> {
     Ok(())
 }
 
+fn enforce_policy(path: &Path, action: &str, hop: Option<&str>) -> Result<()> {
+    match check_policy_file(path, action, hop) {
+        Ok(_) => Ok(()),
+        Err(err) => bail!("{err}"),
+    }
+}
+
+fn cmd_policy_check(path: &Path, action: &str, hop: Option<&str>) -> Result<()> {
+    if !path.is_file() {
+        bail!("policy file missing: {}", path.display());
+    }
+    let pack = load_policy(path).map_err(|e| anyhow::anyhow!("{e}"))?;
+    policy_allows(&pack, action, hop).map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!("policy ok action={action} hop={}", hop.unwrap_or("-"));
+    Ok(())
+}
+
+fn cmd_backup(
+    state_dir: &Path,
+    plans_dir: &Path,
+    out: &Path,
+    estate_path: &Path,
+    policy: &Path,
+) -> Result<()> {
+    enforce_policy(policy, "backup", None)?;
+    let estate = load_estate(estate_path).ok();
+    let (dest, meta) = backup_cell(
+        state_dir,
+        Some(plans_dir),
+        out,
+        estate.as_ref(),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&meta)?);
+    println!("Wrote {}", dest.display());
+    Ok(())
+}
+
+fn cmd_restore(
+    from: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+    estate_path: &Path,
+    dry_run: bool,
+    policy: &Path,
+) -> Result<()> {
+    enforce_policy(policy, "restore", None)?;
+    let estate = load_estate(estate_path).ok();
+    let before = if dry_run {
+        snapshot_state_files(state_dir)
+    } else {
+        Vec::new()
+    };
+    let report = restore_cell(from, state_dir, Some(plans_dir), estate.as_ref(), dry_run)?;
+    if dry_run {
+        let after = snapshot_state_files(state_dir);
+        if before != after {
+            bail!("restore dry-run must not write state files");
+        }
+    }
+    print!("{}", render_restore(&report));
+    if report.would_refuse {
+        bail!("restore would-refuse");
+    }
+    if dry_run {
+        println!("dry-run ok (no writes)");
+    }
+    Ok(())
+}
+
+fn cmd_pause_proof(estate_path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
+    let estate = load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let proof = pause_kit_proof(&estate, state_dir, roots_base)?;
+    println!("{}", serde_json::to_string_pretty(&proof)?);
+    if proof.cloud_spawned || !proof.leases_survived || !proof.in_sync {
+        bail!("pause-proof failed");
+    }
+    Ok(())
+}
+
 fn cmd_leases(state_dir: &Path) -> Result<()> {
     match load_placements(state_dir)? {
         None => {
@@ -1337,7 +1518,8 @@ fn cmd_convey_hop(
     Ok(())
 }
 
-fn cmd_convey_call(id: &str, capability: &str, state_dir: &Path) -> Result<()> {
+fn cmd_convey_call(id: &str, capability: &str, state_dir: &Path, policy: &Path) -> Result<()> {
+    enforce_policy(policy, "convey-call", Some(id))?;
     let call = call_hop(state_dir, id, capability)?;
     println!("{}", serde_json::to_string_pretty(&call)?);
     if !call.allow {
