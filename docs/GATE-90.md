@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#13 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#14 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
@@ -57,6 +57,11 @@ estate doctor --strict
 | Plan diff / export-pr exits | green | wider refuses unless `--allow-wider`; export-pr exits 0 with risks; no `.cell` write |
 | Dry-run refuse writes nothing | green | `--require-plan`, policy-deny, expired; snapshot includes conveyor/sessions |
 | Curator clap vs `refuse:curator` | green | wrong curator refuses on import/accept/apply-import; accept missing flag is clap |
+| Tampered SKU `host_class` on leases | green | slim-parse `refuse:bad-host-class`; aliases still round-trip |
+| Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
+| Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
+| Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
+| Makefile contract | green | `gate-90` / `smoke` / `day90` / `feed-loop` / `fixtures-check` / `doctor-strict`; no `gh` |
 
 ## Remaining Day-90+ (honest; parked, not green)
 
