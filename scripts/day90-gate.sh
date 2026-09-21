@@ -121,7 +121,7 @@ else
   bad "A10 candidate pack written"
 fi
 BEFORE_ESTATE="$(cksum "$ESTATE")"
-cargo run -q -p estate-control -- feed import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE" | tee /tmp/cell90-import.txt
+cargo run -q -p estate-control -- feed import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE" --curator jason | tee /tmp/cell90-import.txt
 if grep -q "estate file unchanged" /tmp/cell90-import.txt && [[ "$(cksum "$ESTATE")" == "$BEFORE_ESTATE" ]]; then
   ok "A10 explicit import does not rewrite estate"
 else
