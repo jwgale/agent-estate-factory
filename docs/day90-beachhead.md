@@ -23,7 +23,7 @@ cargo run -p estate-control -- feed import --id overnight-traces --drop-dir pack
 cargo run -p estate-control -- feed promote --id overnight-traces   # fails
 ```
 
-Import does not rewrite `examples/estate.yaml`. Jason binds a pack by editing `enrich_packs.packs` by hand.
+Import does not rewrite `examples/estate.yaml`. Jason binds a pack by editing `enrich_packs.packs` by hand. Pack ids that encode a hardware SKU (`5090`, …) fail closed. `packs/INDEX.md` lists candidates.
 
 ## A11 — suspend / resume
 
@@ -42,6 +42,16 @@ cargo run -p estate-control -- plan --estate examples/estate.yaml
 cargo run -p estate-control -- plans
 ```
 
-Blast-radius markdown is PR-reviewable. `estate apply --require-plan` fails without a covering plan and writes an apply audit. `placements` lists `cell-one-box` and `cursor-cloud` (`cloud-agent`, unwired). Floor records leases on disk; it does not spawn the cloud stub.
+Blast-radius markdown is PR-reviewable. `estate apply --require-plan` fails without a covering plan and writes an apply audit (`covering_plan` stem + `cloud_agent_spawned=false`). `placements` lists `cell-one-box` and `cursor-cloud` (`cloud-agent`, unwired). Floor records leases on disk via `PlacementDriver`; it does not spawn the cloud stub. Drift fail-closes a spawned cloud-agent lease.
+
+```bash
+cargo run -p estate-control -- catalog --out .cell/catalog.json
+cargo run -p estate-control -- leases
+cargo run -p estate-control -- audits
+cargo run -p floor-supervisor -- suspend
+cargo run -p floor-supervisor -- resume
+```
+
+Reviewed catalog snapshot: [`schema/local-catalog.v0.json`](../schema/local-catalog.v0.json).
 
 See [`overnight-decisions.md`](overnight-decisions.md).

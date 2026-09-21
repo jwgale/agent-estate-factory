@@ -67,6 +67,27 @@ if grep -q "cloud-agent" /tmp/cell90-status.txt; then
 else
   bad "A12 status shows cloud-agent stub"
 fi
+cargo run -q -p estate-control -- catalog --out "$STATE/catalog.json" >/tmp/cell90-catalog.txt
+if [[ -f "$STATE/catalog.json" ]] && grep -q "cell-one.local-catalog.v0" "$STATE/catalog.json"; then
+  ok "A12 catalog file SoT dumped"
+else
+  bad "A12 catalog file SoT dumped"
+fi
+cargo run -q -p estate-control -- leases --state-dir "$STATE" >/tmp/cell90-leases.txt
+if grep -q "cloud-agent" /tmp/cell90-leases.txt; then
+  ok "A12 leases surface"
+else
+  bad "A12 leases surface"
+fi
+set +e
+cargo run -q -p estate-control -- feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id local-5090 >/tmp/cell90-sku.out 2>/tmp/cell90-sku.err
+sku=$?
+set -e
+if [[ "$sku" -ne 0 ]]; then
+  ok "A10 SKU pack id refused"
+else
+  bad "A10 SKU pack id must fail"
+fi
 
 note "-- A10 feed pack drop zone --"
 mkdir -p "$FEED"
@@ -107,8 +128,8 @@ mkdir -p gate-reports
   echo "pass: $PASS"
   echo "fail: $FAIL"
   echo
-  echo "A10 feed pack + explicit import (no auto-promote), A11 suspend/resume, A12 gated apply + placement lease."
-  echo "Live Grok / GPU not required. Hosted CI is cargo check --workspace --locked only."
+  echo "A10 feed pack + explicit import (no auto-promote, SKU refuse, INDEX), A11 suspend/resume + unspawned leases, A12 gated apply + PlacementDriver + catalog file SoT."
+  echo "Live Grok / GPU not required. Hosted CI is disabled overnight. Gate is local cargo test / make gate-90."
 } > "$REPORT"
 
 echo
