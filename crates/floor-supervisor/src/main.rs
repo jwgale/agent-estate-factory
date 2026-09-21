@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use floor_supervisor::{apply_with_profile_dir, drift, spawn_runtime_heartbeats, stop_runtime};
+use floor_supervisor::{apply_with_profile_dir, spawn_runtime_heartbeats, stop_runtime};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
         Command::Status { estate, state_dir } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
-            let report = drift(&loaded, &state_dir)?;
+            let report = floor_supervisor::drift_with_roots(&loaded, &state_dir, None)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
             if !report.in_sync {
                 std::process::exit(2);

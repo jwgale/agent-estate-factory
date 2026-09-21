@@ -3,8 +3,19 @@ name = "model-estate"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Equal-class frontier and local model bindings (Cell One: placeholders, wired false)"
+description = "Equal-class frontier and portable local catalog/route/bind (Day 60: A7–A9)"
 
 [dependencies]
+anyhow.workspace = true
+clap.workspace = true
 estate-schema.workspace = true
+feed-collector.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tiny_http.workspace = true
+ureq.workspace = true
+
+[[bin]]
+name = "model-estate"
+path = "src/main.rs"

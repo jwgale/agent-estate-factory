@@ -35,6 +35,12 @@ pub struct DriftReport {
     pub actual_hash: Option<String>,
     pub missing_agents: Vec<String>,
     pub extra_agents: Vec<String>,
+    #[serde(default)]
+    pub mismatched_sessions: Vec<String>,
+    #[serde(default)]
+    pub missing_session_dirs: Vec<String>,
+    #[serde(default)]
+    pub missing_lane_roots: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -80,6 +86,7 @@ pub fn apply(
         regenerable: true,
     };
     write_actual(state_dir, &actual)?;
+    write_desired_snapshot(state_dir, estate)?;
     Ok(actual)
 }
 
@@ -99,6 +106,25 @@ pub fn write_actual(state_dir: &Path, actual: &ActualState) -> Result<(), Superv
     Ok(())
 }
 
+pub fn write_desired_snapshot(state_dir: &Path, estate: &Estate) -> Result<(), SupervisorError> {
+    std::fs::create_dir_all(state_dir)?;
+    let yaml = serde_yaml::to_string(estate)
+        .map_err(|e| SupervisorError::Other(format!("snapshot: {e}")))?;
+    std::fs::write(state_dir.join("desired-snapshot.yaml"), yaml)?;
+    Ok(())
+}
+
+pub fn load_desired_snapshot(state_dir: &Path) -> Result<Option<Estate>, SupervisorError> {
+    let path = state_dir.join("desired-snapshot.yaml");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let estate = serde_yaml::from_str(&text)
+        .map_err(|e| SupervisorError::Other(format!("desired-snapshot.yaml: {e}")))?;
+    Ok(Some(estate))
+}
+
 pub fn load_actual(state_dir: &Path) -> Result<Option<ActualState>, SupervisorError> {
     let path = state_dir.join("actual-state.json");
     if !path.exists() {
@@ -111,6 +137,14 @@ pub fn load_actual(state_dir: &Path) -> Result<Option<ActualState>, SupervisorEr
 }
 
 pub fn drift(estate: &Estate, state_dir: &Path) -> Result<DriftReport, SupervisorError> {
+    drift_with_roots(estate, state_dir, None)
+}
+
+pub fn drift_with_roots(
+    estate: &Estate,
+    state_dir: &Path,
+    roots_base: Option<&Path>,
+) -> Result<DriftReport, SupervisorError> {
     estate_schema::validate(estate).map_err(SupervisorError::Invalid)?;
     let desired_hash = estate_hash(estate);
     let actual = load_actual(state_dir)?;
@@ -121,6 +155,9 @@ pub fn drift(estate: &Estate, state_dir: &Path) -> Result<DriftReport, Superviso
             actual_hash: None,
             missing_agents: estate.agents.iter().map(|a| a.id.clone()).collect(),
             extra_agents: vec![],
+            mismatched_sessions: vec![],
+            missing_session_dirs: vec![],
+            missing_lane_roots: vec![],
             notes: vec!["no actual-state.json; run apply".into()],
         });
     };
@@ -135,6 +172,26 @@ pub fn drift(estate: &Estate, state_dir: &Path) -> Result<DriftReport, Superviso
     let missing: Vec<String> = desired.difference(&have).cloned().collect();
     let extra: Vec<String> = have.difference(&desired).cloned().collect();
     let hash_match = actual.desired_hash == desired_hash;
+    let mut mismatched_sessions = Vec::new();
+    let mut missing_session_dirs = Vec::new();
+    for session in &actual.sessions {
+        if let Some(agent) = estate.agent(&session.agent_id) {
+            if agent.desktop != session.desktop || agent.lane != session.lane_id {
+                mismatched_sessions.push(session.agent_id.clone());
+            }
+        }
+        if session.isolation_handle.driver == "profile-dir" && !session.session_path.exists() {
+            missing_session_dirs.push(session.agent_id.clone());
+        }
+    }
+    let mut missing_lane_roots = Vec::new();
+    if let Some(base) = roots_base {
+        for lane in &estate.lanes {
+            if !base.join(&lane.root_path).is_dir() {
+                missing_lane_roots.push(lane.id.clone());
+            }
+        }
+    }
     let mut notes = Vec::new();
     if !hash_match {
         notes.push("desired estate hash differs from last apply".into());
@@ -145,7 +202,30 @@ pub fn drift(estate: &Estate, state_dir: &Path) -> Result<DriftReport, Superviso
     if !extra.is_empty() {
         notes.push(format!("extra sessions: {}", extra.join(", ")));
     }
-    let in_sync = hash_match && missing.is_empty() && extra.is_empty();
+    if !mismatched_sessions.is_empty() {
+        notes.push(format!(
+            "session desktop/lane mismatch: {}",
+            mismatched_sessions.join(", ")
+        ));
+    }
+    if !missing_session_dirs.is_empty() {
+        notes.push(format!(
+            "session dirs missing (warm desktop discarded): {}",
+            missing_session_dirs.join(", ")
+        ));
+    }
+    if !missing_lane_roots.is_empty() {
+        notes.push(format!(
+            "lane roots missing: {}",
+            missing_lane_roots.join(", ")
+        ));
+    }
+    let in_sync = hash_match
+        && missing.is_empty()
+        && extra.is_empty()
+        && mismatched_sessions.is_empty()
+        && missing_session_dirs.is_empty()
+        && missing_lane_roots.is_empty();
     if in_sync {
         notes.push("actual-state matches desired estate".into());
     }
@@ -155,6 +235,9 @@ pub fn drift(estate: &Estate, state_dir: &Path) -> Result<DriftReport, Superviso
         actual_hash: Some(actual.desired_hash),
         missing_agents: missing,
         extra_agents: extra,
+        mismatched_sessions,
+        missing_session_dirs,
+        missing_lane_roots,
         notes,
     })
 }
@@ -226,8 +309,25 @@ mod tests {
         assert!(ids.contains(&"research"));
         assert!(ids.contains(&"sanctum"));
         assert_eq!(driver.bound.lock().unwrap().len(), 3);
-        let report = drift(&estate, &tmp).unwrap();
+        let report = drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap();
         assert!(report.in_sync);
+        assert!(tmp.join("desired-snapshot.yaml").is_file());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn drift_detects_discarded_session_dirs() {
+        let estate = example();
+        let tmp = tempfile();
+        let state = tmp.join("state");
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        assert!(drift_with_roots(&estate, &state, Some(&tmp)).unwrap().in_sync);
+        stop_runtime(&state).unwrap();
+        let report = drift_with_roots(&estate, &state, Some(&tmp)).unwrap();
+        assert!(!report.in_sync);
+        assert!(!report.missing_session_dirs.is_empty());
+        apply_with_profile_dir(&estate, &state, &tmp).unwrap();
+        assert!(drift_with_roots(&estate, &state, Some(&tmp)).unwrap().in_sync);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
