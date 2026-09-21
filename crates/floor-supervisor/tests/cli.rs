@@ -67,5 +67,11 @@ fn apply_suspend_resume_leases() {
         "stderr={}",
         String::from_utf8_lossy(&resumed.stderr)
     );
+    let history = floor_bin()
+        .args(["history", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(history.status.success());
+    assert!(String::from_utf8_lossy(&history.stdout).contains("lifecycle history"));
     let _ = std::fs::remove_dir_all(&tmp);
 }

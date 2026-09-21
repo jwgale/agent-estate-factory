@@ -7,7 +7,8 @@ use feed_collector::{
     append_event, import_pack, materialize_from_feed, refuse_promote, ScrubbedEvent,
 };
 use floor_supervisor::{
-    apply_with_profile_dir, load_lifecycle, load_placements, resume, suspend, LifecycleState,
+    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements, resume, suspend,
+    CloudAgentDriver, LifecycleState, PlacementDriver,
 };
 
 fn example() -> estate_schema::Estate {
@@ -70,6 +71,10 @@ fn a10_feed_pack_from_both_paths_never_promotes() {
     assert!(!imported.estate_bound);
     assert!(!imported.pack.promoted);
     assert_eq!(imported.pack.schema, "cell-one.pack.v0");
+    assert_eq!(pack.path_counts.local, 1);
+    assert_eq!(pack.path_counts.frontier, 1);
+    assert!(feed.join("feed-cursor.json").is_file());
+    assert!(accepted.join("import-audit.jsonl").is_file());
     assert!(dest.ends_with("overnight-traces.pack.json"));
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -92,6 +97,9 @@ fn a11_suspend_resume_survives_restart() {
         .find(|l| l.kind == "cloud-agent")
         .expect("cloud-agent lease");
     assert!(!cloud.spawned);
+    let history = list_lifecycle_events(&state).unwrap();
+    assert!(history.iter().any(|e| e.action == "suspend"));
+    assert!(history.iter().any(|e| e.action == "resume" || e.action == "apply"));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -111,5 +119,37 @@ fn a12_plan_reviewable_and_placement_stub_declared() {
     assert!(written.is_file());
     assert!(root.join("INDEX.md").is_file());
     assert!(plan_covers_hash(&root, &plan.desired_hash));
+    assert_eq!(plan.schema, "cell-one.plan.v0");
+    assert!(estate_schema::plan_against_is_fresh(&plan, None));
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a10_pack_id_refuses_sku_and_writes_index() {
+    let root = tmp();
+    let drop = root.join("drop");
+    let err = materialize_from_feed(&root.join("feed"), &drop, "local-5090").unwrap_err();
+    assert!(err.to_string().contains("SKU") || err.to_string().contains("5090"));
+    let (pack, _) = materialize_from_feed(&root.join("feed"), &drop, "overnight-traces").unwrap();
+    assert_eq!(pack.schema, "cell-one.pack.v0");
+    assert!(drop.join("INDEX.md").is_file());
+    let index = std::fs::read_to_string(drop.join("INDEX.md")).unwrap();
+    assert!(index.contains("overnight-traces"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a12_cloud_driver_never_spawns() {
+    let placement = estate_schema::Placement {
+        id: "remote-stub".into(),
+        kind: estate_schema::PlacementKind::CloudAgent,
+        host_class: Some("any".into()),
+        agents: vec!["horizon".into()],
+        wired: true,
+        params: serde_json::json!({}),
+        note: None,
+    };
+    let lease = CloudAgentDriver.claim(&placement);
+    assert!(!lease.spawned);
+    assert_eq!(lease.driver, "cloud-agent");
 }
