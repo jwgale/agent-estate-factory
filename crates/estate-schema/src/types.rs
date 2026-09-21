@@ -242,6 +242,9 @@ pub struct Placement {
     pub params: serde_json::Value,
     #[serde(default)]
     pub note: Option<String>,
+    /// Optional lease lifetime in seconds. Absent = no expiry.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
 }
 
 /// Locked host_class names: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`.
