@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#24 plus this slice)
+## On `main` (PR #1-#31 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -92,19 +92,25 @@ only. `mock-local` was not a Mac/GPU proof.
 or `/api/tags`. Jason was pinged for live Ollama probes.
 `READY_FOR_LIVE_TEST` for that surface: yes (already handed off).
 
+## Frontier grok-4.7 (#29–#31)
+
+#29 pinned the frontier model to `grok-4.7` and required `XAI_API_KEY` for `estate specialist --driver frontier`. `--driver http-remote` stayed the local card. `READY_FOR_LIVE_TEST` was yes for that hand-off; the key was never printed.
+
+#30 recorded the live PASS (`completion` `pong`, reason `frontier completion`) and set `READY_FOR_LIVE_TEST` back to no. The mixed fixture validates and dry-runs with no POST. Local `--driver ollama` down or unset does not call frontier.
+
+#31 plans and applies that fixture (`--require-plan`) on a mock cell. The catalog sibling card names `grok-4.7` with streaming/tools/vision false and completion budget 64. `ollama`, `http-remote`, `llama.cpp`, `mlx`, `vllm`, and `trt` do not POST frontier. `reasoning_effort` xhigh stays docs-only.
+
 ## This slice
 
-Operator path on `examples/fixtures/mixed-frontier-local.yaml`: `estate plan` then `estate apply --require-plan` writes `model-actual.json` (`frontier_http` / `http-remote`, `local_slm` / `ollama`), `placement-actual.json`, and `catalog.json`. No live key. Plan and apply do not POST. The next `estate specialist --driver ollama` completes on the local mock and still does not POST frontier.
+`make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml`: status → plan → `apply --require-plan` → status → doctor on an isolated cell. No live key. Not in `make smoke` or Actions.
 
-Catalog file SoT lists frontier as a sibling card: model `grok-4.7`, streaming/tools/vision false, completion budget 64. Not a local probe and not a context window. `reasoning_effort` xhigh stays docs-only and is not sent.
-
-Requested local specialist does not fall through: `ollama` up, `http-remote` up, `llama.cpp` down, and `mlx` / `vllm` / `trt` refuse. `XAI_API_KEY` and `CELL_FRONTIER_ENDPOINT` set still means no frontier POST.
+`estate status` prints `frontier: <id> model=grok-4.7` only when the binding sets `params.model`. The default estate binding does not, so status does not invent that line. Catalog files print `catalog frontier: schema|cell model=grok-4.7` when they contain `frontier.model`. Doctor prints the same id from `schema/local-catalog.v0.json` and from `.cell/catalog.json` when those files are present. A SKU in that field fails doctor.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#31 (plain English)
+## Bug fixes on #10-#32 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -129,6 +135,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #29 | Frontier default was `grok-3-mini`. Key did not unlock specialist. | Model `grok-4.7`. `XAI_API_KEY` required. READY yes (handed off). |
 | #30 | Frontier live PASS was not on the hand-off page. | Recorded `pong` / `frontier completion`. READY no. Mixed `grok-4.7` dry-run. Local down does not POST frontier. |
 | #31 | Mixed fixture stopped at dry-run. Catalog did not name `grok-4.7`. Stub local drivers were not locked off frontier. | `plan` + `apply --require-plan` on the mixed fixture (mock, no key, no POST). Frontier catalog card lists `grok-4.7` and completion caps. `ollama` / `http-remote` / `llama.cpp` / `mlx` / `vllm` / `trt` do not POST frontier. READY no. |
+| #32 | Mixed plan/apply was only a crate test. Status and doctor never named the frontier model. | `make day90-mixed` walks the fixture on an isolated cell. Status/doctor print `grok-4.7` when the catalog or estate binding has it. Default estate does not invent a binding model. READY no. |
 
 ## Known-good local commands
 
@@ -163,7 +170,7 @@ Isolated loops without live boxes:
 - OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
 - Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
 - Live specialist complete (`estate specialist`): `crates/estate-control/tests/specialist_cli.rs` + adapter complete tests
-- Mixed estate dry-run + plan/apply + local specialist skips frontier: `crates/estate-control/tests/day90_mixed.rs`
+- Mixed estate dry-run + plan/apply + `make day90-mixed`: `scripts/day90-mixed.sh` + `crates/estate-control/tests/day90_mixed.rs`
 - Apply records `local_slm` then specialist complete: `crates/estate-control/tests/day90_apply_specialist.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 

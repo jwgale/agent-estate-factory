@@ -89,6 +89,8 @@ estate doctor --strict
 | Mixed plan + apply | green | `plan` then `apply --require-plan` on mixed fixture; catalog names `grok-4.7`; no POST; no live key |
 | Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
+| `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture; no live key; not in smoke / Actions |
+| Frontier model on status / doctor | green | `grok-4.7` when catalog or estate binding names it; default estate does not invent a binding model |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
