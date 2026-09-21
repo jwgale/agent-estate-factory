@@ -116,14 +116,22 @@ pub fn describe_bindings(estate: &Estate) -> String {
             .get("host_class")
             .and_then(|v| v.as_str())
             .unwrap_or("-");
+        let model = b
+            .params
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("-");
         lines.push(format!(
-            "  {:<8} {:<16} driver={:<16} wired={} status={:<12} host_class={}",
+            "  {:<8} {:<16} driver={:<16} wired={} status={:<12} host_class={} model={}",
             b.class.as_str(),
             b.id,
             b.driver,
             b.wired,
             status,
-            host
+            host,
+            model
         ));
     }
     lines.join("\n")
