@@ -96,22 +96,23 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 | What was broken | What it does now |
 | --- | --- |
-| Compat chat discarded the model body and returned factory policy only. Probes were still the only live surface Jason could run. | `complete` keeps `message.content`. `estate specialist --driver ollama --prompt` prints it. |
-| There was no `estate specialist`. Jason had to know `model-estate specialist` and still got no model text. | Thin control verb. Same `run_http_specialist` helper. Default job `complete`. |
-| Sacred tokens were POSTed to `/v0/specialist` / chat before deny. | Sacred / empty / SKU refuse before any HTTP POST. |
-| Empty OpenAI `message.content` could count as a completion. | Empty content refuses. No Ollama fall-through. |
+| 5090 `estate specialist` took OpenAI chat, got a 200 with empty `message.content`, and died. Probes were still `live ok (openai /v1/models)`. | Empty / missing / whitespace OpenAI content falls through to Ollama `/api/chat`. Content-array / `text` / reasoning-only accepted only when clearly non-empty. |
+| Both chat paths failing said only `empty message.content`. | Refuse names HTTP status, the model id used, and `ollama pull llama3` / `CELL_LOCAL_MODEL`. |
+| Unset `CELL_LOCAL_MODEL` preferred `/v1/models` first. | First portable id from `/api/tags`, then `/v1/models`. No hardcoded empty name. |
 
-`READY_FOR_LIVE_TEST` for this complete verb: **yes**. Jason already
-PASSed Mac `probes --live`. One command: `estate specialist --driver
-ollama --prompt "Reply with the single word pong."` against
-`CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`. Expect a non-empty
-`completion`. Wording varies.
+`READY_FOR_LIVE_TEST`: **yes**. Retry on the 5090:
 
-Do not ping for native MLX or a 5090-specific path.
+```
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+cargo run -q -p estate-control -- specialist --driver ollama \
+  --prompt "Reply with the single word pong."
+```
+
+Expect exit 0, `allow` true, `job` complete, non-empty `completion`.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#24 (plain English)
+## Bug fixes on #10-#25 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -130,6 +131,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #23 | Probes POSTed factory `/v0/specialist`. A running Ollama looked down. | GET `/v1/models` or `/api/tags`. `HttpLocal` adapter. Jason pinged for live Ollama. |
 | #24 | Chat posted dummy ping. v0 200 garbage fell through. OpenAI choices without content counted as up. SKU model ids bound. | Request text round-trip. v0 / content / SKU refuse. `model-estate specialist` + llama.cpp OpenAI smoke. |
 | #25 | Complete discarded model text. No `estate specialist`. Sacred text still POSTed. | `estate specialist --prompt` returns `completion`. Sacred refuse first. READY_FOR_LIVE_TEST yes. |
+| #26 | 5090 OpenAI chat 200 with empty `message.content` hard-failed. | Fall through to `/api/chat`. Both-fail names status + model + pull. READY yes. |
 
 ## Known-good local commands
 

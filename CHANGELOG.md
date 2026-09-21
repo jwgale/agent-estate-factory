@@ -65,6 +65,14 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #25 (this slice)
+
+- OpenAI `/v1/chat/completions` with empty / missing / whitespace `message.content` falls through to Ollama `/api/chat` (same as probes try both shapes).
+- Accepts content-array parts, `text`, or reasoning-only when the text is clearly non-empty.
+- Both chat paths fail: HTTP status, model id used, `ollama pull llama3` / `CELL_LOCAL_MODEL`.
+- Unset `CELL_LOCAL_MODEL` prefers first `/api/tags` id, then `/v1/models`.
+- `READY_FOR_LIVE_TEST`: yes. 5090 retry of `estate specialist --driver ollama --prompt "Reply with the single word pong."`
+
 ## After PR #24 (this slice)
 
 - `estate specialist --driver ollama --prompt` is a thin `HttpLocal` delegate. Default job `complete` returns model `completion`. Same helper as `model-estate specialist --job complete`.

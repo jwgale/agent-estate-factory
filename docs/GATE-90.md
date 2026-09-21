@@ -79,6 +79,7 @@ estate doctor --strict
 | OpenAI / Ollama live adapter | green | GET `/v1/models` or `/api/tags`; in-process mock; SKIP without env |
 | Specialist chat round-trip | green | `HttpLocal` posts request text; `model-estate specialist`; llama.cpp OpenAI smoke; mock HTTP |
 | Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion`; mock-locked + ready for Ollama |
+| OpenAI empty content fallthrough | green | empty/missing OpenAI content tries `/api/chat`; both-fail names status + model + pull |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |

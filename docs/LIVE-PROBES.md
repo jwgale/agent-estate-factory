@@ -48,7 +48,7 @@ That is HTTP, not native MLX. The catalog card stays stub.
 | `CELL_MLX_ENDPOINT` | OpenAI-compatible MLX *server* only; native MLX stays stub | unused unless you set it |
 | `CELL_VLLM_ENDPOINT` | experimental; unset = SKIP | experimental `/v1/models` |
 | `CELL_TRT_ENDPOINT` | experimental; unset = SKIP | experimental; unset = SKIP |
-| `CELL_LOCAL_MODEL` | optional model id for `specialist()`; SKU ids refuse | optional; SKU ids refuse |
+| `CELL_LOCAL_MODEL` | optional model id for `specialist()`; SKU ids refuse. Unset = first `/api/tags` id, then `/v1/models`. | same |
 
 `XAI_*` is frontier A7. Probes do not use it.
 
@@ -232,6 +232,40 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
 `READY_FOR_LIVE_TEST` for this complete verb: **yes**. Mock HTTP locks
 the shape. Jason can run the Mac command above against the Ollama that
 already PASSed `probes --live` and get real text back.
+
+`probes --live` can print `live ok (openai /v1/models)` while
+`/v1/chat/completions` returns empty `message.content`. Specialist now
+falls through to Ollama `/api/chat` instead of dying on that 200.
+
+## Jason Linux / 5090 retry (empty OpenAI content)
+
+Same command as Mac. This is the retry after the 5090 box hit
+`driver unreachable: openai chat: empty message.content`.
+
+```bash
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+# optional: export CELL_LOCAL_MODEL=<id from ollama list>
+cargo run -q -p estate-control -- specialist --driver ollama \
+  --prompt "Reply with the single word pong."
+```
+
+Expect exit 0, `"allow": true`, `"job": "complete"`, and a **non-empty
+`completion`**. Sample:
+
+```
+{
+  "allow": true,
+  "redacted_text": "Reply with the single word pong.",
+  "reason": "compat completion",
+  "job": "complete",
+  "completion": "pong"
+}
+```
+
+If both OpenAI and `/api/chat` are empty, the refuse names HTTP status,
+the model id used, and `ollama pull llama3` / `CELL_LOCAL_MODEL`.
+
+`READY_FOR_LIVE_TEST`: **yes**. One retry on the 5090 (and Mac if handy).
 
 ## Jason Mac (Apple Silicon) - Ollama-on-Mac
 
