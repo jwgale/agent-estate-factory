@@ -16,7 +16,7 @@ usage() {
 stop() {
   cargo run -q -p estate-control -- suspend --state-dir "$STATE"
   echo "pause-kit stop: runtime discarded; lifecycle.json durable"
-  echo "persisted: charter.md $ESTATE schema/ lanes/ plans/ gate-reports/ $STATE/lifecycle.json $STATE/placement-actual.json $STATE/apply-audit.jsonl"
+  echo "persisted: charter.md $ESTATE schema/ lanes/ plans/ gate-reports/ $STATE/lifecycle.json $STATE/lifecycle.jsonl $STATE/placement-actual.json $STATE/apply-audit.jsonl $STATE/feed/feed-cursor.json"
 }
 
 start() {

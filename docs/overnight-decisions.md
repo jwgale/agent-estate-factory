@@ -12,6 +12,10 @@ Jason was asleep. These are the seams we picked for **maximum flexibility**. Eve
 6. **Placement is a driver.** `PlacementDriver` (`box` / `cloud-agent`) is the swappable seam. `CloudAgentDriver.claim` never sets `spawned=true`, even if the estate row is wired. Floor CLI now has `suspend` / `resume` / `leases`. Drift fail-closes if a cloud-agent lease is spawned or if declared leases are missing.
 7. **Pack drop zone refuses SKUs and writes INDEX.** Pack ids must be slugs and must not encode a hardware SKU. `host_class` must be portable. `write_pack_index` regenerates `packs/INDEX.md`.
 8. **Catalog is file SoT.** `schema/local-catalog.v0.json` matches `model_estate::catalog_file()`. Apply/resume dump `.cell/catalog.json`. `estate catalog` / `estate leases` / `estate audits` are control-surface reads (no model invoke).
+9. **Feed cursor + import audit.** `feed-cursor.json` is a durable watermark over `events.jsonl`. Packs carry `path_counts` (frontier/local/proxy). Events that encode a SKU fail closed. Explicit import appends `import-audit.jsonl`. Still no auto-promote.
+10. **Lifecycle history.** `lifecycle.json` is v1 (`cell-one.lifecycle.v0`). Transitions append `lifecycle.jsonl`. `estate history` / `floor history` read it. Pause-safe: sessions die, history stays.
+11. **Plan freshness.** Plans are `cell-one.plan.v0`. `covering_plan` returns the plan, not just a stem. `apply --require-fresh-plan` fails when `against_hash` does not match last apply. INDEX lists hashes.
+12. **Placement release + host_class drift.** `PlacementDriver::release` unspawns without deleting the lease file. Drift fail-closes host_class mismatch. Cloud placements refuse sacred agent ids. Driver `probe()` is catalog-level (`live_probed=false`); not a live ping.
 
 ## Assumptions (safe to reopen)
 

@@ -54,4 +54,13 @@ cargo run -p floor-supervisor -- resume
 
 Reviewed catalog snapshot: [`schema/local-catalog.v0.json`](../schema/local-catalog.v0.json).
 
+```bash
+cargo run -p estate-control -- history
+cargo run -p estate-control -- probes
+cargo run -p estate-control -- feed cursor --feed-dir .cell/feed
+cargo run -p estate-control -- apply --require-plan --require-fresh-plan
+```
+
+Durable watermarks: `.cell/feed/feed-cursor.json`, `.cell/lifecycle.jsonl`, `packs/accepted/import-audit.jsonl`. Cloud-agent still does not spawn. Probes are catalog-level, not live pings.
+
 See [`overnight-decisions.md`](overnight-decisions.md).

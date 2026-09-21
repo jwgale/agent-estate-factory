@@ -13,9 +13,11 @@ Cell One is pause-safe when desired-state lives on disk and runtime is disposabl
 | Plans | `plans/` (append-only) |
 | Gate reports | `gate-reports/` |
 | Operator lifecycle | `.cell/lifecycle.json` (durable, not estate SoT) |
+| Lifecycle history | `.cell/lifecycle.jsonl` (append-only transitions) |
 | Placement leases | `.cell/placement-actual.json` (durable; spawned flags drop on suspend) |
 | Apply audit log | `.cell/apply-audit.jsonl` (append-only; also `plans/apply-*.json`) |
 | Local catalog dump | `.cell/catalog.json` (regenerable file SoT of driver cards) |
+| Feed cursor | `.cell/feed/feed-cursor.json` (watermark; not estate SoT) |
 
 ## Disposable
 
