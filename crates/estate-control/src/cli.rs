@@ -4,7 +4,9 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "estate",
-    about = "Cell One estate-control: validate, plan, apply, drift. Does not execute tools or models."
+    about = "Cell One estate-control: validate, plan, apply, drift. Does not execute tools or models.",
+    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
+    disable_help_subcommand = true
 )]
 pub(crate) struct Cli {
     /// Dual-layer sacred file. Missing = hardcoded defaults only.
@@ -16,12 +18,19 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
+    /// Day-90 operator topic pages. `estate help status`.
+    Help {
+        /// Topic: status, plan, apply, reconcile, feed-loop, backup. Omit to list.
+        #[arg(value_name = "TOPIC")]
+        topic: Option<String>,
+    },
     /// Fail closed if the estate file is invalid.
     Validate {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
     /// Human-readable blast-radius plan; append-only write to plans/.
+    /// Examples: `estate help plan`
     Plan {
         #[command(subcommand)]
         action: Option<PlanAction>,
@@ -41,6 +50,7 @@ pub(crate) enum Command {
         reviewed_dir: PathBuf,
     },
     /// Converge isolation (Control→Data apply seam). Stretch: included, thin.
+    /// Examples: `estate help apply`
     Apply {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -107,6 +117,7 @@ pub(crate) enum Command {
         roots_base: PathBuf,
     },
     /// Persisted estate + durable lifecycle + disposable runtime.
+    /// Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -144,6 +155,7 @@ pub(crate) enum Command {
         state_dir: PathBuf,
     },
     /// Desired vs actual placement reconcile. Sacred-id deny stays.
+    /// Examples: `estate help reconcile`
     Reconcile {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -214,6 +226,9 @@ pub(crate) enum Command {
         estate: PathBuf,
         #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
         policy: PathBuf,
+        /// Keep only the newest N `cell-backup-*` dirs after writing. Omit = keep all.
+        #[arg(long)]
+        prune: Option<usize>,
     },
     /// Restore a cell archive. Refuses sacred mismatch. `--dry-run` writes nothing.
     Restore {
