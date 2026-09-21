@@ -432,6 +432,30 @@ fn apply_import_pack_curator_refuse_writes_no_leases() {
 }
 
 #[test]
+fn apply_writes_nonempty_placement_actual() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-place-write-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let roots = root.join("roots");
+    std::fs::create_dir_all(&state).unwrap();
+    apply_cell(
+        &fixture("examples/estate.yaml"),
+        &state.display().to_string(),
+        &roots.display().to_string(),
+        &plans.display().to_string(),
+    );
+    let blob = std::fs::read_to_string(state.join("placement-actual.json")).unwrap();
+    assert!(!blob.trim().is_empty(), "apply must not write empty placement-actual");
+    assert!(blob.contains("cell-one.placement-actual.v0"), "{blob}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn garbage_plan_json_is_refuse_not_empty() {
     let root = repo_root().join(format!(
         "target/test-honesty-plan-{}",
