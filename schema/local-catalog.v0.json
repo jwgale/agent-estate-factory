@@ -1,0 +1,74 @@
+{
+  "schema": "cell-one.local-catalog.v0",
+  "note": "Hardware is a driver choice, not a product fork. Not an LM Studio. supported = Ollama (+ llama.cpp) green on the box.",
+  "hosts": [
+    "consumer-nvidia",
+    "apple-silicon",
+    "rented-nvidia",
+    "any"
+  ],
+  "cards": [
+    {
+      "driver_id": "ollama",
+      "runtime": "ollama",
+      "status": "supported",
+      "hosts": [
+        "consumer-nvidia",
+        "apple-silicon",
+        "rented-nvidia",
+        "any"
+      ],
+      "notes": "First green local path. Ollama-on-Linux and Ollama-on-Mac share this card."
+    },
+    {
+      "driver_id": "llama.cpp",
+      "runtime": "llama.cpp",
+      "status": "swap-proof",
+      "hosts": [
+        "consumer-nvidia",
+        "apple-silicon",
+        "rented-nvidia",
+        "any"
+      ],
+      "notes": "Swap-proof sibling of Ollama. Same /v0/specialist protocol, not a second product."
+    },
+    {
+      "driver_id": "mlx",
+      "runtime": "mlx",
+      "status": "stub",
+      "hosts": [
+        "apple-silicon"
+      ],
+      "notes": "Apple Silicon stub. Same catalog/route/bind API; live Mac proof later."
+    },
+    {
+      "driver_id": "vllm",
+      "runtime": "vllm",
+      "status": "experimental",
+      "hosts": [
+        "consumer-nvidia",
+        "rented-nvidia"
+      ],
+      "notes": "Optional. Not required for the first green demo. Experimental until Jason verifies."
+    },
+    {
+      "driver_id": "trt",
+      "runtime": "trt",
+      "status": "experimental",
+      "hosts": [
+        "consumer-nvidia",
+        "rented-nvidia"
+      ],
+      "notes": "TensorRT-LLM. Experimental until Jason verifies."
+    },
+    {
+      "driver_id": "http-remote",
+      "runtime": "http-remote",
+      "status": "supported",
+      "hosts": [
+        "any"
+      ],
+      "notes": "CELL_LOCAL_ENDPOINT remote pattern. Same protocol on any host class."
+    }
+  ]
+}

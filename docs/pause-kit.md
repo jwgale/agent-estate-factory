@@ -13,6 +13,9 @@ Cell One is pause-safe when desired-state lives on disk and runtime is disposabl
 | Plans | `plans/` (append-only) |
 | Gate reports | `gate-reports/` |
 | Operator lifecycle | `.cell/lifecycle.json` (durable, not estate SoT) |
+| Placement leases | `.cell/placement-actual.json` (durable; spawned flags drop on suspend) |
+| Apply audit log | `.cell/apply-audit.jsonl` (append-only; also `plans/apply-*.json`) |
+| Local catalog dump | `.cell/catalog.json` (regenerable file SoT of driver cards) |
 
 ## Disposable
 
@@ -22,7 +25,7 @@ Cell One is pause-safe when desired-state lives on disk and runtime is disposabl
 | Warm desktops / session dirs | `.cell/sessions/` |
 | Regenerable actual-state | `.cell/actual-state.json` |
 
-`actual-state.json` is *not* SoT. After a pause you re-apply from the estate file. Lane files you wrote stay put.
+`actual-state.json` is *not* SoT. After a pause you re-apply from the estate file. Lane files you wrote stay put. `placement-actual.json` stays; every lease is marked `spawned=false` until resume. Cloud-agent leases are never spawned.
 
 ## Commands
 

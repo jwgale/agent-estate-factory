@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated drift models catalog supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list
+.PHONY: validate plan apply apply-gated drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits floor-suspend floor-resume
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -23,6 +23,9 @@ models:
 
 catalog:
 	cargo run -q -p model-estate -- catalog
+
+catalog-dump:
+	cargo run -q -p estate-control -- catalog --out $(STATE)/catalog.json
 
 supervisor:
 	cargo run -q -p floor-supervisor -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base .
@@ -68,6 +71,18 @@ feed-list:
 
 feed-import:
 	cargo run -q -p estate-control -- feed import --id overnight-traces --drop-dir packs --accepted-dir packs/accepted --estate $(ESTATE)
+
+leases:
+	cargo run -q -p estate-control -- leases --state-dir $(STATE)
+
+audits:
+	cargo run -q -p estate-control -- audits --state-dir $(STATE)
+
+floor-suspend:
+	cargo run -q -p floor-supervisor -- suspend --state-dir $(STATE)
+
+floor-resume:
+	cargo run -q -p floor-supervisor -- resume --estate $(ESTATE) --state-dir $(STATE) --roots-base .
 
 task-mock:
 	cargo run -q -p model-estate -- task --estate $(ESTATE) --agent horizon --act model --object xai_grok --mock

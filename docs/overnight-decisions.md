@@ -9,6 +9,9 @@ Jason was asleep. These are the seams we picked for **maximum flexibility**. Eve
 3. **Plan is the human control surface.** `estate plan` writes markdown + JSON plus a `Reviewable diff` block and regenerates `plans/INDEX.md`. `estate apply --require-plan` is gated on a covering plan hash and writes `plans/apply-*.json` plus `.cell/apply-audit.jsonl`. `estate plans` lists history. Generated plans stay gitignored; commit a specific `.md` into a PR when Jason should review apply.
 4. **Drivers stay swappable.** Ollama / llama.cpp / http-remote bind the same specialist protocol via `CELL_LOCAL_ENDPOINT`. MLX stays a stub. `host_class` is validated. Wrong host on a card fail-closes at bind (no frontier fallback).
 5. **Cloud-agent placement is declared, not wired.** `placements[]` on the estate: `box` (this Cell One) and `cloud-agent` (`cursor-cloud`, `wired: false`, no agents). Apply/resume write `.cell/placement-actual.json` leases (`box` spawned, cloud-agent not). Floor still binds one session per estate agent. Day-90 operator day can assign agents without a schema break.
+6. **Placement is a driver.** `PlacementDriver` (`box` / `cloud-agent`) is the swappable seam. `CloudAgentDriver.claim` never sets `spawned=true`, even if the estate row is wired. Floor CLI now has `suspend` / `resume` / `leases`. Drift fail-closes if a cloud-agent lease is spawned or if declared leases are missing.
+7. **Pack drop zone refuses SKUs and writes INDEX.** Pack ids must be slugs and must not encode a hardware SKU. `host_class` must be portable. `write_pack_index` regenerates `packs/INDEX.md`.
+8. **Catalog is file SoT.** `schema/local-catalog.v0.json` matches `model_estate::catalog_file()`. Apply/resume dump `.cell/catalog.json`. `estate catalog` / `estate leases` / `estate audits` are control-surface reads (no model invoke).
 
 ## Assumptions (safe to reopen)
 
