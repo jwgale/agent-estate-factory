@@ -1038,6 +1038,45 @@ mod tests {
     }
 
     #[test]
+    fn reconcile_extra_lease_and_kind_mismatch_refuse_codes() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-recon-extra-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        actual.leases[0].kind = "cloud-agent".into();
+        actual.leases.push(PlacementLease {
+            placement_id: "ghost-box".into(),
+            kind: "box".into(),
+            host_class: "any".into(),
+            agents: vec![],
+            wired: true,
+            spawned: true,
+            durable: true,
+            driver: "box".into(),
+            note: None,
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
+        });
+        write_placements(&tmp, &actual).unwrap();
+        let report = reconcile_placements(&estate, &tmp).unwrap();
+        assert!(!report.in_sync);
+        assert!(report.refuses.iter().any(|r| r.code == "extra-lease"));
+        assert!(report.refuses.iter().any(|r| r.code == "kind-mismatch"));
+        assert!(report.notes.iter().any(|n| n.contains("refuse:extra-lease")));
+        assert!(report.notes.iter().any(|n| n.contains("refuse:kind-mismatch")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn reconcile_sacred_id_on_actual_fail_closes() {
         let estate =
             estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
