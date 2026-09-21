@@ -195,7 +195,17 @@ pub(crate) fn run() -> Result<()> {
             } => crate::heal::cmd_packs_accept(&id, &proposed_dir, &accepted_dir, &estate, &curator),
         },
         Command::Expire { state_dir, forget } => cmd_expire(&state_dir, forget),
-        Command::Doctor { root, state_dir } => cmd_doctor(&root, &state_dir),
+        Command::Doctor {
+            root,
+            state_dir,
+            strict,
+        } => {
+            if strict {
+                crate::doctor_strict::cmd_doctor_strict(&root, &state_dir)
+            } else {
+                cmd_doctor(&root, &state_dir)
+            }
+        }
         Command::Sessions { command } => match command {
             SessionsCommand::List { state_dir } => cmd_sessions_list(&state_dir),
             SessionsCommand::Tail { state_dir, n } => cmd_sessions_tail(&state_dir, n),
