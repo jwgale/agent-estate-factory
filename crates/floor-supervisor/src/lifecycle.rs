@@ -77,6 +77,7 @@ pub fn write_lifecycle(state_dir: &Path, record: &LifecycleRecord) -> Result<(),
 pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
     let prev = load_lifecycle(state_dir).ok();
     stop_runtime(state_dir)?;
+    crate::mark_leases_unspawned(state_dir)?;
     let record = LifecycleRecord {
         version: 0,
         state: LifecycleState::Suspended,
@@ -175,6 +176,11 @@ mod tests {
         suspend(&state).unwrap();
         assert!(lifecycle_path(&state).is_file());
         assert!(!state.join("sessions").exists());
+        assert!(lifecycle_path(&state).is_file());
+        let leases = crate::load_placements(&state)
+            .unwrap()
+            .expect("leases survive suspend");
+        assert!(leases.leases.iter().all(|l| !l.spawned));
         assert_eq!(
             load_lifecycle(&state).unwrap().state,
             LifecycleState::Suspended
