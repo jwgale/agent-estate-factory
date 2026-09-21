@@ -39,7 +39,21 @@ unchanged. Promote stays refused. No live keys.
 
 Not part of `make smoke`. See [`FEED-LOOP.md`](FEED-LOOP.md).
 
-## 3. Backup rotate
+## 3. Opt-in frontier help and mixed walk
+
+Not part of `make smoke` or `make gate-90`.
+
+```bash
+estate help frontier
+estate help day90-mixed
+make day90-mixed
+```
+
+`estate help frontier` names the grok-4.7 specialist. `XAI_API_KEY` is required. A prompt that mentions Cyera or Rust classroom refuses before any POST, the same way a local specialist does. Local down does not call frontier.
+
+`make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml` on an isolated cell: status, plan, apply with a plan, status, doctor. That fixture already sets `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked and does not invent a binding model. No live key.
+
+## 4. Backup rotate
 
 Use an isolated cell so the walk does not touch a real `.cell/`.
 
