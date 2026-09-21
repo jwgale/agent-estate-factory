@@ -1,2 +1,3 @@
+# ureq pulls icu_* which requires rustc 1.88+. Do not pin 1.85.
 [toolchain]
 channel = "1.88.0"
