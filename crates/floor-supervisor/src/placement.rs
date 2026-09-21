@@ -26,6 +26,13 @@ pub struct PlacementLease {
     pub driver: String,
     #[serde(default)]
     pub note: Option<String>,
+    /// Optional lease lifetime. Absent = no expiry.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub issued_at: Option<u64>,
+    #[serde(default)]
+    pub expires_at: Option<u64>,
 }
 
 fn default_placement_schema() -> String {
@@ -109,6 +116,9 @@ impl PlacementDriver for BoxDriver {
             durable: true,
             driver: self.name().to_string(),
             note: Some("box lease. Sessions are regenerable from the estate file.".into()),
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
         }
     }
 }
@@ -134,6 +144,9 @@ impl PlacementDriver for CloudAgentDriver {
             note: Some(
                 "declared placement stub. Floor records the lease and does not spawn it.".into(),
             ),
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
         }
     }
 }
@@ -145,17 +158,97 @@ pub fn driver_for(kind: PlacementKind) -> Box<dyn PlacementDriver> {
     }
 }
 
-pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
-    std::fs::create_dir_all(state_dir)?;
-    let actual = PlacementActual {
+pub fn now_unix() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn stamp_ttl(lease: &mut PlacementLease, placement: &Placement, now: u64) {
+    if let Some(ttl) = placement.ttl_secs.filter(|t| *t > 0) {
+        lease.ttl_secs = Some(ttl);
+        lease.issued_at = Some(now);
+        lease.expires_at = Some(now.saturating_add(ttl));
+    }
+}
+
+/// Claim leases from desired-state. Does not write. Used by apply and dry-run.
+pub fn claim_leases(estate: &Estate) -> PlacementActual {
+    let now = now_unix();
+    PlacementActual {
         schema: default_placement_schema(),
         desired_hash: estate_hash(estate),
         leases: estate
             .placements
             .iter()
-            .map(|p| driver_for(p.kind).claim(p))
+            .map(|p| {
+                let mut lease = driver_for(p.kind).claim(p);
+                stamp_ttl(&mut lease, p, now);
+                lease
+            })
             .collect(),
+    }
+}
+
+pub fn lease_is_expired(lease: &PlacementLease, now: u64) -> bool {
+    lease.expires_at.map(|exp| now >= exp).unwrap_or(false)
+}
+
+pub fn list_expired_leases(
+    state_dir: &Path,
+    now: u64,
+) -> Result<Vec<PlacementLease>, SupervisorError> {
+    let Some(actual) = load_placements(state_dir)? else {
+        return Ok(Vec::new());
     };
+    Ok(actual
+        .leases
+        .into_iter()
+        .filter(|l| lease_is_expired(l, now))
+        .collect())
+}
+
+pub fn refuse_expired_leases(state_dir: &Path) -> Result<(), SupervisorError> {
+    let expired = list_expired_leases(state_dir, now_unix())?;
+    if expired.is_empty() {
+        return Ok(());
+    }
+    let ids = expired
+        .iter()
+        .map(|l| l.placement_id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(SupervisorError::Other(format!(
+        "refuse:expired: lease ttl elapsed for {ids}"
+    )))
+}
+
+/// Drop expired rows so apply can record fresh leases. Does not spawn.
+pub fn forget_expired_leases(state_dir: &Path) -> Result<Vec<String>, SupervisorError> {
+    let Some(mut actual) = load_placements(state_dir)? else {
+        return Ok(Vec::new());
+    };
+    let now = now_unix();
+    let mut forgotten = Vec::new();
+    actual.leases.retain(|l| {
+        if lease_is_expired(l, now) {
+            forgotten.push(l.placement_id.clone());
+            false
+        } else {
+            true
+        }
+    });
+    if !forgotten.is_empty() {
+        write_placements(state_dir, &actual)?;
+    }
+    Ok(forgotten)
+}
+
+pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
+    std::fs::create_dir_all(state_dir)?;
+    let actual = claim_leases(estate);
     write_placements(state_dir, &actual)?;
     Ok(actual)
 }
@@ -408,6 +501,7 @@ pub fn reconcile_placements(
         });
     }
     if let Some(actual) = actual.as_ref() {
+        let now = now_unix();
         for lease in &actual.leases {
             for agent in &lease.agents {
                 if is_sacred_name(agent) || estate.is_sacred(agent) {
@@ -421,13 +515,30 @@ pub fn reconcile_placements(
                     });
                 }
             }
+            if lease_is_expired(lease, now) {
+                refuses.push(Refuse {
+                    code: "expired".into(),
+                    subject: lease.placement_id.clone(),
+                    reason: format!(
+                        "refuse:expired: lease '{}' ttl elapsed (expires_at={})",
+                        lease.placement_id,
+                        lease.expires_at.unwrap_or(0)
+                    ),
+                });
+            }
         }
     }
 
-    let in_sync = drift.in_sync() && refuses.iter().all(|r| r.code != "sacred-id");
+    let in_sync = drift.in_sync()
+        && refuses
+            .iter()
+            .all(|r| r.code != "sacred-id" && r.code != "expired");
     let mut notes = drift.notes;
     if refuses.iter().any(|r| r.code == "sacred-id") {
         notes.push("refuse:sacred-id: actual lease binds a sacred exclusion".into());
+    }
+    if refuses.iter().any(|r| r.code == "expired") {
+        notes.push("refuse:expired: one or more leases have elapsed ttl".into());
     }
     Ok(ReconcileReport {
         schema: RECONCILE_SCHEMA.into(),
@@ -516,6 +627,164 @@ pub fn write_reconcile(
     std::fs::write(&json, serde_json::to_string_pretty(report).unwrap_or_default())?;
     std::fs::write(state_dir.join("reconcile.md"), render_reconcile(report))?;
     Ok(json)
+}
+
+pub const DRY_RUN_SCHEMA: &str = "cell-one.apply-dry-run.v0";
+
+/// Desired-state apply preview. Never writes leases or sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApplyDryRun {
+    #[serde(default = "default_dry_run_schema")]
+    pub schema: String,
+    pub writes: bool,
+    pub desired_hash: String,
+    pub blast_radius: String,
+    pub preview: Vec<ReconcileRow>,
+    pub expired: Vec<String>,
+    pub refuses: Vec<Refuse>,
+    pub would_refuse: bool,
+    pub notes: Vec<String>,
+}
+
+fn default_dry_run_schema() -> String {
+    DRY_RUN_SCHEMA.into()
+}
+
+/// Preview apply: blast radius + reconcile + would-refuse. Does not write.
+pub fn apply_dry_run(estate: &Estate, state_dir: &Path) -> Result<ApplyDryRun, SupervisorError> {
+    estate_schema::validate(estate).map_err(SupervisorError::Invalid)?;
+    let previous = crate::load_desired_snapshot(state_dir)?;
+    let plan = estate_schema::diff_estates(estate, previous.as_ref());
+    let preview_actual = claim_leases(estate);
+    let recon = reconcile_placements(estate, state_dir)?;
+    let expired = list_expired_leases(state_dir, now_unix())?;
+    let expired_ids: Vec<String> = expired.iter().map(|l| l.placement_id.clone()).collect();
+
+    let mut refuses = Vec::new();
+    for r in &recon.refuses {
+        if matches!(r.code.as_str(), "sacred-id" | "cloud-spawned" | "expired") {
+            refuses.push(r.clone());
+        }
+    }
+    for lease in &preview_actual.leases {
+        if lease.kind == PlacementKind::CloudAgent.as_str() && lease.spawned {
+            refuses.push(Refuse {
+                code: "cloud-spawned".into(),
+                subject: lease.placement_id.clone(),
+                reason: format!(
+                    "refuse:cloud-spawned: preview would spawn cloud-agent '{}'",
+                    lease.placement_id
+                ),
+            });
+        }
+        for agent in &lease.agents {
+            if is_sacred_name(agent) || estate.is_sacred(agent) {
+                refuses.push(Refuse {
+                    code: "sacred-id".into(),
+                    subject: format!("{}:{}", lease.placement_id, agent),
+                    reason: format!(
+                        "refuse:sacred-id: preview lease '{}' would bind sacred exclusion '{agent}'",
+                        lease.placement_id
+                    ),
+                });
+            }
+        }
+    }
+    for id in &expired_ids {
+        if !refuses.iter().any(|r| r.code == "expired" && r.subject == *id) {
+            refuses.push(Refuse {
+                code: "expired".into(),
+                subject: id.clone(),
+                reason: format!("refuse:expired: lease '{id}' ttl elapsed; apply/resume refuse"),
+            });
+        }
+    }
+
+    let preview: Vec<ReconcileRow> = preview_actual
+        .leases
+        .iter()
+        .map(|l| ReconcileRow {
+            id: l.placement_id.clone(),
+            side: "preview".into(),
+            kind: l.kind.clone(),
+            host_class: l.host_class.clone(),
+            agents: l.agents.clone(),
+            wired: l.wired,
+            spawned: Some(l.spawned),
+        })
+        .collect();
+
+    let mut notes = vec![
+        "dry-run: no leases, sessions, snapshots, or audits written".into(),
+        format!("current reconcile in_sync={}", recon.in_sync),
+    ];
+    notes.extend(recon.notes.iter().cloned());
+
+    Ok(ApplyDryRun {
+        schema: DRY_RUN_SCHEMA.into(),
+        writes: false,
+        desired_hash: estate_hash(estate),
+        blast_radius: plan.blast_radius_text,
+        preview,
+        expired: expired_ids,
+        would_refuse: !refuses.is_empty(),
+        refuses,
+        notes,
+    })
+}
+
+pub fn render_dry_run(report: &ApplyDryRun) -> String {
+    let mut out = String::from("Apply dry-run (no writes)\n");
+    out.push_str("========================\n");
+    out.push_str(&format!("schema: {}\n", report.schema));
+    out.push_str(&format!("writes: {}\n", report.writes));
+    out.push_str(&format!("would_refuse: {}\n", report.would_refuse));
+    out.push_str(&format!("desired_hash: {}\n\n", report.desired_hash));
+    out.push_str("Blast radius\n------------\n");
+    out.push_str(&report.blast_radius);
+    out.push_str("\n\nPreview leases (not written)\n----------------------------\n");
+    if report.preview.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        for row in &report.preview {
+            out.push_str(&format!(
+                "  {:<16} kind={:<12} host_class={:<16} wired={} spawned={} agents={}\n",
+                row.id,
+                row.kind,
+                row.host_class,
+                row.wired,
+                row.spawned
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                if row.agents.is_empty() {
+                    "(none)".into()
+                } else {
+                    row.agents.join(",")
+                }
+            ));
+        }
+    }
+    out.push_str("\nExpired\n-------\n");
+    if report.expired.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        for id in &report.expired {
+            out.push_str(&format!("  refuse:expired: {id}\n"));
+        }
+    }
+    out.push_str("\nWould-refuse\n------------\n");
+    if report.refuses.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        for r in &report.refuses {
+            out.push_str(&format!("  refuse:{}: {} — {}\n", r.code, r.subject, r.reason));
+        }
+    }
+    out.push_str("\nNotes\n-----\n");
+    for note in &report.notes {
+        out.push_str(&format!("  {note}\n"));
+    }
+    out
 }
 
 pub fn append_apply_audit(
@@ -620,6 +889,7 @@ mod tests {
             wired: true,
             params: serde_json::json!({}),
             note: None,
+            ttl_secs: None,
         };
         let lease = CloudAgentDriver.claim(&placement);
         assert!(!lease.spawned);
@@ -860,6 +1130,69 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("cloud-agent"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn lease_ttl_expire_refuse_and_forget() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-ttl-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        let now = now_unix();
+        if let Some(lease) = actual.leases.iter_mut().find(|l| l.kind == "box") {
+            lease.ttl_secs = Some(1);
+            lease.issued_at = Some(now.saturating_sub(10));
+            lease.expires_at = Some(now.saturating_sub(1));
+        }
+        write_placements(&tmp, &actual).unwrap();
+        assert!(!list_expired_leases(&tmp, now).unwrap().is_empty());
+        let err = refuse_expired_leases(&tmp).unwrap_err();
+        assert!(err.to_string().contains("refuse:expired"));
+        let recon = reconcile_placements(&estate, &tmp).unwrap();
+        assert!(!recon.in_sync);
+        assert!(recon.refuses.iter().any(|r| r.code == "expired"));
+        let forgotten = forget_expired_leases(&tmp).unwrap();
+        assert!(!forgotten.is_empty());
+        assert!(list_expired_leases(&tmp, now_unix()).unwrap().is_empty());
+        refuse_expired_leases(&tmp).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn apply_dry_run_does_not_write_leases() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-dry-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let report = apply_dry_run(&estate, &tmp).unwrap();
+        assert!(!report.writes);
+        assert!(!report.would_refuse, "{:?}", report.refuses);
+        assert_eq!(report.schema, DRY_RUN_SCHEMA);
+        assert!(!report.blast_radius.is_empty());
+        assert!(!tmp.join("placement-actual.json").exists());
+        assert!(!tmp.join("actual-state.json").exists());
+        assert!(!tmp.join("desired-snapshot.yaml").exists());
+        assert!(!tmp.join("reconcile.json").exists());
+        let rendered = render_dry_run(&report);
+        assert!(rendered.contains("writes: false"));
+        assert!(rendered.contains("Blast radius"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
