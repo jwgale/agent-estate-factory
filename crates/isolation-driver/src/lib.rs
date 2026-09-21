@@ -89,13 +89,24 @@ impl IsolationDriver for ProfileDirDriver {
             "lane_root": bound.lane_root,
             "note": "session dirs are disposable warm desktops; lane roots persist"
         });
-        std::fs::write(
-            session_path.join("session.json"),
-            serde_json::to_string_pretty(&record).unwrap_or_default(),
-        )
-        .map_err(|e| IsolationError(e.to_string()))?;
+        let body = serialize_pretty(&record)?;
+        std::fs::write(session_path.join("session.json"), body)
+            .map_err(|e| IsolationError(e.to_string()))?;
         Ok(bound)
     }
+}
+
+fn refuse_empty_blob(body: &str) -> Result<(), IsolationError> {
+    if body.trim().is_empty() {
+        return Err(IsolationError("serialize: empty blob".into()));
+    }
+    Ok(())
+}
+
+fn serialize_pretty<T: Serialize>(value: &T) -> Result<String, IsolationError> {
+    let body = serde_json::to_string_pretty(value).map_err(|e| IsolationError(e.to_string()))?;
+    refuse_empty_blob(&body)?;
+    Ok(body)
 }
 
 /// In-memory driver for tests — proves the supervisor does not require profile dirs.
@@ -154,7 +165,23 @@ mod tests {
             .unwrap();
         assert_eq!(bound.isolation_handle.driver, "profile-dir");
         assert!(bound.session_path.join("profile").is_dir());
-        assert!(bound.session_path.join("session.json").is_file());
+        let blob = std::fs::read_to_string(bound.session_path.join("session.json")).unwrap();
+        assert!(!blob.trim().is_empty(), "must not write empty session.json");
+        assert!(blob.contains("horizon"));
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn serialize_pretty_refuses_boom_and_empty() {
+        use serde::ser::Error;
+        struct Boom;
+        impl Serialize for Boom {
+            fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+                Err(S::Error::custom("boom"))
+            }
+        }
+        assert!(serialize_pretty(&Boom).is_err());
+        assert!(refuse_empty_blob("").is_err());
+        assert!(refuse_empty_blob("  \n").is_err());
     }
 }
