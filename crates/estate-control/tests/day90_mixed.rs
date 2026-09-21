@@ -128,6 +128,50 @@ fn mixed_estate_dry_run_http_local_against_mock() {
 }
 
 #[test]
+fn frontier_http_host_fixture_names_grok_without_touching_locked_estate() {
+    let path = repo_root().join("examples/hosts/frontier-http.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        yaml.contains("model: grok-4.7"),
+        "host fixture must name the frontier model"
+    );
+    assert!(yaml.contains("driver: http-remote"), "{yaml}");
+    let estate = load_estate(&path).unwrap();
+    assert_eq!(estate.name, "cell-one-frontier-http");
+    let frontier = estate
+        .model_bindings
+        .iter()
+        .find(|b| b.id == "frontier_http")
+        .expect("frontier_http");
+    assert_eq!(frontier.class, ModelClass::Frontier);
+    assert_eq!(frontier.driver, "http-remote");
+    assert_eq!(frontier.params["model"].as_str(), Some("grok-4.7"));
+    assert!(estate
+        .model_bindings
+        .iter()
+        .any(|b| b.id == "local_slm" && b.driver == "ollama"));
+    let locked = std::fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+    assert!(
+        locked.contains("sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930"),
+        "hash lock comment must stay"
+    );
+    assert!(
+        !locked.contains("model: grok-4.7"),
+        "hash-locked estate.yaml must not gain a binding model"
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args(["validate", "--estate", &path.display().to_string()])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn mixed_grok_4_7_validate_and_dry_run_does_not_post() {
     let path = repo_root().join("examples/fixtures/mixed-frontier-local.yaml");
     let yaml = std::fs::read_to_string(&path).unwrap();
