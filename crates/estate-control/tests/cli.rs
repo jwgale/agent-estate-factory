@@ -42,6 +42,7 @@ fn validate_invalid_fails_closed() {
         "sku-binding.yaml",
         "placement-sku.yaml",
         "placement-unknown-agent.yaml",
+        "placement-sacred-cloud.yaml",
         "not-yaml.txt",
     ] {
         let path = fixture(&format!("examples/invalid/{name}"));
@@ -212,5 +213,104 @@ fn feed_import_does_not_rewrite_estate_and_promote_fails() {
         .output()
         .unwrap();
     assert!(!promo.status.success());
+    let sku = estate_bin()
+        .args([
+            "feed",
+            "pack",
+            "--feed-dir",
+            &tmp.join("feed").display().to_string(),
+            "--drop-dir",
+            &tmp.join("drop").display().to_string(),
+            "--id",
+            "local-5090",
+        ])
+        .output()
+        .unwrap();
+    assert!(!sku.status.success(), "SKU pack id must fail closed");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn catalog_and_leases_are_file_sot() {
+    let tmp = repo_root().join(format!("target/test-catalog-leases-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let catalog = tmp.join("catalog.json");
+    let dumped = estate_bin()
+        .args(["catalog", "--out", &catalog.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(
+        dumped.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&dumped.stderr)
+    );
+    assert!(catalog.is_file());
+    let text = std::fs::read_to_string(&catalog).unwrap();
+    assert!(text.contains("cell-one.local-catalog.v0"));
+    assert!(text.contains("ollama"));
+    assert!(!text.contains("5090"));
+
+    let plans = tmp.join("plans");
+    let state = tmp.join("state");
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(planned.status.success());
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert!(state.join("catalog.json").is_file());
+    let leases = estate_bin()
+        .args(["leases", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(leases.status.success());
+    let stdout = String::from_utf8_lossy(&leases.stdout);
+    assert!(stdout.contains("cloud-agent"));
+    assert!(stdout.contains("\"spawned\": false") || stdout.contains("spawned\": false"));
+    let audits = estate_bin()
+        .args(["audits", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(audits.status.success());
+    assert!(String::from_utf8_lossy(&audits.stdout).contains("require_plan=true"));
+    let history = estate_bin()
+        .args(["history", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(history.status.success());
+    assert!(String::from_utf8_lossy(&history.stdout).contains("lifecycle history"));
+    let probes = estate_bin().args(["probes"]).output().unwrap();
+    assert!(probes.status.success());
+    let probe_out = String::from_utf8_lossy(&probes.stdout);
+    assert!(probe_out.contains("ollama"));
+    assert!(probe_out.contains("live_probed=false"));
     let _ = std::fs::remove_dir_all(&tmp);
 }

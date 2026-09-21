@@ -1,13 +1,18 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use estate_schema::{
-    describe, describe_placements, diff_estates, estate_hash, list_plans, load_estate,
-    load_estate_unvalidated, plan_covers_hash, render_plan, validate, write_plan,
+    covering_plan, describe, describe_placements, diff_estates, estate_hash,
+    list_plans, load_estate, load_estate_unvalidated, plan_against_is_fresh, render_plan, validate,
+    write_plan,
 };
-use feed_collector::{import_pack, list_drop_packs, materialize_from_feed, refuse_promote};
+use feed_collector::{
+    import_pack, list_drop_packs, load_cursor, materialize_from_feed, refuse_promote,
+    write_pack_index,
+};
 use floor_supervisor::{
-    append_apply_audit, apply_with_profile_dir, drift_with_roots, load_desired_snapshot,
-    load_lifecycle, load_placements, mark_running, record_placements, resume, suspend, ApplyAudit,
+    append_apply_audit, apply_with_profile_dir, drift_with_roots, list_apply_audits,
+    list_lifecycle_events, load_desired_snapshot, load_lifecycle, load_placements, mark_running,
+    record_placements, resume, suspend, ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -58,6 +63,9 @@ enum Command {
         import_pack: Option<String>,
         #[arg(long, default_value = "packs")]
         packs_dir: PathBuf,
+        /// Fail if covering plan against_hash does not match last apply.
+        #[arg(long, default_value_t = false)]
+        require_fresh_plan: bool,
     },
     /// Compare desired estate to regenerable actual-state.
     Drift {
@@ -106,6 +114,28 @@ enum Command {
         #[command(subcommand)]
         command: FeedCommand,
     },
+    /// Dump portable local catalog (file SoT). Does not invoke models.
+    Catalog {
+        #[arg(long, default_value = ".cell/catalog.json")]
+        out: PathBuf,
+    },
+    /// Print durable placement leases. Cloud-agent must stay unspawned.
+    Leases {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print apply-audit.jsonl (gated apply history).
+    Audits {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print append-only lifecycle.jsonl (suspend/resume/apply).
+    History {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Catalog-level driver probes. Not live pings. Does not invoke models.
+    Probes,
 }
 
 #[derive(Subcommand)]
@@ -140,6 +170,11 @@ enum FeedCommand {
         #[arg(long)]
         id: String,
     },
+    /// Print durable feed-cursor.json watermark.
+    Cursor {
+        #[arg(long, default_value = ".cell/feed")]
+        feed_dir: PathBuf,
+    },
 }
 
 fn main() {
@@ -167,6 +202,7 @@ fn run() -> Result<()> {
             require_plan,
             import_pack,
             packs_dir,
+            require_fresh_plan,
         } => cmd_apply(
             &estate,
             &state_dir,
@@ -175,6 +211,7 @@ fn run() -> Result<()> {
             require_plan,
             import_pack.as_deref(),
             &packs_dir,
+            require_fresh_plan,
         ),
         Command::Drift {
             estate,
@@ -208,7 +245,13 @@ fn run() -> Result<()> {
                 estate,
             } => cmd_feed_import(&id, &drop_dir, &accepted_dir, &estate),
             FeedCommand::Promote { id } => cmd_feed_promote(&id),
+            FeedCommand::Cursor { feed_dir } => cmd_feed_cursor(&feed_dir),
         },
+        Command::Catalog { out } => cmd_catalog(&out),
+        Command::Leases { state_dir } => cmd_leases(&state_dir),
+        Command::Audits { state_dir } => cmd_audits(&state_dir),
+        Command::History { state_dir } => cmd_history(&state_dir),
+        Command::Probes => cmd_probes(),
     }
 }
 
@@ -261,11 +304,27 @@ fn cmd_apply(
     require_plan: bool,
     import_pack_id: Option<&str>,
     packs_dir: &Path,
+    require_fresh_plan: bool,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let hash = estate_hash(&estate);
-    if require_plan && !plan_covers_hash(plans_dir, &hash) {
+    let covering = covering_plan(plans_dir, &hash);
+    let covering_stem = covering.as_ref().map(|c| c.stem.clone());
+    if (require_plan || require_fresh_plan) && covering.is_none() {
         bail!("apply gated: no plan on disk for {hash}; run estate plan first");
+    }
+    let last_applied = load_desired_snapshot(state_dir)?
+        .as_ref()
+        .map(estate_hash);
+    let fresh = covering
+        .as_ref()
+        .map(|c| plan_against_is_fresh(&c.plan, last_applied.as_deref()))
+        .unwrap_or(true);
+    if require_fresh_plan && !fresh {
+        bail!(
+            "apply gated: covering plan against_hash does not match last apply {}",
+            last_applied.unwrap_or_else(|| "-".into())
+        );
     }
     let mut imported = Vec::new();
     if let Some(id) = import_pack_id {
@@ -288,6 +347,7 @@ fn cmd_apply(
     model_estate::record_bindings(&estate, state_dir)?;
     record_placements(&estate, state_dir)?;
     mark_running(&estate, state_dir)?;
+    let _ = model_estate::write_catalog(&state_dir.join("catalog.json"));
     let audit = ApplyAudit {
         created_at: chrono_stamp(),
         desired_hash: hash,
@@ -295,6 +355,9 @@ fn cmd_apply(
         imported_packs: imported,
         require_plan,
         note: "Apply audit. Estate file unchanged. Cloud-agent placements not spawned.".into(),
+        covering_plan: covering_stem,
+        cloud_agent_spawned: false,
+        fresh_plan: fresh,
     };
     let audit_path = append_apply_audit(plans_dir, state_dir, &audit)?;
     println!(
@@ -323,7 +386,12 @@ fn cmd_plans(plans_dir: &Path) -> Result<()> {
     }
     println!("plan history ({})", plans_dir.display());
     for entry in entries {
-        println!("  {}", entry.markdown);
+        println!(
+            "  {} hash={} against={}",
+            entry.markdown,
+            entry.desired_hash.as_deref().unwrap_or("-"),
+            entry.against_hash.as_deref().unwrap_or("(greenfield)")
+        );
     }
     Ok(())
 }
@@ -340,6 +408,7 @@ fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let (actual, record) = resume(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
     record_placements(&estate, state_dir)?;
+    let _ = model_estate::write_catalog(&state_dir.join("catalog.json"));
     println!(
         "resumed {} sessions; lifecycle {}",
         actual.sessions.len(),
@@ -367,9 +436,34 @@ fn cmd_status(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
         }
     }
     println!("floor in_sync: {}", report.in_sync);
+    if !report.spawned_cloud_agents.is_empty() {
+        bail!(
+            "cloud-agent lease spawned (fail closed): {}",
+            report.spawned_cloud_agents.join(", ")
+        );
+    }
     if !report.notes.is_empty() {
         for note in &report.notes {
             println!("  {note}");
+        }
+    }
+    let history = list_lifecycle_events(state_dir)?;
+    if !history.is_empty() {
+        println!("lifecycle history: {}", history.len());
+        if let Some(last) = history.last() {
+            println!("  last {} -> {} ({})", last.action, last.to, last.ts);
+        }
+    }
+    let audits = list_apply_audits(state_dir)?;
+    if !audits.is_empty() {
+        println!("apply audits: {}", audits.len());
+        if let Some(last) = audits.last() {
+            println!(
+                "  last require_plan={} covering={} imported={}",
+                last.require_plan,
+                last.covering_plan.as_deref().unwrap_or("-"),
+                last.imported_packs.len()
+            );
         }
     }
     Ok(())
@@ -388,8 +482,56 @@ fn cmd_feed_pack(feed_dir: &Path, drop_dir: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_catalog(out: &Path) -> Result<()> {
+    println!("{}", model_estate::render_catalog());
+    let written = model_estate::write_catalog(out)?;
+    println!("wrote catalog file {}", written.display());
+    Ok(())
+}
+
+fn cmd_leases(state_dir: &Path) -> Result<()> {
+    match load_placements(state_dir)? {
+        None => {
+            println!("no placement-actual.json under {}", state_dir.display());
+            println!("run apply or resume to record leases");
+            Ok(())
+        }
+        Some(places) => {
+            println!("{}", serde_json::to_string_pretty(&places)?);
+            for lease in &places.leases {
+                if lease.kind == "cloud-agent" && lease.spawned {
+                    bail!("cloud-agent lease spawned (fail closed)");
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn cmd_audits(state_dir: &Path) -> Result<()> {
+    let audits = list_apply_audits(state_dir)?;
+    if audits.is_empty() {
+        println!("no apply-audit.jsonl under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("apply audits ({})", audits.len());
+    for audit in audits {
+        println!(
+            "  {} hash={} sessions={} require_plan={} covering={} spawned_cloud={}",
+            audit.created_at,
+            audit.desired_hash,
+            audit.sessions,
+            audit.require_plan,
+            audit.covering_plan.as_deref().unwrap_or("-"),
+            audit.cloud_agent_spawned
+        );
+    }
+    Ok(())
+}
+
 fn cmd_feed_list(drop_dir: &Path) -> Result<()> {
     let packs = list_drop_packs(drop_dir)?;
+    let _ = write_pack_index(drop_dir);
     if packs.is_empty() {
         println!("no candidate packs in {}", drop_dir.display());
         return Ok(());
@@ -440,6 +582,52 @@ fn cmd_feed_promote(id: &str) -> Result<()> {
         Ok(()) => unreachable!("promote has no success path"),
         Err(err) => bail!("{err}"),
     }
+}
+
+fn cmd_feed_cursor(feed_dir: &Path) -> Result<()> {
+    match load_cursor(feed_dir)? {
+        None => {
+            println!("no feed-cursor.json under {}", feed_dir.display());
+            Ok(())
+        }
+        Some(cursor) => {
+            println!("{}", serde_json::to_string_pretty(&cursor)?);
+            Ok(())
+        }
+    }
+}
+
+fn cmd_history(state_dir: &Path) -> Result<()> {
+    let events = list_lifecycle_events(state_dir)?;
+    if events.is_empty() {
+        println!("no lifecycle.jsonl under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("lifecycle history ({})", events.len());
+    for ev in events {
+        println!(
+            "  {} {} -> {} hash={}",
+            ev.action,
+            ev.from.as_deref().unwrap_or("-"),
+            ev.to,
+            ev.desired_hash.as_deref().unwrap_or("-")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_probes() -> Result<()> {
+    let probes = model_estate::catalog_probes();
+    for probe in probes {
+        println!(
+            "  {:<12} status={:<12} bindable={} live_probed={} host_class={}",
+            probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
+        );
+        if !probe.live_probed {
+            println!("    {}", probe.note);
+        }
+    }
+    Ok(())
 }
 
 fn chrono_stamp() -> String {
