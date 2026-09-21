@@ -16,11 +16,12 @@ pub use lifecycle::{
     LIFECYCLE_FILE, LIFECYCLE_LOG, LIFECYCLE_SCHEMA, LIFECYCLE_VERSION,
 };
 pub use placement::{
-    append_apply_audit, driver_for, drift_placements, list_apply_audits, load_placements,
-    mark_leases_unspawned, reconcile_placements, record_placements, render_reconcile,
-    write_placements, write_reconcile, ApplyAudit, BoxDriver, CloudAgentDriver, PlacementActual,
-    PlacementDriver, PlacementDrift, PlacementLease, ReconcileReport, ReconcileRow, Refuse,
-    RECONCILE_SCHEMA,
+    append_apply_audit, apply_dry_run, claim_leases, driver_for, drift_placements,
+    forget_expired_leases, lease_is_expired, list_apply_audits, list_expired_leases, load_placements,
+    mark_leases_unspawned, now_unix, reconcile_placements, record_placements, refuse_expired_leases,
+    render_dry_run, render_reconcile, write_placements, write_reconcile, ApplyAudit, ApplyDryRun,
+    BoxDriver, CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
+    ReconcileReport, ReconcileRow, Refuse, DRY_RUN_SCHEMA, RECONCILE_SCHEMA,
 };
 
 #[derive(Debug, Error)]
@@ -77,6 +78,7 @@ pub fn apply(
     driver: &dyn IsolationDriver,
 ) -> Result<ActualState, SupervisorError> {
     estate_schema::validate(estate).map_err(SupervisorError::Invalid)?;
+    refuse_expired_leases(state_dir)?;
     std::fs::create_dir_all(state_dir)?;
     std::fs::create_dir_all(state_dir.join("sessions"))?;
 
@@ -416,7 +418,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let p = std::env.temp_dir().join(format!("cell-one-floor-{n}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("cell-one-floor-{n}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         p
