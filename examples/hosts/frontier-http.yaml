@@ -1,0 +1,104 @@
+# Frontier http-remote binding that names model grok-4.7.
+# Not a host-class alias. examples/estate.yaml stays hash-locked.
+# No live call. No key in this file.
+
+version: 0
+kind: agent-estate
+name: cell-one-frontier-http
+schema: schema/estate.v0.schema.json
+default_effect: deny
+
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models:
+      - id: frontier_http
+        description: Frontier complete via http-remote, model grok-4.7 (no live call)
+      - id: local_slm
+        description: Local specialist in-path (A8)
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+    tools:
+      - id: notes-append
+        description: Append a note inside the Research lane
+    mounts:
+      - id: notes
+        path: notes
+        description: Research notes directory (own lane only)
+    mcp: []
+    models:
+      - id: local_slm
+        description: In-path policy-precheck before notes-append
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models: []
+
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+
+intentions: []
+
+model_bindings:
+  - id: frontier_http
+    class: frontier
+    driver: http-remote
+    params:
+      hint: openai-compat
+      endpoint_env: CELL_FRONTIER_ENDPOINT
+      model: grok-4.7
+    wired: true
+  - id: local_slm
+    class: local
+    driver: ollama
+    params:
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      job: policy-precheck
+    wired: true
+
+enrich_packs:
+  curator: jason
+  policy: manual
+  packs: []
+
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: any
+    agents: [horizon, research, sanctum]
+    wired: true
+    note: This machine. Isolation driver is profile-dir today; swappable later.
+  - id: cursor-cloud
+    kind: cloud-agent
+    host_class: any
+    agents: []
+    wired: false
+    note: Declared stub. Floor will not spawn this.
+
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera, cyera_ci]
+    reason: Cyera CI must not be an estate agent. Sanctum is not Cyera.
+  - id: rust-classroom
+    aliases: [rust_classroom]
+    reason: Rust classroom stays outside the estate; it is not an agent lane.
