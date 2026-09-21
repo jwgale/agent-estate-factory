@@ -3,6 +3,7 @@
 # Walk: suspend → plan → apply → feed import → resume (+ convey + packs).
 # Wave 6: policy / catalog caps / backup / restore dry-run / pause-proof.
 # Wave 7: status one-pager, --curator jason, convey sync keeps extra hops.
+# Wave 8: idempotent apply, plan export-pr, sacred overlay, mixed proof.
 # Do not call make smoke from here (smoke wraps this script).
 set -euo pipefail
 
@@ -28,6 +29,7 @@ cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/rtx-co
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/apple-silicon.yaml"
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/nvidia-rental.yaml"
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/multi-host.yaml"
+cargo run -q -p estate-control -- validate --estate "$ROOT/examples/fixtures/mixed-frontier-local.yaml"
 
 set +e
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/invalid/host-class-bad.yaml" >/tmp/opday-host.out 2>/tmp/opday-host.err
@@ -64,6 +66,61 @@ if [[ ! -f "$STATE/sessions.jsonl" ]]; then
 fi
 echo "PASS  session journal"
 
+echo "-- idempotent apply --"
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" >/tmp/opday-unchanged.out 2>/tmp/opday-unchanged.err
+if ! grep -q "unchanged" /tmp/opday-unchanged.out; then
+  echo "FAIL  second apply must note unchanged"
+  cat /tmp/opday-unchanged.out /tmp/opday-unchanged.err
+  exit 1
+fi
+echo "PASS  apply unchanged"
+
+echo "-- apply drift refuse / --force --"
+rm -rf "$STATE/sessions/horizon"
+set +e
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" >/tmp/opday-drift.out 2>/tmp/opday-drift.err
+drift_rc=$?
+set -e
+if [[ "$drift_rc" -eq 0 ]]; then
+  echo "FAIL  drifted apply must refuse without --force"
+  exit 1
+fi
+if ! grep -q "refuse:drift" /tmp/opday-drift.out /tmp/opday-drift.err; then
+  echo "FAIL  drifted apply must print refuse:drift"
+  cat /tmp/opday-drift.out /tmp/opday-drift.err
+  exit 1
+fi
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --force
+echo "PASS  apply drift / --force"
+
+echo "-- plan export-pr --"
+cargo run -q -p estate-control -- plan export-pr --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS" --reviewed-dir "$REVIEWED" --out "$PLANS/PR.md" >/tmp/opday-pr.out
+if [[ ! -f "$PLANS/PR.md" ]]; then
+  echo "FAIL  plans/PR.md missing"
+  exit 1
+fi
+if ! grep -q "Blast radius" "$PLANS/PR.md" || ! grep -q "Refuse risks" "$PLANS/PR.md" || ! grep -q "Reviewed" "$PLANS/PR.md"; then
+  echo "FAIL  export-pr markdown missing required sections"
+  exit 1
+fi
+echo "PASS  plan export-pr"
+
+echo "-- sacred overlay refuse --"
+set +e
+cargo run -q -p estate-control -- convey hop --id lab-notebook --capability lane-tool --state-dir "$STATE" >/tmp/opday-sacred-hop.out 2>/tmp/opday-sacred-hop.err
+overlay_hop=$?
+set -e
+if [[ "$overlay_hop" -eq 0 ]]; then
+  echo "FAIL  overlay sacred hop must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:sacred-id" /tmp/opday-sacred-hop.out /tmp/opday-sacred-hop.err; then
+  echo "FAIL  overlay hop must print refuse:sacred-id"
+  cat /tmp/opday-sacred-hop.out /tmp/opday-sacred-hop.err
+  exit 1
+fi
+echo "PASS  sacred overlay refuse"
+
 echo "-- suspend --"
 cargo run -q -p estate-control -- suspend --state-dir "$STATE"
 
@@ -87,7 +144,8 @@ if [[ "$stale" -eq 0 ]]; then
 fi
 
 echo "-- apply --require-plan --require-fresh-plan --"
-cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --require-plan --require-fresh-plan
+# After suspend, sessions/ is gone → drift. --force reconverges (pause-safe).
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --require-plan --require-fresh-plan --force
 
 echo "-- plan diff (last-applied vs same estate; must not grow) --"
 cargo run -q -p estate-control -- plan diff --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS"
