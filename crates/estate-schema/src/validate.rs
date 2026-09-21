@@ -200,7 +200,7 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         if let Some(hc) = binding.params.get("host_class").and_then(|v| v.as_str()) {
             if !is_host_class(hc) {
                 errors.push(format!(
-                    "model_binding '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                    "model_binding '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any (aliases: rtx-consumer, nvidia-rental)",
                     binding.id, hc
                 ));
             }
@@ -218,7 +218,7 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         if let Some(hc) = &placement.host_class {
             if !is_host_class(hc) {
                 errors.push(format!(
-                    "placement '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                    "placement '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any (aliases: rtx-consumer, nvidia-rental)",
                     placement.id, hc
                 ));
             }
