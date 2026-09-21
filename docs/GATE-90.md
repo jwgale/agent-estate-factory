@@ -58,6 +58,7 @@ estate doctor --strict
 | Dry-run refuse writes nothing | green | `--require-plan`, policy-deny, expired; snapshot includes conveyor/sessions |
 | Curator clap vs `refuse:curator` | green | wrong curator refuses on import/accept/apply-import; accept missing flag is clap |
 | Tampered SKU `host_class` on leases | green | slim-parse `refuse:bad-host-class`; aliases still round-trip |
+| Call / status / leases / reconcile on SKU `host_class` | green | `refuse:bad-host-class`; no rewrite to `any`; record writes nothing |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
