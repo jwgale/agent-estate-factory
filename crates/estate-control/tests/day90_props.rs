@@ -125,7 +125,8 @@ fn makefile_contract_gate90_stays_local() {
                 && (t.contains("make gate-90")
                     || t.contains("make smoke")
                     || t.contains("make day90")
-                    || t.contains("make feed-loop"))
+                    || t.contains("make feed-loop")
+                    || t.contains("make day90-mixed"))
         }),
         "ci.yml must not invoke local gates"
     );
