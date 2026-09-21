@@ -336,3 +336,42 @@ fn wave5_journal_hop_ttl_plan_diff_apiver() {
     assert!(!estate_schema::blast_grows(&green, &empty));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn wave6_backup_policy_pause_catalog() {
+    let e = example();
+    let pack = estate_schema::PolicyPack::default();
+    estate_schema::refuse_policy(&pack).unwrap();
+    estate_schema::policy_allows(&pack, "apply", None).unwrap();
+    assert!(estate_schema::policy_allows(&pack, "spawn-cloud", None)
+        .unwrap_err()
+        .contains("refuse:unknown-action"));
+
+    let root = tmp();
+    let state = root.join("state");
+    apply_with_profile_dir(&e, &state, &root).unwrap();
+    let (archive, meta) =
+        floor_supervisor::backup_cell(&state, None, &root.join("backups"), Some(&e)).unwrap();
+    assert!(!meta.sacred_ids.is_empty());
+    assert!(archive.join(floor_supervisor::BACKUP_META).is_file());
+    let dry = floor_supervisor::restore_cell(&archive, &root.join("empty"), None, Some(&e), true)
+        .unwrap();
+    assert!(!dry.writes);
+    assert!(!dry.would_refuse);
+    assert!(!root.join("empty").join("placement-actual.json").exists());
+
+    let proof = floor_supervisor::pause_kit_proof(&e, &root.join("pause"), &root).unwrap();
+    assert!(proof.leases_survived);
+    assert!(!proof.cloud_spawned);
+    assert!(proof.in_sync);
+    assert!(proof.sessions_dropped);
+
+    let snap = model_estate::catalog_file();
+    assert!(snap.cards.iter().all(|c| c.caps.context_tokens > 0));
+    assert!(snap.cards.iter().any(|c| c.driver_id == "mlx" && c.caps.streaming));
+    assert!(snap
+        .cards
+        .iter()
+        .any(|c| c.driver_id == "vllm" && c.caps.tools));
+    let _ = std::fs::remove_dir_all(&root);
+}
