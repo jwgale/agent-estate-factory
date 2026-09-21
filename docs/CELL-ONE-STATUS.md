@@ -6,7 +6,7 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1-#14 plus this slice)
+## On `main` (PR #1-#15 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -25,12 +25,12 @@ Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 
 | What was broken | What it does now |
 | --- | --- |
-| Tampered lease `host_class` (example `rtx-5090`) became `any` on convey sync. | Slim-parse is `refuse:bad-host-class`. No hop files. Aliases still round-trip. Overlay `locked: []` cannot drop locked ids. |
+| After #15, `convey call` still slim-parsed `placement-actual.json` with `if let Ok`, so a SKU `host_class` (example `rtx-5090`) skipped the not-live check and could allow a hop. Floor `record` / claim could persist that SKU as a portable lease if validate were skipped. | Call, sync, status, leases, and reconcile are `refuse:bad-host-class`. Record writes nothing. Claim keeps the raw SKU (does not invent `any`). |
 
 ## Bug fixes on #10-#13 (plain English)
 
 | PR | What was broken | What it does now |
-| --- | --- |
+| --- | --- | --- |
 | #10 | After a placement lease expired, `expire --forget` dropped the row. The next `apply` treated that as drift and demanded `--force`. | Same desired estate restamps the lease (`lease-refresh`). No `--force`. Isolated TTL e2e on `ttl-short.yaml`. |
 | #11 | Overlay e2e was missing. Easy to believe `locked: []` in a sacred file would drop Cyera CI / Rust classroom. | Isolated sacred overlay e2e: omit-locked file still refuses those two on convey. `lab-notebook` refuses only with the overlay installed. |
 | #12 | `convey expire --forget` deleted hop *declarations* with the leases. The next `call` said `refuse:no-lease`. | Forget keeps the hop decl. `call` restamps (`lease-refresh`), same idea as #10. Expired still refuses until forget. |
@@ -61,6 +61,7 @@ Isolated loops without live boxes:
 - Sacred overlay: `sacred-omit-locked.yaml` + `tests/day90_sacred.rs`
 - Hop TTL: `tests/day90_hop.rs`
 - Contracts: `tests/day90_contracts.rs` / `tests/day90_plan.rs`
+- Bad-host-class readers: `tests/day90_sku.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.

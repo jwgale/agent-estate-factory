@@ -2,8 +2,8 @@
 //! Does not grow placement.rs. No live Mac / GPU. Cloud never spawned.
 
 use floor_supervisor::{
-    claim_leases, load_placements, reconcile_placements, write_placements, PlacementActual,
-    PlacementLease,
+    claim_leases, load_placements, reconcile_placements, record_placements, write_placements,
+    PlacementActual, PlacementLease,
 };
 use std::path::PathBuf;
 
@@ -16,6 +16,7 @@ const CODES: &[&str] = &[
     "cloud-spawned",
     "sacred-id",
     "expired",
+    "bad-host-class",
 ];
 
 fn estate() -> estate_schema::Estate {
@@ -88,6 +89,9 @@ fn mutate(code: &str, actual: &mut PlacementActual) {
             lease.issued_at = Some(0);
             lease.expires_at = Some(1);
         }
+        "bad-host-class" => {
+            box_lease(actual).host_class = "rtx-5090".into();
+        }
         other => panic!("unknown refuse code {other}"),
     }
 }
@@ -142,5 +146,37 @@ fn clean_actual_round_trip_has_no_refuse_codes() {
         );
     }
     assert!(report.in_sync);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn record_refuses_sku_host_class_and_claim_does_not_write_any() {
+    let mut estate = estate();
+    let box_place = estate
+        .placements
+        .iter_mut()
+        .find(|p| p.id == "cell-one-box")
+        .expect("cell-one-box");
+    box_place.host_class = Some("rtx-5090".into());
+    let claimed = claim_leases(&estate);
+    let box_lease = claimed
+        .leases
+        .iter()
+        .find(|l| l.placement_id == "cell-one-box")
+        .expect("claimed box");
+    assert_eq!(
+        box_lease.host_class, "rtx-5090",
+        "claim must not launder a SKU to any"
+    );
+    let dir = tmp("record-sku");
+    let err = record_placements(&estate, &dir).unwrap_err();
+    assert!(
+        err.to_string().contains("refuse:bad-host-class"),
+        "{err}"
+    );
+    assert!(
+        !dir.join("placement-actual.json").exists(),
+        "record must not write after a host_class refuse"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

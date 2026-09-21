@@ -9,7 +9,7 @@ use feed_collector::list_open_proposals;
 use floor_supervisor::{
     drift_with_roots,
     forget_expired_leases, list_apply_audits, list_expired_leases, load_lifecycle, load_placements,
-    now_unix,
+    now_unix, refuse_lease_host_classes,
 };
 use std::path::Path;
 
@@ -206,6 +206,9 @@ pub(crate) fn cmd_status(
     let life = load_lifecycle(state_dir)?;
     let report = drift_with_roots(&estate, state_dir, Some(roots_base))?;
     let places = load_placements(state_dir)?;
+    if let Some(actual) = places.as_ref() {
+        refuse_lease_host_classes(actual)?;
+    }
     let lease_n = places.as_ref().map(|p| p.leases.len()).unwrap_or(0);
     let box_n = places
         .as_ref()
@@ -390,4 +393,3 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 }
-

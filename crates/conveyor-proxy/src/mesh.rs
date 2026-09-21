@@ -449,11 +449,10 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
     if !lease.granted {
         return Err(MeshError::Ungranted(hop_id.to_string()));
     }
-    if let Ok(places) = slim_parse_placement_actual(&state_dir.join("placement-actual.json")) {
-        if let Some(place) = places.iter().find(|p| p.placement_id == hop_id) {
-            if !place.spawned {
-                return Err(MeshError::NotLive(hop_id.to_string()));
-            }
+    let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
+    if let Some(place) = places.iter().find(|p| p.placement_id == hop_id) {
+        if !place.spawned {
+            return Err(MeshError::NotLive(hop_id.to_string()));
         }
     }
     let mut call = hop_driver(&lease.kind)?.call(&lease, capability)?;
@@ -784,6 +783,54 @@ mod tests {
         std::fs::write(dir.join("placement-actual.json"), garbage.to_string()).unwrap();
         let err = slim_parse_placement_actual(&dir.join("placement-actual.json")).unwrap_err();
         assert!(matches!(err, MeshError::BadHostClass(ref h) if h == "not-a-host"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn call_does_not_skip_liveness_when_host_class_is_sku() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let actual = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "desired_hash": "sha256:test",
+            "leases": [
+                {
+                    "placement_id": "cell-one-box",
+                    "kind": "box",
+                    "host_class": "rtx-5090",
+                    "spawned": false,
+                    "wired": true
+                }
+            ]
+        });
+        std::fs::write(dir.join("placement-actual.json"), actual.to_string()).unwrap();
+        let before = std::fs::read_to_string(dir.join("placement-actual.json")).unwrap();
+        let err = call_hop(&dir, "cell-one-box", "lane-tool").unwrap_err();
+        assert!(
+            matches!(err, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
+            "{err}"
+        );
+        assert!(
+            err.to_string().contains("refuse:bad-host-class"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
+            before,
+            "call must not rewrite a SKU host_class to any"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
