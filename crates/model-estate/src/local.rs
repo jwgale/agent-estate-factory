@@ -4,12 +4,67 @@ use estate_schema::{is_sacred_name, ModelBinding};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Catalog-level driver probe. Not a live ping. Fail closed at `specialist()`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DriverProbe {
+    pub driver: String,
+    pub runtime: String,
+    pub status: String,
+    pub host_class: String,
+    pub bindable: bool,
+    /// Always false overnight. Live ping is data-plane, not control.
+    pub live_probed: bool,
+    pub note: String,
+}
+
 /// Local specialist driver. Hardware is chosen by `runtime()`, not by a SKU in the estate.
 pub trait LocalDriver: Send + Sync {
     fn id(&self) -> &str;
     fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError>;
     fn runtime(&self) -> LocalRuntime {
         LocalRuntime::HttpRemote
+    }
+    fn probe(&self) -> DriverProbe {
+        probe_runtime(self.id(), self.runtime(), "any")
+    }
+}
+
+pub fn probe_runtime(id: &str, runtime: LocalRuntime, host_class: &str) -> DriverProbe {
+    let (status, bindable, note) = match runtime {
+        LocalRuntime::Ollama => (
+            "supported",
+            true,
+            "Ollama-first. Catalog-level probe; not a live ping.",
+        ),
+        LocalRuntime::LlamaCpp => (
+            "swap-proof",
+            true,
+            "llama.cpp swap-proof sibling. Same specialist protocol.",
+        ),
+        LocalRuntime::HttpRemote => (
+            "supported",
+            true,
+            "CELL_LOCAL_ENDPOINT remote pattern. Catalog-level probe.",
+        ),
+        LocalRuntime::Mlx => (
+            "stub",
+            false,
+            "Apple MLX stub. Same catalog/route/bind API; live Mac proof later.",
+        ),
+        LocalRuntime::Vllm | LocalRuntime::Trt => (
+            "experimental",
+            false,
+            "Experimental until Jason verifies. Fail closed; no frontier fallback.",
+        ),
+    };
+    DriverProbe {
+        driver: id.to_string(),
+        runtime: runtime.as_str().to_string(),
+        status: status.into(),
+        host_class: host_class.into(),
+        bindable,
+        live_probed: false,
+        note: note.into(),
     }
 }
 
@@ -114,6 +169,10 @@ impl LocalDriver for MlxDriver {
 
     fn specialist(&self, _req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
         Err(ModelError::Stub(self.id.clone()))
+    }
+
+    fn probe(&self) -> DriverProbe {
+        probe_runtime(&self.id, LocalRuntime::Mlx, "apple-silicon")
     }
 }
 

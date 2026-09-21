@@ -22,7 +22,8 @@
 use crate::error::ModelError;
 use crate::frontier::param_str;
 use crate::local::{
-    DownLocal, ExperimentalLocal, HttpLocal, LocalDriver, MlxDriver, UnwiredLocal,
+    probe_runtime, DownLocal, DriverProbe, ExperimentalLocal, HttpLocal, LocalDriver, MlxDriver,
+    UnwiredLocal,
 };
 use estate_schema::ModelBinding;
 
@@ -160,6 +161,21 @@ pub fn catalog() -> &'static [CatalogCard] {
     CATALOG
 }
 
+/// Catalog-level probes. Not live pings. Control may print these.
+pub fn catalog_probes() -> Vec<DriverProbe> {
+    CATALOG
+        .iter()
+        .map(|c| {
+            let host = if c.hosts.len() == 1 {
+                c.hosts[0].as_str()
+            } else {
+                "any"
+            };
+            probe_runtime(c.driver_id, c.runtime, host)
+        })
+        .collect()
+}
+
 pub fn card(runtime: LocalRuntime) -> &'static CatalogCard {
     CATALOG
         .iter()
@@ -258,6 +274,60 @@ pub fn bind_local(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelE
             }
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CatalogFileCard {
+    pub driver_id: String,
+    pub runtime: String,
+    pub status: String,
+    pub hosts: Vec<String>,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CatalogFile {
+    pub schema: String,
+    pub note: String,
+    pub hosts: Vec<String>,
+    pub cards: Vec<CatalogFileCard>,
+}
+
+/// File SoT for the portable local catalog. Hardware is a driver choice.
+pub fn catalog_file() -> CatalogFile {
+    CatalogFile {
+        schema: "cell-one.local-catalog.v0".into(),
+        note: "Hardware is a driver choice, not a product fork. Not an LM Studio. supported = Ollama (+ llama.cpp) green on the box.".into(),
+        hosts: vec![
+            HostClass::ConsumerNvidia.as_str().into(),
+            HostClass::AppleSilicon.as_str().into(),
+            HostClass::RentedNvidia.as_str().into(),
+            HostClass::Any.as_str().into(),
+        ],
+        cards: CATALOG
+            .iter()
+            .map(|card| CatalogFileCard {
+                driver_id: card.driver_id.to_string(),
+                runtime: card.runtime.as_str().to_string(),
+                status: card.status.as_str().to_string(),
+                hosts: card.hosts.iter().map(|h| h.as_str().to_string()).collect(),
+                notes: card.notes.to_string(),
+            })
+            .collect(),
+    }
+}
+
+pub fn write_catalog(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(&catalog_file()).unwrap_or_default(),
+    )?;
+    Ok(path.to_path_buf())
 }
 
 pub fn render_catalog() -> String {
@@ -360,6 +430,10 @@ mod tests {
         assert!(matches!(err, ModelError::Stub(_)));
         assert!(err.is_local_down());
         assert_eq!(driver.runtime(), LocalRuntime::Mlx);
+        let probe = driver.probe();
+        assert!(!probe.bindable);
+        assert!(!probe.live_probed);
+        assert_eq!(probe.host_class, "apple-silicon");
     }
 
     #[test]
@@ -393,6 +467,31 @@ mod tests {
             Err(e) => e,
         };
         assert!(err.to_string().contains("host_class"));
+    }
+
+    #[test]
+    fn catalog_probes_are_not_live_pings() {
+        let probes = catalog_probes();
+        assert_eq!(probes.len(), CATALOG.len());
+        assert!(probes.iter().all(|p| !p.live_probed));
+        let mlx = probes.iter().find(|p| p.driver == "mlx").unwrap();
+        assert!(!mlx.bindable);
+        assert_eq!(mlx.status, "stub");
+        let ollama = probes.iter().find(|p| p.driver == "ollama").unwrap();
+        assert!(ollama.bindable);
+        assert_eq!(ollama.status, "supported");
+    }
+
+    #[test]
+    fn catalog_file_is_committed_sot() {
+        let snap = catalog_file();
+        assert_eq!(snap.schema, "cell-one.local-catalog.v0");
+        assert_eq!(snap.cards.len(), CATALOG.len());
+        assert!(snap.cards.iter().any(|c| c.driver_id == "ollama" && c.status == "supported"));
+        assert!(snap.cards.iter().any(|c| c.driver_id == "mlx" && c.status == "stub"));
+        let committed = include_str!("../../../schema/local-catalog.v0.json");
+        let file: CatalogFile = serde_json::from_str(committed).unwrap();
+        assert_eq!(file, snap);
     }
 
     #[test]
