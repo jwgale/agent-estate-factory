@@ -40,6 +40,7 @@ not invent a spawn driver.
 | Item | State |
 | --- | --- |
 | `make gate-90` | Thin local alias: smoke (includes `day90`) + `doctor --strict` + GATE-90 checklist. |
+| `make day90-mixed` | Fixture walk: mixed frontier+local plan → `apply --require-plan`. Not a live box. Not in smoke. |
 | `make feed-loop` | Fixture walk: scrubbed trace → pack → propose → accept. See [`FEED-LOOP.md`](FEED-LOOP.md). |
 | `estate doctor --strict` | Pre-merge operator checks. Vanilla `doctor` unchanged. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. |
