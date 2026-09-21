@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #32 (this slice)
+
+- Feed packs tag `source_drivers` (`frontier` and/or `local`) from the events. The tag must match `path_counts`. Unknown drivers, a tag with a zero count, and a count with no tag refuse.
+- Explicit `object_class: local` stays local even when the kind or note mentions frontier. Local-down does not tag frontier.
+- Propose copies `source_drivers` onto the diff. `auto_apply` stays false. Promote stays off. The estate file is not rewritten.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #31 (this slice)
 
 - `make day90-mixed` walks the mixed fixture: status → plan → `apply --require-plan` → status → doctor. Isolated cell. No live key. Not in smoke or Actions.
