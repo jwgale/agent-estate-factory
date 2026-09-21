@@ -15,10 +15,16 @@ pub(crate) fn snapshot_state_files(state_dir: &Path) -> Vec<String> {
         "actual-state.json",
         "desired-snapshot.yaml",
         "lifecycle.json",
+        "lifecycle.jsonl",
         "apply-audit.jsonl",
+        "sessions.jsonl",
         "reconcile.json",
+        "reconcile.md",
         "catalog.json",
         "model-actual.json",
+        "conveyor-mesh.json",
+        "conveyor-hops.json",
+        "conveyor-leases.json",
     ];
     names
         .into_iter()
@@ -79,4 +85,3 @@ pub(crate) fn copy_tree_files(src: &Path, dest: &Path, copied: &mut Vec<String>)
     }
     Ok(())
 }
-
