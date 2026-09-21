@@ -419,7 +419,7 @@ fn require_frontier_key() -> Result<String, ModelError> {
 fn frontier_model_id() -> Result<String, ModelError> {
     let cell = std::env::var("CELL_FRONTIER_MODEL").ok();
     let xai = std::env::var("XAI_MODEL").ok();
-    crate::frontier::pick_frontier_model(cell.as_deref(), xai.as_deref())
+    crate::frontier::pick_frontier_model(cell.as_deref(), xai.as_deref(), "XAI_MODEL")
 }
 
 fn accepted_specialist_endpoint(raw: &str) -> Result<String, ModelError> {
@@ -543,8 +543,11 @@ mod tests {
     fn missing_frontier_key_is_not_local_down() {
         let err = ModelError::MissingFrontierKey;
         assert!(!err.is_local_down(), "{err}");
-        assert!(err.to_string().contains("XAI_API_KEY"), "{err}");
-        assert!(err.to_string().contains("grok-4.7"), "{err}");
+        let text = err.to_string();
+        assert!(text.contains("XAI_API_KEY"), "{text}");
+        assert!(text.contains("grok-4.7"), "{text}");
+        assert!(text.contains("CELL_FRONTIER_ENDPOINT"), "{text}");
+        assert!(text.contains("CELL_FRONTIER_MODEL"), "{text}");
     }
 
     #[test]
