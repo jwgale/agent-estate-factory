@@ -6,7 +6,7 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1-#19 plus this slice)
+## On `main` (PR #1-#20 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -69,17 +69,21 @@ failed the write. Probes printed while still checking SKU / host_class.
 Status invented `expired=0` / empty proposals on reader failure. Those
 are closed.
 
+## #20 (plan / cursor / force honesty)
+
+#20 closed the plan / cursor / force hunt. Unreadable `plan-*.json` is refuse, not empty. `write_cursor` does not invent an empty `feed-cursor.json`. `apply --force` restamps estate `host_class` (`rtx_consumer` -> `consumer-nvidia`) and does not launder a SKU actual to `any`.
+
 ## Bug fix this slice
 
 | What was broken | What it does now |
 | --- | --- |
-| `covering_plan` / `latest_plan` / `list_plans` treated unreadable plan JSON as empty (skip / `.ok()`). `apply --require-plan` could say "no plan". `status` could invent last-plan. | Present plan JSON parses or refuses. APIs return `Result`. Status / apply / last-applied fail closed. |
-| `write_cursor` used `unwrap_or_default` and could write empty `feed-cursor.json`. A present garbage cursor could look missing. | Load: missing → none; exists but not a file or parse fail → refuse. Write serializes or refuses. No empty blob. |
-| `apply` without `--force` could still walk a SKU `placement-actual`. `--force` must overwrite from the estate, not launder the SKU to `any`. | Without `--force`, `refuse_lease_host_classes` before dry-run. `--force` claims estate `host_class` (`rtx_consumer` → `consumer-nvidia`). |
+| `propose_enrich` used `unwrap_or_default` and could write an empty `.proposal.json`. | Serialize or refuse. No empty proposal blob. |
+| `append_event` invented `"{}"` on serialize failure and could append junk to `events.jsonl`. | Journal / audit lines serialize or refuse. Empty object is refuse. |
+| `write_placements` used `unwrap_or_default` and could wipe `placement-actual.json` empty. Same class on lifecycle, session journal, apply-audit, reconcile, backup meta, actual-state, mesh persist, accept enrich-edit. | Serialize first, then write. Empty blob is refuse. Sentinel on disk stays. |
 
-Remaining `.ok()` on Path-exists loads in estate-control / floor / conveyor / feed are listing skips (`read_dir` / `filter_map`), not sacred / SKU / plan SoT. `load_placements` stays permissive so `--force` can overwrite. Regenerable INDEX writes stay best-effort.
+Remaining `.ok()` on Path-exists loads in estate-control / floor / conveyor / feed are listing skips (`read_dir` / `filter_map`), not sacred / SKU / plan SoT. `load_placements` stays permissive so `--force` can overwrite. Regenerable INDEX writes stay best-effort. Remaining `unwrap_or_default` in those crates are file-name / compare-read / host_class display, not serialize-then-write.
 
-## Bug fixes on #10-#19 (plain English)
+## Bug fixes on #10-#20 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -92,6 +96,7 @@ Remaining `.ok()` on Path-exists loads in estate-control / floor / conveyor / fe
 | #17 | Mesh readers and restore still copied a SKU `host_class`. `canonical_host_class` could still invent `any` on a production path. | Mesh + restore refuse. Production callers of the unwrap are gone. |
 | #18 | Leases printed then refused. Backup/restore swallowed a garbage estate. Suspend swallowed actual-state / journal errors. Feed redaction write was `let _ =`. | Refuse first. Present file must parse. Journal and redaction writes fail closed. |
 | #19 | Lifecycle `.ok()` treated garbage as greenfield. Import audit was `let _ =`. Dry-run skipped curator. Catalog/probes printed first. Status invented expired/proposals. | Parse or refuse. Audit fail-closed. Curator before dry-run. Write/refuse first, then print. |
+| #20 | Plan readers treated garbage JSON as empty. `write_cursor` could write empty. `apply --force` had to restamp estate class, not SKU to `any`. | Present plan JSON parses or refuses. Cursor write refuses empty. `--force` writes `consumer-nvidia`. |
 
 ## Known-good local commands
 
@@ -120,7 +125,7 @@ Isolated loops without live boxes:
 - Contracts: `tests/day90_contracts.rs` / `tests/day90_plan.rs`
 - Bad-host-class readers: `tests/day90_sku.rs`
 - Mesh / restore SKU: `tests/day90_mesh.rs`
-- Swallows / journals / redaction / plan / cursor / force-SKU: `tests/day90_honesty.rs`
+- Swallows / journals / redaction / plan / cursor / force-SKU / nonempty placement write: `tests/day90_honesty.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.

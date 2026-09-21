@@ -97,9 +97,13 @@ pub fn accept_proposal(
         "yaml_snippet": accept.yaml_snippet,
         "note": accept.note,
     });
+    let body = serde_json::to_string_pretty(&json)?;
+    if body.trim().is_empty() {
+        bail!("serialize: empty enrich-edit");
+    }
     std::fs::write(
         accepted_dir.join(format!("{}.enrich-edit.json", proposal.id)),
-        serde_json::to_string_pretty(&json).unwrap_or_default(),
+        body,
     )?;
     Ok((accept, dest))
 }
@@ -171,6 +175,9 @@ mod tests {
         assert!(!accept.applied_to_estate);
         assert!(dest.ends_with("overnight-traces.enrich-edit.md"));
         assert!(accept.yaml_snippet.contains("id: overnight-traces"));
+        let edit = std::fs::read_to_string(accepted.join("overnight-traces.enrich-edit.json")).unwrap();
+        assert!(!edit.trim().is_empty(), "accept must not write empty enrich-edit");
+        assert!(edit.contains(ACCEPT_SCHEMA), "{edit}");
         assert_eq!(before, serde_json::to_string(&estate.enrich_packs).unwrap());
         let _ = std::fs::remove_dir_all(&feed);
     }

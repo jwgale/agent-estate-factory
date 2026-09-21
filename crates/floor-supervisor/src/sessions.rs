@@ -5,7 +5,6 @@
 
 use crate::SupervisorError;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::path::Path;
 
 pub const SESSION_JOURNAL: &str = "sessions.jsonl";
@@ -49,19 +48,7 @@ pub fn append_session_event(
     event: &SessionEvent,
 ) -> Result<(), SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
-    let path = session_journal_path(state_dir);
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .write(true)
-        .truncate(false)
-        .open(path)?;
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(event).unwrap_or_default()
-    )?;
-    Ok(())
+    crate::append_json_line(&session_journal_path(state_dir), event)
 }
 
 pub fn journal_session(
@@ -157,6 +144,13 @@ mod tests {
             "later journal writes must append, not truncate sessions.jsonl"
         );
         assert_eq!(list_session_events(&dir).unwrap().len(), 5);
+        for line in before.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            assert_ne!(line, "{}", "session journal must not invent empty junk");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

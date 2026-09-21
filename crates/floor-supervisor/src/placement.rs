@@ -301,11 +301,7 @@ pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementA
 
 pub fn write_placements(state_dir: &Path, actual: &PlacementActual) -> Result<(), SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
-    std::fs::write(
-        state_dir.join("placement-actual.json"),
-        serde_json::to_string_pretty(actual).unwrap_or_default(),
-    )?;
-    Ok(())
+    crate::write_pretty_json(&state_dir.join("placement-actual.json"), actual)
 }
 
 pub fn load_placements(state_dir: &Path) -> Result<Option<PlacementActual>, SupervisorError> {
@@ -689,7 +685,7 @@ pub fn write_reconcile(
 ) -> Result<std::path::PathBuf, SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
     let json = state_dir.join("reconcile.json");
-    std::fs::write(&json, serde_json::to_string_pretty(report).unwrap_or_default())?;
+    crate::write_pretty_json(&json, report)?;
     std::fs::write(state_dir.join("reconcile.md"), render_reconcile(report))?;
     Ok(json)
 }
@@ -875,18 +871,16 @@ pub fn append_apply_audit(
         .take(8)
         .collect::<String>();
     let path = plans_dir.join(format!("apply-{stamp}-{short}.json"));
-    std::fs::write(&path, serde_json::to_string_pretty(audit).unwrap_or_default())?;
+    let pretty = crate::serialize_pretty(audit)?;
+    let line = crate::serialize_line(audit)?;
+    std::fs::write(&path, pretty)?;
     let log = state_dir.join("apply-audit.jsonl");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log)?;
     use std::io::Write;
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(audit).unwrap_or_default()
-    )?;
+    writeln!(file, "{line}")?;
     Ok(path)
 }
 
@@ -944,6 +938,29 @@ mod tests {
             .expect("box lease");
         assert!(box_lease.spawned);
         assert_eq!(box_lease.driver, "box");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_placements_never_writes_empty_blob() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-empty-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let actual = claim_leases(&estate);
+        write_placements(&tmp, &actual).unwrap();
+        let blob = std::fs::read_to_string(tmp.join("placement-actual.json")).unwrap();
+        assert!(!blob.trim().is_empty(), "write_placements must not wipe empty");
+        assert!(blob.contains("cell-one.placement-actual.v0"), "{blob}");
+        let loaded = load_placements(&tmp).unwrap().expect("placement-actual");
+        assert_eq!(loaded.schema, "cell-one.placement-actual.v0");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

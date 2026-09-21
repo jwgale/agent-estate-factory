@@ -315,26 +315,32 @@ pub fn load_mesh(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
     serde_json::from_str(&text).map_err(|e| MeshError::Parse(format!("{MESH_FILE}: {e}")))
 }
 
+fn serialize_pretty<T: Serialize>(value: &T) -> Result<String, MeshError> {
+    let body = serde_json::to_string_pretty(value)
+        .map_err(|e| MeshError::Parse(format!("serialize: {e}")))?;
+    if body.trim().is_empty() {
+        return Err(MeshError::Parse("serialize: empty".into()));
+    }
+    Ok(body)
+}
+
 pub fn persist_mesh(state_dir: &Path, mesh: &ConveyorMesh) -> Result<PathBuf, MeshError> {
     std::fs::create_dir_all(state_dir)?;
     let path = mesh_path(state_dir);
-    std::fs::write(&path, serde_json::to_string_pretty(mesh).unwrap_or_default())?;
     let hops = serde_json::json!({
         "schema": MESH_SCHEMA,
         "hops": mesh.hops,
     });
-    std::fs::write(
-        state_dir.join(HOPS_FILE),
-        serde_json::to_string_pretty(&hops).unwrap_or_default(),
-    )?;
     let leases = serde_json::json!({
         "schema": MESH_SCHEMA,
         "leases": mesh.leases,
     });
-    std::fs::write(
-        state_dir.join(LEASES_FILE),
-        serde_json::to_string_pretty(&leases).unwrap_or_default(),
-    )?;
+    let mesh_body = serialize_pretty(mesh)?;
+    let hops_body = serialize_pretty(&hops)?;
+    let leases_body = serialize_pretty(&leases)?;
+    std::fs::write(&path, mesh_body)?;
+    std::fs::write(state_dir.join(HOPS_FILE), hops_body)?;
+    std::fs::write(state_dir.join(LEASES_FILE), leases_body)?;
     Ok(path)
 }
 
@@ -642,6 +648,29 @@ mod tests {
         assert_eq!(lease.host_class, "consumer-nvidia");
         let call = call_hop(&dir, "box-notes", "notes-append").unwrap();
         assert!(call.allow);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_mesh_serializes_before_any_write() {
+        let dir = tmp();
+        let mesh = ConveyorMesh::default();
+        persist_mesh(&dir, &mesh).unwrap();
+        for name in [MESH_FILE, HOPS_FILE, LEASES_FILE] {
+            let blob = std::fs::read_to_string(dir.join(name)).unwrap();
+            assert!(!blob.trim().is_empty(), "{name} must not be empty");
+            let _: serde_json::Value = serde_json::from_str(&blob).unwrap();
+        }
+
+        struct Boom;
+        impl Serialize for Boom {
+            fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+                use serde::ser::Error;
+                Err(S::Error::custom("boom"))
+            }
+        }
+        let err = serialize_pretty(&Boom).unwrap_err();
+        assert!(err.to_string().contains("serialize"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

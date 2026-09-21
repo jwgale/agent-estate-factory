@@ -219,8 +219,11 @@ fn handle(estate: &estate_schema::Estate, url: &str, body: &str, feed: Option<&s
     };
     let decision = check(estate, &req.agent_id, kind, &req.object, feed);
     let resp = response_from(&decision);
-    (
-        decision.is_allow(),
-        serde_json::to_string_pretty(&resp).unwrap_or_default(),
-    )
+    match serde_json::to_string_pretty(&resp) {
+        Ok(s) if !s.trim().is_empty() => (decision.is_allow(), s),
+        _ => (
+            false,
+            serde_json::json!({"decision":"deny","reason":"serialize"}).to_string(),
+        ),
+    }
 }
