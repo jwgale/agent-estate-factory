@@ -3,6 +3,7 @@
 
 mod lifecycle;
 mod placement;
+mod sessions;
 
 use estate_schema::{estate_hash, Estate};
 use isolation_driver::{BindRequest, BoundSession, IsolationDriver, ProfileDirDriver};
@@ -22,6 +23,10 @@ pub use placement::{
     render_dry_run, render_reconcile, write_placements, write_reconcile, ApplyAudit, ApplyDryRun,
     BoxDriver, CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
     ReconcileReport, ReconcileRow, Refuse, DRY_RUN_SCHEMA, RECONCILE_SCHEMA,
+};
+pub use sessions::{
+    append_session_event, journal_session, list_session_events, session_journal_path,
+    tail_session_events, SessionEvent, SESSION_JOURNAL, SESSION_JOURNAL_SCHEMA,
 };
 
 #[derive(Debug, Error)]
@@ -117,6 +122,16 @@ pub fn apply(
     write_desired_snapshot(state_dir, estate)?;
     record_placements(estate, state_dir)?;
     mark_running(estate, state_dir)?;
+    for session in &actual.sessions {
+        journal_session(
+            state_dir,
+            "spawn",
+            Some(session.agent_id.as_str()),
+            Some(estate.name.as_str()),
+            Some(actual.desired_hash.as_str()),
+            "apply bind",
+        )?;
+    }
     Ok(actual)
 }
 
@@ -287,6 +302,18 @@ pub fn drift_with_roots(
 }
 
 pub fn stop_runtime(state_dir: &Path) -> Result<(), SupervisorError> {
+    if let Ok(Some(actual)) = load_actual(state_dir) {
+        for session in &actual.sessions {
+            let _ = journal_session(
+                state_dir,
+                "unspawn",
+                Some(session.agent_id.as_str()),
+                Some(actual.estate_name.as_str()),
+                Some(actual.desired_hash.as_str()),
+                "runtime discarded",
+            );
+        }
+    }
     let runtime = state_dir.join("runtime");
     if runtime.exists() {
         std::fs::remove_dir_all(&runtime)?;
