@@ -221,10 +221,7 @@ pub fn backup_cell(
         cloud_agent_spawned: false,
         note: "Local cell archive. Not uploaded. Restore refuses sacred mismatch.".into(),
     };
-    std::fs::write(
-        dest.join(BACKUP_META),
-        serde_json::to_string_pretty(&meta).unwrap_or_default(),
-    )?;
+    crate::write_pretty_json(&dest.join(BACKUP_META), &meta)?;
     let mut md = String::from("Cell One backup (local only)\n============================\n");
     md.push_str("Not a remote upload. Restore is fail-closed on sacred mismatch.\n\n");
     for f in &files {
