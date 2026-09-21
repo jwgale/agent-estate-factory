@@ -53,7 +53,7 @@ pub(crate) fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Re
     let (actual, record) = resume(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
     record_placements(&estate, state_dir)?;
-    let _ = model_estate::write_catalog(&state_dir.join("catalog.json"));
+    model_estate::write_catalog(&state_dir.join("catalog.json"))?;
     println!(
         "resumed {} sessions; lifecycle {}",
         actual.sessions.len(),
