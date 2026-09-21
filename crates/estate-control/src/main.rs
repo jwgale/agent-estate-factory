@@ -173,8 +173,12 @@ enum Command {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
-    /// Catalog-level driver probes. Not live pings. Does not invoke models.
-    Probes,
+    /// Catalog-level driver probes. Does not invoke models.
+    Probes {
+        /// Optional live HTTP. SKIP when endpoints are unset. Never required in CI.
+        #[arg(long, default_value_t = false)]
+        live: bool,
+    },
     /// Capability mesh: declare hop, lease-bound call. Not a gateway.
     Convey {
         #[command(subcommand)]
@@ -613,7 +617,7 @@ fn run() -> Result<()> {
             } => cmd_audit_export(&estate, &state_dir, &plans_dir, &packs_dir, &out, tar),
         },
         Command::History { state_dir } => cmd_history(&state_dir),
-        Command::Probes => cmd_probes(),
+        Command::Probes { live } => cmd_probes(live),
         Command::Convey { command } => match command {
             ConveyCommand::Hop {
                 id,
