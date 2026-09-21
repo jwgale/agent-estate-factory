@@ -223,6 +223,27 @@ pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Erro
         .collect())
 }
 
+pub fn plan_covers_hash(plans_dir: &Path, hash: &str) -> bool {
+    let Ok(entries) = list_plans(plans_dir) else {
+        return false;
+    };
+    for entry in entries {
+        let Some(json_name) = entry.json else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(plans_dir.join(json_name)) else {
+            continue;
+        };
+        let Ok(plan) = serde_json::from_str::<EstatePlan>(&text) else {
+            continue;
+        };
+        if plan.desired_hash == hash {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io::Error> {
     std::fs::create_dir_all(plans_dir)?;
     let entries = list_plans(plans_dir)?;
@@ -447,5 +468,24 @@ mod tests {
         assert!(review.contains("+ placements:"));
         assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
         assert!(plan.blast_radius_text.contains("cloud-agent stub"));
+    }
+
+    #[test]
+    fn plan_covers_hash_reads_json_history() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let plan = diff_estates(&e, None);
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-plan-cover-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_plan(&dir, &plan).unwrap();
+        assert!(plan_covers_hash(&dir, &plan.desired_hash));
+        assert!(!plan_covers_hash(&dir, "sha256:deadbeef"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
