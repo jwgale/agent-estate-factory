@@ -183,10 +183,10 @@ pub(crate) enum Command {
     },
     /// Env-gated data-plane chat via HttpLocal. Not a gateway.
     Specialist {
-        /// Override. Default: CELL_LOCAL_ENDPOINT / CELL_RENTED_ENDPOINT.
+        /// Override. Default: CELL_LOCAL_ENDPOINT (local) or CELL_FRONTIER_ENDPOINT (frontier).
         #[arg(long)]
         endpoint: Option<String>,
-        /// ollama | llama.cpp | http-remote. Visible alias: --runtime.
+        /// ollama | llama.cpp | http-remote | frontier. Visible alias: --runtime.
         #[arg(long, visible_alias = "runtime", default_value = "ollama")]
         driver: String,
         /// complete (default) | chat | policy-precheck | redact
