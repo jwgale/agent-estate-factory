@@ -1,0 +1,22 @@
+[package]
+name = "estate-control"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Control-plane CLI: validate, plan, apply, drift"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+estate-schema.workspace = true
+floor-supervisor.workspace = true
+model-estate.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "estate"
+path = "src/main.rs"
+
+[dev-dependencies]
+estate-schema.workspace = true
+floor-supervisor.workspace = true
