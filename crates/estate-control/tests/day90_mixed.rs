@@ -169,6 +169,37 @@ fn frontier_http_host_fixture_names_grok_without_touching_locked_estate() {
         "stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
+    let models = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args(["models", "--estate", &path.display().to_string()])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let listed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&models.stdout),
+        String::from_utf8_lossy(&models.stderr)
+    );
+    assert!(models.status.success(), "{listed}");
+    assert!(
+        listed.contains("driver=http-remote") && listed.contains("model=grok-4.7"),
+        "models must print the binding model: {listed}"
+    );
+    let default_estate = repo_root().join("examples/estate.yaml");
+    let bare = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args(["models", "--estate", &default_estate.display().to_string()])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let bare_text = String::from_utf8_lossy(&bare.stdout);
+    assert!(bare.status.success(), "{}", String::from_utf8_lossy(&bare.stderr));
+    assert!(
+        bare_text.contains("model=-"),
+        "a binding with no model param stays model=-: {bare_text}"
+    );
+    assert!(
+        !bare_text.contains("model=grok-4.7"),
+        "default estate must not invent a binding model: {bare_text}"
+    );
 }
 
 #[test]
@@ -384,6 +415,19 @@ fn day90_mixed_walks_plan_apply_and_names_grok_4_7() {
     assert!(script.contains("--require-plan"), "{script}");
     assert!(script.contains("unset XAI_API_KEY"), "{script}");
     assert!(
+        script.contains("examples/hosts/frontier-http.yaml"),
+        "day90-mixed must validate the frontier-http host fixture"
+    );
+    assert!(
+        script.contains("examples/estate.yaml changed"),
+        "day90-mixed must refuse a rewrite of the hash-locked estate"
+    );
+    let fixtures = std::fs::read_to_string(root.join("scripts/fixtures-check.sh")).unwrap();
+    assert!(
+        !fixtures.contains("frontier-http.yaml"),
+        "fixtures-check is inside smoke; do not add the host fixture there"
+    );
+    assert!(
         script.contains("Do not add to make smoke or GitHub Actions"),
         "day90-mixed must stay off smoke / Actions"
     );
@@ -424,9 +468,18 @@ fn day90_mixed_walks_plan_apply_and_names_grok_4_7() {
     assert!(out.status.success(), "{text}");
     assert!(text.contains("DAY90-MIXED GREEN"), "{text}");
     assert!(text.contains("frontier: frontier_http model=grok-4.7"), "{text}");
+    assert!(text.contains("estate: cell-one-frontier-http"), "{text}");
     assert!(text.contains("catalog frontier: cell model=grok-4.7"), "{text}");
     let _ = std::fs::remove_dir_all(&state);
     let _ = std::fs::remove_dir_all(&plans);
+    let _ = std::fs::remove_dir_all(root.join(format!(
+        "target/test-day90-mixed-walk-{}-frontier-http",
+        std::process::id()
+    )));
+    let _ = std::fs::remove_dir_all(root.join(format!(
+        "target/test-day90-mixed-plans-{}-frontier-http",
+        std::process::id()
+    )));
 }
 
 #[test]
