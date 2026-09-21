@@ -1,6 +1,7 @@
-# Mixed-path proof: http-remote frontier + local ollama in one estate.
-# Same portable catalog (http-remote + ollama cards). No live calls.
-# validate + apply --dry-run must stay green.
+# Mixed-path proof: frontier http-remote (model grok-4.7) + local ollama.
+# Equal-class cards. No live calls. No XAI_API_KEY in CI.
+# validate + apply --dry-run must stay green and must not POST.
+# Cloud-agent standing default reasoning_effort xhigh is docs-only.
 
 apiVersion: cell-one.estate.v0
 version: 0
@@ -19,7 +20,7 @@ agents:
     mcp: []
     models:
       - id: frontier_http
-        description: Frontier complete via http-remote (no live call)
+        description: Frontier complete via http-remote, model grok-4.7 (no live call)
       - id: local_slm
         description: Local specialist in-path (A8)
   - id: research
@@ -66,6 +67,7 @@ model_bindings:
     params:
       hint: openai-compat
       endpoint_env: CELL_FRONTIER_ENDPOINT
+      model: grok-4.7
     wired: true
   - id: local_slm
     class: local

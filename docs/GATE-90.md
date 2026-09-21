@@ -83,7 +83,9 @@ estate doctor --strict
 | Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
 | Mixed estate mock dry-run | green | apply `--dry-run` write-free; `HttpLocal` posts `/v0/specialist` |
-| Frontier specialist (grok-4.7) | green | `--driver frontier` needs `XAI_API_KEY`; model `grok-4.7`; mock-locked; no key in CI |
+| Frontier specialist (grok-4.7) | green | Live PASS recorded. Mock-locked. No key in CI. `READY_FOR_LIVE_TEST` no |
+| Mixed grok-4.7 + ollama dry-run | green | `validate` + `apply --dry-run` on mixed fixture; no POST; no live key |
+| Local down does not call frontier | green | `--driver ollama` unset or failed local chat; frontier mock gets no POST |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
