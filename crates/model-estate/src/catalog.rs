@@ -346,12 +346,54 @@ pub struct CatalogFileCard {
     pub notes: String,
 }
 
+/// Equal-class frontier card. Not a local runtime and not a live probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrontierCard {
+    pub driver_id: &'static str,
+    pub model: &'static str,
+    pub status: &'static str,
+    pub caps: FrontierCaps,
+    pub notes: &'static str,
+}
+
+/// What the factory frontier chat actually sends. Not a model context window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FrontierCaps {
+    pub streaming: bool,
+    pub tools: bool,
+    pub vision: bool,
+    pub completion_tokens: u32,
+}
+
+pub const FRONTIER_CARD: FrontierCard = FrontierCard {
+    driver_id: "frontier",
+    model: crate::frontier::DEFAULT_FRONTIER_MODEL,
+    status: "equal-class",
+    caps: FrontierCaps {
+        streaming: false,
+        tools: false,
+        vision: false,
+        completion_tokens: crate::frontier::FRONTIER_COMPLETION_TOKENS,
+    },
+    notes: "A7 chat. Model grok-4.7. Needs XAI_API_KEY. No stream, tools, or vision. reasoning_effort xhigh is the cloud-agent standing default and is not sent. Local down does not fall through.",
+};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FrontierCatalogCard {
+    pub driver_id: String,
+    pub model: String,
+    pub status: String,
+    pub caps: FrontierCaps,
+    pub notes: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct CatalogFile {
     pub schema: String,
     pub note: String,
     pub hosts: Vec<String>,
     pub cards: Vec<CatalogFileCard>,
+    pub frontier: FrontierCatalogCard,
 }
 
 /// File SoT for the portable local catalog. Hardware is a driver choice.
@@ -376,6 +418,13 @@ pub fn catalog_file() -> CatalogFile {
                 notes: card.notes.to_string(),
             })
             .collect(),
+        frontier: FrontierCatalogCard {
+            driver_id: FRONTIER_CARD.driver_id.to_string(),
+            model: FRONTIER_CARD.model.to_string(),
+            status: FRONTIER_CARD.status.to_string(),
+            caps: FRONTIER_CARD.caps,
+            notes: FRONTIER_CARD.notes.to_string(),
+        },
     }
 }
 
@@ -417,6 +466,17 @@ pub fn render_catalog() -> String {
             card.notes
         ));
     }
+    lines.push(format!(
+        "  {:<12} model={:<12} status={:<12} streaming={} tools={} vision={} completion={} {}",
+        FRONTIER_CARD.driver_id,
+        FRONTIER_CARD.model,
+        FRONTIER_CARD.status,
+        FRONTIER_CARD.caps.streaming,
+        FRONTIER_CARD.caps.tools,
+        FRONTIER_CARD.caps.vision,
+        FRONTIER_CARD.caps.completion_tokens,
+        FRONTIER_CARD.notes
+    ));
     lines.join("\n")
 }
 
@@ -697,6 +757,17 @@ mod tests {
         assert_eq!(snap.cards.len(), CATALOG.len());
         assert!(snap.cards.iter().any(|c| c.driver_id == "ollama" && c.status == "supported"));
         assert!(snap.cards.iter().any(|c| c.driver_id == "mlx" && c.status == "stub"));
+        assert_eq!(snap.frontier.model, "grok-4.7");
+        assert!(!snap.frontier.caps.streaming);
+        assert!(!snap.frontier.caps.tools);
+        assert!(!snap.frontier.caps.vision);
+        assert_eq!(
+            snap.frontier.caps.completion_tokens,
+            crate::frontier::FRONTIER_COMPLETION_TOKENS
+        );
+        let rendered = render_catalog();
+        assert!(rendered.contains("model=grok-4.7"), "{rendered}");
+        assert!(rendered.contains("completion=64"), "{rendered}");
         let committed = include_str!("../../../schema/local-catalog.v0.json");
         let file: CatalogFile = serde_json::from_str(committed).unwrap();
         assert_eq!(file, snap);
