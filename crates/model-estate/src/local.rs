@@ -2,7 +2,6 @@ use crate::catalog::LocalRuntime;
 use crate::error::ModelError;
 use estate_schema::{is_sacred_name, ModelBinding};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Catalog-level driver probe. Not a live ping. Fail closed at `specialist()`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -50,7 +49,7 @@ pub fn probe_runtime(id: &str, runtime: LocalRuntime, host_class: &str) -> Drive
         LocalRuntime::Mlx => (
             "stub",
             false,
-            "Apple MLX stub. Same catalog/route/bind API; live Mac proof later.",
+            "Native MLX specialist() is stub. Live Mac proof is Ollama-on-Mac (or OpenAI-compatible) via the HTTP adapter.",
         ),
         LocalRuntime::Vllm | LocalRuntime::Trt => (
             "experimental",
@@ -101,21 +100,7 @@ pub fn live_endpoint(runtime: LocalRuntime) -> Option<String> {
     None
 }
 
-pub fn ping_live_endpoint(endpoint: &str) -> Result<(), String> {
-    let url = format!("{}/v0/specialist", endpoint.trim_end_matches('/'));
-    let body = serde_json::json!({
-        "job": "policy-precheck",
-        "agent_id": "probe",
-        "kind": "probe",
-        "text": "ping",
-    });
-    ureq::post(&url)
-        .set("Content-Type", "application/json")
-        .timeout(Duration::from_millis(800))
-        .send_json(body)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
+pub use crate::adapter::{ping_live_endpoint, specialist_via_adapter};
 
 /// Dry overlay. Tests and the runbook fixture use this so CI never opens a socket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,7 +137,11 @@ pub fn enrich_with_live(probe: DriverProbe, endpoint: Option<&str>) -> DriverPro
     match endpoint {
         None => apply_live_overlay(probe, LiveOverlay::Skip),
         Some(ep) => match ping_live_endpoint(ep) {
-            Ok(()) => apply_live_overlay(probe, LiveOverlay::WouldLive),
+            Ok(flavor) => {
+                let mut p = apply_live_overlay(probe, LiveOverlay::WouldLive);
+                p.note = format!("{} ({})", p.note, flavor.as_str());
+                p
+            }
             Err(err) => apply_live_overlay(probe, LiveOverlay::Down(&err)),
         },
     }
@@ -287,7 +276,8 @@ impl LocalDriver for ExperimentalLocal {
 }
 
 /// Thin HTTP specialist. Used by Ollama, llama.cpp, and http-remote.
-/// Speaks `POST {endpoint}/v0/specialist` only — not an Ollama chat UI.
+/// Factory `/v0/specialist` first; else OpenAI `/v1/chat/completions` or
+/// Ollama `/api/chat`. Policy stays `builtin_specialist`.
 pub struct HttpLocal {
     pub id: String,
     pub endpoint: String,
@@ -314,22 +304,7 @@ impl LocalDriver for HttpLocal {
     }
 
     fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
-        let url = format!("{}/v0/specialist", self.endpoint.trim_end_matches('/'));
-        let body = serde_json::json!({
-            "job": req.job.as_str(),
-            "agent_id": req.agent_id,
-            "kind": req.kind,
-            "text": req.text,
-        });
-        let resp = ureq::post(&url)
-            .set("Content-Type", "application/json")
-            .timeout(Duration::from_secs(5))
-            .send_json(body)
-            .map_err(|e| ModelError::Unreachable(e.to_string()))?;
-        let result: SpecialistResult = resp
-            .into_json()
-            .map_err(|e| ModelError::Other(format!("local json: {e}")))?;
-        Ok(result)
+        specialist_via_adapter(&self.endpoint, req)
     }
 }
 
