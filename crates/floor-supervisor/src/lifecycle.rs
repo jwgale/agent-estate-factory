@@ -171,6 +171,14 @@ pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
             .into(),
     };
     persist_transition(state_dir, prev.as_ref(), &record, "suspend")?;
+    crate::journal_session(
+        state_dir,
+        "suspend",
+        None,
+        record.estate_name.as_deref(),
+        record.desired_hash.as_deref(),
+        "Suspended. sessions.jsonl stays; sessions/ discarded.",
+    )?;
     Ok(record)
 }
 
@@ -213,6 +221,14 @@ pub fn resume(
             .into(),
     };
     persist_transition(state_dir, prev.as_ref(), &record, "resume")?;
+    crate::journal_session(
+        state_dir,
+        "resume",
+        None,
+        Some(estate.name.as_str()),
+        record.desired_hash.as_deref(),
+        "Resumed. Runtime regenerable. Cloud-agent placements not spawned.",
+    )?;
     Ok((actual, record))
 }
 
@@ -269,6 +285,11 @@ mod tests {
         );
         assert!(state.join(LIFECYCLE_LOG).is_file());
         assert!(!list_lifecycle_events(&state).unwrap().is_empty());
+        let journal = crate::list_session_events(&state).unwrap();
+        assert!(journal.iter().any(|e| e.action == "spawn"));
+        assert!(journal.iter().any(|e| e.action == "unspawn"));
+        assert!(journal.iter().any(|e| e.action == "suspend"));
+        assert!(state.join(crate::SESSION_JOURNAL).is_file());
         assert!(!drift_with_roots(&estate, &state, Some(&root)).unwrap().in_sync);
         resume(&estate, &state, &root).unwrap();
         assert!(drift_with_roots(&estate, &state, Some(&root)).unwrap().in_sync);
@@ -276,6 +297,10 @@ mod tests {
             load_lifecycle(&state).unwrap().state,
             LifecycleState::Running
         );
+        assert!(crate::list_session_events(&state)
+            .unwrap()
+            .iter()
+            .any(|e| e.action == "resume"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
