@@ -55,8 +55,9 @@ enum Command {
     Probe,
     /// Policy-precheck / redact / complete through HttpLocal.
     /// `estate specialist` is the same helper with `--job complete`.
+    /// Model id: env CELL_LOCAL_MODEL (SKU ids refuse). Empty list refuses.
     Specialist {
-        /// Override. Default: CELL_LOCAL_ENDPOINT.
+        /// Override. Default: CELL_LOCAL_ENDPOINT. Frontier: CELL_FRONTIER_ENDPOINT.
         #[arg(long)]
         endpoint: Option<String>,
         #[arg(long, default_value = "policy-precheck")]
@@ -70,7 +71,7 @@ enum Command {
         /// Alias for `--text`.
         #[arg(long)]
         prompt: Option<String>,
-        /// ollama | llama.cpp | http-remote (same adapter). Default ollama.
+        /// ollama | llama.cpp | http-remote | frontier. Default ollama.
         #[arg(long, default_value = "ollama")]
         runtime: String,
     },
