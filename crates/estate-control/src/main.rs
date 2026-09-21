@@ -20,6 +20,9 @@ use watch::*;
     about = "Cell One estate-control: validate, plan, apply, drift. Does not execute tools or models."
 )]
 struct Cli {
+    /// Dual-layer sacred file. Missing = hardcoded defaults only.
+    #[arg(long, global = true, default_value = "policy/sacred.yaml")]
+    sacred: PathBuf,
     #[command(subcommand)]
     command: Command,
 }
@@ -79,6 +82,9 @@ enum Command {
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
+        /// Reconverge when desired hash matches but actual drifted. Or re-bind when unchanged.
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
     /// Compare desired estate to regenerable actual-state.
     Drift {
@@ -329,6 +335,19 @@ enum PlanAction {
         #[arg(long, default_value_t = false)]
         allow_wider: bool,
     },
+    /// Write a single markdown ready to paste into a GitHub PR body.
+    ExportPr {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        #[arg(long, default_value = "plans/reviewed")]
+        reviewed_dir: PathBuf,
+        #[arg(long, default_value = "plans/PR.md")]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -462,6 +481,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    crate::helpers::install_sacred(&cli.sacred)?;
     match cli.command {
         Command::Validate { estate } => cmd_validate(&estate),
         Command::Plan {
@@ -488,6 +508,13 @@ fn run() -> Result<()> {
                 &diff_plans,
                 allow_wider,
             ),
+            Some(PlanAction::ExportPr {
+                estate: pr_estate,
+                state_dir: pr_state,
+                plans_dir: pr_plans,
+                reviewed_dir: pr_reviewed,
+                out,
+            }) => cmd_plan_export_pr(&pr_estate, &pr_state, &pr_plans, &pr_reviewed, &out),
             None => cmd_plan(
                 &estate,
                 against.as_deref(),
@@ -509,6 +536,7 @@ fn run() -> Result<()> {
             dry_run,
             policy,
             curator,
+            force,
         } => cmd_apply(
             &estate,
             &state_dir,
@@ -521,6 +549,7 @@ fn run() -> Result<()> {
             dry_run,
             &policy,
             &curator,
+            force,
         ),
         Command::Drift {
             estate,
