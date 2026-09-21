@@ -25,7 +25,7 @@ models:
 	cargo run -q -p estate-control -- models --estate $(ESTATE)
 
 catalog:
-	cargo run -p model-estate -- catalog
+	cargo run -q -p model-estate -- catalog
 
 catalog-dump:
 	cargo run -q -p estate-control -- catalog --out $(STATE)/catalog.json
