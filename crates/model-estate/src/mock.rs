@@ -122,10 +122,16 @@ pub enum CompatScript {
     /// 200 on POST /v0/specialist that is not SpecialistResult. Also serves
     /// OpenAI chat so a silent fall-through would have succeeded.
     V0Unparseable,
-    /// OpenAI chat with choices but no message.content.
+    /// OpenAI chat with choices but no message.content. No `/api/chat`.
     OpenAiNoContent { models: Vec<String> },
-    /// OpenAI chat with empty message.content.
+    /// OpenAI chat with empty message.content. No `/api/chat`.
     OpenAiEmptyContent { models: Vec<String> },
+    /// OpenAI empty `message.content`, then Ollama `/api/chat` succeeds.
+    OpenAiEmptyThenOllama { models: Vec<String> },
+    /// OpenAI and Ollama chat both return empty content.
+    OpenAiEmptyAndOllamaEmpty { models: Vec<String> },
+    /// OpenAI `content` as an array of parts.
+    OpenAiContentParts { models: Vec<String> },
 }
 
 pub struct CompatServer {
@@ -247,6 +253,47 @@ fn compat_reply(
             }
             if post && path == "/v1/chat/completions" {
                 return json_ok(r#"{"choices":[{"message":{"content":""}}]}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
+        CompatScript::OpenAiEmptyThenOllama { models } => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(models));
+            }
+            if get && path == "/api/tags" {
+                return json_ok(&ollama_tags_json(models));
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(r#"{"choices":[{"message":{"content":""}}]}"#);
+            }
+            if post && path == "/api/chat" {
+                return json_ok(r#"{"message":{"role":"assistant","content":"ok"}}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
+        CompatScript::OpenAiEmptyAndOllamaEmpty { models } => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(models));
+            }
+            if get && path == "/api/tags" {
+                return json_ok(&ollama_tags_json(models));
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(r#"{"choices":[{"message":{"content":"   "}}]}"#);
+            }
+            if post && path == "/api/chat" {
+                return json_ok(r#"{"message":{"role":"assistant","content":""}}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
+        CompatScript::OpenAiContentParts { models } => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(models));
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(
+                    r#"{"choices":[{"message":{"content":[{"type":"text","text":"ok"}]}}]}"#,
+                );
             }
             json_status(404, r#"{"error":"not found"}"#)
         }
