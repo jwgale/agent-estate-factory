@@ -24,6 +24,7 @@ echo "-- validate host matrix --"
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/rtx-consumer.yaml"
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/apple-silicon.yaml"
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/nvidia-rental.yaml"
+cargo run -q -p estate-control -- validate --estate "$ROOT/examples/hosts/multi-host.yaml"
 
 set +e
 cargo run -q -p estate-control -- validate --estate "$ROOT/examples/invalid/host-class-bad.yaml" >/tmp/opday-host.out 2>/tmp/opday-host.err
@@ -84,6 +85,24 @@ if [[ "$promo" -eq 0 ]]; then
 fi
 echo "PASS  packs list/import/refuse-promote"
 
+echo "-- packs propose (never auto-apply) --"
+BEFORE_PROP="$(cksum "$ESTATE")"
+cargo run -q -p estate-control -- packs propose --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --proposed-dir "$DROP/proposed" --estate "$ESTATE"
+AFTER_PROP="$(cksum "$ESTATE")"
+if [[ "$BEFORE_PROP" != "$AFTER_PROP" ]]; then
+  echo "FAIL  packs propose rewrote the estate"
+  exit 1
+fi
+if [[ ! -f "$DROP/proposed/overnight-traces.proposal.json" ]]; then
+  echo "FAIL  proposal pack missing"
+  exit 1
+fi
+if ! grep -q '"auto_apply": false' "$DROP/proposed/overnight-traces.proposal.json"; then
+  echo "FAIL  proposal must set auto_apply=false"
+  exit 1
+fi
+echo "PASS  packs propose"
+
 echo "-- convey mesh --"
 cargo run -q -p estate-control -- convey sync --state-dir "$STATE"
 cargo run -q -p estate-control -- convey call --id cell-one-box --capability lane-tool --state-dir "$STATE"
@@ -97,6 +116,10 @@ if [[ "$cloud" -eq 0 || "$nolease" -eq 0 ]]; then
   echo "FAIL  convey must refuse cloud-mesh and missing lease"
   exit 1
 fi
+if ! grep -q "refuse:" /tmp/opday-cloud.err /tmp/opday-nolease.err; then
+  echo "FAIL  convey refuse reasons must use refuse: prefix"
+  exit 1
+fi
 echo "PASS  convey hop/call/refuse"
 
 echo "-- resume --"
@@ -104,6 +127,22 @@ cargo run -q -p estate-control -- resume --estate "$ESTATE" --state-dir "$STATE"
 cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR"
 cargo run -q -p estate-control -- packs list --drop-dir "$DROP"
 cargo run -q -p estate-control -- convey leases --state-dir "$STATE"
+
+echo "-- reconcile --"
+cargo run -q -p estate-control -- reconcile --estate "$ESTATE" --state-dir "$STATE"
+if [[ ! -f "$STATE/reconcile.md" ]]; then
+  echo "FAIL  reconcile.md missing"
+  exit 1
+fi
+echo "PASS  reconcile"
+
+echo "-- audit export --"
+cargo run -q -p estate-control -- audit export --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS" --packs-dir "$DROP" --out "$WORKDIR/audit-export" --tar
+if [[ ! -f "$WORKDIR/audit-export/MANIFEST.md" ]]; then
+  echo "FAIL  audit export missing MANIFEST.md"
+  exit 1
+fi
+echo "PASS  audit export"
 
 echo
 echo "OPERATOR-DAY GREEN (fixtures only; no live Grok / GPU)"
