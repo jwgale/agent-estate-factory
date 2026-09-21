@@ -83,6 +83,17 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–6 stay.
 47. **Operator-day grew Wave 7.** Status one-pager, `--curator jason`, wrong-curator refuse, convey sync keeps extra hops.
 48. **`estate-control` split is push-safe, not a behavior change.** `main.rs` stays clap + `run` + validate. Commands live in `helpers.rs` / `plan_apply.rs` / `watch.rs` / `ops.rs` so GitHub MCP can land full files (no truncation).
 
+## Wave 8 (same PR #2 — idempotent apply, export-pr, sacred file)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–7 stay.
+
+49. **Apply is idempotent.** Second apply with identical desired hash + in_sync is a no-op (exit 0, audit note `unchanged`). Hash match + drift → `refuse:drift` unless `--force`. After suspend, sessions/ is gone so reconverge is `--force` (pause-safe, explicit). `--import-pack` skips the no-op (explicit Feed→Control).
+50. **`estate plan export-pr` is a paste artifact.** One markdown: blast radius, covering hash, reviewed flag, refuse risks. Does not open a GitHub PR. Does not auto-promote.
+51. **Sacred is dual-layer.** Hardcoded `LOCKED_SACRED` always applies. `policy/sacred.yaml` overlays are additive (`lab-notebook` fixture). File cannot remove a locked id. Apply / convey / cloud-agent assignment refuse on hit. Missing file = hardcoded only.
+52. **Mixed proof fixture.** `examples/fixtures/mixed-frontier-local.yaml` declares http-remote frontier + local ollama. `estate validate` + `apply --dry-run` green. No live calls. Catalog still lists both cards.
+53. **`CHANGELOG.md` is the morning read.** Day 0–30, 31–60, waves 1–8. Not a product essay.
+54. **Operator-day / fixtures-check / doctor grew Wave 8.** Unchanged apply, drift/`--force`, export-pr, overlay hop refuse, mixed dry-run. Doctor requires `policy/sacred.yaml`, `schema/sacred.v0.json`, `CHANGELOG.md`.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -112,6 +123,10 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–6 stay.
 | `make smoke` is not in operator-day | Recursion / double cargo test | Keep smoke as the outer local wrap |
 | `--curator` defaults to jason | Existing CLI/gate scripts stay green | Require the flag only if Jason wants ceremony |
 | Convey sync skips unknown placement kinds | Not every future kind is a hop | Add a mapping, do not invent a product fork |
+| Unchanged apply requires in_sync | Hash-only no-op would hide discarded sessions | `--force` after suspend |
+| Sacred overlays are thread-local | CLI loads `policy/sacred.yaml`; crate tests stay hardcoded-only | Do not put overlays in `locked_sacred_ids()` |
+| `lab-notebook` is a fixture overlay | Documents the file layer | Not a new product fork |
+| `export-pr` does not open a PR | Quiet hours; paste-only | Human pastes into PR #2 if wanted |
 
 ## Anti-shrink (still)
 
