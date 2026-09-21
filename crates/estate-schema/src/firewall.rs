@@ -57,6 +57,7 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
         IntentionKind::Tool => authorize_declared(estate, req, "tool"),
         IntentionKind::Mount => authorize_declared(estate, req, "mount"),
         IntentionKind::Mcp => authorize_declared(estate, req, "mcp"),
+        IntentionKind::Model => authorize_declared(estate, req, "model"),
     }
 }
 
@@ -85,6 +86,7 @@ fn authorize_declared(estate: &Estate, req: &AccessRequest<'_>, kind_label: &str
         IntentionKind::Tool => agent.has_tool(name),
         IntentionKind::Mount => agent.has_mount(name),
         IntentionKind::Mcp => agent.has_mcp(name),
+        IntentionKind::Model => agent.has_model(name),
         IntentionKind::MemoryRead => false,
     };
     if declared {
@@ -262,6 +264,17 @@ mod tests {
         assert!(authorize(&e, &req("horizon", IntentionKind::MemoryRead, "lane:research")).is_allow());
         // still deny the other way
         assert!(!authorize(&e, &req("research", IntentionKind::MemoryRead, "lane:horizon")).is_allow());
+    }
+
+    #[test]
+    fn declared_model_allowed_undeclared_denied() {
+        let e = estate();
+        assert!(authorize(&e, &req("horizon", IntentionKind::Model, "xai_grok")).is_allow());
+        assert!(authorize(&e, &req("horizon", IntentionKind::Model, "local_slm")).is_allow());
+        assert!(authorize(&e, &req("research", IntentionKind::Model, "local_slm")).is_allow());
+        let d = authorize(&e, &req("sanctum", IntentionKind::Model, "xai_grok"));
+        assert!(!d.is_allow());
+        assert!(d.reason().contains("undeclared"));
     }
 
     #[test]
