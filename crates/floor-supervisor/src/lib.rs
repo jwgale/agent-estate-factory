@@ -422,7 +422,7 @@ mod tests {
         let report = drift_with_roots(&estate, &tmp, Some(&tmp)).unwrap();
         assert!(report.in_sync);
         assert!(tmp.join("desired-snapshot.yaml").is_file());
-        assert!(tmp.join("placement-attual.json").is_file());
+        assert!(tmp.join("placement-actual.json").is_file());
         assert!(report.spawned_cloud_agents.is_empty());
         let _ = std::fs::remove_dir_all(&tmp);
     }
