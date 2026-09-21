@@ -111,7 +111,7 @@ fn copy_tree(src: &Path, dest: &Path, copied: &mut Vec<String>) -> Result<(), Su
 
 fn stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime.now()
+    let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
