@@ -21,8 +21,11 @@ long). Hosted CI never runs it.
 2. **Pack.** `estate feed pack` materializes a candidate pack
    (`overnight-traces`) and stamps `feed-cursor.json` with
    `schema=cell-one.feed-cursor.v0`, `events > 0`, and `packed_id`.
+   `source_drivers` lists `frontier` and/or `local` and matches `path_counts`.
+   `promoted` stays false.
 3. **Propose.** `estate packs propose` writes `packs/proposed/` with
-   `auto_apply: false`. The estate file is unchanged.
+   `auto_apply: false` and copies `source_drivers` onto the diff. The estate
+   file is unchanged.
 4. **Accept.** `estate packs accept --curator jason` writes enrich-pack
    *edit instructions* (`applied_to_estate: false`). Wrong curator refuses.
    Promote still fails closed.

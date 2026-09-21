@@ -37,6 +37,8 @@ pub enum FeedError {
     BadModelHint(String),
     #[error("refuse:source-path: '{0}' is not a relative path (or encodes a SKU)")]
     BadSourcePath(String),
+    #[error("refuse:source-driver: '{0}'")]
+    BadSourceDriver(String),
     #[error("refuse:curator: curator '{provided}' does not match locked curator '{want}'")]
     WrongCurator { provided: String, want: String },
 }
@@ -102,6 +104,10 @@ pub struct PackManifest {
     /// Binding or driver hint (`ollama`, `local_slm`). Not a SKU.
     #[serde(default)]
     pub model_hint: Option<String>,
+    /// Classes that contributed events. Only `frontier` and `local`, sorted.
+    /// Empty when the pack was not built from those events. Not a promote flag.
+    #[serde(default)]
+    pub source_drivers: Vec<String>,
     /// Portable host affinity. Defaults to `host_class` / `any`.
     #[serde(default)]
     pub host_class_affinity: Option<String>,
@@ -166,16 +172,35 @@ pub struct ImportedPack {
 }
 
 pub fn classify_path(ev: &ScrubbedEvent) -> &'static str {
-    let class = ev.object_class.as_deref().unwrap_or("");
-    if class == "frontier" || ev.kind.contains("frontier") {
+    match ev.object_class.as_deref().unwrap_or("") {
+        "frontier" => return "frontier",
+        "local" => return "local",
+        "proxy" => return "proxy",
+        _ => {}
+    }
+    if ev.kind.contains("frontier") {
         "frontier"
-    } else if class == "local" || ev.kind.contains("local") {
+    } else if ev.kind.contains("local") {
         "local"
-    } else if class == "proxy" || ev.kind.contains("proxy") {
+    } else if ev.kind.contains("proxy") {
         "proxy"
     } else {
         "other"
     }
+}
+
+/// Unique `frontier` / `local` classes on the events. Sorted. Proxy stays a count.
+pub fn source_drivers_from_events(events: &[ScrubbedEvent]) -> Vec<String> {
+    let mut drivers = BTreeSet::new();
+    for ev in events {
+        match classify_path(ev) {
+            "frontier" | "local" => {
+                drivers.insert(classify_path(ev).to_string());
+            }
+            _ => {}
+        }
+    }
+    drivers.into_iter().collect()
 }
 
 pub fn refuse_event(ev: &ScrubbedEvent) -> Result<(), FeedError> {
@@ -564,6 +589,7 @@ pub fn pack_from_events(id: &str, events: &[ScrubbedEvent]) -> PackManifest {
         path_counts,
         source_paths: vec!["feed/events.jsonl".into()],
         model_hint: None,
+        source_drivers: source_drivers_from_events(events),
         host_class_affinity: Some(default_host_class()),
         created_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         note: "Candidate only. Import is explicit apply. Jason still adds the id to estate.enrich_packs by hand. Feed never auto-promotes.".into(),
@@ -606,6 +632,7 @@ pub fn refuse_pack(pack: &PackManifest) -> Result<(), FeedError> {
             return Err(FeedError::BadHostClass(affinity.to_string()));
         }
     }
+    refuse_source_drivers(pack)?;
     for path in &pack.source_paths {
         if path.is_empty() {
             continue;
@@ -617,6 +644,44 @@ pub fn refuse_pack(pack: &PackManifest) -> Result<(), FeedError> {
     let blob = to_json(pack)?;
     refuse_raw_secrets(&blob)?;
     refuse_raw_secrets(&pack.note)?;
+    Ok(())
+}
+
+fn refuse_source_drivers(pack: &PackManifest) -> Result<(), FeedError> {
+    let mut prev = "";
+    for driver in &pack.source_drivers {
+        if driver != "frontier" && driver != "local" {
+            return Err(FeedError::BadSourceDriver(format!(
+                "{driver} must be frontier or local"
+            )));
+        }
+        if driver.as_str() <= prev {
+            return Err(FeedError::BadSourceDriver(format!(
+                "{driver} out of order or duplicated"
+            )));
+        }
+        prev = driver.as_str();
+    }
+    if pack.path_counts.frontier > 0 && !pack.source_drivers.iter().any(|d| d == "frontier") {
+        return Err(FeedError::BadSourceDriver(
+            "frontier events are missing from source_drivers".into(),
+        ));
+    }
+    if pack.path_counts.local > 0 && !pack.source_drivers.iter().any(|d| d == "local") {
+        return Err(FeedError::BadSourceDriver(
+            "local events are missing from source_drivers".into(),
+        ));
+    }
+    if pack.source_drivers.iter().any(|d| d == "frontier") && pack.path_counts.frontier == 0 {
+        return Err(FeedError::BadSourceDriver(
+            "frontier tag has no frontier events".into(),
+        ));
+    }
+    if pack.source_drivers.iter().any(|d| d == "local") && pack.path_counts.local == 0 {
+        return Err(FeedError::BadSourceDriver(
+            "local tag has no local events".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -640,12 +705,17 @@ pub fn write_pack_index(drop_dir: &Path) -> Result<PathBuf, FeedError> {
     } else {
         for pack in &packs {
             md.push_str(&format!(
-                "- `{}.pack.json` events={} frontier={} local={} proxy={} promoted={} host_class={} schema={}\n",
+                "- `{}.pack.json` events={} frontier={} local={} proxy={} drivers={} promoted={} host_class={} schema={}\n",
                 pack.id,
                 pack.from_events,
                 pack.path_counts.frontier,
                 pack.path_counts.local,
                 pack.path_counts.proxy,
+                if pack.source_drivers.is_empty() {
+                    "-".to_string()
+                } else {
+                    pack.source_drivers.join(",")
+                },
                 pack.promoted,
                 pack.host_class,
                 pack.schema
@@ -827,6 +897,9 @@ pub struct EnrichDiff {
     pub agents: Vec<String>,
     pub paths: Vec<String>,
     pub path_counts: PathCounts,
+    /// Copied from the pack. Not applied.
+    #[serde(default)]
+    pub source_drivers: Vec<String>,
     pub note: String,
 }
 
@@ -943,6 +1016,14 @@ pub fn render_proposal(proposal: &EnrichProposal) -> String {
         proposal.diff.path_counts.proxy,
         proposal.diff.path_counts.other
     ));
+    out.push_str(&format!(
+        "  source_drivers: {}\n",
+        if proposal.diff.source_drivers.is_empty() {
+            "(none)".into()
+        } else {
+            proposal.diff.source_drivers.join(", ")
+        }
+    ));
     out.push_str(&format!("\n{}\n", proposal.note));
     out.push_str(&format!("{}\n", proposal.diff.note));
     out
@@ -1037,6 +1118,7 @@ pub fn propose_enrich(
             agents: pack.agents.clone(),
             paths: pack.paths.clone(),
             path_counts: pack.path_counts.clone(),
+            source_drivers: pack.source_drivers.clone(),
             note: if estate_bound {
                 "Already listed on estate.enrich_packs. No estate edit required.".into()
             } else {
@@ -1196,6 +1278,8 @@ mod tests {
         assert!(pack.paths.iter().any(|p| p == "frontier"));
         assert_eq!(pack.path_counts.local, 1);
         assert_eq!(pack.path_counts.frontier, 1);
+        assert_eq!(pack.source_drivers, vec!["frontier".to_string(), "local".to_string()]);
+        assert!(!pack.promoted);
         assert!(feed.join("feed-cursor.json").is_file());
         assert!(path.ends_with("overnight-traces.pack.json"));
         assert!(refuse_promote(&pack.id).is_err());
@@ -1207,6 +1291,60 @@ mod tests {
         assert!(!imported.pack.promoted);
         assert!(accepted.join("import-audit.jsonl").is_file());
         let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn local_down_tags_local_and_not_frontier() {
+        let pack = pack_from_events(
+            "local-down",
+            &[ScrubbedEvent {
+                kind: "model.local.down".into(),
+                agent_id: Some("research".into()),
+                decision: Some("deny".into()),
+                object_class: Some("local".into()),
+                note: Some("fail-closed; no frontier fallback".into()),
+                ts: String::new(),
+            }],
+        );
+        assert_eq!(pack.source_drivers, vec!["local".to_string()]);
+        assert_eq!(
+            classify_path(&ScrubbedEvent {
+                kind: "model.frontier.complete".into(),
+                agent_id: Some("research".into()),
+                decision: Some("deny".into()),
+                object_class: Some("local".into()),
+                note: Some("no frontier fallback".into()),
+                ts: String::new(),
+            }),
+            "local"
+        );
+        assert_eq!(pack.path_counts.frontier, 0);
+        assert_eq!(pack.path_counts.local, 1);
+        assert!(!pack.promoted);
+        assert!(refuse_pack(&pack).is_ok());
+    }
+
+    #[test]
+    fn source_driver_tag_must_match_counts_and_stay_unpromoted() {
+        let mut pack = pack_from_events("local-only", &[]);
+        assert!(pack.source_drivers.is_empty());
+        assert!(!pack.promoted);
+        pack.path_counts.local = 1;
+        let missing = refuse_pack(&pack).unwrap_err();
+        assert!(
+            missing.to_string().contains("source-driver"),
+            "{missing}"
+        );
+        pack.source_drivers = vec!["local".into()];
+        refuse_pack(&pack).unwrap();
+        pack.source_drivers = vec!["ollama".into()];
+        assert!(refuse_pack(&pack).is_err());
+        pack.source_drivers = vec!["local".into(), "frontier".into()];
+        pack.path_counts.frontier = 1;
+        assert!(refuse_pack(&pack).is_err(), "order must be frontier then local");
+        pack.promoted = true;
+        pack.source_drivers = vec!["frontier".into(), "local".into()];
+        assert!(matches!(refuse_pack(&pack).unwrap_err(), FeedError::NoAutoPromote));
     }
 
     #[test]

@@ -7,6 +7,7 @@
   "host_class": "any",
   "host_class_affinity": "any",
   "model_hint": "local_slm",
+  "source_drivers": [],
   "source_paths": ["feed/events.jsonl"],
   "path_counts": {
     "frontier": 0,

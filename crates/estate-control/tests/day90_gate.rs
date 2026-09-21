@@ -75,6 +75,10 @@ fn a10_feed_pack_from_both_paths_never_promotes() {
     assert_eq!(imported.pack.schema, "cell-one.pack.v0");
     assert_eq!(pack.path_counts.local, 1);
     assert_eq!(pack.path_counts.frontier, 1);
+    assert_eq!(
+        pack.source_drivers,
+        vec!["frontier".to_string(), "local".to_string()]
+    );
     assert!(feed.join("feed-cursor.json").is_file());
     assert!(accepted.join("import-audit.jsonl").is_file());
     assert!(dest.ends_with("overnight-traces.pack.json"));
