@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#31 plus this slice)
+## On `main` (PR #1-#33 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -100,15 +100,25 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 #31 plans and applies that fixture (`--require-plan`) on a mock cell. The catalog sibling card names `grok-4.7` with streaming/tools/vision false and completion budget 64. `ollama`, `http-remote`, `llama.cpp`, `mlx`, `vllm`, and `trt` do not POST frontier. `reasoning_effort` xhigh stays docs-only.
 
+## Day-90 mixed and feed tags (#32–#33)
+
+#32 added `make day90-mixed`: status → plan → `apply --require-plan` → status → doctor on an isolated cell. No live key. Not in smoke or Actions. Status and doctor print `grok-4.7` when the catalog or an estate binding names it. The default estate binding has no model param, so status does not invent one.
+
+#33 tags packs with `source_drivers` (`frontier` and/or `local`). The tag must match `path_counts`. An explicit `object_class: local` stays local even when the kind mentions frontier. Propose copies the tag. Promote stays off.
+
 ## This slice
 
-Feed packs record `source_drivers` (`frontier` and/or `local`) from the events they were built from. The tag must match `path_counts`. An explicit `object_class: local` stays local even when the kind or note mentions frontier. Propose copies the tag onto the diff. `promoted` and `auto_apply` stay false. The estate file is not rewritten. `make day90-mixed` stays opt-in.
+`make feed-loop` now asserts those tags on the pack it produces: `source_drivers` is `frontier` then `local`, counts are non-zero, and the proposal copies the tag. Live keys are unset. The walk stays off smoke and Actions.
+
+`estate help frontier` and `estate help day90-mixed` are topic pages. Frontier help names `grok-4.7` and the key gate. `day90-mixed` stays opt-in.
+
+A failed feed append on `model-estate` task no longer disappears. The task refuses before frontier. `conveyor-proxy` `check` still ignores an append error and returns the decision.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#33 (plain English)
+## Bug fixes on #10-#34 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -135,6 +145,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #31 | Mixed fixture stopped at dry-run. Catalog did not name `grok-4.7`. Stub local drivers were not locked off frontier. | `plan` + `apply --require-plan` on the mixed fixture (mock, no key, no POST). Frontier catalog card lists `grok-4.7` and completion caps. `ollama` / `http-remote` / `llama.cpp` / `mlx` / `vllm` / `trt` do not POST frontier. READY no. |
 | #32 | Mixed plan/apply was only a crate test. Status and doctor never named the frontier model. | `make day90-mixed` walks the fixture on an isolated cell. Status/doctor print `grok-4.7` when the catalog or estate binding has it. Default estate does not invent a binding model. READY no. |
 | #33 | Packs counted frontier and local events but did not name the source. A kind mentioning frontier could override `object_class: local`. | `source_drivers` is `frontier` and/or `local` and must match `path_counts`. Local class wins. Propose shows the tag. Promote stays off. READY no. |
+| #34 | `make feed-loop` never checked the new tag. A failed feed append still let the task succeed. Help had no frontier or day90-mixed page. | The fixture walk asserts `source_drivers` frontier then local, with no live keys. Task feed failures refuse before frontier. `estate help frontier` and `estate help day90-mixed`. READY no. |
 
 ## Known-good local commands
 
@@ -144,11 +155,12 @@ Hosted CI is compile-only. These stay on the box:
 make gate-90          # smoke + day90 + doctor --strict + checklist (local)
 make smoke            # doctor + fixtures-check + operator-day + cargo test + day90
 make day90            # isolated operator loop
-make feed-loop        # scrubbed trace -> pack -> propose -> accept (not in smoke)
+make feed-loop        # scrubbed trace -> pack source_drivers -> propose -> accept (not in smoke)
+make day90-mixed      # opt-in mixed fixture; not in smoke or gate-90
 make fixtures-check   # fixture files only
 make doctor-strict    # pre-merge extras
 make check            # cargo check --workspace --locked (same as Actions)
-estate help           # Day-90 topics
+estate help           # Day-90 topics, including frontier and day90-mixed
 ```
 
 `make gate-90` does not invoke `gh` or GitHub Actions.
