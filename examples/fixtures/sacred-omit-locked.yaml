@@ -1,0 +1,8 @@
+# Omitting locked ids from the sacred file does not remove them.
+# Hardcoded LOCKED_SACRED still applies. Overlay is additive only.
+schema: cell-one.sacred.v0
+locked: []
+overlays:
+  - id: lab-notebook
+    aliases: [lab_notebook]
+    reason: Additive overlay only. Cannot drop cyera-ci or rust-classroom.
