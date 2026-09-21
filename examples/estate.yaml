@@ -87,6 +87,22 @@ enrich_packs:
   policy: manual
   packs: []
 
+# Day 61–90: declared placements. Floor binds box sessions only.
+# cloud-agent is a stub so Day-90 operator day is not blocked. Not spawned.
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: any
+    agents: [horizon, research, sanctum]
+    wired: true
+    note: This machine. Isolation driver is profile-dir today; swappable later.
+  - id: cursor-cloud
+    kind: cloud-agent
+    host_class: any
+    agents: []
+    wired: false
+    note: Declared stub. Floor will not spawn this. Assign agents when Jason is ready.
+
 sacred_exclusions:
   - id: cyera-ci
     aliases: [cyera, cyera_ci]
