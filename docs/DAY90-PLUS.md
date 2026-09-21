@@ -5,7 +5,7 @@ below is green. Do not treat probe paths, catalog cards, or env-var names as
 proof that a Mac, a GPU, or a cloud spawn ran.
 
 `make gate-90` is the Day-90 operator entrypoint. It stays local. Hosted CI
-stays compile-only. Live Grok / GPU / Mac are not required to keep
+stays compile-only. Live `grok-4.7` / GPU / Mac are not required to keep
 `make smoke` / `make gate-90` green.
 
 ## Parked — needs a box or a Jason lock
@@ -15,7 +15,7 @@ stays compile-only. Live Grok / GPU / Mac are not required to keep
 | Live Mac MLX | Probe path (`CELL_MLX_ENDPOINT`, falls back to `CELL_LOCAL_ENDPOINT`). Catalog card is a stub behind the same catalog / route / bind API. | No Mac in CI. No Mac attached to this factory. MLX is not Supported. Do not mark it live. |
 | Live consumer / rented GPU | Same specialist protocol. 5090 `probes --live` and `estate specialist` `Pong` are recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Host class is `consumer-nvidia` or `rented-nvidia`. | Not required for local gates. Not native MLX. A 5090 is one host, not a binding id or product fork. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
-| Frontier / AI-gateway specialist | `--driver frontier` on `CELL_FRONTIER_ENDPOINT`. Mock-locked. Documented apart from Ollama live. | Not live Grok. `XAI_API_KEY` does not unlock it. Not required in CI. |
+| Frontier specialist (`grok-4.7`) | `--driver frontier` needs `XAI_API_KEY`. Model default `grok-4.7`. Mock-locked. | Not required in CI. Not the 5090 Ollama path. Local down does not fall through. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 Adapter is on `main`. `estate specialist --driver ollama --prompt` is

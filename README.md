@@ -103,7 +103,7 @@ cargo run -p model-estate -- specialist --job complete --prompt "hello from the 
 cargo run -p model-estate -- task --estate examples/estate.yaml \
   --agent research --act tool --object notes-append --payload "append a note"
 
-# A7 live Grok (never bake the key; local must be up or the path fail-closes)
+# A7 live frontier (model grok-4.7; never bake the key; local must be up or the path fail-closes)
 export XAI_API_KEY=...
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:47831
 cargo run -p model-estate -- task --estate examples/estate.yaml \
@@ -117,8 +117,8 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | --- | --- |
 | **A5** | Human blast-radius: sessions to bind, equal-class live-capable bindings, control will not invoke. |
 | **A6** | Apply in-sync; pause-stop drifts; re-apply converges. |
-| **A7** | Horizon completes via frontier after local precheck. Live needs `XAI_API_KEY`. |
-| **A8** | Research `notes-append` (and Horizon frontier) run portable `policy-precheck` first. Local down → audited deny, no Grok fallback. |
+| **A7** | Horizon completes via frontier `grok-4.7` after local precheck. Live needs `XAI_API_KEY`. |
+| **A8** | Research `notes-append` (and Horizon frontier) run portable `policy-precheck` first. Local down → audited deny, no silent `grok-4.7` fallback. |
 | **A9** | Both bindings in `examples/estate.yaml` (`xai_grok` + `local_slm`). Sanctum cannot use them. A3–A4 still deny. |
 
 ## Local runtime locks
@@ -149,8 +149,9 @@ CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when 
 | `CELL_MLX_ENDPOINT` | Apple MLX; falls back to `CELL_LOCAL_ENDPOINT` |
 | `CELL_VLLM_ENDPOINT` | Experimental; unset = SKIP |
 | `CELL_TRT_ENDPOINT` | Experimental; unset = SKIP |
-| `CELL_FRONTIER_ENDPOINT` | `estate specialist --driver frontier` / AI-gateway. Not probes. `XAI_API_KEY` does not unlock. |
-| `XAI_API_KEY` / `XAI_API_BASE` / `XAI_MODEL` | Frontier live A7. Not used by probes or `--driver frontier`. |
+| `CELL_FRONTIER_ENDPOINT` | Optional base for `--driver frontier`. Default `https://api.x.ai/v1`. |
+| `CELL_FRONTIER_MODEL` | Optional frontier model id. Default `grok-4.7`. SKU ids refuse. |
+| `XAI_API_KEY` / `XAI_API_BASE` / `XAI_MODEL` | Frontier A7 and `--driver frontier`. Key required. Model default `grok-4.7`. Not used by probes or Ollama specialist. |
 
 ## Day-30 gate demo (A1–A4)
 

@@ -181,12 +181,12 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = false)]
         live: bool,
     },
-    /// Env-gated data-plane chat via HttpLocal. Not a gateway.
+    /// Env-gated data-plane chat. Local: HttpLocal. Frontier: grok-4.7. Not a gateway.
     Specialist {
-        /// Override. Default: CELL_LOCAL_ENDPOINT (local) or CELL_FRONTIER_ENDPOINT (frontier).
+        /// Override. Local: CELL_LOCAL_ENDPOINT. Frontier: CELL_FRONTIER_ENDPOINT or https://api.x.ai/v1.
         #[arg(long)]
         endpoint: Option<String>,
-        /// ollama | llama.cpp | http-remote | frontier. Visible alias: --runtime.
+        /// ollama | llama.cpp | http-remote | frontier (grok-4.7). Visible alias: --runtime.
         #[arg(long, visible_alias = "runtime", default_value = "ollama")]
         driver: String,
         /// complete (default) | chat | policy-precheck | redact

@@ -8,7 +8,7 @@ One-box factory proving A1–A4. Horizon / Research / Sanctum on separate lanes.
 
 ## Day 31–60 (on `main` with #1)
 
-Mixed model estate A7–A9. Equal-class frontier + local. Ollama-first, llama.cpp swap-proof. Fail-closed when local is down — no silent Grok fallback. Hardware is a driver (`consumer-nvidia` / `apple-silicon` / `rented-nvidia`), not a product fork. GitHub is the only source of truth.
+Mixed model estate A7–A9. Equal-class frontier (`grok-4.7`) + local. Ollama-first, llama.cpp swap-proof. Fail-closed when local is down — no silent `grok-4.7` fallback. Hardware is a driver (`consumer-nvidia` / `apple-silicon` / `rented-nvidia`), not a product fork. GitHub is the only source of truth.
 
 ## Day 61–90 (PR #2)
 
@@ -64,6 +64,14 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 ## After PR #13 (PR #14)
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
+
+## After PR #28 (this slice)
+
+- Frontier model id is **`grok-4.7`** (`CELL_FRONTIER_MODEL` or `XAI_MODEL`). The old `grok-3-mini` default is gone.
+- `estate specialist --driver frontier` requires `XAI_API_KEY`. Optional `CELL_FRONTIER_ENDPOINT` (default `https://api.x.ai/v1`). Unset key refuses. Sacred and SKU refuse before POST. Mock-locked. No key in CI.
+- `--driver http-remote` stays the local `CELL_LOCAL_ENDPOINT` card. Local down does not fall through to frontier.
+- Cloud-agent standing default `reasoning_effort` xhigh is documented only. The factory chat POST sends `grok-4.7`.
+- `READY_FOR_LIVE_TEST`: yes. One command with a real `XAI_API_KEY`.
 
 ## After PR #27 (this slice)
 

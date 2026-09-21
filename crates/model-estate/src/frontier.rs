@@ -37,6 +37,12 @@ impl FrontierDriver for MockFrontier {
     }
 }
 
+/// Frontier chat model. Override with `CELL_FRONTIER_MODEL` or `XAI_MODEL`.
+pub const DEFAULT_FRONTIER_MODEL: &str = "grok-4.7";
+
+/// xAI OpenAI-compatible base. Override with `CELL_FRONTIER_ENDPOINT` or `XAI_API_BASE`.
+pub const DEFAULT_FRONTIER_BASE: &str = "https://api.x.ai/v1";
+
 /// HTTP chat-completions client. Base URL and key come from env named in the binding.
 pub struct HttpFrontier {
     pub id: String,
@@ -51,28 +57,71 @@ impl FrontierDriver for HttpFrontier {
     }
 
     fn complete(&self, prompt: &str) -> Result<String, ModelError> {
-        let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
-        let body = serde_json::json!({
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0
-        });
-        let resp = ureq::post(&url)
-            .set("Authorization", &format!("Bearer {}", self.key))
-            .set("Content-Type", "application/json")
-            .timeout(Duration::from_secs(30))
-            .send_json(body)
-            .map_err(|e| ModelError::Unreachable(scrub_err(&e.to_string())))?;
-        let value: Value = resp
-            .into_json()
-            .map_err(|e| ModelError::Other(format!("frontier json: {e}")))?;
-        value
-            .pointer("/choices/0/message/content")
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| ModelError::Other("frontier response missing content".into()))
+        frontier_chat(&self.base, &self.key, &self.model, prompt)
     }
+}
+
+/// OpenAI chat against a frontier base. `https://api.x.ai/v1` and a mock
+/// origin both work. Does not fall through to Ollama. Does not log the key.
+pub fn frontier_chat(base: &str, key: &str, model: &str, text: &str) -> Result<String, ModelError> {
+    let url = frontier_chat_url(base);
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": text}],
+        "temperature": 0,
+        "max_tokens": 64
+    });
+    let resp = ureq::post(&url)
+        .set("Authorization", &format!("Bearer {key}"))
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_secs(30))
+        .send_json(body)
+        .map_err(|e| {
+            ModelError::Unreachable(format!(
+                "frontier chat: {} (model {model})",
+                scrub_err(&e.to_string(), key)
+            ))
+        })?;
+    let status = resp.status();
+    let value: Value = resp.into_json().map_err(|e| {
+        ModelError::Unreachable(format!(
+            "frontier chat json: {e} (status {status}, model {model})"
+        ))
+    })?;
+    value
+        .pointer("/choices/0/message/content")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            ModelError::Unreachable(format!(
+                "frontier chat: empty message.content (status {status}, model {model})"
+            ))
+        })
+}
+
+pub fn frontier_chat_url(base: &str) -> String {
+    let root = base.trim().trim_end_matches('/');
+    if root.ends_with("/v1") {
+        format!("{root}/chat/completions")
+    } else {
+        format!("{root}/v1/chat/completions")
+    }
+}
+
+/// `CELL_FRONTIER_MODEL`, then `XAI_MODEL`, else `grok-4.7`. SKU ids refuse.
+pub fn pick_frontier_model(cell: Option<&str>, xai: Option<&str>) -> Result<String, ModelError> {
+    let raw = cell
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| xai.map(str::trim).filter(|s| !s.is_empty()))
+        .unwrap_or(DEFAULT_FRONTIER_MODEL);
+    if estate_schema::contains_sku(raw) {
+        return Err(ModelError::Refused(format!(
+            "frontier model '{raw}' encodes a hardware SKU"
+        )));
+    }
+    Ok(raw.to_string())
 }
 
 pub fn frontier_from_binding(binding: &ModelBinding) -> Result<Box<dyn FrontierDriver>, ModelError> {
@@ -92,17 +141,26 @@ pub fn frontier_from_binding(binding: &ModelBinding) -> Result<Box<dyn FrontierD
         )));
     }
     let key_env = param_str(binding, "api_key_env").unwrap_or_else(|| "XAI_API_KEY".into());
-    let key = std::env::var(&key_env).map_err(|_| ModelError::MissingCreds(key_env))?;
+    let key = std::env::var(&key_env)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ModelError::MissingCreds(key_env))?;
     let base_env = param_str(binding, "api_base_env").unwrap_or_else(|| "XAI_API_BASE".into());
     let base = std::env::var(&base_env)
         .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
         .or_else(|| param_str(binding, "api_base"))
-        .unwrap_or_else(|| "https://api.x.ai/v1".into());
+        .unwrap_or_else(|| DEFAULT_FRONTIER_BASE.into());
     let model_env = param_str(binding, "model_env").unwrap_or_else(|| "XAI_MODEL".into());
-    let model = std::env::var(&model_env)
-        .ok()
-        .or_else(|| param_str(binding, "model"))
-        .unwrap_or_else(|| "grok-3-mini".into());
+    let from_env = std::env::var(&model_env).ok();
+    let from_param = param_str(binding, "model");
+    let cell = std::env::var("CELL_FRONTIER_MODEL").ok();
+    let model = pick_frontier_model(
+        cell.as_deref(),
+        from_env.as_deref().or(from_param.as_deref()),
+    )?;
     Ok(Box::new(HttpFrontier {
         id: binding.id.clone(),
         base,
@@ -119,12 +177,51 @@ pub fn param_str(binding: &ModelBinding, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn scrub_err(raw: &str) -> String {
-    let mut out = raw.to_string();
+fn scrub_err(raw: &str, key: &str) -> String {
+    let mut out = if key.trim().is_empty() {
+        raw.to_string()
+    } else {
+        raw.replace(key, "[redacted]")
+    };
     for needle in ["Bearer ", "sk-", "xai-"] {
         if let Some(idx) = out.find(needle) {
             out = format!("{}[redacted]", &out[..idx]);
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frontier_model_defaults_to_grok_4_7() {
+        assert_eq!(
+            pick_frontier_model(None, None).unwrap(),
+            "grok-4.7"
+        );
+        assert_eq!(
+            pick_frontier_model(Some("grok-4.7"), Some("other")).unwrap(),
+            "grok-4.7"
+        );
+        assert_eq!(
+            pick_frontier_model(None, Some("grok-4.7")).unwrap(),
+            "grok-4.7"
+        );
+        let err = pick_frontier_model(Some("rtx-5090-chat"), None).unwrap_err();
+        assert!(err.to_string().contains("SKU"), "{err}");
+    }
+
+    #[test]
+    fn frontier_chat_url_accepts_v1_base_and_origin() {
+        assert_eq!(
+            frontier_chat_url("https://api.x.ai/v1"),
+            "https://api.x.ai/v1/chat/completions"
+        );
+        assert_eq!(
+            frontier_chat_url("http://127.0.0.1:9"),
+            "http://127.0.0.1:9/v1/chat/completions"
+        );
+    }
 }

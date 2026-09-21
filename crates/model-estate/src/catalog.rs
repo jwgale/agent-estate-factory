@@ -18,6 +18,8 @@
 //!
 //! This crate is **not** an LM Studio / weight browser / chat UI. Bindings
 //! speak a thin specialist protocol (`POST /v0/specialist`).
+//! Frontier complete (A7) defaults to model `grok-4.7` (`CELL_FRONTIER_MODEL`
+//! or `XAI_MODEL`). Local down does not fall through to that path.
 
 use crate::error::ModelError;
 use crate::frontier::param_str;

@@ -126,7 +126,7 @@ fn estate_specialist_refuses_sku_endpoint() {
 }
 
 #[test]
-fn estate_specialist_frontier_requires_frontier_env_not_xai() {
+fn estate_specialist_frontier_refuses_without_key() {
     let out = bin()
         .args([
             "specialist",
@@ -135,15 +135,16 @@ fn estate_specialist_frontier_requires_frontier_env_not_xai() {
             "--prompt",
             "Reply with the single word pong.",
         ])
-        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("XAI_API_KEY")
         .env("CELL_LOCAL_ENDPOINT", "http://127.0.0.1:11434")
-        .env("XAI_API_KEY", "xai-not-a-real-key-value")
+        .env("CELL_FRONTIER_ENDPOINT", "http://127.0.0.1:9")
         .output()
         .unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("CELL_FRONTIER_ENDPOINT"), "{err}");
     assert!(err.contains("XAI_API_KEY"), "{err}");
+    assert!(err.contains("grok-4.7"), "{err}");
+    assert!(!err.contains("xai-"), "{err}");
 }
 
 #[test]
@@ -163,7 +164,10 @@ fn estate_specialist_frontier_complete_against_compat_http() {
             "Reply with the single word pong.",
         ])
         .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_FRONTIER_MODEL")
+        .env_remove("XAI_MODEL")
         .env_remove("CELL_LOCAL_ENDPOINT")
+        .env("XAI_API_KEY", "test-not-a-secret")
         .output()
         .unwrap();
     assert!(
@@ -173,10 +177,93 @@ fn estate_specialist_frontier_complete_against_compat_http() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("\"job\": \"complete\""), "{stdout}");
+    assert!(stdout.contains("\"reason\": \"frontier completion\""), "{stdout}");
     assert!(stdout.contains("\"completion\": \"ok\""), "{stdout}");
+    assert!(!stdout.contains("test-not-a-secret"), "{stdout}");
     let (path, body) = srv.last_post().expect("frontier openai chat");
     assert_eq!(path, "/v1/chat/completions");
     assert!(body.contains("Reply with the single word pong."), "{body}");
+    assert!(body.contains("grok-4.7"), "{body}");
+}
+
+#[test]
+fn estate_specialist_frontier_sacred_does_not_post() {
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "frontier",
+            "--endpoint",
+            &srv.endpoint(),
+            "--prompt",
+            "please mention cyera",
+        ])
+        .env("XAI_API_KEY", "test-not-a-secret")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let mix = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(mix.contains("sacred") || mix.contains("denied"), "{mix}");
+    assert!(srv.last_post().is_none(), "sacred must not POST");
+}
+
+#[test]
+fn estate_specialist_frontier_sku_prompt_refuses_before_post() {
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "frontier",
+            "--endpoint",
+            &srv.endpoint(),
+            "--prompt",
+            "use the rtx-5090 weights",
+        ])
+        .env("XAI_API_KEY", "test-not-a-secret")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("SKU") || err.contains("sku"), "{err}");
+    assert!(srv.last_post().is_none(), "SKU prompt must not POST");
+}
+
+#[test]
+fn estate_specialist_frontier_sku_model_refuses_before_post() {
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["grok-4.7".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "frontier",
+            "--endpoint",
+            &srv.endpoint(),
+            "--prompt",
+            "Reply with the single word pong.",
+        ])
+        .env("XAI_API_KEY", "test-not-a-secret")
+        .env("CELL_FRONTIER_MODEL", "rtx-5090-chat")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("SKU") || err.contains("sku"), "{err}");
+    assert!(srv.last_post().is_none(), "SKU model must not POST");
 }
 
 #[test]

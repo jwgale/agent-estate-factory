@@ -96,15 +96,22 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 | What was broken | What it does now |
 | --- | --- |
-| No env-gated frontier specialist. Easy to confuse with Ollama live or `XAI_API_KEY`. | `--driver frontier` uses `CELL_FRONTIER_ENDPOINT` only. Mock-locked. Not in CI. |
-| `--driver frontier` resolved `CELL_LOCAL_ENDPOINT` first and died as a local miss. | Driver is chosen before the endpoint env. |
-| Apply and specialist complete were separate proofs. | One fixture: apply writes `local_slm` in `model-actual.json`, then mock complete. |
+| Frontier default model was `grok-3-mini`. Docs said "Grok" without an id. | Code and docs name **`grok-4.7`**. |
+| `--driver frontier` ignored `XAI_API_KEY` and required only an endpoint. | Key required. Optional endpoint / model. Unset key refuses. Sacred and SKU refuse before POST. |
+| Easy to treat local `http-remote` as the frontier path. | `--driver http-remote` stays `CELL_LOCAL_ENDPOINT`. Local down does not call frontier. |
 
-`READY_FOR_LIVE_TEST`: **no**. Mac specialist is the same command as the 5090 `Pong` PASS. Live Grok stays A7 / unrecorded.
+`READY_FOR_LIVE_TEST`: **yes**. One command with a real `XAI_API_KEY`:
+
+```
+cargo run -q -p estate-control -- specialist --driver frontier \
+  --prompt "Reply with the single word pong."
+```
+
+Model default `grok-4.7`. Not the 5090 Ollama path.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#27 (plain English)
+## Bug fixes on #10-#28 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -126,6 +133,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #26 | 5090 OpenAI chat 200 with empty `message.content` hard-failed. | Fall through to `/api/chat`. Both-fail names status + model + pull. READY yes. |
 | #27 | Live proof was chat-only. Mixed dry-run never hit HttpLocal. Apply swallowed catalog write. | Recorded Mac/5090 proof. `make live-specialist`. Mixed mock dry-run. Catalog write `?`. READY no. |
 | #28 | No frontier specialist env. Apply and complete were separate. | `CELL_FRONTIER_ENDPOINT` mock path. Apply+specialist fixture. READY no. |
+| #29 | Frontier default was `grok-3-mini`. Key did not unlock specialist. | Model `grok-4.7`. `XAI_API_KEY` required. READY yes. |
 
 ## Known-good local commands
 

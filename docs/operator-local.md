@@ -55,7 +55,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 
 A green task prints `"path": ["authorize:allow", "local:allow", "tool:allow"]` (or `frontier:complete` for Horizon). That is the A8 operator proof.
 
-If the endpoint is down, the task **denies** with `local:down` and a feed event `model.local.down`. It does not silently complete on Grok.
+If the endpoint is down, the task **denies** with `local:down` and a feed event `model.local.down`. It does not silently complete on frontier `grok-4.7`.
 
 ## Catalog
 
