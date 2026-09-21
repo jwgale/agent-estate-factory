@@ -137,3 +137,34 @@ fn rematerialize_does_not_auto_promote_or_drop_written_cursor() {
     assert!(refuse_promote("overnight-traces").is_err());
     let _ = std::fs::remove_dir_all(&feed);
 }
+
+#[test]
+fn garbage_cursor_is_refuse_not_empty() {
+    let dir = tmp("garbage");
+    let path = dir.join("feed-cursor.json");
+    std::fs::write(&path, "not-json\n").unwrap();
+    let err = load_cursor(&dir).unwrap_err();
+    assert!(
+        err.to_string().contains("feed-cursor.json"),
+        "{err}"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "not-json\n");
+    assert!(load_cursor(&dir.join("missing")).unwrap().is_none());
+
+    let ok = FeedCursor {
+        schema: "cell-one.feed-cursor.v0".into(),
+        events: 1,
+        last_ts: Some("2026-09-21T00:00:00Z".into()),
+        last_kind: Some("proxy.tool".into()),
+        packed_id: None,
+        updated_at: "2026-09-21T00:00:01Z".into(),
+    };
+    write_cursor(&dir, &ok).unwrap();
+    let loaded = load_cursor(&dir).unwrap().expect("rewritten cursor");
+    assert_eq!(loaded.schema, "cell-one.feed-cursor.v0");
+    assert_eq!(loaded.events, 1);
+    let blob = std::fs::read_to_string(&path).unwrap();
+    assert!(!blob.trim().is_empty());
+    assert!(blob.contains("cell-one.feed-cursor.v0"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
