@@ -62,6 +62,12 @@ pub struct ApplyAudit {
     pub cloud_agent_spawned: bool,
     #[serde(default)]
     pub fresh_plan: bool,
+    /// Second apply with identical desired state and no drift.
+    #[serde(default)]
+    pub unchanged: bool,
+    /// Operator overrode a drift refuse.
+    #[serde(default)]
+    pub forced: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1126,6 +1132,8 @@ mod tests {
                 covering_plan: None,
                 cloud_agent_spawned: true,
                 fresh_plan: false,
+                unchanged: false,
+                forced: false,
             },
         )
         .unwrap_err();
