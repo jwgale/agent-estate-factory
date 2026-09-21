@@ -15,6 +15,7 @@ use feed_collector::{
 use floor_supervisor::{
     backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events,
     list_session_events, load_placements, pause_kit_proof, prune_cell_backups,
+    refuse_lease_host_classes,
     reconcile_placements, record_placements, render_restore, restore_cell,
     resume, suspend, tail_session_events, write_reconcile,
 };
@@ -174,6 +175,7 @@ pub(crate) fn cmd_leases(state_dir: &Path) -> Result<()> {
         }
         Some(places) => {
             println!("{}", serde_json::to_string_pretty(&places)?);
+            refuse_lease_host_classes(&places)?;
             for lease in &places.leases {
                 if lease.kind == "cloud-agent" && lease.spawned {
                     bail!("cloud-agent lease spawned (fail closed)");
