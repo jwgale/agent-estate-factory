@@ -150,11 +150,58 @@ pub fn refuse_event(ev: &ScrubbedEvent) -> Result<(), FeedError> {
     Ok(())
 }
 
+/// Redact PII-ish tokens: `sk-` / `xai-` keys, bearer tokens, emails.
+pub fn looks_pii_token(token: &str) -> bool {
+    token.split(['=', ':', '/']).any(looks_pii_part)
+}
+
+fn looks_pii_part(part: &str) -> bool {
+    let t = part.trim_matches(|c: char| {
+        !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.' && c != '@' && c != '+'
+    });
+    if t.is_empty() {
+        return false;
+    }
+    let lower = t.to_ascii_lowercase();
+    if (lower.starts_with("sk-") || lower.starts_with("xai-") || lower.starts_with("xai_"))
+        && t.len() >= 12
+    {
+        return true;
+    }
+    if lower.starts_with("bearer") && t.len() >= 12 {
+        return true;
+    }
+    if let Some((user, host)) = t.split_once('@') {
+        if !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.') {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn scrub_pii(text: &str) -> String {
+    let mut out = String::new();
+    for word in text.split_inclusive([' ', '\n', '\t', ',', ';', '|']) {
+        let core = word.trim_end_matches([' ', '\n', '\t', ',', ';', '|']);
+        if looks_pii_token(core) {
+            let sep = &word[core.len()..];
+            out.push_str("[redacted]");
+            out.push_str(sep);
+        } else {
+            out.push_str(word);
+        }
+    }
+    out
+}
+
 pub fn append_event(dir: &Path, event: &ScrubbedEvent) -> Result<(), FeedError> {
     std::fs::create_dir_all(dir)?;
     let mut ev = event.clone();
     if ev.ts.is_empty() {
         ev.ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    }
+    if let Some(note) = ev.note.take() {
+        ev.note = Some(scrub_pii(&note));
     }
     refuse_event(&ev)?;
     let line = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".into());
@@ -595,6 +642,40 @@ mod tests {
             write_drop_pack(&dir, &pack),
             Err(FeedError::BadHostClass(_))
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scrub_pii_redacts_keys_bearer_and_email() {
+        let raw = "key=sk-abcdefghijklmnopqrstuv xai-abcdefghijklmnopqrstuv bearer-ABCDEF123456 jason@example.com keep";
+        let scrubbed = scrub_pii(raw);
+        assert!(!scrubbed.contains("sk-"));
+        assert!(!scrubbed.contains("xai-"));
+        assert!(!scrubbed.contains("jason@example.com"));
+        assert!(!scrubbed.contains("bearer-ABCDEF123456"));
+        assert!(scrubbed.contains("[redacted]"));
+        assert!(scrubbed.contains("keep"));
+    }
+
+    #[test]
+    fn append_event_scrubs_note() {
+        let dir = tmp();
+        append_event(
+            &dir,
+            &ScrubbedEvent {
+                kind: "proxy.tool".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("deny".into()),
+                object_class: Some("tool".into()),
+                note: Some("contact jason@example.com key=sk-abcdefghijklmnopqrstuv".into()),
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        assert!(!text.contains("sk-"));
+        assert!(!text.contains("jason@example.com"));
+        assert!(text.contains("[redacted]"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
