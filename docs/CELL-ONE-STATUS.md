@@ -6,7 +6,7 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1-#17 plus this slice)
+## On `main` (PR #1-#18 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -50,26 +50,31 @@ string is not.
 #14 locked plan exits, dry-run refuse writes, and curator clap vs
 `refuse:curator`. No new product bug on those three paths.
 
+## #18 (fail-closed swallows)
+
+#18 closed the first honesty hunt after the SKU series. `estate leases`
+printed a SKU actual, then refused. Backup / restore treated a present
+but unreadable estate file as "no estate". `suspend` swallowed a corrupt
+`actual-state.json` and journal write failures. Feed import wrote the
+redaction report with `let _ =`. Floor src tests still said `rtx-5090`,
+so `doctor --strict` failed. Those are closed. Journals stay append-only.
+
 ## Bug fix this slice
 
 | What was broken | What it does now |
 | --- | --- |
-| `estate leases` printed the SKU `placement-actual` JSON, then refused. The operator still saw the bad actual. | Refuse first. No JSON dump on `refuse:bad-host-class`. Status already refused before print; the test now locks that. |
-| `backup` / `restore` used `load_estate(...).ok()`. A file that existed but did not parse was treated as "no estate", so restore could use a locked-only sacred set. | If the estate path is a file, parse it or refuse. Missing file stays optional. |
-| `suspend` swallowed `actual-state.json` parse errors and journal write failures (`if let Ok` / `let _ =`), so unspawn lines could vanish from `sessions.jsonl`. | Load and journal `?`. Corrupt actual-state fails closed. |
-| Feed import wrote `{id}.redaction.json` with `let _ =` and never re-checked the report bytes. | Report write fails closed. Serialized report is kind counts only; a raw secret in the report is `refuse:raw-secret`. Hand-written dirty packs write no accepted pack and no report. |
-| #17 floor `src` tests used `rtx-5090`, so `doctor --strict` failed the vendor-needle scan. | Floor fixtures use `not-a-host`. Estate-control e2e still uses `rtx-5090`. |
+| `suspend` / `resume` / `apply` used `load_lifecycle(...).ok()`. A present but unreadable `lifecycle.json` was treated as greenfield and overwritten. | Parse it or refuse. Missing file still means default. Apply refuses before lease writes. |
+| Feed import wrote `{id}.pack.json` then swallowed `append_import_audit` (`let _ =`). | Audit append is fail-closed. Serialize no longer invents an empty line. |
+| `apply --dry-run --import-pack --curator robot` skipped the curator check and could print dry-run ok. | `refuse_import_pack` runs before dry-run and before lease writes. Live and dry-run write nothing. |
+| `estate catalog` printed the catalog, then failed the write. | Write first, then print. Serialize does not invent an empty `catalog.json`. |
+| `estate probes` checked SKU / host_class while printing. | Refuse every probe first, then print. |
+| Status invented `expired=0` / empty proposals when those readers failed. | Those reads fail closed. Doctor summary counts a placement load error as a fail. |
 
-#17 left `rtx-5090` in floor `src` tests, so `doctor --strict` failed
-(floor src must not contain vendor / SKU needles). Those fixtures now
-use `not-a-host`. Estate-control e2e still uses `rtx-5090`.
+Sacred and policy refuse paths had no new silent `Ok()` swallows.
+Curator refuse now runs before dry-run and before any lease write.
+`import-audit.jsonl` is no longer best-effort.
 
-Sacred, curator, and policy refuse paths had no new silent `Ok()` swallows.
-
-`lifecycle.jsonl` / `sessions.jsonl` stay append-only under suspend /
-resume / `expire --forget`. Forget rewrites leases, not the journals.
-
-## Bug fixes on #10-#17 (plain English)
+## Bug fixes on #10-#18 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -80,6 +85,7 @@ resume / `expire --forget`. Forget rewrites leases, not the journals.
 | #15 | `convey sync` slim-parsed a SKU `host_class` as portable `any` and could seed a hop. | Slim-parse is `refuse:bad-host-class`. No mesh write. |
 | #16 | `convey call` swallowed slim-parse, so a SKU skipped not-live. Floor claim/record could stamp `any`. Status/leases/reconcile stayed silent. | Call, status, leases, reconcile, record refuse. Claim keeps the raw SKU. |
 | #17 | Mesh readers and restore still copied a SKU `host_class`. `canonical_host_class` could still invent `any` on a production path. | Mesh + restore refuse. Production callers of the unwrap are gone. |
+| #18 | Leases printed then refused. Backup/restore swallowed a garbage estate. Suspend swallowed actual-state / journal errors. Feed redaction write was `let _ =`. | Refuse first. Present file must parse. Journal and redaction writes fail closed. |
 
 ## Known-good local commands
 
