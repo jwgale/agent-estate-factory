@@ -89,7 +89,7 @@ estate doctor --strict
 | Mixed plan + apply | green | `plan` then `apply --require-plan` on mixed fixture; catalog names `grok-4.7`; no POST; no live key |
 | Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
-| `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture; no live key; not in smoke / Actions |
+| `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture, then validate + status on `examples/hosts/frontier-http.yaml`; no live key; not in smoke / Actions |
 | Frontier model on status / doctor | green | `grok-4.7` when catalog or estate binding names it; default estate does not invent a binding model |
 | Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; promote stays off |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
