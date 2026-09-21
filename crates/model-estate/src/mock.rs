@@ -2,13 +2,14 @@ use crate::local::{builtin_specialist, SpecialistJob, SpecialistRequest, Special
 use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 pub struct MockLocalServer {
     pub addr: SocketAddr,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
+    last_post: Arc<Mutex<Option<(String, String)>>>,
 }
 
 impl MockLocalServer {
@@ -19,20 +20,28 @@ impl MockLocalServer {
             _ => return Err("expected ip listen addr".into()),
         };
         let stop = Arc::new(AtomicBool::new(false));
+        let last_post = Arc::new(Mutex::new(None));
         let flag = stop.clone();
+        let last = last_post.clone();
         let handle = thread::spawn(move || {
             while !flag.load(Ordering::Relaxed) {
                 match server.recv_timeout(std::time::Duration::from_millis(50)) {
                     Ok(Some(mut request)) => {
+                        let method = request.method().as_str().to_string();
                         let path = request_path(&request);
-                        if request.method().as_str() == "GET" && path == "/v1/models" {
+                        if method == "GET" && path == "/v1/models" {
                             let _ = request.respond(json_ok(
                                 r#"{"object":"list","data":[]}"#,
                             ));
                             continue;
                         }
                         let mut body = String::new();
-                        let _ = std::io::Read::read_to_string(request.as_reader(), &mut body);
+                        let _ = Read::read_to_string(request.as_reader(), &mut body);
+                        if method == "POST" {
+                            if let Ok(mut slot) = last.lock() {
+                                *slot = Some((path.clone(), body.clone()));
+                            }
+                        }
                         let reply = handle_specialist(&body);
                         let _ = request.respond(json_ok(&reply));
                     }
@@ -44,11 +53,16 @@ impl MockLocalServer {
             addr,
             stop,
             handle: Some(handle),
+            last_post,
         })
     }
 
     pub fn endpoint(&self) -> String {
         format!("http://{}", self.addr)
+    }
+
+    pub fn last_post(&self) -> Option<(String, String)> {
+        self.last_post.lock().ok().and_then(|g| g.clone())
     }
 }
 
@@ -105,12 +119,18 @@ pub enum CompatScript {
     Ollama { models: Vec<String> },
     Garbage,
     EmptyBody,
+    /// 200 on POST /v0/specialist that is not SpecialistResult. Also serves
+    /// OpenAI chat so a silent fall-through would have succeeded.
+    V0Unparseable,
+    /// OpenAI chat with choices but no message.content.
+    OpenAiNoContent { models: Vec<String> },
 }
 
 pub struct CompatServer {
     pub addr: SocketAddr,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
+    last_post: Arc<Mutex<Option<(String, String)>>>,
 }
 
 impl CompatServer {
@@ -121,12 +141,23 @@ impl CompatServer {
             _ => return Err("expected ip listen addr".into()),
         };
         let stop = Arc::new(AtomicBool::new(false));
+        let last_post = Arc::new(Mutex::new(None));
         let flag = stop.clone();
+        let last = last_post.clone();
         let handle = thread::spawn(move || {
             while !flag.load(Ordering::Relaxed) {
                 match server.recv_timeout(std::time::Duration::from_millis(50)) {
-                    Ok(Some(request)) => {
-                        let reply = compat_reply(&script, request.method().as_str(), &request_path(&request));
+                    Ok(Some(mut request)) => {
+                        let method = request.method().as_str().to_string();
+                        let path = request_path(&request);
+                        if method == "POST" {
+                            let mut body = String::new();
+                            let _ = Read::read_to_string(request.as_reader(), &mut body);
+                            if let Ok(mut slot) = last.lock() {
+                                *slot = Some((path.clone(), body));
+                            }
+                        }
+                        let reply = compat_reply(&script, &method, &path);
                         let _ = request.respond(reply);
                     }
                     _ => {}
@@ -137,11 +168,16 @@ impl CompatServer {
             addr,
             stop,
             handle: Some(handle),
+            last_post,
         })
     }
 
     pub fn endpoint(&self) -> String {
         format!("http://{}", self.addr)
+    }
+
+    pub fn last_post(&self) -> Option<(String, String)> {
+        self.last_post.lock().ok().and_then(|g| g.clone())
     }
 }
 
@@ -179,6 +215,27 @@ fn compat_reply(
             }
             if post && path == "/api/chat" {
                 return json_ok(r#"{"message":{"role":"assistant","content":"ok"}}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
+        CompatScript::V0Unparseable => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(&["llama3".into()]));
+            }
+            if post && path == "/v0/specialist" {
+                return json_ok("not-a-specialist-result");
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(r#"{"choices":[{"message":{"content":"ok"}}]}"#);
+            }
+            json_status(404, r#"{"error":"not found"}"#)
+        }
+        CompatScript::OpenAiNoContent { models } => {
+            if get && path == "/v1/models" {
+                return json_ok(&openai_models_json(models));
+            }
+            if post && path == "/v1/chat/completions" {
+                return json_ok(r#"{"choices":[{"index":0}]}"#);
             }
             json_status(404, r#"{"error":"not found"}"#)
         }
