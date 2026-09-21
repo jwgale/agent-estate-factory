@@ -6,7 +6,7 @@ Durable operator state lives under `.cell/`. Runtime is regenerable. The estate 
 | --- | --- | --- |
 | `actual-state.json` | regenerable | Bound sessions from last apply. |
 | `desired-snapshot.yaml` | regenerable | Last applied estate snapshot (plan `against`). |
-| `placement-actual.json` | durable lease | Desired vs actual placement leases. `box` may spawn. `cloud-agent` is declared and never spawned. |
+| `placement-actual.json` | durable lease | Desired vs actual placement leases. `box` may spawn. `cloud-agent` is declared and never spawned. Optional `ttl_secs` / `issued_at` / `expires_at`. |
 | `reconcile.json` / `reconcile.md` | regenerable report | `estate reconcile` desired-vs-actual. Refuse codes: `missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`. |
 | `lifecycle.json` | durable | Operator intent (`running` / `suspended`). Not estate SoT. |
 | `lifecycle.jsonl` | durable history | Append-only suspend / resume / apply. |
@@ -29,8 +29,11 @@ schema: cell-one.placement-actual.v0
 desired_hash: sha256:…
 leases[]:
   placement_id, kind (box|cloud-agent), host_class (canonical),
-  agents[], wired, spawned, durable, driver, note
+  agents[], wired, spawned, durable, driver, note,
+  ttl_secs?, issued_at?, expires_at?
 ```
+
+Optional TTL: absent means no expiry. `estate expire` lists elapsed leases. apply/resume refuse them. `estate expire --forget` drops expired rows (does not spawn) so apply can record fresh leases.
 
 `host_class` on disk is the canonical name (`consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`). Aliases are normalize-only.
 

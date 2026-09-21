@@ -38,6 +38,17 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Wave 2 stays.
 22. **`.cell/` lease layout is documented.** [`docs/cell-layout.md`](cell-layout.md). Leases store canonical `host_class`. Reconcile does not rewrite them.
 23. **Operator-day grew one notch.** Validate multi-host, packs propose, refuse-prefix check, reconcile, audit export. Still fixtures only. Still no live Grok / GPU / Actions.
 
+## Wave 4 (same PR #2 — apply preview + lease ttl)
+
+Jason still asleep. Same branch. No Actions. Local cargo only. Waves 2–3 stay.
+
+24. **Apply dry-run does not write.** `estate apply --dry-run` prints blast radius + preview leases + would-refuse. No `placement-actual`, sessions, snapshots, or audits. Exit 1 on expired / sacred-id / cloud-spawned (and plan gates if those flags are set). Missing leases are not would-refuse (apply would record them).
+25. **Lease TTL is optional.** `ttl_secs` on a placement stamps `issued_at` / `expires_at` on the lease. `estate expire` lists elapsed rows (exit 1). apply/resume refuse expired. `estate expire --forget` drops expired rows so apply can record fresh leases. Does not spawn. Reconcile reports `refuse:expired`.
+26. **Scrub is wider; import writes a redaction report.** `scrub_pii` covers GitHub/HF/AWS/Slack/PEM/`password=` plus the Wave 2 keys. Import refuses raw secrets (never stored in accepted packs) and writes `{id}.redaction.json` (kind counts only).
+27. **Specialist pack v0 is additive.** `source_paths`, `model_hint`, `host_class_affinity` validate on import/propose. `cell-one.pack.v0` and `cell-one.specialist-pack.v0` both load. SKU / absolute source paths / bad host affinity fail closed.
+28. **`estate doctor` is one page.** Schema files present, `.github/workflows/*.yml` absent (quiet hours), `.cell` layout notes, expired/cloud-spawned fail. Greenfield `.cell` is a note, not a fail.
+29. **Operator-day grew dry-run / doctor / expire / redaction.** Still fixtures only.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -56,6 +67,9 @@ Jason still asleep. Same branch. No Actions. Local cargo only. Wave 2 stays.
 | Enrich proposals never apply | Same lock as no auto-promote | Curator UI is still forbidden |
 | Audit export stays on the box | Quiet hours + no remote dump | Zip-to-PR later if Jason wants a review pack |
 | Extra unused bindings / empty box placements are valid | Multi-host fixture needs them | Do not require every binding to be assigned |
+| Apply dry-run never writes | Preview is the control surface next to plan | Keep it that way |
+| Expired leases refuse apply/resume | Fail closed; `--forget` is the refresh | Auto-renew only if Jason asks |
+| Specialist pack fields are optional | Existing `cell-one.pack.v0` fixtures stay valid | Do not require model_hint |
 
 ## Anti-shrink (still)
 

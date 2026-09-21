@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -14,6 +14,9 @@ apply:
 
 apply-gated:
 	cargo run -q -p estate-control -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base . --require-plan
+
+apply-dry-run:
+	cargo run -q -p estate-control -- apply --dry-run --estate $(ESTATE) --state-dir $(STATE) --roots-base .
 
 drift:
 	cargo run -q -p estate-control -- drift --estate $(ESTATE) --state-dir $(STATE)
@@ -117,6 +120,12 @@ packs-propose:
 
 audit-export:
 	cargo run -q -p estate-control -- audit export --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --packs-dir packs --out $(STATE)/audit-export --tar
+
+expire:
+	cargo run -q -p estate-control -- expire --state-dir $(STATE)
+
+doctor:
+	cargo run -q -p estate-control -- doctor --root . --state-dir $(STATE)
 
 task-mock:
 	cargo run -q -p model-estate -- task --estate $(ESTATE) --agent horizon --act model --object xai_grok --mock
