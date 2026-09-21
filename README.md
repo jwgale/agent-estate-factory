@@ -116,8 +116,8 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 
 ## Persist vs disposable
 
-Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`, `.cell/lifecycle.json`.  
-Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/placement-actual.json`.
+Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/feed/feed-cursor.json`.  
+Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`.
 
 ## What is stubbed vs live
 
@@ -154,6 +154,7 @@ Day 61–90 beachhead (local `make gate-90`):
 9. **Feed packs are candidates.** `estate feed pack` writes `packs/`; `estate feed import` is explicit apply; `estate feed promote` fails. Jason edits the estate.
 10. **Suspend/resume is the operator lifecycle.** `.cell/lifecycle.json` survives session discard. Placement leases are regenerable on disk.
 11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. `apply --require-plan` is gated and audited. Commit a plan file when apply needs a PR review.
-12. **`placements[]` declares `box` and a `cloud-agent` stub.** Floor records leases; it does not spawn cloud agents.
+12. **`placements[]` declares `box` and a `cloud-agent` stub.** `PlacementDriver` records leases; it does not spawn cloud agents. Drift fail-closes a spawned cloud lease or host_class mismatch. `schema/local-catalog.v0.json` is the catalog file SoT.
+13. **Feed cursor + lifecycle history + plan freshness** are file-durable. `apply --require-fresh-plan` checks `against_hash`. Driver `probe()` is catalog-level (`live_probed=false`).
 
 Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md). Anti-shrink list is in the charter.
