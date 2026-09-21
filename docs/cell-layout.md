@@ -1,29 +1,41 @@
-# `.cell/` layout (Wave 3)
+# `.cell/` layout
 
-Durable operator state lives under `.cell/`. Runtime is regenerable. The estate file is SoT. This is not a gateway cache and not a remote store.
+Durable operator state lives under `.cell/`. Runtime is regenerable. The estate
+file is SoT. This is not a gateway cache and not a remote store.
+
+Paths below match what the code writes today (`floor-supervisor` backup /
+placement / lifecycle / sessions, `estate-control` suggest / audit export,
+`feed-collector` cursor, `conveyor-proxy` mesh, `model-estate` actual).
+
+## Under `.cell/`
 
 | Path | Kind | Notes |
 | --- | --- | --- |
 | `actual-state.json` | regenerable | Bound sessions from last apply. |
 | `desired-snapshot.yaml` | regenerable | Last applied estate snapshot (plan `against`). |
 | `placement-actual.json` | durable lease | Desired vs actual placement leases. `box` may spawn. `cloud-agent` is declared and never spawned. Optional `ttl_secs` / `issued_at` / `expires_at`. |
-| `reconcile.json` / `reconcile.md` | regenerable report | `estate reconcile` desired-vs-actual. Refuse codes: `missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`. |
+| `reconcile.json` / `reconcile.md` | regenerable report | `estate reconcile` desired-vs-actual. Refuse codes: `missing-lease`, `extra-lease`, `kind-mismatch`, `host-class-mismatch`, `cloud-spawned`, `sacred-id`, `expired`. |
+| `reconcile-suggest.md` | local patch file | `estate reconcile --suggest`. Schema `cell-one.reconcile-suggest.v0`. `auto_apply: false`. Never rewrites leases. |
 | `lifecycle.json` | durable | Operator intent (`running` / `suspended`). Not estate SoT. |
 | `lifecycle.jsonl` | durable history | Append-only suspend / resume / apply. |
 | `sessions.jsonl` | durable journal | Append-only spawn / unspawn / suspend / resume. Not SoT. Survives pause. |
 | `apply-audit.jsonl` | durable | Gated apply history. Cloud-agent spawned is always refuse. |
 | `catalog.json` | regenerable | Portable local catalog dump. File SoT is `schema/local-catalog.v0.json`. |
 | `model-actual.json` | regenerable | Binding actual after apply. |
-| `conveyor-mesh.json` | durable | Capability mesh (not a gateway). |
+| `conveyor-mesh.json` | durable | Capability mesh (not a gateway). Also split as hops + leases below. |
 | `conveyor-hops.json` | durable | Declared hops. |
 | `conveyor-leases.json` | durable | Hop leases. Call refuses without a granted lease. Optional hop `ttl_secs` / `issued_at` / `expires_at`. |
 | `feed/events.jsonl` | durable | Scrubbed traces. No prompts, no keys. |
-| `feed/feed-cursor.json` | durable watermark | Survives rematerialize. |
+| `feed/feed-cursor.json` | durable watermark | Schema `cell-one.feed-cursor.v0`. Survives rematerialize. Does not auto-promote. |
 | `sessions/` | disposable | Profile-dir desktops. Discarded on suspend. |
-| `runtime/` | disposable | Heartbeats / PIDs. Never SoT. |
+| `runtime/` | disposable | Heartbeats / PIDs (`runtime/pids.json`). Never SoT. |
 | `audit-export/` | local review bundle | `estate audit export`. Plans + lifecycle + import-audit + convey leases. Not uploaded. |
 
-Lease file shape (`placement-actual.json`):
+`estate backup` copies the durable / regenerable files listed in
+`floor-supervisor` `DURABLE_FILES` plus `feed/` into
+`backups/cell-backup-*` (outside `.cell/`). Restore refuses sacred mismatch.
+
+## Lease file shape (`placement-actual.json`)
 
 ```
 schema: cell-one.placement-actual.v0
@@ -34,17 +46,29 @@ leases[]:
   ttl_secs?, issued_at?, expires_at?
 ```
 
-Optional TTL: absent means no expiry. `estate expire` lists elapsed leases. apply/resume refuse them. `estate expire --forget` drops expired rows (does not spawn) so apply can record fresh leases.
+Optional TTL: absent means no expiry. `estate expire` lists elapsed leases.
+apply/resume refuse them. `estate expire --forget` drops expired rows (does
+not spawn) so apply can record fresh leases.
 
-`host_class` on disk is the canonical name (`consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`). Aliases are normalize-only.
+host_class` on disk is the canonical name (`consumer-nvidia` |
+`apple-silicon` | `rented-nvidia` | `any`). Aliases are normalize-only.
 
-Sacred-id deny stays: an actual lease that binds a sacred exclusion fail-closes even if `estate.yaml` is clean (tamper). Reconcile does not rewrite leases. It reports.
+Sacred-id deny stays: an actual lease that binds a sacred exclusion
+fail-closes even if `estate.yaml` is clean (tamper). Reconcile does not
+rewrite leases. It reports.
 
-Related drop-zone (not under `.cell/`):
+## Related paths (not under `.cell/`)
 
 | Path | Kind |
 | --- | --- |
+| `backups/cell-backup-*` | Timestamped local archive. `estate backup --prune N` keeps the newest N. `N=0` refuses. Schema `cell-one.cell-backup.v0` / prune `cell-one.backup-prune.v0`. |
+| `plans/` / `plans/reviewed/` | Human control surface. Not cell state. |
 | `packs/{id}.pack.json` | Candidate only. curator=jason policy=manual. |
 | `packs/accepted/{id}.pack.json` | Explicit import. Does not rewrite the estate. |
 | `packs/accepted/import-audit.jsonl` | Import audit. |
+| `packs/accepted/{id}.enrich-edit.md` + `.enrich-edit.json` | `packs accept`. Schema `cell-one.enrich-accept.v0`. Instructions only. |
 | `packs/proposed/{id}.proposal.json` | Enrich proposal. `auto_apply=false`. Jason edits the estate. |
+| `policy/cell-one.policy.v0.yaml` | Deny/allow stub. Checked on apply / convey-call / backup / restore. |
+| `policy/sacred.yaml` | Dual-layer sacred overlay. Omitting a locked id does not remove it. |
+
+Operator walk without live boxes: [`OPERATOR-DAY.md`](OPERATOR-DAY.md).

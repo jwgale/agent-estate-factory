@@ -30,11 +30,17 @@ Optional `estate probes --live` pings a specialist endpoint when you set `CELL_*
 
 README leads with `make gate-90` as the Day-90 operator entrypoint. `make feed-loop` walks scrubbed traces → pack → propose → accept on an isolated cell. The feed cursor stays on disk; rematerialize does not auto-promote. Placement-actual JSON round-trips every reconcile refuse code. `docs/DAY90-PLUS.md` parks live Mac MLX, live GPU, and cloud-spawn until Jason has boxes. Those rows are not green.
 
-## After PR #6 (this slice)
+## PR #7 — help, backup prune, convey policy
 
-- `estate help [topic]` prints Day-90 pages for status, plan, apply, reconcile, feed-loop, and backup. Unknown topics refuse. `estate --help` points at the same list.
-- `estate backup --prune N` keeps the newest N `cell-backup-*` archives and deletes the rest. `N=0` refuses.
-- Convey `call` integration test: `policy-deny.yaml` refuses `convey-call`; the allow fixture still passes.
+`estate help [topic]` prints Day-90 pages for status, plan, apply, reconcile, feed-loop, and backup. Unknown topics refuse. `estate backup --prune N` keeps the newest N archives; `N=0` refuses. Convey `call` refuses on `policy-deny.yaml`.
+
+## After PR #7 (this slice)
+
+- `docs/cell-layout.md` matches the paths the code writes, including `reconcile-suggest.md`, `expired`, backups outside `.cell/`, and enrich-edit accept files.
+- `docs/OPERATOR-DAY.md` walks `make gate-90` → `make feed-loop` → `estate backup --prune` on isolated cells. No live boxes.
+- Why `make gate-90` stays off Actions: it wraps `cargo test --workspace`. Hosted CI stays compile-only. A hardening test locks that contract.
+- Scan: no `TODO`/`FIXME` in crate sources, no leftover Origin URLs.
+- Workspace crates are already `0.1.0`. That is a crate version, not a crates.io release. No new `estate version` command (clap `--version` is enough).
 
 ## Still stubbed
 
@@ -48,4 +54,5 @@ make smoke      # doctor + fixtures-check + operator-day + cargo test + make day
 make day90      # operator loop only
 make feed-loop  # scrubbed trace → pack → propose → accept (fixtures only)
 estate help     # Day-90 topic pages
+# walk: docs/OPERATOR-DAY.md
 ```
