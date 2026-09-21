@@ -22,27 +22,27 @@ pub enum MeshError {
     Io(#[from] std::io::Error),
     #[error("parse: {0}")]
     Parse(String),
-    #[error("no hop lease for '{0}'")]
+    #[error("refuse:no-lease: no hop lease for '{0}'")]
     NoLease(String),
-    #[error("hop '{0}' refused: no granted lease")]
+    #[error("refuse:ungranted: hop '{0}' has no granted lease")]
     Ungranted(String),
-    #[error("cloud-mesh hop '{0}' is declared, not spawned")]
+    #[error("refuse:cloud-not-spawned: cloud-mesh hop '{0}' is declared, not spawned")]
     CloudNotSpawned(String),
-    #[error("hop '{0}' is not live (suspended or unwired)")]
+    #[error("refuse:not-live: hop '{0}' is not live (suspended or unwired)")]
     NotLive(String),
-    #[error("capability '{want}' is not on hop '{hop}' (have {have})")]
+    #[error("refuse:capability: capability '{want}' is not on hop '{hop}' (have {have})")]
     Capability {
         hop: String,
         want: String,
         have: String,
     },
-    #[error("unknown hop kind '{0}' (use box|cloud-mesh)")]
+    #[error("refuse:kind: unknown hop kind '{0}' (use box|cloud-mesh)")]
     Kind(String),
-    #[error("hop id '{0}' encodes a hardware SKU")]
+    #[error("refuse:sku-banned: hop id '{0}' encodes a hardware SKU")]
     SkuBanned(String),
-    #[error("hop id '{0}' must match [a-z][a-z0-9_-]{{0,63}}")]
+    #[error("refuse:bad-id: hop id '{0}' must match [a-z][a-z0-9_-]{{0,63}}")]
     BadId(String),
-    #[error("hop host_class '{0}' must be consumer-nvidia|apple-silicon|rented-nvidia|any")]
+    #[error("refuse:bad-host-class: hop host_class '{0}' must be consumer-nvidia|apple-silicon|rented-nvidia|any")]
     BadHostClass(String),
 }
 
@@ -466,6 +466,7 @@ mod tests {
         let dir = tmp();
         let err = call_hop(&dir, "missing", "lane-tool").unwrap_err();
         assert!(matches!(err, MeshError::NoLease(_)));
+        assert!(err.to_string().starts_with("refuse:no-lease"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -508,6 +509,7 @@ mod tests {
         assert!(!lease.spawned);
         let err = call_hop(&dir, "cursor-cloud", "mesh-stub").unwrap_err();
         assert!(matches!(err, MeshError::CloudNotSpawned(_)));
+        assert!(err.to_string().starts_with("refuse:cloud-not-spawned"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
