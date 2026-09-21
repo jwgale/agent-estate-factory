@@ -28,6 +28,13 @@ pub(crate) fn cmd_probes(live: bool) -> Result<()> {
                 probe.driver
             );
         }
+        if !estate_schema::is_host_class(&probe.host_class) {
+            bail!(
+                "refuse:bad-host-class: probe '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                probe.driver,
+                probe.host_class
+            );
+        }
         println!(
             "  {:<12} status={:<12} bindable={} live_probed={} host_class={}",
             probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
