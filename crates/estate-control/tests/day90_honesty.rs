@@ -452,6 +452,9 @@ fn apply_writes_nonempty_placement_actual() {
     let blob = std::fs::read_to_string(state.join("placement-actual.json")).unwrap();
     assert!(!blob.trim().is_empty(), "apply must not write empty placement-actual");
     assert!(blob.contains("cell-one.placement-actual.v0"), "{blob}");
+    let models = std::fs::read_to_string(state.join("model-actual.json")).unwrap();
+    assert!(!models.trim().is_empty(), "apply must not write empty model-actual");
+    assert!(models.contains("desired_hash"), "{models}");
     let _ = std::fs::remove_dir_all(&root);
 }
 
