@@ -12,6 +12,8 @@ make gate
 make gate-60
 ```
 
+Primary gate is local (or this cloud-agent VM). GitHub Actions is one `pull_request` job: `cargo test --workspace` only. Do not add matrices, cron, or `make gate-60` on hosted CI.
+
 `make gate-60` skips live Grok and live local when `XAI_API_KEY` / `CELL_LOCAL_LIVE` are unset. Never bake secrets.
 
 ## Product locks
