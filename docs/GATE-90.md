@@ -1,8 +1,8 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#24 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#34 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
-`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md). Hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+`make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (Mac specialist complete, native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
 
 ```bash
 make gate-90    # Day-90 operator entrypoint (local)
@@ -98,13 +98,17 @@ estate doctor --strict
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
 | Makefile contract | green | `gate-90` / `smoke` / `day90` / `feed-loop` / `fixtures-check` / `doctor-strict`; no `gh` |
 
-## Remaining Day-90+ (honest; parked, not green)
+## Remaining Day-90+ (honest)
+
+Green above does not mean a box ran. Recorded proofs are not parked, and they are not required again.
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Parked. See [`DAY90-PLUS.md`](DAY90-PLUS.md) + [`LIVE-PROBES.md`](LIVE-PROBES.md). Probe path exists. No Mac in CI. |
-| Live rented / consumer GPU | Parked. Same specialist protocol. Not required in CI. |
-| Cloud-agent spawn | Parked / locked off. Declared only. Floor does not spawn. |
+| Frontier `grok-4.7` live PASS | Recorded. `READY_FOR_LIVE_TEST` no. Not required for `make gate-90`. |
+| 5090-class probes + specialist `Pong` | Recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Not native MLX. Not required for the gate. |
+| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
+| Native MLX | Parked. `specialist()` stays stub. No Mac in CI. |
+| Cloud-agent spawn | Parked. Declared only. Floor does not spawn. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. Not an auto-heal. |
 | `estate packs accept` | Writes enrich_packs **edit instructions**. Does not rewrite `estate.yaml`. Needs `--curator jason`. |
 | Convey hop transport | Lease-bound mesh, not a gateway. |

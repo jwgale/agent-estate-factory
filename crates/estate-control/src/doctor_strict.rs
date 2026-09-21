@@ -190,8 +190,10 @@ fn check_day90_plus(root: &Path, fails: &mut Vec<String>) {
     let rel = "docs/DAY90-PLUS.md";
     let text = fs::read_to_string(root.join(rel)).unwrap_or_default();
     let parked = text.contains("MLX")
+        && text.contains("stub")
         && (text.contains("GPU") || text.contains("rented"))
         && text.contains("cloud")
+        && text.contains("Mac specialist")
         && (text.contains("park") || text.contains("until Jason"));
     if root.join(rel).is_file() && parked {
         println!("  ok    {rel} parks live Mac / GPU / cloud-spawn");

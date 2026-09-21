@@ -113,19 +113,37 @@ pub fn frontier_chat_url(base: &str) -> String {
     }
 }
 
-/// `CELL_FRONTIER_MODEL`, then `XAI_MODEL`, else `grok-4.7`. SKU ids refuse.
-pub fn pick_frontier_model(cell: Option<&str>, xai: Option<&str>) -> Result<String, ModelError> {
-    let raw = cell
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| xai.map(str::trim).filter(|s| !s.is_empty()))
-        .unwrap_or(DEFAULT_FRONTIER_MODEL);
+/// `CELL_FRONTIER_MODEL`, then `other` (named by `other_source`), else `grok-4.7`.
+/// A SKU id refuses and names the setting it came from.
+pub fn pick_frontier_model(
+    cell: Option<&str>,
+    other: Option<&str>,
+    other_source: &str,
+) -> Result<String, ModelError> {
+    let (raw, source) = if let Some(value) = nonempty(cell) {
+        (value, "CELL_FRONTIER_MODEL")
+    } else if let Some(value) = nonempty(other) {
+        (
+            value,
+            if other_source.trim().is_empty() {
+                "model override"
+            } else {
+                other_source.trim()
+            },
+        )
+    } else {
+        (DEFAULT_FRONTIER_MODEL, "default")
+    };
     if estate_schema::contains_sku(raw) {
         return Err(ModelError::Refused(format!(
-            "frontier model '{raw}' encodes a hardware SKU"
+            "frontier model '{raw}' from {source} encodes a hardware SKU; unset CELL_FRONTIER_MODEL or XAI_MODEL (default grok-4.7). Optional CELL_FRONTIER_ENDPOINT"
         )));
     }
     Ok(raw.to_string())
+}
+
+fn nonempty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|s| !s.is_empty())
 }
 
 pub fn frontier_from_binding(binding: &ModelBinding) -> Result<Box<dyn FrontierDriver>, ModelError> {
@@ -158,13 +176,20 @@ pub fn frontier_from_binding(binding: &ModelBinding) -> Result<Box<dyn FrontierD
         .or_else(|| param_str(binding, "api_base"))
         .unwrap_or_else(|| DEFAULT_FRONTIER_BASE.into());
     let model_env = param_str(binding, "model_env").unwrap_or_else(|| "XAI_MODEL".into());
-    let from_env = std::env::var(&model_env).ok();
-    let from_param = param_str(binding, "model");
+    let from_env = std::env::var(&model_env)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let from_param = param_str(binding, "model").filter(|s| !s.trim().is_empty());
+    let (other, other_source) = if let Some(value) = from_env {
+        (Some(value), model_env.clone())
+    } else if let Some(value) = from_param {
+        (Some(value), "binding params.model".into())
+    } else {
+        (None, model_env.clone())
+    };
     let cell = std::env::var("CELL_FRONTIER_MODEL").ok();
-    let model = pick_frontier_model(
-        cell.as_deref(),
-        from_env.as_deref().or(from_param.as_deref()),
-    )?;
+    let model = pick_frontier_model(cell.as_deref(), other.as_deref(), &other_source)?;
     Ok(Box::new(HttpFrontier {
         id: binding.id.clone(),
         base,
@@ -202,19 +227,27 @@ mod tests {
     #[test]
     fn frontier_model_defaults_to_grok_4_7() {
         assert_eq!(
-            pick_frontier_model(None, None).unwrap(),
+            pick_frontier_model(None, None, "XAI_MODEL").unwrap(),
             "grok-4.7"
         );
         assert_eq!(
-            pick_frontier_model(Some("grok-4.7"), Some("other")).unwrap(),
+            pick_frontier_model(Some("grok-4.7"), Some("other"), "XAI_MODEL").unwrap(),
             "grok-4.7"
         );
         assert_eq!(
-            pick_frontier_model(None, Some("grok-4.7")).unwrap(),
+            pick_frontier_model(None, Some("grok-4.7"), "XAI_MODEL").unwrap(),
             "grok-4.7"
         );
-        let err = pick_frontier_model(Some("rtx-5090-chat"), None).unwrap_err();
-        assert!(err.to_string().contains("SKU"), "{err}");
+        let err = pick_frontier_model(Some("rtx-5090-chat"), None, "XAI_MODEL").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("SKU"), "{text}");
+        assert!(text.contains("CELL_FRONTIER_MODEL"), "{text}");
+        assert!(text.contains("CELL_FRONTIER_ENDPOINT"), "{text}");
+        let from_xai = pick_frontier_model(None, Some("a100-chat"), "XAI_MODEL").unwrap_err();
+        assert!(
+            from_xai.to_string().contains("from XAI_MODEL"),
+            "{from_xai}"
+        );
     }
 
     #[test]
