@@ -19,6 +19,8 @@ pub struct PlanDelta {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EstatePlan {
+    #[serde(default = "default_plan_schema")]
+    pub schema: String,
     pub desired_hash: String,
     pub against_hash: Option<String>,
     pub added: PlanDelta,
@@ -26,6 +28,16 @@ pub struct EstatePlan {
     pub changed: PlanDelta,
     pub blast_radius_text: String,
     pub created_at: String,
+}
+
+fn default_plan_schema() -> String {
+    "cell-one.plan.v0".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CoveringPlan {
+    pub stem: String,
+    pub plan: EstatePlan,
 }
 
 pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
@@ -107,6 +119,7 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
     let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let blast_radius_text = blast_radius(desired, &added, &removed, &changed, against.is_none());
     EstatePlan {
+        schema: default_plan_schema(),
         desired_hash,
         against_hash,
         added,
@@ -190,6 +203,12 @@ pub struct PlanIndexEntry {
     pub stem: String,
     pub markdown: String,
     pub json: Option<String>,
+    #[serde(default)]
+    pub desired_hash: Option<String>,
+    #[serde(default)]
+    pub against_hash: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Error> {
@@ -211,39 +230,68 @@ pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Erro
     Ok(stems
         .into_iter()
         .rev()
-        .map(|stem| PlanIndexEntry {
-            markdown: format!("{stem}.md"),
-            json: if plans_dir.join(format!("{stem}.json")).exists() {
+        .map(|stem| {
+            let json = if plans_dir.join(format!("{stem}.json")).exists() {
                 Some(format!("{stem}.json"))
             } else {
                 None
-            },
-            stem,
+            };
+            let loaded = json
+                .as_ref()
+                .and_then(|name| std::fs::read_to_string(plans_dir.join(name)).ok())
+                .and_then(|text| serde_json::from_str::<EstatePlan>(&text).ok());
+            PlanIndexEntry {
+                markdown: format!("{stem}.md"),
+                json,
+                desired_hash: loaded.as_ref().map(|p| p.desired_hash.clone()),
+                against_hash: loaded.as_ref().and_then(|p| p.against_hash.clone()),
+                created_at: loaded.as_ref().map(|p| p.created_at.clone()),
+                stem,
+            }
         })
         .collect())
 }
 
-pub fn covering_plan_stem(plans_dir: &Path, hash: &str) -> Option<String> {
+pub fn load_plan_json(path: &Path) -> Result<EstatePlan, std::io::Error> {
+    let text = std::fs::read_to_string(path)?;
+    serde_json::from_str(&text)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+pub fn covering_plan(plans_dir: &Path, hash: &str) -> Option<CoveringPlan> {
     let entries = list_plans(plans_dir).ok()?;
     for entry in entries {
         let Some(json_name) = entry.json.clone() else {
             continue;
         };
-        let Ok(text) = std::fs::read_to_string(plans_dir.join(json_name)) else {
-            continue;
-        };
-        let Ok(plan) = serde_json::from_str::<EstatePlan>(&text) else {
+        let Ok(plan) = load_plan_json(&plans_dir.join(json_name)) else {
             continue;
         };
         if plan.desired_hash == hash {
-            return Some(entry.stem);
+            return Some(CoveringPlan {
+                stem: entry.stem,
+                plan,
+            });
         }
     }
     None
 }
 
+pub fn covering_plan_stem(plans_dir: &Path, hash: &str) -> Option<String> {
+    covering_plan(plans_dir, hash).map(|c| c.stem)
+}
+
 pub fn plan_covers_hash(plans_dir: &Path, hash: &str) -> bool {
     covering_plan_stem(plans_dir, hash).is_some()
+}
+
+/// Fresh when there is no last apply, or the plan was taken against that apply.
+/// A greenfield covering plan (`against_hash = None`) of the current desired hash still counts.
+pub fn plan_against_is_fresh(plan: &EstatePlan, last_applied: Option<&str>) -> bool {
+    match (last_applied, plan.against_hash.as_deref()) {
+        (Some(applied), Some(against)) => applied == against,
+        _ => true,
+    }
 }
 
 pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io::Error> {
@@ -254,7 +302,12 @@ pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io:
         md.push_str("(no plans yet)\n");
     } else {
         for entry in &entries {
-            md.push_str(&format!("- `{}`\n", entry.markdown));
+            md.push_str(&format!(
+                "- `{}` hash={} against={}\n",
+                entry.markdown,
+                entry.desired_hash.as_deref().unwrap_or("-"),
+                entry.against_hash.as_deref().unwrap_or("(greenfield)")
+            ));
         }
     }
     let path = plans_dir.join("INDEX.md");
@@ -489,6 +542,13 @@ mod tests {
         assert!(plan_covers_hash(&dir, &plan.desired_hash));
         assert!(!plan_covers_hash(&dir, "sha256:deadbeef"));
         assert!(covering_plan_stem(&dir, &plan.desired_hash).is_some());
+        let covering = covering_plan(&dir, &plan.desired_hash).unwrap();
+        assert_eq!(covering.plan.schema, "cell-one.plan.v0");
+        assert!(plan_against_is_fresh(&covering.plan, None));
+        assert!(plan_against_is_fresh(&covering.plan, Some("sha256:other")));
+        let mut stale = covering.plan.clone();
+        stale.against_hash = Some("sha256:old".into());
+        assert!(!plan_against_is_fresh(&stale, Some("sha256:new")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
