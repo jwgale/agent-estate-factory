@@ -372,12 +372,33 @@ pub fn refuse_raw_secrets(text: &str) -> Result<(), FeedError> {
     Ok(())
 }
 
+fn refuse_empty_blob(body: &str) -> Result<(), FeedError> {
+    if body.trim().is_empty() {
+        return Err(FeedError::Parse("serialize: empty".into()));
+    }
+    Ok(())
+}
+
 fn to_json<T: Serialize>(value: &T) -> Result<String, FeedError> {
-    serde_json::to_string(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))
+    let line = serde_json::to_string(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))?;
+    refuse_empty_blob(&line)?;
+    Ok(line)
 }
 
 fn to_pretty_json<T: Serialize>(value: &T) -> Result<String, FeedError> {
-    serde_json::to_string_pretty(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))
+    let body =
+        serde_json::to_string_pretty(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))?;
+    refuse_empty_blob(&body)?;
+    Ok(body)
+}
+
+/// Journal / audit line. Inventing `"{}"` on serialize failure is refuse.
+fn to_jsonl_line<T: Serialize>(value: &T) -> Result<String, FeedError> {
+    let line = to_json(value)?;
+    if line.trim() == "{}" {
+        return Err(FeedError::Parse("serialize: empty object".into()));
+    }
+    Ok(line)
 }
 
 /// Kind counts only. Refuses if the serialized report itself contains a raw secret.
@@ -410,7 +431,7 @@ pub fn append_event(dir: &Path, event: &ScrubbedEvent) -> Result<(), FeedError> 
         ev.note = Some(scrub_pii(&note));
     }
     refuse_event(&ev)?;
-    let line = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".into());
+    let line = to_jsonl_line(&ev)?;
     let path = dir.join("events.jsonl");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -447,9 +468,6 @@ pub fn write_cursor(dir: &Path, cursor: &FeedCursor) -> Result<PathBuf, FeedErro
     std::fs::create_dir_all(dir)?;
     let path = cursor_path(dir);
     let body = to_pretty_json(cursor)?;
-    if body.trim().is_empty() {
-        return Err(FeedError::Parse("serialize: empty feed cursor".into()));
-    }
     std::fs::write(&path, body)?;
     Ok(path)
 }
@@ -472,10 +490,7 @@ pub fn append_import_audit(accepted_dir: &Path, audit: &ImportAudit) -> Result<P
         .create(true)
         .append(true)
         .open(&path)?;
-    let line = to_json(audit)?;
-    if line.trim().is_empty() {
-        return Err(FeedError::Parse("serialize: empty import audit".into()));
-    }
+    let line = to_jsonl_line(audit)?;
     writeln!(file, "{line}")?;
     Ok(path)
 }
@@ -1034,10 +1049,8 @@ pub fn propose_enrich(
     };
     std::fs::create_dir_all(proposed_dir)?;
     let path = proposed_dir.join(format!("{}.proposal.json", pack.id));
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&proposal).unwrap_or_default(),
-    )?;
+    let body = to_pretty_json(&proposal)?;
+    std::fs::write(&path, body)?;
     std::fs::write(
         proposed_dir.join(format!("{}.proposal.md", pack.id)),
         render_proposal(&proposal),
@@ -1071,6 +1084,57 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cell-one-feed-{n}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    struct Boom;
+    impl Serialize for Boom {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::Error;
+            Err(S::Error::custom("boom"))
+        }
+    }
+
+    #[test]
+    fn serialize_helpers_refuse_boom_empty_and_object() {
+        let boom = to_json(&Boom).unwrap_err();
+        assert!(boom.to_string().contains("serialize"), "{boom}");
+        assert!(to_pretty_json(&Boom).is_err());
+        assert!(to_jsonl_line(&Boom).is_err());
+        assert!(refuse_empty_blob("").is_err());
+        assert!(refuse_empty_blob("  \n").is_err());
+        let empty_obj = to_jsonl_line(&serde_json::json!({})).unwrap_err();
+        assert!(
+            empty_obj.to_string().contains("empty"),
+            "{empty_obj}"
+        );
+    }
+
+    #[test]
+    fn append_event_never_writes_empty_object_line() {
+        let dir = tmp();
+        append_event(
+            &dir,
+            &ScrubbedEvent {
+                kind: "proxy.tool".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("allow".into()),
+                object_class: Some("tool".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        assert!(!text.trim().is_empty());
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            assert_ne!(line, "{}", "append_event must not invent empty junk");
+            let _: serde_json::Value = serde_json::from_str(line).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1287,6 +1351,9 @@ mod tests {
         assert!(path.ends_with("overnight-traces.proposal.json"));
         assert!(proposed.join("overnight-traces.proposal.md").is_file());
         assert!(proposed.join("INDEX.md").is_file());
+        let blob = std::fs::read_to_string(&path).unwrap();
+        assert!(!blob.trim().is_empty(), "propose_enrich must not write empty");
+        assert!(blob.contains(PROPOSAL_SCHEMA), "{blob}");
         let md = render_proposal(&proposal);
         assert!(md.contains("auto_apply: false"));
         assert!(md.contains("would_add_to_estate: true"));
