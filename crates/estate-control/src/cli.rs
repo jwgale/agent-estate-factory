@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(
     name = "estate",
     about = "Cell One estate-control: validate, plan, apply, drift. Specialist complete is a thin HttpLocal delegate, not a gateway.",
-    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
+    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
     disable_help_subcommand = true
 )]
 pub(crate) struct Cli {
@@ -20,7 +20,7 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Day-90 operator topic pages. `estate help status`.
     Help {
-        /// Topic: status, plan, apply, reconcile, feed-loop, backup. Omit to list.
+        /// Topic: status, plan, apply, reconcile, feed-loop, backup, frontier, day90-mixed. Omit to list.
         #[arg(value_name = "TOPIC")]
         topic: Option<String>,
     },
