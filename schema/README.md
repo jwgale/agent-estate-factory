@@ -9,6 +9,8 @@ Documentary snapshots. Fail-closed SoT is the Rust validator, not these files.
 
 Unknown `apiVersion` / `kind` / pack schema fail closed.
 
+`examples/estate.yaml` hash is locked at `sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930` (see `estate-schema` `example_estate_hash_is_locked`). YAML comments are ok. Renames need a new hash.
+
 ## v0 files
 
 | File | Schema id | Used by |
