@@ -206,6 +206,10 @@ fn readers_refuse_tampered_sku_host_class() {
     let status_text = text(&status);
     assert!(!status.status.success(), "{status_text}");
     assert!(status_text.contains("refuse:bad-host-class"), "{status_text}");
+    assert!(
+        !status_text.contains("Cell One status"),
+        "status must refuse before printing: {status_text}"
+    );
 
     let leases = estate_bin()
         .args(["leases", "--state-dir", &state_s])
@@ -215,6 +219,10 @@ fn readers_refuse_tampered_sku_host_class() {
     assert!(!leases.status.success(), "{leases_text}");
     assert!(leases_text.contains("rtx-5090"), "{leases_text}");
     assert!(leases_text.contains("refuse:bad-host-class"), "{leases_text}");
+    assert!(
+        !leases_text.contains("cell-one.placement"),
+        "leases must refuse before printing the SKU actual: {leases_text}"
+    );
 
     let recon = estate_bin()
         .args([
