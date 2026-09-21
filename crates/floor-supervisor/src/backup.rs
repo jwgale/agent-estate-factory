@@ -3,7 +3,9 @@
 //! Restores refuse on sacred mismatch. Dry-run writes nothing.
 
 use crate::{load_desired_snapshot, load_placements, SupervisorError};
-use estate_schema::{is_sacred_name, locked_sacred_ids, normalize_name, Estate};
+use estate_schema::{
+    canonical_host_class_opt, is_sacred_name, locked_sacred_ids, normalize_name, Estate,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -272,6 +274,55 @@ fn scan_sacred_in_archive(archive: &Path) -> Result<Vec<String>, SupervisorError
     Ok(hits)
 }
 
+fn scan_mesh_file_host_class(path: &Path) -> Result<Vec<String>, SupervisorError> {
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(path)?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| SupervisorError::Other(format!("{}: {e}", path.display())))?;
+    let mut hits = Vec::new();
+    let mut rows = Vec::new();
+    if let Some(hops) = v.get("hops").and_then(|x| x.as_array()) {
+        rows.extend(hops);
+    }
+    if let Some(leases) = v.get("leases").and_then(|x| x.as_array()) {
+        rows.extend(leases);
+    }
+    for row in rows {
+        let host = row.get("host_class").and_then(|x| x.as_str()).unwrap_or("");
+        if canonical_host_class_opt(Some(host)).is_none() {
+            let id = row
+                .get("id")
+                .or_else(|| row.get("hop_id"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("?");
+            hits.push(format!(
+                "refuse:bad-host-class: hop/lease '{id}' host_class '{host}' must be consumer-nvidia|apple-silicon|rented-nvidia|any"
+            ));
+        }
+    }
+    Ok(hits)
+}
+
+fn scan_host_class_in_archive(archive: &Path) -> Result<Vec<String>, SupervisorError> {
+    let mut hits = Vec::new();
+    if let Some(places) = load_placements(&archive.join("cell"))? {
+        for lease in &places.leases {
+            if canonical_host_class_opt(Some(lease.host_class.as_str())).is_none() {
+                hits.push(format!(
+                    "refuse:bad-host-class: lease '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                    lease.placement_id, lease.host_class
+                ));
+            }
+        }
+    }
+    for name in ["conveyor-mesh.json", "conveyor-hops.json", "conveyor-leases.json"] {
+        hits.extend(scan_mesh_file_host_class(&archive.join("cell").join(name))?);
+    }
+    Ok(hits)
+}
+
 /// Restore durable files. Dry-run writes nothing. Sacred mismatch is refuse.
 pub fn restore_cell(
     archive: &Path,
@@ -282,6 +333,7 @@ pub fn restore_cell(
 ) -> Result<RestoreReport, SupervisorError> {
     let meta = load_backup_meta(archive)?;
     let mut refuses = scan_sacred_in_archive(archive)?;
+    refuses.extend(scan_host_class_in_archive(archive)?);
     let backup_sacred: BTreeSet<String> = meta.sacred_ids.iter().map(|s| normalize_name(s)).collect();
     let current_sacred = sacred_id_set(current);
     if sacred_mismatch(&backup_sacred, &current_sacred) {
@@ -463,6 +515,108 @@ mod tests {
         assert!(root.join("restored").join("placement-actual.json").is_file());
         let leases = load_placements(&root.join("restored")).unwrap().unwrap();
         assert!(leases.leases.iter().all(|l| l.kind != "cloud-agent" || !l.spawned));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn tamper_archive_box_host_class(archive: &Path, host_class: &str) {
+        let path = archive.join("cell").join("placement-actual.json");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let leases = v["leases"].as_array_mut().expect("leases");
+        let box_lease = leases
+            .iter_mut()
+            .find(|l| l["placement_id"] == "cell-one-box")
+            .expect("cell-one-box");
+        box_lease["host_class"] = serde_json::Value::String(host_class.into());
+        std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn restore_refuses_sku_placement_actual_and_writes_nothing() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        let (archive, _) =
+            backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
+        tamper_archive_box_host_class(&archive, "rtx-5090");
+        let dest = root.join("restored");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("placement-actual.json"), "sentinel\n").unwrap();
+        let dry = restore_cell(&archive, &dest, None, Some(&estate), true).unwrap();
+        assert!(!dry.writes);
+        assert!(dry.would_refuse);
+        assert!(
+            dry.refuses
+                .iter()
+                .any(|r| r.contains("refuse:bad-host-class") && r.contains("rtx-5090")),
+            "{:?}",
+            dry.refuses
+        );
+        let live = restore_cell(&archive, &dest, None, Some(&estate), false).unwrap();
+        assert!(!live.writes);
+        assert!(live.would_refuse);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("placement-actual.json")).unwrap(),
+            "sentinel\n"
+        );
+        let archived = std::fs::read_to_string(archive.join("cell").join("placement-actual.json"))
+            .unwrap();
+        assert!(archived.contains("rtx-5090"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn restore_refuses_sku_mesh_and_writes_nothing() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        let (archive, _) =
+            backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
+        let mesh = serde_json::json!({
+            "schema": "cell-one.conveyor-mesh.v0",
+            "hops": [{
+                "id": "cell-one-box",
+                "kind": "box",
+                "capability": "lane-tool",
+                "host_class": "rtx-5090",
+                "wired": true
+            }],
+            "leases": [{
+                "hop_id": "cell-one-box",
+                "kind": "box",
+                "capability": "lane-tool",
+                "host_class": "rtx-5090",
+                "granted": true,
+                "spawned": true,
+                "durable": true,
+                "driver": "box"
+            }]
+        });
+        std::fs::write(
+            archive.join("cell").join("conveyor-mesh.json"),
+            serde_json::to_string_pretty(&mesh).unwrap(),
+        )
+        .unwrap();
+        let dest = root.join("restored");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("conveyor-mesh.json"), "sentinel\n").unwrap();
+        let report = restore_cell(&archive, &dest, None, Some(&estate), false).unwrap();
+        assert!(!report.writes);
+        assert!(report.would_refuse);
+        assert!(
+            report
+                .refuses
+                .iter()
+                .any(|r| r.contains("refuse:bad-host-class") && r.contains("rtx-5090")),
+            "{:?}",
+            report.refuses
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("conveyor-mesh.json")).unwrap(),
+            "sentinel\n"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

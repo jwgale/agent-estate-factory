@@ -6,7 +6,7 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1-#15 plus this slice)
+## On `main` (PR #1-#16 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -25,9 +25,9 @@ Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 
 | What was broken | What it does now |
 | --- | --- |
-| After #15, `convey call` still slim-parsed `placement-actual.json` with `if let Ok`, so a SKU `host_class` (example `rtx-5090`) skipped the not-live check and could allow a hop. Floor `record` / claim could persist that SKU as a portable lease if validate were skipped. | Call, sync, status, leases, and reconcile are `refuse:bad-host-class`. Record writes nothing. Claim keeps the raw SKU (does not invent `any`). |
+| After #16, `convey call` / `list` / `expire` / `sync` still loaded `conveyor-mesh.json` without checking `host_class`. A SKU on a hop or lease could allow a call, or get written back on sync/forget. `restore` copied a SKU `placement-actual` (or mesh) onto disk. | Mesh readers are `refuse:bad-host-class` and write nothing. Restore is the same refuse and writes nothing. Hop declare stamps via opt after `refuse_hop` and does not invent `any`. |
 
-## Bug fixes on #10-#13 (plain English)
+## Bug fixes on #10-#16 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -35,6 +35,8 @@ Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 | #11 | Overlay e2e was missing. Easy to believe `locked: []` in a sacred file would drop Cyera CI / Rust classroom. | Isolated sacred overlay e2e: omit-locked file still refuses those two on convey. `lab-notebook` refuses only with the overlay installed. |
 | #12 | `convey expire --forget` deleted hop *declarations* with the leases. The next `call` said `refuse:no-lease`. | Forget keeps the hop decl. `call` restamps (`lease-refresh`), same idea as #10. Expired still refuses until forget. |
 | #13 | `restore` treated empty/missing backup `sacred_ids` as "matches anything" and could write files. | Empty set is `refuse:sacred-mismatch`. Dry-run and live restore both write nothing. |
+| #15 | `convey sync` slim-parsed a SKU `host_class` as portable `any` and could seed a hop. | Slim-parse is `refuse:bad-host-class`. No mesh write. |
+| #16 | `convey call` swallowed slim-parse, so a SKU skipped not-live. Floor claim/record could stamp `any`. Status/leases/reconcile stayed silent. | Call, status, leases, reconcile, record refuse. Claim keeps the raw SKU. |
 
 ## Known-good local commands
 
@@ -62,6 +64,7 @@ Isolated loops without live boxes:
 - Hop TTL: `tests/day90_hop.rs`
 - Contracts: `tests/day90_contracts.rs` / `tests/day90_plan.rs`
 - Bad-host-class readers: `tests/day90_sku.rs`
+- Mesh / restore SKU: `tests/day90_mesh.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.

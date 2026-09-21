@@ -7,8 +7,7 @@
 //! on floor-supervisor.
 
 use estate_schema::{
-    canonical_host_class, canonical_host_class_opt, contains_sku, is_sacred_name, is_slug,
-    normalize_host_class,
+    canonical_host_class_opt, contains_sku, is_sacred_name, is_slug, normalize_host_class,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -71,6 +70,35 @@ pub struct HopDecl {
 
 fn default_host_class() -> String {
     "any".into()
+}
+
+/// Locked name, or the raw string. Never invents `any` for a SKU.
+fn stamp_host_class(raw: &str) -> String {
+    canonical_host_class_opt(Some(raw))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| raw.to_string())
+}
+
+/// Interpreting readers refuse unknown / SKU host_class on disk.
+/// `load_mesh` stays permissive so a later overwrite can still land.
+pub fn refuse_mesh_host_classes(mesh: &ConveyorMesh) -> Result<(), MeshError> {
+    for hop in &mesh.hops {
+        if canonical_host_class_opt(Some(hop.host_class.as_str())).is_none() {
+            return Err(MeshError::BadHostClass(hop.host_class.clone()));
+        }
+    }
+    for lease in &mesh.leases {
+        if canonical_host_class_opt(Some(lease.host_class.as_str())).is_none() {
+            return Err(MeshError::BadHostClass(lease.host_class.clone()));
+        }
+    }
+    Ok(())
+}
+
+fn load_interpreted_mesh(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
+    let mesh = load_mesh(state_dir)?;
+    refuse_mesh_host_classes(&mesh)?;
+    Ok(mesh)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -182,7 +210,8 @@ impl ConveyorHop for BoxHop {
             hop_id: hop.id.clone(),
             kind: "box".into(),
             capability: hop.capability.clone(),
-            host_class: canonical_host_class(Some(hop.host_class.as_str())).into(),
+            // refuse_hop already locked the name. Do not invent `any`.
+            host_class: stamp_host_class(&hop.host_class),
             granted: hop.wired,
             spawned: hop.wired,
             durable: true,
@@ -230,7 +259,8 @@ impl ConveyorHop for CloudMeshHop {
             hop_id: hop.id.clone(),
             kind: "cloud-mesh".into(),
             capability: hop.capability.clone(),
-            host_class: canonical_host_class(Some(hop.host_class.as_str())).into(),
+            // refuse_hop already locked the name. Do not invent `any`.
+            host_class: stamp_host_class(&hop.host_class),
             granted: false,
             spawned: false,
             durable: true,
@@ -380,7 +410,7 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
 /// Manually declared hops with other ids stay. Sacred ids refuse.
 pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
-    let mut mesh = load_mesh(state_dir)?;
+    let mut mesh = load_interpreted_mesh(state_dir)?;
     for place in &places {
         let Some(_) = hop_kind_for_placement(&place.kind) else {
             continue;
@@ -408,7 +438,7 @@ pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError
     refuse_hop(&hop)?;
     let mut lease = hop_driver(&hop.kind)?.declare(&hop);
     stamp_hop_ttl(&mut lease, &hop, hop_now_unix());
-    let mut mesh = load_mesh(state_dir)?;
+    let mut mesh = load_interpreted_mesh(state_dir)?;
     mesh.hops.retain(|h| h.id != hop.id);
     mesh.leases.retain(|l| l.hop_id != hop.id);
     mesh.hops.push(hop);
@@ -422,7 +452,7 @@ fn restamp_hop_from_decl(state_dir: &Path, hop: &HopDecl) -> Result<HopLease, Me
     refuse_hop(hop)?;
     let mut lease = hop_driver(&hop.kind)?.declare(hop);
     stamp_hop_ttl(&mut lease, hop, hop_now_unix());
-    let mut mesh = load_mesh(state_dir)?;
+    let mut mesh = load_interpreted_mesh(state_dir)?;
     mesh.leases.retain(|l| l.hop_id != hop.id);
     mesh.leases.push(lease.clone());
     persist_mesh(state_dir, &mesh)?;
@@ -430,7 +460,7 @@ fn restamp_hop_from_decl(state_dir: &Path, hop: &HopDecl) -> Result<HopLease, Me
 }
 
 pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopCall, MeshError> {
-    let mesh = load_mesh(state_dir)?;
+    let mesh = load_interpreted_mesh(state_dir)?;
     let mut refreshed = false;
     let lease = if let Some(lease) = mesh.leases.iter().find(|l| l.hop_id == hop_id).cloned() {
         lease
@@ -463,11 +493,11 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
 }
 
 pub fn list_hops(state_dir: &Path) -> Result<Vec<HopDecl>, MeshError> {
-    Ok(load_mesh(state_dir)?.hops)
+    Ok(load_interpreted_mesh(state_dir)?.hops)
 }
 
 pub fn list_hop_leases(state_dir: &Path) -> Result<Vec<HopLease>, MeshError> {
-    Ok(load_mesh(state_dir)?.leases)
+    Ok(load_interpreted_mesh(state_dir)?.leases)
 }
 
 pub fn hop_now_unix() -> u64 {
@@ -494,7 +524,7 @@ pub fn list_expired_hop_leases(
     state_dir: &Path,
     now: u64,
 ) -> Result<Vec<HopLease>, MeshError> {
-    Ok(load_mesh(state_dir)?
+    Ok(load_interpreted_mesh(state_dir)?
         .leases
         .into_iter()
         .filter(|l| hop_lease_is_expired(l, now))
@@ -503,7 +533,7 @@ pub fn list_expired_hop_leases(
 
 /// Drop expired hop leases. Hop decls stay so call can restamp. Does not spawn.
 pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshError> {
-    let mut mesh = load_mesh(state_dir)?;
+    let mut mesh = load_interpreted_mesh(state_dir)?;
     let now = hop_now_unix();
     let mut forgotten = Vec::new();
     mesh.leases.retain(|l| {
@@ -831,6 +861,122 @@ mod tests {
             before,
             "call must not rewrite a SKU host_class to any"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tampered_mesh_sku_host_class_refuses_readers_and_writes_nothing() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let mut mesh = load_mesh(&dir).unwrap();
+        mesh.hops[0].host_class = "rtx-5090".into();
+        mesh.leases[0].host_class = "rtx-5090".into();
+        persist_mesh(&dir, &mesh).unwrap();
+        let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let hops_before = std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap();
+        let leases_before = std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap();
+
+        let call = call_hop(&dir, "cell-one-box", "lane-tool").unwrap_err();
+        assert!(
+            matches!(call, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
+            "{call}"
+        );
+        assert!(call.to_string().contains("refuse:bad-host-class"), "{call}");
+
+        let listed = list_hops(&dir).unwrap_err();
+        assert!(matches!(listed, MeshError::BadHostClass(ref h) if h == "rtx-5090"));
+        let hop_leases = list_hop_leases(&dir).unwrap_err();
+        assert!(matches!(hop_leases, MeshError::BadHostClass(ref h) if h == "rtx-5090"));
+        let expired = list_expired_hop_leases(&dir, hop_now_unix()).unwrap_err();
+        assert!(matches!(expired, MeshError::BadHostClass(_)));
+        let forgotten = forget_expired_hop_leases(&dir).unwrap_err();
+        assert!(matches!(forgotten, MeshError::BadHostClass(_)));
+
+        std::fs::write(
+            dir.join("placement-actual.json"),
+            serde_json::json!({
+                "schema": "cell-one.placement-actual.v0",
+                "leases": [{
+                    "placement_id": "cell-one-box",
+                    "kind": "box",
+                    "host_class": "any",
+                    "spawned": true,
+                    "wired": true
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let sync = sync_from_placements(&dir).unwrap_err();
+        assert!(
+            matches!(sync, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
+            "{sync}"
+        );
+
+        let again = declare_hop(
+            &dir,
+            HopDecl {
+                id: "other-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(again, MeshError::BadHostClass(_)));
+
+        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
+            hops_before
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
+            leases_before
+        );
+        assert!(before.contains("rtx-5090"));
+        assert!(!before.contains("\"host_class\": \"any\""));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tampered_mesh_unknown_host_class_refuses_like_sku() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let mut mesh = load_mesh(&dir).unwrap();
+        mesh.leases[0].host_class = "not-a-host".into();
+        persist_mesh(&dir, &mesh).unwrap();
+        let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let err = call_hop(&dir, "cell-one-box", "lane-tool").unwrap_err();
+        assert!(matches!(err, MeshError::BadHostClass(ref h) if h == "not-a-host"));
+        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
