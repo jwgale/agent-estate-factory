@@ -1,11 +1,18 @@
 //! Floor supervisor: bind per-agent sessions. Does not execute tools or models.
 //! Isolation is a driver. This crate must stay free of vendor identifiers.
 
+mod lifecycle;
+
 use estate_schema::{estate_hash, Estate};
 use isolation_driver::{BindRequest, BoundSession, IsolationDriver, ProfileDirDriver};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+pub use lifecycle::{
+    lifecycle_path, load_lifecycle, mark_running, resume, suspend, write_lifecycle, LifecycleRecord,
+    LifecycleState, LIFECYCLE_FILE,
+};
 
 #[derive(Debug, Error)]
 pub enum SupervisorError {
