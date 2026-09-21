@@ -25,7 +25,7 @@ Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 
 | What was broken | What it does now |
 | --- | --- |
-| `convey sync` slim-parsed `placement-actual.json` through `canonical_host_class`, which rewrote unknown / SKU `host_class` (example: `rtx-5090`) to `any`. A tampered lease could seed a portable hop. | Unknown host class is `refuse:bad-host-class`. No hop files written. Aliases (`rtx_consumer`, `nvidia-rental`, case/underscore) still round-trip to the locked names. Overlay files with `locked: []` still cannot drop Cyera CI / Rust classroom. |
+| Tampered lease `host_class` (example `rtx-5090`) became `any` on convey sync. | Slim-parse is `refuse:bad-host-class`. No hop files. Aliases still round-trip. Overlay `locked: []` cannot drop locked ids. |
 
 ## Bug fixes on #10-#13 (plain English)
 
