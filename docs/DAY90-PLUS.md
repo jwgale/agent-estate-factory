@@ -8,14 +8,35 @@ proof that a Mac, a GPU, or a cloud spawn ran.
 stays compile-only. Live `grok-4.7` / GPU / Mac are not required to keep
 `make smoke` / `make gate-90` green.
 
-## Parked — needs a box or a Jason lock
+## Green without a box
+
+These stay green on this factory. They do not prove a Mac, a GPU, or a spawn.
+
+| Item | What is true |
+| --- | --- |
+| `make gate-90` | Local only: smoke, `day90`, `doctor --strict`, checklist. Not on Actions. |
+| `make day90-mixed` | Opt-in fixture walk. Not in smoke or `gate-90`. No live key. |
+| `make feed-loop` | Fixture walk. Pack `source_drivers` is `frontier` then `local`. No live key. |
+| Frontier specialist in tests | Mock HTTP. Model id `grok-4.7`. Missing key and a SKU model refuse before POST and name `CELL_FRONTIER_MODEL` / `CELL_FRONTIER_ENDPOINT`. |
+| `estate help frontier` / `day90-mixed` | Topic pages. Not a live run. |
+
+## Recorded live proofs (not a gate)
+
+These already ran. Do not re-ping. They are not required to keep `make gate-90` green. Details: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+
+| Item | What is true | What is not true |
+| --- | --- | --- |
+| Frontier `grok-4.7` | `completion` `pong`, reason `frontier completion`. Key never printed. | `READY_FOR_LIVE_TEST` is no. CI has no key. |
+| 5090-class GPU | `probes --live` PASS and `estate specialist --driver ollama` `Pong` are recorded. Host class is `consumer-nvidia` or `rented-nvidia`. | Not native MLX. Not a binding id. Not required for the gate. |
+| Mac probes | Ollama-on-Mac `probes --live` PASS. | That is not a Mac specialist complete. |
+
+## Parked — still not green
 
 | Item | What exists today | What is not true |
 | --- | --- | --- |
-| Live Mac MLX | Probe path (`CELL_MLX_ENDPOINT`, falls back to `CELL_LOCAL_ENDPOINT`). Catalog card is a stub behind the same catalog / route / bind API. | No Mac in CI. No Mac attached to this factory. MLX is not Supported. Do not mark it live. |
-| Live consumer / rented GPU | Same specialist protocol. 5090 `probes --live` and `estate specialist` `Pong` are recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Host class is `consumer-nvidia` or `rented-nvidia`. | Not required for local gates. Not native MLX. A 5090 is one host, not a binding id or product fork. |
-| Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Cloud agents are locked off until Jason assigns agents and accepts a spawn driver. |
-| Frontier specialist (`grok-4.7`) | Live PASS recorded (`completion` `pong`, reason `frontier completion`). Key never printed. Mixed plan + apply is mock-locked. Catalog card names `grok-4.7`. | Not required in CI. `READY_FOR_LIVE_TEST` no. Local specialist does not fall through. |
+| Mac specialist | Optional. Same `estate specialist --driver ollama` command as the recorded 5090 complete. | Not recorded on a Mac. Do not mark it green. Do not ping. |
+| Native MLX | Catalog card is a stub. `CELL_MLX_ENDPOINT` is only an OpenAI-compatible server, if you set it. | Native `specialist()` is not Supported. No Mac in CI. |
+| Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Locked off until Jason accepts a spawn driver. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 Adapter is on `main`. `estate specialist --driver ollama --prompt` is
