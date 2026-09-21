@@ -30,7 +30,7 @@ make gate-90
 
 That alias runs `make smoke` (doctor + fixtures-check + operator-day + `cargo test --workspace` + `make day90`), then `estate doctor --strict`, then prints the GATE-90 checklist. It does not spawn cloud agents. It does not auto-promote packs. It does not require a Mac, a GPU, or live Grok.
 
-Live Mac MLX, live consumer/rented GPU (including a 5090-class box), and cloud-agent spawn are parked in [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) until Jason has boxes ready. Those rows are not green. Do not fake them.
+Live Mac MLX, live consumer/rented GPU (including a 5090-class box), and cloud-agent spawn are parked in [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) until Jason has boxes ready. Exact env + commands: [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md). Those rows are not green. Do not fake them.
 
 ```bash
 make feed-loop   # isolated fixture walk: scrubbed trace → pack → propose → accept
@@ -133,6 +133,8 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 Do not put `5090`, `4090`, or `m3-max` in estate binding ids **or probe ids**. A 5090 box is one `rented-nvidia` host.
 
 ## Live probe env (optional)
+
+One-page hand-off (not a live-box proof): [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md).
 
 CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when the endpoint is unset and exits 0.
 
