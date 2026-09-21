@@ -64,9 +64,12 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         "schema/session-journal.v0.json",
         "schema/policy.v0.json",
         "schema/cell-backup.v0.json",
+        "schema/sacred.v0.json",
         "policy/cell-one.policy.v0.yaml",
+        "policy/sacred.yaml",
         "schema/README.md",
         "docs/GATE-90.md",
+        "CHANGELOG.md",
     ];
     for rel in required {
         let path = root.join(rel);
@@ -301,9 +304,12 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         "schema/session-journal.v0.json",
         "schema/policy.v0.json",
         "schema/cell-backup.v0.json",
+        "schema/sacred.v0.json",
         "policy/cell-one.policy.v0.yaml",
+        "policy/sacred.yaml",
         "schema/README.md",
         "docs/GATE-90.md",
+        "CHANGELOG.md",
     ];
     let mut fails = 0usize;
     for rel in required {
