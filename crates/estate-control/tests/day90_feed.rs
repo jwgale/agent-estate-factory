@@ -83,6 +83,15 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
         "stderr={}",
         String::from_utf8_lossy(&pack.stderr)
     );
+    let packed: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(drop.join("overnight-traces.pack.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(packed["promoted"], false);
+    assert_eq!(
+        packed["source_drivers"],
+        serde_json::json!(["frontier", "local"])
+    );
 
     let cursor = estate_bin()
         .args([
@@ -146,6 +155,15 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
         propose.status.success(),
         "stderr={}",
         String::from_utf8_lossy(&propose.stderr)
+    );
+    let proposal: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(proposed.join("overnight-traces.proposal.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(proposal["auto_apply"], false);
+    assert_eq!(
+        proposal["diff"]["source_drivers"],
+        serde_json::json!(["frontier", "local"])
     );
 
     let accept = estate_bin()

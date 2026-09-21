@@ -127,7 +127,8 @@ Fixtures only. Isolated target/feed-loop-cell. Not part of make smoke.
   estate packs accept --id overnight-traces --curator jason
 
 Cursor is a watermark. Rematerialize does not auto-promote.
-estate.yaml is never rewritten. Promote stays locked off.
+Packs tag source_drivers frontier and/or local. Promote stays locked off.
+estate.yaml is never rewritten.
 See docs/FEED-LOOP.md.
 ";
 
