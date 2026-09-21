@@ -28,5 +28,6 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 | `feed-cursor.v0.json` | `cell-one.feed-cursor.v0` | Feed watermark |
 | `policy.v0.json` | `cell-one.policy.v0` | Deny/allow stub |
 | `cell-backup.v0.json` | `cell-one.cell-backup.v0` | Local cell archive |
+| `sacred.v0.json` | `cell-one.sacred.v0` | Dual-layer sacred file |
 
-Policy file (not a schema snapshot): `policy/cell-one.policy.v0.yaml`.
+Policy files (not schema snapshots): `policy/cell-one.policy.v0.yaml`, `policy/sacred.yaml`.
