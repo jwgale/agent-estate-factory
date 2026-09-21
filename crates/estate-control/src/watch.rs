@@ -39,6 +39,32 @@ pub(crate) fn cmd_expire(state_dir: &Path, forget: bool) -> Result<()> {
     bail!("refuse:expired: apply/resume refuse until estate expire --forget");
 }
 
+const DOCTOR_REQUIRED: &[&str] = &[
+    "schema/estate.v0.schema.json",
+    "schema/pack.v0.json",
+    "schema/specialist-pack.v0.json",
+    "schema/placement-actual.v0.json",
+    "schema/reconcile.v0.json",
+    "schema/conveyor-mesh.v0.json",
+    "schema/local-catalog.v0.json",
+    "schema/lifecycle.v0.json",
+    "schema/estate-plan.v0.json",
+    "schema/feed-cursor.v0.json",
+    "schema/enrich-proposal.v0.json",
+    "schema/apply-dry-run.v0.json",
+    "schema/session-journal.v0.json",
+    "schema/policy.v0.json",
+    "schema/cell-backup.v0.json",
+    "schema/sacred.v0.json",
+    "policy/cell-one.policy.v0.yaml",
+    "policy/sacred.yaml",
+    "schema/README.md",
+    "docs/GATE-90.md",
+    "CHANGELOG.md",
+    "docs/MORNING-BRIEF-2026-09-21.md",
+    "docs/PR2-DESCRIPTION.md",
+];
+
 pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     let mut fails: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
@@ -48,30 +74,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
 
     println!("Schema files");
     println!("------------");
-    let required = [
-        "schema/estate.v0.schema.json",
-        "schema/pack.v0.json",
-        "schema/specialist-pack.v0.json",
-        "schema/placement-actual.v0.json",
-        "schema/reconcile.v0.json",
-        "schema/conveyor-mesh.v0.json",
-        "schema/local-catalog.v0.json",
-        "schema/lifecycle.v0.json",
-        "schema/estate-plan.v0.json",
-        "schema/feed-cursor.v0.json",
-        "schema/enrich-proposal.v0.json",
-        "schema/apply-dry-run.v0.json",
-        "schema/session-journal.v0.json",
-        "schema/policy.v0.json",
-        "schema/cell-backup.v0.json",
-        "schema/sacred.v0.json",
-        "policy/cell-one.policy.v0.yaml",
-        "policy/sacred.yaml",
-        "schema/README.md",
-        "docs/GATE-90.md",
-        "CHANGELOG.md",
-    ];
-    for rel in required {
+    for rel in DOCTOR_REQUIRED {
         let path = root.join(rel);
         if path.is_file() {
             println!("  ok    {rel}");
@@ -288,31 +291,8 @@ pub(crate) fn cmd_status(
 }
 
 pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
-    let required = [
-        "schema/estate.v0.schema.json",
-        "schema/pack.v0.json",
-        "schema/specialist-pack.v0.json",
-        "schema/placement-actual.v0.json",
-        "schema/reconcile.v0.json",
-        "schema/conveyor-mesh.v0.json",
-        "schema/local-catalog.v0.json",
-        "schema/lifecycle.v0.json",
-        "schema/estate-plan.v0.json",
-        "schema/feed-cursor.v0.json",
-        "schema/enrich-proposal.v0.json",
-        "schema/apply-dry-run.v0.json",
-        "schema/session-journal.v0.json",
-        "schema/policy.v0.json",
-        "schema/cell-backup.v0.json",
-        "schema/sacred.v0.json",
-        "policy/cell-one.policy.v0.yaml",
-        "policy/sacred.yaml",
-        "schema/README.md",
-        "docs/GATE-90.md",
-        "CHANGELOG.md",
-    ];
     let mut fails = 0usize;
-    for rel in required {
+    for rel in DOCTOR_REQUIRED {
         if !root.join(rel).is_file() {
             fails += 1;
         }
@@ -344,4 +324,3 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         format!("FAIL ({fails})")
     }
 }
-
