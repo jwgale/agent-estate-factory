@@ -31,11 +31,13 @@ pub struct ScrubbedEvent {
     pub ts: String,
 }
 
-/// Candidate pack. `promoted` is always false when produced from the feed.
+/// Stable pack schema (cell-one.pack.v0). `promoted` is never set by the feed.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PackManifest {
     pub id: String,
     pub version: u32,
+    #[serde(default = "default_pack_schema")]
+    pub schema: String,
     pub curator: String,
     pub policy: String,
     pub promoted: bool,
@@ -44,8 +46,32 @@ pub struct PackManifest {
     pub kinds: Vec<String>,
     pub paths: Vec<String>,
     pub agents: Vec<String>,
+    #[serde(default = "default_host_class")]
+    pub host_class: String,
+    #[serde(default)]
+    pub job: Option<String>,
+    /// Day-90+ LoRA/adapter slot. Empty on the beachhead.
+    #[serde(default)]
+    pub adapter: Option<String>,
     pub created_at: String,
     pub note: String,
+}
+
+fn default_pack_schema() -> String {
+    "cell-one.pack.v0".into()
+}
+
+fn default_host_class() -> String {
+    "any".into()
+}
+
+/// Explicit import record. Not estate SoT. Never silent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportedPack {
+    pub pack: PackManifest,
+    pub estate_bound: bool,
+    pub imported_at: String,
+    pub source_path: String,
 }
 
 pub fn append_event(dir: &Path, event: &ScrubbedEvent) -> Result<(), FeedError> {
@@ -105,6 +131,7 @@ pub fn pack_from_events(id: &str, events: &[ScrubbedEvent]) -> PackManifest {
     PackManifest {
         id: id.to_string(),
         version: 0,
+        schema: default_pack_schema(),
         curator: "jason".into(),
         policy: "manual".into(),
         promoted: false,
@@ -113,8 +140,11 @@ pub fn pack_from_events(id: &str, events: &[ScrubbedEvent]) -> PackManifest {
         kinds: kinds.into_iter().collect(),
         paths: paths.into_iter().collect(),
         agents: agents.into_iter().collect(),
+        host_class: default_host_class(),
+        job: Some("policy-precheck".into()),
+        adapter: None,
         created_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        note: "Candidate only. Not in estate.enrich_packs until Jason adds the id by hand. Feed never auto-promotes.".into(),
+        note: "Candidate only. Import is explicit apply. Jason still adds the id to estate.enrich_packs by hand. Feed never auto-promotes.".into(),
     }
 }
 
@@ -157,9 +187,50 @@ pub fn list_drop_packs(drop_dir: &Path) -> Result<Vec<PackManifest>, FeedError> 
     Ok(out)
 }
 
-/// Always fails. The estate file is the only promotion path.
+/// Always fails. Auto-promote is locked off. Use `import_pack` (explicit apply).
 pub fn refuse_promote(_id: &str) -> Result<(), FeedError> {
     Err(FeedError::NoAutoPromote)
+}
+
+pub fn load_pack(dir: &Path, id: &str) -> Result<PackManifest, FeedError> {
+    let path = dir.join(format!("{id}.pack.json"));
+    if !path.exists() {
+        return Err(FeedError::Parse(format!("missing pack {}", path.display())));
+    }
+    let text = std::fs::read_to_string(&path)?;
+    serde_json::from_str(&text).map_err(|e| FeedError::Parse(format!("{}: {e}", path.display())))
+}
+
+/// Explicit Feed→Control import. Copies the candidate into `accepted/`.
+/// Does not rewrite the estate file. `estate_bound` is true only if Jason
+/// already listed the id on `enrich_packs.packs`.
+pub fn import_pack(
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    id: &str,
+    estate_pack_ids: &[String],
+) -> Result<(ImportedPack, PathBuf), FeedError> {
+    let mut pack = load_pack(drop_dir, id)?;
+    if pack.promoted {
+        return Err(FeedError::NoAutoPromote);
+    }
+    pack.promoted = false;
+    pack.policy = "manual".into();
+    pack.curator = "jason".into();
+    let estate_bound = estate_pack_ids.iter().any(|p| p == &pack.id);
+    let imported = ImportedPack {
+        pack: pack.clone(),
+        estate_bound,
+        imported_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        source_path: drop_dir.join(format!("{id}.pack.json")).display().to_string(),
+    };
+    std::fs::create_dir_all(accepted_dir)?;
+    let path = accepted_dir.join(format!("{id}.pack.json"));
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&imported).unwrap_or_default(),
+    )?;
+    Ok((imported, path))
 }
 
 pub fn materialize_from_feed(
@@ -240,12 +311,18 @@ mod tests {
         assert_eq!(pack.curator, "jason");
         assert_eq!(pack.policy, "manual");
         assert_eq!(pack.from_events, 2);
+        assert_eq!(pack.schema, "cell-one.pack.v0");
+        assert_eq!(pack.host_class, "any");
         assert!(pack.paths.iter().any(|p| p == "local"));
         assert!(pack.paths.iter().any(|p| p == "frontier"));
         assert!(path.ends_with("overnight-traces.pack.json"));
         assert!(refuse_promote(&pack.id).is_err());
         let listed = list_drop_packs(&drop).unwrap();
         assert_eq!(listed.len(), 1);
+        let accepted = feed.join("accepted");
+        let (imported, _) = import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+        assert!(!imported.estate_bound);
+        assert!(!imported.pack.promoted);
         let _ = std::fs::remove_dir_all(&feed);
     }
 

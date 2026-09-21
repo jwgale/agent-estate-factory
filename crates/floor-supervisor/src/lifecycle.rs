@@ -115,6 +115,7 @@ pub fn resume(
     roots_base: &Path,
 ) -> Result<(ActualState, LifecycleRecord), SupervisorError> {
     let actual = apply_with_profile_dir(estate, state_dir, roots_base)?;
+    crate::record_placements(estate, state_dir)?;
     let record = LifecycleRecord {
         version: 0,
         state: LifecycleState::Running,

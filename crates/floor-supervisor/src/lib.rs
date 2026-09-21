@@ -2,6 +2,7 @@
 //! Isolation is a driver. This crate must stay free of vendor identifiers.
 
 mod lifecycle;
+mod placement;
 
 use estate_schema::{estate_hash, Estate};
 use isolation_driver::{BindRequest, BoundSession, IsolationDriver, ProfileDirDriver};
@@ -12,6 +13,10 @@ use thiserror::Error;
 pub use lifecycle::{
     lifecycle_path, load_lifecycle, mark_running, resume, suspend, write_lifecycle, LifecycleRecord,
     LifecycleState, LIFECYCLE_FILE,
+};
+pub use placement::{
+    append_apply_audit, load_placements, record_placements, ApplyAudit, PlacementActual,
+    PlacementLease,
 };
 
 #[derive(Debug, Error)]
