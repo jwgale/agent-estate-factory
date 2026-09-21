@@ -175,7 +175,19 @@ if ! grep -q 'applied_to_estate: false' "$DROP/accepted/overnight-traces.enrich-
   echo "FAIL  accept must record applied_to_estate=false"
   exit 1
 fi
-echo "PASS  accept"
+python3 - "$DROP/accepted/overnight-traces.enrich-edit.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("source_drivers") != ["frontier", "local"]:
+    raise SystemExit(f"FAIL  enrich-edit source_drivers={doc.get('source_drivers')}")
+if doc.get("applied_to_estate") is not False or doc.get("auto_apply") is not False:
+    raise SystemExit("FAIL  enrich-edit must stay unapplied")
+PY
+if ! grep -q 'source_drivers: frontier, local' "$DROP/accepted/overnight-traces.enrich-edit.md"; then
+  echo "FAIL  enrich-edit instructions must keep source_drivers"
+  exit 1
+fi
+echo "PASS  accept source_drivers frontier, local"
 
 echo "-- promote refuse + estate unchanged --"
 set +e
