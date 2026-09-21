@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#23 plus this slice)
+## On `main` (PR #1-#24 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -96,17 +96,22 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 | What was broken | What it does now |
 | --- | --- |
-| Compat chat posted dummy `"ping"` and ignored the request text. Probes were the only live-shaped surface. | Chat posts the real `SpecialistRequest` text. `model-estate specialist` is the `estate specialist` equivalent. Mock HTTP locks the round-trip. |
-| `POST /v0/specialist` 200 that was not a specialist result fell through to OpenAI. | Unparseable / empty v0 200 refuses. No silent compat fallback. |
-| OpenAI `choices` without `message.content` counted as up. | Missing content refuses. A bad OpenAI body does not try Ollama. |
-| `CELL_LOCAL_MODEL` / listed model ids could be a SKU. | SKU model ids refuse. Listed SKU names are skipped. |
+| Compat chat discarded the model body and returned factory policy only. Probes were still the only live surface Jason could run. | `complete` keeps `message.content`. `estate specialist --driver ollama --prompt` prints it. |
+| There was no `estate specialist`. Jason had to know `model-estate specialist` and still got no model text. | Thin control verb. Same `run_http_specialist` helper. Default job `complete`. |
+| Sacred tokens were POSTed to `/v0/specialist` / chat before deny. | Sacred / empty / SKU refuse before any HTTP POST. |
+| Empty OpenAI `message.content` could count as a completion. | Empty content refuses. No Ollama fall-through. |
 
-`READY_FOR_LIVE_TEST` for the new chat verb: **no**. Mock is the proof.
-Do not ping Jason.
+`READY_FOR_LIVE_TEST` for this complete verb: **yes**. Jason already
+PASSed Mac `probes --live`. One command: `estate specialist --driver
+ollama --prompt "Reply with the single word pong."` against
+`CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`. Expect a non-empty
+`completion`. Wording varies.
+
+Do not ping for native MLX or a 5090-specific path.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#23 (plain English)
+## Bug fixes on #10-#24 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -124,6 +129,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #22 | Live probe runbook + dry SKIP/would-live fixtures. Still `/v0/specialist` only. | Hand-off page. Live still needed a real Ollama adapter. |
 | #23 | Probes POSTed factory `/v0/specialist`. A running Ollama looked down. | GET `/v1/models` or `/api/tags`. `HttpLocal` adapter. Jason pinged for live Ollama. |
 | #24 | Chat posted dummy ping. v0 200 garbage fell through. OpenAI choices without content counted as up. SKU model ids bound. | Request text round-trip. v0 / content / SKU refuse. `model-estate specialist` + llama.cpp OpenAI smoke. |
+| #25 | Complete discarded model text. No `estate specialist`. Sacred text still POSTed. | `estate specialist --prompt` returns `completion`. Sacred refuse first. READY_FOR_LIVE_TEST yes. |
 
 ## Known-good local commands
 
@@ -157,6 +163,7 @@ Isolated loops without live boxes:
 - Live probe SKIP vs would-live (no network): `schema/live-probe-shapes.v0.json` + catalog unit test
 - OpenAI / Ollama adapter ping + specialist (in-process mock): `crates/model-estate` adapter tests
 - Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
+- Live specialist complete (`estate specialist`): `crates/estate-control/tests/specialist_cli.rs` + adapter complete tests
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
