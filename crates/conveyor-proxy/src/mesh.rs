@@ -832,4 +832,115 @@ mod tests {
         assert!(err.to_string().starts_with("refuse:sacred-id"));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn refuse_codes_kind_id_host_capability_not_live() {
+        let kind = refuse_hop(&HopDecl {
+            id: "studio-hop".into(),
+            kind: "studio".into(),
+            capability: "lane-tool".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+            ttl_secs: None,
+        })
+        .unwrap_err();
+        assert!(matches!(kind, MeshError::Kind(_)));
+        assert!(kind.to_string().starts_with("refuse:kind"));
+
+        let bad_id = refuse_hop(&HopDecl {
+            id: "Not A Slug".into(),
+            kind: "box".into(),
+            capability: "lane-tool".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+            ttl_secs: None,
+        })
+        .unwrap_err();
+        assert!(matches!(bad_id, MeshError::BadId(_)));
+        assert!(bad_id.to_string().starts_with("refuse:bad-id"));
+
+        let host = refuse_hop(&HopDecl {
+            id: "ok-hop".into(),
+            kind: "box".into(),
+            capability: "lane-tool".into(),
+            host_class: "not-a-host".into(),
+            wired: true,
+            note: None,
+            ttl_secs: None,
+        })
+        .unwrap_err();
+        assert!(matches!(host, MeshError::BadHostClass(_)));
+        assert!(host.to_string().starts_with("refuse:bad-host-class"));
+
+        let sku = refuse_hop(&HopDecl {
+            id: "gpu-5090-hop".into(),
+            kind: "box".into(),
+            capability: "lane-tool".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+            ttl_secs: None,
+        })
+        .unwrap_err();
+        assert!(sku.to_string().starts_with("refuse:sku-banned"));
+
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "notes-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let cap = call_hop(&dir, "notes-hop", "other-cap").unwrap_err();
+        assert!(matches!(cap, MeshError::Capability { .. }));
+        assert!(cap.to_string().starts_with("refuse:capability"));
+
+        let ungranted = call_hop(&dir, "missing-grant", "lane-tool").unwrap_err();
+        assert!(ungranted.to_string().starts_with("refuse:no-lease"));
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cold-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let denied = call_hop(&dir, "cold-box", "lane-tool").unwrap_err();
+        assert!(denied.to_string().starts_with("refuse:ungranted"));
+
+        std::fs::write(
+            dir.join("placement-actual.json"),
+            serde_json::json!({
+                "schema": "cell-one.placement-actual.v0",
+                "leases": [{
+                    "placement_id": "notes-hop",
+                    "kind": "box",
+                    "host_class": "any",
+                    "spawned": false,
+                    "wired": true
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let dead = call_hop(&dir, "notes-hop", "notes-append").unwrap_err();
+        assert!(matches!(dead, MeshError::NotLive(_)));
+        assert!(dead.to_string().starts_with("refuse:not-live"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
