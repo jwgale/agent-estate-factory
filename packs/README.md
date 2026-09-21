@@ -1,6 +1,6 @@
 # Pack drop zone (`packs/`)
 
-Live Feed\u2192Control drop zone. `estate feed pack` writes `{id}.pack.json` here from scrubbed traces.
+Live Feed→Control drop zone. `estate feed pack` writes `{id}.pack.json` here from scrubbed traces.
 
 Rules:
 
