@@ -691,3 +691,173 @@ fn reconcile_propose_and_audit_export() {
     assert!(tmp.join("audit-export").join("import-audit.jsonl").is_file());
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn apply_dry_run_expire_and_doctor() {
+    let tmp = repo_root().join(format!("target/test-wave4-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let state = tmp.join("state");
+    let plans = tmp.join("plans");
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        dry.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&dry.stdout);
+    assert!(stdout.contains("writes: false"));
+    assert!(stdout.contains("Blast radius"));
+    assert!(!state.join("placement-actual.json").exists());
+    assert!(!state.join("actual-state.json").exists());
+
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(planned.status.success());
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+
+    let expire = estate_bin()
+        .args(["expire", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(
+        expire.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&expire.stderr)
+    );
+
+    let mut actual: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+    )
+    .unwrap();
+    if let Some(leases) = actual.get_mut("leases").and_then(|v| v.as_array_mut()) {
+        if let Some(lease) = leases.iter_mut().find(|l| l.get("kind").and_then(|k| k.as_str()) == Some("box"))
+        {
+            lease["ttl_secs"] = serde_json::json!(1);
+            lease["issued_at"] = serde_json::json!(1);
+            lease["expires_at"] = serde_json::json!(2);
+        }
+    }
+    std::fs::write(
+        state.join("placement-actual.json"),
+        serde_json::to_string_pretty(&actual).unwrap(),
+    )
+    .unwrap();
+    let listed = estate_bin()
+        .args(["expire", "--state-dir", &state.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(!listed.status.success());
+    assert!(String::from_utf8_lossy(&listed.stderr).contains("refuse:expired")
+        || String::from_utf8_lossy(&listed.stdout).contains("refuse:expired"));
+    let refused = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let dry_ref = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!dry_ref.status.success());
+    let forgot = estate_bin()
+        .args([
+            "expire",
+            "--forget",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        forgot.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&forgot.stderr)
+    );
+
+    let doctor = estate_bin()
+        .args([
+            "doctor",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        doctor.status.success(),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&doctor.stderr),
+        String::from_utf8_lossy(&doctor.stdout)
+    );
+    let doc = String::from_utf8_lossy(&doctor.stdout);
+    assert!(doc.contains("no .github/workflows/*.yml"));
+    assert!(doc.contains("specialist-pack.v0.json"));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
