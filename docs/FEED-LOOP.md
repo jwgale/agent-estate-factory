@@ -9,8 +9,8 @@ make feed-loop
 ```
 
 The script uses an isolated `target/feed-loop-cell`. It does not touch the
-operator `.cell/`. It is not part of `make smoke` (that gate is already
-long). Hosted CI never runs it.
+operator `.cell/`. It unsets `XAI_API_KEY` and `CELL_*_ENDPOINT`. It is not
+part of `make smoke` (that gate is already long). Hosted CI never runs it.
 
 ## What the walk proves
 
@@ -22,7 +22,9 @@ long). Hosted CI never runs it.
    (`overnight-traces`) and stamps `feed-cursor.json` with
    `schema=cell-one.feed-cursor.v0`, `events > 0`, and `packed_id`.
    `source_drivers` lists `frontier` and/or `local` and matches `path_counts`.
-   `promoted` stays false.
+   The script asserts the produced pack is exactly `frontier` then `local`,
+   and that propose copies the same tag. `promoted` stays false. Live keys
+   are unset.
 3. **Propose.** `estate packs propose` writes `packs/proposed/` with
    `auto_apply: false` and copies `source_drivers` onto the diff. The estate
    file is unchanged.
