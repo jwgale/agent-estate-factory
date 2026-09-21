@@ -21,6 +21,7 @@
   },
   "source_paths": ["feed/events.jsonl"],
   "model_hint": null,
+  "source_drivers": [],
   "host_class_affinity": "any",
   "created_at": "2026-09-21T00:00:00Z",
   "note": "Fixture candidate only. Import is explicit apply. Jason still adds the id to estate.enrich_packs by hand. Feed never auto-promotes."
