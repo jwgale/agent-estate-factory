@@ -93,12 +93,22 @@ impl HostClass {
     }
 }
 
+/// Per-driver capability flags. Stub drivers stay flag-complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DriverCaps {
+    pub streaming: bool,
+    pub tools: bool,
+    pub vision: bool,
+    pub context_tokens: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CatalogCard {
     pub runtime: LocalRuntime,
     pub driver_id: &'static str,
     pub status: SupportStatus,
     pub hosts: &'static [HostClass],
+    pub caps: DriverCaps,
     pub notes: &'static str,
 }
 
@@ -113,6 +123,12 @@ pub const CATALOG: &[CatalogCard] = &[
             HostClass::RentedNvidia,
             HostClass::Any,
         ],
+        caps: DriverCaps {
+            streaming: true,
+            tools: true,
+            vision: true,
+            context_tokens: 8192,
+        },
         notes: "First green local path. Ollama-on-Linux and Ollama-on-Mac share this card.",
     },
     CatalogCard {
@@ -125,6 +141,12 @@ pub const CATALOG: &[CatalogCard] = &[
             HostClass::RentedNvidia,
             HostClass::Any,
         ],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 4096,
+        },
         notes: "Swap-proof sibling of Ollama. Same /v0/specialist protocol, not a second product.",
     },
     CatalogCard {
@@ -132,6 +154,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "mlx",
         status: SupportStatus::Stub,
         hosts: &[HostClass::AppleSilicon],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "Apple Silicon stub. Same catalog/route/bind API; live Mac proof later.",
     },
     CatalogCard {
@@ -139,6 +167,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "vllm",
         status: SupportStatus::Experimental,
         hosts: &[HostClass::ConsumerNvidia, HostClass::RentedNvidia],
+        caps: DriverCaps {
+            streaming: true,
+            tools: true,
+            vision: false,
+            context_tokens: 32768,
+        },
         notes: "Optional. Not required for the first green demo. Experimental until Jason verifies.",
     },
     CatalogCard {
@@ -146,6 +180,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "trt",
         status: SupportStatus::Experimental,
         hosts: &[HostClass::ConsumerNvidia, HostClass::RentedNvidia],
+        caps: DriverCaps {
+            streaming: true,
+            tools: false,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "TensorRT-LLM. Experimental until Jason verifies.",
     },
     CatalogCard {
@@ -153,6 +193,12 @@ pub const CATALOG: &[CatalogCard] = &[
         driver_id: "http-remote",
         status: SupportStatus::Supported,
         hosts: &[HostClass::Any],
+        caps: DriverCaps {
+            streaming: false,
+            tools: true,
+            vision: false,
+            context_tokens: 8192,
+        },
         notes: "CELL_LOCAL_ENDPOINT remote pattern. Same protocol on any host class.",
     },
 ];
@@ -282,6 +328,7 @@ pub struct CatalogFileCard {
     pub runtime: String,
     pub status: String,
     pub hosts: Vec<String>,
+    pub caps: DriverCaps,
     pub notes: String,
 }
 
@@ -311,6 +358,7 @@ pub fn catalog_file() -> CatalogFile {
                 runtime: card.runtime.as_str().to_string(),
                 status: card.status.as_str().to_string(),
                 hosts: card.hosts.iter().map(|h| h.as_str().to_string()).collect(),
+                caps: card.caps,
                 notes: card.notes.to_string(),
             })
             .collect(),
@@ -344,9 +392,13 @@ pub fn render_catalog() -> String {
             .collect::<Vec<_>>()
             .join(",");
         lines.push(format!(
-            "  {:<12} status={:<12} hosts={:<48} {}",
+            "  {:<12} status={:<12} streaming={} tools={} vision={} context={} hosts={:<32} {}",
             card.driver_id,
             card.status.as_str(),
+            card.caps.streaming,
+            card.caps.tools,
+            card.caps.vision,
+            card.caps.context_tokens,
             hosts,
             card.notes
         ));
@@ -386,6 +438,13 @@ mod tests {
             .hosts
             .contains(&HostClass::RentedNvidia));
         assert_eq!(card(LocalRuntime::Mlx).hosts, &[HostClass::AppleSilicon]);
+        for c in CATALOG {
+            assert!(c.caps.context_tokens > 0, "{}", c.driver_id);
+        }
+        assert!(card(LocalRuntime::Ollama).caps.tools);
+        assert!(card(LocalRuntime::Mlx).caps.streaming);
+        assert!(card(LocalRuntime::Vllm).caps.tools);
+        assert_eq!(card(LocalRuntime::Trt).status, SupportStatus::Experimental);
     }
 
     #[test]
