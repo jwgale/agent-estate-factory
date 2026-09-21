@@ -302,6 +302,56 @@ mod tests {
     }
 
     #[test]
+    fn feed_audit_failure_refuses_before_frontier() {
+        let e = estate();
+        let local = MockLocal {
+            id: "local_slm".into(),
+        };
+        let frontier = MockFrontier {
+            id: "xai_grok".into(),
+            reply: "pong".into(),
+        };
+        let blocked = std::env::temp_dir().join(format!(
+            "cell-one-feed-blocked-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&blocked);
+        std::fs::write(&blocked, "not a directory").unwrap();
+        let err = run_task(
+            &e,
+            &TaskRequest {
+                agent_id: "horizon".into(),
+                act: TaskAct::Model,
+                object: "xai_grok".into(),
+                payload: "Reply with the single word pong.".into(),
+            },
+            Some(&frontier),
+            Some(&local),
+            Some(&blocked),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("feed:"), "{err}");
+        let sku = run_task(
+            &e,
+            &TaskRequest {
+                agent_id: "horizon-5090".into(),
+                act: TaskAct::Model,
+                object: "xai_grok".into(),
+                payload: "Reply with the single word pong.".into(),
+            },
+            Some(&frontier),
+            Some(&local),
+            Some(&std::env::temp_dir().join(format!(
+                "cell-one-feed-sku-{}",
+                std::process::id()
+            ))),
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("5090"), "{sku}");
+        let _ = std::fs::remove_file(&blocked);
+    }
+
+    #[test]
     fn a8_research_tool_runs_local_before_tool() {
         let e = estate();
         let local = MockLocal {
