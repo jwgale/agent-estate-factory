@@ -1,6 +1,16 @@
-use anyhow::{bail, Result};
-use estate_schema::{check_policy_file, load_and_install_sacred_file};
+use anyhow::{bail, Context, Result};
+use estate_schema::{check_policy_file, load_and_install_sacred_file, load_estate, Estate};
 use std::path::Path;
+
+/// Missing estate file is optional. A file that exists but does not parse
+/// is refuse — backup/restore must not invent a locked-only sacred set.
+pub(crate) fn load_estate_if_present(path: &Path) -> Result<Option<Estate>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    Ok(Some(estate))
+}
 
 pub(crate) fn install_sacred(path: &Path) -> Result<()> {
     match load_and_install_sacred_file(path) {
@@ -48,7 +58,7 @@ pub(crate) fn enforce_policy(path: &Path, action: &str, hop: Option<&str>) -> Re
 
 pub(crate) fn chrono_stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
+    let secs = SystemTime.now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
