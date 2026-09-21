@@ -1,0 +1,15 @@
+{
+  "schema": "cell-one.pack.v0",
+  "id": "overnight-traces",
+  "curator": "jason",
+  "policy": "manual",
+  "promoted": false,
+  "host_class": "any",
+  "path_counts": {
+    "frontier": 0,
+    "local": 0,
+    "proxy": 0,
+    "other": 0
+  },
+  "note": "Candidate only. Import is explicit apply. Feed never auto-promotes."
+}

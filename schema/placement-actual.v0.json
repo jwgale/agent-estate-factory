@@ -1,0 +1,20 @@
+{
+  "schema": "cell-one.placement-actual.v0",
+  "note": "Durable lease file. box may spawn. cloud-agent is declared and never spawned. Hardware is a driver choice.",
+  "leases": [
+    {
+      "placement_id": "cell-one-box",
+      "kind": "box",
+      "host_class": "any",
+      "spawned": true,
+      "driver": "box"
+    },
+    {
+      "placement_id": "cursor-cloud",
+      "kind": "cloud-agent",
+      "host_class": "any",
+      "spawned": false,
+      "driver": "cloud-agent"
+    }
+  ]
+}

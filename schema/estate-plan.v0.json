@@ -1,0 +1,9 @@
+{
+  "schema": "cell-one.plan.v0",
+  "note": "PR-reviewable blast-radius. apply --require-plan is gated on desired_hash. --require-fresh-plan also checks against_hash vs last apply.",
+  "desired_hash": "sha256:example",
+  "against_hash": null,
+  "added": {},
+  "removed": {},
+  "changed": {}
+}

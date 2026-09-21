@@ -1,0 +1,8 @@
+{
+  "schema": "cell-one.feed-cursor.v0",
+  "note": "Durable watermark over events.jsonl. Rematerialize does not auto-promote. Pack ids must not encode a SKU.",
+  "events": 0,
+  "last_ts": null,
+  "last_kind": null,
+  "packed_id": null
+}
