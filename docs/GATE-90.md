@@ -1,8 +1,8 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#20 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#21 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
-`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
+`make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md). Hand-off page (not green): [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ```bash
 make gate-90    # Day-90 operator entrypoint (local)
@@ -73,6 +73,9 @@ estate doctor --strict
 | Feed-cursor load/write | green | present garbage refuses; write does not invent empty `feed-cursor.json` |
 | Apply `--force` SKU actual | green | `rtx-consumer.yaml` restamps `consumer-nvidia`; no SKU→`any` launder |
 | Propose / append / placements serialize | green | serialize-then-write refuses empty; no `"{}"` journal junk |
+| model-actual / session.json serialize | green | refuse empty blob; garbage model-actual is not greenfield |
+| Estate compare-read | green | accept / import / propose refuse unreadable estate bytes |
+| Live probe runbook + dry shapes | green | [`LIVE-PROBES.md`](LIVE-PROBES.md); SKIP vs would-live fixture, no network |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
@@ -82,7 +85,7 @@ estate doctor --strict
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Parked. See [`DAY90-PLUS.md`](DAY90-PLUS.md). Probe path exists. No Mac in CI. |
+| Live Mac MLX | Parked. See [`DAY90-PLUS.md`](DAY90-PLUS.md) + [`LIVE-PROBES.md`](LIVE-PROBES.md). Probe path exists. No Mac in CI. |
 | Live rented / consumer GPU | Parked. Same specialist protocol. Not required in CI. |
 | Cloud-agent spawn | Parked / locked off. Declared only. Floor does not spawn. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. Not an auto-heal. |

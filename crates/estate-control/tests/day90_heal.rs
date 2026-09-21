@@ -33,6 +33,10 @@ fn probes_live_skip_and_refuse_sku_ids() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("SKIP"));
     assert!(text.contains("live_probed=false"));
+    assert!(text.contains("mlx"));
+    assert!(text.contains("apple-silicon"));
+    assert!(text.contains("ollama"));
+    assert!(!text.contains("live_probed=true"));
     assert!(!text.contains("5090"));
     assert!(!text.contains("4090"));
 }

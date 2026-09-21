@@ -41,12 +41,23 @@ pub fn record_bindings(estate: &Estate, state_dir: &Path) -> Result<ModelActual,
             .collect(),
     };
     let path = state_dir.join("model-actual.json");
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(&actual).unwrap_or_default(),
-    )
-    .map_err(|e| ModelError::Other(e.to_string()))?;
+    let body = serialize_pretty(&actual)?;
+    std::fs::write(&path, body).map_err(|e| ModelError::Other(e.to_string()))?;
     Ok(actual)
+}
+
+fn refuse_empty_blob(body: &str) -> Result<(), ModelError> {
+    if body.trim().is_empty() {
+        return Err(ModelError::Other("serialize: empty blob".into()));
+    }
+    Ok(())
+}
+
+fn serialize_pretty<T: Serialize>(value: &T) -> Result<String, ModelError> {
+    let body = serde_json::to_string_pretty(value)
+        .map_err(|e| ModelError::Other(format!("serialize: {e}")))?;
+    refuse_empty_blob(&body)?;
+    Ok(body)
 }
 
 pub fn drift_bindings(estate: &Estate, state_dir: &Path) -> Result<ModelDrift, ModelError> {
@@ -86,4 +97,70 @@ pub fn drift_bindings(estate: &Estate, state_dir: &Path) -> Result<ModelDrift, M
         wired_mismatch,
         notes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::ser::Error;
+    use serde::Serialize;
+
+    struct Boom;
+    impl Serialize for Boom {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(S::Error::custom("boom"))
+        }
+    }
+
+    fn estate() -> Estate {
+        estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
+    }
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cell-one-model-actual-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn record_bindings_refuses_empty_serialize_and_leaves_sentinel() {
+        assert!(serialize_pretty(&Boom).is_err());
+        assert!(refuse_empty_blob("").is_err());
+        assert!(refuse_empty_blob("  \n").is_err());
+
+        let dir = tmp("sentinel");
+        let path = dir.join("model-actual.json");
+        std::fs::write(&path, "sentinel\n").unwrap();
+        let body = serialize_pretty(&Boom);
+        assert!(body.is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "sentinel\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn record_bindings_writes_nonempty_and_garbage_is_not_greenfield() {
+        let estate = estate();
+        let dir = tmp("roundtrip");
+        let actual = record_bindings(&estate, &dir).unwrap();
+        let blob = std::fs::read_to_string(dir.join("model-actual.json")).unwrap();
+        assert!(!blob.trim().is_empty(), "must not write empty model-actual");
+        assert!(blob.contains(&actual.desired_hash));
+        assert!(drift_bindings(&estate, &dir).unwrap().in_sync);
+
+        std::fs::write(dir.join("model-actual.json"), "not-json\n").unwrap();
+        let err = drift_bindings(&estate, &dir).unwrap_err();
+        assert!(
+            !err.to_string().contains("run apply"),
+            "garbage model-actual must refuse, not look greenfield: {err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("model-actual.json")).unwrap(),
+            "not-json\n"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

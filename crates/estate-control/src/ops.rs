@@ -238,7 +238,7 @@ pub(crate) fn cmd_feed_import(
         .iter()
         .map(|p| p.id.clone())
         .collect();
-    let before = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let before = crate::helpers::read_estate_text(estate_path)?;
     let (rec, dest) = import_pack_for(
         drop_dir,
         accepted_dir,
@@ -247,7 +247,7 @@ pub(crate) fn cmd_feed_import(
         curator,
         &estate.enrich_packs.curator,
     )?;
-    let after = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let after = crate::helpers::read_estate_text(estate_path)?;
     if before != after {
         bail!("import must not rewrite the estate file");
     }
@@ -462,9 +462,9 @@ pub(crate) fn cmd_packs_propose(
 ) -> Result<()> {
     let estate = load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
-    let before = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let before = crate::helpers::read_estate_text(estate_path)?;
     let (proposal, dest) = propose_enrich(drop_dir, accepted_dir, proposed_dir, id, &estate)?;
-    let after = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let after = crate::helpers::read_estate_text(estate_path)?;
     if before != after {
         bail!("propose must not rewrite the estate file");
     }

@@ -1,0 +1,30 @@
+{
+  "schema": "cell-one.live-probe-shape.v0",
+  "note": "Dry shapes only. Not a live-box proof. CI never opens a socket.",
+  "skip": {
+    "live_probed": false,
+    "note_must_contain": ["SKIP", "no endpoint env"]
+  },
+  "would_live": {
+    "live_probed": true,
+    "note_must_contain": ["live ok"]
+  },
+  "down": {
+    "live_probed": false,
+    "note_must_contain": ["down:"]
+  },
+  "mac_mlx": {
+    "driver": "mlx",
+    "host_class": "apple-silicon",
+    "status": "stub",
+    "bindable": false,
+    "endpoint_envs": ["CELL_MLX_ENDPOINT", "CELL_LOCAL_ENDPOINT"]
+  },
+  "linux_gpu": {
+    "driver": "ollama",
+    "host_class": "any",
+    "status": "supported",
+    "bindable": true,
+    "endpoint_envs": ["CELL_LOCAL_ENDPOINT", "CELL_RENTED_ENDPOINT"]
+  }
+}

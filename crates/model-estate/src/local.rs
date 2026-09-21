@@ -117,28 +117,45 @@ pub fn ping_live_endpoint(endpoint: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Overlay a live result. `None` endpoint is SKIP (exit-safe for CI / Mac-less boxes).
-pub fn enrich_with_live(mut probe: DriverProbe, endpoint: Option<&str>) -> DriverProbe {
-    match endpoint {
-        None => {
+/// Dry overlay. Tests and the runbook fixture use this so CI never opens a socket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveOverlay<'a> {
+    Skip,
+    WouldLive,
+    Down(&'a str),
+}
+
+/// Apply SKIP / would-live / down without touching the network.
+pub fn apply_live_overlay(mut probe: DriverProbe, overlay: LiveOverlay<'_>) -> DriverProbe {
+    match overlay {
+        LiveOverlay::Skip => {
             probe.live_probed = false;
             probe.note = format!(
                 "{} SKIP (no endpoint env; CI never requires a live box)",
                 probe.note
             );
         }
-        Some(ep) => match ping_live_endpoint(ep) {
-            Ok(()) => {
-                probe.live_probed = true;
-                probe.note = format!("{} live ok", probe.note);
-            }
-            Err(err) => {
-                probe.live_probed = false;
-                probe.note = format!("{} down: {err}", probe.note);
-            }
-        },
+        LiveOverlay::WouldLive => {
+            probe.live_probed = true;
+            probe.note = format!("{} live ok", probe.note);
+        }
+        LiveOverlay::Down(err) => {
+            probe.live_probed = false;
+            probe.note = format!("{} down: {err}", probe.note);
+        }
     }
     probe
+}
+
+/// Overlay a live result. `None` endpoint is SKIP (exit-safe for CI / Mac-less boxes).
+pub fn enrich_with_live(probe: DriverProbe, endpoint: Option<&str>) -> DriverProbe {
+    match endpoint {
+        None => apply_live_overlay(probe, LiveOverlay::Skip),
+        Some(ep) => match ping_live_endpoint(ep) {
+            Ok(()) => apply_live_overlay(probe, LiveOverlay::WouldLive),
+            Err(err) => apply_live_overlay(probe, LiveOverlay::Down(&err)),
+        },
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

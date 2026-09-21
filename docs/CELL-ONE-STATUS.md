@@ -5,8 +5,9 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
 Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
+Live probe hand-off (not green): [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#20 plus this slice)
+## On `main` (PR #1-#21 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -73,17 +74,23 @@ are closed.
 
 #20 closed the plan / cursor / force hunt. Unreadable `plan-*.json` is refuse, not empty. `write_cursor` does not invent an empty `feed-cursor.json`. `apply --force` restamps estate `host_class` (`rtx_consumer` -> `consumer-nvidia`) and does not launder a SKU actual to `any`.
 
+## #21 (serialize-then-write)
+
+#21 closed the named invent-on-error holes after #20. `propose_enrich`,
+`append_event` (`"{}"`), and `write_placements` serialize or refuse.
+Same class on journals, mesh persist, and accept.
+
 ## Bug fix this slice
 
 | What was broken | What it does now |
 | --- | --- |
-| `propose_enrich` used `unwrap_or_default` and could write an empty `.proposal.json`. | Serialize or refuse. No empty proposal blob. |
-| `append_event` invented `"{}"` on serialize failure and could append junk to `events.jsonl`. | Journal / audit lines serialize or refuse. Empty object is refuse. |
-| `write_placements` used `unwrap_or_default` and could wipe `placement-actual.json` empty. Same class on lifecycle, session journal, apply-audit, reconcile, backup meta, actual-state, mesh persist, accept enrich-edit. | Serialize first, then write. Empty blob is refuse. Sentinel on disk stays. |
+| `record_bindings` used `unwrap_or_default` and could wipe `model-actual.json` empty. Same class on isolation `session.json`. Mock specialist invented `"{}"` on serialize fail. | Serialize or refuse. Garbage `model-actual.json` is refuse, not "run apply" greenfield. |
+| Accept / import / propose compared estate bytes with `unwrap_or_default`. Unreadable file looked like empty==empty and hid a rewrite. | `read_estate_text` refuses. Missing or unreadable is not unchanged. |
+| Live Mac MLX / Linux GPU had env names in README but no one-page hand-off. | [`LIVE-PROBES.md`](LIVE-PROBES.md) lists exact env + commands. Dry fixtures lock SKIP vs would-live without network. Not a live-box proof. |
 
-Remaining `.ok()` on Path-exists loads in estate-control / floor / conveyor / feed are listing skips (`read_dir` / `filter_map`), not sacred / SKU / plan SoT. `load_placements` stays permissive so `--force` can overwrite. Regenerable INDEX writes stay best-effort. Remaining `unwrap_or_default` in those crates are file-name / compare-read / host_class display, not serialize-then-write.
+Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#20 (plain English)
+## Bug fixes on #10-#21 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -97,6 +104,7 @@ Remaining `.ok()` on Path-exists loads in estate-control / floor / conveyor / fe
 | #18 | Leases printed then refused. Backup/restore swallowed a garbage estate. Suspend swallowed actual-state / journal errors. Feed redaction write was `let _ =`. | Refuse first. Present file must parse. Journal and redaction writes fail closed. |
 | #19 | Lifecycle `.ok()` treated garbage as greenfield. Import audit was `let _ =`. Dry-run skipped curator. Catalog/probes printed first. Status invented expired/proposals. | Parse or refuse. Audit fail-closed. Curator before dry-run. Write/refuse first, then print. |
 | #20 | Plan readers treated garbage JSON as empty. `write_cursor` could write empty. `apply --force` had to restamp estate class, not SKU to `any`. | Present plan JSON parses or refuses. Cursor write refuses empty. `--force` writes `consumer-nvidia`. |
+| #21 | Propose / journal / placements serialize used `unwrap_or_default` or invented `"{}"`. | Serialize or refuse. No empty proposal, journal junk, or wiped actual. |
 
 ## Known-good local commands
 
@@ -126,6 +134,8 @@ Isolated loops without live boxes:
 - Bad-host-class readers: `tests/day90_sku.rs`
 - Mesh / restore SKU: `tests/day90_mesh.rs`
 - Swallows / journals / redaction / plan / cursor / force-SKU / nonempty placement write: `tests/day90_honesty.rs`
+- model-actual serialize + garbage refuse: `crates/model-estate` actual tests
+- Live probe SKIP vs would-live (no network): `schema/live-probe-shapes.v0.json` + catalog unit test
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
@@ -135,8 +145,8 @@ Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 
 | Item | State |
 | --- | --- |
-| Live Mac MLX | Probe path only. No Mac attached. |
-| Live consumer / rented GPU | Same specialist protocol. Not required for gates. |
+| Live Mac MLX | Probe path + [`LIVE-PROBES.md`](LIVE-PROBES.md). No Mac attached. MLX stays stub. |
+| Live consumer / rented GPU | Same page. Specialist protocol, not Ollama chat. Not required for gates. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |
 | Auto-promote / curator UI | Locked off / not built. Jason pastes pack ids. |
 | Convey hop transport | Lease-bound mesh, not a gateway. |
