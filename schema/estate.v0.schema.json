@@ -30,7 +30,8 @@
     "sacred_exclusions": {
       "type": "array",
       "items": { "$ref": "#/definitions/sacred_exclusion" }
-    }
+    },
+    "enrich_packs": { "$ref": "#/definitions/enrich_packs" }
   },
   "definitions": {
     "slug": {
@@ -78,6 +79,17 @@
               "description": { "type": "string" }
             }
           }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "$ref": "#/definitions/slug" },
+              "description": { "type": "string" }
+            }
+          }
         }
       }
     },
@@ -98,7 +110,7 @@
         "object": { "type": "string", "minLength": 1 },
         "kind": {
           "type": "string",
-          "enum": ["memory_read", "tool", "mcp", "mount"]
+          "enum": ["memory_read", "tool", "mcp", "mount", "model"]
         },
         "effect": { "type": "string", "enum": ["allow", "deny"] },
         "note": { "type": "string" }
@@ -113,6 +125,25 @@
         "driver": { "type": "string", "minLength": 1 },
         "params": { "type": "object" },
         "wired": { "type": "boolean" }
+      }
+    },
+    "enrich_packs": {
+      "type": "object",
+      "description": "Jason curates first specialist enrich packs. Policy is manual. Not auto-promote.",
+      "properties": {
+        "curator": { "type": "string" },
+        "policy": { "type": "string", "enum": ["manual"] },
+        "packs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "$ref": "#/definitions/slug" },
+              "description": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "sacred_exclusion": {

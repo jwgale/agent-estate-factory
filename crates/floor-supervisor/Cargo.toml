@@ -12,6 +12,7 @@ estate-schema.workspace = true
 isolation-driver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 thiserror.workspace = true
 
 [[bin]]

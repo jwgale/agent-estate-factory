@@ -1,5 +1,7 @@
 # Cell One synthetic estate — Horizon / Research / Sanctum
 # Desired-state file is the control API. Runtime is not SoT.
+# Day 31–60: both model bindings wired; still deny-default + sacred dual-layer.
+# Hardware is a driver choice. Do not put SKUs in binding ids.
 
 version: 0
 kind: agent-estate
@@ -15,6 +17,11 @@ agents:
     tools: []
     mounts: []
     mcp: []
+    models:
+      - id: xai_grok
+        description: Frontier complete under the estate (A7)
+      - id: local_slm
+        description: Local specialist in-path (A8)
   - id: research
     display_name: Research
     lane: research
@@ -27,6 +34,9 @@ agents:
         path: notes
         description: Research notes directory (own lane only)
     mcp: []
+    models:
+      - id: local_slm
+        description: In-path policy-precheck before notes-append
   - id: sanctum
     display_name: Sanctum
     lane: sanctum
@@ -34,6 +44,7 @@ agents:
     tools: []
     mounts: []
     mcp: []
+    models: []
 
 lanes:
   - id: horizon
@@ -49,20 +60,32 @@ lanes:
 # Deny-default: no cross-lane memory, no extra tools, no MCP.
 intentions: []
 
-# Equal-class placeholders. Floor core must not hard-code these vendor hints.
+# Equal-class live bindings. Floor core must not hard-code vendor or SKU hints.
+# Secrets stay in env (XAI_API_KEY, CELL_LOCAL_ENDPOINT). Never in this file.
 model_bindings:
   - id: xai_grok
     class: frontier
     driver: frontier-http
     params:
       hint: xai-grok
-    wired: false
-  - id: gpu_5090
+      api_key_env: XAI_API_KEY
+      api_base_env: XAI_API_BASE
+      model_env: XAI_MODEL
+    wired: true
+  - id: local_slm
     class: local
-    driver: local-gpu
+    driver: ollama
     params:
-      hint: nvidia-5090
-    wired: false
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      job: policy-precheck
+    wired: true
+
+# Jason curates the first specialist enrich packs by hand. No auto-promote.
+enrich_packs:
+  curator: jason
+  policy: manual
+  packs: []
 
 sacred_exclusions:
   - id: cyera-ci

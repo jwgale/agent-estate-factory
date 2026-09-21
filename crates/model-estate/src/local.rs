@@ -1,0 +1,242 @@
+use crate::catalog::LocalRuntime;
+use crate::error::ModelError;
+use estate_schema::{is_sacred_name, ModelBinding};
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+/// Local specialist driver. Hardware is chosen by `runtime()`, not by a SKU in the estate.
+pub trait LocalDriver: Send + Sync {
+    fn id(&self) -> &str;
+    fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError>;
+    fn runtime(&self) -> LocalRuntime {
+        LocalRuntime::HttpRemote
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpecialistJob {
+    PolicyPrecheck,
+    Redact,
+}
+
+impl SpecialistJob {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SpecialistJob::PolicyPrecheck => "policy-precheck",
+            SpecialistJob::Redact => "redact",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpecialistRequest {
+    pub job: SpecialistJob,
+    pub agent_id: String,
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpecialistResult {
+    pub allow: bool,
+    pub redacted_text: String,
+    pub reason: String,
+    pub job: String,
+}
+
+pub struct UnwiredLocal {
+    pub id: String,
+}
+
+impl LocalDriver for UnwiredLocal {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn specialist(&self, _req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        Err(ModelError::NotWired(self.id.clone()))
+    }
+}
+
+pub struct MockLocal {
+    pub id: String,
+}
+
+impl LocalDriver for MockLocal {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn runtime(&self) -> LocalRuntime {
+        LocalRuntime::Ollama
+    }
+
+    fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        Ok(builtin_specialist(req))
+    }
+}
+
+/// Wired local that cannot be reached. `run_task` turns this into an audited deny.
+pub struct DownLocal {
+    pub id: String,
+    pub reason: ModelError,
+    pub runtime: LocalRuntime,
+}
+
+impl LocalDriver for DownLocal {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn runtime(&self) -> LocalRuntime {
+        self.runtime
+    }
+
+    fn specialist(&self, _req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        Err(self.reason.clone())
+    }
+}
+
+/// Apple MLX stub — same catalog/route/bind API, live Mac proof later.
+pub struct MlxDriver {
+    pub id: String,
+}
+
+impl LocalDriver for MlxDriver {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn runtime(&self) -> LocalRuntime {
+        LocalRuntime::Mlx
+    }
+
+    fn specialist(&self, _req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        Err(ModelError::Stub(self.id.clone()))
+    }
+}
+
+/// vLLM / TRT until Jason verifies. Fail closed; not a silent frontier fallback.
+pub struct ExperimentalLocal {
+    pub id: String,
+    pub runtime: LocalRuntime,
+}
+
+impl LocalDriver for ExperimentalLocal {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn runtime(&self) -> LocalRuntime {
+        self.runtime
+    }
+
+    fn specialist(&self, _req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        Err(ModelError::Experimental(self.id.clone()))
+    }
+}
+
+/// Thin HTTP specialist. Used by Ollama, llama.cpp, and http-remote.
+/// Speaks `POST {endpoint}/v0/specialist` only — not an Ollama chat UI.
+pub struct HttpLocal {
+    pub id: String,
+    pub endpoint: String,
+    pub runtime: LocalRuntime,
+}
+
+impl HttpLocal {
+    pub fn new(id: impl Into<String>, endpoint: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            endpoint: endpoint.into(),
+            runtime: LocalRuntime::HttpRemote,
+        }
+    }
+}
+
+impl LocalDriver for HttpLocal {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn runtime(&self) -> LocalRuntime {
+        self.runtime
+    }
+
+    fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
+        let url = format!("{}/v0/specialist", self.endpoint.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "job": req.job.as_str(),
+            "agent_id": req.agent_id,
+            "kind": req.kind,
+            "text": req.text,
+        });
+        let resp = ureq::post(&url)
+            .set("Content-Type", "application/json")
+            .timeout(Duration::from_secs(5))
+            .send_json(body)
+            .map_err(|e| ModelError::Unreachable(e.to_string()))?;
+        let result: SpecialistResult = resp
+            .into_json()
+            .map_err(|e| ModelError::Other(format!("local json: {e}")))?;
+        Ok(result)
+    }
+}
+
+/// Prefer [`crate::catalog::bind_local`]. Kept as the data-plane alias.
+pub fn local_from_binding(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelError> {
+    crate::catalog::bind_local(binding)
+}
+
+/// Bounded specialist used by mock-local and MockLocal.
+/// Same protocol every host class (RTX / Apple / rented Nvidia) should speak.
+pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
+    const MAX: usize = 16 * 1024;
+    if req.text.len() > MAX {
+        return SpecialistResult {
+            allow: false,
+            redacted_text: String::new(),
+            reason: "payload exceeds 16KiB bound".into(),
+            job: req.job.as_str().into(),
+        };
+    }
+    let lower = req.text.to_ascii_lowercase();
+    for token in ["cyera", "rust-classroom", "rust_classroom"] {
+        if lower.contains(token) || is_sacred_name(token) && lower.contains(token) {
+            return SpecialistResult {
+                allow: false,
+                redacted_text: String::new(),
+                reason: format!("policy-precheck denied sacred token '{token}'"),
+                job: req.job.as_str().into(),
+            };
+        }
+    }
+    let redacted = redact_secrets(&req.text);
+    SpecialistResult {
+        allow: true,
+        redacted_text: redacted,
+        reason: "policy-precheck allow".into(),
+        job: req.job.as_str().into(),
+    }
+}
+
+fn redact_secrets(text: &str) -> String {
+    let mut out = String::new();
+    for word in text.split_inclusive([' ', '\n', '\t', ',', ';']) {
+        let core = word.trim_end_matches([' ', '\n', '\t', ',', ';']);
+        if looks_secret(core) {
+            let sep = &word[core.len()..];
+            out.push_str("[redacted]");
+            out.push_str(sep);
+        } else {
+            out.push_str(word);
+        }
+    }
+    out
+}
+
+fn looks_secret(token: &str) -> bool {
+    let t = token.trim();
+    (t.starts_with("sk-") || t.starts_with("xai-") || t.starts_with("xai_")) && t.len() >= 12
+}

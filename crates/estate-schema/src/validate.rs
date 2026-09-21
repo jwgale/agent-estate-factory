@@ -74,6 +74,24 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
             agent.mcp.iter().map(|m| m.id.as_str()),
             &mut errors,
         );
+        check_unique_slugs(
+            &format!("agent '{}' models", agent.id),
+            agent.models.iter().map(|m| m.id.as_str()),
+            &mut errors,
+        );
+        for model in &agent.models {
+            reject_sku(&format!("agent '{}' model", agent.id), &model.id, &mut errors);
+            if estate
+                .model_bindings
+                .iter()
+                .all(|b| normalize_name(&b.id) != normalize_name(&model.id))
+            {
+                errors.push(format!(
+                    "agent '{}' model '{}' is not a model_binding",
+                    agent.id, model.id
+                ));
+            }
+        }
         for mount in &agent.mounts {
             if mount.path.trim().is_empty() {
                 errors.push(format!(
@@ -176,13 +194,24 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         if binding.driver.trim().is_empty() {
             errors.push(format!("model_binding '{}' driver must not be empty", binding.id));
         }
+        reject_sku("model_binding.id", &binding.id, &mut errors);
+        reject_sku("model_binding.driver", &binding.driver, &mut errors);
+        reject_sku_in_params(&binding.id, &binding.params, &mut errors);
         classes.insert(binding.class);
-        if opts.cell_one && binding.wired {
-            errors.push(format!(
-                "model_binding '{}' has wired=true; Cell One placeholders must stay wired=false",
-                binding.id
-            ));
-        }
+    }
+
+    if estate.enrich_packs.policy.trim().to_ascii_lowercase() != "manual" {
+        errors.push(
+            "enrich_packs.policy must be manual (Jason curates first specialist packs; no auto-promote)"
+                .into(),
+        );
+    }
+    if opts.cell_one && estate.enrich_packs.curator.trim().to_ascii_lowercase() != "jason" {
+        errors.push("Cell One enrich_packs.curator must be jason".into());
+    }
+    for pack in &estate.enrich_packs.packs {
+        check_slug("enrich_packs.pack.id", &pack.id, &mut errors);
+        reject_sku("enrich_packs.pack.id", &pack.id, &mut errors);
     }
 
     if opts.cell_one {
@@ -201,6 +230,24 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         if !classes.contains(&ModelClass::Frontier) || !classes.contains(&ModelClass::Local) {
             errors.push(
                 "Cell One requires equal-class model_bindings: at least one frontier and one local"
+                    .into(),
+            );
+        }
+        let used: HashSet<String> = estate
+            .agents
+            .iter()
+            .flat_map(|a| a.models.iter().map(|m| normalize_name(&m.id)))
+            .collect();
+        let uses_frontier = estate.model_bindings.iter().any(|b| {
+            b.class == ModelClass::Frontier && used.contains(&normalize_name(&b.id))
+        });
+        let uses_local = estate
+            .model_bindings
+            .iter()
+            .any(|b| b.class == ModelClass::Local && used.contains(&normalize_name(&b.id)));
+        if !used.is_empty() && (!uses_frontier || !uses_local) {
+            errors.push(
+                "A9: estate must assign at least one frontier and one local binding to agents"
                     .into(),
             );
         }
@@ -281,6 +328,40 @@ fn check_unique_slugs<'a>(
     }
 }
 
+/// Hardware SKUs must not appear in estate contracts. Hardware is a driver choice.
+const SKU_NEEDLES: &[&str] = &[
+    "5090", "4090", "4080", "3090", "a100", "h100", "b200", "m3-max", "m3max", "m2-max", "m2max",
+    "m1-max", "m1max", "m4-max", "m4max",
+];
+
+fn contains_sku(value: &str) -> bool {
+    let n = value.to_ascii_lowercase();
+    SKU_NEEDLES.iter().any(|needle| n.contains(needle))
+}
+
+fn reject_sku(field: &str, value: &str, errors: &mut Vec<String>) {
+    if contains_sku(value) {
+        errors.push(format!(
+            "{field} '{value}' encodes a hardware SKU; hardware is a driver choice (use a portable id such as local_slm and driver ollama|llama.cpp|mlx)"
+        ));
+    }
+}
+
+fn reject_sku_in_params(binding_id: &str, params: &serde_json::Value, errors: &mut Vec<String>) {
+    let Some(map) = params.as_object() else {
+        return;
+    };
+    for (key, value) in map {
+        if let Some(s) = value.as_str() {
+            if contains_sku(s) {
+                errors.push(format!(
+                    "model_binding '{binding_id}' params.{key} encodes a hardware SKU; use host_class consumer-nvidia|apple-silicon|rented-nvidia|any"
+                ));
+            }
+        }
+    }
+}
+
 fn path_escapes(path: &str) -> bool {
     Path::new(path)
         .components()
@@ -325,9 +406,16 @@ mod tests {
     }
 
     #[test]
-    fn wired_true_fails() {
-        let err = validate(&load_invalid("wired-true.yaml")).unwrap_err();
-        assert!(err.iter().any(|e| e.contains("wired=true")));
+    fn wired_true_is_allowed() {
+        let estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        assert!(estate.model_bindings.iter().all(|b| b.wired));
+        validate(&estate).unwrap();
+    }
+
+    #[test]
+    fn frontier_only_fails_equal_class() {
+        let err = validate(&load_invalid("frontier-only.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("equal-class") || e.contains("local")));
     }
 
     #[test]
@@ -346,5 +434,19 @@ mod tests {
     fn default_allow_fails() {
         let err = validate(&load_invalid("default-allow.yaml")).unwrap_err();
         assert!(err.iter().any(|e| e.contains("default_effect")));
+    }
+
+    #[test]
+    fn sku_in_binding_id_fails() {
+        let err = validate(&load_invalid("sku-binding.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("hardware SKU") || e.contains("5090")));
+    }
+
+    #[test]
+    fn enrich_packs_must_stay_manual() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate.enrich_packs.policy = "auto".into();
+        let err = validate(&estate).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("manual")));
     }
 }

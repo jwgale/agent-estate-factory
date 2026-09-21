@@ -31,4 +31,4 @@ Undeclared `shell` / `secrets` deny. Research `notes-append` and mount `notes` a
 
 ## Still out of scope
 
-Live Grok/5090, Dual PE/vault, multi-box control, AI-gateway product, feed auto-promote.
+Live Grok / live local GPU box, Dual PE/vault, multi-box control, AI-gateway product, feed auto-promote.

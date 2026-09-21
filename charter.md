@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory charter
 
-Status: locked defaults for Day 0–30 (A1–A4). Edits to this file are how defaults change. This is factory altitude, not a product spine.
+Status: Day 0–30 **A1–A4 locked**. Day 31–60 **A5–A9** (this file). Edits to this file are how defaults change. Factory altitude, not a product spine.
 
 Schema (desired-state shape): [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json)  
 Example estate: [`examples/estate.yaml`](examples/estate.yaml)  
@@ -8,15 +8,23 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 
 ## Locked defaults
 
-1. **Product:** Agent Estate Factory. One-box Cell One skeleton only.
+1. **Product:** Agent Estate Factory. One-box Cell One. Source of truth: [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory).
 2. **Lanes:** Horizon / Research / Sanctum are separate. Sanctum is not Cyera. Rust classroom is not an estate lane.
-3. **Sacred exclusions:** Cyera CI and Rust classroom must never appear as estate agents. The example estate declares them; the validator also hard-denies their ids and aliases.
-4. **Models:** Equal-class `frontier` and `local` bindings in schema. Day 0–30 placeholders only: `xai_grok` (frontier) and `gpu_5090` (local), both `wired: false`. No live provider or 5090 calls.
-5. **Intentions:** Deny-default for tool, MCP, mount, and cross-lane memory. Own-lane memory read is allowed so an agent can work. Everything else needs a declared tool/mount/mcp or an allow intention.
-6. **Isolation:** Swappable `IsolationDriver`. Cell One ships a profile-dir driver (per-agent session directory). Floor core does not hard-code vendor ids.
-7. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches.
-8. **Language:** Rust default on the hot path (conveyor allow/deny, isolation, supervisor core). Escape hatches allowed. Not forever-Rust. Model drivers are separate processes and language-free.
-9. **Day-90 horizon (not this cell):** full multi-agent workday + cloud agents. Do not build A7–A12 here.
+3. **Sacred exclusions (dual-layer through Day 60):** Cyera CI and Rust classroom must never appear as estate agents. The estate declares them; the validator also hard-denies their ids and aliases. An allow intention cannot punch through.
+4. **Models (equal class):** `frontier` and `local` bindings in the same estate. Day 31–60 wires `xai_grok` (frontier-http) and portable `local_slm` (driver `ollama`) with `wired: true` behind swappable traits. Credentials via env (`XAI_API_KEY`, `CELL_LOCAL_ENDPOINT`). Never bake secrets. Never put vendor strings or hardware SKUs in floor-supervisor sources or estate binding ids.
+5. **SLM / local-runtime locks (do not reopen):**
+   1. Ollama-first; llama.cpp is swap-proof; vLLM is optional — not required for the first green demo.
+   2. Local process on a host + `CELL_LOCAL_ENDPOINT` remote pattern for other machines.
+   3. Fail closed for estate-bound local work when local is down. No silent frontier fallback. Audit the deny (`model.local.down`).
+   4. Jason curates the first specialist enrich packs. Policy is **manual**. Feed does not auto-promote.
+   5. “Supported” = the Ollama (+ llama.cpp) path is green on the box. vLLM / TRT stay experimental until Jason verifies.
+6. **Portability (critical):** The factory must work equally via drivers on (a) consumer-grade RTX, (b) Apple Silicon laptop, (c) rented latest Nvidia. Hardware is a **driver choice**, not a product fork. Estate contracts use `host_class`: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`. Do not encode `5090` / `4090` / `m3-max` in binding ids or drivers. Apple path: Ollama-on-Mac is Supported (same `ollama` card); MLX is a Stub behind the same catalog / route / bind API (live Mac proof may come later).
+7. **Intentions:** Deny-default for tool, MCP, mount, model, and cross-lane memory. Own-lane memory read is allowed. Model use is a declared allow-list on the agent (`models:`), same class as tools.
+8. **Mixed path:** authorize (A3–A4) → local specialist (A8, policy-precheck) → tool or frontier (A7). Data plane (`model-estate`) only. Control does not complete. Keep A7–A9 thin: Grok + local endpoint drivers in the estate registry. Do not turn Cell One into LM Studio.
+9. **Isolation:** Swappable `IsolationDriver`. Cell One ships a profile-dir driver. Floor core does not hard-code vendor ids.
+10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`.
+11. **Language:** Rust default on the hot path (conveyor allow/deny, isolation, supervisor core, mixed-path authorize). Escape hatches allowed. Not forever-Rust. Model drivers are traits; the local specialist process may be any language.
+12. **Day-90 horizon (not this cell):** full multi-agent workday + cloud agents. Do not build A10–A12 here.
 
 ## Flexibility (must survive)
 
@@ -25,6 +33,8 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 - Pause and resume from files. Runtime is regenerable.
 - Equal-class model bindings: neither frontier nor local is a sidecar in the schema.
 - Compiled intentions are pure functions of the estate (plus hash). No silent policy learning.
+- Local specialist endpoint is config (`CELL_LOCAL_ENDPOINT`), not a compiled host.
+- Swap the local *runtime* (Ollama ↔ llama.cpp ↔ later MLX) through catalog / route / bind. Do not fork the product per GPU or SoC.
 
 ## Anti-shrink
 
@@ -39,30 +49,32 @@ Refuse to let this factory become any of:
 - Dual PE / vault
 - ChatGPT Team + permissions
 - a local LLM studio alone
-- a multi-provider proxy alone
+- a multi-provider proxy alone / frontier-proxy-only
 
 Those may exist later as *consumers* of the factory. They are not the factory.
 
-## Non-goals (Day 0–30)
+## Non-goals (through Day 60)
 
-- Live Grok, live 5090, or any real model completion
 - Dual PE, vault, multi-box control plane
-- AI-gateway / MCP-catalog product surface
+- AI-gateway / MCP-catalog product surface (conveyor does not complete)
 - Mesh, Kubernetes, frozen public API
-- Feed auto-promote (feed is a reserved one-way seam only)
+- Feed auto-promote (feed is one-way scrubbed traces from both model paths)
 - Treating PIDs or warm desktops as source of truth
 - Cyera CI or Rust classroom as agents
+- Tool slug taxonomy (still deferred)
+- LM Studio / weight browser / chat UI
+- Requiring vLLM or TensorRT for a green demo
 
 ## Planes (do not collapse)
 
 | Plane | Owns | Must not |
 | --- | --- | --- |
 | Control (`estate-control`) | validate, plan, apply, drift, compile intentions | execute tools/models; own agent memory |
-| Data (`floor-supervisor`, `model-estate`, `conveyor-proxy`, workers) | spawn/bind, deny-default enforcement | rewrite the estate file as SoT; silently learn policy |
-| Feed (`feed-collector`) | append scrubbed traces | block the data plane; auto-promote in Cell One |
+| Data (`floor-supervisor`, `model-estate`, `conveyor-proxy`, workers) | spawn/bind, deny-default, mixed model path | rewrite the estate file as SoT; silently learn policy; silently fall back to frontier when local is down |
+| Feed (`feed-collector`) | append scrubbed traces | block the data plane; auto-promote |
 
 Boundaries: Control→Data = apply; Data→Control = drift/acks; Data→Feed = scrubbed events; Feed→Control = pack manifests later (never silent); Feed→Data = nothing in Cell One.
 
 ## How defaults change
 
-Change this charter, then the example estate and `estate-schema` validator. Do not sneak defaults into floor-supervisor or conveyor-proxy.
+Change this charter, then the example estate and `estate-schema` validator. Do not sneak defaults into floor-supervisor. Do not teach conveyor to complete.

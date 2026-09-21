@@ -35,10 +35,11 @@ fn validate_invalid_fails_closed() {
         "too-few-agents.yaml",
         "shared-lane.yaml",
         "sacred-as-agent.yaml",
-        "wired-true.yaml",
+        "frontier-only.yaml",
         "missing-sacred.yaml",
         "allow-sacred-intention.yaml",
         "default-allow.yaml",
+        "sku-binding.yaml",
         "not-yaml.txt",
     ] {
         let path = fixture(&format!("examples/invalid/{name}"));

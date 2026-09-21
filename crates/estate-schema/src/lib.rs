@@ -17,8 +17,8 @@ pub use hash::estate_hash;
 pub use plan::{diff_estates, render_plan, write_plan, EstatePlan, PlanDelta};
 pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
 pub use types::{
-    Agent, Effect, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding, ModelClass,
-    MountDecl, ObjectRef, SacredExclusion, ToolDecl,
+    Agent, Effect, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
+    ModelBinding, ModelClass, ModelUseDecl, MountDecl, ObjectRef, SacredExclusion, ToolDecl,
 };
 pub use validate::{validate, ValidateOpts};
 
@@ -80,7 +80,7 @@ pub fn describe(estate: &Estate) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}",
+        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}\nenrich_packs: {} / {} ({} packs)",
         estate.name,
         estate_hash(estate),
         estate.agents.len(),
@@ -90,7 +90,10 @@ pub fn describe(estate: &Estate) -> String {
         estate.default_effect.as_str(),
         estate.model_bindings.len(),
         bindings,
-        sacred
+        sacred,
+        estate.enrich_packs.curator,
+        estate.enrich_packs.policy,
+        estate.enrich_packs.packs.len()
     )
 }
 
@@ -108,6 +111,10 @@ mod tests {
         assert_eq!(estate.agents.len(), 3);
         assert_eq!(estate.lanes.len(), 3);
         assert!(estate.intentions.is_empty());
-        assert!(estate.model_bindings.iter().all(|b| !b.wired));
+        assert!(estate.model_bindings.iter().all(|b| b.wired));
+        assert!(estate.agent("horizon").unwrap().has_model("xai_grok"));
+        assert!(estate.agent("horizon").unwrap().has_model("local_slm"));
+        assert_eq!(estate.enrich_packs.curator, "jason");
+        assert_eq!(estate.enrich_packs.policy, "manual");
     }
 }

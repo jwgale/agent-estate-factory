@@ -29,9 +29,9 @@ model_bindings:
     class: frontier
     driver: frontier-http
     wired: false
-  - id: gpu_5090
+  - id: local_slm
     class: local
-    driver: local-gpu
+    driver: ollama
     wired: false
 sacred_exclusions:
   - id: cyera-ci

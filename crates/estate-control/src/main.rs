@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use estate_schema::{
     describe, diff_estates, load_estate, load_estate_unvalidated, render_plan, validate, write_plan,
 };
-use floor_supervisor::{apply_with_profile_dir, drift};
+use floor_supervisor::{apply_with_profile_dir, drift_with_roots, load_desired_snapshot};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -27,11 +27,13 @@ enum Command {
     Plan {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
-        /// Previous estate YAML to diff against. Default: greenfield.
+        /// Previous estate YAML to diff against. Default: last apply snapshot, else greenfield.
         #[arg(long)]
         against: Option<PathBuf>,
         #[arg(long, default_value = "plans")]
         plans_dir: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
     },
     /// Converge isolation (Control→Data apply seam). Stretch: included, thin.
     Apply {
@@ -48,8 +50,10 @@ enum Command {
         estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
     },
-    /// List equal-class bindings. Refuses to invoke them.
+    /// List equal-class bindings. Does not invoke them.
     Models {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -71,13 +75,18 @@ fn run() -> Result<()> {
             estate,
             against,
             plans_dir,
-        } => cmd_plan(&estate, against.as_deref(), &plans_dir),
+            state_dir,
+        } => cmd_plan(&estate, against.as_deref(), &plans_dir, &state_dir),
         Command::Apply {
             estate,
             state_dir,
             roots_base,
         } => cmd_apply(&estate, &state_dir, &roots_base),
-        Command::Drift { estate, state_dir } => cmd_drift(&estate, &state_dir),
+        Command::Drift {
+            estate,
+            state_dir,
+            roots_base,
+        } => cmd_drift(&estate, &state_dir, &roots_base),
         Command::Models { estate } => cmd_models(&estate),
     }
 }
@@ -110,11 +119,11 @@ fn cmd_validate(path: &Path) -> Result<()> {
     }
 }
 
-fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path) -> Result<()> {
+fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path, state_dir: &Path) -> Result<()> {
     let desired = load_estate(path).with_context(|| format!("desired {}", path.display()))?;
     let previous = match against {
         Some(p) => Some(load_estate(p).with_context(|| format!("against {}", p.display()))?),
-        None => None,
+        None => load_desired_snapshot(state_dir)?,
     };
     let plan = diff_estates(&desired, previous.as_ref());
     let written = write_plan(plans_dir, &plan)?;
@@ -126,6 +135,7 @@ fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path) -> Result<()>
 fn cmd_apply(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let actual = apply_with_profile_dir(&estate, state_dir, roots_base)?;
+    model_estate::record_bindings(&estate, state_dir)?;
     println!(
         "applied {} sessions; actual-state {}",
         actual.sessions.len(),
@@ -142,11 +152,13 @@ fn cmd_apply(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_drift(path: &Path, state_dir: &Path) -> Result<()> {
+fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
-    let report = drift(&estate, state_dir)?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    if !report.in_sync {
+    let report = drift_with_roots(&estate, state_dir, Some(roots_base))?;
+    let models = model_estate::drift_bindings(&estate, state_dir)?;
+    println!("floor:\n{}", serde_json::to_string_pretty(&report)?);
+    println!("models:\n{}", serde_json::to_string_pretty(&models)?);
+    if !report.in_sync || !models.in_sync {
         bail!("drift detected");
     }
     Ok(())
@@ -155,9 +167,11 @@ fn cmd_drift(path: &Path, state_dir: &Path) -> Result<()> {
 fn cmd_models(path: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     println!("{}", model_estate::describe_bindings(&estate));
+    println!("{}", model_estate::readiness(&estate));
     for binding in &estate.model_bindings {
-        if let Err(err) = model_estate::ping(&estate, &binding.id) {
-            println!("  refuse: {err}");
+        match model_estate::ping(&estate, &binding.id) {
+            Ok(()) => println!("  ping {}: wired (control will not complete)", binding.id),
+            Err(err) => println!("  refuse: {err}"),
         }
     }
     Ok(())

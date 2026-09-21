@@ -158,6 +158,12 @@ fn blast_radius(
     } else {
         lines.push("Desired-state diff will rebind only the listed agents/lanes/intentions.".into());
     }
+    lines.push(format!(
+        "Apply will bind {} sessions, ensure {} lane roots, and record {} model binding(s). Control does not invoke models.",
+        estate.agents.len(),
+        estate.lanes.len(),
+        estate.model_bindings.len()
+    ));
     if estate.intentions.is_empty() {
         lines.push("No cross-lane intentions: memory firewall stays deny-default.".into());
     } else {
@@ -166,15 +172,22 @@ fn blast_radius(
             estate.intentions.len()
         ));
     }
-    let placeholders: Vec<String> = estate
+    let bindings: Vec<String> = estate
         .model_bindings
         .iter()
         .map(|b| format!("{}={} wired={}", b.class.as_str(), b.id, b.wired))
         .collect();
-    lines.push(format!(
-        "Model bindings remain placeholders: {}.",
-        placeholders.join(", ")
-    ));
+    if estate.model_bindings.iter().any(|b| b.wired) {
+        lines.push(format!(
+            "Equal-class bindings are live-capable (data plane only): {}.",
+            bindings.join(", ")
+        ));
+    } else {
+        lines.push(format!(
+            "Model bindings remain placeholders: {}.",
+            bindings.join(", ")
+        ));
+    }
     lines.push(format!(
         "Sacred exclusions stay out of the estate: {}.",
         estate
@@ -282,8 +295,9 @@ mod tests {
         let e = load_estate_str(crate::tests::example_yaml()).unwrap();
         let plan = diff_estates(&e, None);
         assert_eq!(plan.added.agents.len(), 3);
-        assert!(plan.blast_radius_text.contains("3 agents"));
+        assert!(plan.blast_radius_text.contains("3 agents") || plan.blast_radius_text.contains("3 sessions"));
         assert!(plan.blast_radius_text.contains("deny-default"));
+        assert!(plan.blast_radius_text.contains("live-capable") || plan.blast_radius_text.contains("placeholder"));
     }
 
     #[test]

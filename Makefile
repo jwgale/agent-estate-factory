@@ -1,4 +1,4 @@
-.PHONY: validate plan apply drift models supervisor proxy-check gate pause-stop pause-start pause-status test
+.PHONY: validate plan apply drift models catalog supervisor proxy-check gate gate-60 pause-stop pause-start pause-status test task-mock
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -18,6 +18,9 @@ drift:
 models:
 	cargo run -q -p estate-control -- models --estate $(ESTATE)
 
+catalog:
+	cargo run -q -p model-estate -- catalog
+
 supervisor:
 	cargo run -q -p floor-supervisor -- apply --estate $(ESTATE) --state-dir $(STATE) --roots-base .
 
@@ -35,6 +38,12 @@ pause-status:
 
 gate:
 	./scripts/day30-gate.sh
+
+gate-60:
+	./scripts/day60-gate.sh
+
+task-mock:
+	cargo run -q -p model-estate -- task --estate $(ESTATE) --agent horizon --act model --object xai_grok --mock
 
 test:
 	cargo test --workspace
