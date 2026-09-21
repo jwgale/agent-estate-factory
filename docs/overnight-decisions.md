@@ -17,6 +17,16 @@ Jason was asleep. These are the seams we picked for **maximum flexibility**. Eve
 11. **Plan freshness.** Plans are `cell-one.plan.v0`. `covering_plan` returns the plan, not just a stem. `apply --require-fresh-plan` fails when `against_hash` does not match last apply. INDEX lists hashes.
 12. **Placement release + host_class drift.** `PlacementDriver::release` unspawns without deleting the lease file. Drift fail-closes host_class mismatch. Cloud placements refuse sacred agent ids. Driver `probe()` is catalog-level (`live_probed=false`); not a live ping.
 
+## Wave 2 (same PR #2 — deepen factory substance)
+
+Jason still asleep. Same branch. No Actions. Local cargo only.
+
+13. **Conveyor capability mesh is a driver.** `ConveyorHop` (`box` / `cloud-mesh`) matches `PlacementDriver` / `LocalDriver`. Declare a hop, persist `.cell/conveyor-mesh.json` + hops/leases files, lease-bound `estate convey call`. No lease → refuse. Cloud-mesh declare is fine; call always refuse (not spawned). Slim-parses `placement-actual.json` so conveyor-proxy does not depend on floor. File SoT: `schema/conveyor-mesh.v0.json`. Not a gateway.
+14. **Security-as-IaC is the plan markdown.** `write_plan` also writes `{stem}.security.md`. `estate plan --reviewed` copies md/json/security into `plans/reviewed/`. `plan_is_reviewable` requires `cell-one.plan.v0` + blast radius. `--require-fresh-plan` now uses `plan_against_is_fresh_strict`: a greenfield covering plan after an apply is stale. Fixtures: `examples/valid/covering-plan.json`, `examples/invalid/stale-plan.json`, `examples/invalid/host-class-bad.yaml`.
+15. **Pack curator path is first-class CLI.** `estate packs list|import|promote|index` (promote still fails). `scrub_pii` redacts `sk-` / `xai-` / bearer / emails on feed notes. Pack INDEX already had `path_counts`; still no auto-promote. Fixture pack: `examples/fixtures/overnight-traces.pack.json`.
+16. **Operator day is a local dry-run.** `make operator-day` / `scripts/operator-day.sh` walks validate-hosts → plan → apply → suspend → plan --reviewed → apply --require-fresh-plan → packs import → convey sync/call/refuse → resume. Fixtures only. No live Grok, no 5090, no Actions.
+17. **Host aliases map; locked names stay.** `rtx_consumer` / `rtx-consumer` → `consumer-nvidia`; `nvidia_rental` / `nvidia-rental` → `rented-nvidia`. Placement leases store the canonical name. Drift compares via `host_class_eq` (alias vs canonical is in-sync; apple vs consumer fail-closes). Matrix: `examples/hosts/{rtx-consumer,apple-silicon,nvidia-rental}.yaml`. MLX stays stub, catalog-complete.
+
 ## Assumptions (safe to reopen)
 
 | Assumption | Why | Revisit |
@@ -28,6 +38,9 @@ Jason was asleep. These are the seams we picked for **maximum flexibility**. Eve
 | Pack ids are slugs Jason chooses | Drop zone is a file convention, not a registry | Add a pack schema crate later |
 | No hosted Actions overnight | Quiet hours + cost lock | `.github/workflows/ci.yml` **deleted on this branch and on main**. Pushes/PRs must not email Jason. Re-enable tomorrow as compile-only (`cargo check --workspace --locked`) only if he wants. Real `cargo test` stays local / Makefile. |
 | A10–A12 here means *beachhead*, not a full workday | Progress > polish | Next cell: assign cloud agents, curator UI is still forbidden |
+| Wave 2 mesh is lease-bound, not a hop runtime | Same class as cloud-agent placement stub | Real hop transport later behind `ConveyorHop` |
+| `plan_against_is_fresh` stays greenfield-friendly | Existing tests / `--require-plan` | `--require-fresh-plan` is the strict path |
+| Host aliases are normalize-only | Do not reopen locked `host_class` names | Add aliases, not new product forks |
 
 ## Anti-shrink (still)
 
