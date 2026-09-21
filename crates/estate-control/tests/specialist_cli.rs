@@ -126,6 +126,60 @@ fn estate_specialist_refuses_sku_endpoint() {
 }
 
 #[test]
+fn estate_specialist_frontier_requires_frontier_env_not_xai() {
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "frontier",
+            "--prompt",
+            "Reply with the single word pong.",
+        ])
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env("CELL_LOCAL_ENDPOINT", "http://127.0.0.1:11434")
+        .env("XAI_API_KEY", "xai-not-a-real-key-value")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("CELL_FRONTIER_ENDPOINT"), "{err}");
+    assert!(err.contains("XAI_API_KEY"), "{err}");
+}
+
+#[test]
+fn estate_specialist_frontier_complete_against_compat_http() {
+    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
+        models: vec!["gateway-model".into()],
+    })
+    .unwrap();
+    let out = bin()
+        .args([
+            "specialist",
+            "--driver",
+            "frontier",
+            "--endpoint",
+            &srv.endpoint(),
+            "--prompt",
+            "Reply with the single word pong.",
+        ])
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"job\": \"complete\""), "{stdout}");
+    assert!(stdout.contains("\"completion\": \"ok\""), "{stdout}");
+    let (path, body) = srv.last_post().expect("frontier openai chat");
+    assert_eq!(path, "/v1/chat/completions");
+    assert!(body.contains("Reply with the single word pong."), "{body}");
+}
+
+#[test]
 fn estate_specialist_sacred_denies_without_inventing_text() {
     let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
         models: vec!["llama3".into()],
