@@ -201,31 +201,39 @@ fn estate_specialist_frontier_complete_against_compat_http() {
 
 #[test]
 fn estate_specialist_frontier_sacred_does_not_post() {
-    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
-        models: vec!["grok-4.7".into()],
-    })
-    .unwrap();
-    let out = bin()
-        .args([
-            "specialist",
-            "--driver",
-            "frontier",
-            "--endpoint",
-            &srv.endpoint(),
-            "--prompt",
-            "please mention cyera",
-        ])
-        .env("XAI_API_KEY", "test-not-a-secret")
-        .output()
-        .unwrap();
-    assert!(!out.status.success());
-    let mix = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(mix.contains("sacred") || mix.contains("denied"), "{mix}");
-    assert!(srv.last_post().is_none(), "sacred must not POST");
+    for prompt in ["please mention cyera", "please mention rust-classroom"] {
+        let srv = spawn_compat(model_estate::CompatScript::OpenAi {
+            models: vec!["grok-4.7".into()],
+        });
+        let out = bin()
+            .args([
+                "specialist",
+                "--driver",
+                "frontier",
+                "--endpoint",
+                &srv.endpoint(),
+                "--prompt",
+                prompt,
+            ])
+            .env("XAI_API_KEY", "test-not-a-secret")
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{prompt}");
+        let mix = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(mix.contains("sacred") || mix.contains("denied"), "{prompt}: {mix}");
+        assert!(
+            !mix.contains("\"completion\": \"ok\""),
+            "frontier sacred refuse must not invent a completion: {prompt}: {mix}"
+        );
+        assert!(
+            srv.last_post().is_none(),
+            "sacred must not POST ({prompt})"
+        );
+    }
 }
 
 #[test]
@@ -492,27 +500,28 @@ fn estate_specialist_stub_drivers_refuse_without_calling_frontier() {
 
 #[test]
 fn estate_specialist_sacred_denies_without_inventing_text() {
-    let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
-        models: vec!["llama3".into()],
-    })
-    .unwrap();
-    let out = bin()
-        .args([
-            "specialist",
-            "--endpoint",
-            &srv.endpoint(),
-            "--prompt",
-            "please mention cyera",
-        ])
-        .output()
-        .unwrap();
-    assert!(!out.status.success());
-    let mix = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(mix.contains("sacred") || mix.contains("denied"), "{mix}");
-    assert!(!mix.contains("\"completion\": \"ok\""), "{mix}");
-    assert!(srv.last_post().is_none());
+    for prompt in ["please mention cyera", "please mention rust-classroom"] {
+        let srv = spawn_compat(model_estate::CompatScript::OpenAi {
+            models: vec!["llama3".into()],
+        });
+        let out = bin()
+            .args([
+                "specialist",
+                "--endpoint",
+                &srv.endpoint(),
+                "--prompt",
+                prompt,
+            ])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{prompt}");
+        let mix = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(mix.contains("sacred") || mix.contains("denied"), "{prompt}: {mix}");
+        assert!(!mix.contains("\"completion\": \"ok\""), "{prompt}: {mix}");
+        assert!(srv.last_post().is_none(), "sacred must not POST ({prompt})");
+    }
 }

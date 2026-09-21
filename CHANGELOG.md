@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #38 (this slice)
+
+- Frontier `estate specialist` refuses a Cyera or Rust classroom prompt before POST, and does not invent `"completion": "ok"`. The local specialist test locks the same two prompts.
+- README start-here and `docs/OPERATOR-DAY.md` point at `estate help frontier` and `make day90-mixed`. Those stay off smoke and gate-90. `examples/fixtures/mixed-frontier-local.yaml` already names `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
+- No new CLI.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## #35–#37 in plain English
 
 #35. Frontier refuse text names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT`. A hardware SKU in the model id says which setting it came from and still refuses before any POST. GATE-90 and DAY90-PLUS keep green factory checks, recorded live proofs, and parked rows separate. Mac specialist stays optional. Native MLX and cloud-spawn stay parked.
