@@ -190,7 +190,7 @@ Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actua
 | MLX | Stub. Same catalog/route/bind. Live Mac proof later. |
 | vLLM / TRT | Experimental. Fail closed until Jason verifies. |
 | Enrich packs | Curator jason, policy manual, packs empty. Live drop zone: `packs/`. Import is explicit and does not rewrite the estate. |
-| Feed | Scrubbed jsonl, both layers. Candidate packs. No auto-promote. |
+| Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
 | A10–A12 | Beachhead: feed packs + import, suspend/resume + placement leases, gated/auditable apply, cloud-agent stub. |
 
 ## Sharp choices (Jev bait)
