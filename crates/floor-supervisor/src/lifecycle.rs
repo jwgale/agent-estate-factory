@@ -88,11 +88,7 @@ pub fn load_lifecycle(state_dir: &Path) -> Result<LifecycleRecord, SupervisorErr
 
 pub fn write_lifecycle(state_dir: &Path, record: &LifecycleRecord) -> Result<(), SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
-    std::fs::write(
-        lifecycle_path(state_dir),
-        serde_json::to_string_pretty(record).unwrap_or_default(),
-    )?;
-    Ok(())
+    crate::write_pretty_json(&lifecycle_path(state_dir), record)
 }
 
 pub fn append_lifecycle_event(
@@ -100,20 +96,7 @@ pub fn append_lifecycle_event(
     event: &LifecycleEvent,
 ) -> Result<(), SupervisorError> {
     std::fs::create_dir_all(state_dir)?;
-    let path = state_dir.join(LIFECYCLE_LOG);
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .write(true)
-        .truncate(false)
-        .open(path)?;
-    use std::io::Write;
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(event).unwrap_or_default()
-    )?;
-    Ok(())
+    crate::append_json_line(&state_dir.join(LIFECYCLE_LOG), event)
 }
 
 pub fn list_lifecycle_events(state_dir: &Path) -> Result<Vec<LifecycleEvent>, SupervisorError> {
