@@ -209,17 +209,24 @@ pub(crate) fn cmd_audits(state_dir: &Path) -> Result<()> {
 
 pub(crate) fn cmd_feed_list(drop_dir: &Path) -> Result<()> {
     let packs = list_drop_packs(drop_dir)?;
-    let _ = write_pack_index(drop_dir);
+    let index = write_pack_index(drop_dir)?;
     if packs.is_empty() {
         println!("no candidate packs in {}", drop_dir.display());
+        println!("index {}", index.display());
         return Ok(());
     }
     for pack in packs {
+        let drivers = if pack.source_drivers.is_empty() {
+            "-".to_string()
+        } else {
+            pack.source_drivers.join(",")
+        };
         println!(
-            "  {} events={} promoted={} policy={}/{}",
-            pack.id, pack.from_events, pack.promoted, pack.curator, pack.policy
+            "  {} events={} drivers={} promoted={} policy={}/{}",
+            pack.id, pack.from_events, drivers, pack.promoted, pack.curator, pack.policy
         );
     }
+    println!("index {}", index.display());
     Ok(())
 }
 
