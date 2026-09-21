@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Operator-day dry-run. Fixtures only. No live Grok / no GPU / no hosted CI.
 # Walk: suspend → plan → apply → feed import → resume (+ convey + packs).
+# Wave 6: policy / catalog caps / backup / restore dry-run / pause-proof.
+# Do not call make smoke from here (smoke wraps this script).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -183,6 +185,90 @@ cargo run -q -p estate-control -- expire --state-dir "$STATE"
 cargo run -q -p estate-control -- doctor --root "$ROOT" --state-dir "$STATE"
 cargo run -q -p estate-control -- sessions tail --state-dir "$STATE" --n 8
 echo "PASS  expire/doctor/sessions"
+
+echo "-- catalog capability flags --"
+cargo run -q -p estate-control -- catalog --out "$STATE/catalog.json" >/tmp/opday-catalog.out
+if ! grep -q "streaming=" /tmp/opday-catalog.out || ! grep -q "context=" /tmp/opday-catalog.out; then
+  echo "FAIL  estate catalog must print capability flags"
+  exit 1
+fi
+if ! grep -q '"context_tokens"' "$STATE/catalog.json"; then
+  echo "FAIL  catalog.json missing context_tokens"
+  exit 1
+fi
+echo "PASS  catalog caps"
+
+echo "-- policy allow / deny / unknown --"
+cargo run -q -p estate-control -- policy check --policy "$ROOT/policy/cell-one.policy.v0.yaml" --action apply
+cargo run -q -p estate-control -- policy check --policy "$ROOT/examples/fixtures/policy-allow.yaml" --action convey-call
+set +e
+cargo run -q -p estate-control -- policy check --policy "$ROOT/examples/fixtures/policy-deny.yaml" --action apply >/tmp/opday-policy-deny.out 2>/tmp/opday-policy-deny.err
+deny=$?
+cargo run -q -p estate-control -- policy check --policy "$ROOT/examples/fixtures/policy-unknown-action.yaml" --action apply >/tmp/opday-policy-unknown.out 2>/tmp/opday-policy-unknown.err
+unknown=$?
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --policy "$ROOT/examples/fixtures/policy-deny.yaml" >/tmp/opday-apply-deny.out 2>/tmp/opday-apply-deny.err
+apply_deny=$?
+set -e
+if [[ "$deny" -eq 0 || "$unknown" -eq 0 || "$apply_deny" -eq 0 ]]; then
+  echo "FAIL  policy deny / unknown / apply-deny must refuse"
+  exit 1
+fi
+echo "PASS  policy"
+
+echo "-- backup + restore --dry-run --"
+cargo run -q -p estate-control -- backup --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS" --out "$WORKDIR/backups" --policy "$ROOT/policy/cell-one.policy.v0.yaml"
+ARCHIVE="$(find "$WORKDIR/backups" -maxdepth 1 -type d -name 'cell-backup-*' | sort | tail -n 1)"
+if [[ -z "$ARCHIVE" || ! -f "$ARCHIVE/backup.json" ]]; then
+  echo "FAIL  timestamped backup missing"
+  exit 1
+fi
+BEFORE="$(cksum "$STATE/placement-actual.json")"
+cargo run -q -p estate-control -- restore --from "$ARCHIVE" --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS" --dry-run --policy "$ROOT/policy/cell-one.policy.v0.yaml"
+AFTER="$(cksum "$STATE/placement-actual.json")"
+if [[ "$BEFORE" != "$AFTER" ]]; then
+  echo "FAIL  restore --dry-run wrote placement-actual.json"
+  exit 1
+fi
+echo "PASS  backup / restore dry-run"
+
+echo "-- restore sacred-mismatch --"
+TAMPER="$WORKDIR/tampered-backup"
+cp -a "$ARCHIVE" "$TAMPER"
+cat > "$TAMPER/backup.json" <<'EOF'
+{
+  "schema": "cell-one.cell-backup.v0",
+  "created_at": "unix:1",
+  "state_dir": "tamper",
+  "files": [],
+  "sacred_ids": ["not-the-locked-set"],
+  "writes": true,
+  "cloud_agent_spawned": false,
+  "note": "tampered sacred set"
+}
+EOF
+set +e
+cargo run -q -p estate-control -- restore --from "$TAMPER" --estate "$ESTATE" --state-dir "$STATE" --plans-dir "$PLANS" --dry-run --policy "$ROOT/policy/cell-one.policy.v0.yaml" >/tmp/opday-sacred.out 2>/tmp/opday-sacred.err
+mismatch=$?
+set -e
+if [[ "$mismatch" -eq 0 ]]; then
+  echo "FAIL  restore must refuse sacred mismatch"
+  exit 1
+fi
+if ! grep -q "refuse:sacred-mismatch" /tmp/opday-sacred.out /tmp/opday-sacred.err; then
+  echo "FAIL  sacred mismatch must print refuse:sacred-mismatch"
+  exit 1
+fi
+echo "PASS  restore sacred-mismatch"
+
+echo "-- pause-kit proof (apply → suspend → drop sessions → resume) --"
+PAUSE_STATE="$WORKDIR/pause-proof"
+mkdir -p "$PAUSE_STATE"
+cargo run -q -p estate-control -- pause-proof --estate "$ESTATE" --state-dir "$PAUSE_STATE" --roots-base "$WORKDIR"
+if [[ ! -f "$PAUSE_STATE/placement-actual.json" ]]; then
+  echo "FAIL  pause-proof must keep leases on disk"
+  exit 1
+fi
+echo "PASS  pause-proof"
 
 echo
 echo "OPERATOR-DAY GREEN (fixtures only; no live Grok / GPU)"
