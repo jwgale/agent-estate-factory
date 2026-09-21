@@ -154,6 +154,12 @@ Jason asked to merge PR #2 when compile-only CI is green.
 - No `cargo test` on Actions. No matrix. No push-to-main jobs. One workflow only.
 - `estate doctor` allows that file and fails extra `*.yml`.
 
+## Day 90+ (after PR #2 merge)
+
+58. **Live probes are opt-in.** `estate probes --live` or `CELL_LIVE_PROBE=1`. No endpoint → SKIP, exit 0. CI never sets this. Mac MLX: `CELL_MLX_ENDPOINT`. Rented/consumer box: `CELL_LOCAL_ENDPOINT` or `CELL_RENTED_ENDPOINT`. No SKU in binding ids.
+59. **`make day90`** is status → plan → dry-run → apply → reconcile on an isolated `target/day90-cell`. Also in `make smoke`.
+60. Hosted CI stays one compile-only job. Real cargo test stays local.
+
 ## Origin
 
 Zero Origin remotes or URLs. SoT is https://github.com/jwgale/agent-estate-factory
