@@ -66,17 +66,17 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         );
         check_unique_slugs(
             &format!("agent '{}' mounts", agent.id),
-            agent.mounts.iter().map(|t| t.id.as_str()),
+            agent.mounts.iter().map(|m| m.id.as_str()),
             &mut errors,
         );
         check_unique_slugs(
             &format!("agent '{}' mcp", agent.id),
-            agent.mcp.iter().map(|t| t.id.as_str()),
+            agent.mcp.iter().map(|m| m.id.as_str()),
             &mut errors,
         );
         check_unique_slugs(
             &format!("agent '{}' models", agent.id),
-            agent.models.iter().map(|t| t.id.as_str()),
+            agent.models.iter().map(|m| m.id.as_str()),
             &mut errors,
         );
         for model in &agent.models {
@@ -232,6 +232,15 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
             }
         }
         if placement.kind == PlacementKind::CloudAgent {
+            for agent_id in &placement.agents {
+                if is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
+                    errors.push(format!(
+                        "placement '{}' cannot assign sacred exclusion '{}' to a cloud-agent",
+                        placement.id, agent_id
+                    ));
+                }
+            }
+            // Declared stub is valid even when wired:true. Floor still does not spawn it.
             if placement.agents.is_empty() && placement.wired {
                 errors.push(format!(
                     "placement '{}' is a wired cloud-agent with no agents; leave wired:false until Day-90 assigns it",
@@ -511,5 +520,11 @@ mod tests {
             .iter()
             .any(|p| p.kind == PlacementKind::CloudAgent && !p.wired));
         validate(&estate).unwrap();
+    }
+
+    #[test]
+    fn cloud_placement_refuses_sacred_agent() {
+        let err = validate(&load_invalid("placement-sacred-cloud.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("sacred")));
     }
 }
