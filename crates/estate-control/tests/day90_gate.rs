@@ -375,3 +375,42 @@ fn wave6_backup_policy_pause_catalog() {
         .any(|c| c.driver_id == "vllm" && c.caps.tools));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn wave7_curator_sync_status() {
+    feed_collector::refuse_curator("jason", "jason").unwrap();
+    assert!(feed_collector::refuse_curator("robot", "jason")
+        .unwrap_err()
+        .to_string()
+        .contains("refuse:curator"));
+    assert_eq!(
+        conveyor_proxy::hop_kind_for_placement("box"),
+        Some("box")
+    );
+    assert_eq!(
+        conveyor_proxy::hop_kind_for_placement("cloud-agent"),
+        Some("cloud-mesh")
+    );
+    assert!(conveyor_proxy::hop_kind_for_placement("studio").is_none());
+
+    let e = example();
+    let root = tmp();
+    apply_with_profile_dir(&e, &root.join("state"), &root).unwrap();
+    conveyor_proxy::declare_hop(
+        &root.join("state"),
+        conveyor_proxy::HopDecl {
+            id: "ttl-box".into(),
+            kind: "box".into(),
+            capability: "lane-tool".into(),
+            host_class: "any".into(),
+            wired: true,
+            note: None,
+            ttl_secs: Some(60),
+        },
+    )
+    .unwrap();
+    let mesh = conveyor_proxy::sync_from_placements(&root.join("state")).unwrap();
+    assert!(mesh.hops.iter().any(|h| h.id == "ttl-box"));
+    assert!(mesh.hops.iter().any(|h| h.id == "cell-one-box"));
+    let _ = std::fs::remove_dir_all(&root);
+}

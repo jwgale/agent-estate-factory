@@ -2,6 +2,7 @@
 # Operator-day dry-run. Fixtures only. No live Grok / no GPU / no hosted CI.
 # Walk: suspend → plan → apply → feed import → resume (+ convey + packs).
 # Wave 6: policy / catalog caps / backup / restore dry-run / pause-proof.
+# Wave 7: status one-pager, --curator jason, convey sync keeps extra hops.
 # Do not call make smoke from here (smoke wraps this script).
 set -euo pipefail
 
@@ -96,7 +97,19 @@ echo "-- feed import (fixture pack, no live models) --"
 cp "$ROOT/examples/fixtures/overnight-traces.pack.json" "$DROP/overnight-traces.pack.json"
 cargo run -q -p estate-control -- packs index --drop-dir "$DROP"
 BEFORE="$(cksum "$ESTATE")"
-cargo run -q -p estate-control -- packs import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE"
+cargo run -q -p estate-control -- packs import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE" --curator jason
+set +e
+cargo run -q -p estate-control -- packs import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE" --curator not-jason >/tmp/opday-curator.out 2>/tmp/opday-curator.err
+bad_curator=$?
+set -e
+if [[ "$bad_curator" -eq 0 ]]; then
+  echo "FAIL  wrong curator must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:curator" /tmp/opday-curator.out /tmp/opday-curator.err; then
+  echo "FAIL  wrong curator must print refuse:curator"
+  exit 1
+fi
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then
   echo "FAIL  pack import rewrote the estate"
@@ -155,12 +168,22 @@ echo "PASS  convey hop/call/refuse"
 
 echo "-- convey hop TTL + expire --"
 cargo run -q -p estate-control -- convey hop --id ttl-box --capability lane-tool --ttl-secs 3600 --state-dir "$STATE"
+cargo run -q -p estate-control -- convey sync --state-dir "$STATE" >/tmp/opday-resync.out
+if ! grep -q "ttl-box" /tmp/opday-resync.out; then
+  echo "FAIL  convey sync must keep manually declared ttl-box"
+  exit 1
+fi
 cargo run -q -p estate-control -- convey expire --state-dir "$STATE"
 echo "PASS  convey expire"
 
 echo "-- resume --"
 cargo run -q -p estate-control -- resume --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR"
-cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR"
+cargo run -q -p estate-control -- status --estate "$ESTATE" --state-dir "$STATE" --roots-base "$WORKDIR" --plans-dir "$PLANS" --packs-dir "$DROP" --policy "$ROOT/policy/cell-one.policy.v0.yaml" --root "$ROOT" | tee /tmp/opday-status.out
+if ! grep -q "paused:" /tmp/opday-status.out || ! grep -q "last_plan:" /tmp/opday-status.out || ! grep -q "policy:" /tmp/opday-status.out || ! grep -q "doctor:" /tmp/opday-status.out; then
+  echo "FAIL  status one-pager missing fields"
+  exit 1
+fi
+echo "PASS  status one-pager"
 cargo run -q -p estate-control -- packs list --drop-dir "$DROP"
 cargo run -q -p estate-control -- convey leases --state-dir "$STATE"
 
