@@ -44,6 +44,8 @@ pub enum MeshError {
     BadId(String),
     #[error("refuse:bad-host-class: hop host_class '{0}' must be consumer-nvidia|apple-silicon|rented-nvidia|any")]
     BadHostClass(String),
+    #[error("refuse:expired: hop lease ttl elapsed for '{0}'")]
+    Expired(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +59,9 @@ pub struct HopDecl {
     pub wired: bool,
     #[serde(default)]
     pub note: Option<String>,
+    /// Optional hop-lease lifetime. Absent = no expiry.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
 }
 
 fn default_host_class() -> String {
@@ -75,6 +80,12 @@ pub struct HopLease {
     pub driver: String,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub issued_at: Option<u64>,
+    #[serde(default)]
+    pub expires_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -118,6 +129,8 @@ pub struct SlimPlacement {
     pub spawned: bool,
     #[serde(default)]
     pub wired: bool,
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -136,6 +149,8 @@ struct SlimLeaseRow {
     spawned: bool,
     #[serde(default)]
     wired: bool,
+    #[serde(default)]
+    ttl_secs: Option<u64>,
 }
 
 /// Swappable hop backend. Conveyor talks to this trait only.
@@ -164,6 +179,9 @@ impl ConveyorHop for BoxHop {
             durable: true,
             driver: self.name().into(),
             note: Some("box hop lease. Call refuses without granted+".into()),
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
         }
     }
 
@@ -209,6 +227,9 @@ impl ConveyorHop for CloudMeshHop {
             durable: true,
             driver: self.name().into(),
             note: Some("declared mesh stub. Conveyor records the hop and does not spawn it.".into()),
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
         }
     }
 
@@ -291,6 +312,7 @@ pub fn slim_parse_placement_actual(path: &Path) -> Result<Vec<SlimPlacement>, Me
             host_class: canonical_host_class(Some(row.host_class.as_str())).into(),
             spawned: row.spawned,
             wired: row.wired,
+            ttl_secs: row.ttl_secs,
         })
         .collect())
 }
@@ -308,6 +330,7 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
         host_class: canonical_host_class(Some(place.host_class.as_str())).into(),
         wired: place.wired,
         note: Some("derived from placement-actual (slim parse)".into()),
+        ttl_secs: place.ttl_secs,
     }
 }
 
@@ -319,6 +342,7 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
         let hop = hop_from_placement(place);
         refuse_hop(&hop)?;
         let mut lease = hop_driver(&hop.kind)?.declare(&hop);
+        stamp_hop_ttl(&mut lease, &hop, hop_now_unix());
         // Box live-ness follows the placement lease (suspend unspawns).
         if hop.kind == "box" {
             lease.spawned = place.spawned && hop.wired;
@@ -333,7 +357,8 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
 
 pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError> {
     refuse_hop(&hop)?;
-    let lease = hop_driver(&hop.kind)?.declare(&hop);
+    let mut lease = hop_driver(&hop.kind)?.declare(&hop);
+    stamp_hop_ttl(&mut lease, &hop, hop_now_unix());
     let mut mesh = load_mesh(state_dir)?;
     mesh.hops.retain(|h| h.id != hop.id);
     mesh.leases.retain(|l| l.hop_id != hop.id);
@@ -353,6 +378,9 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
         .ok_or_else(|| MeshError::NoLease(hop_id.to_string()))?;
     if lease.kind == "cloud-mesh" {
         return Err(MeshError::CloudNotSpawned(hop_id.to_string()));
+    }
+    if hop_lease_is_expired(&lease, hop_now_unix()) {
+        return Err(MeshError::Expired(hop_id.to_string()));
     }
     if !lease.granted {
         return Err(MeshError::Ungranted(hop_id.to_string()));
@@ -375,6 +403,57 @@ pub fn list_hop_leases(state_dir: &Path) -> Result<Vec<HopLease>, MeshError> {
     Ok(load_mesh(state_dir)?.leases)
 }
 
+pub fn hop_now_unix() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn stamp_hop_ttl(lease: &mut HopLease, hop: &HopDecl, now: u64) {
+    if let Some(ttl) = hop.ttl_secs.filter(|t| *t > 0) {
+        lease.ttl_secs = Some(ttl);
+        lease.issued_at = Some(now);
+        lease.expires_at = Some(now.saturating_add(ttl));
+    }
+}
+
+pub fn hop_lease_is_expired(lease: &HopLease, now: u64) -> bool {
+    lease.expires_at.map(|exp| now >= exp).unwrap_or(false)
+}
+
+pub fn list_expired_hop_leases(
+    state_dir: &Path,
+    now: u64,
+) -> Result<Vec<HopLease>, MeshError> {
+    Ok(load_mesh(state_dir)?
+        .leases
+        .into_iter()
+        .filter(|l| hop_lease_is_expired(l, now))
+        .collect())
+}
+
+/// Drop expired hop leases so a later declare can record a fresh row. Does not spawn.
+pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshError> {
+    let mut mesh = load_mesh(state_dir)?;
+    let now = hop_now_unix();
+    let mut forgotten = Vec::new();
+    mesh.leases.retain(|l| {
+        if hop_lease_is_expired(l, now) {
+            forgotten.push(l.hop_id.clone());
+            false
+        } else {
+            true
+        }
+    });
+    mesh.hops.retain(|h| !forgotten.iter().any(|id| id == &h.id));
+    if !forgotten.is_empty() {
+        persist_mesh(state_dir, &mesh)?;
+    }
+    Ok(forgotten)
+}
+
 /// File SoT committed next to the crate must match the schema snapshot.
 pub fn mesh_file_sot() -> ConveyorMesh {
     ConveyorMesh {
@@ -387,6 +466,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 host_class: "any".into(),
                 wired: true,
                 note: None,
+                ttl_secs: None,
             },
             HopDecl {
                 id: "cursor-cloud".into(),
@@ -395,6 +475,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 host_class: "any".into(),
                 wired: false,
                 note: None,
+                ttl_secs: None,
             },
         ],
         leases: vec![
@@ -408,6 +489,9 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 durable: true,
                 driver: "box".into(),
                 note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
             },
             HopLease {
                 hop_id: "cursor-cloud".into(),
@@ -419,6 +503,9 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 durable: true,
                 driver: "cloud-mesh".into(),
                 note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
             },
         ],
     }
@@ -451,6 +538,7 @@ mod tests {
                 host_class: "rtx_consumer".into(),
                 wired: true,
                 note: None,
+                ttl_secs: None,
             },
         )
         .unwrap();
@@ -482,6 +570,7 @@ mod tests {
                 host_class: "any".into(),
                 wired: false,
                 note: None,
+                ttl_secs: None,
             },
         )
         .unwrap();
@@ -502,6 +591,7 @@ mod tests {
                 host_class: "any".into(),
                 wired: true,
                 note: None,
+                ttl_secs: None,
             },
         )
         .unwrap();
@@ -525,6 +615,7 @@ mod tests {
                 host_class: "any".into(),
                 wired: true,
                 note: None,
+                ttl_secs: None,
             },
         )
         .unwrap_err();
@@ -589,5 +680,40 @@ mod tests {
         assert_eq!(file.hops.len(), snap.hops.len());
         assert_eq!(file.leases.len(), snap.leases.len());
         assert!(!file.leases.iter().any(|l| l.kind == "cloud-mesh" && l.spawned));
+    }
+
+    #[test]
+    fn expired_hop_lease_refuses_call() {
+        let dir = tmp();
+        let lease = declare_hop(
+            &dir,
+            HopDecl {
+                id: "short-hop".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: Some(1),
+            },
+        )
+        .unwrap();
+        assert_eq!(lease.ttl_secs, Some(1));
+        assert!(lease.expires_at.is_some());
+        let mut mesh = load_mesh(&dir).unwrap();
+        let now = hop_now_unix();
+        mesh.leases[0].issued_at = Some(now.saturating_sub(10));
+        mesh.leases[0].expires_at = Some(now.saturating_sub(1));
+        persist_mesh(&dir, &mesh).unwrap();
+        let err = call_hop(&dir, "short-hop", "lane-tool").unwrap_err();
+        assert!(matches!(err, MeshError::Expired(_)));
+        assert!(err.to_string().starts_with("refuse:expired"));
+        let listed = list_expired_hop_leases(&dir, now).unwrap();
+        assert_eq!(listed.len(), 1);
+        let forgotten = forget_expired_hop_leases(&dir).unwrap();
+        assert_eq!(forgotten, vec!["short-hop".to_string()]);
+        let err = call_hop(&dir, "short-hop", "lane-tool").unwrap_err();
+        assert!(matches!(err, MeshError::NoLease(_)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
