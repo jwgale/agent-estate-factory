@@ -15,7 +15,7 @@ make gate-60
 make gate-90    # Day-90 operator entrypoint: smoke + day90 + doctor --strict + checklist
 make feed-loop  # fixtures only: scrubbed trace → pack → propose → accept
 make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
-estate help     # Day-90 topic pages (status / plan / apply / reconcile / feed-loop / backup)
+estate help     # Day-90 topic pages (status / plan / apply / reconcile / feed-loop / backup / frontier / day90-mixed)
 ```
 
 Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` or `make gate-90` to Actions — gate-90 wraps the local test suite. Walk without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md). `.cell/` paths: [`docs/cell-layout.md`](docs/cell-layout.md).

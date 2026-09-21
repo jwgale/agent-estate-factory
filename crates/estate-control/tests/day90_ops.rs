@@ -44,7 +44,16 @@ fn help_topics_cover_day90_loop() {
     assert!(index_text.contains("make gate-90"));
     assert!(index_text.contains("DAY90-PLUS"));
 
-    for topic in ["status", "plan", "apply", "reconcile", "feed-loop", "backup"] {
+    for topic in [
+        "status",
+        "plan",
+        "apply",
+        "reconcile",
+        "feed-loop",
+        "backup",
+        "frontier",
+        "day90-mixed",
+    ] {
         let out = estate_bin().args(["help", topic]).output().unwrap();
         let body = text(&out);
         assert!(out.status.success(), "{topic}: {body}");
@@ -53,6 +62,26 @@ fn help_topics_cover_day90_loop() {
             "{topic} missing examples: {body}"
         );
     }
+
+    let frontier = estate_bin().args(["help", "frontier"]).output().unwrap();
+    let frontier_text = text(&frontier);
+    assert!(frontier_text.contains("grok-4.7"), "{frontier_text}");
+    assert!(frontier_text.contains("XAI_API_KEY"), "{frontier_text}");
+    assert!(
+        frontier_text.contains("do not POST frontier")
+            || frontier_text.contains("does not POST frontier"),
+        "{frontier_text}"
+    );
+    assert!(
+        !frontier_text.contains("READY_FOR_LIVE_TEST: yes"),
+        "{frontier_text}"
+    );
+
+    let mixed = estate_bin().args(["help", "day90-mixed"]).output().unwrap();
+    let mixed_text = text(&mixed);
+    assert!(mixed_text.contains("make day90-mixed"), "{mixed_text}");
+    assert!(mixed_text.contains("Not part of make smoke"), "{mixed_text}");
+    assert!(mixed_text.contains("--require-plan"), "{mixed_text}");
 
     let apply = estate_bin()
         .args(["apply", "--help"])

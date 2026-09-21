@@ -170,10 +170,13 @@ fn check_feed_loop(root: &Path, fails: &mut Vec<String>) {
     let makefile = fs::read_to_string(root.join("Makefile")).unwrap_or_default();
     let script = root.join("scripts/feed-loop.sh");
     let doc = root.join("docs/FEED-LOOP.md");
+    let script_text = fs::read_to_string(&script).unwrap_or_default();
     let ok = makefile.contains("feed-loop")
         && makefile.contains("scripts/feed-loop.sh")
         && script.is_file()
-        && doc.is_file();
+        && doc.is_file()
+        && script_text.contains("source_drivers")
+        && script_text.contains("unset XAI_API_KEY");
     if ok {
         println!("  ok    make feed-loop → scrubbed trace → pack → propose → accept");
     } else {

@@ -41,13 +41,13 @@ not invent a spawn driver.
 | --- | --- |
 | `make gate-90` | Thin local alias: smoke (includes `day90`) + `doctor --strict` + GATE-90 checklist. |
 | `make day90-mixed` | Fixture walk: mixed frontier+local plan → `apply --require-plan`. Not a live box. Not in smoke. |
-| `make feed-loop` | Fixture walk: scrubbed trace → pack → propose → accept. See [`FEED-LOOP.md`](FEED-LOOP.md). |
+| `make feed-loop` | Fixture walk: scrubbed trace → pack (`source_drivers` frontier+local) → propose → accept. No live keys. See [`FEED-LOOP.md`](FEED-LOOP.md). |
 | `estate doctor --strict` | Pre-merge operator checks. Vanilla `doctor` unchanged. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. |
 | `estate packs accept` | Enrich-pack edit instructions. Does not rewrite `estate.yaml`. Needs `--curator jason`. |
 | Compile-only CI | One `pull_request` job. `cargo check --workspace --locked`. No `cargo test` on Actions. |
 | Dual-layer sacred | Locked Cyera CI + Rust classroom. Sanctum is not Cyera. |
-| `estate help` | Topic pages for the Day-90 loop. Not a studio. |
+| `estate help` | Topic pages for the Day-90 loop, including `frontier` and `day90-mixed`. Not a studio. |
 | `estate backup --prune N` | Local rotate. Not a remote vault. |
 | Operator day runbook | [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Walk only. Not a live-box proof. |
 | `make gate-90` on Actions | Not green and not planned. It wraps `cargo test --workspace`. |

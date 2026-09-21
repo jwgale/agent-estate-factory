@@ -7,11 +7,53 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOINT
+
 WORKDIR="${WORKDIR:-$ROOT/target/feed-loop-cell}"
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 FEED="$WORKDIR/feed"
 DROP="$WORKDIR/packs"
 STATE="$WORKDIR/state"
+BIN="${ESTATE_BIN:-}"
+MODEL_BIN="${MODEL_ESTATE_BIN:-}"
+
+estate() {
+  if [[ -n "$BIN" ]]; then
+    "$BIN" "$@"
+  else
+    cargo run -q -p estate-control -- "$@"
+  fi
+}
+
+model_estate() {
+  if [[ -n "$MODEL_BIN" ]]; then
+    "$MODEL_BIN" "$@"
+  else
+    cargo run -q -p model-estate -- "$@"
+  fi
+}
+
+assert_source_drivers() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if "diff" in doc:
+    drivers = doc["diff"].get("source_drivers")
+    counts = doc["diff"].get("path_counts") or {}
+    if doc.get("auto_apply") is not False:
+        raise SystemExit(f"FAIL  auto_apply must stay false: {doc.get('auto_apply')}")
+else:
+    drivers = doc.get("source_drivers")
+    counts = doc.get("path_counts") or {}
+    if doc.get("promoted") is not False:
+        raise SystemExit(f"FAIL  promoted must stay false: {doc.get('promoted')}")
+if drivers != ["frontier", "local"]:
+    raise SystemExit(f"FAIL  source_drivers={drivers} in {sys.argv[1]}")
+if int(counts.get("frontier") or 0) < 1 or int(counts.get("local") or 0) < 1:
+    raise SystemExit(f"FAIL  path_counts={counts} in {sys.argv[1]}")
+PY
+}
 
 rm -rf "$WORKDIR"
 mkdir -p "$FEED" "$DROP" "$STATE"
@@ -20,11 +62,11 @@ echo "== feed-loop (fixtures only) =="
 echo "workdir: $WORKDIR"
 
 echo "-- mock traces (mixed path; no live keys) --"
-cargo run -q -p model-estate -- task --estate "$ESTATE" \
+model_estate task --estate "$ESTATE" \
   --agent horizon --act model --object xai_grok --mock \
   --payload "Reply with the single word pong." \
   --feed-dir "$FEED"
-cargo run -q -p model-estate -- task --estate "$ESTATE" \
+model_estate task --estate "$ESTATE" \
   --agent research --act tool --object notes-append --mock \
   --payload "append a note" \
   --feed-dir "$FEED"
@@ -42,15 +84,16 @@ echo "PASS  scrubbed traces"
 
 echo "-- feed pack --"
 BEFORE="$(cksum "$ESTATE")"
-cargo run -q -p estate-control -- feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id overnight-traces
+estate feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id overnight-traces
 if [[ ! -f "$DROP/overnight-traces.pack.json" ]]; then
   echo "FAIL  candidate pack missing"
   exit 1
 fi
-echo "PASS  pack"
+assert_source_drivers "$DROP/overnight-traces.pack.json"
+echo "PASS  pack source_drivers frontier, local"
 
 echo "-- feed cursor (durable watermark) --"
-cargo run -q -p estate-control -- feed cursor --feed-dir "$FEED" | tee "$WORKDIR/cursor-1.json"
+estate feed cursor --feed-dir "$FEED" | tee "$WORKDIR/cursor-1.json"
 if [[ ! -f "$FEED/feed-cursor.json" ]]; then
   echo "FAIL  feed-cursor.json missing after pack"
   exit 1
@@ -73,7 +116,7 @@ fi
 echo "PASS  cursor schema + packed_id + events=$EVENTS"
 
 echo "-- rematerialize (cursor stays; no auto-promote) --"
-cargo run -q -p estate-control -- feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id overnight-traces
+estate feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id overnight-traces
 if [[ ! -f "$FEED/feed-cursor.json" ]]; then
   echo "FAIL  rematerialize dropped feed-cursor.json"
   exit 1
@@ -83,10 +126,11 @@ if ! grep -q '"packed_id": "overnight-traces"' "$FEED/feed-cursor.json"; then
   cat "$FEED/feed-cursor.json"
   exit 1
 fi
-echo "PASS  rematerialize keeps cursor"
+assert_source_drivers "$DROP/overnight-traces.pack.json"
+echo "PASS  rematerialize keeps cursor and source_drivers"
 
 echo "-- packs propose (never auto-apply) --"
-cargo run -q -p estate-control -- packs propose --id overnight-traces \
+estate packs propose --id overnight-traces \
   --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --proposed-dir "$DROP/proposed" --estate "$ESTATE"
 if [[ ! -f "$DROP/proposed/overnight-traces.proposal.json" ]]; then
   echo "FAIL  proposal missing"
@@ -96,11 +140,12 @@ if ! grep -q '"auto_apply": false' "$DROP/proposed/overnight-traces.proposal.jso
   echo "FAIL  proposal must set auto_apply=false"
   exit 1
 fi
-echo "PASS  propose"
+assert_source_drivers "$DROP/proposed/overnight-traces.proposal.json"
+echo "PASS  propose source_drivers frontier, local"
 
 echo "-- packs accept --curator jason (instructions only) --"
 set +e
-cargo run -q -p estate-control -- packs accept --id overnight-traces \
+estate packs accept --id overnight-traces \
   --curator robot --proposed-dir "$DROP/proposed" --accepted-dir "$DROP/accepted" --estate "$ESTATE" \
   >/tmp/feed-loop-curator.out 2>/tmp/feed-loop-curator.err
 bad_curator=$?
@@ -114,7 +159,7 @@ if ! grep -q "refuse:curator" /tmp/feed-loop-curator.out /tmp/feed-loop-curator.
   cat /tmp/feed-loop-curator.out /tmp/feed-loop-curator.err
   exit 1
 fi
-cargo run -q -p estate-control -- packs accept --id overnight-traces \
+estate packs accept --id overnight-traces \
   --curator jason --proposed-dir "$DROP/proposed" --accepted-dir "$DROP/accepted" --estate "$ESTATE"
 if [[ ! -f "$DROP/accepted/overnight-traces.enrich-edit.md" ]]; then
   echo "FAIL  accept must write enrich-edit instructions"
@@ -129,7 +174,7 @@ echo "PASS  accept"
 
 echo "-- promote refuse + estate unchanged --"
 set +e
-cargo run -q -p estate-control -- packs promote --id overnight-traces \
+estate packs promote --id overnight-traces \
   >/tmp/feed-loop-promo.out 2>/tmp/feed-loop-promo.err
 promo=$?
 set -e

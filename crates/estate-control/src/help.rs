@@ -3,7 +3,16 @@
 
 use anyhow::{bail, Result};
 
-const TOPICS: &[&str] = &["status", "plan", "apply", "reconcile", "feed-loop", "backup"];
+const TOPICS: &[&str] = &[
+    "status",
+    "plan",
+    "apply",
+    "reconcile",
+    "feed-loop",
+    "backup",
+    "frontier",
+    "day90-mixed",
+];
 
 pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
     match topic.map(str::trim).filter(|t| !t.is_empty()) {
@@ -35,6 +44,14 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             print!("{BACKUP}");
             Ok(())
         }
+        Some("frontier") => {
+            print!("{FRONTIER}");
+            Ok(())
+        }
+        Some("day90-mixed") | Some("mixed") => {
+            print!("{DAY90_MIXED}");
+            Ok(())
+        }
         Some(other) => {
             eprintln!("unknown help topic: {other}");
             eprintln!("topics: {}", TOPICS.join(", "));
@@ -55,11 +72,14 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
   estate help reconcile
   estate help feed-loop
   estate help backup
+  estate help frontier
+  estate help day90-mixed
 
 Entrypoint: make gate-90
 Loop:       make day90
 Mixed:      make day90-mixed
 Feed walk:  make feed-loop
+Frontier:   estate specialist --driver frontier
 ";
 
 const STATUS: &str = "\
@@ -143,4 +163,33 @@ Timestamped backups/cell-backup-*. Restore refuses sacred mismatch.
 
 --prune N keeps the newest N archives and deletes the rest.
 N=0 refuses. Does not upload. Does not spawn.
+";
+
+const FRONTIER: &str = "\
+frontier — grok-4.7 specialist
+==============================
+Equal-class frontier card. Not a fallback when local is down.
+
+  estate specialist --driver frontier --prompt \"Reply with the single word pong.\"
+
+Requires XAI_API_KEY. Model is grok-4.7 (CELL_FRONTIER_MODEL or XAI_MODEL).
+Optional CELL_FRONTIER_ENDPOINT (default https://api.x.ai/v1).
+Unset key refuses. Sacred text and hardware SKUs refuse before any POST.
+--driver http-remote stays the local card on CELL_LOCAL_ENDPOINT.
+Requested local drivers do not POST frontier when local is down.
+reasoning_effort xhigh is docs-only. The factory POST does not send it.
+No key in CI. This page is not a live-box proof.
+";
+
+const DAY90_MIXED: &str = "\
+day90-mixed — mixed fixture plan → apply
+=========================================
+Opt-in. Not part of make smoke, make gate-90, or Actions.
+
+  make day90-mixed
+
+Walks examples/fixtures/mixed-frontier-local.yaml on an isolated cell:
+status → plan → apply --require-plan → status → doctor.
+The frontier binding names model grok-4.7. No live key. No frontier POST.
+The script unsets XAI_API_KEY and CELL_*_ENDPOINT.
 ";

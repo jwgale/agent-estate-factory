@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #33 (this slice)
+
+- `make feed-loop` asserts the produced pack `source_drivers` is `frontier` then `local`, counts are non-zero, and propose copies the tag. Live keys are unset. Still off smoke and Actions.
+- `estate help frontier` names `grok-4.7`, the `XAI_API_KEY` gate, and that local down does not POST frontier. `estate help day90-mixed` stays opt-in.
+- Hole: `run_task` swallowed a failed feed append and could still complete. A failed audit now refuses before frontier.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #32 (this slice)
 
 - Feed packs tag `source_drivers` (`frontier` and/or `local`) from the events. The tag must match `path_counts`. Unknown drivers, a tag with a zero count, and a count with no tag refuse.

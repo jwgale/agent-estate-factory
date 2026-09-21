@@ -33,11 +33,11 @@ estate doctor --strict
 | Sanctum-as-Cyera display-name bleed | green | `refuse-sanctum-as-cyera.yaml` |
 | Thin `make gate-90` | green | smoke + day90 + checklist print |
 | README Day-90 operator entrypoint | green | leads with `make gate-90` |
-| `make feed-loop` | green | scrubbed trace → pack → propose → accept |
+| `make feed-loop` | green | scrubbed trace → pack `source_drivers` frontier+local → propose → accept; no live keys |
 | Feed cursor durability | green | schema + packed_id + rematerialize keeps cursor |
 | Placement-actual refuse round-trip | green | every reconcile refuse code, schema preserved |
 | Honest live-box parking lot | green | [`DAY90-PLUS.md`](DAY90-PLUS.md) |
-| `estate help` topic pages | green | `estate help status` / `plan` / `apply` / `reconcile` / `feed-loop` / `backup` |
+| `estate help` topic pages | green | `status` / `plan` / `apply` / `reconcile` / `feed-loop` / `backup` / `frontier` / `day90-mixed` |
 | `estate backup --prune N` | green | keep newest N cell archives; `N=0` refuses |
 | Convey call policy deny | green | `policy-deny.yaml` refuses `convey-call` |
 | `.cell/` layout doc matches code | green | [`cell-layout.md`](cell-layout.md) |

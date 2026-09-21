@@ -202,3 +202,70 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
     assert!(feed.join("feed-cursor.json").is_file());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn feed_loop_script_asserts_source_drivers_without_live_keys() {
+    let root = repo_root();
+    let script = std::fs::read_to_string(root.join("scripts/feed-loop.sh")).unwrap();
+    assert!(script.contains("source_drivers"), "{script}");
+    assert!(script.contains("unset XAI_API_KEY"), "{script}");
+    assert!(
+        script.contains("Do not add to make smoke or GitHub Actions"),
+        "feed-loop must stay off smoke / Actions"
+    );
+    let smoke = std::fs::read_to_string(root.join("scripts/smoke.sh")).unwrap();
+    let gate = std::fs::read_to_string(root.join("scripts/day90-gate.sh")).unwrap();
+    assert!(!smoke.contains("feed-loop.sh"), "smoke must not run feed-loop");
+    assert!(!gate.contains("feed-loop.sh"), "gate-90 must not run feed-loop");
+
+    let built = Command::new("cargo")
+        .args(["build", "-p", "model-estate", "--bin", "model-estate"])
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert!(built.success(), "model-estate build failed");
+    let model = root.join("target/debug/model-estate");
+    let work = root.join(format!(
+        "target/test-feed-loop-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&work);
+    let out = Command::new("bash")
+        .arg(root.join("scripts/feed-loop.sh"))
+        .current_dir(&root)
+        .env("ESTATE_BIN", env!("CARGO_BIN_EXE_estate"))
+        .env("MODEL_ESTATE_BIN", &model)
+        .env("WORKDIR", &work)
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("FEED-LOOP GREEN"), "{text}");
+    assert!(
+        text.contains("source_drivers frontier, local"),
+        "{text}"
+    );
+    let pack: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(work.join("packs/overnight-traces.pack.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(pack["promoted"], false);
+    assert_eq!(pack["source_drivers"], serde_json::json!(["frontier", "local"]));
+    let proposal: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(work.join("packs/proposed/overnight-traces.proposal.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(proposal["auto_apply"], false);
+    assert_eq!(
+        proposal["diff"]["source_drivers"],
+        serde_json::json!(["frontier", "local"])
+    );
+    let _ = std::fs::remove_dir_all(&work);
+}
