@@ -1,8 +1,14 @@
 //! Day 61–90 beachhead toward A10–A12. No live Grok / GPU required.
 
-use estate_schema::{diff_estates, load_estate_str, render_review_diff, write_plan};
-use feed_collector::{append_event, materialize_from_feed, refuse_promote, ScrubbedEvent};
-use floor_supervisor::{apply_with_profile_dir, load_lifecycle, resume, suspend, LifecycleState};
+use estate_schema::{
+    diff_estates, load_estate_str, plan_covers_hash, render_review_diff, write_plan,
+};
+use feed_collector::{
+    append_event, import_pack, materialize_from_feed, refuse_promote, ScrubbedEvent,
+};
+use floor_supervisor::{
+    apply_with_profile_dir, load_lifecycle, load_placements, resume, suspend, LifecycleState,
+};
 
 fn example() -> estate_schema::Estate {
     load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
@@ -59,6 +65,12 @@ fn a10_feed_pack_from_both_paths_never_promotes() {
     assert!(refuse_promote("overnight-traces").is_err());
     let estate = example();
     assert!(estate.enrich_packs.packs.is_empty());
+    let accepted = root.join("accepted");
+    let (imported, dest) = import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+    assert!(!imported.estate_bound);
+    assert!(!imported.pack.promoted);
+    assert_eq!(imported.pack.schema, "cell-one.pack.v0");
+    assert!(dest.ends_with("overnight-traces.pack.json"));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -73,6 +85,13 @@ fn a11_suspend_resume_survives_restart() {
     assert!(state.join("lifecycle.json").is_file());
     resume(&e, &state, &root).unwrap();
     assert_eq!(load_lifecycle(&state).unwrap().state, LifecycleState::Running);
+    let places = load_placements(&state).unwrap().expect("placement-actual");
+    let cloud = places
+        .leases
+        .iter()
+        .find(|l| l.kind == "cloud-agent")
+        .expect("cloud-agent lease");
+    assert!(!cloud.spawned);
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -91,5 +110,6 @@ fn a12_plan_reviewable_and_placement_stub_declared() {
     let written = write_plan(&root, &plan).unwrap();
     assert!(written.is_file());
     assert!(root.join("INDEX.md").is_file());
+    assert!(plan_covers_hash(&root, &plan.desired_hash));
     let _ = std::fs::remove_dir_all(&root);
 }

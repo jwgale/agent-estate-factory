@@ -1,13 +1,13 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use estate_schema::{
-    describe, describe_placements, diff_estates, list_plans, load_estate, load_estate_unvalidated,
-    render_plan, validate, write_plan,
+    describe, describe_placements, diff_estates, estate_hash, list_plans, load_estate,
+    load_estate_unvalidated, plan_covers_hash, render_plan, validate, write_plan,
 };
-use feed_collector::{list_drop_packs, materialize_from_feed, refuse_promote};
+use feed_collector::{import_pack, list_drop_packs, materialize_from_feed, refuse_promote};
 use floor_supervisor::{
-    apply_with_profile_dir, drift_with_roots, load_desired_snapshot, load_lifecycle, mark_running,
-    resume, suspend,
+    append_apply_audit, apply_with_profile_dir, drift_with_roots, load_desired_snapshot,
+    load_lifecycle, load_placements, mark_running, record_placements, resume, suspend, ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -48,6 +48,16 @@ enum Command {
         state_dir: PathBuf,
         #[arg(long, default_value = ".")]
         roots_base: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        /// Fail if no plan on disk covers this estate hash (gated apply).
+        #[arg(long, default_value_t = false)]
+        require_plan: bool,
+        /// Explicit pack import during apply (never silent; does not edit estate.yaml).
+        #[arg(long)]
+        import_pack: Option<String>,
+        #[arg(long, default_value = "packs")]
+        packs_dir: PathBuf,
     },
     /// Compare desired estate to regenerable actual-state.
     Drift {
@@ -104,17 +114,28 @@ enum FeedCommand {
     Pack {
         #[arg(long, default_value = ".cell/feed")]
         feed_dir: PathBuf,
-        #[arg(long, default_value = "examples/enrich-packs/drop")]
+        #[arg(long, default_value = "packs")]
         drop_dir: PathBuf,
         #[arg(long, default_value = "overnight-traces")]
         id: String,
     },
     /// List candidate packs in the drop zone.
     List {
-        #[arg(long, default_value = "examples/enrich-packs/drop")]
+        #[arg(long, default_value = "packs")]
         drop_dir: PathBuf,
     },
-    /// Always fails. Jason edits estate.yaml by hand.
+    /// Explicit apply of a pack artifact. Does not rewrite the estate file.
+    Import {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "packs")]
+        drop_dir: PathBuf,
+        #[arg(long, default_value = "packs/accepted")]
+        accepted_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Always fails. Auto-promote is locked off.
     Promote {
         #[arg(long)]
         id: String,
@@ -142,7 +163,19 @@ fn run() -> Result<()> {
             estate,
             state_dir,
             roots_base,
-        } => cmd_apply(&estate, &state_dir, &roots_base),
+            plans_dir,
+            require_plan,
+            import_pack,
+            packs_dir,
+        } => cmd_apply(
+            &estate,
+            &state_dir,
+            &roots_base,
+            &plans_dir,
+            require_plan,
+            import_pack.as_deref(),
+            &packs_dir,
+        ),
         Command::Drift {
             estate,
             state_dir,
@@ -168,6 +201,12 @@ fn run() -> Result<()> {
                 id,
             } => cmd_feed_pack(&feed_dir, &drop_dir, &id),
             FeedCommand::List { drop_dir } => cmd_feed_list(&drop_dir),
+            FeedCommand::Import {
+                id,
+                drop_dir,
+                accepted_dir,
+                estate,
+            } => cmd_feed_import(&id, &drop_dir, &accepted_dir, &estate),
             FeedCommand::Promote { id } => cmd_feed_promote(&id),
         },
     }
@@ -214,15 +253,55 @@ fn cmd_plan(path: &Path, against: Option<&Path>, plans_dir: &Path, state_dir: &P
     Ok(())
 }
 
-fn cmd_apply(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
+fn cmd_apply(
+    path: &Path,
+    state_dir: &Path,
+    roots_base: &Path,
+    plans_dir: &Path,
+    require_plan: bool,
+    import_pack_id: Option<&str>,
+    packs_dir: &Path,
+) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let hash = estate_hash(&estate);
+    if require_plan && !plan_covers_hash(plans_dir, &hash) {
+        bail!("apply gated: no plan on disk for {hash}; run estate plan first");
+    }
+    let mut imported = Vec::new();
+    if let Some(id) = import_pack_id {
+        let ids: Vec<String> = estate
+            .enrich_packs
+            .packs
+            .iter()
+            .map(|p| p.id.clone())
+            .collect();
+        let (rec, dest) = import_pack(packs_dir, &packs_dir.join("accepted"), id, &ids)?;
+        imported.push(id.to_string());
+        println!(
+            "imported pack {} estate_bound={} -> {}",
+            rec.pack.id,
+            rec.estate_bound,
+            dest.display()
+        );
+    }
     let actual = apply_with_profile_dir(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
+    record_placements(&estate, state_dir)?;
     mark_running(&estate, state_dir)?;
+    let audit = ApplyAudit {
+        created_at: chrono_stamp(),
+        desired_hash: hash,
+        sessions: actual.sessions.len(),
+        imported_packs: imported,
+        require_plan,
+        note: "Apply audit. Estate file unchanged. Cloud-agent placements not spawned.".into(),
+    };
+    let audit_path = append_apply_audit(plans_dir, state_dir, &audit)?;
     println!(
-        "applied {} sessions; actual-state {}",
+        "applied {} sessions; actual-state {}; audit {}",
         actual.sessions.len(),
-        state_dir.join("actual-state.json").display()
+        state_dir.join("actual-state.json").display(),
+        audit_path.display()
     );
     for session in &actual.sessions {
         println!(
@@ -260,6 +339,7 @@ fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let (actual, record) = resume(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
+    record_placements(&estate, state_dir)?;
     println!(
         "resumed {} sessions; lifecycle {}",
         actual.sessions.len(),
@@ -277,6 +357,15 @@ fn cmd_status(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     println!("lifecycle: {} (durable={})", life.state.as_str(), life.durable);
     println!("{}", life.note);
     println!("{}", describe_placements(&estate));
+    if let Some(places) = load_placements(state_dir)? {
+        println!("placement actual (durable, regenerable):");
+        for lease in &places.leases {
+            println!(
+                "  {} kind={} spawned={} wired={}",
+                lease.placement_id, lease.kind, lease.spawned, lease.wired
+            );
+        }
+    }
     println!("floor in_sync: {}", report.in_sync);
     if !report.notes.is_empty() {
         for note in &report.notes {
@@ -314,11 +403,52 @@ fn cmd_feed_list(drop_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cmd_feed_import(
+    id: &str,
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    estate_path: &Path,
+) -> Result<()> {
+    let estate = load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let ids: Vec<String> = estate
+        .enrich_packs
+        .packs
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    let before = std::fs::read_to_string(estate_path).unwrap_or_default();
+    let (rec, dest) = import_pack(drop_dir, accepted_dir, id, &ids)?;
+    let after = std::fs::read_to_string(estate_path).unwrap_or_default();
+    if before != after {
+        bail!("import must not rewrite the estate file");
+    }
+    println!(
+        "imported pack {} schema={} estate_bound={} promoted={} -> {}",
+        rec.pack.id,
+        rec.pack.schema,
+        rec.estate_bound,
+        rec.pack.promoted,
+        dest.display()
+    );
+    println!("estate file unchanged. Jason still lists pack ids on enrich_packs by hand.");
+    Ok(())
+}
+
 fn cmd_feed_promote(id: &str) -> Result<()> {
     match refuse_promote(id) {
         Ok(()) => unreachable!("promote has no success path"),
         Err(err) => bail!("{err}"),
     }
+}
+
+fn chrono_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("unix:{secs}")
 }
 
 fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
