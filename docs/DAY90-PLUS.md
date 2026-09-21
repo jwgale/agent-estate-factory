@@ -40,6 +40,8 @@ not invent a spawn driver.
 | Dual-layer sacred | Locked Cyera CI + Rust classroom. Sanctum is not Cyera. |
 | `estate help` | Topic pages for the Day-90 loop. Not a studio. |
 | `estate backup --prune N` | Local rotate. Not a remote vault. |
+| Operator day runbook | [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Walk only. Not a live-box proof. |
+| `make gate-90` on Actions | Not green and not planned. It wraps `cargo test --workspace`. |
 
 ## Rails
 
