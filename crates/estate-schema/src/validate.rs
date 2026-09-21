@@ -1,5 +1,5 @@
 use crate::sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
-use crate::types::{Effect, Estate, ModelClass};
+use crate::types::{is_host_class, Effect, Estate, ModelClass, PlacementKind};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path};
 
@@ -197,7 +197,49 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         reject_sku("model_binding.id", &binding.id, &mut errors);
         reject_sku("model_binding.driver", &binding.driver, &mut errors);
         reject_sku_in_params(&binding.id, &binding.params, &mut errors);
+        if let Some(hc) = binding.params.get("host_class").and_then(|v| v.as_str()) {
+            if !is_host_class(hc) {
+                errors.push(format!(
+                    "model_binding '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                    binding.id, hc
+                ));
+            }
+        }
         classes.insert(binding.class);
+    }
+
+    let mut placement_ids = HashSet::new();
+    for placement in &estate.placements {
+        check_slug("placement.id", &placement.id, &mut errors);
+        if !placement_ids.insert(normalize_name(&placement.id)) {
+            errors.push(format!("duplicate placement id '{}'", placement.id));
+        }
+        reject_sku("placement.id", &placement.id, &mut errors);
+        if let Some(hc) = &placement.host_class {
+            if !is_host_class(hc) {
+                errors.push(format!(
+                    "placement '{}' host_class '{}' must be consumer-nvidia|apple-silicon|rented-nvidia|any",
+                    placement.id, hc
+                ));
+            }
+        }
+        for agent_id in &placement.agents {
+            if estate.agent(agent_id).is_none() {
+                errors.push(format!(
+                    "placement '{}' agent '{}' is not an agent",
+                    placement.id, agent_id
+                ));
+            }
+        }
+        if placement.kind == PlacementKind::CloudAgent {
+            // Declared stub is valid even when wired:true. Floor still does not spawn it.
+            if placement.agents.is_empty() && placement.wired {
+                errors.push(format!(
+                    "placement '{}' is a wired cloud-agent with no agents; leave wired:false until Day-90 assigns it",
+                    placement.id
+                ));
+            }
+        }
     }
 
     if estate.enrich_packs.policy.trim().to_ascii_lowercase() != "manual" {
@@ -448,5 +490,27 @@ mod tests {
         estate.enrich_packs.policy = "auto".into();
         let err = validate(&estate).unwrap_err();
         assert!(err.iter().any(|e| e.contains("manual")));
+    }
+
+    #[test]
+    fn placement_sku_fails() {
+        let err = validate(&load_invalid("placement-sku.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("hardware SKU")));
+    }
+
+    #[test]
+    fn placement_unknown_agent_fails() {
+        let err = validate(&load_invalid("placement-unknown-agent.yaml")).unwrap_err();
+        assert!(err.iter().any(|e| e.contains("not an agent")));
+    }
+
+    #[test]
+    fn example_declares_cloud_agent_stub() {
+        let estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        assert!(estate
+            .placements
+            .iter()
+            .any(|p| p.kind == PlacementKind::CloudAgent && !p.wired));
+        validate(&estate).unwrap();
     }
 }

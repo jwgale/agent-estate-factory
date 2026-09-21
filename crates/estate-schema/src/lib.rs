@@ -14,11 +14,15 @@ pub use compile::{compile_intentions, CompiledIntention};
 pub use error::EstateError;
 pub use firewall::{authorize, read_lane_file, AccessRequest, Decision, Deny};
 pub use hash::estate_hash;
-pub use plan::{diff_estates, render_plan, write_plan, EstatePlan, PlanDelta};
+pub use plan::{
+    diff_estates, list_plans, render_plan, render_review_diff, write_plan, write_plan_index,
+    EstatePlan, PlanDelta, PlanIndexEntry,
+};
 pub use sacred::{is_sacred_name, locked_sacred_ids, normalize_name, LOCKED_SACRED};
 pub use types::{
-    Agent, Effect, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
-    ModelBinding, ModelClass, ModelUseDecl, MountDecl, ObjectRef, SacredExclusion, ToolDecl,
+    is_host_class, Agent, Effect, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane,
+    McpDecl, ModelBinding, ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind,
+    SacredExclusion, ToolDecl,
 };
 pub use validate::{validate, ValidateOpts};
 
@@ -80,7 +84,7 @@ pub fn describe(estate: &Estate) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}\nenrich_packs: {} / {} ({} packs)",
+        "name: {}\nhash: {}\nagents: {} ({})\nlanes: {}\nintentions: {} (default_effect={})\nmodel_bindings: {} ({})\nsacred_exclusions: {}\nenrich_packs: {} / {} ({} packs)\nplacements: {}",
         estate.name,
         estate_hash(estate),
         estate.agents.len(),
@@ -93,8 +97,34 @@ pub fn describe(estate: &Estate) -> String {
         sacred,
         estate.enrich_packs.curator,
         estate.enrich_packs.policy,
-        estate.enrich_packs.packs.len()
+        estate.enrich_packs.packs.len(),
+        estate.placements.len()
     )
+}
+
+pub fn describe_placements(estate: &Estate) -> String {
+    if estate.placements.is_empty() {
+        return "placements: (none declared; default is this box)".into();
+    }
+    let mut lines = vec!["placements (declared; floor does not spawn cloud-agent):".to_string()];
+    for p in &estate.placements {
+        lines.push(format!(
+            "  {:<16} kind={:<12} host_class={} wired={} agents={}",
+            p.id,
+            p.kind.as_str(),
+            p.host_class.as_deref().unwrap_or("any"),
+            p.wired,
+            if p.agents.is_empty() {
+                "(none)".into()
+            } else {
+                p.agents.join(",")
+            }
+        ));
+        if p.kind == PlacementKind::CloudAgent {
+            lines.push("    stub: Day-90 operator day. Not a session. Not a gateway.".into());
+        }
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -116,5 +146,9 @@ mod tests {
         assert!(estate.agent("horizon").unwrap().has_model("local_slm"));
         assert_eq!(estate.enrich_packs.curator, "jason");
         assert_eq!(estate.enrich_packs.policy, "manual");
+        assert!(estate
+            .placements
+            .iter()
+            .any(|p| p.id == "cursor-cloud" && p.kind == PlacementKind::CloudAgent && !p.wired));
     }
 }

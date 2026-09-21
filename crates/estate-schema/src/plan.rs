@@ -1,5 +1,5 @@
 use crate::hash::estate_hash;
-use crate::types::Estate;
+use crate::types::{Estate, PlacementKind};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -11,6 +11,10 @@ pub struct PlanDelta {
     pub lanes: Vec<String>,
     pub intentions: Vec<String>,
     pub model_bindings: Vec<String>,
+    #[serde(default)]
+    pub placements: Vec<String>,
+    #[serde(default)]
+    pub enrich_packs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +38,8 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                 lanes: names(desired.lanes.iter().map(|l| l.id.as_str())),
                 intentions: intention_keys(desired),
                 model_bindings: names(desired.model_bindings.iter().map(|b| b.id.as_str())),
+                placements: names(desired.placements.iter().map(|p| p.id.as_str())),
+                enrich_packs: names(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())),
             },
             PlanDelta::default(),
             PlanDelta::default(),
@@ -47,6 +53,10 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
             let rem_int = set_diff(intention_key_set(prev), intention_key_set(desired));
             let add_bind = set_diff(ids(desired.model_bindings.iter().map(|b| b.id.as_str())), ids(prev.model_bindings.iter().map(|b| b.id.as_str())));
             let rem_bind = set_diff(ids(prev.model_bindings.iter().map(|b| b.id.as_str())), ids(desired.model_bindings.iter().map(|b| b.id.as_str())));
+            let add_place = set_diff(ids(desired.placements.iter().map(|p| p.id.as_str())), ids(prev.placements.iter().map(|p| p.id.as_str())));
+            let rem_place = set_diff(ids(prev.placements.iter().map(|p| p.id.as_str())), ids(desired.placements.iter().map(|p| p.id.as_str())));
+            let add_packs = set_diff(ids(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())), ids(prev.enrich_packs.packs.iter().map(|p| p.id.as_str())));
+            let rem_packs = set_diff(ids(prev.enrich_packs.packs.iter().map(|p| p.id.as_str())), ids(desired.enrich_packs.packs.iter().map(|p| p.id.as_str())));
             let changed = PlanDelta {
                 agents: changed_ids(
                     desired.agents.iter().map(|a| (a.id.as_str(), fingerprint(a))),
@@ -66,6 +76,11 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                         .iter()
                         .map(|b| (b.id.as_str(), fingerprint(b))),
                 ),
+                placements: changed_ids(
+                    desired.placements.iter().map(|p| (p.id.as_str(), fingerprint(p))),
+                    prev.placements.iter().map(|p| (p.id.as_str(), fingerprint(p))),
+                ),
+                enrich_packs: vec![],
             };
             (
                 PlanDelta {
@@ -73,12 +88,16 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
                     lanes: add_lanes,
                     intentions: add_int,
                     model_bindings: add_bind,
+                    placements: add_place,
+                    enrich_packs: add_packs,
                 },
                 PlanDelta {
                     agents: rem_agents,
                     lanes: rem_lanes,
                     intentions: rem_int,
                     model_bindings: rem_bind,
+                    placements: rem_place,
+                    enrich_packs: rem_packs,
                 },
                 changed,
             )
@@ -110,12 +129,38 @@ pub fn render_plan(plan: &EstatePlan) -> String {
     out.push_str("Blast radius\n------------\n");
     out.push_str(&plan.blast_radius_text);
     out.push('\n');
+    out.push_str("\n");
+    out.push_str(&render_review_diff(plan));
     out.push_str("\nAdded\n");
     out.push_str(&render_delta(&plan.added));
     out.push_str("Removed\n");
     out.push_str(&render_delta(&plan.removed));
     out.push_str("Changed\n");
     out.push_str(&render_delta(&plan.changed));
+    out
+}
+
+/// PR-reviewable markdown: what apply will touch. Not a gateway changelog.
+pub fn render_review_diff(plan: &EstatePlan) -> String {
+    let mut out = String::from("Reviewable diff (commit this file to review apply)\n");
+    out.push_str("----------------------------------------------------\n");
+    out.push_str(&format!("+ agents:          {}\n", fmt_list(&plan.added.agents)));
+    out.push_str(&format!("- agents:          {}\n", fmt_list(&plan.removed.agents)));
+    out.push_str(&format!("~ agents:          {}\n", fmt_list(&plan.changed.agents)));
+    out.push_str(&format!("+ lanes:           {}\n", fmt_list(&plan.added.lanes)));
+    out.push_str(&format!("- lanes:           {}\n", fmt_list(&plan.removed.lanes)));
+    out.push_str(&format!("~ lanes:           {}\n", fmt_list(&plan.changed.lanes)));
+    out.push_str(&format!("+ intentions:      {}\n", fmt_list(&plan.added.intentions)));
+    out.push_str(&format!("- intentions:      {}\n", fmt_list(&plan.removed.intentions)));
+    out.push_str(&format!("+ model_bindings:  {}\n", fmt_list(&plan.added.model_bindings)));
+    out.push_str(&format!("- model_bindings:  {}\n", fmt_list(&plan.removed.model_bindings)));
+    out.push_str(&format!("~ model_bindings:  {}\n", fmt_list(&plan.changed.model_bindings)));
+    out.push_str(&format!("+ placements:      {}\n", fmt_list(&plan.added.placements)));
+    out.push_str(&format!("- placements:      {}\n", fmt_list(&plan.removed.placements)));
+    out.push_str(&format!("~ placements:      {}\n", fmt_list(&plan.changed.placements)));
+    out.push_str(&format!("+ enrich_packs:    {}\n", fmt_list(&plan.added.enrich_packs)));
+    out.push_str(&format!("- enrich_packs:    {}\n", fmt_list(&plan.removed.enrich_packs)));
+    out.push_str("Control does not invoke models. Cloud-agent placements are not spawned.\n");
     out
 }
 
@@ -136,7 +181,62 @@ pub fn write_plan(plans_dir: &Path, plan: &EstatePlan) -> Result<std::path::Path
     let json_path = plans_dir.join(format!("{stem}.json"));
     std::fs::write(&md_path, render_plan(plan))?;
     std::fs::write(&json_path, serde_json::to_string_pretty(plan).unwrap_or_default())?;
+    let _ = write_plan_index(plans_dir);
     Ok(md_path)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlanIndexEntry {
+    pub stem: String,
+    pub markdown: String,
+    pub json: Option<String>,
+}
+
+pub fn list_plans(plans_dir: &Path) -> Result<Vec<PlanIndexEntry>, std::io::Error> {
+    if !plans_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut stems: BTreeSet<String> = BTreeSet::new();
+    for entry in std::fs::read_dir(plans_dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if let Some(stem) = name.strip_suffix(".md") {
+            if stem != "INDEX" && stem != "README" {
+                stems.insert(stem.to_string());
+            }
+        } else if let Some(stem) = name.strip_suffix(".json") {
+            stems.insert(stem.to_string());
+        }
+    }
+    Ok(stems
+        .into_iter()
+        .rev()
+        .map(|stem| PlanIndexEntry {
+            markdown: format!("{stem}.md"),
+            json: if plans_dir.join(format!("{stem}.json")).exists() {
+                Some(format!("{stem}.json"))
+            } else {
+                None
+            },
+            stem,
+        })
+        .collect())
+}
+
+pub fn write_plan_index(plans_dir: &Path) -> Result<std::path::PathBuf, std::io::Error> {
+    std::fs::create_dir_all(plans_dir)?;
+    let entries = list_plans(plans_dir)?;
+    let mut md = String::from("# Plan history\n\nAppend-only blast-radius files. Commit a plan markdown into a PR when you want Jason to review apply.\n\n");
+    if entries.is_empty() {
+        md.push_str("(no plans yet)\n");
+    } else {
+        for entry in &entries {
+            md.push_str(&format!("- `{}`\n", entry.markdown));
+        }
+    }
+    let path = plans_dir.join("INDEX.md");
+    std::fs::write(&path, md)?;
+    Ok(path)
 }
 
 fn blast_radius(
@@ -197,6 +297,33 @@ fn blast_radius(
             .collect::<Vec<_>>()
             .join(", ")
     ));
+    let boxes = estate
+        .placements
+        .iter()
+        .filter(|p| p.kind == PlacementKind::Box)
+        .count();
+    let cloud = estate
+        .placements
+        .iter()
+        .filter(|p| p.kind == PlacementKind::CloudAgent)
+        .count();
+    lines.push(format!(
+        "Placements declared: {boxes} box, {cloud} cloud-agent stub(s). Floor does not spawn cloud agents."
+    ));
+    if estate.enrich_packs.packs.is_empty() {
+        lines.push("Enrich packs stay empty until Jason curates (manual; no auto-promote).".into());
+    } else {
+        lines.push(format!(
+            "Enrich packs listed (still manual): {}.",
+            estate
+                .enrich_packs
+                .packs
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
     if !added.agents.is_empty() {
         lines.push(format!("Adding agents {} expands session count.", added.agents.join(", ")));
     }
@@ -211,11 +338,13 @@ fn blast_radius(
 
 fn render_delta(delta: &PlanDelta) -> String {
     format!(
-        "  agents: {}\n  lanes: {}\n  intentions: {}\n  model_bindings: {}\n",
+        "  agents: {}\n  lanes: {}\n  intentions: {}\n  model_bindings: {}\n  placements: {}\n  enrich_packs: {}\n",
         fmt_list(&delta.agents),
         fmt_list(&delta.lanes),
         fmt_list(&delta.intentions),
-        fmt_list(&delta.model_bindings)
+        fmt_list(&delta.model_bindings),
+        fmt_list(&delta.placements),
+        fmt_list(&delta.enrich_packs)
     )
 }
 
@@ -233,6 +362,8 @@ impl PlanDelta {
             && self.lanes.is_empty()
             && self.intentions.is_empty()
             && self.model_bindings.is_empty()
+            && self.placements.is_empty()
+            && self.enrich_packs.is_empty()
     }
 }
 
@@ -306,5 +437,15 @@ mod tests {
         let plan = diff_estates(&e, Some(&e));
         assert!(plan.added.agents.is_empty());
         assert!(plan.blast_radius_text.contains("empty"));
+    }
+
+    #[test]
+    fn review_diff_names_placements() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let plan = diff_estates(&e, None);
+        let review = render_review_diff(&plan);
+        assert!(review.contains("+ placements:"));
+        assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
+        assert!(plan.blast_radius_text.contains("cloud-agent stub"));
     }
 }

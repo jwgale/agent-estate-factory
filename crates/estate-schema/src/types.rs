@@ -23,6 +23,9 @@ pub struct Estate {
     /// First specialist enrich packs. Jason curates; policy is manual. Not auto-promote.
     #[serde(default)]
     pub enrich_packs: EnrichPacks,
+    /// Where agents run. `box` is Cell One today. `cloud-agent` is declared, not spawned.
+    #[serde(default)]
+    pub placements: Vec<Placement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -206,6 +209,53 @@ impl Default for EnrichPacks {
             packs: Vec::new(),
         }
     }
+}
+
+/// Day-90 operator placement. Declared on the estate; floor does not spawn cloud agents.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlacementKind {
+    Box,
+    CloudAgent,
+}
+
+impl PlacementKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlacementKind::Box => "box",
+            PlacementKind::CloudAgent => "cloud-agent",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Placement {
+    pub id: String,
+    pub kind: PlacementKind,
+    #[serde(default)]
+    pub host_class: Option<String>,
+    #[serde(default)]
+    pub agents: Vec<String>,
+    #[serde(default)]
+    pub wired: bool,
+    #[serde(default)]
+    pub params: serde_json::Value,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Portable host class. Hardware is a driver choice, not a SKU.
+pub fn is_host_class(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "consumer-nvidia"
+            | "consumer_nvidia"
+            | "apple-silicon"
+            | "apple_silicon"
+            | "rented-nvidia"
+            | "rented_nvidia"
+            | "any"
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
