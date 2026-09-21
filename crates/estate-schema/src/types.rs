@@ -5,6 +5,14 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Estate {
     pub version: u32,
+    /// Cell One config version. Absent = legacy `version: 0`.
+    #[serde(
+        default,
+        rename = "apiVersion",
+        alias = "api_version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub api_version: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
     pub name: String,
