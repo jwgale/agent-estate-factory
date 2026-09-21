@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#17 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#18 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
@@ -65,6 +65,10 @@ estate doctor --strict
 | Feed redaction report | green | pack + `redaction.json` never store the raw secret |
 | Journals append-only | green | suspend / resume / `expire --forget` do not truncate jsonl |
 | Floor src SKU needles | green | `doctor --strict` floor scan stays clean (`not-a-host` in src tests) |
+| Garbage `lifecycle.json` | green | suspend / resume / apply refuse; no overwrite; apply writes no leases |
+| Import audit fail-closed | green | accepted pack write does not swallow `import-audit.jsonl` |
+| Apply `--import-pack` curator | green | live and `--dry-run` refuse before any lease / pack / audit write |
+| Catalog / probes print | green | catalog writes first; probes refuse every card first |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |

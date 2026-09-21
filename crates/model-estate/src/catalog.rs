@@ -383,10 +383,10 @@ pub fn write_catalog(path: &std::path::Path) -> std::io::Result<std::path::PathB
             std::fs::create_dir_all(parent)?;
         }
     }
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(&catalog_file()).unwrap_or_default(),
-    )?;
+    let body = serde_json::to_string_pretty(&catalog_file()).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+    })?;
+    std::fs::write(path, body)?;
     Ok(path.to_path_buf())
 }
 

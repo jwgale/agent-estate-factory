@@ -227,12 +227,8 @@ pub(crate) fn cmd_status(
         .as_ref()
         .map(|p| p.leases.iter().filter(|l| l.spawned).count())
         .unwrap_or(0);
-    let expired_n = list_expired_leases(state_dir, now_unix())
-        .map(|v| v.len())
-        .unwrap_or(0);
-    let hop_expired_n = list_expired_hop_leases(state_dir, hop_now_unix())
-        .map(|v| v.len())
-        .unwrap_or(0);
+    let expired_n = list_expired_leases(state_dir, now_unix())?.len();
+    let hop_expired_n = list_expired_hop_leases(state_dir, hop_now_unix())?.len();
     let last_plan = latest_plan(plans_dir)
         .map(|p| p.desired_hash)
         .unwrap_or_else(|| "-".into());
@@ -244,7 +240,8 @@ pub(crate) fn cmd_status(
             a.covering_plan.as_deref().unwrap_or("-")
         )
     });
-    let proposals = list_open_proposals(&packs_dir.join("proposed")).unwrap_or_default();
+    let proposals = list_open_proposals(&packs_dir.join("proposed"))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let policy_present = policy.is_file();
     let doctor = doctor_summary_line(root, state_dir);
     let paused = life.state == floor_supervisor::LifecycleState::Suspended;
@@ -302,14 +299,18 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         HostedCiStatus::Missing => fails += 1,
         HostedCiStatus::Extra(extra) => fails += extra.len(),
     }
-    if let Ok(Some(places)) = load_placements(state_dir) {
-        if places
-            .leases
-            .iter()
-            .any(|l| l.kind == "cloud-agent" && l.spawned)
-        {
-            fails += 1;
+    match load_placements(state_dir) {
+        Ok(Some(places)) => {
+            if places
+                .leases
+                .iter()
+                .any(|l| l.kind == "cloud-agent" && l.spawned)
+            {
+                fails += 1;
+            }
         }
+        Ok(None) => {}
+        Err(_) => fails += 1,
     }
     if fails == 0 {
         "ok (compile-only CI; schemas present)".into()

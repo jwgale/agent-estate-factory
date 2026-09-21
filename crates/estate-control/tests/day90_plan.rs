@@ -511,5 +511,42 @@ fn curator_missing_vs_wrong_is_consistent() {
         !root.join("apply-state").join("placement-actual.json").exists(),
         "wrong curator on apply --import-pack must not write leases"
     );
+    assert!(
+        !root.join("apply-state").join("apply-audit.jsonl").exists(),
+        "wrong curator on apply --import-pack must not write apply-audit"
+    );
+    assert!(
+        !drop.join("accepted").join("overnight-traces.pack.json").exists(),
+        "wrong curator on apply --import-pack must not write accepted pack"
+    );
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--import-pack",
+            "overnight-traces",
+            "--curator",
+            "robot",
+            "--packs-dir",
+            &drop.display().to_string(),
+            "--estate",
+            &estate_yaml().display().to_string(),
+            "--state-dir",
+            &root.join("dry-state").display().to_string(),
+            "--roots-base",
+            &root.display().to_string(),
+            "--plans-dir",
+            &root.join("dry-plans").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let dry_text = text(&dry);
+    assert!(!dry.status.success(), "{dry_text}");
+    assert!(dry_text.contains("refuse:curator"), "{dry_text}");
+    assert!(
+        !root.join("dry-state").join("placement-actual.json").exists(),
+        "dry-run wrong curator must not write leases"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

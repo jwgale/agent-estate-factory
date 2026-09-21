@@ -372,9 +372,17 @@ pub fn refuse_raw_secrets(text: &str) -> Result<(), FeedError> {
     Ok(())
 }
 
+fn to_json<T: Serialize>(value: &T) -> Result<String, FeedError> {
+    serde_json::to_string(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))
+}
+
+fn to_pretty_json<T: Serialize>(value: &T) -> Result<String, FeedError> {
+    serde_json::to_string_pretty(value).map_err(|e| FeedError::Parse(format!("serialize: {e}")))
+}
+
 /// Kind counts only. Refuses if the serialized report itself contains a raw secret.
 pub fn write_redaction_report(path: &Path, report: &RedactionReport) -> Result<(), FeedError> {
-    let blob = serde_json::to_string_pretty(report).unwrap_or_default();
+    let blob = to_pretty_json(report)?;
     refuse_raw_secrets(&blob)?;
     for kind in report.kinds.keys() {
         if looks_pii_token(kind) {
@@ -454,11 +462,11 @@ pub fn append_import_audit(accepted_dir: &Path, audit: &ImportAudit) -> Result<P
         .create(true)
         .append(true)
         .open(&path)?;
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(audit).unwrap_or_default()
-    )?;
+    let line = to_json(audit)?;
+    if line.trim().is_empty() {
+        return Err(FeedError::Parse("serialize: empty import audit".into()));
+    }
+    writeln!(file, "{line}")?;
     Ok(path)
 }
 
@@ -581,7 +589,7 @@ pub fn refuse_pack(pack: &PackManifest) -> Result<(), FeedError> {
             return Err(FeedError::BadSourcePath(path.clone()));
         }
     }
-    let blob = serde_json::to_string(pack).unwrap_or_default();
+    let blob = to_json(pack)?;
     refuse_raw_secrets(&blob)?;
     refuse_raw_secrets(&pack.note)?;
     Ok(())
@@ -591,7 +599,7 @@ pub fn write_drop_pack(drop_dir: &Path, pack: &PackManifest) -> Result<PathBuf, 
     refuse_pack(pack)?;
     std::fs::create_dir_all(drop_dir)?;
     let path = drop_dir.join(format!("{}.pack.json", pack.id));
-    std::fs::write(&path, serde_json::to_string_pretty(pack).unwrap_or_default())?;
+    std::fs::write(&path, to_pretty_json(pack)?)?;
     let _ = write_pack_index(drop_dir);
     Ok(path)
 }
@@ -683,6 +691,27 @@ pub fn import_pack(
     )
 }
 
+/// Refuse curator / id / raw secret / pack schema without writing accepted files.
+pub fn refuse_import_pack(
+    drop_dir: &Path,
+    id: &str,
+    curator: &str,
+    estate_curator: &str,
+) -> Result<PackManifest, FeedError> {
+    refuse_curator(curator, estate_curator)?;
+    refuse_pack_id(id)?;
+    let source = drop_dir.join(format!("{id}.pack.json"));
+    let raw = std::fs::read_to_string(&source)
+        .map_err(|_| FeedError::MissingPack(id.to_string()))?;
+    refuse_raw_secrets(&raw)?;
+    let pack = load_pack(drop_dir, id)?;
+    refuse_pack(&pack)?;
+    if pack.promoted {
+        return Err(FeedError::NoAutoPromote);
+    }
+    Ok(pack)
+}
+
 /// Explicit Feed→Control import gated on the locked curator.
 pub fn import_pack_for(
     drop_dir: &Path,
@@ -692,17 +721,10 @@ pub fn import_pack_for(
     curator: &str,
     estate_curator: &str,
 ) -> Result<(ImportedPack, PathBuf), FeedError> {
-    refuse_curator(curator, estate_curator)?;
-    refuse_pack_id(id)?;
+    let mut pack = refuse_import_pack(drop_dir, id, curator, estate_curator)?;
     let source = drop_dir.join(format!("{id}.pack.json"));
     let raw = std::fs::read_to_string(&source)
         .map_err(|_| FeedError::MissingPack(id.to_string()))?;
-    refuse_raw_secrets(&raw)?;
-    let mut pack = load_pack(drop_dir, id)?;
-    refuse_pack(&pack)?;
-    if pack.promoted {
-        return Err(FeedError::NoAutoPromote);
-    }
     pack.promoted = false;
     pack.policy = "manual".into();
     pack.curator = "jason".into();
@@ -717,14 +739,14 @@ pub fn import_pack_for(
     };
     std::fs::create_dir_all(accepted_dir)?;
     let path = accepted_dir.join(format!("{id}.pack.json"));
-    let written = serde_json::to_string_pretty(&imported).unwrap_or_default();
+    let written = to_pretty_json(&imported)?;
     refuse_raw_secrets(&written)?;
     std::fs::write(&path, written)?;
     write_redaction_report(
         &accepted_dir.join(format!("{id}.redaction.json")),
         &report,
     )?;
-    let _ = append_import_audit(
+    append_import_audit(
         accepted_dir,
         &ImportAudit {
             imported_at: imported.imported_at.clone(),
@@ -733,7 +755,7 @@ pub fn import_pack_for(
             source_path: imported.source_path.clone(),
             promoted: imported.pack.promoted,
         },
-    );
+    )?;
     let _ = write_pack_index(drop_dir);
     Ok((imported, path))
 }
@@ -1348,6 +1370,9 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, FeedError::WrongCurator { .. }));
+        let err = refuse_import_pack(&drop, "overnight-traces", "robot", "jason").unwrap_err();
+        assert!(matches!(err, FeedError::WrongCurator { .. }));
+        assert!(!dir.join("accepted").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
