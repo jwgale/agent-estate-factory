@@ -17,8 +17,10 @@ pub use lifecycle::{
 };
 pub use placement::{
     append_apply_audit, driver_for, drift_placements, list_apply_audits, load_placements,
-    mark_leases_unspawned, record_placements, write_placements, ApplyAudit, BoxDriver,
-    CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
+    mark_leases_unspawned, reconcile_placements, record_placements, render_reconcile,
+    write_placements, write_reconcile, ApplyAudit, BoxDriver, CloudAgentDriver, PlacementActual,
+    PlacementDriver, PlacementDrift, PlacementLease, ReconcileReport, ReconcileRow, Refuse,
+    RECONCILE_SCHEMA,
 };
 
 #[derive(Debug, Error)]
@@ -414,7 +416,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!("cell-one-floor-{n}-{}", std::process::id()));
+        let p = std::env.temp_dir().join(format!("cell-one-floor-{n}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         p

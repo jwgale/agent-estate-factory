@@ -5,11 +5,12 @@ use estate_schema::{
     plan_is_reviewable, render_review_diff, render_security_iac, write_plan,
 };
 use feed_collector::{
-    append_event, import_pack, materialize_from_feed, refuse_promote, ScrubbedEvent,
+    append_event, import_pack, materialize_from_feed, propose_enrich, refuse_apply_proposal,
+    refuse_promote, ScrubbedEvent,
 };
 use floor_supervisor::{
-    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements, resume, suspend,
-    CloudAgentDriver, LifecycleState, PlacementDriver,
+    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements,
+    reconcile_placements, resume, suspend, CloudAgentDriver, LifecycleState, PlacementDriver,
 };
 
 fn example() -> estate_schema::Estate {
@@ -17,7 +18,7 @@ fn example() -> estate_schema::Estate {
 }
 
 fn tmp() -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(format!(
+    let p = std::env.temp_dir().join(format!(
         "cell-one-d90-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
@@ -211,5 +212,41 @@ fn wave2_host_matrix_and_convey_mesh() {
         .unwrap()
         .allow);
     assert!(conveyor_proxy::call_hop(&root, "missing", "lane-tool").is_err());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn wave3_multi_host_propose_reconcile() {
+    let path = format!(
+        "{}/../../examples/hosts/multi-host.yaml",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let estate = estate_schema::load_estate(std::path::Path::new(&path)).unwrap();
+    assert!(estate
+        .model_bindings
+        .iter()
+        .any(|b| b.driver == "http-remote"));
+    assert!(estate
+        .model_bindings
+        .iter()
+        .any(|b| b.driver == "llama.cpp"));
+    assert!(estate.model_bindings.iter().any(|b| b.driver == "mlx"));
+    assert!(estate.placements.iter().any(|p| p.id == "box-rtx"));
+    assert!(estate.placements.iter().any(|p| p.id == "box-apple"));
+    assert!(estate.placements.iter().any(|p| p.id == "box-rental"));
+    let root = tmp();
+    apply_with_profile_dir(&estate, &root.join("state"), &root).unwrap();
+    let report = reconcile_placements(&estate, &root.join("state")).unwrap();
+    assert!(report.in_sync, "{:?}", report.refuses);
+    let drop = root.join("drop");
+    let accepted = root.join("accepted");
+    let proposed = root.join("proposed");
+    materialize_from_feed(&root.join("feed"), &drop, "overnight-traces").unwrap();
+    import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+    let (proposal, _) =
+        propose_enrich(&drop, &accepted, &proposed, "overnight-traces", &estate).unwrap();
+    assert!(!proposal.auto_apply);
+    assert!(proposal.diff.would_add_to_estate);
+    assert!(refuse_apply_proposal("overnight-traces").is_err());
     let _ = std::fs::remove_dir_all(&root);
 }
