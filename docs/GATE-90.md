@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#7). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#8 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose — it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. Live Mac MLX / GPU / cloud-spawn wait in [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
@@ -43,6 +43,9 @@ estate doctor --strict
 | `.cell/` layout doc matches code | green | [`cell-layout.md`](cell-layout.md) |
 | Operator day runbook (no live boxes) | green | [`OPERATOR-DAY.md`](OPERATOR-DAY.md) |
 | `make gate-90` stays off Actions | green | wraps `cargo test`; hosted stays compile-only |
+| Dual-layer-demo operator e2e | green | validate → plan → dry-run → apply → status → reconcile → backup → prune |
+| README ↔ OPERATOR-DAY / FEED-LOOP | green | start-here cross-links both loops |
+| Cell One snapshot (Jason) | green | [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md) |
 
 ## Remaining Day-90+ (honest; parked, not green)
 
