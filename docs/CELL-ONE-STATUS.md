@@ -102,15 +102,13 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 ## This slice
 
-`make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml`: status → plan → `apply --require-plan` → status → doctor on an isolated cell. No live key. Not in `make smoke` or Actions.
-
-`estate status` prints `frontier: <id> model=grok-4.7` only when the binding sets `params.model`. The default estate binding does not, so status does not invent that line. Catalog files print `catalog frontier: schema|cell model=grok-4.7` when they contain `frontier.model`. Doctor prints the same id from `schema/local-catalog.v0.json` and from `.cell/catalog.json` when those files are present. A SKU in that field fails doctor.
+Feed packs record `source_drivers` (`frontier` and/or `local`) from the events they were built from. The tag must match `path_counts`. An explicit `object_class: local` stays local even when the kind or note mentions frontier. Propose copies the tag onto the diff. `promoted` and `auto_apply` stay false. The estate file is not rewritten. `make day90-mixed` stays opt-in.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#32 (plain English)
+## Bug fixes on #10-#33 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -136,6 +134,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #30 | Frontier live PASS was not on the hand-off page. | Recorded `pong` / `frontier completion`. READY no. Mixed `grok-4.7` dry-run. Local down does not POST frontier. |
 | #31 | Mixed fixture stopped at dry-run. Catalog did not name `grok-4.7`. Stub local drivers were not locked off frontier. | `plan` + `apply --require-plan` on the mixed fixture (mock, no key, no POST). Frontier catalog card lists `grok-4.7` and completion caps. `ollama` / `http-remote` / `llama.cpp` / `mlx` / `vllm` / `trt` do not POST frontier. READY no. |
 | #32 | Mixed plan/apply was only a crate test. Status and doctor never named the frontier model. | `make day90-mixed` walks the fixture on an isolated cell. Status/doctor print `grok-4.7` when the catalog or estate binding has it. Default estate does not invent a binding model. READY no. |
+| #33 | Packs counted frontier and local events but did not name the source. A kind mentioning frontier could override `object_class: local`. | `source_drivers` is `frontier` and/or `local` and must match `path_counts`. Local class wins. Propose shows the tag. Promote stays off. READY no. |
 
 ## Known-good local commands
 

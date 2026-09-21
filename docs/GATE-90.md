@@ -91,6 +91,7 @@ estate doctor --strict
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
 | `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture; no live key; not in smoke / Actions |
 | Frontier model on status / doctor | green | `grok-4.7` when catalog or estate binding names it; default estate does not invent a binding model |
+| Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; propose copies the tag; promote stays off |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
