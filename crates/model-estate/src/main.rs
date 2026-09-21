@@ -84,7 +84,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli.parse();
+    let cli = Cli::parse();
     match cli.command {
         Command::Task {
             estate,
