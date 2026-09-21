@@ -79,6 +79,27 @@ if grep -q "cloud-agent" /tmp/cell90-leases.txt; then
 else
   bad "A12 leases surface"
 fi
+cargo run -q -p estate-control -- history --state-dir "$STATE" >/tmp/cell90-history.txt
+if grep -q "lifecycle history" /tmp/cell90-history.txt; then
+  ok "A11 lifecycle history"
+else
+  bad "A11 lifecycle history"
+fi
+cargo run -q -p estate-control -- probes >/tmp/cell90-probes.txt
+if grep -q "live_probed=false" /tmp/cell90-probes.txt && grep -q "ollama" /tmp/cell90-probes.txt; then
+  ok "A12 catalog probes are not live pings"
+else
+  bad "A12 catalog probes are not live pings"
+fi
+set +e
+cargo run -q -p estate-control -- validate --estate examples/invalid/placement-sacred-cloud.yaml >/tmp/cell90-sacred.out 2>/tmp/cell90-sacred.err
+sacred=$?
+set -e
+if [[ "$sacred" -ne 0 ]]; then
+  ok "A12 sacred cloud-agent assignment refused"
+else
+  bad "A12 sacred cloud-agent assignment must fail"
+fi
 set +e
 cargo run -q -p estate-control -- feed pack --feed-dir "$FEED" --drop-dir "$DROP" --id local-5090 >/tmp/cell90-sku.out 2>/tmp/cell90-sku.err
 sku=$?

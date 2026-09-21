@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use floor_supervisor::{
-    apply_with_profile_dir, load_lifecycle, load_placements, resume, spawn_runtime_heartbeats,
-    stop_runtime, suspend,
+    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements, resume,
+    spawn_runtime_heartbeats, stop_runtime, suspend,
 };
 use std::path::PathBuf;
 
@@ -54,6 +54,11 @@ enum Command {
     },
     /// Print durable placement-actual leases.
     Leases {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Print append-only lifecycle.jsonl.
+    History {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -160,6 +165,23 @@ fn main() -> Result<()> {
                             anyhow::bail!("cloud-agent lease spawned (fail closed)");
                         }
                     }
+                }
+            }
+        }
+        Command::History { state_dir } => {
+            let events = list_lifecycle_events(&state_dir)?;
+            if events.is_empty() {
+                println!("no lifecycle.jsonl under {}", state_dir.display());
+            } else {
+                println!("lifecycle history ({})", events.len());
+                for ev in events {
+                    println!(
+                        "  {} {} -> {} hash={}",
+                        ev.action,
+                        ev.from.as_deref().unwrap_or("-"),
+                        ev.to,
+                        ev.desired_hash.as_deref().unwrap_or("-")
+                    );
                 }
             }
         }
