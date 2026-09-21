@@ -20,6 +20,7 @@ happy=(
   "$ROOT/examples/hosts/nvidia-rental.yaml"
   "$ROOT/examples/hosts/multi-host.yaml"
   "$ROOT/examples/fixtures/happy.yaml"
+  "$ROOT/examples/fixtures/mixed-frontier-local.yaml"
 )
 for f in "${happy[@]}"; do
   echo "-- validate ok  ${f#$ROOT/}"
@@ -42,6 +43,7 @@ refuse=(
   "$ROOT/examples/fixtures/refuse-placement-unknown-agent.yaml"
   "$ROOT/examples/fixtures/refuse-placement-sacred-cloud.yaml"
   "$ROOT/examples/fixtures/refuse-host-class.yaml"
+  "$ROOT/examples/fixtures/refuse-sacred-overlay.yaml"
 )
 for f in "${refuse[@]}"; do
   echo "-- validate refuse  ${f#$ROOT/}"
@@ -54,6 +56,21 @@ for f in "${refuse[@]}"; do
     exit 1
   fi
 done
+
+echo "-- mixed proof dry-run (no live calls) --"
+MIXED="$ROOT/examples/fixtures/mixed-frontier-local.yaml"
+"${ESTATE[@]}" validate --estate "$MIXED"
+"${ESTATE[@]}" apply --dry-run --estate "$MIXED" --state-dir "$STATE" --roots-base "$STATE" --plans-dir "$STATE/plans"
+if [[ -f "$STATE/placement-actual.json" ]]; then
+  echo "FAIL  mixed dry-run wrote placement-actual.json"
+  exit 1
+fi
+"${ESTATE[@]}" catalog --out "$STATE/catalog.json" >/tmp/fixtures-catalog.out
+if ! grep -q "http-remote" /tmp/fixtures-catalog.out || ! grep -q "ollama" /tmp/fixtures-catalog.out; then
+  echo "FAIL  catalog must list http-remote and ollama"
+  exit 1
+fi
+echo "PASS  mixed-frontier-local validate + dry-run + catalog"
 
 echo "-- doctor --"
 "${ESTATE[@]}" doctor --root "$ROOT" --state-dir "$STATE"

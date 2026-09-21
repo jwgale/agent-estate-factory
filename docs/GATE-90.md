@@ -44,6 +44,10 @@ make gate-90
 | Wave 6 catalog caps | streaming / tools / vision / context | `estate catalog` |
 | Wave 7 status | one-pager: paused, leases, expired, plan, apply, proposals, policy, doctor | `estate status` |
 | Wave 7 convey sync | Placement kinds seed hops; extra hops stay; sacred refuse | `estate convey sync` |
+| Wave 8 idempotent apply | Second apply notes `unchanged`; drift → `refuse:drift` unless `--force` | `estate apply` twice / `--force` |
+| Wave 8 plan export-pr | Single markdown: blast, covering, reviewed, refuse risks | `estate plan export-pr` |
+| Wave 8 sacred file | `policy/sacred.yaml` overlays + hardcoded; hop/agent refuse | `estate convey hop --id lab-notebook` |
+| Wave 8 mixed proof | http-remote frontier + ollama; validate + dry-run | `examples/fixtures/mixed-frontier-local.yaml` |
 | Schema freeze | Additive ok; rename → v1 | `schema/README.md` |
 
 Fail closed: sacred exclusions, SKU in ids, unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote.
