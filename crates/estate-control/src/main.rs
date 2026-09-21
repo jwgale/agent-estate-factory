@@ -193,7 +193,7 @@ enum Command {
         #[arg(long, default_value_t = false)]
         forget: bool,
     },
-    /// One-page health: .cell layout, schema files, quiet-hours workflows absent.
+    /// One-page health: .cell layout, schema files, compile-only CI present.
     Doctor {
         #[arg(long, default_value = ".")]
         root: PathBuf,
