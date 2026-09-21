@@ -193,6 +193,9 @@ pub(crate) enum Command {
         root: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        /// Pre-merge operator checks. Local only. No live Mac / GPU.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
     },
     /// Append-only `.cell/sessions.jsonl` (spawn/unspawn/suspend/resume).
     Sessions {
