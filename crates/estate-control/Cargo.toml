@@ -20,3 +20,4 @@ path = "src/main.rs"
 [dev-dependencies]
 estate-schema.workspace = true
 floor-supervisor.workspace = true
+model-estate.workspace = true
