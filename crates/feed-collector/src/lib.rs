@@ -694,6 +694,17 @@ pub fn refuse_source_driver_list(
     Ok(())
 }
 
+/// Index label after the tag matches the counts. Empty stays `-`.
+/// A missing tag with a nonzero frontier or local count is refuse, not `-`.
+fn index_drivers_label(drivers: &[String], counts: &PathCounts) -> Result<String, FeedError> {
+    refuse_source_driver_list(drivers, counts)?;
+    Ok(if drivers.is_empty() {
+        "-".into()
+    } else {
+        drivers.join(",")
+    })
+}
+
 pub fn write_drop_pack(drop_dir: &Path, pack: &PackManifest) -> Result<PathBuf, FeedError> {
     refuse_pack(pack)?;
     std::fs::create_dir_all(drop_dir)?;
@@ -713,6 +724,7 @@ pub fn write_pack_index(drop_dir: &Path) -> Result<PathBuf, FeedError> {
         md.push_str("(no candidate packs)\n");
     } else {
         for pack in &packs {
+            let drivers = index_drivers_label(&pack.source_drivers, &pack.path_counts)?;
             md.push_str(&format!(
                 "- `{}.pack.json` events={} frontier={} local={} proxy={} drivers={} promoted={} host_class={} schema={}\n",
                 pack.id,
@@ -720,11 +732,7 @@ pub fn write_pack_index(drop_dir: &Path) -> Result<PathBuf, FeedError> {
                 pack.path_counts.frontier,
                 pack.path_counts.local,
                 pack.path_counts.proxy,
-                if pack.source_drivers.is_empty() {
-                    "-".to_string()
-                } else {
-                    pack.source_drivers.join(",")
-                },
+                drivers,
                 pack.promoted,
                 pack.host_class,
                 pack.schema
@@ -1066,11 +1074,7 @@ pub fn write_proposal_index(proposed_dir: &Path) -> Result<PathBuf, FeedError> {
             let p: EnrichProposal = serde_json::from_str(&text).map_err(|e| {
                 FeedError::Parse(format!("{}: {e}", path.display()))
             })?;
-            let drivers = if p.diff.source_drivers.is_empty() {
-                "-".to_string()
-            } else {
-                p.diff.source_drivers.join(",")
-            };
+            let drivers = index_drivers_label(&p.diff.source_drivers, &p.diff.path_counts)?;
             md.push_str(&format!(
                 "- `{}.proposal.json` estate_bound={} would_add={} auto_apply={} drivers={} source={}\n",
                 p.id,
@@ -1528,6 +1532,47 @@ mod tests {
         assert!(specialist.contains("\"source_drivers\""));
         let proposal = include_str!("../../../schema/enrich-proposal.v0.json");
         assert!(proposal.contains("\"source_drivers\""));
+        let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn index_refuses_missing_source_drivers_when_counts_are_nonzero() {
+        let feed = tmp();
+        append_event(
+            &feed,
+            &ScrubbedEvent {
+                kind: "model.frontier.complete".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("allow".into()),
+                object_class: Some("frontier".into()),
+                note: Some("bytes=4".into()),
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        let events = read_events(&feed).unwrap();
+        let pack = pack_from_events("overnight-traces", &events);
+        let mut raw = serde_json::to_value(&pack).unwrap();
+        raw.as_object_mut().unwrap().remove("source_drivers");
+        let drop = feed.join("drop");
+        std::fs::create_dir_all(&drop).unwrap();
+        std::fs::write(
+            drop.join("overnight-traces.pack.json"),
+            serde_json::to_string_pretty(&raw).unwrap(),
+        )
+        .unwrap();
+        let stale = "stale drivers=-\n";
+        std::fs::write(drop.join("INDEX.md"), stale).unwrap();
+        let err = write_pack_index(&drop).unwrap_err();
+        assert!(
+            err.to_string().contains("refuse:source-driver"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(drop.join("INDEX.md")).unwrap(),
+            stale,
+            "a mismatched tag must not rewrite INDEX as drivers=-"
+        );
         let _ = std::fs::remove_dir_all(&feed);
     }
 

@@ -205,6 +205,8 @@ fn feed_loop_pack_propose_accept_keeps_estate_and_cursor() {
         edit["source_drivers"],
         serde_json::json!(["frontier", "local"])
     );
+    assert_eq!(packed["source_drivers"], proposal["diff"]["source_drivers"]);
+    assert_eq!(proposal["diff"]["source_drivers"], edit["source_drivers"]);
     let edit_md = std::fs::read_to_string(accepted.join("overnight-traces.enrich-edit.md")).unwrap();
     assert!(
         edit_md.contains("source_drivers: frontier, local"),
@@ -242,6 +244,10 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     let script = std::fs::read_to_string(root.join("scripts/feed-loop.sh")).unwrap();
     assert!(script.contains("source_drivers"), "{script}");
     assert!(script.contains("drivers=frontier,local"), "{script}");
+    assert!(
+        script.contains("source_drivers must survive"),
+        "feed-loop must compare pack, proposal, and enrich-edit"
+    );
     assert!(script.contains("unset XAI_API_KEY"), "{script}");
     assert!(
         script.contains("Do not add to make smoke or GitHub Actions"),
@@ -312,6 +318,8 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
         edit["source_drivers"],
         serde_json::json!(["frontier", "local"])
     );
+    assert_eq!(pack["source_drivers"], proposal["diff"]["source_drivers"]);
+    assert_eq!(proposal["diff"]["source_drivers"], edit["source_drivers"]);
     assert_eq!(edit["applied_to_estate"], false);
     let _ = std::fs::remove_dir_all(&work);
 }

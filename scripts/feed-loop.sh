@@ -175,12 +175,20 @@ if ! grep -q 'applied_to_estate: false' "$DROP/accepted/overnight-traces.enrich-
   echo "FAIL  accept must record applied_to_estate=false"
   exit 1
 fi
-python3 - "$DROP/accepted/overnight-traces.enrich-edit.json" <<'PY'
+python3 - \
+  "$DROP/overnight-traces.pack.json" \
+  "$DROP/proposed/overnight-traces.proposal.json" \
+  "$DROP/accepted/overnight-traces.enrich-edit.json" <<'PY'
 import json, sys
-doc = json.load(open(sys.argv[1]))
-if doc.get("source_drivers") != ["frontier", "local"]:
-    raise SystemExit(f"FAIL  enrich-edit source_drivers={doc.get('source_drivers')}")
-if doc.get("applied_to_estate") is not False or doc.get("auto_apply") is not False:
+pack, proposal, edit = [json.load(open(p)) for p in sys.argv[1:]]
+survived = [
+    pack.get("source_drivers"),
+    (proposal.get("diff") or {}).get("source_drivers"),
+    edit.get("source_drivers"),
+]
+if survived != [["frontier", "local"]] * 3:
+    raise SystemExit(f"FAIL  source_drivers must survive pack -> propose -> enrich-edit: {survived}")
+if edit.get("applied_to_estate") is not False or edit.get("auto_apply") is not False:
     raise SystemExit("FAIL  enrich-edit must stay unapplied")
 PY
 if ! grep -q 'source_drivers: frontier, local' "$DROP/accepted/overnight-traces.enrich-edit.md"; then

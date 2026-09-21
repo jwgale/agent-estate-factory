@@ -103,9 +103,7 @@ pub fn accept_proposal(
         yaml_snippet,
         note: "Jason pastes the id into estate.enrich_packs.packs. source_drivers is copied onto these instructions and is not an estate field. The factory will not rewrite the estate. auto_apply=false.".into(),
     };
-    std::fs::create_dir_all(accepted_dir)?;
-    let dest = accepted_dir.join(format!("{}.enrich-edit.md", proposal.id));
-    std::fs::write(&dest, render_accept(&accept))?;
+    let md = render_accept(&accept);
     let json = serde_json::json!({
         "schema": accept.schema,
         "id": accept.id,
@@ -119,12 +117,15 @@ pub fn accept_proposal(
         "note": accept.note,
     });
     let body = serde_json::to_string_pretty(&json)?;
-    if body.trim().is_empty() {
+    if body.trim().is_empty() || md.trim().is_empty() {
         bail!("serialize: empty enrich-edit");
     }
+    std::fs::create_dir_all(accepted_dir)?;
+    let dest = accepted_dir.join(format!("{}.enrich-edit.md", proposal.id));
+    std::fs::write(&dest, &md)?;
     std::fs::write(
         accepted_dir.join(format!("{}.enrich-edit.json", proposal.id)),
-        body,
+        &body,
     )?;
     Ok((accept, dest))
 }
