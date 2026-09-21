@@ -1,14 +1,15 @@
 use anyhow::{bail, Context, Result};
 use estate_schema::{
     blast_grows, covering_plan, describe_placements, diff_estates,
-    estate_hash, latest_plan, load_estate, load_plan_json, mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict,
-    plan_blast_width, plan_is_reviewable, render_plan, render_plan_diff,
-    write_plan,
+    estate_hash, latest_plan, load_estate, load_plan_json, mark_plan_reviewed, overlay_sacred_ids,
+    plan_against_is_fresh, plan_against_is_fresh_strict, plan_blast_width, plan_is_reviewable,
+    render_plan, render_plan_diff, render_plan_pr, write_plan,
 };
 use feed_collector::import_pack_for;
 use floor_supervisor::{
-    append_apply_audit, apply_dry_run, apply_with_profile_dir, load_desired_snapshot, mark_running, record_placements, refuse_expired_leases,
-    render_dry_run, ApplyAudit,
+    append_apply_audit, apply_dry_run, apply_with_profile_dir, classify_apply, list_expired_leases,
+    load_desired_snapshot, mark_running, now_unix, record_placements, refuse_expired_leases,
+    render_dry_run, ApplyAudit, ApplyIdentity,
 };
 use std::path::Path;
 
@@ -65,6 +66,81 @@ pub(crate) fn cmd_plan_diff(
     } else {
         println!("plan diff ok (width {from_w} -> {to_w})");
     }
+    Ok(())
+}
+
+pub(crate) fn cmd_plan_export_pr(
+    estate_path: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+    reviewed_dir: &Path,
+    out: &Path,
+) -> Result<()> {
+    let desired = load_estate(estate_path)
+        .with_context(|| format!("desired {}", estate_path.display()))?;
+    let previous = load_desired_snapshot(state_dir)?;
+    let plan = diff_estates(&desired, previous.as_ref());
+    let hash = estate_hash(&desired);
+    let covering = covering_plan(plans_dir, &hash);
+    let covering_stem = covering.as_ref().map(|c| c.stem.clone());
+    let reviewed = covering_stem.as_ref().is_some_and(|stem| {
+        reviewed_dir.join(format!("{stem}.md")).is_file()
+            || reviewed_dir.join(format!("{stem}.json")).is_file()
+    });
+    let mut risks = Vec::new();
+    if desired
+        .placements
+        .iter()
+        .any(|p| p.kind == estate_schema::PlacementKind::CloudAgent)
+    {
+        risks.push("cloud-agent: declared, not spawned".into());
+    }
+    if !desired.sacred_exclusions.is_empty() {
+        risks.push(format!(
+            "sacred exclusions on estate: {}",
+            desired
+                .sacred_exclusions
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let overlays = overlay_sacred_ids();
+    if !overlays.is_empty() {
+        risks.push(format!("sacred overlays: {}", overlays.join(", ")));
+    }
+    if covering.is_none() {
+        risks.push("no covering plan on disk; gated apply will refuse".into());
+    } else if covering
+        .as_ref()
+        .is_some_and(|c| !plan_is_reviewable(&c.plan))
+    {
+        risks.push("covering plan is not reviewable".into());
+    }
+    if !reviewed {
+        risks.push("plan is not marked reviewed".into());
+    }
+    let expired = list_expired_leases(state_dir, now_unix()).unwrap_or_default();
+    if !expired.is_empty() {
+        risks.push(format!(
+            "expired placement leases: {}",
+            expired
+                .iter()
+                .map(|l| l.placement_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let md = render_plan_pr(&plan, covering_stem.as_deref(), reviewed, &risks);
+    if let Some(parent) = out.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(out, &md)?;
+    print!("{md}");
+    println!("Wrote {}", out.display());
     Ok(())
 }
 
@@ -160,6 +236,7 @@ pub(crate) fn cmd_apply(
     dry_run: bool,
     policy: &Path,
     curator: &str,
+    force: bool,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     enforce_policy(policy, "apply", None)?;
@@ -171,6 +248,8 @@ pub(crate) fn cmd_apply(
             plans_dir,
             require_plan,
             require_fresh_plan,
+            roots_base,
+            force,
         );
     }
     refuse_expired_leases(state_dir)?;
@@ -203,6 +282,38 @@ pub(crate) fn cmd_apply(
             "apply gated: covering plan is stale; against_hash does not match last apply {} (greenfield after apply is refuse)",
             last_applied.unwrap_or_else(|| "-".into())
         );
+    }
+    let identity = classify_apply(&estate, state_dir, roots_base)?;
+    if import_pack_id.is_none() {
+        match &identity {
+            ApplyIdentity::Unchanged if !force => {
+                let audit = ApplyAudit {
+                    created_at: chrono_stamp(),
+                    desired_hash: hash,
+                    sessions: 0,
+                    imported_packs: vec![],
+                    require_plan,
+                    note: "unchanged: identical desired state; in_sync. No-op apply.".into(),
+                    covering_plan: covering_stem,
+                    cloud_agent_spawned: false,
+                    fresh_plan: fresh,
+                    unchanged: true,
+                    forced: false,
+                };
+                let audit_path = append_apply_audit(plans_dir, state_dir, &audit)?;
+                println!("apply unchanged (desired hash matches last apply; in_sync)");
+                println!("audit {}", audit_path.display());
+                return Ok(());
+            }
+            ApplyIdentity::Drift { notes } if !force => {
+                eprintln!("refuse:drift: identical desired hash but actual drifted");
+                for note in notes {
+                    eprintln!("  {note}");
+                }
+                bail!("refuse:drift: pass --force to reconverge (clear reason required)");
+            }
+            _ => {}
+        }
     }
     let mut imported = Vec::new();
     if let Some(id) = import_pack_id {
@@ -243,8 +354,13 @@ pub(crate) fn cmd_apply(
         covering_plan: covering_stem,
         cloud_agent_spawned: false,
         fresh_plan: fresh,
+        unchanged: false,
+        forced: force && matches!(identity, ApplyIdentity::Drift { .. } | ApplyIdentity::Unchanged),
     };
     let audit_path = append_apply_audit(plans_dir, state_dir, &audit)?;
+    if audit.forced {
+        println!("apply --force (drift or unchanged override)");
+    }
     println!(
         "applied {} sessions; actual-state {}; audit {}",
         actual.sessions.len(),
@@ -270,13 +386,24 @@ pub(crate) fn cmd_apply_dry_run(
     plans_dir: &Path,
     require_plan: bool,
     require_fresh_plan: bool,
+    roots_base: &Path,
+    force: bool,
 ) -> Result<()> {
     let hash = estate_hash(estate);
     let covering = covering_plan(plans_dir, &hash);
     let last_applied = load_desired_snapshot(state_dir)?
         .as_ref()
         .map(estate_hash);
+    let identity = classify_apply(estate, state_dir, roots_base)?;
     let mut extra_refuses = Vec::new();
+    if let ApplyIdentity::Drift { notes } = &identity {
+        if !force {
+            extra_refuses.push(format!(
+                "refuse:drift: identical desired hash but actual drifted ({})",
+                notes.join("; ")
+            ));
+        }
+    }
     if (require_plan || require_fresh_plan) && covering.is_none() {
         extra_refuses.push(format!(
             "refuse:no-plan: no covering plan for {hash}; run estate plan first"
@@ -310,6 +437,11 @@ pub(crate) fn cmd_apply_dry_run(
     }
     if report.would_refuse {
         bail!("apply dry-run would-refuse");
+    }
+    if matches!(identity, ApplyIdentity::Unchanged) && !force {
+        println!("dry-run unchanged (desired hash matches last apply; in_sync)");
+        println!("estate: {}", path.display());
+        return Ok(());
     }
     println!("dry-run ok (no writes)");
     Ok(())
