@@ -83,6 +83,10 @@ estate doctor --strict
 | Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
 | Mixed estate mock dry-run | green | apply `--dry-run` write-free; `HttpLocal` posts `/v0/specialist` |
+| Frontier specialist env-gate | green | `--driver frontier` needs `CELL_FRONTIER_ENDPOINT`; XAI/local do not unlock; mock-locked |
+| Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
+| Frontier specialist env-gate | green | `--driver frontier` needs `CELL_FRONTIER_ENDPOINT`; XAI/local do not unlock; mock-locked |
+| Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |

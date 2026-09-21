@@ -10,6 +10,8 @@ pub enum ModelError {
     MissingCreds(String),
     #[error("local specialist endpoint unset; set {0} (or run model-estate mock-local)")]
     MissingEndpoint(String),
+    #[error("frontier specialist endpoint unset; set CELL_FRONTIER_ENDPOINT (XAI_API_KEY is not used)")]
+    MissingFrontierEndpoint,
     #[error("driver unreachable: {0}")]
     Unreachable(String),
     #[error("driver refused: {0}")]

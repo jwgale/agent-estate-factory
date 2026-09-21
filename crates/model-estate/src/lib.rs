@@ -23,7 +23,8 @@ pub use frontier::{
 pub use adapter::{ping_live_endpoint, specialist_via_adapter, LiveFlavor};
 pub use local::{
     apply_live_overlay, builtin_specialist, enrich_with_live, live_endpoint, live_endpoint_envs,
-    live_probe_env_requested, local_from_binding, parse_specialist_job, probe_runtime,
+    is_frontier_specialist_driver, live_probe_env_requested, local_from_binding,
+    parse_specialist_job, probe_runtime, resolve_frontier_specialist_endpoint,
     resolve_specialist_endpoint, run_http_specialist, DownLocal, DriverProbe, ExperimentalLocal,
     HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
     SpecialistResult, UnwiredLocal,

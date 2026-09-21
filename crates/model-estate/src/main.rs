@@ -70,7 +70,7 @@ enum Command {
         /// Alias for `--text`.
         #[arg(long)]
         prompt: Option<String>,
-        /// ollama | llama.cpp | http-remote (same adapter). Default ollama.
+        /// ollama | llama.cpp | http-remote | frontier. Default ollama.
         #[arg(long, default_value = "ollama")]
         runtime: String,
     },

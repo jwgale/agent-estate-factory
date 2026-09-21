@@ -383,12 +383,37 @@ pub fn resolve_specialist_endpoint(explicit: Option<&str>) -> Result<String, Mod
             ModelError::MissingEndpoint("CELL_LOCAL_ENDPOINT".into())
         })?,
     };
-    if estate_schema::contains_sku(&raw) {
+    accepted_specialist_endpoint(&raw)
+}
+
+/// `--driver frontier` / `ai-gateway`. `CELL_FRONTIER_ENDPOINT` only.
+/// `CELL_LOCAL_ENDPOINT` and `XAI_API_KEY` do not unlock this path.
+pub fn is_frontier_specialist_driver(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "frontier" | "frontier-http" | "ai-gateway" | "openai-compat"
+    )
+}
+
+pub fn resolve_frontier_specialist_endpoint(explicit: Option<&str>) -> Result<String, ModelError> {
+    let raw = match explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(ep) => ep.to_string(),
+        None => std::env::var("CELL_FRONTIER_ENDPOINT")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or(ModelError::MissingFrontierEndpoint)?,
+    };
+    accepted_specialist_endpoint(&raw)
+}
+
+fn accepted_specialist_endpoint(raw: &str) -> Result<String, ModelError> {
+    if estate_schema::contains_sku(raw) {
         return Err(ModelError::Refused(
             "endpoint encodes a hardware SKU".into(),
         ));
     }
-    Ok(raw.trim_end_matches('/').to_string())
+    Ok(raw.trim().trim_end_matches('/').to_string())
 }
 
 pub fn run_http_specialist(
@@ -406,10 +431,25 @@ pub fn run_http_specialist(
     if estate_schema::contains_sku(text) {
         return Err(ModelError::Refused("prompt encodes a hardware SKU".into()));
     }
+    let job = parse_specialist_job(job)?;
+    if is_frontier_specialist_driver(runtime) {
+        let endpoint = resolve_frontier_specialist_endpoint(endpoint)?;
+        return HttpLocal {
+            id: "cli-frontier".into(),
+            endpoint,
+            runtime: LocalRuntime::HttpRemote,
+        }
+        .specialist(&SpecialistRequest {
+            job,
+            agent_id: agent.to_string(),
+            kind: kind.to_string(),
+            text: text.to_string(),
+        });
+    }
     let endpoint = resolve_specialist_endpoint(endpoint)?;
     let runtime = parse_runtime(runtime).ok_or_else(|| {
         ModelError::Refused(format!(
-            "driver must be ollama|llama.cpp|http-remote, got {runtime}"
+            "driver must be ollama|llama.cpp|http-remote or frontier, got {runtime}"
         ))
     })?;
     if !matches!(
@@ -417,17 +457,16 @@ pub fn run_http_specialist(
         LocalRuntime::Ollama | LocalRuntime::LlamaCpp | LocalRuntime::HttpRemote
     ) {
         return Err(ModelError::Refused(
-            "native mlx / vllm / trt specialist stays stub or experimental; use ollama|llama.cpp|http-remote"
+            "native mlx / vllm / trt specialist stays stub or experimental; use ollama|llama.cpp|http-remote or frontier"
                 .into(),
         ));
     }
-    let job = parse_specialist_job(job)?;
-    let local = HttpLocal {
+    HttpLocal {
         id: "cli".into(),
         endpoint,
         runtime,
-    };
-    local.specialist(&SpecialistRequest {
+    }
+    .specialist(&SpecialistRequest {
         job,
         agent_id: agent.to_string(),
         kind: kind.to_string(),
@@ -453,4 +492,34 @@ fn redact_secrets(text: &str) -> String {
 fn looks_secret(token: &str) -> bool {
     let t = token.trim();
     (t.starts_with("sk-") || t.starts_with("xai-") || t.starts_with("xai_")) && t.len() >= 12
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frontier_driver_aliases() {
+        assert!(is_frontier_specialist_driver("frontier"));
+        assert!(is_frontier_specialist_driver("AI-Gateway"));
+        assert!(is_frontier_specialist_driver("frontier-http"));
+        assert!(!is_frontier_specialist_driver("ollama"));
+        assert!(!is_frontier_specialist_driver("http-remote"));
+    }
+
+    #[test]
+    fn missing_frontier_endpoint_is_not_local_down() {
+        let err = ModelError::MissingFrontierEndpoint;
+        assert!(!err.is_local_down(), "{err}");
+        assert!(err.to_string().contains("CELL_FRONTIER_ENDPOINT"), "{err}");
+        assert!(err.to_string().contains("XAI_API_KEY"), "{err}");
+    }
+
+    #[test]
+    fn frontier_explicit_endpoint_accepted() {
+        let ep = resolve_frontier_specialist_endpoint(Some("http://127.0.0.1:47832/")).unwrap();
+        assert_eq!(ep, "http://127.0.0.1:47832");
+        let err = resolve_frontier_specialist_endpoint(Some("http://rtx-5090.example")).unwrap_err();
+        assert!(err.to_string().contains("SKU"), "{err}");
+    }
 }

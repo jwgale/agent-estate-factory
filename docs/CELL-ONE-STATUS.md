@@ -96,16 +96,15 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 | What was broken | What it does now |
 | --- | --- |
-| Live proof lived only in chat. Easy to forget Mac probes and 5090 `Pong` already ran. | [`LIVE-PROBES.md`](LIVE-PROBES.md) records Mac probes PASS, 5090 probes PASS, 5090 specialist `Pong`. Native MLX stays stub. |
-| No Makefile helper for the specialist command Jason already ran. | `make live-specialist` requires `CELL_LOCAL_ENDPOINT`. Not in smoke / Actions. |
-| Mixed fixture dry-run never bound `HttpLocal` against mock. | Isolated test: apply `--dry-run` writes nothing; `local_slm` posts factory `/v0/specialist`. |
-| Apply / resume swallowed `catalog.json` write failure. | Catalog write fail-closed (`?`). |
+| No env-gated frontier specialist. Easy to confuse with Ollama live or `XAI_API_KEY`. | `--driver frontier` uses `CELL_FRONTIER_ENDPOINT` only. Mock-locked. Not in CI. |
+| `--driver frontier` resolved `CELL_LOCAL_ENDPOINT` first and died as a local miss. | Driver is chosen before the endpoint env. |
+| Apply and specialist complete were separate proofs. | One fixture: apply writes `local_slm` in `model-actual.json`, then mock complete. |
 
-`READY_FOR_LIVE_TEST`: **no**. Recorded boxes already ran. Do not ping for Mac probes or 5090 specialist. Mac specialist chat and live Grok stay unrecorded.
+`READY_FOR_LIVE_TEST`: **no**. Mac specialist is the same command as the 5090 `Pong` PASS. Live Grok stays A7 / unrecorded.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#26 (plain English)
+## Bug fixes on #10-#27 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -126,6 +125,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #25 | Complete discarded model text. No `estate specialist`. Sacred text still POSTed. | `estate specialist --prompt` returns `completion`. Sacred refuse first. READY_FOR_LIVE_TEST yes. |
 | #26 | 5090 OpenAI chat 200 with empty `message.content` hard-failed. | Fall through to `/api/chat`. Both-fail names status + model + pull. READY yes. |
 | #27 | Live proof was chat-only. Mixed dry-run never hit HttpLocal. Apply swallowed catalog write. | Recorded Mac/5090 proof. `make live-specialist`. Mixed mock dry-run. Catalog write `?`. READY no. |
+| #28 | No frontier specialist env. Apply and complete were separate. | `CELL_FRONTIER_ENDPOINT` mock path. Apply+specialist fixture. READY no. |
 
 ## Known-good local commands
 
@@ -161,6 +161,7 @@ Isolated loops without live boxes:
 - Specialist chat round-trip + llama.cpp OpenAI smoke: `crates/model-estate` adapter + `tests/specialist_cli.rs`
 - Live specialist complete (`estate specialist`): `crates/estate-control/tests/specialist_cli.rs` + adapter complete tests
 - Mixed estate dry-run + HttpLocal mock: `crates/estate-control/tests/day90_mixed.rs`
+- Apply records `local_slm` then specialist complete: `crates/estate-control/tests/day90_apply_specialist.rs`
 - Feed: [`FEED-LOOP.md`](FEED-LOOP.md)
 
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
