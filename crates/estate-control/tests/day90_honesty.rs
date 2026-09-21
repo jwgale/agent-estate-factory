@@ -430,3 +430,241 @@ fn apply_import_pack_curator_refuse_writes_no_leases() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn garbage_plan_json_is_refuse_not_empty() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-plan-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let roots = root.join("roots");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::create_dir_all(&plans).unwrap();
+    let estate = fixture("examples/estate.yaml");
+    apply_cell(
+        &estate,
+        &state.display().to_string(),
+        &roots.display().to_string(),
+        &plans.display().to_string(),
+    );
+    let leases = std::fs::read_to_string(state.join("placement-actual.json")).unwrap();
+    let garbage = plans.join("plan-unix1-deadbeef.json");
+    std::fs::write(&garbage, "not-json\n").unwrap();
+
+    let apply = estate_bin()
+        .args([
+            "apply",
+            "--require-plan",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&apply);
+    assert!(!apply.status.success(), "{body}");
+    assert!(
+        !body.contains("no plan on disk"),
+        "unreadable plan must not look like empty: {body}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("placement-actual.json")).unwrap(),
+        leases,
+        "garbage plan must not restamp leases"
+    );
+    assert_eq!(std::fs::read_to_string(&garbage).unwrap(), "not-json\n");
+
+    let status = estate_bin()
+        .args([
+            "status",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&status);
+    assert!(!status.status.success(), "{body}");
+    assert!(
+        !body.contains("Cell One status")
+            || body.contains("not-json")
+            || body.contains("plan-unix1"),
+        "status must refuse garbage plan before inventing last-plan: {body}"
+    );
+    assert_eq!(std::fs::read_to_string(&garbage).unwrap(), "not-json\n");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn garbage_feed_cursor_is_refuse_not_empty() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-cursor-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let feed = root.join("feed");
+    std::fs::create_dir_all(&feed).unwrap();
+    let cursor = feed.join("feed-cursor.json");
+    std::fs::write(&cursor, "not-json\n").unwrap();
+
+    let out = estate_bin()
+        .args(["feed", "cursor", "--feed-dir", &feed.display().to_string()])
+        .output()
+        .unwrap();
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(
+        body.contains("feed-cursor.json") || body.contains("parse"),
+        "{body}"
+    );
+    assert!(
+        !body.contains("no feed-cursor.json"),
+        "present garbage must not look missing: {body}"
+    );
+    assert_eq!(std::fs::read_to_string(&cursor).unwrap(), "not-json\n");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn apply_force_sku_actual_on_rtx_consumer_writes_consumer_nvidia() {
+    let root = repo_root().join(format!(
+        "target/test-honesty-force-sku-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+    let roots = root.join("roots");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = fixture("examples/hosts/rtx-consumer.yaml");
+    apply_cell(
+        &estate,
+        &state.display().to_string(),
+        &roots.display().to_string(),
+        &plans.display().to_string(),
+    );
+
+    let leases_path = state.join("placement-actual.json");
+    let mut places: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&leases_path).unwrap()).unwrap();
+    let box_lease = places["leases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["placement_id"] == "cell-one-box")
+        .expect("cell-one-box");
+    assert_eq!(
+        box_lease["host_class"], "consumer-nvidia",
+        "rtx_consumer alias must stamp consumer-nvidia, not any"
+    );
+
+    let leases = places["leases"].as_array_mut().expect("leases");
+    let box_lease = leases
+        .iter_mut()
+        .find(|l| l["placement_id"] == "cell-one-box")
+        .expect("cell-one-box");
+    box_lease["host_class"] = serde_json::Value::String("rtx-5090".into());
+    let tampered = serde_json::to_string_pretty(&places).unwrap();
+    std::fs::write(&leases_path, &tampered).unwrap();
+
+    let blocked = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&blocked);
+    assert!(!blocked.status.success(), "{body}");
+    assert!(body.contains("refuse:bad-host-class"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(&leases_path).unwrap(),
+        tampered,
+        "without --force, SKU actual must stay on disk"
+    );
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--force",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&dry);
+    assert!(
+        body.contains("host_class=consumer-nvidia"),
+        "dry-run --force must preview estate class, not SKU→any: {body}"
+    );
+    assert!(
+        !body.contains("host_class=rtx-5090") || body.contains("consumer-nvidia"),
+        "{body}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&leases_path).unwrap(),
+        tampered,
+        "dry-run --force must not rewrite SKU actual"
+    );
+
+    let forced = estate_bin()
+        .args([
+            "apply",
+            "--force",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &roots.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let body = text(&forced);
+    assert!(forced.status.success(), "{body}");
+    let after = std::fs::read_to_string(&leases_path).unwrap();
+    let written: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let box_lease = written["leases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["placement_id"] == "cell-one-box")
+        .expect("cell-one-box after force");
+    assert_eq!(
+        box_lease["host_class"], "consumer-nvidia",
+        "apply --force must claim estate host_class, not launder SKU to any: {after}"
+    );
+    assert!(!after.contains("rtx-5090"), "SKU leftover: {after}");
+    let _ = std::fs::remove_dir_all(&root);
+}
