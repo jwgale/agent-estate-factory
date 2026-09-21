@@ -229,7 +229,7 @@ pub(crate) fn cmd_status(
         .unwrap_or(0);
     let expired_n = list_expired_leases(state_dir, now_unix())?.len();
     let hop_expired_n = list_expired_hop_leases(state_dir, hop_now_unix())?.len();
-    let last_plan = latest_plan(plans_dir)
+    let last_plan = latest_plan(plans_dir)?
         .map(|p| p.desired_hash)
         .unwrap_or_else(|| "-".into());
     let audits = list_apply_audits(state_dir)?;
