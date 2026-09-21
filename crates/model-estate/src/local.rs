@@ -496,7 +496,7 @@ fn redact_secrets(text: &str) -> String {
     out
 }
 
-fn looks_secret(token: &str) -> String {
+fn looks_secret(token: &str) -> bool {
     let t = token.trim();
     (t.starts_with("sk-") || t.starts_with("xai-") || t.starts_with("xai_")) && t.len() >= 12
 }
