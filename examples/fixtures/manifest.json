@@ -1,0 +1,28 @@
+{
+  "schema": "cell-one.fixtures.v0",
+  "happy": [
+    "examples/estate.yaml",
+    "examples/hosts/rtx-consumer.yaml",
+    "examples/hosts/apple-silicon.yaml",
+    "examples/hosts/nvidia-rental.yaml",
+    "examples/hosts/multi-host.yaml",
+    "examples/fixtures/happy.yaml"
+  ],
+  "refuse": [
+    {"code": "api-version", "file": "examples/fixtures/refuse-api-version.yaml", "needle": "apiVersion"},
+    {"code": "kind", "file": "examples/fixtures/refuse-kind.yaml", "needle": "kind"},
+    {"code": "version", "file": "examples/fixtures/refuse-version.yaml", "needle": "estate version"},
+    {"code": "too-few-agents", "file": "examples/fixtures/refuse-too-few-agents.yaml", "needle": "at least 3 agents"},
+    {"code": "shared-lane", "file": "examples/fixtures/refuse-shared-lane.yaml", "needle": "lane"},
+    {"code": "sacred-as-agent", "file": "examples/fixtures/refuse-sacred-as-agent.yaml", "needle": "sacred"},
+    {"code": "frontier-only", "file": "examples/fixtures/refuse-frontier-only.yaml", "needle": "equal-class"},
+    {"code": "missing-sacred", "file": "examples/fixtures/refuse-missing-sacred.yaml", "needle": "sacred"},
+    {"code": "allow-sacred", "file": "examples/fixtures/refuse-allow-sacred.yaml", "needle": "sacred"},
+    {"code": "default-allow", "file": "examples/fixtures/refuse-default-allow.yaml", "needle": "default_effect"},
+    {"code": "sku-binding", "file": "examples/fixtures/refuse-sku-binding.yaml", "needle": "SKU"},
+    {"code": "placement-sku", "file": "examples/fixtures/refuse-placement-sku.yaml", "needle": "SKU"},
+    {"code": "placement-unknown-agent", "file": "examples/fixtures/refuse-placement-unknown-agent.yaml", "needle": "not an agent"},
+    {"code": "placement-sacred-cloud", "file": "examples/fixtures/refuse-placement-sacred-cloud.yaml", "needle": "sacred"},
+    {"code": "host-class", "file": "examples/fixtures/refuse-host-class.yaml", "needle": "host_class"}
+  ]
+}

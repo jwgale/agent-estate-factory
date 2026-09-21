@@ -1,0 +1,46 @@
+version: 0
+name: allow-sacred
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+intentions:
+  - subject_agent: horizon
+    object: exclusion:cyera-ci
+    kind: memory_read
+    effect: allow
+    note: must fail closed
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: local_slm
+    class: local
+    driver: ollama
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    reason: locked
+  - id: rust-classroom
+    reason: locked

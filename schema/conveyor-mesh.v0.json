@@ -1,6 +1,6 @@
 {
   "schema": "cell-one.conveyor-mesh.v0",
-  "note": "Capability mesh beachhead. Declare a hop, lease-bound call, refuse without a granted lease. Cloud-mesh hops are declared, not spawned. Not a gateway.",
+  "note": "Capability mesh beachhead. Declare a hop, lease-bound call, refuse without a granted lease. Optional hop ttl_secs stamps issued_at/expires_at. Call refuses expired. Cloud-mesh hops are declared, not spawned. Not a gateway.",
   "kinds": ["box", "cloud-mesh"],
   "durable": [".cell/conveyor-mesh.json", ".cell/conveyor-hops.json", ".cell/conveyor-leases.json"],
   "hops": [

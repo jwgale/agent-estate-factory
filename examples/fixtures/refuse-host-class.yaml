@@ -1,0 +1,52 @@
+# Invalid: host_class is not a locked name or alias.
+version: 0
+name: bad-host-class
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+  - id: sanctum
+    display_name: Sanctum
+    lane: sanctum
+    desktop: sanctum-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    params: {}
+    wired: false
+  - id: local_slm
+    class: local
+    driver: ollama
+    params:
+      host_class: not-a-host
+    wired: false
+placements:
+  - id: cell-one-box
+    kind: box
+    host_class: not-a-host
+    agents: [horizon]
+    wired: true
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera]
+    reason: locked
+  - id: rust-classroom
+    aliases: []
+    reason: locked

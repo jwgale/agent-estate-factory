@@ -1,0 +1,40 @@
+version: 0
+name: sacred-as-agent
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+  - id: cyera-ci
+    display_name: Cyera CI
+    lane: cyera-ci
+    desktop: cyera-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: cyera-ci
+    root_path: lanes/cyera
+    owner_agent_id: cyera-ci
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: local_slm
+    class: local
+    driver: ollama
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    reason: locked
+  - id: rust-classroom
+    reason: locked
