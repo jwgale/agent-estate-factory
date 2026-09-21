@@ -5,7 +5,8 @@
 
 use crate::SupervisorError;
 use estate_schema::{
-    canonical_host_class, estate_hash, host_class_eq, Estate, Placement, PlacementKind,
+    canonical_host_class, estate_hash, host_class_eq, is_sacred_name, Estate, Placement,
+    PlacementKind,
 };
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
@@ -254,26 +255,29 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         notes.push("placement-actual hash differs from desired estate".into());
     }
     if !missing_leases.is_empty() {
-        notes.push(format!("missing leases: {}", missing_leases.join(", ")));
+        notes.push(format!(
+            "refuse:missing-lease: {}",
+            missing_leases.join(", ")
+        ));
     }
     if !extra_leases.is_empty() {
-        notes.push(format!("extra leases: {}", extra_leases.join(", ")));
+        notes.push(format!("refuse:extra-lease: {}", extra_leases.join(", ")));
     }
     if !lease_kind_mismatch.is_empty() {
         notes.push(format!(
-            "lease kind mismatch: {}",
+            "refuse:kind-mismatch: {}",
             lease_kind_mismatch.join(", ")
         ));
     }
     if !host_class_mismatch.is_empty() {
         notes.push(format!(
-            "lease host_class mismatch: {}",
+            "refuse:host-class-mismatch: {}",
             host_class_mismatch.join(", ")
         ));
     }
     if !spawned_cloud_agents.is_empty() {
         notes.push(format!(
-            "cloud-agent lease spawned (fail closed): {}",
+            "refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {}",
             spawned_cloud_agents.join(", ")
         ));
     }
@@ -289,6 +293,229 @@ pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDr
         host_class_mismatch,
         notes,
     })
+}
+
+pub const RECONCILE_SCHEMA: &str = "cell-one.reconcile.v0";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Refuse {
+    pub code: String,
+    pub subject: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReconcileRow {
+    pub id: String,
+    pub side: String,
+    pub kind: String,
+    pub host_class: String,
+    pub agents: Vec<String>,
+    pub wired: bool,
+    #[serde(default)]
+    pub spawned: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReconcileReport {
+    #[serde(default = "default_reconcile_schema")]
+    pub schema: String,
+    pub in_sync: bool,
+    pub desired_hash: String,
+    pub actual_hash: Option<String>,
+    pub desired: Vec<ReconcileRow>,
+    pub actual: Vec<ReconcileRow>,
+    pub refuses: Vec<Refuse>,
+    pub notes: Vec<String>,
+}
+
+fn default_reconcile_schema() -> String {
+    RECONCILE_SCHEMA.into()
+}
+
+/// Desired vs actual placement reconcile. Sacred-id on an actual lease fail-closes.
+pub fn reconcile_placements(
+    estate: &Estate,
+    state_dir: &Path,
+) -> Result<ReconcileReport, SupervisorError> {
+    let drift = drift_placements(estate, state_dir)?;
+    let actual = load_placements(state_dir)?;
+    let desired: Vec<ReconcileRow> = estate
+        .placements
+        .iter()
+        .map(|p| ReconcileRow {
+            id: p.id.clone(),
+            side: "desired".into(),
+            kind: p.kind.as_str().into(),
+            host_class: canonical_host_class(p.host_class.as_deref()).into(),
+            agents: p.agents.clone(),
+            wired: p.wired,
+            spawned: None,
+        })
+        .collect();
+    let actual_rows: Vec<ReconcileRow> = actual
+        .as_ref()
+        .map(|a| {
+            a.leases
+                .iter()
+                .map(|l| ReconcileRow {
+                    id: l.placement_id.clone(),
+                    side: "actual".into(),
+                    kind: l.kind.clone(),
+                    host_class: canonical_host_class(Some(&l.host_class)).into(),
+                    agents: l.agents.clone(),
+                    wired: l.wired,
+                    spawned: Some(l.spawned),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut refuses = Vec::new();
+    for id in &drift.missing_leases {
+        refuses.push(Refuse {
+            code: "missing-lease".into(),
+            subject: id.clone(),
+            reason: format!("desired placement '{id}' has no lease in placement-actual.json"),
+        });
+    }
+    for id in &drift.extra_leases {
+        refuses.push(Refuse {
+            code: "extra-lease".into(),
+            subject: id.clone(),
+            reason: format!("actual lease '{id}' is not on the desired estate"),
+        });
+    }
+    for id in &drift.lease_kind_mismatch {
+        refuses.push(Refuse {
+            code: "kind-mismatch".into(),
+            subject: id.clone(),
+            reason: format!("lease kind for '{id}' does not match desired placement"),
+        });
+    }
+    for id in &drift.host_class_mismatch {
+        refuses.push(Refuse {
+            code: "host-class-mismatch".into(),
+            subject: id.clone(),
+            reason: format!("lease host_class for '{id}' drifted from desired (fail closed)"),
+        });
+    }
+    for id in &drift.spawned_cloud_agents {
+        refuses.push(Refuse {
+            code: "cloud-spawned".into(),
+            subject: id.clone(),
+            reason: format!("cloud-agent '{id}' lease is spawned; floor must not spawn it"),
+        });
+    }
+    if let Some(actual) = actual.as_ref() {
+        for lease in &actual.leases {
+            for agent in &lease.agents {
+                if is_sacred_name(agent) || estate.is_sacred(agent) {
+                    refuses.push(Refuse {
+                        code: "sacred-id".into(),
+                        subject: format!("{}:{}", lease.placement_id, agent),
+                        reason: format!(
+                            "refuse:sacred-id: lease '{}' must not bind sacred exclusion '{agent}'",
+                            lease.placement_id
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    let in_sync = drift.in_sync() && refuses.iter().all(|r| r.code != "sacred-id");
+    let mut notes = drift.notes;
+    if refuses.iter().any(|r| r.code == "sacred-id") {
+        notes.push("refuse:sacred-id: actual lease binds a sacred exclusion".into());
+    }
+    Ok(ReconcileReport {
+        schema: RECONCILE_SCHEMA.into(),
+        in_sync,
+        desired_hash: estate_hash(estate),
+        actual_hash: actual.as_ref().map(|a| a.desired_hash.clone()),
+        desired,
+        actual: actual_rows,
+        refuses,
+        notes,
+    })
+}
+
+pub fn render_reconcile(report: &ReconcileReport) -> String {
+    let mut out = String::from("Placement reconcile (desired vs actual)\n");
+    out.push_str("======================================\n");
+    out.push_str(&format!("schema: {}\n", report.schema));
+    out.push_str(&format!("in_sync: {}\n", report.in_sync));
+    out.push_str(&format!("desired_hash: {}\n", report.desired_hash));
+    out.push_str(&format!(
+        "actual_hash: {}\n\n",
+        report.actual_hash.as_deref().unwrap_or("(none)")
+    ));
+    out.push_str("Desired\n-------\n");
+    if report.desired.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        for row in &report.desired {
+            out.push_str(&format!(
+                "  {:<16} kind={:<12} host_class={:<16} wired={} agents={}\n",
+                row.id,
+                row.kind,
+                row.host_class,
+                row.wired,
+                if row.agents.is_empty() {
+                    "(none)".into()
+                } else {
+                    row.agents.join(",")
+                }
+            ));
+        }
+    }
+    out.push_str("\nActual\n------\n");
+    if report.actual.is_empty() {
+        out.push_str("(no placement-actual.json; run apply)\n");
+    } else {
+        for row in &report.actual {
+            out.push_str(&format!(
+                "  {:<16} kind={:<12} host_class={:<16} wired={} spawned={} agents={}\n",
+                row.id,
+                row.kind,
+                row.host_class,
+                row.wired,
+                row.spawned
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                if row.agents.is_empty() {
+                    "(none)".into()
+                } else {
+                    row.agents.join(",")
+                }
+            ));
+        }
+    }
+    out.push_str("\nRefuses\n-------\n");
+    if report.refuses.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        for r in &report.refuses {
+            out.push_str(&format!("  refuse:{}: {} — {}\n", r.code, r.subject, r.reason));
+        }
+    }
+    out.push_str("\nNotes\n-----\n");
+    for note in &report.notes {
+        out.push_str(&format!("  {note}\n"));
+    }
+    out
+}
+
+pub fn write_reconcile(
+    state_dir: &Path,
+    report: &ReconcileReport,
+) -> Result<std::path::PathBuf, SupervisorError> {
+    std::fs::create_dir_all(state_dir)?;
+    let json = state_dir.join("reconcile.json");
+    std::fs::write(&json, serde_json::to_string_pretty(report).unwrap_or_default())?;
+    std::fs::write(state_dir.join("reconcile.md"), render_reconcile(report))?;
+    Ok(json)
 }
 
 pub fn append_apply_audit(
@@ -503,6 +730,105 @@ mod tests {
         let drift = drift_placements(&estate, &tmp).unwrap();
         assert!(!drift.in_sync());
         assert!(!drift.host_class_mismatch.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reconcile_in_sync_after_record() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-recon-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        record_placements(&estate, &tmp).unwrap();
+        let report = reconcile_placements(&estate, &tmp).unwrap();
+        assert!(report.in_sync, "{:?}", report.refuses);
+        assert_eq!(report.schema, RECONCILE_SCHEMA);
+        assert!(report.refuses.is_empty());
+        assert_eq!(report.desired.len(), estate.placements.len());
+        assert_eq!(report.actual.len(), estate.placements.len());
+        let path = write_reconcile(&tmp, &report).unwrap();
+        assert!(path.is_file());
+        assert!(tmp.join("reconcile.md").is_file());
+        let md = std::fs::read_to_string(tmp.join("reconcile.md")).unwrap();
+        assert!(md.contains("in_sync: true"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reconcile_sacred_id_on_actual_fail_closes() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let sacred = estate
+            .sacred_exclusions
+            .first()
+            .map(|s| s.id.clone())
+            .expect("locked sacred exclusion");
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-recon-sacred-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        if let Some(lease) = actual.leases.iter_mut().find(|l| l.kind == "box") {
+            lease.agents.push(sacred.clone());
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let report = reconcile_placements(&estate, &tmp).unwrap();
+        assert!(!report.in_sync);
+        assert!(
+            report.refuses.iter().any(|r| r.code == "sacred-id"),
+            "{:?}",
+            report.refuses
+        );
+        assert!(report
+            .notes
+            .iter()
+            .any(|n| n.contains("refuse:sacred-id")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reconcile_host_mismatch_has_refuse_codes() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-recon-host-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        for lease in &mut actual.leases {
+            lease.host_class = "apple-silicon".into();
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let drift = drift_placements(&estate, &tmp).unwrap();
+        assert!(drift
+            .notes
+            .iter()
+            .any(|n| n.starts_with("refuse:host-class-mismatch")));
+        let report = reconcile_placements(&estate, &tmp).unwrap();
+        assert!(!report.in_sync);
+        assert!(report
+            .refuses
+            .iter()
+            .any(|r| r.code == "host-class-mismatch"));
+        let rendered = render_reconcile(&report);
+        assert!(rendered.contains("refuse:host-class-mismatch"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
