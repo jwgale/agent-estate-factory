@@ -2,6 +2,8 @@
 
 One local walk: **scrubbed trace → pack → propose → accept**.
 
+Start here: [`../README.md`](../README.md) · full operator walk (gate-90 → this loop → backup prune): [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Not a live-box proof. Parked Mac / GPU / cloud-spawn: [`DAY90-PLUS.md`](DAY90-PLUS.md).
+
 ```bash
 make feed-loop
 ```

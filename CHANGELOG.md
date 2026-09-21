@@ -34,13 +34,16 @@ README leads with `make gate-90` as the Day-90 operator entrypoint. `make feed-l
 
 `estate help [topic]` prints Day-90 pages for status, plan, apply, reconcile, feed-loop, and backup. Unknown topics refuse. `estate backup --prune N` keeps the newest N archives; `N=0` refuses. Convey `call` refuses on `policy-deny.yaml`.
 
-## After PR #7 (this slice)
+## PR #8 — layout, local-only honesty, operator runbook
 
-- `docs/cell-layout.md` matches the paths the code writes, including `reconcile-suggest.md`, `expired`, backups outside `.cell/`, and enrich-edit accept files.
-- `docs/OPERATOR-DAY.md` walks `make gate-90` → `make feed-loop` → `estate backup --prune` on isolated cells. No live boxes.
-- Why `make gate-90` stays off Actions: it wraps `cargo test --workspace`. Hosted CI stays compile-only. A hardening test locks that contract.
-- Scan: no `TODO`/`FIXME` in crate sources, no leftover Origin URLs.
-- Workspace crates are already `0.1.0`. That is a crate version, not a crates.io release. No new `estate version` command (clap `--version` is enough).
+`docs/cell-layout.md` matches the paths the code writes. `docs/OPERATOR-DAY.md` walks `make gate-90` → `make feed-loop` → `estate backup --prune` on isolated cells. A hardening test locks `make gate-90` off Actions (it wraps `cargo test --workspace`). No leftover Origin URLs. No new `estate version` command.
+
+## After PR #8 (this slice)
+
+- Isolated dual-layer-demo e2e: validate → plan → dry-run → apply → status → reconcile → backup → prune. No live boxes. Cloud never spawned.
+- README start-here points at OPERATOR-DAY and FEED-LOOP; those docs point back.
+- Dead leftover `cmd_probes` / `cmd_reconcile` wrappers removed from `ops.rs` (live copies stay in `heal.rs`) so `cargo run -q` stays quiet.
+- Snapshot for Jason: `docs/CELL-ONE-STATUS.md`. Not a live-box report.
 
 ## Still stubbed
 
@@ -55,4 +58,5 @@ make day90      # operator loop only
 make feed-loop  # scrubbed trace → pack → propose → accept (fixtures only)
 estate help     # Day-90 topic pages
 # walk: docs/OPERATOR-DAY.md
+# snapshot: docs/CELL-ONE-STATUS.md
 ```

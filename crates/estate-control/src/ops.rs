@@ -15,7 +15,7 @@ use feed_collector::{
 use floor_supervisor::{
     backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events,
     list_session_events, load_placements, pause_kit_proof, prune_cell_backups,
-    reconcile_placements, record_placements, render_reconcile, render_restore, restore_cell,
+    reconcile_placements, record_placements, render_restore, restore_cell,
     resume, suspend, tail_session_events, write_reconcile,
 };
 use std::path::{Path, PathBuf};
@@ -448,38 +448,6 @@ pub(crate) fn cmd_sessions_tail(state_dir: &Path, n: usize) -> Result<()> {
 pub(crate) fn cmd_packs_index(drop_dir: &Path) -> Result<()> {
     let path = write_pack_index(drop_dir)?;
     println!("wrote {}", path.display());
-    Ok(())
-}
-
-pub(crate) fn cmd_probes(live: bool) -> Result<()> {
-    let live = live || model_estate::live_probe_env_requested();
-    if live {
-        println!("live probe (SKIP without endpoints; not used in CI)");
-    }
-    let probes = if live {
-        model_estate::catalog_probes_live()
-    } else {
-        model_estate::catalog_probes()
-    };
-    for probe in probes {
-        println!(
-            "  {:<12} status={:<12} bindable={} live_probed={} host_class={}",
-            probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
-        );
-        println!("    {}", probe.note);
-    }
-    Ok(())
-}
-
-pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path) -> Result<()> {
-    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
-    let report = reconcile_placements(&estate, state_dir)?;
-    let written = write_reconcile(state_dir, &report)?;
-    print!("{}", render_reconcile(&report));
-    println!("Wrote {}", written.display());
-    if !report.in_sync {
-        bail!("reconcile drift (fail closed)");
-    }
     Ok(())
 }
 
