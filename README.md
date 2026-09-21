@@ -13,7 +13,7 @@ make gate-60
 make gate-90    # local only; not in GitHub Actions
 ```
 
-CI is intentionally thin (one `ubuntu-latest` job, `pull_request` only, `cargo test --workspace`). Run gates locally.
+Hosted CI is **disabled overnight** (no Actions workflows; no failure emails). Real `cargo test --workspace` and `make gate*` stay local. Re-enable tomorrow as compile-only if Jason wants.
 
 Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md).
 
@@ -80,7 +80,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Ollama-first | First green local path. llama.cpp is swap-proof. vLLM optional. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work does not silently fall through to frontier. Feed: `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. See [`examples/enrich-packs/`](examples/enrich-packs/). |
+| Enrich packs | Jason curates; `policy: manual`. Live drop zone: [`packs/`](packs/). |
 | Supported | Ollama (+ llama.cpp) green on the box. vLLM / TRT experimental until Jason verifies. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver, not a fork. |
 | Apple | Ollama-on-Mac = Supported. MLX = Stub behind the same catalog / route / bind API. |
@@ -116,8 +116,8 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 
 ## Persist vs disposable
 
-Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`.  
-Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`.
+Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `gate-reports/`, `.cell/lifecycle.json`.  
+Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/placement-actual.json`.
 
 ## What is stubbed vs live
 
@@ -130,9 +130,9 @@ Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actua
 | llama.cpp | Swap-proof card; same specialist protocol. |
 | MLX | Stub. Same catalog/route/bind. Live Mac proof later. |
 | vLLM / TRT | Experimental. Fail closed until Jason verifies. |
-| Enrich packs | Curator jason, policy manual, packs empty. Drop zone: `examples/enrich-packs/drop/`. |
+| Enrich packs | Curator jason, policy manual, packs empty. Live drop zone: `packs/`. Import is explicit and does not rewrite the estate. |
 | Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
-| A10–A12 | Beachhead: feed packs, suspend/resume, reviewable plans, cloud-agent placement stub. |
+| A10–A12 | Beachhead: feed packs + import, suspend/resume + placement leases, gated/auditable apply, cloud-agent stub. |
 
 ## Sharp choices (Jev bait)
 
@@ -151,9 +151,9 @@ Day 60 additions:
 
 Day 61–90 beachhead (local `make gate-90`):
 
-9. **Feed packs are candidates.** `estate feed pack` writes the drop zone; `estate feed promote` fails. Jason edits the estate.
-10. **Suspend/resume is the operator lifecycle.** `.cell/lifecycle.json` survives session discard.
-11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. Commit a plan file when apply needs a PR review.
-12. **`placements[]` declares `box` and a `cloud-agent` stub.** Floor does not spawn cloud agents.
+9. **Feed packs are candidates.** `estate feed pack` writes `packs/`; `estate feed import` is explicit apply; `estate feed promote` fails. Jason edits the estate.
+10. **Suspend/resume is the operator lifecycle.** `.cell/lifecycle.json` survives session discard. Placement leases are regenerable on disk.
+11. **Plans are the human control surface.** Reviewable markdown + `estate plans` history. `apply --require-plan` is gated and audited. Commit a plan file when apply needs a PR review.
+12. **`placements[]` declares `box` and a `cloud-agent` stub.** Floor records leases; it does not spawn cloud agents.
 
 Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md). Anti-shrink list is in the charter.
