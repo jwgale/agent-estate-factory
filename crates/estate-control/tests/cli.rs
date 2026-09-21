@@ -322,6 +322,7 @@ fn host_matrix_validates_and_bad_host_fails() {
         "examples/hosts/rtx-consumer.yaml",
         "examples/hosts/apple-silicon.yaml",
         "examples/hosts/nvidia-rental.yaml",
+        "examples/hosts/multi-host.yaml",
     ] {
         let out = estate_bin()
             .args(["validate", "--estate", &fixture(name)])
@@ -545,5 +546,148 @@ fn convey_lease_bound_and_packs_refuse_promote() {
         .output()
         .unwrap();
     assert!(!promo.status.success());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn reconcile_propose_and_audit_export() {
+    let tmp = repo_root().join(format!("target/test-wave3-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("drop")).unwrap();
+    let plans = tmp.join("plans");
+    let state = tmp.join("state");
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        planned.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&planned.stderr)
+    );
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let recon = estate_bin()
+        .args([
+            "reconcile",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        recon.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&recon.stderr)
+    );
+    let recon_out = String::from_utf8_lossy(&recon.stdout);
+    assert!(recon_out.contains("in_sync: true"));
+    assert!(state.join("reconcile.md").is_file());
+
+    let drop = tmp.join("drop");
+    std::fs::copy(
+        repo_root().join("examples/fixtures/overnight-traces.pack.json"),
+        drop.join("overnight-traces.pack.json"),
+    )
+    .unwrap();
+    let estate = repo_root().join("examples/estate.yaml");
+    let before = std::fs::read_to_string(&estate).unwrap();
+    let imported = estate_bin()
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &drop.join("accepted").display().to_string(),
+            "--estate",
+            &estate.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(imported.status.success());
+    let proposed = estate_bin()
+        .args([
+            "packs",
+            "propose",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &drop.join("accepted").display().to_string(),
+            "--proposed-dir",
+            &drop.join("proposed").display().to_string(),
+            "--estate",
+            &estate.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        proposed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&proposed.stderr)
+    );
+    let prop_out = String::from_utf8_lossy(&proposed.stdout);
+    assert!(prop_out.contains("auto_apply: false"));
+    assert_eq!(before, std::fs::read_to_string(&estate).unwrap());
+    assert!(drop.join("proposed").join("overnight-traces.proposal.json").is_file());
+
+    let export = estate_bin()
+        .args([
+            "audit",
+            "export",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--packs-dir",
+            &drop.display().to_string(),
+            "--out",
+            &tmp.join("audit-export").display().to_string(),
+            "--tar",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        export.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    assert!(tmp.join("audit-export").join("MANIFEST.md").is_file());
+    assert!(tmp.join("audit-export").join("placement-actual.json").is_file());
+    assert!(tmp.join("audit-export").join("import-audit.jsonl").is_file());
     let _ = std::fs::remove_dir_all(&tmp);
 }
