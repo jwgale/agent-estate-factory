@@ -6,7 +6,9 @@
 //! Slim-parses `.cell/placement-actual.json` so this crate does not depend
 //! on floor-supervisor.
 
-use estate_schema::{canonical_host_class, contains_sku, is_slug, normalize_host_class};
+use estate_schema::{
+    canonical_host_class, contains_sku, is_sacred_name, is_slug, normalize_host_class,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -46,6 +48,8 @@ pub enum MeshError {
     BadHostClass(String),
     #[error("refuse:expired: hop lease ttl elapsed for '{0}'")]
     Expired(String),
+    #[error("refuse:sacred-id: hop/placement '{0}' is a sacred exclusion")]
+    SacredId(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,6 +135,8 @@ pub struct SlimPlacement {
     pub wired: bool,
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub agents: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -151,6 +157,8 @@ struct SlimLeaseRow {
     wired: bool,
     #[serde(default)]
     ttl_secs: Option<u64>,
+    #[serde(default)]
+    agents: Vec<String>,
 }
 
 /// Swappable hop backend. Conveyor talks to this trait only.
@@ -247,6 +255,9 @@ pub fn hop_driver(kind: &str) -> Result<Box<dyn ConveyorHop>, MeshError> {
 }
 
 pub fn refuse_hop(hop: &HopDecl) -> Result<(), MeshError> {
+    if is_sacred_name(&hop.id) {
+        return Err(MeshError::SacredId(hop.id.clone()));
+    }
     if !is_slug(&hop.id) {
         return Err(MeshError::BadId(hop.id.clone()));
     }
@@ -313,15 +324,38 @@ pub fn slim_parse_placement_actual(path: &Path) -> Result<Vec<SlimPlacement>, Me
             spawned: row.spawned,
             wired: row.wired,
             ttl_secs: row.ttl_secs,
+            agents: row.agents,
         })
         .collect())
 }
 
+/// Placement kind → hop kind. Unmatched kinds are not seeded.
+pub fn hop_kind_for_placement(kind: &str) -> Option<&'static str> {
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "box" => Some("box"),
+        "cloud-agent" | "cloud_agent" | "cloud-mesh" | "cloud_mesh" => Some("cloud-mesh"),
+        _ => None,
+    }
+}
+
+fn refuse_placement_seed(place: &SlimPlacement) -> Result<(), MeshError> {
+    if is_sacred_name(&place.placement_id) {
+        return Err(MeshError::SacredId(place.placement_id.clone()));
+    }
+    for agent in &place.agents {
+        if is_sacred_name(agent) {
+            return Err(MeshError::SacredId(agent.clone()));
+        }
+    }
+    Ok(())
+}
+
 pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
-    let cloud = place.kind == "cloud-agent" || place.kind == "cloud-mesh";
+    let kind = hop_kind_for_placement(&place.kind).unwrap_or("box");
+    let cloud = kind == "cloud-mesh";
     HopDecl {
         id: place.placement_id.clone(),
-        kind: if cloud { "cloud-mesh".into() } else { "box".into() },
+        kind: kind.into(),
         capability: if cloud {
             "mesh-stub".into()
         } else {
@@ -335,10 +369,16 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
 }
 
 /// Derive hops from durable placement leases. Pause-safe; no live spawn.
+/// Matching kinds (`box` → box, `cloud-agent` → cloud-mesh) upsert hops.
+/// Manually declared hops with other ids stay. Sacred ids refuse.
 pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
-    let mut mesh = ConveyorMesh::default();
+    let mut mesh = load_mesh(state_dir)?;
     for place in &places {
+        let Some(_) = hop_kind_for_placement(&place.kind) else {
+            continue;
+        };
+        refuse_placement_seed(place)?;
         let hop = hop_from_placement(place);
         refuse_hop(&hop)?;
         let mut lease = hop_driver(&hop.kind)?.declare(&hop);
@@ -348,6 +388,8 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
             lease.spawned = place.spawned && hop.wired;
             lease.granted = hop.wired;
         }
+        mesh.hops.retain(|h| h.id != hop.id);
+        mesh.leases.retain(|l| l.hop_id != hop.id);
         mesh.hops.push(hop);
         mesh.leases.push(lease);
     }
@@ -714,6 +756,80 @@ mod tests {
         assert_eq!(forgotten, vec!["short-hop".to_string()]);
         let err = call_hop(&dir, "short-hop", "lane-tool").unwrap_err();
         assert!(matches!(err, MeshError::NoLease(_)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sync_keeps_manual_hops_and_skips_unknown_kinds() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "ttl-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: Some(3600),
+            },
+        )
+        .unwrap();
+        let actual = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [
+                {
+                    "placement_id": "cell-one-box",
+                    "kind": "box",
+                    "host_class": "any",
+                    "spawned": true,
+                    "wired": true,
+                    "agents": ["horizon"]
+                },
+                {
+                    "placement_id": "cursor-cloud",
+                    "kind": "cloud-agent",
+                    "host_class": "any",
+                    "spawned": false,
+                    "wired": false
+                },
+                {
+                    "placement_id": "odd-kind",
+                    "kind": "studio",
+                    "host_class": "any",
+                    "spawned": false,
+                    "wired": false
+                }
+            ]
+        });
+        std::fs::write(dir.join("placement-actual.json"), actual.to_string()).unwrap();
+        let mesh = sync_from_placements(&dir).unwrap();
+        assert!(mesh.hops.iter().any(|h| h.id == "ttl-box"));
+        assert!(mesh.hops.iter().any(|h| h.id == "cell-one-box"));
+        assert!(mesh.hops.iter().any(|h| h.id == "cursor-cloud"));
+        assert!(!mesh.hops.iter().any(|h| h.id == "odd-kind"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sync_refuses_sacred_placement() {
+        let dir = tmp();
+        let sacred = estate_schema::locked_sacred_ids()[0];
+        let actual = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": sacred,
+                "kind": "box",
+                "host_class": "any",
+                "spawned": false,
+                "wired": true,
+                "agents": []
+            }]
+        });
+        std::fs::write(dir.join("placement-actual.json"), actual.to_string()).unwrap();
+        let err = sync_from_placements(&dir).unwrap_err();
+        assert!(matches!(err, MeshError::SacredId(_)));
+        assert!(err.to_string().starts_with("refuse:sacred-id"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
