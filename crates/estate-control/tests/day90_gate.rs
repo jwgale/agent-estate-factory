@@ -414,3 +414,58 @@ fn wave7_curator_sync_status() {
     assert!(mesh.hops.iter().any(|h| h.id == "cell-one-box"));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn wave8_apply_identity_export_pr_sacred() {
+    let e = example();
+    let root = tmp();
+    let state = root.join("state");
+    assert_eq!(
+        floor_supervisor::classify_apply(&e, &state, &root).unwrap(),
+        floor_supervisor::ApplyIdentity::Greenfield
+    );
+    apply_with_profile_dir(&e, &state, &root).unwrap();
+    assert_eq!(
+        floor_supervisor::classify_apply(&e, &state, &root).unwrap(),
+        floor_supervisor::ApplyIdentity::Unchanged
+    );
+
+    estate_schema::clear_sacred_overlays();
+    estate_schema::set_sacred_overlays(&[estate_schema::SacredFileEntry {
+        id: "lab-notebook".into(),
+        aliases: vec!["lab_notebook".into()],
+        reason: None,
+    }]);
+    assert!(estate_schema::is_sacred_name("lab-notebook"));
+    estate_schema::clear_sacred_overlays();
+    assert!(!estate_schema::is_sacred_name("lab-notebook"));
+
+    let plan = diff_estates(&e, None);
+    let md = estate_schema::render_plan_pr(
+        &plan,
+        Some("plan-cover"),
+        false,
+        &["cloud-agent: declared, not spawned".into()],
+    );
+    assert!(md.contains("paste into PR body"));
+    assert!(md.contains("Refuse risks"));
+    assert!(md.contains("Reviewed:** no"));
+
+    let mixed = estate_schema::load_estate(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/fixtures/mixed-frontier-local.yaml"
+    )))
+    .unwrap();
+    assert!(mixed
+        .model_bindings
+        .iter()
+        .any(|b| b.driver == "http-remote" && b.class == estate_schema::ModelClass::Frontier));
+    assert!(mixed
+        .model_bindings
+        .iter()
+        .any(|b| b.driver == "ollama" && b.class == estate_schema::ModelClass::Local));
+    let dry = floor_supervisor::apply_dry_run(&mixed, &root.join("mixed")).unwrap();
+    assert!(!dry.writes);
+    assert!(!dry.would_refuse);
+    let _ = std::fs::remove_dir_all(&root);
+}
