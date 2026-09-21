@@ -1,0 +1,28 @@
+# Compile-only. Real cargo test stays local (`make smoke`).
+# Do not add cargo test, matrix, clippy, fmt, coverage, or push-to-main jobs.
+name: check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUSTUP_TOOLCHAIN: "1.88.0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: cargo check (locked)
+        run: cargo check --workspace --locked

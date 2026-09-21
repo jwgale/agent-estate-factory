@@ -1,13 +1,17 @@
 # Workflows
 
-**Overnight quiet hours:** no GitHub Actions workflows are registered.
+One workflow only: `ci.yml`.
 
-Do not add `ci.yml` (or any `*.yml`) until Jason re-enables hosted CI. Preferred re-enable shape, if he wants it: one `pull_request` job, `cargo check --workspace --locked` only, timeout ≤ 10, no `cargo test`, no matrix, no clippy/fmt/coverage.
+- `pull_request` → `main`
+- concurrency cancel-in-progress
+- one job: `cargo check --workspace --locked`
+- rustc 1.88 (`rust-toolchain.toml` + `dtolnay/rust-toolchain@1.88.0`)
+- timeout 10 minutes
 
-Until then the gate is local:
+Do not add `cargo test`, a matrix, clippy/fmt/coverage, or push-to-main jobs. Real tests stay local:
 
 ```bash
 cargo check --workspace --locked
 cargo test --workspace
-make gate-90
+make smoke
 ```
