@@ -237,6 +237,52 @@ fn estate_specialist_frontier_sacred_does_not_post() {
 }
 
 #[test]
+fn estate_specialist_frontier_sacred_beats_sku_model() {
+    for prompt in ["please mention cyera", "please mention rust-classroom"] {
+        let srv = spawn_compat(model_estate::CompatScript::OpenAi {
+            models: vec!["grok-4.7".into()],
+        });
+        let out = bin()
+            .args([
+                "specialist",
+                "--driver",
+                "frontier",
+                "--endpoint",
+                &srv.endpoint(),
+                "--prompt",
+                prompt,
+            ])
+            .env("XAI_API_KEY", "test-not-a-secret")
+            .env("CELL_FRONTIER_MODEL", "rtx-5090-chat")
+            .env_remove("XAI_MODEL")
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{prompt}");
+        let mix = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            mix.contains("policy-precheck denied sacred token"),
+            "sacred must win over a SKU model id ({prompt}): {mix}"
+        );
+        assert!(
+            !mix.contains("\"completion\": \"ok\""),
+            "sacred refuse must not invent a completion ({prompt}): {mix}"
+        );
+        assert!(
+            !mix.contains("encodes a hardware SKU"),
+            "SKU model id must not be the refusal when the prompt is sacred ({prompt}): {mix}"
+        );
+        assert!(
+            srv.last_post().is_none(),
+            "sacred must not POST when the model id is a SKU ({prompt})"
+        );
+    }
+}
+
+#[test]
 fn estate_specialist_frontier_sku_prompt_refuses_before_post() {
     let srv = model_estate::CompatServer::spawn(model_estate::CompatScript::OpenAi {
         models: vec!["grok-4.7".into()],
