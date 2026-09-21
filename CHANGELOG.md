@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #35 (this slice)
+
+- Pack INDEX and `estate feed list` / `estate packs list` print `drivers=` from `source_drivers` (`frontier,local` when both are present, `-` when empty). Empty packs do not invent a source.
+- Hole: `write_drop_pack`, import, and `feed list` swallowed a failed INDEX rewrite. A failed rewrite is now an error.
+- `make feed-loop` greps INDEX for `drivers=frontier,local`. Did not add `make feed-loop-mixed`; the existing walk already tags mixed frontier and local traces. Still off smoke and gate-90. No new CLI.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #34 (this slice)
 
 - `estate specialist --driver frontier` refuse text names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT`. A missing `XAI_API_KEY` already did. A hardware SKU in the model id now says whether it came from `CELL_FRONTIER_MODEL`, `XAI_MODEL`, or a binding model param, and still refuses before POST.
