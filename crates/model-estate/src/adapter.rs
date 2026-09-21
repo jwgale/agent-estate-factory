@@ -3,17 +3,19 @@
 //! Live probes hit `GET /v1/models` or Ollama `GET /api/tags`. They do not
 //! invent success on an empty or garbage body. Specialist chat posts the
 //! real request text (not a dummy ping) to `/v1/chat/completions` or
-//! `/api/chat`, then factory-owned policy (`builtin_specialist`) decides.
-//! Native MLX `specialist()` stays stubbed; Mac proof is Ollama-on-Mac
+//! `/api/chat`. Policy jobs then use factory-owned `builtin_specialist`.
+//! `complete` keeps the model text. Sacred refuse happens before the chat
+//! POST. Native MLX `specialist()` stays stubbed; Mac proof is Ollama-on-Mac
 //! (or any OpenAI-compatible server, including llama.cpp) on this adapter.
 
 use crate::error::ModelError;
-use crate::local::{builtin_specialist, SpecialistRequest, SpecialistResult};
+use crate::local::{builtin_specialist, SpecialistJob, SpecialistRequest, SpecialistResult};
 use serde_json::Value;
 use std::time::Duration;
 
 const PING_TIMEOUT: Duration = Duration::from_millis(800);
-const SPECIALIST_TIMEOUT: Duration = Duration::from_secs(5);
+const SPECIALIST_TIMEOUT: Duration = Duration::from_secs(30);
+const COMPLETE_MAX_TOKENS: u32 = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveFlavor {
@@ -60,34 +62,101 @@ pub fn ping_live_endpoint(endpoint: &str) -> Result<LiveFlavor, String> {
     }
 }
 
-/// Factory `/v0/specialist` first (mock-local). Else OpenAI/Ollama completion
-/// that carries the request text, then factory-owned policy. A 200 that is
+/// Factory `/v0/specialist` first (mock-local). Else factory policy, then
+/// OpenAI/Ollama chat. `complete` returns the model text. A 200 that is
 /// not a specialist result refuses (no silent fall-through). No silent allow.
 pub fn specialist_via_adapter(
     endpoint: &str,
     req: &SpecialistRequest,
 ) -> Result<SpecialistResult, ModelError> {
+    let policy = builtin_specialist(&SpecialistRequest {
+        job: SpecialistJob::PolicyPrecheck,
+        agent_id: req.agent_id.clone(),
+        kind: req.kind.clone(),
+        text: req.text.clone(),
+    });
+    if !policy.allow {
+        return Ok(SpecialistResult {
+            job: req.job.as_str().into(),
+            completion: String::new(),
+            ..policy
+        });
+    }
     match post_v0_specialist(endpoint, req) {
-        Ok(result) => return Ok(result),
+        Ok(result) => return finish_v0(result, req),
         Err(Transport::NotThisFlavor) => {}
         Err(Transport::Down(e)) => {
             return Err(ModelError::Unreachable(e));
         }
     }
-    prove_compat_runtime(endpoint, req)?;
-    Ok(builtin_specialist(req))
+    match req.job {
+        SpecialistJob::Complete => {
+            let completion = compat_chat(endpoint, &req.text)?;
+            Ok(SpecialistResult {
+                allow: true,
+                redacted_text: policy.redacted_text,
+                reason: "compat completion".into(),
+                job: req.job.as_str().into(),
+                completion,
+            })
+        }
+        SpecialistJob::PolicyPrecheck | SpecialistJob::Redact => {
+            prove_compat_runtime(endpoint, &req.text)?;
+            Ok(SpecialistResult {
+                job: req.job.as_str().into(),
+                completion: String::new(),
+                ..policy
+            })
+        }
+    }
 }
 
-fn prove_compat_runtime(endpoint: &str, req: &SpecialistRequest) -> Result<(), ModelError> {
+fn finish_v0(
+    result: SpecialistResult,
+    req: &SpecialistRequest,
+) -> Result<SpecialistResult, ModelError> {
+    if req.job == SpecialistJob::Complete
+        && result.allow
+        && result.completion.trim().is_empty()
+    {
+        return Err(ModelError::Unreachable(
+            "v0 specialist: empty completion".into(),
+        ));
+    }
+    Ok(result)
+}
+
+fn prove_compat_runtime(endpoint: &str, text: &str) -> Result<(), ModelError> {
+    compat_chat(endpoint, text).map(|_| ())
+}
+
+fn compat_chat(endpoint: &str, text: &str) -> Result<String, ModelError> {
     let model = resolve_model(endpoint)?;
-    match post_openai_chat(endpoint, &model, &req.text) {
-        Ok(()) => return Ok(()),
+    match post_openai_chat(endpoint, &model, text) {
+        Ok(content) => return accepted_completion(&content),
         Err(e) if openai_answered_badly(&e) => {
             return Err(ModelError::Unreachable(e));
         }
         Err(_) => {}
     }
-    post_ollama_chat(endpoint, &model, &req.text).map_err(ModelError::Unreachable)
+    accepted_completion(
+        &post_ollama_chat(endpoint, &model, text).map_err(ModelError::Unreachable)?,
+    )
+}
+
+fn accepted_completion(raw: &str) -> Result<String, ModelError> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return Err(ModelError::Unreachable(
+            "compat adapter: empty completion".into(),
+        ));
+    }
+    if estate_schema::contains_sku(v) {
+        return Err(ModelError::Refused(
+            "completion encodes a hardware SKU".into(),
+        ));
+    }
+    Ok(v.to_string())
 }
 
 /// 200-shaped OpenAI garbage is this flavor, not a reason to try Ollama.
@@ -95,6 +164,7 @@ fn openai_answered_badly(err: &str) -> bool {
     err.contains("missing choices")
         || err.contains("empty choices")
         || err.contains("missing message.content")
+        || err.contains("empty message.content")
         || err.contains("empty body")
         || err.contains("json:")
         || err.contains("not a JSON object")
@@ -172,7 +242,7 @@ fn post_v0_specialist(
     }
 }
 
-fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<(), String> {
+fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<String, String> {
     let url = format!(
         "{}/v1/chat/completions",
         endpoint.trim().trim_end_matches('/')
@@ -180,7 +250,7 @@ fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<(), Strin
     let body = serde_json::json!({
         "model": model,
         "messages": [{"role":"user","content": text}],
-        "max_tokens": 16,
+        "max_tokens": COMPLETE_MAX_TOKENS,
     });
     let resp = ureq::post(&url)
         .set("Content-Type", "application/json")
@@ -199,19 +269,21 @@ fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<(), Strin
     let content = choices[0]
         .get("message")
         .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str());
-    if content.is_none() {
-        return Err("openai chat: missing message.content".into());
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| "openai chat: missing message.content".to_string())?;
+    if content.trim().is_empty() {
+        return Err("openai chat: empty message.content".into());
     }
-    Ok(())
+    Ok(content.to_string())
 }
 
-fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<(), String> {
+fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<String, String> {
     let url = format!("{}/api/chat", endpoint.trim().trim_end_matches('/'));
     let body = serde_json::json!({
         "model": model,
         "messages": [{"role":"user","content": text}],
         "stream": false,
+        "options": {"num_predict": COMPLETE_MAX_TOKENS},
     });
     let resp = ureq::post(&url)
         .set("Content-Type", "application/json")
@@ -220,14 +292,21 @@ fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<(), Strin
         .map_err(|e| e.to_string())?;
     let raw = resp.into_string().map_err(|e| e.to_string())?;
     let v = parse_json_object(&raw)?;
-    let has_msg = v
+    if let Some(content) = v
         .get("message")
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
-        .is_some();
-    let has_response = v.get("response").and_then(|c| c.as_str()).is_some();
-    if has_msg || has_response {
-        return Ok(());
+    {
+        if content.trim().is_empty() {
+            return Err("ollama chat: empty message.content".into());
+        }
+        return Ok(content.to_string());
+    }
+    if let Some(content) = v.get("response").and_then(|c| c.as_str()) {
+        if content.trim().is_empty() {
+            return Err("ollama chat: empty message.content".into());
+        }
+        return Ok(content.to_string());
     }
     Err("ollama chat: missing message.content".into())
 }
@@ -427,11 +506,16 @@ mod tests {
         };
         let allow = local.specialist(&req("hello from the factory")).unwrap();
         assert!(allow.allow, "{}", allow.reason);
-        let deny = local.specialist(&req("please mention cyera")).unwrap();
-        assert!(!deny.allow, "{}", deny.reason);
         let (path, body) = srv.last_post().expect("v0 POST");
         assert_eq!(path, "/v0/specialist");
-        assert!(body.contains("please mention cyera"), "{body}");
+        assert!(body.contains("hello from the factory"), "{body}");
+        let deny = local.specialist(&req("please mention cyera")).unwrap();
+        assert!(!deny.allow, "{}", deny.reason);
+        let (_, body) = srv.last_post().expect("v0 POST stays the allow");
+        assert!(
+            !body.contains("please mention cyera"),
+            "sacred text must not POST: {body}"
+        );
     }
 
     #[test]
@@ -487,5 +571,96 @@ mod tests {
         assert!(body.contains("llama3"), "{body}");
         assert!(body.contains(marker), "{body}");
         assert!(!body.contains("5090"), "{body}");
+    }
+
+    fn complete_req(text: &str) -> SpecialistRequest {
+        SpecialistRequest {
+            job: SpecialistJob::Complete,
+            agent_id: "probe".into(),
+            kind: "probe".into(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn specialist_complete_openai_returns_model_text() {
+        let srv = CompatServer::spawn(CompatScript::OpenAi {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let marker = "complete-openai-marker";
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker)).unwrap();
+        assert!(result.allow, "{}", result.reason);
+        assert_eq!(result.job, "complete");
+        assert_eq!(result.completion, "ok");
+        assert_ne!(result.completion, marker);
+        let (path, body) = srv.last_post().expect("compat chat POST");
+        assert_eq!(path, "/v1/chat/completions");
+        assert!(body.contains(marker), "{body}");
+    }
+
+    #[test]
+    fn specialist_complete_ollama_returns_model_text() {
+        let srv = CompatServer::spawn(CompatScript::Ollama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        assert!(result.allow, "{}", result.reason);
+        assert_eq!(result.completion, "ok");
+        let (path, _) = srv.last_post().expect("ollama chat POST");
+        assert_eq!(path, "/api/chat");
+    }
+
+    #[test]
+    fn specialist_complete_sacred_does_not_post() {
+        let srv = CompatServer::spawn(CompatScript::OpenAi {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let deny = specialist_via_adapter(&srv.endpoint(), &complete_req("cyera")).unwrap();
+        assert!(!deny.allow, "{}", deny.reason);
+        assert!(deny.completion.is_empty(), "{deny:?}");
+        assert!(srv.last_post().is_none(), "must not send sacred text");
+    }
+
+    #[test]
+    fn specialist_complete_empty_content_fail_closed() {
+        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyContent {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let err = specialist_via_adapter(&srv.endpoint(), &complete_req("hello")).unwrap_err();
+        assert!(err.is_local_down(), "{err}");
+        assert!(
+            err.to_string().contains("empty message.content")
+                || err.to_string().contains("empty completion"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn llama_cpp_complete_returns_openai_text() {
+        let srv = CompatServer::spawn(CompatScript::OpenAi {
+            models: vec!["ggml-model".into()],
+        })
+        .unwrap();
+        let local = HttpLocal {
+            id: "local_slm".into(),
+            endpoint: srv.endpoint(),
+            runtime: LocalRuntime::LlamaCpp,
+        };
+        let result = local.specialist(&complete_req("llamacpp-complete")).unwrap();
+        assert_eq!(result.completion, "ok");
+        assert_eq!(local.runtime(), LocalRuntime::LlamaCpp);
+    }
+
+    #[test]
+    fn accepted_completion_refuses_empty_and_sku() {
+        assert!(accepted_completion("pong").is_ok());
+        assert!(accepted_completion("   ").is_err());
+        let err = accepted_completion("llama3-rtx-5090").unwrap_err();
+        assert!(err.to_string().contains("SKU"), "{err}");
+        assert!(err.is_local_down(), "{err}");
     }
 }
