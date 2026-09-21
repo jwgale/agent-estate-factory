@@ -16,7 +16,7 @@ make gate-60   # A5–A9; live Grok/local SKIP without secrets
 make gate-90   # A10–A12 beachhead; local only
 ```
 
-Hosted CI is disabled overnight (quiet hours). Run `cargo test --workspace` and `make gate` / `make gate-60` / `make gate-90` locally. Do not add a GitHub Actions workflow until Jason re-enables compile-only CI.
+Hosted CI is compile-only (`cargo check --workspace --locked` on pull requests). Run `cargo test --workspace` and `make gate` / `make gate-60` / `make gate-90` / `make smoke` locally. Do not add `cargo test` or a second workflow.
 
 Open pull requests against `main` on `jwgale/agent-estate-factory`. Cursor cloud agents should start from `repo: https://github.com/jwgale/agent-estate-factory`.
 

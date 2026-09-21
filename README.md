@@ -16,7 +16,7 @@ make gate-90    # local only; not in GitHub Actions
 make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
 ```
 
-Hosted CI is **disabled overnight** (no Actions workflows; no failure emails). Real `cargo test --workspace` and `make gate*` stay local. Re-enable tomorrow as compile-only if Jason wants.
+Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` stay local. Do not add `cargo test` to Actions.
 
 Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Lease files: [`docs/cell-layout.md`](docs/cell-layout.md).
 
