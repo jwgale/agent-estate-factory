@@ -21,6 +21,7 @@
   },
   "source_paths": ["feed/events.jsonl"],
   "model_hint": "local_slm",
+  "source_drivers": [],
   "host_class_affinity": "any",
   "created_at": "2026-09-21T00:00:00Z",
   "note": "Specialist fixture. Import is explicit apply. Feed never auto-promotes. No raw secrets."
