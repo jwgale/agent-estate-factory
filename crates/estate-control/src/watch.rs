@@ -71,6 +71,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     println!("Cell One doctor\n===============");
     println!("root: {}", root.display());
     println!("state: {}\n", state_dir.display());
+
     println!("Schema files");
     println!("------------");
     for rel in DOCTOR_REQUIRED {
