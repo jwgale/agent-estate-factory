@@ -196,10 +196,10 @@ pub fn parse_runtime(driver: &str) -> Option<LocalRuntime> {
 }
 
 pub fn parse_host_class(raw: &str) -> Option<HostClass> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "consumer-nvidia" | "consumer_nvidia" => Some(HostClass::ConsumerNvidia),
-        "apple-silicon" | "apple_silicon" => Some(HostClass::AppleSilicon),
-        "rented-nvidia" | "rented_nvidia" => Some(HostClass::RentedNvidia),
+    match estate_schema::normalize_host_class(raw)? {
+        "consumer-nvidia" => Some(HostClass::ConsumerNvidia),
+        "apple-silicon" => Some(HostClass::AppleSilicon),
+        "rented-nvidia" => Some(HostClass::RentedNvidia),
         "any" => Some(HostClass::Any),
         _ => None,
     }
@@ -386,6 +386,28 @@ mod tests {
             .hosts
             .contains(&HostClass::RentedNvidia));
         assert_eq!(card(LocalRuntime::Mlx).hosts, &[HostClass::AppleSilicon]);
+    }
+
+    #[test]
+    fn parse_host_class_aliases() {
+        assert_eq!(
+            parse_host_class("rtx_consumer"),
+            Some(HostClass::ConsumerNvidia)
+        );
+        assert_eq!(
+            parse_host_class("rtx-consumer"),
+            Some(HostClass::ConsumerNvidia)
+        );
+        assert_eq!(
+            parse_host_class("nvidia_rental"),
+            Some(HostClass::RentedNvidia)
+        );
+        assert_eq!(
+            parse_host_class("apple_silicon"),
+            Some(HostClass::AppleSilicon)
+        );
+        assert!(parse_host_class("not-a-host").is_none());
+        assert!(parse_host_class("rtx-5090").is_none());
     }
 
     #[test]
