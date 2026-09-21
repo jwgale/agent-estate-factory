@@ -58,6 +58,7 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
 
 Entrypoint: make gate-90
 Loop:       make day90
+Mixed:      make day90-mixed
 Feed walk:  make feed-loop
 ";
 
@@ -65,7 +66,8 @@ const STATUS: &str = "\
 estate status — one-pager
 =========================
 paused?, lease counts, expired, last plan, last apply, open proposals,
-policy present?, doctor line. Cloud-agent stays \"declared, not spawned\".
+policy present?, doctor line. Frontier model id prints when the estate
+binding or a catalog file names one. Cloud-agent stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
   make day90

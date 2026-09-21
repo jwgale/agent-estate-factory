@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -58,6 +58,11 @@ gate-90:
 
 day90:
 	./scripts/day90.sh
+
+# Mixed frontier+local fixture: plan → apply --require-plan.
+# Isolated cell. Fixtures only. Do not add to smoke or GitHub Actions.
+day90-mixed:
+	bash scripts/day90-mixed.sh
 
 suspend:
 	cargo run -q -p estate-control -- suspend --state-dir $(STATE)

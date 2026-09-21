@@ -331,6 +331,106 @@ fn mixed_plan_apply_then_local_specialist_skips_frontier() {
 }
 
 #[test]
+fn day90_mixed_walks_plan_apply_and_names_grok_4_7() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("day90-mixed:"), "Makefile missing day90-mixed");
+    assert!(makefile.contains("scripts/day90-mixed.sh"));
+    let script = std::fs::read_to_string(root.join("scripts/day90-mixed.sh")).unwrap();
+    assert!(script.contains("--require-plan"), "{script}");
+    assert!(script.contains("unset XAI_API_KEY"), "{script}");
+    assert!(
+        script.contains("Do not add to make smoke or GitHub Actions"),
+        "day90-mixed must stay off smoke / Actions"
+    );
+    let smoke = std::fs::read_to_string(root.join("scripts/smoke.sh")).unwrap();
+    let gate = std::fs::read_to_string(root.join("scripts/day90-gate.sh")).unwrap();
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
+    for (name, text) in [("smoke", &smoke), ("gate-90", &gate), ("ci.yml", &ci)] {
+        assert!(
+            !text.contains("day90-mixed"),
+            "{name} must not invoke day90-mixed"
+        );
+    }
+
+    let state = root.join(format!(
+        "target/test-day90-mixed-walk-{}",
+        std::process::id()
+    ));
+    let plans = root.join(format!(
+        "target/test-day90-mixed-plans-{}",
+        std::process::id()
+    ));
+    let out = Command::new("bash")
+        .arg(root.join("scripts/day90-mixed.sh"))
+        .current_dir(&root)
+        .env("ESTATE_BIN", env!("CARGO_BIN_EXE_estate"))
+        .env("STATE_DIR", &state)
+        .env("PLANS_DIR", &plans)
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("DAY90-MIXED GREEN"), "{text}");
+    assert!(text.contains("frontier: frontier_http model=grok-4.7"), "{text}");
+    assert!(text.contains("catalog frontier: cell model=grok-4.7"), "{text}");
+    let _ = std::fs::remove_dir_all(&state);
+    let _ = std::fs::remove_dir_all(&plans);
+}
+
+#[test]
+fn status_does_not_invent_frontier_model_on_the_default_estate() {
+    let root = repo_root();
+    let state = root.join(format!(
+        "target/test-status-default-frontier-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&state);
+    let out = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "status",
+            "--estate",
+            &root.join("examples/estate.yaml").display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &root.display().to_string(),
+            "--plans-dir",
+            &state.join("plans").display().to_string(),
+            "--policy",
+            &root.join("policy/cell-one.policy.v0.yaml").display().to_string(),
+            "--root",
+            &root.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("catalog frontier: schema model=grok-4.7"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("frontier: xai_grok model="),
+        "default estate binding has no model param: {text}"
+    );
+    assert!(!text.contains("catalog frontier: cell"), "{text}");
+    let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
 fn live_specialist_helper_requires_endpoint_and_stays_off_smoke() {
     let root = repo_root();
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
