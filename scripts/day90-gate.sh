@@ -7,7 +7,7 @@ cd "$ROOT"
 ESTATE="${ESTATE:-examples/estate.yaml}"
 STATE="${STATE_DIR:-.cell}"
 FEED="${FEED_DIR:-.cell/feed}"
-DROP="${DROP_DIR:-examples/enrich-packs/drop}"
+DROP="${DROP_DIR:-packs}"
 REPORT="gate-reports/day90.md"
 PASS=0
 FAIL=0
@@ -33,7 +33,17 @@ cargo run -q -p estate-control -- plans --plans-dir plans >/tmp/cell90-plans.txt
 ok "A12 plan history lists"
 
 note "-- A11 suspend / resume --"
-cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT"
+cargo run -q -p estate-control -- apply --estate "$ESTATE" --state-dir "$STATE" --roots-base "$ROOT" --plans-dir plans --require-plan
+if [[ -f "$STATE/placement-actual.json" ]]; then
+  ok "A12 placement-actual.json durable after gated apply"
+else
+  bad "A12 placement-actual.json missing"
+fi
+if ls plans/apply-*.json >/dev/null 2>&1; then
+  ok "A12 apply audit written"
+else
+  bad "A12 apply audit written"
+fi
 cargo run -q -p estate-control -- suspend --state-dir "$STATE"
 if [[ -f "$STATE/lifecycle.json" ]]; then
   ok "A11 lifecycle.json durable after suspend"
@@ -68,6 +78,13 @@ if [[ -f "$DROP/overnight-traces.pack.json" ]]; then
 else
   bad "A10 candidate pack written"
 fi
+BEFORE_ESTATE="$(cksum "$ESTATE")"
+cargo run -q -p estate-control -- feed import --id overnight-traces --drop-dir "$DROP" --accepted-dir "$DROP/accepted" --estate "$ESTATE" | tee /tmp/cell90-import.txt
+if grep -q "estate file unchanged" /tmp/cell90-import.txt && [[ "$(cksum "$ESTATE")" == "$BEFORE_ESTATE" ]]; then
+  ok "A10 explicit import does not rewrite estate"
+else
+  bad "A10 explicit import does not rewrite estate"
+fi
 set +e
 cargo run -q -p estate-control -- feed promote --id overnight-traces >/tmp/cell90-promote.out 2>/tmp/cell90-promote.err
 promo=$?
@@ -90,8 +107,8 @@ mkdir -p gate-reports
   echo "pass: $PASS"
   echo "fail: $FAIL"
   echo
-  echo "A10 feed pack (no auto-promote), A11 suspend/resume, A12 reviewable plan + placement stub."
-  echo "Live Grok / GPU not required. CI stays thin."
+  echo "A10 feed pack + explicit import (no auto-promote), A11 suspend/resume, A12 gated apply + placement lease."
+  echo "Live Grok / GPU not required. Hosted CI is cargo check --workspace --locked only."
 } > "$REPORT"
 
 echo

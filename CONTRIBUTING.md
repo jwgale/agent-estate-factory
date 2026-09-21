@@ -16,7 +16,7 @@ make gate-60   # A5–A9; live Grok/local SKIP without secrets
 make gate-90   # A10–A12 beachhead; local only
 ```
 
-CI is intentionally thin: one GitHub Actions job on `pull_request` only (`cargo test --workspace`). Run `make gate` / `make gate-60` / `make gate-90` locally. Do not add `gate-90` to hosted CI.
+CI is intentionally thin: one GitHub Actions job on `pull_request` to `main` only (`cargo check --workspace --locked`, 10-minute timeout). Run `cargo test --workspace` and `make gate` / `make gate-60` / `make gate-90` locally. Do not add `gate-90` to hosted CI.
 
 Open pull requests against `main` on `jwgale/agent-estate-factory`. Cursor cloud agents should start from `repo: https://github.com/jwgale/agent-estate-factory`.
 

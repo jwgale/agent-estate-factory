@@ -1,6 +1,6 @@
 # Enrich-pack drop zone
 
-Usable now. `estate feed pack` writes `{id}.pack.json` here from scrubbed feed traces.
+Documentary drop zone. The live default is `packs/` at the repo root.
 
 Rules:
 
@@ -8,5 +8,6 @@ Rules:
 - policy: manual
 - `promoted: false` always from the feed
 - `estate feed promote` fails on purpose
+- `estate feed import` copies a candidate to `accepted/` and does not rewrite the estate
 
-To use a pack, Jason copies the id into `examples/estate.yaml` `enrich_packs.packs`. That is the only promotion path.
+To bind a pack, Jason copies the id into `examples/estate.yaml` `enrich_packs.packs`. That is the only estate-bound path.

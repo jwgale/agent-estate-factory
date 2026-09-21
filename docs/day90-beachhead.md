@@ -7,22 +7,23 @@ cargo test --workspace
 make gate-90
 ```
 
-Live Grok / live local are not required. CI stays PR-only `cargo test --workspace`.
+Live Grok / live local are not required. Hosted CI is PR-only `cargo check --workspace --locked`.
 
 ## A10 — feed packs
 
-Scrubbed traces from both model paths land in `.cell/feed/events.jsonl`. Materialize a **candidate** pack:
+Scrubbed traces from both model paths land in `.cell/feed/events.jsonl`. Materialize a **candidate** pack, then import explicitly:
 
 ```bash
 cargo run -p estate-control -- feed pack \
   --feed-dir .cell/feed \
-  --drop-dir examples/enrich-packs/drop \
+  --drop-dir packs \
   --id overnight-traces
-cargo run -p estate-control -- feed list
+cargo run -p estate-control -- feed list --drop-dir packs
+cargo run -p estate-control -- feed import --id overnight-traces --drop-dir packs
 cargo run -p estate-control -- feed promote --id overnight-traces   # fails
 ```
 
-Jason promotes by editing `examples/estate.yaml` `enrich_packs.packs`. Feed never writes the estate.
+Import does not rewrite `examples/estate.yaml`. Jason binds a pack by editing `enrich_packs.packs` by hand.
 
 ## A11 — suspend / resume
 
@@ -41,6 +42,6 @@ cargo run -p estate-control -- plan --estate examples/estate.yaml
 cargo run -p estate-control -- plans
 ```
 
-Blast-radius markdown is PR-reviewable. `placements` lists `cell-one-box` and `cursor-cloud` (`cloud-agent`, unwired). Floor does not spawn the cloud stub.
+Blast-radius markdown is PR-reviewable. `estate apply --require-plan` fails without a covering plan and writes an apply audit. `placements` lists `cell-one-box` and `cursor-cloud` (`cloud-agent`, unwired). Floor records leases on disk; it does not spawn the cloud stub.
 
 See [`overnight-decisions.md`](overnight-decisions.md).

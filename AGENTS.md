@@ -13,7 +13,7 @@ make gate-60
 make gate-90    # local Day 61–90 beachhead; do not add to GHA
 ```
 
-Primary gate is local (or this cloud-agent VM). GitHub Actions is one `pull_request` job: `cargo test --workspace` only. Do not add matrices, cron, or `make gate-60` on hosted CI.
+Primary gate is local (or this cloud-agent VM). GitHub Actions is one `pull_request` job: `cargo check --workspace --locked` only (job name `check`, timeout 10). Do not add matrices, cron, clippy, fmt, coverage, or `make gate-*` on hosted CI. Real `cargo test` stays local.
 
 `make gate-60` skips live Grok and live local when `XAI_API_KEY` / `CELL_LOCAL_LIVE` are unset. Never bake secrets.
 
