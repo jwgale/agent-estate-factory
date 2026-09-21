@@ -18,7 +18,7 @@ fn example() -> estate_schema::Estate {
 }
 
 fn tmp() -> std::path::PathBuf {
-    let p = std::env.temp_dir().join(format!(
+    let p = std::env::temp_dir().join(format!(
         "cell-one-d90-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
@@ -150,6 +150,7 @@ fn a12_cloud_driver_never_spawns() {
         wired: true,
         params: serde_json::json!({}),
         note: None,
+        ttl_secs: None,
     };
     let lease = CloudAgentDriver.claim(&placement);
     assert!(!lease.spawned);
@@ -248,5 +249,48 @@ fn wave3_multi_host_propose_reconcile() {
     assert!(!proposal.auto_apply);
     assert!(proposal.diff.would_add_to_estate);
     assert!(refuse_apply_proposal("overnight-traces").is_err());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn wave4_dry_run_ttl_scrub_specialist() {
+    let e = example();
+    let root = tmp();
+    let state = root.join("state");
+    let dry = floor_supervisor::apply_dry_run(&e, &state).unwrap();
+    assert!(!dry.writes);
+    assert!(!dry.would_refuse, "{:?}", dry.refuses);
+    assert!(!state.join("placement-actual.json").exists());
+    apply_with_profile_dir(&e, &state, &root).unwrap();
+    let mut actual = load_placements(&state).unwrap().unwrap();
+    let now = floor_supervisor::now_unix();
+    if let Some(lease) = actual.leases.iter_mut().find(|l| l.kind == "box") {
+        lease.ttl_secs = Some(1);
+        lease.issued_at = Some(now.saturating_sub(10));
+        lease.expires_at = Some(now.saturating_sub(1));
+    }
+    floor_supervisor::write_placements(&state, &actual).unwrap();
+    assert!(floor_supervisor::refuse_expired_leases(&state).is_err());
+    let preview = floor_supervisor::apply_dry_run(&e, &state).unwrap();
+    assert!(preview.would_refuse);
+    assert!(preview.refuses.iter().any(|r| r.code == "expired"));
+    floor_supervisor::forget_expired_leases(&state).unwrap();
+    floor_supervisor::refuse_expired_leases(&state).unwrap();
+
+    let raw = "ghp_abcdefghijklmnopqrstuv password=hunter2";
+    let scrubbed = feed_collector::scrub_pii(raw);
+    assert!(!scrubbed.contains("ghp_"));
+    assert!(!scrubbed.contains("hunter2"));
+    assert!(feed_collector::refuse_raw_secrets(raw).is_err());
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/fixtures/specialist-overnight.pack.json"
+    ))
+    .unwrap();
+    let pack: feed_collector::PackManifest = serde_json::from_str(&text).unwrap();
+    assert_eq!(pack.schema, "cell-one.specialist-pack.v0");
+    assert_eq!(pack.model_hint.as_deref(), Some("local_slm"));
+    assert!(!pack.source_paths.is_empty());
+    feed_collector::refuse_pack(&pack).unwrap();
     let _ = std::fs::remove_dir_all(&root);
 }
