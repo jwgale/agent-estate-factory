@@ -22,7 +22,7 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 7. **Intentions:** Deny-default for tool, MCP, mount, model, and cross-lane memory. Own-lane memory read is allowed. Model use is a declared allow-list on the agent (`models:`), same class as tools.
 8. **Mixed path:** authorize (A3–A4) → local specialist (A8, policy-precheck) → tool or frontier (A7). Data plane (`model-estate`) only. Control does not complete. Keep A7–A9 thin: Grok + local endpoint drivers in the estate registry. Do not turn Cell One into LM Studio.
 9. **Isolation:** Swappable `IsolationDriver`. Cell One ships a profile-dir driver. Floor core does not hard-code vendor ids.
-10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`. Operator lifecycle (`estate suspend` / `resume`) writes durable `.cell/lifecycle.json` — not estate SoT.
+10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`, `placement-actual.json`. Operator lifecycle (`estate suspend` / `resume`) writes durable `.cell/lifecycle.json` — not estate SoT. Apply may be gated on a covering plan (`--require-plan`) and is audited.
 11. **Language:** Rust default on the hot path (conveyor allow/deny, isolation, supervisor core, mixed-path authorize). Escape hatches allowed. Not forever-Rust. Model drivers are traits; the local specialist process may be any language.
 12. **Day 61–90 beachhead (toward A10–A12, not a full workday):** feed materializes candidate enrich packs (manual, no auto-promote). Operator suspend/resume is file-durable. Plans are the human control surface (PR-reviewable blast-radius). `placements[]` declares `box` and a `cloud-agent` stub so Day-90 operator day is not schema-blocked. Floor does not spawn cloud agents. Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md).
 
@@ -73,7 +73,7 @@ Those may exist later as *consumers* of the factory. They are not the factory.
 | Data (`floor-supervisor`, `model-estate`, `conveyor-proxy`, workers) | spawn/bind, deny-default, mixed model path | rewrite the estate file as SoT; silently learn policy; silently fall back to frontier when local is down |
 | Feed (`feed-collector`) | append scrubbed traces; materialize candidate packs | block the data plane; auto-promote |
 
-Boundaries: Control→Data = apply; Data→Control = drift/acks; Data→Feed = scrubbed events; Feed→Control = pack manifests later (never silent); Feed→Data = nothing in Cell One.
+Boundaries: Control→Data = apply; Data→Control = drift/acks; Data→Feed = scrubbed events; Feed→Control = explicit pack import (never silent; never rewrites the estate file); Feed→Data = nothing in Cell One.
 
 ## How defaults change
 
