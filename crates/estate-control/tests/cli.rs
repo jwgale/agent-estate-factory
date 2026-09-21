@@ -1541,6 +1541,8 @@ fn wave7_status_curator_sync() {
     assert!(doc.contains("schema/README.md"));
     assert!(doc.contains("CHANGELOG.md"));
     assert!(doc.contains("sacred.yaml"));
+    assert!(doc.contains("MORNING-BRIEF-2026-09-21.md"));
+    assert!(doc.contains("PR2-DESCRIPTION.md"));
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
