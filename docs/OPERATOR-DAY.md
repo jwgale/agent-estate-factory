@@ -2,10 +2,14 @@
 
 A walk Jason can run on this box after Day 90. Fixtures only. It does not
 prove a Mac, a GPU, or a cloud spawn. Those rows stay parked in
-[`DAY90-PLUS.md`](DAY90-PLUS.md).
+[`DAY90-PLUS.md`](DAY90-PLUS.md). README start-here: [`../README.md`](../README.md).
+Feed-only walk (this is step 2): [`FEED-LOOP.md`](FEED-LOOP.md).
+`.cell/` paths: [`cell-layout.md`](cell-layout.md).
 
 Hosted CI does **not** run this walk. See “Why `make gate-90` stays local”
-below.
+below. The same isolated loop on `examples/fixtures/dual-layer-demo.yaml`
+is covered by `crates/estate-control/tests/day90_e2e.rs`. Snapshot:
+[`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 ## 1. `make gate-90`
 
