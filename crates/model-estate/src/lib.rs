@@ -12,8 +12,8 @@ mod path;
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
     bind_local, card, catalog, catalog_file, catalog_probes, parse_host_class, parse_runtime,
-    render_catalog, route, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, HostClass,
-    LocalRuntime, SupportStatus, CATALOG,
+    render_catalog, route, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
+    HostClass, LocalRuntime, SupportStatus, CATALOG,
 };
 pub use error::ModelError;
 pub use frontier::{
