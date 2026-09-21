@@ -80,11 +80,11 @@ pub fn sacred_id_set(estate: Option<&Estate>) -> BTreeSet<String> {
     set
 }
 
+/// Symmetric match. Empty/missing backup `sacred_ids` is a mismatch against a
+/// locked current set (fail closed). Aliases are already collapsed by
+/// `sacred_id_set` / `normalize_name`.
 pub fn sacred_mismatch(backup: &BTreeSet<String>, current: &BTreeSet<String>) -> bool {
-    if backup.is_empty() || current.is_empty() {
-        return false;
-    }
-    !backup.is_subset(current) || !current.is_subset(backup)
+    backup != current
 }
 
 fn copy_if_exists(src: &Path, dest: &Path, copied: &mut Vec<String>) -> Result<bool, SupervisorError> {
@@ -402,7 +402,45 @@ mod tests {
         fake.insert("not-the-locked-set".into());
         assert!(sacred_mismatch(&fake, &current));
         assert!(!sacred_mismatch(&current, &current));
-        assert!(!sacred_mismatch(&BTreeSet::new(), &current));
+        assert!(
+            sacred_mismatch(&BTreeSet::new(), &current),
+            "empty backup sacred_ids must not skip the check"
+        );
+        assert!(!sacred_mismatch(&BTreeSet::new(), &BTreeSet::new()));
+    }
+
+    #[test]
+    fn empty_backup_sacred_ids_refuses_restore_writes() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        apply_with_profile_dir(&estate, &state, &root).unwrap();
+        let (archive, _) =
+            backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
+        let meta_path = archive.join(BACKUP_META);
+        let mut meta: CellBackup =
+            serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+        meta.sacred_ids.clear();
+        std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+        let dest = root.join("restored");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("placement-actual.json"), "sentinel\n").unwrap();
+        let report = restore_cell(&archive, &dest, None, Some(&estate), false).unwrap();
+        assert!(!report.writes);
+        assert!(report.would_refuse);
+        assert!(
+            report
+                .refuses
+                .iter()
+                .any(|r| r.contains("refuse:sacred-mismatch")),
+            "{:?}",
+            report.refuses
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("placement-actual.json")).unwrap(),
+            "sentinel\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

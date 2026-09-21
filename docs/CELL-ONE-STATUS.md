@@ -6,7 +6,7 @@ Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 Read with [`../README.md`](../README.md) → [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 → [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 
-## On `main` (PR #1–#11 plus this slice)
+## On `main` (PR #1–#12 plus this slice)
 
 Day 0–90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -19,7 +19,8 @@ Sanctum is first-class and is not Cyera.
 | #9 | Dual-layer-demo e2e (validate → prune); README ↔ operator/feed links; `CELL-ONE-STATUS.md` |
 | #10 | Placement TTL e2e. `expire --forget` then apply restamps (was `refuse:drift`) |
 | #11 | Sacred overlay e2e: omit-locked file still refuses Cyera CI / Rust classroom on convey |
-| this | Hop expire `--forget` kept decls; call restamps (`lease-refresh`). Pause-kit still holds after unchanged apply |
+| #12 | Hop expire `--forget` kept decls; call restamps (`lease-refresh`). Pause-kit still holds after unchanged apply |
+| this | Restore empty `sacred_ids` now `refuse:sacred-mismatch`. Pack leftover / suggest-on-drift / doctor vanilla↔strict locked |
 
 Operator entrypoint is local `make gate-90`. Hosted Actions stays one
 `pull_request` job: `cargo check --workspace --locked`. Do not put
