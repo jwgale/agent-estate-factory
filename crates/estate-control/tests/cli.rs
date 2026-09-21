@@ -43,6 +43,7 @@ fn validate_invalid_fails_closed() {
         "placement-sku.yaml",
         "placement-unknown-agent.yaml",
         "placement-sacred-cloud.yaml",
+        "host-class-bad.yaml",
         "not-yaml.txt",
     ] {
         let path = fixture(&format!("examples/invalid/{name}"));
@@ -312,5 +313,237 @@ fn catalog_and_leases_are_file_sot() {
     let probe_out = String::from_utf8_lossy(&probes.stdout);
     assert!(probe_out.contains("ollama"));
     assert!(probe_out.contains("live_probed=false"));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn host_matrix_validates_and_bad_host_fails() {
+    for name in [
+        "examples/hosts/rtx-consumer.yaml",
+        "examples/hosts/apple-silicon.yaml",
+        "examples/hosts/nvidia-rental.yaml",
+    ] {
+        let out = estate_bin()
+            .args(["validate", "--estate", &fixture(name)])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name} stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn require_fresh_plan_refuses_greenfield_after_apply() {
+    let tmp = repo_root().join(format!("target/test-fresh-plan-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let plans = tmp.join("plans");
+    let state = tmp.join("state");
+    let planned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--reviewed",
+            "--reviewed-dir",
+            &tmp.join("reviewed").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        planned.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&planned.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&planned.stdout);
+    assert!(stdout.contains("Security-as-IaC"));
+    assert!(tmp.join("reviewed").join("INDEX.md").is_file() || {
+        std::fs::read_dir(tmp.join("reviewed"))
+            .unwrap()
+            .any(|e| e.unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
+    });
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(applied.status.success());
+    let stale = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-fresh-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !stale.status.success(),
+        "greenfield covering plan after apply must be stale; stdout={} stderr={}",
+        String::from_utf8_lossy(&stale.stdout),
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let replanned = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(replanned.status.success());
+    let fresh = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &tmp.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--require-fresh-plan",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        fresh.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&fresh.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn convey_lease_bound_and_packs_refuse_promote() {
+    let tmp = repo_root().join(format!("target/test-convey-packs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("drop")).unwrap();
+    let state = tmp.join("state");
+    let hop = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "box-notes",
+            "--kind",
+            "box",
+            "--capability",
+            "notes-append",
+            "--host-class",
+            "rtx_consumer",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        hop.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&hop.stderr)
+    );
+    let call = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "box-notes",
+            "--capability",
+            "notes-append",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(call.status.success());
+    let missing = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "no-such-hop",
+            "--capability",
+            "lane-tool",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!missing.status.success());
+    let cloud = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "cursor-cloud",
+            "--kind",
+            "cloud-mesh",
+            "--capability",
+            "mesh-stub",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(cloud.status.success());
+    let cloud_call = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "cursor-cloud",
+            "--capability",
+            "mesh-stub",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!cloud_call.status.success());
+    let drop = tmp.join("drop");
+    std::fs::copy(
+        repo_root().join("examples/fixtures/overnight-traces.pack.json"),
+        drop.join("overnight-traces.pack.json"),
+    )
+    .unwrap();
+    let listed = estate_bin()
+        .args(["packs", "list", "--drop-dir", &drop.display().to_string()])
+        .output()
+        .unwrap();
+    assert!(listed.status.success());
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("overnight-traces"));
+    let promo = estate_bin()
+        .args(["packs", "promote", "--id", "overnight-traces"])
+        .output()
+        .unwrap();
+    assert!(!promo.status.success());
     let _ = std::fs::remove_dir_all(&tmp);
 }
