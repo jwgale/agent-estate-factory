@@ -47,6 +47,15 @@ fn default_backup_schema() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PruneReport {
+    pub schema: String,
+    pub keep: usize,
+    pub kept: Vec<String>,
+    pub removed: Vec<String>,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RestoreReport {
     pub schema: String,
     pub archive: String,
@@ -111,11 +120,69 @@ fn copy_tree(src: &Path, dest: &Path, copied: &mut Vec<String>) -> Result<(), Su
 
 fn stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
+    let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("unix{secs}")
+        .unwrap_or_default();
+    format!("unix{:010}-{:09}", dur.as_secs(), dur.subsec_nanos())
+}
+
+fn backup_sort_key(path: &Path) -> (u64, u64) {
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let rest = name.strip_prefix("cell-backup-unix").unwrap_or("");
+    let mut parts = rest.split('-');
+    let secs = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let nanos = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    (secs, nanos)
+}
+
+/// Newest-first list of `cell-backup-*` directories.
+pub fn list_cell_backups(out_dir: &Path) -> Result<Vec<PathBuf>, SupervisorError> {
+    if !out_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(out_dir)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if path.is_dir() && name.starts_with("cell-backup-") {
+            dirs.push(path);
+        }
+    }
+    dirs.sort_by(|a, b| backup_sort_key(b).cmp(&backup_sort_key(a)));
+    Ok(dirs)
+}
+
+/// Keep the newest `keep` cell backups. `keep == 0` refuses. Does not spawn.
+pub fn prune_cell_backups(
+    out_dir: &Path,
+    keep: usize,
+) -> Result<PruneReport, SupervisorError> {
+    if keep == 0 {
+        return Err(SupervisorError::Other(
+            "refuse:prune: keep must be >= 1".into(),
+        ));
+    }
+    let dirs = list_cell_backups(out_dir)?;
+    let mut kept = Vec::new();
+    let mut removed = Vec::new();
+    for (i, dir) in dirs.into_iter().enumerate() {
+        if i < keep {
+            kept.push(dir.display().to_string());
+        } else {
+            std::fs::remove_dir_all(&dir)?;
+            removed.push(dir.display().to_string());
+        }
+    }
+    Ok(PruneReport {
+        schema: "cell-one.backup-prune.v0".into(),
+        keep,
+        kept,
+        removed,
+        note: "Newest archives kept. Older cell-backup-* dirs deleted. Local only.".into(),
+    })
 }
 
 /// Copy durable `.cell/` files (and optional plans) to a timestamped folder.
