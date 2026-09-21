@@ -1,8 +1,12 @@
-//! Durable placement / lease actual-state. Cloud-agent is declared, not spawned.
+//! Durable placement / lease actual-state.
+//!
+//! Placement is a driver. `box` may spawn sessions this floor binds.
+//! `cloud-agent` is declared and never spawned.
 
 use crate::SupervisorError;
-use estate_schema::{estate_hash, Estate, PlacementKind};
+use estate_schema::{estate_hash, Estate, Placement, PlacementKind};
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -15,6 +19,10 @@ pub struct PlacementLease {
     /// True only for `box` sessions this floor actually bound.
     pub spawned: bool,
     pub durable: bool,
+    #[serde(default)]
+    pub driver: String,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,6 +39,96 @@ pub struct ApplyAudit {
     pub imported_packs: Vec<String>,
     pub require_plan: bool,
     pub note: String,
+    #[serde(default)]
+    pub covering_plan: Option<String>,
+    /// Always false on this beachhead. Cloud-agent is declared, not spawned.
+    #[serde(default)]
+    pub cloud_agent_spawned: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlacementDrift {
+    pub missing_leases: Vec<String>,
+    pub extra_leases: Vec<String>,
+    pub spawned_cloud_agents: Vec<String>,
+    pub lease_kind_mismatch: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+impl PlacementDrift {
+    pub fn in_sync(&self) -> bool {
+        self.missing_leases.is_empty()
+            && self.extra_leases.is_empty()
+            && self.spawned_cloud_agents.is_empty()
+            && self.lease_kind_mismatch.is_empty()
+    }
+}
+
+/// Swappable placement backend. Floor talks to this trait only.
+pub trait PlacementDriver: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn claim(&self, placement: &Placement) -> PlacementLease;
+}
+
+/// This Cell One box. Floor may mark the lease spawned when wired.
+pub struct BoxDriver;
+
+impl PlacementDriver for BoxDriver {
+    fn name(&self) -> &'static str {
+        "box"
+    }
+
+    fn claim(&self, placement: &Placement) -> PlacementLease {
+        PlacementLease {
+            placement_id: placement.id.clone(),
+            kind: PlacementKind::Box.as_str().to_string(),
+            host_class: placement
+                .host_class
+                .clone()
+                .unwrap_or_else(|| "any".into()),
+            agents: placement.agents.clone(),
+            wired: placement.wired,
+            spawned: placement.wired,
+            durable: true,
+            driver: self.name().to_string(),
+            note: Some("box lease. Sessions are regenerable from the estate file.".into()),
+        }
+    }
+}
+
+/// Declared remote placement. Never spawned, even if `wired: true`.
+pub struct CloudAgentDriver;
+
+impl PlacementDriver for CloudAgentDriver {
+    fn name(&self) -> &'static str {
+        "cloud-agent"
+    }
+
+    fn claim(&self, placement: &Placement) -> PlacementLease {
+        PlacementLease {
+            placement_id: placement.id.clone(),
+            kind: PlacementKind::CloudAgent.as_str().to_string(),
+            host_class: placement
+                .host_class
+                .clone()
+                .unwrap_or_else(|| "any".into()),
+            agents: placement.agents.clone(),
+            wired: placement.wired,
+            spawned: false,
+            durable: true,
+            driver: self.name().to_string(),
+            note: Some(
+                "declared placement stub. Floor records the lease and does not spawn it.".into(),
+            ),
+        }
+    }
+}
+
+pub fn driver_for(kind: PlacementKind) -> Box<dyn PlacementDriver> {
+    match kind {
+        PlacementKind::Box => Box::new(BoxDriver),
+        PlacementKind::CloudAgent => Box::new(CloudAgentDriver),
+    }
 }
 
 pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
@@ -40,22 +138,20 @@ pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementA
         leases: estate
             .placements
             .iter()
-            .map(|p| PlacementLease {
-                placement_id: p.id.clone(),
-                kind: p.kind.as_str().to_string(),
-                host_class: p.host_class.clone().unwrap_or_else(|| "any".into()),
-                agents: p.agents.clone(),
-                wired: p.wired,
-                spawned: p.kind == PlacementKind::Box && p.wired,
-                durable: true,
-            })
+            .map(|p| driver_for(p.kind).claim(p))
             .collect(),
     };
+    write_placements(state_dir, &actual)?;
+    Ok(actual)
+}
+
+pub fn write_placements(state_dir: &Path, actual: &PlacementActual) -> Result<(), SupervisorError> {
+    std::fs::create_dir_all(state_dir)?;
     std::fs::write(
         state_dir.join("placement-actual.json"),
-        serde_json::to_string_pretty(&actual).unwrap_or_default(),
+        serde_json::to_string_pretty(actual).unwrap_or_default(),
     )?;
-    Ok(actual)
+    Ok(())
 }
 
 pub fn load_placements(state_dir: &Path) -> Result<Option<PlacementActual>, SupervisorError> {
@@ -69,11 +165,110 @@ pub fn load_placements(state_dir: &Path) -> Result<Option<PlacementActual>, Supe
     Ok(Some(actual))
 }
 
+/// Sessions/PIDs died. Keep the lease file; mark every lease unspawned.
+pub fn mark_leases_unspawned(state_dir: &Path) -> Result<Option<PlacementActual>, SupervisorError> {
+    let Some(mut actual) = load_placements(state_dir)? else {
+        return Ok(None);
+    };
+    for lease in &mut actual.leases {
+        lease.spawned = false;
+    }
+    write_placements(state_dir, &actual)?;
+    Ok(Some(actual))
+}
+
+pub fn drift_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementDrift, SupervisorError> {
+    let desired_ids: std::collections::BTreeSet<String> =
+        estate.placements.iter().map(|p| p.id.clone()).collect();
+    let Some(actual) = load_placements(state_dir)? else {
+        if desired_ids.is_empty() {
+            return Ok(PlacementDrift::default());
+        }
+        return Ok(PlacementDrift {
+            missing_leases: desired_ids.into_iter().collect(),
+            extra_leases: vec![],
+            spawned_cloud_agents: vec![],
+            lease_kind_mismatch: vec![],
+            notes: vec!["no placement-actual.json; run apply or resume".into()],
+        });
+    };
+
+    let have_ids: std::collections::BTreeSet<String> =
+        actual.leases.iter().map(|l| l.placement_id.clone()).collect();
+    let missing_leases: Vec<String> = desired_ids.difference(&have_ids).cloned().collect();
+    let extra_leases: Vec<String> = have_ids.difference(&desired_ids).cloned().collect();
+
+    let mut spawned_cloud_agents = Vec::new();
+    let mut lease_kind_mismatch = Vec::new();
+    for placement in &estate.placements {
+        let Some(lease) = actual
+            .leases
+            .iter()
+            .find(|l| l.placement_id == placement.id)
+        else {
+            continue;
+        };
+        if lease.kind != placement.kind.as_str() {
+            lease_kind_mismatch.push(placement.id.clone());
+        }
+        if placement.kind == PlacementKind::CloudAgent && lease.spawned {
+            spawned_cloud_agents.push(placement.id.clone());
+        }
+    }
+    // Tampered actual with a spawned cloud lease not on the estate still fail-closes.
+    for lease in &actual.leases {
+        if lease.kind == PlacementKind::CloudAgent.as_str() && lease.spawned {
+            if !spawned_cloud_agents.contains(&lease.placement_id) {
+                spawned_cloud_agents.push(lease.placement_id.clone());
+            }
+        }
+    }
+
+    let mut notes = Vec::new();
+    if actual.desired_hash != estate_hash(estate) {
+        notes.push("placement-actual hash differs from desired estate".into());
+    }
+    if !missing_leases.is_empty() {
+        notes.push(format!("missing leases: {}", missing_leases.join(", ")));
+    }
+    if !extra_leases.is_empty() {
+        notes.push(format!("extra leases: {}", extra_leases.join(", ")));
+    }
+    if !lease_kind_mismatch.is_empty() {
+        notes.push(format!(
+            "lease kind mismatch: {}",
+            lease_kind_mismatch.join(", ")
+        ));
+    }
+    if !spawned_cloud_agents.is_empty() {
+        notes.push(format!(
+            "cloud-agent lease spawned (fail closed): {}",
+            spawned_cloud_agents.join(", ")
+        ));
+    }
+    if notes.is_empty() {
+        notes.push("placement leases match desired estate; cloud-agent not spawned".into());
+    }
+
+    Ok(PlacementDrift {
+        missing_leases,
+        extra_leases,
+        spawned_cloud_agents,
+        lease_kind_mismatch,
+        notes,
+    })
+}
+
 pub fn append_apply_audit(
     plans_dir: &Path,
     state_dir: &Path,
     audit: &ApplyAudit,
 ) -> Result<std::path::PathBuf, SupervisorError> {
+    if audit.cloud_agent_spawned {
+        return Err(SupervisorError::Other(
+            "apply audit refuse: cloud-agent must not be spawned".into(),
+        ));
+    }
     std::fs::create_dir_all(plans_dir)?;
     std::fs::create_dir_all(state_dir)?;
     let stamp = audit.created_at.replace(':', "").replace('-', "");
@@ -97,6 +292,28 @@ pub fn append_apply_audit(
         serde_json::to_string(audit).unwrap_or_default()
     )?;
     Ok(path)
+}
+
+pub fn list_apply_audits(state_dir: &Path) -> Result<Vec<ApplyAudit>, SupervisorError> {
+    let path = state_dir.join("apply-audit.jsonl");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let file = std::fs::File::open(&path)?;
+    let reader = BufReader::new(file);
+    let mut out = Vec::new();
+    for (i, line) in reader.lines().enumerate() {
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let audit: ApplyAudit = serde_json::from_str(line).map_err(|e| {
+            SupervisorError::Other(format!("apply-audit.jsonl line {}: {e}", i + 1))
+        })?;
+        out.push(audit);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -123,12 +340,87 @@ mod tests {
             .find(|l| l.kind == "cloud-agent")
             .expect("cloud-agent lease");
         assert!(!cloud.spawned);
+        assert_eq!(cloud.driver, "cloud-agent");
         let box_lease = actual
             .leases
             .iter()
             .find(|l| l.kind == "box")
             .expect("box lease");
         assert!(box_lease.spawned);
+        assert_eq!(box_lease.driver, "box");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn cloud_agent_driver_never_spawns_when_wired() {
+        let placement = Placement {
+            id: "remote-stub".into(),
+            kind: PlacementKind::CloudAgent,
+            host_class: Some("any".into()),
+            agents: vec!["horizon".into()],
+            wired: true,
+            params: serde_json::json!({}),
+            note: None,
+        };
+        let lease = CloudAgentDriver.claim(&placement);
+        assert!(!lease.spawned);
+        assert_eq!(lease.driver, "cloud-agent");
+        assert!(lease.wired);
+    }
+
+    #[test]
+    fn drift_fail_closes_spawned_cloud_lease() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-drift-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+            }
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let drift = drift_placements(&estate, &tmp).unwrap();
+        assert!(!drift.in_sync());
+        assert!(!drift.spawned_cloud_agents.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn apply_audit_refuses_spawned_cloud() {
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-audit-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let err = append_apply_audit(
+            &tmp.join("plans"),
+            &tmp.join("state"),
+            &ApplyAudit {
+                created_at: "unix:1".into(),
+                desired_hash: "sha256:abcd".into(),
+                sessions: 0,
+                imported_packs: vec![],
+                require_plan: false,
+                note: "nope".into(),
+                covering_plan: None,
+                cloud_agent_spawned: true,
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("cloud-agent"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
