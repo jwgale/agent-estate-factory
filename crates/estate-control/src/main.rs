@@ -13,10 +13,11 @@ use feed_collector::{
     refuse_promote, write_pack_index,
 };
 use floor_supervisor::{
-    append_apply_audit, apply_with_profile_dir, drift_with_roots, list_apply_audits,
-    list_lifecycle_events, load_desired_snapshot, load_lifecycle, load_placements, mark_running,
-    reconcile_placements, record_placements, render_reconcile, resume, suspend, write_reconcile,
-    ApplyAudit,
+    append_apply_audit, apply_dry_run, apply_with_profile_dir, drift_with_roots,
+    forget_expired_leases, list_apply_audits, list_expired_leases, list_lifecycle_events,
+    load_desired_snapshot, load_lifecycle, load_placements, mark_running, now_unix,
+    reconcile_placements, record_placements, refuse_expired_leases, render_dry_run,
+    render_reconcile, resume, suspend, write_reconcile, ApplyAudit,
 };
 use std::path::{Path, PathBuf};
 
@@ -75,6 +76,9 @@ enum Command {
         /// Fail if covering plan against_hash does not match last apply.
         #[arg(long, default_value_t = false)]
         require_fresh_plan: bool,
+        /// Print blast radius + reconcile preview. Does not write leases.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
     /// Compare desired estate to regenerable actual-state.
     Drift {
@@ -166,6 +170,21 @@ enum Command {
     Packs {
         #[command(subcommand)]
         command: PacksCommand,
+    },
+    /// List expired placement leases. Apply/resume refuse them.
+    Expire {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Drop expired rows so a later apply can record fresh leases. Does not spawn.
+        #[arg(long, default_value_t = false)]
+        forget: bool,
+    },
+    /// One-page health: .cell layout, schema files, quiet-hours workflows absent.
+    Doctor {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
     },
 }
 
@@ -349,6 +368,7 @@ fn run() -> Result<()> {
             import_pack,
             packs_dir,
             require_fresh_plan,
+            dry_run,
         } => cmd_apply(
             &estate,
             &state_dir,
@@ -358,6 +378,7 @@ fn run() -> Result<()> {
             import_pack.as_deref(),
             &packs_dir,
             require_fresh_plan,
+            dry_run,
         ),
         Command::Drift {
             estate,
@@ -445,6 +466,8 @@ fn run() -> Result<()> {
                 estate,
             } => cmd_packs_propose(&id, &drop_dir, &accepted_dir, &proposed_dir, &estate),
         },
+        Command::Expire { state_dir, forget } => cmd_expire(&state_dir, forget),
+        Command::Doctor { root, state_dir } => cmd_doctor(&root, &state_dir),
     }
 }
 
@@ -516,8 +539,13 @@ fn cmd_apply(
     import_pack_id: Option<&str>,
     packs_dir: &Path,
     require_fresh_plan: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    if dry_run {
+        return cmd_apply_dry_run(&estate, path, state_dir, plans_dir, require_plan, require_fresh_plan);
+    }
+    refuse_expired_leases(state_dir)?;
     let hash = estate_hash(&estate);
     let covering = covering_plan(plans_dir, &hash);
     let covering_stem = covering.as_ref().map(|c| c.stem.clone());
@@ -598,6 +626,240 @@ fn cmd_apply(
     }
     println!("{}", describe_placements(&estate));
     Ok(())
+}
+
+fn cmd_apply_dry_run(
+    estate: &estate_schema::Estate,
+    path: &Path,
+    state_dir: &Path,
+    plans_dir: &Path,
+    require_plan: bool,
+    require_fresh_plan: bool,
+) -> Result<()> {
+    let hash = estate_hash(estate);
+    let covering = covering_plan(plans_dir, &hash);
+    let last_applied = load_desired_snapshot(state_dir)?
+        .as_ref()
+        .map(estate_hash);
+    let mut extra_refuses = Vec::new();
+    if (require_plan || require_fresh_plan) && covering.is_none() {
+        extra_refuses.push(format!(
+            "refuse:no-plan: no covering plan for {hash}; run estate plan first"
+        ));
+    }
+    if let Some(c) = covering.as_ref() {
+        if (require_plan || require_fresh_plan) && !plan_is_reviewable(&c.plan) {
+            extra_refuses.push(
+                "refuse:plan: covering plan is not reviewable".into(),
+            );
+        }
+        if require_fresh_plan
+            && !plan_against_is_fresh_strict(&c.plan, last_applied.as_deref())
+        {
+            extra_refuses.push("refuse:stale-plan: covering plan is stale".into());
+        }
+    }
+    let before = snapshot_state_files(state_dir);
+    let report = apply_dry_run(estate, state_dir)?;
+    let after = snapshot_state_files(state_dir);
+    if before != after {
+        bail!("dry-run must not write leases or state files");
+    }
+    print!("{}", render_dry_run(&report));
+    println!("estate: {}", path.display());
+    if !extra_refuses.is_empty() {
+        for line in &extra_refuses {
+            println!("  {line}");
+        }
+        bail!("apply dry-run would-refuse");
+    }
+    if report.would_refuse {
+        bail!("apply dry-run would-refuse");
+    }
+    println!("dry-run ok (no writes)");
+    Ok(())
+}
+
+fn snapshot_state_files(state_dir: &Path) -> Vec<String> {
+    let names = [
+        "placement-actual.json",
+        "actual-state.json",
+        "desired-snapshot.yaml",
+        "lifecycle.json",
+        "apply-audit.jsonl",
+        "reconcile.json",
+        "catalog.json",
+        "model-actual.json",
+    ];
+    names
+        .into_iter()
+        .filter_map(|n| {
+            let p = state_dir.join(n);
+            if p.is_file() {
+                Some(format!("{}:{}", n, p.metadata().map(|m| m.len()).unwrap_or(0)))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn cmd_expire(state_dir: &Path, forget: bool) -> Result<()> {
+    let expired = list_expired_leases(state_dir, now_unix())?;
+    if expired.is_empty() {
+        println!("no expired leases under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("expired leases ({})", expired.len());
+    for lease in &expired {
+        println!(
+            "  refuse:expired: {} kind={} expires_at={}",
+            lease.placement_id,
+            lease.kind,
+            lease
+                .expires_at
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "-".into())
+        );
+    }
+    if forget {
+        let forgotten = forget_expired_leases(state_dir)?;
+        println!("forgot {} expired lease(s); apply may record fresh rows", forgotten.len());
+        return Ok(());
+    }
+    bail!("refuse:expired: apply/resume refuse until estate expire --forget");
+}
+
+fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
+    let mut fails: Vec<String> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    println!("Cell One doctor\n===============");
+    println!("root: {}", root.display());
+    println!("state: {}\n", state_dir.display());
+
+    println!("Schema files");
+    println!("------------");
+    let required = [
+        "schema/estate.v0.schema.json",
+        "schema/pack.v0.json",
+        "schema/specialist-pack.v0.json",
+        "schema/placement-actual.v0.json",
+        "schema/reconcile.v0.json",
+        "schema/conveyor-mesh.v0.json",
+        "schema/local-catalog.v0.json",
+        "schema/lifecycle.v0.json",
+        "schema/estate-plan.v0.json",
+        "schema/feed-cursor.v0.json",
+        "schema/enrich-proposal.v0.json",
+        "schema/apply-dry-run.v0.json",
+    ];
+    for rel in required {
+        let path = root.join(rel);
+        if path.is_file() {
+            println!("  ok    {rel}");
+        } else {
+            println!("  FAIL  {rel}");
+            fails.push(format!("missing {rel}"));
+        }
+    }
+
+    println!("\nQuiet hours");
+    println!("-----------");
+    let wf = root.join(".github/workflows");
+    let mut yml = 0usize;
+    if wf.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&wf) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.ends_with(".yml") || name.ends_with(".yaml") {
+                    yml += 1;
+                    println!("  FAIL  .github/workflows/{name}");
+                    fails.push(format!("workflow present: {name}"));
+                }
+            }
+        }
+    }
+    if yml == 0 {
+        println!("  ok    no .github/workflows/*.yml (quiet hours)");
+    }
+
+    println!("\n.cell layout");
+    println!("------------");
+    let layout = [
+        ("placement-actual.json", "durable lease"),
+        ("lifecycle.json", "durable"),
+        ("lifecycle.jsonl", "durable history"),
+        ("apply-audit.jsonl", "durable"),
+        ("conveyor-leases.json", "durable"),
+        ("reconcile.json", "regenerable"),
+        ("actual-state.json", "regenerable"),
+        ("desired-snapshot.yaml", "regenerable"),
+        ("catalog.json", "regenerable"),
+        ("sessions/", "disposable"),
+        ("runtime/", "disposable"),
+    ];
+    if !state_dir.exists() {
+        println!("  note  {} missing (greenfield ok)", state_dir.display());
+        notes.push("greenfield .cell".into());
+    } else {
+        for (name, kind) in layout {
+            let path = state_dir.join(name.trim_end_matches('/'));
+            let present = if name.ends_with('/') {
+                path.is_dir()
+            } else {
+                path.is_file()
+            };
+            println!(
+                "  {:<6} {:<24} {}",
+                if present { "ok" } else { "note" },
+                name,
+                kind
+            );
+        }
+    }
+
+    println!("\nLeases");
+    println!("------");
+    match load_placements(state_dir) {
+        Ok(Some(places)) => {
+            for lease in &places.leases {
+                if lease.kind == "cloud-agent" && lease.spawned {
+                    println!("  FAIL  {} spawned cloud-agent", lease.placement_id);
+                    fails.push("cloud-agent spawned".into());
+                }
+            }
+            let expired = list_expired_leases(state_dir, now_unix())?;
+            if expired.is_empty() {
+                println!("  ok    no expired leases");
+            } else {
+                for lease in &expired {
+                    println!("  FAIL  refuse:expired: {}", lease.placement_id);
+                    fails.push(format!("expired {}", lease.placement_id));
+                }
+            }
+        }
+        Ok(None) => println!("  note  no placement-actual.json"),
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+        }
+    }
+
+    println!("\nHealth");
+    println!("------");
+    if fails.is_empty() {
+        println!("  ok    factory ready (no workflow yml; schemas present)");
+        for note in notes {
+            println!("  note  {note}");
+        }
+        Ok(())
+    } else {
+        for fail in &fails {
+            println!("  FAIL  {fail}");
+        }
+        bail!("doctor failed ({} check(s))", fails.len());
+    }
 }
 
 fn cmd_plans(plans_dir: &Path) -> Result<()> {
@@ -795,6 +1057,21 @@ fn cmd_feed_import(
         rec.pack.promoted,
         dest.display()
     );
+    let redaction = accepted_dir.join(format!("{}.redaction.json", rec.pack.id));
+    if redaction.is_file() {
+        if let Ok(text) = std::fs::read_to_string(&redaction) {
+            println!("redaction report {}", redaction.display());
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                println!(
+                    "  redacted={} raw_secrets_found={}",
+                    v.get("redacted").and_then(|x| x.as_u64()).unwrap_or(0),
+                    v.get("raw_secrets_found")
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(0)
+                );
+            }
+        }
+    }
     println!("estate file unchanged. Jason still lists pack ids on enrich_packs by hand.");
     Ok(())
 }
