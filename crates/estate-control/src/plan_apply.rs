@@ -365,7 +365,7 @@ pub(crate) fn cmd_apply(
     model_estate::record_bindings(&estate, state_dir)?;
     record_placements(&estate, state_dir)?;
     mark_running(&estate, state_dir)?;
-    let _ = model_estate::write_catalog(&state_dir.join("catalog.json"));
+    model_estate::write_catalog(&state_dir.join("catalog.json"))?;
     let audit = ApplyAudit {
         created_at: chrono_stamp(),
         desired_hash: hash,
