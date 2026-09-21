@@ -1,0 +1,7 @@
+# Overlay-only sacred file for CLI tests that do not run from repo root.
+schema: cell-one.sacred.v0
+locked: []
+overlays:
+  - id: lab-notebook
+    aliases: [lab_notebook]
+    reason: Fixture overlay. Not an estate agent.
