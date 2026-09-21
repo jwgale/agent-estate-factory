@@ -7,7 +7,7 @@ cargo test --workspace
 make gate-90
 ```
 
-Live Grok / live local are not required. Hosted CI is PR-only `cargo check --workspace --locked`.
+Live Grok / live local are not required. Hosted CI is disabled overnight; this gate is local only.
 
 ## A10 — feed packs
 

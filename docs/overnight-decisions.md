@@ -19,12 +19,21 @@ Jason was asleep. These are the seams we picked for **maximum flexibility**. Eve
 | Plans are local artifacts unless force-added | Avoid noisy generated diffs | Track `plans/reviewed/` if that becomes the ritual |
 | Cloud-agent `wired:true` with empty agents is invalid | Stops a half-spawn | Allow when a real spawn driver exists |
 | Pack ids are slugs Jason chooses | Drop zone is a file convention, not a registry | Add a pack schema crate later |
-| No hosted `make gate-90` | Cost lock | Hosted CI is PR-only `cargo check --workspace --locked` (job `check`, timeout 10). Real `cargo test` stays local / Makefile. |
+| No hosted Actions overnight | Quiet hours + cost lock | `.github/workflows/ci.yml` **deleted on this branch and on main**. Pushes/PRs must not email Jason. Re-enable tomorrow as compile-only (`cargo check --workspace --locked`) only if he wants. Real `cargo test` stays local / Makefile. |
 | A10–A12 here means *beachhead*, not a full workday | Progress > polish | Next cell: assign cloud agents, curator UI is still forbidden |
 
 ## Anti-shrink (still)
 
 This is not a gateway, not LM Studio, not an auto-promote feed, not a cloud-agent farm. Cloud-agent is a **declared placement**, same class as `box`, behind the estate file.
+
+## CI (overnight quiet)
+
+Jason’s inbox was filling with Actions failure mail. Until ~7am America/Chicago:
+
+- No GitHub Actions workflows. `ci.yml` is gone on `main` and on `cursor/day61-90-beachhead-2950`.
+- Do not add a workflow file overnight. Do not open extra PRs that would retrigger CI.
+- Gate is local only: `cargo check --workspace --locked`, `cargo test --workspace`, `make gate` / `make gate-60` / `make gate-90`.
+- Tomorrow, if Jason wants hosted CI back: one `pull_request` job, `cargo check --workspace --locked` only, timeout ≤ 10. Never `cargo test` on Actions overnight.
 
 ## Origin
 
