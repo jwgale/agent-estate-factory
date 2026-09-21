@@ -60,6 +60,13 @@ Session journal. Convey hop TTL. `estate plan diff` (`refuse:wider`). Fixture li
 - `estate reconcile --suggest` writes a patch file only (never auto-apply).
 - `estate packs accept --curator jason` writes enrich_packs edit instructions (no estate rewrite).
 
+## After PR #4
+
+- `estate doctor --strict`: pre-merge operator checks (compile-only CI body, locked sacred file, dual-layer demo, refuse fixtures, floor no-vendor, hash lock).
+- `examples/fixtures/dual-layer-demo.yaml`: dual-path + dual-layer sacred demo. Sanctum is not Cyera. Not a Dual PE product.
+- Refuse fixtures: Sanctum-as-Cyera display-name bleed; omit-locked sacred file still refuses Cyera CI as an agent.
+- `make gate-90` is a thin local alias: smoke (includes day90) + `doctor --strict` + GATE-90 checklist print.
+
 ## Still stubbed
 
 MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI.
@@ -67,6 +74,7 @@ MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop 
 ## How to run
 
 ```bash
-make smoke    # doctor + fixtures-check + operator-day + cargo test + make day90
-make day90    # operator loop only
+make smoke      # doctor + fixtures-check + operator-day + cargo test + make day90
+make day90      # operator loop only
+make gate-90    # smoke + doctor --strict + GATE-90 checklist
 ```

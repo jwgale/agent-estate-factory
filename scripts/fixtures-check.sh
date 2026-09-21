@@ -21,6 +21,7 @@ happy=(
   "$ROOT/examples/hosts/multi-host.yaml"
   "$ROOT/examples/fixtures/happy.yaml"
   "$ROOT/examples/fixtures/mixed-frontier-local.yaml"
+  "$ROOT/examples/fixtures/dual-layer-demo.yaml"
 )
 for f in "${happy[@]}"; do
   echo "-- validate ok  ${f#$ROOT/}"
@@ -44,6 +45,7 @@ refuse=(
   "$ROOT/examples/fixtures/refuse-placement-sacred-cloud.yaml"
   "$ROOT/examples/fixtures/refuse-host-class.yaml"
   "$ROOT/examples/fixtures/refuse-sacred-overlay.yaml"
+  "$ROOT/examples/fixtures/refuse-sanctum-as-cyera.yaml"
 )
 for f in "${refuse[@]}"; do
   echo "-- validate refuse  ${f#$ROOT/}"
@@ -56,6 +58,27 @@ for f in "${refuse[@]}"; do
     exit 1
   fi
 done
+
+echo "-- omit locked sacred file still refuses Cyera CI as agent --"
+set +e
+"${ESTATE[@]}" --sacred "$ROOT/examples/fixtures/sacred-omit-locked.yaml" validate --estate "$ROOT/examples/fixtures/refuse-sacred-as-agent.yaml" >/tmp/fixtures-omit-locked.out 2>/tmp/fixtures-omit-locked.err
+omit_rc=$?
+set -e
+if [[ "$omit_rc" -eq 0 ]]; then
+  echo "FAIL  omitting locked ids from sacred file must still refuse cyera-ci as agent"
+  exit 1
+fi
+echo "PASS  omit-locked sacred file still refuses Cyera CI"
+
+echo "-- dual-layer demo dry-run (no live calls) --"
+DEMO="$ROOT/examples/fixtures/dual-layer-demo.yaml"
+"${ESTATE[@]}" validate --estate "$DEMO"
+"${ESTATE[@]}" apply --dry-run --estate "$DEMO" --state-dir "$STATE" --roots-base "$STATE" --plans-dir "$STATE/plans-demo"
+if [[ -f "$STATE/placement-actual.json" ]]; then
+  echo "FAIL  dual-layer dry-run wrote placement-actual.json"
+  exit 1
+fi
+echo "PASS  dual-layer-demo validate + dry-run"
 
 echo "-- mixed proof dry-run (no live calls) --"
 MIXED="$ROOT/examples/fixtures/mixed-frontier-local.yaml"
@@ -86,6 +109,8 @@ echo "PASS  probes --live SKIP"
 
 echo "-- doctor --"
 "${ESTATE[@]}" doctor --root "$ROOT" --state-dir "$STATE"
+echo "-- doctor --strict --"
+"${ESTATE[@]}" doctor --strict --root "$ROOT" --state-dir "$STATE"
 
 echo "-- policy allow --"
 "${ESTATE[@]}" policy check --policy "$ROOT/examples/fixtures/policy-allow.yaml" --action apply

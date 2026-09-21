@@ -1,0 +1,43 @@
+# Invalid: Sanctum display_name must not be a locked sacred name.
+# Sanctum is not Cyera. Cyera CI stays an exclusion, not an agent alias.
+version: 0
+name: sanctum-as-cyera
+default_effect: deny
+agents:
+  - id: horizon
+    display_name: Horizon
+    lane: horizon
+    desktop: horizon-desktop
+  - id: research
+    display_name: Research
+    lane: research
+    desktop: research-desktop
+  - id: sanctum
+    display_name: Cyera
+    lane: sanctum
+    desktop: sanctum-desktop
+lanes:
+  - id: horizon
+    root_path: lanes/horizon
+    owner_agent_id: horizon
+  - id: research
+    root_path: lanes/research
+    owner_agent_id: research
+  - id: sanctum
+    root_path: lanes/sanctum
+    owner_agent_id: sanctum
+model_bindings:
+  - id: xai_grok
+    class: frontier
+    driver: frontier-http
+    wired: false
+  - id: local_slm
+    class: local
+    driver: ollama
+    wired: false
+sacred_exclusions:
+  - id: cyera-ci
+    aliases: [cyera, cyera_ci]
+    reason: locked
+  - id: rust-classroom
+    reason: locked

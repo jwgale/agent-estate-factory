@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory
 
-**Start here:** [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local `make smoke` / `make day90`. Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
+**Start here:** [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local `make smoke` / `make day90` / `make gate-90`. Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 
@@ -12,7 +12,7 @@ cd agent-estate-factory
 cargo test --workspace
 make gate
 make gate-60
-make gate-90    # local only; not in GitHub Actions
+make gate-90    # smoke + day90 + doctor --strict + checklist; local only
 make operator-day   # fixtures only: suspend → plan → apply → feed import → resume
 ```
 
@@ -31,6 +31,8 @@ This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy.
 | `estate suspend` / `resume` / `status` / `history` | Multi-box control plane |
 | `estate reconcile` desired vs actual + sacred-id deny on tampered leases | Auto-heal / rewrite of leases |
 | `estate packs list\|import\|propose` — propose writes `packs/proposed/`, never applies | Feed auto-promote (locked off) |
+| `estate doctor --strict` — pre-merge operator checks (compile-only CI, locked sacred, demo estate) | Actions expansion (Jason lock) |
+| Dual-layer sacred demo `examples/fixtures/dual-layer-demo.yaml` (Sanctum is not Cyera) | Dual PE product (out of altitude) |
 | `estate convey hop\|call\|leases` — lease-bound; refuse codes prefixed `refuse:` | Real hop transport |
 | `estate audit export` — local folder / optional tarball | Remote audit upload |
 | Ollama + `CELL_LOCAL_ENDPOINT` + llama.cpp swap-proof card | vLLM / TRT until Jason verifies |
@@ -138,7 +140,7 @@ make gate
 ## Layout
 
 | Crate | Plane | Role |
-| --- | --- | --- |
+| --- | --- |
 | `estate-schema` | shared | types, validate, hash, compiled intentions, plan, firewall, SKU ban |
 | `estate-control` | control | `estate` CLI: validate, plan, apply, drift, models (no complete) |
 | `isolation-driver` | data | `IsolationDriver` trait + profile-dir + in-memory |

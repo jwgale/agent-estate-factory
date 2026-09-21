@@ -1,8 +1,7 @@
-use anyhow::Result;
-
 mod accept;
 mod cli;
 mod dispatch;
+mod doctor_strict;
 mod heal;
 mod helpers;
 mod ops;

@@ -1,0 +1,119 @@
+//! Day 90+ doctor --strict, dual-layer demo, sanctum-not-Cyera refuse.
+//! No live Grok / Mac / GPU required.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn estate_bin() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_estate"))
+}
+
+#[test]
+fn doctor_strict_passes_on_repo() {
+    let out = estate_bin()
+        .args([
+            "doctor",
+            "--strict",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &repo_root().join("target/test-strict-doctor").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("pre-merge operator checks"));
+    assert!(text.contains("compile-only"));
+    assert!(text.contains("Sanctum is not Cyera"));
+}
+
+#[test]
+fn dual_layer_demo_validates_and_sanctum_is_not_cyera() {
+    let demo = repo_root().join("examples/fixtures/dual-layer-demo.yaml");
+    let out = estate_bin()
+        .args(["validate", "--estate", &demo.display().to_string()])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("sanctum"));
+    assert!(!text.to_ascii_lowercase().contains("sanctum is cyera"));
+}
+
+#[test]
+fn refuse_sanctum_as_cyera_display_name() {
+    let estate = repo_root().join("examples/fixtures/refuse-sanctum-as-cyera.yaml");
+    let out = estate_bin()
+        .args(["validate", "--estate", &estate.display().to_string()])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "sanctum-as-cyera must fail closed");
+    assert!(
+        text.contains("Sanctum must not be Cyera") || text.contains("sacred exclusion"),
+        "{text}"
+    );
+}
+
+#[test]
+fn omit_locked_sacred_file_still_refuses_cyera_as_agent() {
+    let sacred = repo_root().join("examples/fixtures/sacred-omit-locked.yaml");
+    let estate = repo_root().join("examples/fixtures/refuse-sacred-as-agent.yaml");
+    let out = estate_bin()
+        .args([
+            "--sacred",
+            &sacred.display().to_string(),
+            "validate",
+            "--estate",
+            &estate.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "omitting locked ids from the sacred file must not admit Cyera CI"
+    );
+    assert!(text.contains("sacred exclusion") || text.contains("cyera"), "{text}");
+}
+
+#[test]
+fn doctor_strict_fails_on_empty_root() {
+    let root = repo_root().join(format!("target/test-strict-empty-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let out = estate_bin()
+        .args([
+            "doctor",
+            "--strict",
+            "--root",
+            &root.display().to_string(),
+            "--state-dir",
+            &root.join("cell").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "empty root must fail --strict");
+    let _ = std::fs::remove_dir_all(&root);
+}
