@@ -222,6 +222,18 @@ pub fn catalog_probes() -> Vec<DriverProbe> {
         .collect()
 }
 
+/// Optional live HTTP overlay. Missing endpoints stay SKIP. Never fails closed for CI.
+pub fn catalog_probes_live() -> Vec<DriverProbe> {
+    catalog_probes()
+        .into_iter()
+        .map(|p| {
+            let runtime = parse_runtime(&p.driver).unwrap_or(LocalRuntime::HttpRemote);
+            let endpoint = crate::local::live_endpoint(runtime);
+            crate::local::enrich_with_live(p, endpoint.as_deref())
+        })
+        .collect()
+}
+
 pub fn card(runtime: LocalRuntime) -> &'static CatalogCard {
     CATALOG
         .iter()
@@ -561,6 +573,28 @@ mod tests {
         let ollama = probes.iter().find(|p| p.driver == "ollama").unwrap();
         assert!(ollama.bindable);
         assert_eq!(ollama.status, "supported");
+    }
+
+    #[test]
+    fn live_probe_skips_without_endpoint() {
+        let p = crate::probe_runtime("mlx", LocalRuntime::Mlx, "apple-silicon");
+        let p = crate::enrich_with_live(p, None);
+        assert!(!p.live_probed);
+        assert!(p.note.contains("SKIP"));
+    }
+
+    #[test]
+    fn live_probe_ok_against_mock_and_down_is_safe() {
+        let server = crate::MockLocalServer::spawn().unwrap();
+        let p = crate::probe_runtime("ollama", LocalRuntime::Ollama, "any");
+        let p = crate::enrich_with_live(p, Some(&server.endpoint()));
+        assert!(p.live_probed, "{}", p.note);
+        let down = crate::enrich_with_live(
+            crate::probe_runtime("mlx", LocalRuntime::Mlx, "apple-silicon"),
+            Some("http://127.0.0.1:1"),
+        );
+        assert!(!down.live_probed);
+        assert!(down.note.contains("down"));
     }
 
     #[test]

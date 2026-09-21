@@ -20,5 +20,8 @@ bash "$ROOT/scripts/operator-day.sh"
 echo "-- cargo test --workspace --"
 cargo test --workspace
 
+echo "-- day90 operator loop --"
+bash "$ROOT/scripts/day90.sh"
+
 echo
 echo "SMOKE GREEN (local only)"

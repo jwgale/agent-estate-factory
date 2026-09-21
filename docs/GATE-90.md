@@ -5,7 +5,8 @@ Checklist for A10–A12 plus overnight waves. Hosted CI is compile-only (`cargo 
 Primary wrap:
 
 ```bash
-make smoke    # doctor + fixtures-check + operator-day + cargo test --workspace
+make smoke    # doctor + fixtures-check + operator-day + cargo test + day90
+make day90    # status → plan → dry-run → apply → reconcile
 ```
 
 Pieces:
@@ -49,6 +50,8 @@ make gate-90
 | Wave 8 sacred file | `policy/sacred.yaml` overlays + hardcoded; hop/agent refuse | `estate convey hop --id lab-notebook` |
 | Wave 8 mixed proof | http-remote frontier + ollama; validate + dry-run | `examples/fixtures/mixed-frontier-local.yaml` |
 | Schema freeze | Additive ok; rename → v1 | `schema/README.md` |
+| Day 90+ operator loop | status → plan → dry-run → apply → reconcile | `make day90` |
+| Live probes | Catalog default; `--live` SKIP without endpoints | `estate probes --live` |
 
 Fail closed: sacred exclusions, SKU in ids, unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote.
 

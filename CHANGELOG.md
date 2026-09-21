@@ -1,6 +1,6 @@
 # Changelog
 
-Morning read for Jason. Local gate only: `make smoke`. GitHub Actions is off. PR **#2** (`cursor/day61-90-beachhead-2950`) is the overnight branch. Do not merge unless you ask.
+Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 61–90 is on `main` via PR **#2**.
 
 ## Day 0–30 (on `main` via PR #1)
 
@@ -10,7 +10,7 @@ One-box factory proving A1–A4. Desired-state `estate.yaml` (Horizon / Research
 
 Mixed model estate A7–A9. Equal-class frontier + local. Ollama-first catalog, llama.cpp swap-proof, MLX/vLLM/TRT stub/experimental. Fail-closed when local is down (no silent frontier fallback). Portable `host_class` (consumer-nvidia / apple-silicon / rented-nvidia / any). Hardware is a driver choice, not a product fork. GitHub is source of truth. Origin stripped.
 
-## Day 61–90 (PR #2 — not merged)
+## Day 61–90 (on `main` via PR #2)
 
 Beachhead toward A10–A12. Cloud-agent is **declared, not spawned**. Feed packs never auto-promote. Curator is Jason / manual.
 
@@ -49,12 +49,18 @@ Session journal. Convey hop TTL. `estate plan diff` (`refuse:wider`). Fixture li
 - `policy/sacred.yaml` overlays on hardcoded sacred ids. Apply / convey / cloud refuse on hit.
 - Mixed fixture: http-remote frontier + local ollama; validate + dry-run, no live calls.
 
+## Day 90+ (PR after #2)
+
+- `estate probes --live` / `CELL_LIVE_PROBE=1`: optional HTTP ping. Unset endpoints print SKIP. CI does not require a Mac or a rented GPU. Rented box uses `CELL_LOCAL_ENDPOINT` or `CELL_RENTED_ENDPOINT` (no SKU in the id). MLX uses `CELL_MLX_ENDPOINT`.
+- `make day90`: status → plan → dry-run → apply → reconcile, then catalog + live probes.
+
 ## Still stubbed
 
-MLX / vLLM / TRT live runtimes. Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI. Hosted Actions.
+MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI.
 
 ## How to run
 
 ```bash
-make smoke    # doctor + fixtures-check + operator-day + cargo test --workspace
+make smoke    # doctor + fixtures-check + operator-day + cargo test + make day90
+make day90    # operator loop only
 ```

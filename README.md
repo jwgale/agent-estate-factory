@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory
 
-**Start here (21 Sep 2026 morning):** [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local gate `make smoke`. PR #2 paste: [`docs/PR2-DESCRIPTION.md`](docs/PR2-DESCRIPTION.md).
+**Start here:** [`docs/GATE-90.md`](docs/GATE-90.md) · [`CHANGELOG.md`](CHANGELOG.md) · local `make smoke` / `make day90`. Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
 One-box factory. Day 0–30 proves **A1–A4**. Day 31–60 proves **A5–A9** (mixed frontier + local) on the same Horizon / Research / Sanctum estate. Pause-safe. Not Dual PE, not multi-box control, not an AI-gateway product, not a local studio.
 

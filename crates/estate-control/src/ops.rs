@@ -439,16 +439,22 @@ pub(crate) fn cmd_packs_index(drop_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_probes() -> Result<()> {
-    let probes = model_estate::catalog_probes();
+pub(crate) fn cmd_probes(live: bool) -> Result<()> {
+    let live = live || model_estate::live_probe_env_requested();
+    if live {
+        println!("live probe (SKIP without endpoints; not used in CI)");
+    }
+    let probes = if live {
+        model_estate::catalog_probes_live()
+    } else {
+        model_estate::catalog_probes()
+    };
     for probe in probes {
         println!(
             "  {:<12} status={:<12} bindable={} live_probed={} host_class={}",
             probe.driver, probe.status, probe.bindable, probe.live_probed, probe.host_class
         );
-        if !probe.live_probed {
-            println!("    {}", probe.note);
-        }
+        println!("    {}", probe.note);
     }
     Ok(())
 }
