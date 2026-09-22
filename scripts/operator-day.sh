@@ -268,13 +268,13 @@ cargo run -q -p estate-control -- sessions tail --state-dir "$STATE" --n 8
 echo "PASS  expire/doctor/sessions"
 
 echo "-- catalog capability flags --"
-cargo run -q -p estate-control -- catalog --out "$STATE/catalog.json" >/tmp/opday-catalog.out
+cargo run -q -p estate-control -- catalog --out "$WORKDIR/schema-catalog.json" >/tmp/opday-catalog.out
 if ! grep -q "streaming=" /tmp/opday-catalog.out || ! grep -q "context=" /tmp/opday-catalog.out; then
   echo "FAIL  estate catalog must print capability flags"
   exit 1
 fi
-if ! grep -q '"context_tokens"' "$STATE/catalog.json"; then
-  echo "FAIL  catalog.json missing context_tokens"
+if ! grep -q '"context_tokens"' "$WORKDIR/schema-catalog.json"; then
+  echo "FAIL  schema catalog missing context_tokens"
   exit 1
 fi
 echo "PASS  catalog caps"
