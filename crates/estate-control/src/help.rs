@@ -127,6 +127,9 @@ Binds box sessions. Records placement leases. Does not spawn cursor-cloud.
 
 Second identical apply is a no-op (unchanged). Expired leases refuse.
 After `estate expire --forget`, apply restamps leases. That is not `--force`.
+A cell catalog that disagrees with the binding is `refuse:frontier-model`
+before any apply write. The schema card is not the binding. A missing
+catalog is not a disagreement, and `--force` does not overwrite one.
 ";
 
 const RECONCILE: &str = "\
