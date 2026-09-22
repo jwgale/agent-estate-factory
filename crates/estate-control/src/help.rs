@@ -97,7 +97,10 @@ mesh as no expired hop leases. A mesh that does not parse, or a hop
 host class that is not a class, is FAIL before factory ready. A missing
 lifecycle.json is not a failure, and doctor does not invent suspended.
 A lifecycle file that does not parse is FAIL before factory ready. A
-parsed file prints its state. Cloud-agent
+parsed file prints its state. A missing apply-audit.jsonl is not a
+failure, and doctor does not invent a line count. An audit file that
+does not parse is FAIL before factory ready. A parsed file prints its
+line count. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell

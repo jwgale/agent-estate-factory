@@ -193,6 +193,19 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
             }
         }
     }
+    // Missing apply-audit.jsonl is not a failure. Printing a line count
+    // for a missing file would invent zero. A present file that does not
+    // parse is FAIL. A note would still print "factory ready".
+    let audit_path = state_dir.join("apply-audit.jsonl");
+    if audit_path.exists() {
+        match list_apply_audits(state_dir) {
+            Ok(audits) => println!("  ok    apply-audit.jsonl lines={}", audits.len()),
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+            }
+        }
+    }
 
     println!("\nFrontier model");
     println!("--------------");
