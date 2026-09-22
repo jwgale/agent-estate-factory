@@ -69,7 +69,7 @@ fn a10_feed_pack_from_both_paths_never_promotes() {
     let estate = example();
     assert!(estate.enrich_packs.packs.is_empty());
     let accepted = root.join("accepted");
-    let (imported, dest) = import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+    let (imported, dest) = import_pack(&drop, &accepted, "overnight-traces", &[], &estate).unwrap();
     assert!(!imported.estate_bound);
     assert!(!imported.pack.promoted);
     assert_eq!(imported.pack.schema, "cell-one.pack.v0");
@@ -248,7 +248,7 @@ fn wave3_multi_host_propose_reconcile() {
     let accepted = root.join("accepted");
     let proposed = root.join("proposed");
     materialize_from_feed(&root.join("feed"), &drop, "overnight-traces").unwrap();
-    import_pack(&drop, &accepted, "overnight-traces", &[]).unwrap();
+    import_pack(&drop, &accepted, "overnight-traces", &[], &estate).unwrap();
     let (proposal, _) =
         propose_enrich(&drop, &accepted, &proposed, "overnight-traces", &estate).unwrap();
     assert!(!proposal.auto_apply);
