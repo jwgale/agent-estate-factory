@@ -8,7 +8,8 @@ use estate_schema::{
 use feed_collector::list_open_proposals;
 use floor_supervisor::{
     drift_with_roots,
-    forget_expired_leases, list_apply_audits, list_expired_leases, load_lifecycle, load_placements,
+    forget_expired_leases, list_apply_audits, list_expired_leases, list_lifecycle_events,
+    load_lifecycle, load_placements,
     now_unix, refuse_lease_host_classes,
 };
 use std::path::Path;
@@ -200,6 +201,19 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     if audit_path.exists() {
         match list_apply_audits(state_dir) {
             Ok(audits) => println!("  ok    apply-audit.jsonl lines={}", audits.len()),
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+            }
+        }
+    }
+    // Missing lifecycle.jsonl is not a failure. Printing a line count
+    // for a missing file would invent zero. A present file that does not
+    // parse is FAIL. A note would still print "factory ready".
+    let history_path = state_dir.join("lifecycle.jsonl");
+    if history_path.exists() {
+        match list_lifecycle_events(state_dir) {
+            Ok(events) => println!("  ok    lifecycle.jsonl lines={}", events.len()),
             Err(err) => {
                 println!("  FAIL  {err}");
                 fails.push(err.to_string());
