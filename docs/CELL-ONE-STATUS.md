@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#53 plus this slice)
+## On `main` (PR #1-#54 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -178,15 +178,19 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 `docs/GATE-90.md` stops calling the Ollama complete path ready. The mock completion stays green. The 5090 `Pong` stays recorded. Mac complete stays unrecorded. `mlx`, `vllm`, and `trt` refuse a frontier POST and are not live-ok. `docs/DAY90-PLUS.md` parks vLLM and TRT with the other stubs. `READY_FOR_LIVE_TEST` is yes only when a concrete command on the live-probe page is still unblocked. None is.
 
-## This slice
+## #54 in plain English
 
 `estate probes --live` does not print `live ok` for `mlx`, `vllm`, or `trt`. A stub or experimental card stays `live_probed=false` and says `not live-ok`, even when an HTTP endpoint answers. Ollama, llama.cpp, and http-remote still print `live ok` when their endpoint answers. No new CLI. No new smoke or gate-90 step.
 
-`READY_FOR_LIVE_TEST`: **no**. No new live surface.
+## This slice
+
+Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`.
+
+`READY_FOR_LIVE_TEST`: **yes** for that Mac command only.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#54 (plain English)
+## Bug fixes on #10-#55 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -234,6 +238,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #52 | Backup and restore copied a cell catalog that disagreed with the binding, and a frontier `source_driver`, onto an estate with no frontier binding. A desired snapshot could name sacred exclusions the estate does not. | Those are `refuse:frontier-model`, `refuse:frontier-invent`, and `refuse:sacred-mismatch` before the archive or the restore write. A local-only pack still archives. A missing catalog is not a disagreement. READY no. |
 | #53 | The gate called Ollama specialist complete ready, and the parking lot did not name vLLM or TRT, so a stub card could be read as a live hand-off. | The completion row is mock-locked. 5090 `Pong` stays recorded. Mac complete stays unrecorded. vLLM and TRT are parked and not live-ok. READY no. |
 | #54 | `mlx` could print `live ok` by falling back to `CELL_LOCAL_ENDPOINT`. vLLM and TRT could do the same when their endpoint answered. | Stub and experimental probes stay `not live-ok` and do not open that ping. Supported cards still print `live ok`. READY no. |
+| #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | [`LIVE-PROBES.md`](LIVE-PROBES.md) has the MacBook Air and 5090-class copy-paste (`~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`). READY yes for the Mac command only. The 5090 `Pong` stays recorded. |
 
 ## Known-good local commands
 
@@ -280,7 +285,7 @@ Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 
 | Item | State |
 | --- | --- |
-| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
+| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). Do not mark it green. |
 | Native MLX | `specialist()` stays stub. Not the Ollama-on-Mac probe. |
 | Live consumer / rented GPU | 5090 probes and specialist `Pong` are recorded. Not required to re-run for gates. Not native MLX. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |
