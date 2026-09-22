@@ -1,0 +1,22 @@
+{
+  "schema": "cell-one.enrich-binding-stage.v0",
+  "curator": "jason",
+  "policy": "manual",
+  "auto_apply": false,
+  "promoted": false,
+  "estate_rewritten": false,
+  "applied": false,
+  "source_estate": "lab/estate.yaml",
+  "staged_estate": ".cell/enrich-stage/staged-estate.yaml",
+  "prepared_dir": ".cell/enrich/overnight-traces/ollama-modelfile",
+  "pack_id": "overnight-traces",
+  "driver": "ollama-modelfile",
+  "job": "enrich",
+  "local_tag": "cell-enrich-overnight-traces",
+  "binding_id": "local_slm",
+  "seated_driver": "ollama",
+  "source_estate_hash": "sha256:documentary",
+  "staged_estate_hash": "sha256:documentary-staged",
+  "binding_fingerprint": "{}",
+  "note": "Stage only. auto_apply=false. estate plan the staged estate, then estate apply --require-plan. The source estate is written only when that apply succeeds. apply-proposal does not apply."
+}

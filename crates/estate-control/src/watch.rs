@@ -303,6 +303,8 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         }
     }
 
+    print_doctor_enrich_join(state_dir, &mut fails);
+
     println!("\nFrontier model");
     println!("--------------");
     print_doctor_frontier(
@@ -338,6 +340,10 @@ pub(crate) fn cmd_status(
     root: &Path,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let enrich_facts = model_estate::enrich_join_facts(&state_dir.join("enrich"))
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let enrich_stage = model_estate::read_enrich_stage(state_dir)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
     // Missing lifecycle.json is the default record, not a file. Printing
     // that default would invent suspended and durable=true. A present
     // file that does not parse is refuse before the page. A parsed file
@@ -436,6 +442,7 @@ pub(crate) fn cmd_status(
             proposals.join(",")
         }
     );
+    print_status_enrich_join(enrich_facts.as_deref(), enrich_stage.as_ref(), &estate);
     println!(
         "policy: {} ({})",
         if policy_present { "present" } else { "missing" },
@@ -614,6 +621,103 @@ fn read_catalog_frontier(path: &Path) -> std::result::Result<Option<String>, Str
     model_estate::frontier_model_from_catalog_json(&text)
 }
 
+fn print_status_enrich_join(
+    facts: Option<&[model_estate::EnrichJoinFact]>,
+    stage: Option<&model_estate::EnrichBindingStage>,
+    estate: &estate_schema::Estate,
+) {
+    if let Some(stage) = stage {
+        println!(
+            "enrich_stage: applied={} estate_rewritten={} tag={} binding={}",
+            stage.applied, stage.estate_rewritten, stage.local_tag, stage.binding_id
+        );
+    }
+    let Some(facts) = facts else {
+        return;
+    };
+    let model = model_estate::local_slm_model_param(estate);
+    if facts.is_empty() {
+        println!("enrich_binding: enrich directory is empty");
+        return;
+    }
+    for fact in facts {
+        let shown = model.as_deref().unwrap_or("-");
+        if model.as_deref() == Some(fact.local_tag.as_str()) {
+            println!(
+                "enrich_binding: local_slm model={} pack={} driver={}",
+                fact.local_tag, fact.pack_id, fact.driver
+            );
+        } else {
+            println!(
+                "enrich_binding: pending kind={} pack={} driver={} tag={} estate_model={shown}",
+                fact.kind, fact.pack_id, fact.driver, fact.local_tag
+            );
+        }
+    }
+}
+
+fn print_doctor_enrich_join(state_dir: &Path, fails: &mut Vec<String>) {
+    let facts = match model_estate::enrich_join_facts(&state_dir.join("enrich")) {
+        Ok(None) => return,
+        Ok(Some(facts)) => facts,
+        Err(err) => {
+            println!("\nEnrich join");
+            println!("-----------");
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+            return;
+        }
+    };
+    println!("\nEnrich join");
+    println!("-----------");
+    let model = match floor_supervisor::load_desired_snapshot(state_dir) {
+        Ok(Some(estate)) => model_estate::local_slm_model_param(&estate),
+        Ok(None) => None,
+        Err(err) => {
+            println!("  FAIL  desired-snapshot.yaml: {err}");
+            fails.push(format!("desired-snapshot.yaml: {err}"));
+            return;
+        }
+    };
+    match model_estate::read_enrich_stage(state_dir) {
+        Ok(Some(stage)) if !stage.applied => {
+            println!(
+                "  note  enrich stage tag={} source estate not written (apply --require-plan)",
+                stage.local_tag
+            );
+        }
+        Ok(_) => {}
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+            return;
+        }
+    }
+    if facts.is_empty() {
+        println!("  note  enrich directory is empty");
+        return;
+    }
+    let shown = model.as_deref().unwrap_or("-");
+    for fact in &facts {
+        if model.as_deref() == Some(fact.local_tag.as_str()) {
+            println!(
+                "  ok    local_slm model={} pack={} driver={}",
+                fact.local_tag, fact.pack_id, fact.driver
+            );
+        } else if fact.kind == "proposal" {
+            println!(
+                "  note  binding proposal pack={} driver={} tag={} estate local_slm model={shown}",
+                fact.pack_id, fact.driver, fact.local_tag
+            );
+        } else {
+            println!(
+                "  note  prepare pack={} driver={} tag={} estate local_slm model={shown} (no binding proposal)",
+                fact.pack_id, fact.driver, fact.local_tag
+            );
+        }
+    }
+}
+
 pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
     let mut fails = 0usize;
     for rel in DOCTOR_REQUIRED {
@@ -650,6 +754,11 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         }
     }
     if cell_catalog_binding_problem(state_dir).is_some() {
+        fails += 1;
+    }
+    if model_estate::enrich_join_facts(&state_dir.join("enrich")).is_err()
+        || model_estate::read_enrich_stage(state_dir).is_err()
+    {
         fails += 1;
     }
     if fails == 0 {

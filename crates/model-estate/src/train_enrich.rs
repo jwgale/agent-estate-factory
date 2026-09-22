@@ -681,9 +681,11 @@ fn next_markdown(
          {handoff}\
          {path_note}\n\
          \n\
-         After that model exists, record a binding proposal for the local_slm seat. The proposal is not applied. Paste it, then estate plan and estate apply --require-plan.\n\
+         After that model exists, record a binding proposal, then stage it. apply-proposal does not apply. estate plan and estate apply --require-plan write the source estate only when require-plan succeeds.\n\
          \n\
          estate enrich import-prepared --estate <estate.yaml> --prepared {out} --tag {tag} --path {import_path}\n\
+         \n\
+         estate enrich apply-proposal --estate <estate.yaml> --prepared {out} --tag {tag} --state-dir <state-dir>\n\
          \n\
          Fail closed:\n\
          - curator must be jason (refuse:curator)\n\
@@ -820,7 +822,7 @@ pub fn render_prepared_index(enrich_root: &Path, rows: &[PreparedEntry]) -> Stri
     lines.push(format!("count={}", rows.len()));
     lines.push("promoted=false auto_apply=false estate_rewritten=false".to_string());
     lines.push(
-        "handoff is NEXT.md in each out dir. join: estate enrich import-prepared --prepared <out> --tag <tag> --path <file>"
+        "handoff is NEXT.md in each out dir. join: estate enrich import-prepared --prepared <out> --tag <tag> --path <file> ; then estate enrich apply-proposal"
             .to_string(),
     );
     lines.join("\n")
@@ -955,7 +957,7 @@ pub fn import_prepared(
         proposed_binding,
         paste_yaml,
         note: format!(
-            "Proposal only. auto_apply=false. Replace the existing local_slm binding with the snippet, then estate plan and estate apply --require-plan. import-prepared does not apply, does not promote, and does not rewrite the estate. Operator file content_scanned={content_scanned}."
+            "Proposal only. auto_apply=false. Next: estate enrich apply-proposal, then estate plan and estate apply --require-plan. import-prepared does not apply, does not promote, and does not rewrite the estate. Operator file content_scanned={content_scanned}."
         ),
     };
     let json = to_pretty(&proposal)?;
@@ -1157,9 +1159,9 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
          content_scanned: {scanned}\n\
          \n\
          This file is not applied. It does not rewrite estate.yaml and it does not write catalog.json.\n\
-         Replace the existing local_slm binding with the snippet. Agents that already allow local_slm keep that id.\n\
-         Then run estate plan and estate apply --require-plan on the estate file you edited.\n\
-         import-prepared does not run plan or apply.\n\
+         Agents that already allow local_slm keep that id.\n\
+         Next: estate enrich apply-proposal stages this binding for estate plan and estate apply --require-plan.\n\
+         The source estate is written only when that apply succeeds. import-prepared does not run plan or apply.\n\
          \n\
          ```yaml\n\
          {paste}\
@@ -1250,6 +1252,677 @@ fn external_manifest_yaml(manifest: &ExternalManifest) -> String {
         drivers = yaml_list("source_drivers", &manifest.source_drivers),
         note = yaml_quote(manifest.note),
     )
+}
+
+pub const BINDING_STAGE_SCHEMA: &str = "cell-one.enrich-binding-stage.v0";
+
+const STAGED_ESTATE_FILE: &str = "staged-estate.yaml";
+const STAGE_JSON: &str = "stage.json";
+
+/// `{state_dir}/enrich-stage`. Plan and apply read `staged-estate.yaml` from here.
+pub fn enrich_stage_dir(state_dir: &Path) -> PathBuf {
+    state_dir.join("enrich-stage")
+}
+
+fn staged_estate_path(state_dir: &Path) -> PathBuf {
+    enrich_stage_dir(state_dir).join(STAGED_ESTATE_FILE)
+}
+
+fn stage_json_path(state_dir: &Path) -> PathBuf {
+    enrich_stage_dir(state_dir).join(STAGE_JSON)
+}
+
+/// `local_slm` `params.model` when that string is present.
+pub fn local_slm_model_param(estate: &Estate) -> Option<String> {
+    estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == "local_slm")
+        .and_then(|binding| binding.params.get("model"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(str::to_string)
+}
+
+/// One prepared driver under `.cell/enrich`, with a proposal when that file exists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnrichJoinFact {
+    pub kind: String,
+    pub pack_id: String,
+    pub driver: String,
+    pub local_tag: String,
+}
+
+/// Read-only. `Ok(None)` when `enrich/` is missing. A bad proposal or prepare refuses.
+pub fn enrich_join_facts(enrich_root: &Path) -> Result<Option<Vec<EnrichJoinFact>>, ModelError> {
+    if !enrich_root.exists() {
+        return Ok(None);
+    }
+    let rows = list_prepared(enrich_root)?;
+    let mut facts = Vec::new();
+    for row in rows {
+        let proposal_path = row.out_dir.join(BINDING_PROPOSAL_JSON);
+        if proposal_path.is_file() {
+            let proposal = parse_binding_proposal(&proposal_path)?;
+            if proposal.pack_id != row.pack_id
+                || proposal.driver != row.driver
+                || proposal.job != row.job
+            {
+                return Err(ModelError::Other(format!(
+                    "refuse:prepare: {} does not match prepare.json",
+                    proposal_path.display()
+                )));
+            }
+            if proposal.local_tag != row.local_tag {
+                return Err(ModelError::Other(format!(
+                    "refuse:tag: '{}' must be {}",
+                    proposal.local_tag, row.local_tag
+                )));
+            }
+            facts.push(EnrichJoinFact {
+                kind: "proposal".into(),
+                pack_id: row.pack_id,
+                driver: row.driver,
+                local_tag: row.local_tag,
+            });
+        } else {
+            facts.push(EnrichJoinFact {
+                kind: "prepare".into(),
+                pack_id: row.pack_id,
+                driver: row.driver,
+                local_tag: row.local_tag,
+            });
+        }
+    }
+    Ok(Some(facts))
+}
+
+/// Receipt for a staged `local_slm` join. `applied` flips only after
+/// `estate apply --require-plan` writes the source estate.
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct EnrichBindingStage {
+    pub schema: String,
+    pub curator: String,
+    pub policy: String,
+    pub auto_apply: bool,
+    pub promoted: bool,
+    pub estate_rewritten: bool,
+    pub applied: bool,
+    pub source_estate: String,
+    pub staged_estate: String,
+    pub prepared_dir: String,
+    pub pack_id: String,
+    pub driver: String,
+    pub job: String,
+    pub local_tag: String,
+    pub binding_id: String,
+    pub seated_driver: String,
+    pub source_estate_hash: String,
+    pub staged_estate_hash: String,
+    pub binding_fingerprint: String,
+    pub note: String,
+}
+
+pub struct ApplyProposalRequest<'a> {
+    pub estate: &'a Estate,
+    pub estate_path: &'a Path,
+    pub prepared_dir: &'a Path,
+    pub tag: &'a str,
+    pub curator: &'a str,
+    pub state_dir: &'a Path,
+    /// Set only for `--verify-local-tag`. Absent skips the network.
+    pub verify_endpoint: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyProposalOutcome {
+    Staged(EnrichBindingStage),
+    Noop { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnrichStageCommit {
+    Absent,
+    NotThisEstate,
+    Held,
+    Wrote { source: PathBuf },
+    Already { source: PathBuf },
+}
+
+/// Validate `binding-proposal.json` and write a staged estate that `estate plan`
+/// and `estate apply --require-plan` already consume. Does not apply. Does not
+/// write the source estate.
+pub fn apply_proposal(
+    req: &ApplyProposalRequest<'_>,
+) -> Result<ApplyProposalOutcome, ModelError> {
+    if points_at_stage_file(req.estate_path, req.state_dir) {
+        return Err(ModelError::Other(
+            "refuse:stage: --estate must be the source estate, not enrich-stage/staged-estate.yaml"
+                .into(),
+        ));
+    }
+    refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
+    refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
+    let proposal_path = req.prepared_dir.join(BINDING_PROPOSAL_JSON);
+    let proposal = parse_binding_proposal(&proposal_path)?;
+    let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
+    if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job
+    {
+        return Err(ModelError::Other(
+            "refuse:prepare: prepare.json does not match the binding proposal".into(),
+        ));
+    }
+    refuse_frontier_source_on_estate(&doc.source_drivers, req.estate).map_err(map_feed)?;
+    let expected = local_enrich_tag(&doc.pack_id);
+    if req.tag != expected || proposal.local_tag != expected {
+        return Err(ModelError::Other(format!(
+            "refuse:tag: '{tag}' must be {expected}",
+            tag = req.tag
+        )));
+    }
+    if !same_file(Path::new(&proposal.prepared_dir), req.prepared_dir) {
+        return Err(ModelError::Other(
+            "refuse:prepared: binding proposal prepared_dir does not match --prepared".into(),
+        ));
+    }
+    let operator_path = Path::new(&proposal.local_path);
+    refuse_sacred_and_sku("operator path", &proposal.local_path)?;
+    let _scanned = scan_operator_file(operator_path)?;
+    let seat = req
+        .estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == "local_slm")
+        .ok_or_else(|| ModelError::Other("refuse:binding: estate has no local_slm seat".into()))?;
+    let proposed = proposed_model_binding(seat, &proposal, req.tag)?;
+    let mut staged_estate = req.estate.clone();
+    let index = staged_estate
+        .model_bindings
+        .iter()
+        .position(|binding| binding.id == "local_slm")
+        .ok_or_else(|| ModelError::Other("refuse:binding: estate has no local_slm seat".into()))?;
+    staged_estate.model_bindings[index] = proposed.clone();
+    estate_schema::validate(&staged_estate).map_err(|errors| {
+        ModelError::Other(format!(
+            "refuse:binding: staged estate invalid: {}",
+            errors.join("; ")
+        ))
+    })?;
+    if let Some(endpoint) = req.verify_endpoint {
+        crate::runtime_lists_model(endpoint, req.tag).map_err(ModelError::Other)?;
+    }
+    if seat == &proposed {
+        return Ok(ApplyProposalOutcome::Noop {
+            reason: format!("no-op: local_slm already bound to {}", req.tag),
+        });
+    }
+    let current_hash = estate_schema::estate_hash(req.estate);
+    let fingerprint = binding_fingerprint(&proposed)?;
+    if let Some(stage) = load_stage(req.state_dir)? {
+        let same_intent = stage.local_tag == req.tag
+            && stage.binding_fingerprint == fingerprint
+            && stage.source_estate_hash == current_hash
+            && stage.binding_id == "local_slm"
+            && !stage.auto_apply
+            && !stage.promoted;
+        if same_intent && staged_file_matches(&stage)? {
+            return Ok(ApplyProposalOutcome::Noop {
+                reason: format!(
+                    "no-op: enrich stage already holds tag={} binding=local_slm",
+                    req.tag
+                ),
+            });
+        }
+        if !stage.applied {
+            return Err(ModelError::Other(format!(
+                "refuse:stage: pending stage tag={} hash={} does not match this proposal",
+                stage.local_tag, stage.source_estate_hash
+            )));
+        }
+    }
+    if proposal.estate_hash != current_hash {
+        return Err(ModelError::Other(format!(
+            "refuse:estate-hash: binding proposal {} does not match estate {current_hash}",
+            proposal.estate_hash
+        )));
+    }
+    let yaml = estate_schema::render_estate_yaml(&staged_estate).map_err(|err| {
+        ModelError::Other(format!("refuse:binding: staged estate: {err}"))
+    })?;
+    let parsed = estate_schema::load_estate_str(&yaml).map_err(|err| {
+        ModelError::Other(format!("refuse:binding: staged estate: {err}"))
+    })?;
+    let staged_hash = estate_schema::estate_hash(&parsed);
+    let source_estate = canonical_string(req.estate_path)?;
+    let stage_dir = enrich_stage_dir(req.state_dir);
+    std::fs::create_dir_all(&stage_dir).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:stage-write: {}: {err}",
+            stage_dir.display()
+        ))
+    })?;
+    let stage_dir = canonical_path(&stage_dir)?;
+    let staged_estate_path = stage_dir.join(STAGED_ESTATE_FILE);
+    if Path::new(&source_estate) == staged_estate_path {
+        return Err(ModelError::Other(
+            "refuse:stage: --estate must be the source estate, not enrich-stage/staged-estate.yaml"
+                .into(),
+        ));
+    }
+    let stage = EnrichBindingStage {
+        schema: BINDING_STAGE_SCHEMA.into(),
+        curator: "jason".into(),
+        policy: "manual".into(),
+        auto_apply: false,
+        promoted: false,
+        estate_rewritten: false,
+        applied: false,
+        source_estate,
+        staged_estate: staged_estate_path.display().to_string(),
+        prepared_dir: canonical_string(req.prepared_dir)?,
+        pack_id: proposal.pack_id,
+        driver: proposal.driver,
+        job: proposal.job,
+        local_tag: expected,
+        binding_id: "local_slm".into(),
+        seated_driver: proposal.seated_driver,
+        source_estate_hash: current_hash,
+        staged_estate_hash: staged_hash,
+        binding_fingerprint: fingerprint,
+        note: "Stage only. auto_apply=false. estate plan the staged estate, then estate apply --require-plan. The source estate is written only when that apply succeeds. apply-proposal does not apply.".into(),
+    };
+    let json = to_pretty(&stage)?;
+    refuse_sacred_and_sku("binding stage", &json)?;
+    refuse_raw_secrets(&json).map_err(map_feed)?;
+    let staged_tmp = stage_dir.join("staged-estate.yaml.tmp");
+    let json_tmp = stage_dir.join("stage.json.tmp");
+    std::fs::write(&staged_tmp, &yaml).map_err(|err| {
+        ModelError::Other(format!("refuse:stage-write: {}: {err}", staged_tmp.display()))
+    })?;
+    std::fs::write(&json_tmp, &json).map_err(|err| {
+        ModelError::Other(format!("refuse:stage-write: {}: {err}", json_tmp.display()))
+    })?;
+    std::fs::rename(&staged_tmp, &staged_estate_path).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:stage-write: {}: {err}",
+            staged_estate_path.display()
+        ))
+    })?;
+    std::fs::rename(&json_tmp, stage_dir.join(STAGE_JSON)).map_err(|err| {
+        ModelError::Other(format!("refuse:stage-write: stage.json: {err}"))
+    })?;
+    Ok(ApplyProposalOutcome::Staged(stage))
+}
+
+/// Refuse a require-plan apply of the staged estate when the receipt does not
+/// cover that hash. Other estate paths are ignored. Does not write.
+pub fn refuse_staged_apply(
+    applied_path: &Path,
+    state_dir: &Path,
+    applied_hash: &str,
+    require_plan: bool,
+) -> Result<(), ModelError> {
+    if !same_file(applied_path, &staged_estate_path(state_dir)) {
+        return Ok(());
+    }
+    let Some(stage) = load_stage(state_dir)? else {
+        return Ok(());
+    };
+    if require_plan && stage.staged_estate_hash != applied_hash {
+        return Err(ModelError::Other(format!(
+            "refuse:stage: applied hash {applied_hash} does not match enrich stage {}",
+            stage.staged_estate_hash
+        )));
+    }
+    Ok(())
+}
+
+/// After a successful apply of the staged estate, copy it onto the source
+/// estate only when `--require-plan` was set.
+pub fn commit_enrich_stage(
+    applied_path: &Path,
+    state_dir: &Path,
+    require_plan: bool,
+    applied_hash: &str,
+) -> Result<EnrichStageCommit, ModelError> {
+    let staged_path = staged_estate_path(state_dir);
+    if !same_file(applied_path, &staged_path) {
+        return Ok(EnrichStageCommit::NotThisEstate);
+    }
+    let Some(mut stage) = load_stage(state_dir)? else {
+        return Ok(EnrichStageCommit::Absent);
+    };
+    if !require_plan {
+        return Ok(EnrichStageCommit::Held);
+    }
+    if stage.staged_estate_hash != applied_hash {
+        return Err(ModelError::Other(format!(
+            "refuse:stage: applied hash {applied_hash} does not match enrich stage {}",
+            stage.staged_estate_hash
+        )));
+    }
+    let bytes = std::fs::read(&staged_path).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:stage: {}: {err}",
+            staged_path.display()
+        ))
+    })?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| {
+        ModelError::Other("refuse:stage: staged estate is not utf-8".into())
+    })?;
+    let parsed = estate_schema::load_estate_str(text).map_err(|err| {
+        ModelError::Other(format!("refuse:stage: staged estate: {err}"))
+    })?;
+    if estate_schema::estate_hash(&parsed) != applied_hash {
+        return Err(ModelError::Other(
+            "refuse:stage: staged estate hash changed before write-back".into(),
+        ));
+    }
+    let source = PathBuf::from(&stage.source_estate);
+    if same_file(&source, &staged_path) {
+        return Err(ModelError::Other(
+            "refuse:stage: source estate is the stage file".into(),
+        ));
+    }
+    let already = std::fs::read(&source).ok().as_deref() == Some(bytes.as_slice());
+    if !already {
+        write_bytes_atomic(&source, &bytes)?;
+    }
+    if !stage.applied || !stage.estate_rewritten {
+        stage.applied = true;
+        stage.estate_rewritten = true;
+        stage.auto_apply = false;
+        stage.promoted = false;
+        let json = to_pretty(&stage)?;
+        std::fs::write(stage_json_path(state_dir), json).map_err(|err| {
+            ModelError::Other(format!("refuse:stage-write: stage.json: {err}"))
+        })?;
+    }
+    if already {
+        Ok(EnrichStageCommit::Already { source })
+    } else {
+        Ok(EnrichStageCommit::Wrote { source })
+    }
+}
+
+fn parse_binding_proposal(path: &Path) -> Result<EnrichBindingProposal, ModelError> {
+    if !path.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:missing-proposal: {}",
+            path.display()
+        )));
+    }
+    let text = std::fs::read_to_string(path).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:proposal: {}: {err}",
+            path.display()
+        ))
+    })?;
+    refuse_raw_secrets(&text).map_err(map_feed)?;
+    let proposal: EnrichBindingProposal = serde_json::from_str(&text).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:proposal: {}: {err}",
+            path.display()
+        ))
+    })?;
+    if proposal.schema != BINDING_PROPOSAL_SCHEMA {
+        return Err(ModelError::Other(format!(
+            "refuse:proposal: schema '{}' is not {BINDING_PROPOSAL_SCHEMA}",
+            proposal.schema
+        )));
+    }
+    if proposal.auto_apply || proposal.promoted || proposal.estate_rewritten {
+        return Err(ModelError::Other(
+            "refuse:proposal: auto_apply, promoted, and estate_rewritten must stay false".into(),
+        ));
+    }
+    if proposal.curator != "jason" || proposal.policy != "manual" {
+        return Err(ModelError::Other(
+            "refuse:curator: binding proposal curator must be jason and policy manual".into(),
+        ));
+    }
+    if proposal.binding_id != "local_slm" {
+        return Err(ModelError::Other(
+            "refuse:binding: binding proposal id is not local_slm".into(),
+        ));
+    }
+    refuse_sacred_and_sku("tag", &proposal.local_tag)?;
+    refuse_sacred_and_sku("pack id", &proposal.pack_id)?;
+    refuse_sacred_and_sku("driver", &proposal.driver)?;
+    refuse_sacred_and_sku("seated driver", &proposal.seated_driver)?;
+    refuse_sacred_and_sku("operator path", &proposal.local_path)?;
+    refuse_sacred_and_sku("binding proposal", &proposal.paste_yaml)?;
+    refuse_sacred_and_sku("binding proposal", &proposal.note)?;
+    Ok(proposal)
+}
+
+fn proposed_model_binding(
+    seat: &estate_schema::ModelBinding,
+    proposal: &EnrichBindingProposal,
+    tag: &str,
+) -> Result<estate_schema::ModelBinding, ModelError> {
+    let obj = proposal.proposed_binding.as_object().ok_or_else(|| {
+        ModelError::Other("refuse:binding: proposed binding is not an object".into())
+    })?;
+    let id = obj.get("id").and_then(|value| value.as_str()).unwrap_or("");
+    if id != "local_slm" || seat.id != "local_slm" {
+        return Err(ModelError::Other(
+            "refuse:binding: proposed id must stay local_slm".into(),
+        ));
+    }
+    let class = obj.get("class").and_then(|value| value.as_str()).unwrap_or("");
+    if class == "frontier" {
+        return Err(ModelError::Other(
+            "refuse:frontier-invent: binding proposal class is frontier".into(),
+        ));
+    }
+    if class != "local" || seat.class != estate_schema::ModelClass::Local {
+        return Err(ModelError::Other(
+            "refuse:binding: local_slm class is not local".into(),
+        ));
+    }
+    let driver = obj.get("driver").and_then(|value| value.as_str()).unwrap_or("");
+    if driver != seat.driver || proposal.seated_driver != seat.driver || driver.trim().is_empty() {
+        return Err(ModelError::Other(
+            "refuse:binding: proposed driver must stay the seated local_slm driver".into(),
+        ));
+    }
+    refuse_sacred_and_sku("seated driver", driver)?;
+    let wired = obj.get("wired").and_then(|value| value.as_bool()).ok_or_else(|| {
+        ModelError::Other("refuse:binding: wired must be a bool".into())
+    })?;
+    if wired != seat.wired {
+        return Err(ModelError::Other(
+            "refuse:binding: proposed wired does not match the seat".into(),
+        ));
+    }
+    let params = obj.get("params").and_then(|value| value.as_object()).ok_or_else(|| {
+        ModelError::Other("refuse:binding: local_slm params must be an object".into())
+    })?;
+    let seat_params = match &seat.params {
+        serde_json::Value::Object(map) => map.clone(),
+        serde_json::Value::Null => serde_json::Map::new(),
+        _ => {
+            return Err(ModelError::Other(
+                "refuse:binding: local_slm params must be an object".into(),
+            ))
+        }
+    };
+    const MANAGED: &[&str] = &["model", "prepared_pack", "prepared_driver"];
+    for key in seat_params.keys() {
+        if MANAGED.contains(&key.as_str()) {
+            continue;
+        }
+        match params.get(key) {
+            Some(value) if value == &seat_params[key] => {}
+            Some(_) => {
+                return Err(ModelError::Other(format!(
+                    "refuse:binding: params.{key} does not match the seat"
+                )))
+            }
+            None => {
+                return Err(ModelError::Other(format!(
+                    "refuse:binding: params.{key} missing from the proposal"
+                )))
+            }
+        }
+    }
+    for key in params.keys() {
+        if MANAGED.contains(&key.as_str()) || seat_params.contains_key(key) {
+            continue;
+        }
+        return Err(ModelError::Other(format!(
+            "refuse:binding: params.{key} is not on the seat"
+        )));
+    }
+    let model = params.get("model").and_then(|value| value.as_str()).unwrap_or("");
+    if model != tag || model != proposal.local_tag {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: params.model '{model}' must be {tag}"
+        )));
+    }
+    let prepared_pack = params
+        .get("prepared_pack")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if prepared_pack != proposal.pack_id {
+        return Err(ModelError::Other(
+            "refuse:binding: params.prepared_pack does not match the pack".into(),
+        ));
+    }
+    let prepared_driver = params
+        .get("prepared_driver")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if prepared_driver != proposal.driver {
+        return Err(ModelError::Other(
+            "refuse:binding: params.prepared_driver does not match the driver".into(),
+        ));
+    }
+    for (key, value) in params {
+        if let Some(text) = value.as_str() {
+            refuse_sacred_and_sku(&format!("params.{key}"), text)?;
+        }
+    }
+    Ok(estate_schema::ModelBinding {
+        id: "local_slm".into(),
+        class: estate_schema::ModelClass::Local,
+        driver: seat.driver.clone(),
+        params: serde_json::Value::Object(params.clone()),
+        wired: seat.wired,
+    })
+}
+
+fn binding_fingerprint(binding: &estate_schema::ModelBinding) -> Result<String, ModelError> {
+    serde_json::to_string(binding)
+        .map_err(|err| ModelError::Other(format!("refuse:binding: fingerprint: {err}")))
+}
+
+/// Read `{state}/enrich-stage/stage.json`. Missing file is `Ok(None)`.
+pub fn read_enrich_stage(state_dir: &Path) -> Result<Option<EnrichBindingStage>, ModelError> {
+    load_stage(state_dir)
+}
+
+fn load_stage(state_dir: &Path) -> Result<Option<EnrichBindingStage>, ModelError> {
+    let path = stage_json_path(state_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    if !path.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:stage: {} is not a file",
+            path.display()
+        )));
+    }
+    let text = std::fs::read_to_string(&path).map_err(|err| {
+        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
+    })?;
+    refuse_raw_secrets(&text).map_err(map_feed)?;
+    let stage: EnrichBindingStage = serde_json::from_str(&text).map_err(|err| {
+        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
+    })?;
+    if stage.schema != BINDING_STAGE_SCHEMA {
+        return Err(ModelError::Other(format!(
+            "refuse:stage: schema '{}' is not {BINDING_STAGE_SCHEMA}",
+            stage.schema
+        )));
+    }
+    if stage.auto_apply || stage.promoted {
+        return Err(ModelError::Other(
+            "refuse:stage: auto_apply and promoted must stay false".into(),
+        ));
+    }
+    if stage.binding_id != "local_slm" {
+        return Err(ModelError::Other(
+            "refuse:binding: stage binding_id is not local_slm".into(),
+        ));
+    }
+    refuse_sacred_and_sku("tag", &stage.local_tag)?;
+    Ok(Some(stage))
+}
+
+fn staged_file_matches(stage: &EnrichBindingStage) -> Result<bool, ModelError> {
+    let path = Path::new(&stage.staged_estate);
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let text = std::fs::read_to_string(path).map_err(|err| {
+        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
+    })?;
+    let estate = estate_schema::load_estate_str(&text).map_err(|err| {
+        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
+    })?;
+    Ok(estate_schema::estate_hash(&estate) == stage.staged_estate_hash)
+}
+
+fn points_at_stage_file(path: &Path, state_dir: &Path) -> bool {
+    let expected = staged_estate_path(state_dir);
+    if same_file(path, &expected) {
+        return true;
+    }
+    path.file_name() == Some(std::ffi::OsStr::new(STAGED_ESTATE_FILE))
+        && path.parent().and_then(|parent| parent.file_name())
+            == Some(std::ffi::OsStr::new("enrich-stage"))
+}
+
+fn same_file(left: &Path, right: &Path) -> bool {
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn canonical_path(path: &Path) -> Result<PathBuf, ModelError> {
+    std::fs::canonicalize(path).map_err(|err| {
+        ModelError::Other(format!("refuse:path: {}: {err}", path.display()))
+    })
+}
+
+fn canonical_string(path: &Path) -> Result<String, ModelError> {
+    Ok(canonical_path(path)?.display().to_string())
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), ModelError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                ModelError::Other(format!(
+                    "refuse:stage-write: {}: {err}",
+                    parent.display()
+                ))
+            })?;
+        }
+    }
+    let tmp = path.with_extension("yaml.tmp");
+    std::fs::write(&tmp, bytes).map_err(|err| {
+        ModelError::Other(format!("refuse:stage-write: {}: {err}", tmp.display()))
+    })?;
+    std::fs::rename(&tmp, path).map_err(|err| {
+        let _ = std::fs::remove_file(&tmp);
+        ModelError::Other(format!("refuse:stage-write: {}: {err}", path.display()))
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1826,5 +2499,280 @@ mod tests {
         assert!(!snap.auto_apply && !snap.promoted && !snap.estate_rewritten);
         assert_eq!(snap.binding_id, "local_slm");
         assert!(snap.note.to_ascii_lowercase().contains("does not"));
+    }
+
+    #[test]
+    fn apply_proposal_stages_plan_input_and_require_plan_writes_the_source() {
+        let root = tmp("stage");
+        let pack = fixture_pack();
+        let estate = fixture_estate();
+        let state = root.join("state");
+        let prepared = default_enrich_out(&state, &pack.id, "ollama-modelfile");
+        run(
+            "ollama-modelfile",
+            &pack,
+            &estate,
+            &prepared,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        let source = root.join("estate.yaml");
+        let example = repo_root().join("examples/estate.yaml");
+        std::fs::copy(&example, &source).unwrap();
+        let before = std::fs::read(&source).unwrap();
+        let example_before = std::fs::read(&example).unwrap();
+        let modelfile = prepared.join("Modelfile");
+        import_prepared(&ImportPreparedRequest {
+            estate: &estate,
+            prepared_dir: &prepared,
+            tag: "cell-enrich-overnight-traces",
+            path: &modelfile,
+            curator: "jason",
+        })
+        .unwrap();
+
+        fn req<'a>(
+            estate: &'a Estate,
+            source: &'a Path,
+            prepared: &'a Path,
+            tag: &'a str,
+            state_dir: &'a Path,
+            verify: Option<&'a str>,
+        ) -> ApplyProposalRequest<'a> {
+            ApplyProposalRequest {
+                estate,
+                estate_path: source,
+                prepared_dir: prepared,
+                tag,
+                curator: "jason",
+                state_dir,
+                verify_endpoint: verify,
+            }
+        }
+
+        let missing = apply_proposal(&ApplyProposalRequest {
+            estate: &estate,
+            estate_path: &source,
+            prepared_dir: &root.join("no-proposal"),
+            tag: "cell-enrich-overnight-traces",
+            curator: "jason",
+            state_dir: &root.join("missing-state"),
+            verify_endpoint: None,
+        })
+        .unwrap_err();
+        assert!(
+            missing.to_string().contains("refuse:missing-proposal"),
+            "{missing}"
+        );
+        assert!(!root.join("missing-state").join("enrich-stage").exists());
+
+        let wrong = apply_proposal(&req(&estate, &source, &prepared, "other-tag", &state, None)).unwrap_err();
+        assert!(wrong.to_string().contains("refuse:tag"), "{wrong}");
+        assert!(!state.join("enrich-stage").exists());
+
+        let curator = apply_proposal(&ApplyProposalRequest {
+            curator: "ada",
+            ..req(
+                &estate,
+                &source,
+                &prepared,
+                "cell-enrich-overnight-traces",
+                &state,
+                None,
+            )
+        })
+        .unwrap_err();
+        assert!(curator.to_string().contains("refuse:curator"), "{curator}");
+
+        let prepare_path = prepared.join("prepare.json");
+        let prepare_body = std::fs::read_to_string(&prepare_path).unwrap();
+        let mut tampered: serde_json::Value = serde_json::from_str(&prepare_body).unwrap();
+        tampered["job"] = serde_json::json!("train");
+        std::fs::write(
+            &prepare_path,
+            serde_json::to_string_pretty(&tampered).unwrap(),
+        )
+        .unwrap();
+        let mismatch = apply_proposal(&req(
+            &estate,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            None,
+        ))
+        .unwrap_err();
+        assert!(
+            mismatch.to_string().contains("refuse:prepare"),
+            "{mismatch}"
+        );
+        std::fs::write(&prepare_path, &prepare_body).unwrap();
+        assert!(!state.join("enrich-stage").exists());
+
+        let proposal_path = prepared.join("binding-proposal.json");
+        let proposal_body = std::fs::read_to_string(&proposal_path).unwrap();
+        let mut frontier: serde_json::Value = serde_json::from_str(&proposal_body).unwrap();
+        frontier["proposed_binding"]["class"] = serde_json::json!("frontier");
+        std::fs::write(
+            &proposal_path,
+            serde_json::to_string_pretty(&frontier).unwrap(),
+        )
+        .unwrap();
+        let frontier_err = apply_proposal(&req(
+            &estate,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            None,
+        ))
+        .unwrap_err();
+        assert!(
+            frontier_err.to_string().contains("refuse:frontier-invent"),
+            "{frontier_err}"
+        );
+        std::fs::write(&proposal_path, &proposal_body).unwrap();
+
+        let mut renamed = estate.clone();
+        renamed.name = "other-cell".into();
+        let stale = apply_proposal(&req(
+            &renamed,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            None,
+        ))
+        .unwrap_err();
+        assert!(
+            stale.to_string().contains("refuse:estate-hash"),
+            "{stale}"
+        );
+        assert!(!state.join("enrich-stage").exists());
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let down_state = root.join("down-state");
+        let down = apply_proposal(&req(
+            &estate,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &down_state,
+            Some("http://127.0.0.1:1"),
+        ))
+        .unwrap_err();
+        assert!(down.to_string().contains("refuse:local-tag"), "{down}");
+        assert!(down.to_string().contains("down"), "{down}");
+        assert!(!root.join("down-state").join("enrich-stage").exists());
+
+        let server = crate::mock::CompatServer::spawn(crate::mock::CompatScript::OpenAi {
+            models: vec!["cell-enrich-overnight-traces".into()],
+        })
+        .unwrap();
+        let endpoint = server.endpoint();
+        let outcome = apply_proposal(&req(
+            &estate,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            Some(&endpoint),
+        ))
+        .unwrap();
+        let stage = match outcome {
+            ApplyProposalOutcome::Staged(stage) => stage,
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        };
+        assert!(!stage.auto_apply && !stage.promoted && !stage.applied);
+        assert!(!stage.estate_rewritten);
+        assert_eq!(stage.schema, BINDING_STAGE_SCHEMA);
+        assert_eq!(stage.binding_id, "local_slm");
+        assert_eq!(stage.local_tag, "cell-enrich-overnight-traces");
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+        let staged_yaml =
+            std::fs::read_to_string(state.join("enrich-stage/staged-estate.yaml")).unwrap();
+        let staged_estate = estate_schema::load_estate_str(&staged_yaml).unwrap();
+        assert_eq!(
+            local_slm_model_param(&staged_estate).as_deref(),
+            Some("cell-enrich-overnight-traces")
+        );
+        let facts = enrich_join_facts(&state.join("enrich")).unwrap().unwrap();
+        assert!(facts.iter().any(|fact| fact.kind == "proposal"
+            && fact.local_tag == "cell-enrich-overnight-traces"));
+
+        let again = apply_proposal(&req(
+            &estate,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            None,
+        ))
+        .unwrap();
+        assert!(
+            matches!(again, ApplyProposalOutcome::Noop { .. }),
+            "{again:?}"
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let staged_path = state.join("enrich-stage/staged-estate.yaml");
+        let hash = estate_schema::estate_hash(&staged_estate);
+        let bad_hash = commit_enrich_stage(&staged_path, &state, true, "sha256:nope").unwrap_err();
+        assert!(bad_hash.to_string().contains("refuse:stage"), "{bad_hash}");
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let held = commit_enrich_stage(&staged_path, &state, false, &hash).unwrap();
+        assert_eq!(held, EnrichStageCommit::Held);
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let wrote = commit_enrich_stage(&staged_path, &state, true, &hash).unwrap();
+        match wrote {
+            EnrichStageCommit::Wrote { source: path } => {
+                assert_eq!(path, std::fs::canonicalize(&source).unwrap());
+            }
+            other => panic!("{other:?}"),
+        }
+        let after = std::fs::read_to_string(&source).unwrap();
+        assert!(after.contains("cell-enrich-overnight-traces"), "{after}");
+        assert_ne!(after.as_bytes(), before.as_slice());
+        let bound = estate_schema::load_estate_str(&after).unwrap();
+        assert_eq!(
+            local_slm_model_param(&bound).as_deref(),
+            Some("cell-enrich-overnight-traces")
+        );
+        let receipt: EnrichBindingStage = serde_json::from_str(
+            &std::fs::read_to_string(state.join("enrich-stage/stage.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(receipt.applied && receipt.estate_rewritten && !receipt.auto_apply);
+        let already =
+            apply_proposal(&req(
+                &bound,
+                &source,
+                &prepared,
+                "cell-enrich-overnight-traces",
+                &state,
+                None,
+            ))
+            .unwrap();
+        assert!(
+            matches!(already, ApplyProposalOutcome::Noop { ref reason } if reason.contains("already bound")),
+            "{already:?}"
+        );
+        let ignored = commit_enrich_stage(&source, &state, true, &hash).unwrap();
+        assert_eq!(ignored, EnrichStageCommit::NotThisEstate);
+        assert_eq!(std::fs::read(&example).unwrap(), example_before);
+    }
+
+    #[test]
+    fn binding_stage_snapshot_stays_unapplied() {
+        let snap: EnrichBindingStage = serde_json::from_str(include_str!(
+            "../../../schema/enrich-binding-stage.v0.json"
+        ))
+        .unwrap();
+        assert_eq!(snap.schema, BINDING_STAGE_SCHEMA);
+        assert!(!snap.auto_apply && !snap.promoted && !snap.applied && !snap.estate_rewritten);
+        assert_eq!(snap.binding_id, "local_slm");
     }
 }

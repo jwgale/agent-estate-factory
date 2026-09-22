@@ -214,6 +214,23 @@ pub(crate) fn run() -> Result<()> {
                 &path,
                 &curator,
             ),
+            EnrichCommand::ApplyProposal {
+                estate,
+                prepared,
+                tag,
+                state_dir,
+                plans_dir,
+                curator,
+                verify_local_tag,
+            } => crate::enrich::cmd_enrich_apply_proposal(
+                &estate,
+                &prepared,
+                &tag,
+                &state_dir,
+                &plans_dir,
+                &curator,
+                verify_local_tag,
+            ),
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },
         Command::Packs { command } => match command {

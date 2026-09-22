@@ -84,7 +84,7 @@ estate help enrich
 make enrich-prepare
 ```
 
-`make enrich-prepare` uses `examples/fixtures/specialist-overnight.pack.json` and writes both drivers under `target/enrich-prepare-cell`. You get a Modelfile, `NEXT.md` with the `ollama create` line, a portable manifest, `estate enrich list`, and an `import-prepared` binding proposal. The script does not call Ollama, does not apply, and does not change `examples/estate.yaml`. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+`make enrich-prepare` uses `examples/fixtures/specialist-overnight.pack.json` and writes both drivers under `target/enrich-prepare-cell`. You get a Modelfile, `NEXT.md` with the `ollama create` line, a portable manifest, `estate enrich list`, and an `import-prepared` binding proposal. The script copies the example estate into that directory and runs `estate enrich apply-proposal`, `estate plan`, and `estate apply --require-plan` on the staged file. It does not call Ollama. `examples/estate.yaml` stays unchanged. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## 5. Backup rotate
 

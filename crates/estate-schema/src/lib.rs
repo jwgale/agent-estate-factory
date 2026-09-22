@@ -63,6 +63,21 @@ pub fn load_estate(path: &Path) -> Result<Estate, EstateError> {
     load_estate_str(&text)
 }
 
+/// Serialize an estate and parse it back. The bytes are a plan input.
+/// A round-trip that changes the struct refuses.
+pub fn render_estate_yaml(estate: &Estate) -> Result<String, EstateError> {
+    let yaml = serde_yaml::to_string(estate)
+        .map_err(|err| EstateError::Other(format!("estate yaml: {err}")))?;
+    let parsed = parse_estate_yaml(&yaml)?;
+    if &parsed != estate {
+        return Err(EstateError::Other(
+            "estate yaml round-trip changed the estate".into(),
+        ));
+    }
+    validate(&parsed).map_err(EstateError::Invalid)?;
+    Ok(yaml)
+}
+
 pub fn load_estate_unvalidated(path: &Path) -> Result<Estate, EstateError> {
     let text = std::fs::read_to_string(path).map_err(|e| EstateError::Io {
         path: path.display().to_string(),
@@ -148,6 +163,15 @@ mod tests {
 
     pub fn example_yaml() -> &'static str {
         include_str!("../../../examples/estate.yaml")
+    }
+
+    #[test]
+    fn render_estate_yaml_round_trips_the_example() {
+        let estate = load_estate_str(example_yaml()).unwrap();
+        let yaml = render_estate_yaml(&estate).unwrap();
+        let again = load_estate_str(&yaml).unwrap();
+        assert_eq!(again, estate);
+        assert_eq!(estate_hash(&again), estate_hash(&estate));
     }
 
     #[test]

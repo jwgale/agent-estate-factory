@@ -65,6 +65,15 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## This slice — apply-proposal stages the local_slm join
+
+- `estate enrich apply-proposal` reads `binding-proposal.json`. It checks schema, curator, sacred, hardware, frontier, and `prepare.json`. It writes `{state}/enrich-stage/staged-estate.yaml` and `stage.json` (`cell-one.enrich-binding-stage.v0`). That staged file is the input for the existing `estate plan` and `estate apply --require-plan`. The command does not apply. The source estate stays unchanged until that require-plan apply succeeds.
+- The same tag and binding again is a no-op. A missing proposal, a prepare mismatch, a wrong tag, a stale estate hash, or a different pending stage refuses before any stage write.
+- `--verify-local-tag` is off by default. When set, the seated runtime must list the tag (`GET /v1/models` or `/api/tags`). A failed probe is `refuse:local-tag` before any stage write. No new local server.
+- `estate status` and `estate doctor` name a pending enrich join when `.cell/enrich` holds a prepare or proposal and `local_slm` is still unbound. An unreadable proposal, prepare, or stage refuses before the page. A pending note is not a factory-ready failure.
+- Opt-in `make enrich-prepare` walks prepare, list, import-prepared, apply-proposal, plan, and require-plan apply on a throwaway lab copy. `examples/estate.yaml` stays unchanged. Off smoke, gate-90, and Actions.
+- llama.cpp stays on the existing OpenAI-compat seat. `--verify-local-tag` uses that probe. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — prepare, list, import-prepared
 
 - `estate enrich prepare --all-drivers` writes every `TrainEnrichDriver` card into sibling directories. One refuse writes none of them. Each directory gains `NEXT.md`: artifact paths, the exact handoff (`ollama create … -f <Modelfile>` or the external manifest files), the `import-prepared` line, and fail-closed reminders. Prepare still does not shell out, train, POST, promote, or rewrite `estate.yaml`.

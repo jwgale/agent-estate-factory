@@ -40,6 +40,108 @@ enum Transport {
     Down(String),
 }
 
+/// The seated runtime must already list `tag`. Uses the same OpenAI
+/// `/v1/models` and Ollama `/api/tags` reads as `ping_live_endpoint`.
+/// An empty list is up and still a refuse: the tag is not seated.
+/// Does not start a server.
+pub fn runtime_lists_model(endpoint: &str, tag: &str) -> Result<(), String> {
+    let tag = tag.trim();
+    if tag.is_empty() {
+        return Err("refuse:local-tag: empty tag".into());
+    }
+    if estate_schema::contains_sku(tag) {
+        return Err(format!(
+            "refuse:sku-banned: tag '{tag}' encodes a hardware SKU"
+        ));
+    }
+    let names = list_runtime_model_names(endpoint)?;
+    if names.iter().any(|name| model_name_matches(name, tag)) {
+        return Ok(());
+    }
+    let shown = if names.is_empty() {
+        "no models".to_string()
+    } else {
+        names.join(",")
+    };
+    Err(format!(
+        "refuse:local-tag: '{tag}' is not seated (listed {shown})"
+    ))
+}
+
+fn model_name_matches(listed: &str, tag: &str) -> bool {
+    let listed = listed.trim();
+    listed == tag || listed.strip_suffix(":latest") == Some(tag)
+}
+
+fn list_runtime_model_names(endpoint: &str) -> Result<Vec<String>, String> {
+    let base = endpoint.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err("refuse:local-tag: empty endpoint".into());
+    }
+    let mut names = Vec::new();
+    let mut saw_list = false;
+    let mut connect_down = None;
+    match get_json(&format!("{base}/v1/models"), PING_TIMEOUT) {
+        Ok(v) if is_openai_models(&v) => {
+            saw_list = true;
+            names.extend(openai_model_names(&v));
+        }
+        Err(Transport::Down(err)) if is_connect_fail(&err) => connect_down = Some(err),
+        _ => {}
+    }
+    match get_json(&format!("{base}/api/tags"), PING_TIMEOUT) {
+        Ok(v) if is_ollama_tags(&v) => {
+            saw_list = true;
+            names.extend(ollama_model_names(&v));
+        }
+        Err(Transport::Down(err)) if is_connect_fail(&err) && connect_down.is_none() => {
+            connect_down = Some(err);
+        }
+        _ => {}
+    }
+    if !saw_list {
+        return Err(match connect_down {
+            Some(err) => format!("refuse:local-tag: seated runtime is down ({err})"),
+            None => "refuse:local-tag: no /v1/models or /api/tags models list".into(),
+        });
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+fn openai_model_names(v: &Value) -> Vec<String> {
+    v.get("data")
+        .and_then(|data| data.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("id").and_then(|id| id.as_str()))
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn ollama_model_names(v: &Value) -> Vec<String> {
+    v.get("models")
+        .and_then(|data| data.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    row.get("name")
+                        .or_else(|| row.get("model"))
+                        .and_then(|name| name.as_str())
+                })
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Honest live ping. `Ok` only when a models list JSON is present.
 /// Empty list is up (server running, no weights). Garbage / empty body is down.
 pub fn ping_live_endpoint(endpoint: &str) -> Result<LiveFlavor, String> {
@@ -466,6 +568,36 @@ mod tests {
             kind: "probe".into(),
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn runtime_lists_model_accepts_the_tag_and_refuses_when_it_is_absent() {
+        let openai = CompatServer::spawn(CompatScript::OpenAi {
+            models: vec!["cell-enrich-overnight-traces".into()],
+        })
+        .unwrap();
+        runtime_lists_model(&openai.endpoint(), "cell-enrich-overnight-traces").unwrap();
+        let missing = runtime_lists_model(&openai.endpoint(), "cell-enrich-other").unwrap_err();
+        assert!(missing.contains("refuse:local-tag"), "{missing}");
+        assert!(missing.contains("not seated"), "{missing}");
+
+        let ollama = CompatServer::spawn(CompatScript::Ollama {
+            models: vec!["cell-enrich-overnight-traces:latest".into()],
+        })
+        .unwrap();
+        runtime_lists_model(&ollama.endpoint(), "cell-enrich-overnight-traces").unwrap();
+
+        let empty = CompatServer::spawn(CompatScript::OpenAi { models: vec![] }).unwrap();
+        let none = runtime_lists_model(&empty.endpoint(), "cell-enrich-overnight-traces").unwrap_err();
+        assert!(none.contains("not seated"), "{none}");
+        assert!(none.contains("no models"), "{none}");
+    }
+
+    #[test]
+    fn runtime_lists_model_down_host_refuses_before_a_fake_seat() {
+        let err = runtime_lists_model("http://127.0.0.1:1", "cell-enrich-overnight-traces").unwrap_err();
+        assert!(err.contains("refuse:local-tag"), "{err}");
+        assert!(err.contains("down"), "{err}");
     }
 
     #[test]

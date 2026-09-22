@@ -52,6 +52,8 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("--all-drivers"), "{body}");
         assert!(body.contains("estate enrich list"), "{body}");
         assert!(body.contains("import-prepared"), "{body}");
+        assert!(body.contains("apply-proposal"), "{body}");
+        assert!(body.contains("--verify-local-tag"), "{body}");
         assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
     }
     let index = estate_bin().args(["help"]).output().unwrap();
@@ -498,4 +500,309 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
     assert_eq!(proposal["proposed_binding"]["id"], "local_slm");
     assert!(!ollama.join("catalog.json").exists());
     assert_eq!(estate_bytes(), before, "import-prepared rewrote the estate");
+}
+
+#[test]
+fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
+    let root = tmp("apply-proposal");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let example = repo_root().join("examples/estate.yaml");
+    let example_before = std::fs::read(&example).unwrap();
+    let lab = root.join("estate.yaml");
+    std::fs::copy(&example, &lab).unwrap();
+    let lab_before = std::fs::read(&lab).unwrap();
+    let state = root.join("state");
+    let plans = root.join("plans");
+
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &lab.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "ollama-modelfile",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    let dir = state.join("enrich/overnight-traces/ollama-modelfile");
+
+    let imported = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-prepared",
+            "--estate",
+            &lab.display().to_string(),
+            "--prepared",
+            &dir.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--path",
+            &dir.join("Modelfile").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(imported.status.success(), "{}", text(&imported));
+    assert!(text(&imported).contains("apply-proposal"), "{}", text(&imported));
+
+    let verify = estate_bin()
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_RENTED_ENDPOINT")
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "apply-proposal",
+            "--estate",
+            &lab.display().to_string(),
+            "--prepared",
+            &dir.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--state-dir",
+            &root.join("verify-state").display().to_string(),
+            "--verify-local-tag",
+        ])
+        .output()
+        .unwrap();
+    let verify_text = text(&verify);
+    assert!(!verify.status.success(), "{verify_text}");
+    assert!(verify_text.contains("refuse:local-tag"), "{verify_text}");
+    assert!(!root.join("verify-state").join("enrich-stage").exists());
+
+    let wrong = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "apply-proposal",
+            "--estate",
+            &lab.display().to_string(),
+            "--prepared",
+            &dir.display().to_string(),
+            "--tag",
+            "other-tag",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let wrong_text = text(&wrong);
+    assert!(!wrong.status.success(), "{wrong_text}");
+    assert!(wrong_text.contains("refuse:tag"), "{wrong_text}");
+    assert!(!state.join("enrich-stage").exists());
+
+    let staged = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "apply-proposal",
+            "--estate",
+            &lab.display().to_string(),
+            "--prepared",
+            &dir.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let staged_text = text(&staged);
+    assert!(staged.status.success(), "{staged_text}");
+    assert!(staged_text.contains("apply-proposal did not apply"), "{staged_text}");
+    assert!(staged_text.contains("auto_apply=false"), "{staged_text}");
+    assert!(staged_text.contains("--require-plan"), "{staged_text}");
+    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+    let staged_estate = state.join("enrich-stage/staged-estate.yaml");
+    assert!(staged_estate.is_file());
+    let again = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "apply-proposal",
+            "--estate",
+            &lab.display().to_string(),
+            "--prepared",
+            &dir.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let again_text = text(&again);
+    assert!(again.status.success(), "{again_text}");
+    assert!(again_text.contains("no-op:"), "{again_text}");
+
+    let status = estate_bin()
+        .args([
+            "status",
+            "--estate",
+            &lab.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--root",
+            &repo_root().display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let status_text = text(&status);
+    assert!(status.status.success(), "{status_text}");
+    assert!(
+        status_text.contains("enrich_binding: pending"),
+        "{status_text}"
+    );
+    assert!(
+        status_text.contains("enrich_stage: applied=false"),
+        "{status_text}"
+    );
+
+    let doctor = estate_bin()
+        .args([
+            "doctor",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let doctor_text = text(&doctor);
+    assert!(doctor.status.success(), "{doctor_text}");
+    assert!(
+        doctor_text.contains("source estate not written"),
+        "{doctor_text}"
+    );
+    assert!(
+        doctor_text.contains("binding proposal"),
+        "{doctor_text}"
+    );
+
+    let plan = estate_bin()
+        .args([
+            "plan",
+            "--estate",
+            &staged_estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let plan_text = text(&plan);
+    assert!(plan.status.success(), "{plan_text}");
+    assert!(plan_text.contains("local_slm"), "{plan_text}");
+
+    let dry = estate_bin()
+        .args([
+            "apply",
+            "--dry-run",
+            "--require-plan",
+            "--estate",
+            &staged_estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--roots-base",
+            &root.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(dry.status.success(), "{}", text(&dry));
+    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+
+    let ungated = estate_bin()
+        .args([
+            "apply",
+            "--estate",
+            &staged_estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--roots-base",
+            &root.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let ungated_text = text(&ungated);
+    assert!(ungated.status.success(), "{ungated_text}");
+    assert!(
+        ungated_text.contains("enrich stage held"),
+        "{ungated_text}"
+    );
+    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+
+    let applied = estate_bin()
+        .args([
+            "apply",
+            "--require-plan",
+            "--estate",
+            &staged_estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--roots-base",
+            &root.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let applied_text = text(&applied);
+    assert!(applied.status.success(), "{applied_text}");
+    assert!(
+        applied_text.contains("enrich stage wrote"),
+        "{applied_text}"
+    );
+    let lab_after = std::fs::read_to_string(&lab).unwrap();
+    assert!(
+        lab_after.contains("cell-enrich-overnight-traces"),
+        "{lab_after}"
+    );
+    assert_eq!(std::fs::read(&example).unwrap(), example_before);
+
+    let joined = estate_bin()
+        .args([
+            "status",
+            "--estate",
+            &lab.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--root",
+            &repo_root().display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let joined_text = text(&joined);
+    assert!(joined.status.success(), "{joined_text}");
+    assert!(
+        joined_text.contains("enrich_binding: local_slm model=cell-enrich-overnight-traces"),
+        "{joined_text}"
+    );
+    assert!(
+        joined_text.contains("enrich_stage: applied=true"),
+        "{joined_text}"
+    );
 }

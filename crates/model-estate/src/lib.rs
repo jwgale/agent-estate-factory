@@ -22,7 +22,7 @@ pub use error::ModelError;
 pub use frontier::{
     frontier_from_binding, FrontierDriver, HttpFrontier, MockFrontier, UnwiredFrontier,
 };
-pub use adapter::{ping_live_endpoint, specialist_via_adapter, LiveFlavor};
+pub use adapter::{ping_live_endpoint, runtime_lists_model, specialist_via_adapter, LiveFlavor};
 pub use local::{
     apply_live_overlay, builtin_specialist, enrich_with_live, live_endpoint, live_endpoint_envs,
     is_frontier_specialist_driver, live_probe_env_requested, local_from_binding,
@@ -36,12 +36,15 @@ pub use mock::{
 };
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
-    default_enrich_out, default_train_enrich_driver_id, import_prepared, list_prepared,
-    load_enrich_pack, local_enrich_tag, parse_enrich_job, prepare_enrich, prepare_enrich_set,
-    render_prepared_index, render_train_enrich_catalog, resolve_train_enrich_driver,
-    train_enrich_catalog, EnrichBindingProposal, EnrichJob, EnrichJobKind, EnrichPrepareDoc,
-    ImportPreparedRequest, PrepareEnrichRequest, PreparedEntry, TrainEnrichCard, TrainEnrichDriver,
-    TrainEnrichProbe, BINDING_PROPOSAL_SCHEMA, PREPARE_SCHEMA,
+    apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
+    enrich_join_facts, enrich_stage_dir, import_prepared, list_prepared, load_enrich_pack,
+    local_enrich_tag, local_slm_model_param, parse_enrich_job, prepare_enrich, prepare_enrich_set,
+    read_enrich_stage, refuse_staged_apply, render_prepared_index, render_train_enrich_catalog,
+    resolve_train_enrich_driver, train_enrich_catalog, ApplyProposalOutcome, ApplyProposalRequest,
+    EnrichBindingProposal, EnrichBindingStage, EnrichJob, EnrichJobKind, EnrichJoinFact,
+    EnrichPrepareDoc, EnrichStageCommit, ImportPreparedRequest, PrepareEnrichRequest,
+    PreparedEntry, TrainEnrichCard, TrainEnrichDriver, TrainEnrichProbe, BINDING_PROPOSAL_SCHEMA,
+    BINDING_STAGE_SCHEMA, PREPARE_SCHEMA,
 };
 
 use estate_schema::{Estate, ModelBinding, ModelClass};
