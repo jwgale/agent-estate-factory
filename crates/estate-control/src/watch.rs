@@ -9,7 +9,7 @@ use feed_collector::list_open_proposals;
 use floor_supervisor::{
     drift_with_roots,
     forget_expired_leases, list_apply_audits, list_expired_leases, list_lifecycle_events,
-    list_session_events, load_lifecycle, load_placements,
+    list_session_events, load_actual, load_lifecycle, load_placements,
     now_unix, refuse_lease_host_classes,
 };
 use std::path::Path;
@@ -227,6 +227,22 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     if sessions_path.exists() {
         match list_session_events(state_dir) {
             Ok(events) => println!("  ok    sessions.jsonl lines={}", events.len()),
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+            }
+        }
+    }
+    // Missing actual-state.json is not a failure. Printing a session
+    // count for a missing file would invent zero. A present file that
+    // does not parse is FAIL. A note would still print "factory ready".
+    let actual_path = state_dir.join("actual-state.json");
+    if actual_path.exists() {
+        match load_actual(state_dir) {
+            Ok(Some(actual)) => {
+                println!("  ok    actual-state.json sessions={}", actual.sessions.len())
+            }
+            Ok(None) => {}
             Err(err) => {
                 println!("  FAIL  {err}");
                 fails.push(err.to_string());
