@@ -34,7 +34,7 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### purpose-built SLM
 
@@ -46,7 +46,7 @@ Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `st
 
 ### train/enrich facilitation
 
-The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. List reads them. Import-prepared proposes the `local_slm` join and leaves plan/apply to Jason. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### frontier
 

@@ -19,7 +19,7 @@ Both jobs are first-class.
 1. A local runtime is an ecosystem seat. Ollama fills it today. Another process can fill it tomorrow. Catalog, route, and bind take any entrant. Integrate that driver.
 2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Today's beachhead is curator packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts for the seated runtime (Ollama Modelfile today) and a portable manifest for a later trainer. The curator is Jason. `estate packs accept` writes curator edit instructions. Jason pastes them into the estate file. Promote stays refused. No GPU training stack ships on `main`. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Today's beachhead is curator packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts for the seated runtime (Ollama Modelfile today) and a portable manifest for a later trainer. `--all-drivers` writes both. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. The curator is Jason. `estate packs accept` writes curator edit instructions. Jason pastes them into the estate file. Promote stays refused. No GPU training stack ships on `main`. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 Build rule: a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that integration.
 
@@ -41,7 +41,7 @@ Local gate first. Live steps are opt-in. An unset endpoint prints SKIP and exits
 2. **`make day90`** — inside gate-90. Status, plan, dry-run, apply, reconcile on an isolated cell.
 3. **`make feed-loop`** — fixtures. Scrubbed trace, then pack, propose, and accept. Accept writes curator edit instructions. Off smoke.
 4. **`make real-world`** — after the gate. Prints the north-star line, runs `cargo check --workspace --locked` (same check as `make check`), and runs vanilla `estate doctor` on the checkout that holds `examples/estate.yaml`. With `CELL_LOCAL_ENDPOINT` set, the env in [`LIVE-PROBES.md`](LIVE-PROBES.md) runs `estate probes --live` and `estate specialist --driver ollama --prompt "Reply with the single word pong."`. Unset: those two steps print SKIP and the command exits 0. It points at train/enrich prepare and does not run a train.
-5. **`make enrich-prepare`** — opt-in fixture. Example pack, both drivers, throwaway dir. Not a live train. Off smoke, `gate-90`, and Actions. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+5. **`make enrich-prepare`** — opt-in fixture. Example pack, both drivers, list, and a binding proposal on a throwaway dir. Not a live train. Off smoke, `gate-90`, and Actions. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 `make real-world` stays out of `make smoke`, `make gate-90`, and GitHub Actions. Hosted CI is one `pull_request` job: `cargo check --workspace --locked`.
 

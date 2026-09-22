@@ -53,14 +53,22 @@ estate enrich prepare \
 
 test -f "$WORKDIR/ollama/Modelfile"
 test -f "$WORKDIR/ollama/PREPARE.md"
+test -f "$WORKDIR/ollama/NEXT.md"
 test -f "$WORKDIR/ollama/prepare.json"
 grep -q "FROM local_slm" "$WORKDIR/ollama/Modelfile"
 grep -q "ollama create cell-enrich-overnight-traces -f Modelfile" "$WORKDIR/ollama/PREPARE.md"
+grep -q "ollama create cell-enrich-overnight-traces -f $WORKDIR/ollama/Modelfile" "$WORKDIR/ollama/NEXT.md"
+grep -q "import-prepared" "$WORKDIR/ollama/NEXT.md"
 
 test -f "$WORKDIR/manifest/manifest.json"
 test -f "$WORKDIR/manifest/manifest.yaml"
 test -f "$WORKDIR/manifest/PREPARE.md"
+test -f "$WORKDIR/manifest/NEXT.md"
 test -f "$WORKDIR/manifest/prepare.json"
+if grep -q "ollama create" "$WORKDIR/manifest/NEXT.md"; then
+  echo "FAIL  external NEXT.md must not name ollama create"
+  exit 1
+fi
 
 python3 - "$WORKDIR/manifest/manifest.json" "$WORKDIR/ollama/prepare.json" <<'PY'
 import json, sys
@@ -105,6 +113,96 @@ if [[ -d "$WORKDIR/missing" ]]; then
   echo "FAIL  missing pack wrote an output directory"
   exit 1
 fi
+
+echo "-- all-drivers, list, import-prepared --"
+CELL="$WORKDIR/cell"
+estate enrich prepare \
+  --estate "$ESTATE" \
+  --pack "$PACK" \
+  --all-drivers \
+  --state-dir "$CELL"
+
+test -f "$CELL/enrich/overnight-traces/ollama-modelfile/Modelfile"
+test -f "$CELL/enrich/overnight-traces/ollama-modelfile/NEXT.md"
+test -f "$CELL/enrich/overnight-traces/external-manifest/manifest.json"
+test -f "$CELL/enrich/overnight-traces/external-manifest/NEXT.md"
+
+estate enrich list --state-dir "$CELL" | tee "$WORKDIR/list.out"
+grep -q "pack=overnight-traces driver=external-manifest" "$WORKDIR/list.out"
+grep -q "pack=overnight-traces driver=ollama-modelfile" "$WORKDIR/list.out"
+grep -q "tag=cell-enrich-overnight-traces" "$WORKDIR/list.out"
+grep -q "count=2" "$WORKDIR/list.out"
+
+set +e
+estate enrich list --state-dir "$WORKDIR/missing-cell" \
+  >/tmp/enrich-list-missing.out 2>/tmp/enrich-list-missing.err
+list_rc=$?
+set -e
+if [[ "$list_rc" -eq 0 ]]; then
+  echo "FAIL  missing enrich dir must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:enrich-index" /tmp/enrich-list-missing.out /tmp/enrich-list-missing.err; then
+  echo "FAIL  missing enrich dir did not refuse:enrich-index"
+  cat /tmp/enrich-list-missing.out /tmp/enrich-list-missing.err
+  exit 1
+fi
+if [[ -d "$WORKDIR/missing-cell" ]]; then
+  echo "FAIL  list created a missing state dir"
+  exit 1
+fi
+
+PREPARED="$CELL/enrich/overnight-traces/ollama-modelfile"
+set +e
+estate enrich import-prepared \
+  --estate "$ESTATE" \
+  --prepared "$PREPARED" \
+  --tag other-tag \
+  --path "$PREPARED/Modelfile" \
+  >/tmp/enrich-import-tag.out 2>/tmp/enrich-import-tag.err
+tag_rc=$?
+set -e
+if [[ "$tag_rc" -eq 0 ]]; then
+  echo "FAIL  wrong tag must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:tag" /tmp/enrich-import-tag.out /tmp/enrich-import-tag.err; then
+  echo "FAIL  wrong tag did not refuse:tag"
+  cat /tmp/enrich-import-tag.out /tmp/enrich-import-tag.err
+  exit 1
+fi
+if [[ -f "$PREPARED/binding-proposal.json" ]]; then
+  echo "FAIL  wrong tag wrote a binding proposal"
+  exit 1
+fi
+
+estate enrich import-prepared \
+  --estate "$ESTATE" \
+  --prepared "$PREPARED" \
+  --tag cell-enrich-overnight-traces \
+  --path "$PREPARED/Modelfile" \
+  | tee "$WORKDIR/import.out"
+test -f "$PREPARED/binding-proposal.json"
+test -f "$PREPARED/binding-proposal.md"
+grep -q "auto_apply=false" "$WORKDIR/import.out"
+grep -q "import-prepared did not apply" "$WORKDIR/import.out"
+grep -q "local_slm" "$PREPARED/binding-proposal.md"
+
+python3 - "$PREPARED/binding-proposal.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("schema") != "cell-one.enrich-binding-proposal.v0":
+    raise SystemExit(f"FAIL  schema={doc.get('schema')}")
+if doc.get("auto_apply") is not False or doc.get("promoted") is not False:
+    raise SystemExit("FAIL  binding proposal must stay unapplied")
+if doc.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  binding proposal claims an estate rewrite")
+if doc.get("binding_id") != "local_slm":
+    raise SystemExit(f"FAIL  binding_id={doc.get('binding_id')}")
+params = doc.get("proposed_binding", {}).get("params", {})
+if params.get("model") != "cell-enrich-overnight-traces":
+    raise SystemExit(f"FAIL  model={params.get('model')}")
+PY
 
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then

@@ -2,7 +2,7 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Ollama is the local-run seat. Integrate the driver that already does the job. `estate enrich prepare` writes artifacts (Ollama Modelfile today, a portable manifest for the next trainer). Packs stay curator edit instructions. Control does not complete. Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md).
+Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Ollama is the local-run seat. Integrate the driver that already does the job. `estate enrich prepare` writes artifacts (one driver, or `--all-drivers`). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. Packs stay curator edit instructions. Control does not complete. Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md).
 
 **Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md) · [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
@@ -147,7 +147,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Ollama-first | Today's entrant in the local-runtime seat: the `ollama` driver. llama.cpp swaps on the same protocol. The seat stays open. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work stops on `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. `estate enrich prepare` writes artifacts from a pack and does not train. Drop zone: [`packs/`](packs/). Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md). |
+| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. `estate enrich prepare` writes artifacts from a pack and does not train. `estate enrich list` and `estate enrich import-prepared` stay off the estate until you paste and apply. Drop zone: [`packs/`](packs/). Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md). |
 | Supported | `ollama` and llama.cpp green on the box. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver choice. |
 | Apple | Ollama-on-Mac is the supported Apple runtime. Same `ollama` driver. |

@@ -36,10 +36,12 @@ pub use mock::{
 };
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
-    default_enrich_out, load_enrich_pack, parse_enrich_job, prepare_enrich,
-    render_train_enrich_catalog, resolve_train_enrich_driver, train_enrich_catalog, EnrichJob,
-    EnrichJobKind, EnrichPrepareDoc, PrepareEnrichRequest, TrainEnrichCard, TrainEnrichDriver,
-    TrainEnrichProbe, PREPARE_SCHEMA,
+    default_enrich_out, default_train_enrich_driver_id, import_prepared, list_prepared,
+    load_enrich_pack, local_enrich_tag, parse_enrich_job, prepare_enrich, prepare_enrich_set,
+    render_prepared_index, render_train_enrich_catalog, resolve_train_enrich_driver,
+    train_enrich_catalog, EnrichBindingProposal, EnrichJob, EnrichJobKind, EnrichPrepareDoc,
+    ImportPreparedRequest, PrepareEnrichRequest, PreparedEntry, TrainEnrichCard, TrainEnrichDriver,
+    TrainEnrichProbe, BINDING_PROPOSAL_SCHEMA, PREPARE_SCHEMA,
 };
 
 use estate_schema::{Estate, ModelBinding, ModelClass};
