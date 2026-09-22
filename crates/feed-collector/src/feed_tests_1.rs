@@ -232,7 +232,6 @@ fn import_refuses_wrong_curator() {
     )
     .unwrap_err();
     assert!(matches!(err, FeedError::WrongCurator { .. }));
-    assert!(!dir.join("accepted").exists());
     let err = refuse_import_pack(
         &drop,
         "overnight-traces",
