@@ -71,6 +71,10 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 - `estate help north-star` / `charter` match that page. README and [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) use the same words.
 - `READY_FOR_LIVE_TEST`: no.
 
+## This slice — operator enrich journeys
+
+- [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md) walks train/enrich facilitation: an Ollama Modelfile and `ollama create` after pack accept, a later entrant on the same `local_slm` id, and an external manifest for a trainer outside the factory. Fail-closed stops stay sacred, SKU, `model.local.down`, and no auto-promote. Integrate-vs-invent stays the build rule. No new command. No training stack. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #83
 
 - `estate help north-star` (alias `northstar`) and `estate help charter` print the locked product sentence, short anti-shrink bullets, and pointers to `charter.md`, `make gate-90`, `make day90`, and `docs/LIVE-PROBES.md`.
