@@ -329,7 +329,7 @@ pub(crate) enum ConveyCommand {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
-    /// Print hop leases.
+    /// Print hop leases. Cloud-mesh must stay unspawned.
     Leases {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

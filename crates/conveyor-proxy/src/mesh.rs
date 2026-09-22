@@ -552,8 +552,27 @@ pub fn list_hops(state_dir: &Path) -> Result<Vec<HopDecl>, MeshError> {
     Ok(load_interpreted_mesh(state_dir)?.hops)
 }
 
+/// A spawned cloud hop lease is still spawned. Refuse before hop lease
+/// JSON that looks like a normal list. A missing mesh is an empty list,
+/// not a spawned lease. An unspawned cloud hop still lists.
 pub fn list_hop_leases(state_dir: &Path) -> Result<Vec<HopLease>, MeshError> {
-    Ok(load_interpreted_mesh(state_dir)?.leases)
+    let mesh = load_interpreted_mesh(state_dir)?;
+    refuse_spawned_cloud_hop(&mesh.leases)?;
+    Ok(mesh.leases)
+}
+
+/// A present spawned cloud hop lease is a refuse before a list that
+/// would print it. A missing mesh is not a spawned lease.
+fn refuse_spawned_cloud_hop(leases: &[HopLease]) -> Result<(), MeshError> {
+    let spawned: Vec<String> = leases
+        .iter()
+        .filter(|lease| hop_is_cloud(&lease.kind) && lease.spawned)
+        .map(|lease| lease.hop_id.clone())
+        .collect();
+    if spawned.is_empty() {
+        return Ok(());
+    }
+    Err(MeshError::CloudSpawned(spawned.join(", ")))
 }
 
 pub fn hop_now_unix() -> u64 {
@@ -1442,6 +1461,76 @@ mod tests {
         assert_eq!(lease.ttl_secs, Some(1));
         assert!(lease.expires_at.is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_hop_leases_does_not_print_a_spawned_cloud_hop() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cursor-cloud".into(),
+                kind: "cloud-mesh".into(),
+                capability: "mesh-stub".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+
+        let unspawned = list_hop_leases(&dir).unwrap();
+        assert_eq!(unspawned.len(), 2);
+        assert!(unspawned.iter().any(|l| l.hop_id == "cursor-cloud"));
+        assert!(!unspawned.iter().any(|l| l.kind == "cloud-mesh" && l.spawned));
+
+        let mut mesh = load_mesh(&dir).unwrap();
+        for lease in &mut mesh.leases {
+            if lease.hop_id == "cell-one-box" {
+                lease.spawned = true;
+            }
+        }
+        persist_mesh(&dir, &mesh).unwrap();
+        let box_up = list_hop_leases(&dir).unwrap();
+        assert!(box_up.iter().any(|l| l.hop_id == "cell-one-box" && l.spawned));
+
+        let mut mesh = load_mesh(&dir).unwrap();
+        for lease in &mut mesh.leases {
+            if lease.hop_id == "cursor-cloud" {
+                lease.spawned = true;
+            }
+        }
+        persist_mesh(&dir, &mesh).unwrap();
+        let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let leases_before = std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap();
+        let err = list_hop_leases(&dir).unwrap_err();
+        assert!(matches!(err, MeshError::CloudSpawned(_)), "{err}");
+        assert!(err.to_string().starts_with("refuse:cloud-spawned"), "{err}");
+        assert!(err.to_string().contains("cursor-cloud"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
+            leases_before
+        );
+
+        let empty = tmp();
+        assert!(list_hop_leases(&empty).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     #[test]
