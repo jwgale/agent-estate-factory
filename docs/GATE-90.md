@@ -91,7 +91,7 @@ estate doctor --strict
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
 | `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture, then validate + status on `examples/hosts/frontier-http.yaml`; no live key; not in smoke / Actions |
 | Frontier model on status / doctor | green | Binding line only when `params.model` is set. Schema card stays `grok-4.7`. Cell catalog after apply copies the bound model, or `model=-` when the binding sets none. Plan and dry-run print that bound model. No frontier binding is `refuse:frontier-invent` |
-| Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; promote stays off |
+| Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; a frontier tag with no frontier binding is `refuse:frontier-invent`; promote stays off |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
