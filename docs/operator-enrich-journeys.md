@@ -1,12 +1,12 @@
 # Operator journeys: train/enrich
 
-Walks for the suite goal: facilitate train and enrich of purpose-built small-parameter models. Today's beachhead is enrich packs and the specialist path. No training stack ships on `main`.
+Walks for the suite goal: facilitate train and enrich of purpose-built small-parameter models. Today's beachhead is enrich packs, the specialist path, and an Axolotl recipe the operator runs outside the factory.
 
 Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md`](NORTH-STAR.md). Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Prepare command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Live paste target: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
-Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, and `estate enrich apply-proposal`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page. The opt-in `ollama create` handoff is [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, `estate enrich import-trained`, and `estate enrich apply-proposal`. No new crate. The factory does not run Axolotl. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page. The opt-in `ollama create` handoff is [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ## What stays fixed
 
@@ -154,7 +154,55 @@ The trainer trains on their own hardware. Weights come back to the operator. Jou
 
 No dataset pipeline and no trainer crate ship with this page.
 
-## 4. Fail-closed moments
+## 4. Train a LoRA with Axolotl, then seat it
+
+Axolotl already trains LoRA and QLoRA. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `axolotl train`.
+
+`<your-estate.yaml>` is a lab copy. It needs `params.model` on `local_slm` (a model the seat already has, such as `llama3`) or a pack `model_hint` that is already a model tag. `examples/estate.yaml` on `main` stays hash-locked. A binding id as `FROM` is `refuse:base-model`.
+
+The train hosts for this card are `consumer-nvidia` and `rented-nvidia`. Prepare on `apple-silicon` still writes the files. `NEXT.md` says the GPU path expects CUDA. There is no MLX trainer in this journey.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id> \
+  --driver axolotl-lora \
+  --job train \
+  --state-dir .cell
+```
+
+That writes `.cell/enrich/<pack-id>/axolotl-lora/axolotl.yml` and `dataset.jsonl`. `prepare.json` says `job` `train`, and `promoted`, `auto_apply`, and `estate_rewritten` stay false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
+
+On the CUDA host, run the line from `NEXT.md`:
+
+```bash
+axolotl train .cell/enrich/<pack-id>/axolotl-lora/axolotl.yml
+```
+
+If `base_model` in the yaml is only an Ollama tag, point it at a Hugging Face repo or a local weights directory before that command. This factory does not download weights.
+
+When Axolotl finishes, the adapter directory (it contains `adapter_config.json`) or a merged GGUF is the handoff. Seat the tag on Ollama yourself, then record the join. `import-trained` writes `binding-proposal.json` for the existing `local_slm` seat. It does not apply.
+
+```bash
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --tag cell-enrich-<pack-id> \
+  --adapter <adapter-dir-or-gguf>
+
+estate enrich apply-proposal \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --tag cell-enrich-<pack-id> \
+  --state-dir .cell
+
+estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
+estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
+```
+
+A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate. Opt-in check, with no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
+
+## 5. Fail-closed moments
 
 | Moment | Stop |
 | --- | --- |
@@ -166,15 +214,15 @@ No dataset pipeline and no trainer crate ship with this page.
 
 Text over 16KiB refuses before the POST. Credentials stay in the environment (`XAI_API_KEY`, `CELL_LOCAL_ENDPOINT`). The estate file does not carry them.
 
-## 5. Integrate a driver, or let a new one earn its keep
+## 6. Integrate a driver, or let a new one earn its keep
 
 Build rule (`integrate-vs-invent`): a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver.
 
-Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it.
+Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use Axolotl when the job is a LoRA/QLoRA train: `axolotl-lora` writes the recipe, and you run `axolotl train` outside the factory (journey 4).
 
 A new driver earns a catalog card when `ollama` and llama.cpp both lack the job. The card goes through catalog, route, and bind. The binding id stays `local_slm`. Floor core does not gain a vendor string. The driver stays a trait. The specialist process may be any language. Jason verifies before the card is Supported. Until that verification, the card stays stub or experimental and fails closed.
 
-Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a Grok Bot clone, a chat UI, a weight browser. GPU training stays with the trainer who holds the external manifest.
+Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a Grok Bot clone, a chat UI, a weight browser. Axolotl stays the trainer. This factory writes the recipe and does not run it.
 
 Control does not complete. Completion stays on the data plane (`estate specialist`, `model-estate`).
 

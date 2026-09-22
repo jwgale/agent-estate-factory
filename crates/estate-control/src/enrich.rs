@@ -4,9 +4,10 @@
 use anyhow::{bail, Context, Result};
 use estate_schema::load_estate_unvalidated;
 use model_estate::{
-    default_enrich_out, default_train_enrich_driver_id, import_prepared, list_prepared,
-    load_enrich_pack, prepare_enrich_set, render_prepared_index, render_train_enrich_catalog,
-    train_enrich_catalog, ImportPreparedRequest, PrepareEnrichRequest,
+    default_enrich_out, default_train_enrich_driver_id, driver_default_job, import_prepared,
+    import_trained, list_prepared, load_enrich_pack, prepare_enrich_set, render_prepared_index,
+    render_train_enrich_catalog, train_enrich_drivers_for_job, ImportPreparedRequest,
+    ImportTrainedRequest, PrepareEnrichRequest,
 };
 use std::path::{Path, PathBuf};
 
@@ -23,18 +24,19 @@ pub(crate) fn cmd_enrich_prepare(
     all_drivers: bool,
     out: Option<&Path>,
     state_dir: &Path,
-    job: &str,
+    job: Option<&str>,
     curator: &str,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
     }
+    let job = resolve_prepare_job(driver, all_drivers, job)?;
     let before = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
     let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
     let manifest = load_enrich_pack(pack, packs_dir)?;
-    let targets = prepare_targets(driver, all_drivers, out, state_dir, &manifest.id)?;
+    let targets = prepare_targets(driver, all_drivers, out, state_dir, &manifest.id, &job)?;
     let reqs: Vec<PrepareEnrichRequest<'_>> = targets
         .iter()
         .map(|(driver_id, out_dir)| PrepareEnrichRequest {
@@ -42,7 +44,7 @@ pub(crate) fn cmd_enrich_prepare(
             pack: &manifest,
             curator,
             driver_id,
-            job,
+            job: job.as_str(),
             out_dir,
         })
         .collect();
@@ -80,7 +82,7 @@ pub(crate) fn cmd_enrich_from_pack(
     driver: Option<&str>,
     all_drivers: bool,
     state_dir: &Path,
-    job: &str,
+    job: Option<&str>,
     curator: &str,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
@@ -154,6 +156,58 @@ pub(crate) fn cmd_enrich_import_prepared(
         tag
     );
     println!("import-prepared did not apply.");
+    Ok(())
+}
+
+pub(crate) fn cmd_enrich_import_trained(
+    estate_path: &Path,
+    prepared_dir: &Path,
+    tag: &str,
+    adapter: &Path,
+    curator: &str,
+) -> Result<()> {
+    let before = std::fs::read_to_string(estate_path)
+        .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
+    let estate = load_estate_unvalidated(estate_path)
+        .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
+    let proposal = import_trained(&ImportTrainedRequest {
+        estate: &estate,
+        prepared_dir,
+        tag,
+        adapter,
+        curator,
+    })?;
+    let after = std::fs::read_to_string(estate_path)
+        .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
+    if before != after {
+        bail!("enrich import-trained must not rewrite the estate file");
+    }
+    let json_path = prepared_dir.join("binding-proposal.json");
+    let md_path = prepared_dir.join("binding-proposal.md");
+    println!(
+        "enrich import-trained: pack={} binding={} tag={} seated_driver={} driver={}",
+        proposal.pack_id,
+        proposal.binding_id,
+        proposal.local_tag,
+        proposal.seated_driver,
+        proposal.driver
+    );
+    println!("  prepared: {}", prepared_dir.display());
+    println!("  adapter: {}", adapter.display());
+    println!("  weights: {}", proposal.local_path);
+    println!("  json: {}", json_path.display());
+    println!("  md: {}", md_path.display());
+    println!(
+        "auto_apply={} promoted={} estate_rewritten={}",
+        proposal.auto_apply, proposal.promoted, proposal.estate_rewritten
+    );
+    println!(
+        "next: estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir <state-dir>",
+        estate_path.display(),
+        prepared_dir.display(),
+        tag
+    );
+    println!("import-trained did not apply.");
     Ok(())
 }
 
@@ -251,21 +305,36 @@ fn seated_endpoint(estate: &estate_schema::Estate) -> Result<String> {
     }
 }
 
+fn resolve_prepare_job(
+    driver: Option<&str>,
+    all_drivers: bool,
+    job: Option<&str>,
+) -> Result<String> {
+    if let Some(job) = job.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(job.to_string());
+    }
+    if all_drivers || driver.is_none() {
+        return Ok("enrich".to_string());
+    }
+    Ok(driver_default_job(driver.unwrap_or_default())?.to_string())
+}
+
 fn prepare_targets(
     driver: Option<&str>,
     all_drivers: bool,
     out: Option<&Path>,
     state_dir: &Path,
     pack_id: &str,
+    job: &str,
 ) -> Result<Vec<(String, PathBuf)>> {
     if all_drivers {
         let mut targets = Vec::new();
-        for card in train_enrich_catalog() {
+        for driver_id in train_enrich_drivers_for_job(job)? {
             let dir = match out {
-                Some(parent) => parent.join(card.driver_id),
-                None => default_enrich_out(state_dir, pack_id, card.driver_id),
+                Some(parent) => parent.join(driver_id),
+                None => default_enrich_out(state_dir, pack_id, driver_id),
             };
-            targets.push((card.driver_id.to_string(), dir));
+            targets.push((driver_id.to_string(), dir));
         }
         if targets.is_empty() {
             bail!("refuse:driver: no train/enrich drivers to prepare");

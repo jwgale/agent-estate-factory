@@ -59,6 +59,9 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("TrainEnrichDriver"), "{body}");
         assert!(body.contains("ollama-modelfile"), "{body}");
         assert!(body.contains("external-manifest"), "{body}");
+        assert!(body.contains("axolotl-lora"), "{body}");
+        assert!(body.contains("import-trained"), "{body}");
+        assert!(body.contains("make train-prepare"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
         assert!(body.contains("make enrich-live-prove"), "{body}");
         assert!(body.contains("estate enrich from-pack"), "{body}");
@@ -82,7 +85,9 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(drivers.status.success(), "{listed}");
     assert!(listed.contains("ollama-modelfile"), "{listed}");
     assert!(listed.contains("external-manifest"), "{listed}");
+    assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
+    assert!(listed.contains("default=train"), "{listed}");
 }
 
 #[test]
@@ -395,6 +400,40 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         std::fs::read_to_string(root.join("crates/estate-control/src/dispatch.rs")).unwrap();
     assert!(!dispatch.contains("ollama-modelfile"));
     assert!(!dispatch.contains("external-manifest"));
+    assert!(!dispatch.contains("axolotl-lora"));
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.contains("train-prepare:"),
+        "Makefile missing train-prepare"
+    );
+    assert!(makefile.contains("scripts/train-prepare.sh"));
+    let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
+    assert!(train_script.contains("axolotl-lora"), "{train_script}");
+    assert!(train_script.contains("axolotl train"), "{train_script}");
+    assert!(train_script.contains("SKIP live train"), "{train_script}");
+    assert!(
+        train_script.contains("job") && train_script.contains("train"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/estate.yaml") || train_script.contains("\"$ESTATE\""),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("Do not add to make smoke"),
+        "{train_script}"
+    );
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("train-prepare"),
+            "{rel} must not run train-prepare"
+        );
+    }
     let floor = std::fs::read_to_string(root.join("crates/floor-supervisor/src/lib.rs")).unwrap();
     assert!(!floor.contains("TrainEnrichDriver"));
 }
@@ -629,7 +668,11 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         .output()
         .unwrap();
     assert!(imported.status.success(), "{}", text(&imported));
-    assert!(text(&imported).contains("apply-proposal"), "{}", text(&imported));
+    assert!(
+        text(&imported).contains("apply-proposal"),
+        "{}",
+        text(&imported)
+    );
 
     let verify = estate_bin()
         .env_remove("CELL_LOCAL_ENDPOINT")
@@ -699,7 +742,10 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         .unwrap();
     let staged_text = text(&staged);
     assert!(staged.status.success(), "{staged_text}");
-    assert!(staged_text.contains("apply-proposal did not apply"), "{staged_text}");
+    assert!(
+        staged_text.contains("apply-proposal did not apply"),
+        "{staged_text}"
+    );
     assert!(staged_text.contains("auto_apply=false"), "{staged_text}");
     assert!(staged_text.contains("--require-plan"), "{staged_text}");
     assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
@@ -767,10 +813,7 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         doctor_text.contains("source estate not written"),
         "{doctor_text}"
     );
-    assert!(
-        doctor_text.contains("binding proposal"),
-        "{doctor_text}"
-    );
+    assert!(doctor_text.contains("binding proposal"), "{doctor_text}");
 
     let plan = estate_bin()
         .args([
@@ -823,10 +866,7 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         .unwrap();
     let ungated_text = text(&ungated);
     assert!(ungated.status.success(), "{ungated_text}");
-    assert!(
-        ungated_text.contains("enrich stage held"),
-        "{ungated_text}"
-    );
+    assert!(ungated_text.contains("enrich stage held"), "{ungated_text}");
     assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
 
     let applied = estate_bin()
@@ -1114,4 +1154,175 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
     );
     assert!(!root.join("frontier-state/enrich").exists());
     assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
+    let root = tmp("axolotl-cli");
+    let seated = write_seated_estate(&root, "llama3");
+    let seated_path = seated.display().to_string();
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+    let out = root.join("recipe");
+
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "axolotl-lora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(prepared_text.contains("job=train"), "{prepared_text}");
+    assert!(
+        prepared_text.contains("driver=axolotl-lora"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("promoted=false"), "{prepared_text}");
+    assert!(
+        prepared_text.contains("estate_rewritten=false"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("axolotl train "), "{prepared_text}");
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(doc["job"], "train");
+    assert_eq!(doc["promoted"], false);
+    assert_eq!(doc["auto_apply"], false);
+    assert_eq!(doc["estate_rewritten"], false);
+    assert!(out.join("axolotl.yml").is_file());
+    assert!(out.join("dataset.jsonl").is_file());
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(
+        next.contains(&format!(
+            "axolotl train {}",
+            out.join("axolotl.yml").display()
+        )),
+        "{next}"
+    );
+    assert_eq!(estate_bytes(), before);
+
+    let enrich_job = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "axolotl-lora",
+            "--job",
+            "enrich",
+            "--out",
+            &root.join("enrich-job").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let enrich_text = text(&enrich_job);
+    assert!(!enrich_job.status.success(), "{enrich_text}");
+    assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
+    assert!(!root.join("enrich-job").exists());
+
+    let state = root.join("state");
+    let all_train = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--all-drivers",
+            "--job",
+            "train",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let all_text = text(&all_train);
+    assert!(all_train.status.success(), "{all_text}");
+    assert!(all_text.contains("prepared=3"), "{all_text}");
+    assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
+    assert!(state
+        .join("enrich/overnight-traces/axolotl-lora/axolotl.yml")
+        .is_file());
+    assert!(state
+        .join("enrich/overnight-traces/ollama-modelfile/Modelfile")
+        .is_file());
+
+    let adapter = root.join("adapter");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    let imported = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated_path,
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &adapter.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let imported_text = text(&imported);
+    assert!(imported.status.success(), "{imported_text}");
+    assert!(
+        imported_text.contains("binding=local_slm"),
+        "{imported_text}"
+    );
+    assert!(
+        imported_text.contains("import-trained did not apply"),
+        "{imported_text}"
+    );
+    assert!(
+        imported_text.contains("auto_apply=false"),
+        "{imported_text}"
+    );
+    assert!(out.join("binding-proposal.json").is_file());
+    assert_eq!(estate_bytes(), before);
+
+    let missing = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated_path,
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &root.join("missing-adapter").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let missing_text = text(&missing);
+    assert!(!missing.status.success(), "{missing_text}");
+    assert!(missing_text.contains("refuse:adapter"), "{missing_text}");
 }

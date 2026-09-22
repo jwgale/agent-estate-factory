@@ -485,9 +485,9 @@ pub(crate) enum EnrichCommand {
         out: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` (default) or `train`. A label on the artifact. Does not run a trainer.
-        #[arg(long, default_value = "enrich")]
-        job: String,
+        /// `enrich` or `train`. Omit for the driver default (`train` on axolotl-lora, `enrich` otherwise). `--all-drivers` defaults to enrich.
+        #[arg(long)]
+        job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
@@ -509,9 +509,9 @@ pub(crate) enum EnrichCommand {
         all_drivers: bool,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` (default) or `train`. A label on the artifact. Does not run a trainer.
-        #[arg(long, default_value = "enrich")]
-        job: String,
+        /// `enrich` or `train`. Omit for the driver default (`train` on axolotl-lora, `enrich` otherwise). With no `--driver`, the default job is enrich.
+        #[arg(long)]
+        job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
@@ -534,6 +534,23 @@ pub(crate) enum EnrichCommand {
         /// File the operator loaded (Modelfile or returned weights). Must exist.
         #[arg(long)]
         path: PathBuf,
+        /// Import gate. Must match locked curator `jason`.
+        #[arg(long, default_value = "jason")]
+        curator: String,
+    },
+    /// Record an Axolotl adapter or merged GGUF on the local_slm proposal. Does not apply.
+    ImportTrained {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Directory that holds an axolotl-lora prepare.json with job train.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.
+        #[arg(long)]
+        tag: String,
+        /// Adapter directory (adapter_config.json inside) or a merged GGUF / safetensors file.
+        #[arg(long)]
+        adapter: PathBuf,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,

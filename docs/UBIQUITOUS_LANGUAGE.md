@@ -34,7 +34,7 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich from-pack` runs that prepare for an accepted pack into `.cell/enrich`. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Modelfile `FROM` is the seated model: `params.model` on the local binding, or a pack `model_hint` that is already a model tag. The binding id `local_slm` is not that tag. A missing seated name is `refuse:base-model`. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card the job allows). `estate enrich from-pack` runs that prepare for an accepted pack into `.cell/enrich`. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. `axolotl-lora` defaults to `train`. Prepare does not train, does not POST, and does not rewrite the estate. Modelfile `FROM` is the seated model: `params.model` on the local binding, or a pack `model_hint` that is already a model tag. The binding id `local_slm` is not that tag. A missing seated name is `refuse:base-model`. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ### purpose-built SLM
 
@@ -42,11 +42,11 @@ A small-parameter model crafted for one job. Open-source SLMs will get more comm
 
 ### TrainEnrichDriver
 
-Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `status` and `probe`. Cards on `main`: `ollama-modelfile` (integrate Ollama `create` / Modelfile `FROM` + `SYSTEM`; `FROM` is the seated model, never the binding id) and `external-manifest` (portable JSON/YAML for a later trainer). A third train/enrich entrant is another card. llama.cpp INI presets stay off this catalog until a pack or binding names a GGUF path. Floor and control dispatch do not match driver ids.
+Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `status` and `probe`. Cards on `main`: `ollama-modelfile` (integrate Ollama `create` / Modelfile `FROM` + `SYSTEM`; `FROM` is the seated model, never the binding id), `external-manifest` (portable JSON/YAML for a later trainer), and `axolotl-lora` (an Axolotl LoRA/QLoRA recipe; default job `train`; the factory does not run Axolotl). A later train/enrich entrant is another card. llama.cpp INI presets stay off this catalog until a pack or binding names a GGUF path. Floor and control dispatch do not match driver ids.
 
 ### train/enrich facilitation
 
-The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. List reads them. Import-prepared proposes the `local_slm` join and leaves plan/apply to Jason. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. `axolotl-lora` writes the Axolotl recipe an operator runs outside the factory, and `import-trained` hands the adapter back through the existing proposal. List reads them. Import-prepared proposes the `local_slm` join and leaves plan/apply to Jason. A dataset downloader and an in-process trainer stay unshipped. No new crate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### frontier
 
@@ -101,7 +101,7 @@ Both are first-class:
 1. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant.
 2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. Train and distill stay the suite direction. No GPU training stack ships here. Ollama is the local-run seat. The suite is that portable seat and facilitation of purpose-built SLMs. Integrate the driver that already does the job. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. `axolotl-lora` facilitates a LoRA/QLoRA train by writing an Axolotl recipe; the factory does not run the trainer. Ollama is the local-run seat. The suite is that portable seat and facilitation of purpose-built SLMs. Integrate the driver that already does the job. `READY_FOR_LIVE_TEST` stays no. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Aliases to avoid
 

@@ -11,26 +11,93 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `TrainEnrichDriver` | Data-plane trait in `model-estate`. `id()`, `prepare(job)`, catalog `status` / `probe`. |
 | `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. `FROM` is the seated model. Does not shell out. |
 | `external-manifest` | Portable JSON and YAML. Base model ref, purpose, host class affinity, dataset path hints from the pack `source_paths`. No vendor lock. `NEXT.md` names the files to hand off. |
-| `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` line, and the fail-closed reminders. |
+| `axolotl-lora` | Integration. Writes `axolotl.yml` (QLoRA: `load_in_4bit: true`, `adapter: qlora`) and `dataset.jsonl`. Default job is `train`. `NEXT.md` has the exact `axolotl train` line. Does not shell out. |
+| `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` or `import-trained` line, and the fail-closed reminders. |
 | `estate enrich drivers` | Prints the catalog. `live=false`. A probe here does not train. |
-| `estate enrich prepare --all-drivers` | One call. Each registered card writes a sibling directory. A refuse writes none of them. |
+| `estate enrich prepare --all-drivers` | One call. Each card the job allows writes a sibling directory. A refuse writes none of them. The enrich default skips `axolotl-lora`. `--job train` includes it. |
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
-| `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card. Does not apply. |
+| `estate enrich import-trained` | Same proposal, for an `axolotl-lora` prepare whose job is `train`. `--adapter` is an adapter directory or a merged GGUF / safetensors file. Does not apply. |
+| `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card the job allows. The default job is enrich, so `axolotl-lora` waits for `--job train`. Does not apply. |
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
 | `make enrich-prepare` | Opt-in fixture walk. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
+| `make train-prepare` | Opt-in Axolotl recipe walk. Prints `SKIP live train`. Does not run Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
 | `make enrich-live-prove` | Opt-in seated handoff. Runs `ollama create` when the seat is up, then removes the tag. Not a factory-wide live test. Off smoke, `gate-90`, and Actions. |
 
-Job field: `enrich` (default) or `train`. The field is a label on the artifact. Both jobs only prepare.
+Job field: `enrich` (default) or `train`. `axolotl-lora` defaults to `train` and refuses `enrich`. Both jobs only prepare. The factory does not run a trainer.
 
 Default output is `.cell/enrich/{pack_id}/{driver}/`. Pass `--out` to write somewhere else, including `packs/prepared/`. Layout: [`cell-layout.md`](cell-layout.md). Schema: [`../schema/train-enrich.v0.json`](../schema/train-enrich.v0.json) (`cell-one.enrich-prepare.v0`).
 
 ## Facilitated vs invented
 
-Ollama already creates a model from a Modelfile. This factory writes that file and the next command. It does not invent a local inference server and it does not invent a GPU training stack.
+Ollama already creates a model from a Modelfile. This factory writes that file and the next command. It does not invent a local inference server.
 
-A full LoRA / SFT / DPO loop, a dataset downloader, and a GPU scheduler stay out of this beachhead.
+Axolotl already trains LoRA and QLoRA from a YAML recipe. `axolotl-lora` writes that recipe and the `axolotl train` line. It does not invent an in-process trainer, a dataset downloader, or a GPU scheduler. Unsloth can train the same JSONL in its own process. This factory does not register an Unsloth card. `NEXT.md` names the Unsloth repo in one line.
+
+## Train / fine-tune
+
+Supported train hosts for `axolotl-lora` are `consumer-nvidia` and `rented-nvidia`. `host_class_affinity` comes from the pack when that field is set, otherwise from `params.host_class` on `local_slm`, otherwise from the pack `host_class`. An `apple-silicon` affinity still prepares. `NEXT.md` says Axolotl's GPU path expects a CUDA host. This factory does not write an MLX trainer.
+
+`base_model` in `axolotl.yml` is the seated model tag. Same resolution as Modelfile `FROM`: a pack `model_hint` that is already a model tag, otherwise `params.model` on the local binding. The binding id `local_slm` is `refuse:base-model` and writes nothing. Axolotl expects a Hugging Face repo id or a local weights directory. If the seated tag is only an Ollama name, edit `base_model` in the recipe before you train. This factory does not download weights and does not map the tag.
+
+`dataset.jsonl` is Alpaca JSONL (`instruction`, `input`, `output`), which Axolotl reads with `type: alpaca` and `ds_type: json`. When the pack has `source_paths`, each row names one of those paths. The factory does not read or download the files. When `source_paths` is empty, the file is a three-row stub and `NEXT.md` says to replace the rows before `axolotl train`. An empty source path string is `refuse:dataset`.
+
+The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`, `lora_target_linear: true`). On the CUDA host you can edit the recipe to 8-bit LoRA (`load_in_8bit: true`, `load_in_4bit: false`, `adapter: lora`) before you run Axolotl. `val_set_size` is `0.0` so a short scaffold does not try to split an eval set.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id-or-pack.json> \
+  --driver axolotl-lora \
+  --job train \
+  --state-dir .cell
+```
+
+Omitting `--job` on `--driver axolotl-lora` is the same train job. `--job enrich` is `refuse:job` and writes nothing. `--all-drivers --job train` writes this card next to the Modelfile and the external manifest. `--all-drivers` without `--job` stays on `enrich` and skips `axolotl-lora`.
+
+The output directory is `.cell/enrich/{pack_id}/axolotl-lora/`:
+
+| File | Role |
+| --- | --- |
+| `axolotl.yml` | Axolotl config. `datasets[].path` and `output_dir` are absolute paths under that directory. |
+| `dataset.jsonl` | Scaffold the recipe points at. |
+| `PREPARE.md` | What this step wrote, including `axolotl train axolotl.yml` from that directory. |
+| `NEXT.md` | `axolotl train <absolute>/axolotl.yml`, the host note, and the import line. |
+| `prepare.json` | `job` is `train`. `promoted`, `auto_apply`, and `estate_rewritten` are false. |
+
+Run the command from `NEXT.md` on a CUDA host. This factory does not run it.
+
+```bash
+axolotl train .cell/enrich/<pack-id>/axolotl-lora/axolotl.yml
+```
+
+Axolotl writes the adapter under `output_dir` in the recipe (the `outputs/` directory next to the yaml). When that directory holds `adapter_config.json` (and the adapter weights) or you have a merged GGUF, record the join. Ollama stays the local-run seat. Create the tag `cell-enrich-{pack_id}` on that seat yourself: a Modelfile `FROM` of a merged GGUF, or `FROM` of the base plus `ADAPTER` for the adapter directory. This factory does not run `ollama create`.
+
+```bash
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --tag cell-enrich-<pack-id> \
+  --adapter <adapter-dir-or-gguf>
+
+estate enrich apply-proposal \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --tag cell-enrich-<pack-id> \
+  --state-dir .cell
+
+estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
+estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
+```
+
+`import-trained` writes the same `binding-proposal.json` as `import-prepared`. A prepare that is not `axolotl-lora`, a job that is not `train`, or an adapter path with no `adapter_config.json`, adapter weights, or GGUF is a refuse before that proposal exists. `apply-proposal` does not apply. The source estate is written only when `estate apply --require-plan` succeeds. Point `--estate` at a lab copy. `examples/estate.yaml` on `main` stays hash-locked.
+
+```bash
+make train-prepare
+```
+
+Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`) and sets `params.model: llama3` on that copy. Asserts `axolotl.yml`, `dataset.jsonl`, the `axolotl train` line in `NEXT.md`, and `prepare.json` with `job` `train`. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 ```bash
 estate enrich from-pack \
@@ -111,15 +178,15 @@ estate enrich prepare \
 
 `manifest.json` and `manifest.yaml` are the market-shift hatch. A later trainer reads `base_model`, `purpose`, `host_class_affinity`, and `dataset_paths`. Cell One does not call that trainer. When weights come back, load them on the seated runtime as `cell-enrich-{pack_id}` and point `import-prepared --path` at that file.
 
-## Add a third entrant
+## Add another entrant
 
-1. Implement `TrainEnrichDriver` in `model-estate` (a sibling of the two drivers).
-2. Add one `RegisteredDriver` card in `crates/model-estate/src/train_enrich.rs`.
+1. Implement `TrainEnrichDriver` in `model-estate` (a sibling of the cards already registered).
+2. Add one `RegisteredDriver` card in `crates/model-estate/src/train_enrich.rs`. Set `jobs` and `default_job` so `--all-drivers` includes the card only when the job allows it.
 3. Leave floor-supervisor and `estate-control` dispatch alone. They pass the driver id through.
 
 `estate enrich drivers` prints the new card. No estate file change is required to register it.
 
-llama.cpp on a host already reads an INI preset (`llama-server --models-preset`). That preset needs a GGUF path or a Hugging Face repo. This estate does not carry either, so no third card ships here. `external-manifest` stays the portable hatch until a pack or binding names that file.
+llama.cpp on a host already reads an INI preset (`llama-server --models-preset`). That preset needs a GGUF path or a Hugging Face repo. This estate does not carry either, so that preset stays off this catalog. `external-manifest` stays the portable hatch until a pack or binding names that file.
 
 ## Refuse
 
@@ -135,6 +202,10 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Unknown driver id | `refuse:driver` |
 | `--driver` and `--all-drivers` together | `refuse:driver` |
 | Job is not `train` or `enrich` | `refuse:job` |
+| `axolotl-lora` with `--job enrich` | `refuse:job` |
+| A train source path is empty | `refuse:dataset` |
+| `import-trained` on a prepare that is not `axolotl-lora` with job `train` | `refuse:driver` or `refuse:job` |
+| Adapter path is missing, or has no adapter config, weights, or GGUF | `refuse:adapter` |
 | `{state_dir}/enrich` is missing on list | `refuse:enrich-index` |
 | `prepare.json` missing, unreadable, or flagged promoted | `refuse:missing-prepare`, `refuse:prepare-unreadable`, `refuse:prepared` |
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |

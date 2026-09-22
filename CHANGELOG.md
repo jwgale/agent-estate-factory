@@ -2,6 +2,15 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Axolotl train recipe
+
+- `axolotl-lora` is a `TrainEnrichDriver` card beside `ollama-modelfile` and `external-manifest`. `estate enrich prepare --driver axolotl-lora` writes `axolotl.yml` (QLoRA: `load_in_4bit` and `adapter: qlora`), `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with the exact `axolotl train` line, and `prepare.json` (`job: train`). The factory does not run Axolotl, does not download a dataset, and does not rewrite `estate.yaml`.
+- Default job for that card is `train`. `--job enrich` is `refuse:job` and writes nothing. `--all-drivers` includes the card when the job is `train`. The enrich default still prepares the other two cards.
+- `estate enrich import-trained` checks an adapter directory or a merged GGUF and writes the same `local_slm` binding proposal as `import-prepared`. `apply-proposal`, `plan`, and `apply --require-plan` stay the join. Ollama stays the local-run seat.
+- Train hosts for the card are `consumer-nvidia` and `rented-nvidia`. `apple-silicon` can prepare; `NEXT.md` says the Axolotl GPU path expects CUDA. No MLX trainer.
+- Opt-in `make train-prepare` asserts the recipe, the `axolotl train` line, `prepare.json` `job=train`, and an untouched `examples/estate.yaml`. It prints `SKIP live train`. Off smoke, `gate-90`, and Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — seated FROM, from-pack, live prove
 
 - Keeps `estate enrich apply-proposal`. The proposal still stages `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. The source estate is written only when that apply succeeds. Status and doctor still name a pending join. `auto_apply` stays false.

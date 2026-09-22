@@ -2,7 +2,8 @@
 //!
 //! The local runtime stays a seat. Ollama is today's entrant. This module
 //! does not shell out, does not POST a train job, and does not rewrite the
-//! estate. A later trainer consumes `external-manifest` or adds a card here.
+//! estate. `axolotl-lora` writes an Axolotl recipe the operator runs outside
+//! the factory. `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
 use crate::error::ModelError;
@@ -37,13 +38,17 @@ const PREPARE_NOTE: &str = "Prepared artifacts only. Does not train, does not PO
 
 const SACRED_NEEDLES: &[&str] = &["cyera", "rust-classroom", "rust_classroom"];
 
-/// Catalog card. A third entrant is another row in `REGISTRY`.
+/// Catalog card. Another entrant is another row in `REGISTRY`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrainEnrichCard {
     pub driver_id: &'static str,
     pub status: &'static str,
     pub integrates: &'static str,
     pub notes: &'static str,
+    /// Jobs this card writes. `--all-drivers` includes the card when the requested job is here.
+    pub jobs: &'static [EnrichJobKind],
+    /// Job used when the operator names this driver and omits `--job`.
+    pub default_job: EnrichJobKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +85,8 @@ pub struct EnrichJob {
     pub host_class_affinity: String,
     pub source_paths: Vec<String>,
     pub source_drivers: Vec<String>,
+    /// Directory the artifacts will occupy. Path-bearing recipes use it for absolute paths.
+    pub out_dir: PathBuf,
 }
 
 pub struct DriverPrepare {
@@ -106,6 +113,9 @@ struct RegisteredDriver {
     build: fn() -> Box<dyn TrainEnrichDriver>,
 }
 
+const ENRICH_AND_TRAIN: &[EnrichJobKind] = &[EnrichJobKind::Enrich, EnrichJobKind::Train];
+const TRAIN_ONLY: &[EnrichJobKind] = &[EnrichJobKind::Train];
+
 const REGISTRY: &[RegisteredDriver] = &[
     RegisteredDriver {
         card: TrainEnrichCard {
@@ -113,6 +123,8 @@ const REGISTRY: &[RegisteredDriver] = &[
             status: "integration",
             integrates: "ollama create / Modelfile FROM+SYSTEM",
             notes: "Joins the seated Ollama runtime. Writes a Modelfile. Does not shell out. Does not train.",
+            jobs: ENRICH_AND_TRAIN,
+            default_job: EnrichJobKind::Enrich,
         },
         build: || Box::new(OllamaModelfileDriver),
     },
@@ -122,14 +134,32 @@ const REGISTRY: &[RegisteredDriver] = &[
             status: "portable",
             integrates: "json+yaml manifest",
             notes: "Market-shift hatch. A future trainer reads the manifest. No vendor lock.",
+            jobs: ENRICH_AND_TRAIN,
+            default_job: EnrichJobKind::Enrich,
         },
         build: || Box::new(ExternalManifestDriver),
+    },
+    RegisteredDriver {
+        card: TrainEnrichCard {
+            driver_id: AXOLOTL_LORA_ID,
+            status: "integration",
+            integrates: "axolotl train LoRA/QLoRA recipe",
+            notes: "Writes axolotl.yml and dataset.jsonl for Axolotl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(AxolotlLoraDriver),
     },
 ];
 
 struct OllamaModelfileDriver;
 
 struct ExternalManifestDriver;
+
+struct AxolotlLoraDriver;
+
+/// Registered train card. Axolotl already trains LoRA/QLoRA. This id writes that recipe.
+pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
 
 impl TrainEnrichDriver for OllamaModelfileDriver {
     fn id(&self) -> &'static str {
@@ -224,6 +254,54 @@ impl TrainEnrichDriver for ExternalManifestDriver {
     }
 }
 
+impl TrainEnrichDriver for AxolotlLoraDriver {
+    fn id(&self) -> &'static str {
+        AXOLOTL_LORA_ID
+    }
+
+    fn status(&self) -> &'static str {
+        "integration"
+    }
+
+    fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        if job.kind != EnrichJobKind::Train {
+            return Err(ModelError::Other(format!(
+                "refuse:job: {AXOLOTL_LORA_ID} prepares train; got {}",
+                job.kind.as_str()
+            )));
+        }
+        let (dataset, stub) = axolotl_dataset_jsonl(job)?;
+        let yaml = axolotl_recipe_yaml(job, stub);
+        let host = axolotl_host_note(&job.host_class_affinity);
+        let data_note = axolotl_dataset_note(stub, &job.source_paths);
+        let steps = format!(
+            "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, and did not rewrite the estate.\n\
+             \n\
+             {host}\n\
+             \n\
+             {data_note}\n\
+             \n\
+             base_model is {base}. That is the seated model tag, the same resolution as Modelfile FROM. Axolotl expects a Hugging Face repo id or a local weights directory. If {base} is only an Ollama tag, set base_model in axolotl.yml to that repo or directory before you train. This factory did not download weights.\n\
+             \n\
+             To train full LoRA on that host, set `load_in_8bit: true`, `load_in_4bit: false`, and `adapter: lora` in axolotl.yml before you run it.\n\
+             \n\
+             From this directory:\n\
+             \n\
+             axolotl train axolotl.yml\n\
+             \n\
+             The copy-paste line with the config path is in NEXT.md. Ollama stays the local-run seat after the weights exist.\n",
+            base = job.base_model,
+        );
+        Ok(DriverPrepare {
+            files: vec![
+                ("axolotl.yml".into(), yaml),
+                ("dataset.jsonl".into(), dataset),
+            ],
+            steps,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct ExternalManifest {
     schema: String,
@@ -274,22 +352,55 @@ pub fn train_enrich_catalog() -> Vec<TrainEnrichCard> {
     REGISTRY.iter().map(|row| row.card).collect()
 }
 
+fn unknown_train_enrich_driver(id: &str) -> ModelError {
+    let known = REGISTRY
+        .iter()
+        .map(|row| row.card.driver_id)
+        .collect::<Vec<_>>()
+        .join(", ");
+    ModelError::Other(format!(
+        "refuse:driver: unknown train/enrich driver '{id}' (catalog: {known})"
+    ))
+}
+
+pub fn train_enrich_card(id: &str) -> Result<TrainEnrichCard, ModelError> {
+    let id = id.trim();
+    REGISTRY
+        .iter()
+        .find(|row| row.card.driver_id == id)
+        .map(|row| row.card)
+        .ok_or_else(|| unknown_train_enrich_driver(id))
+}
+
 pub fn resolve_train_enrich_driver(id: &str) -> Result<Box<dyn TrainEnrichDriver>, ModelError> {
     let id = id.trim();
     REGISTRY
         .iter()
         .find(|row| row.card.driver_id == id)
         .map(|row| (row.build)())
-        .ok_or_else(|| {
-            let known = REGISTRY
-                .iter()
-                .map(|row| row.card.driver_id)
-                .collect::<Vec<_>>()
-                .join(", ");
-            ModelError::Other(format!(
-                "refuse:driver: unknown train/enrich driver '{id}' (catalog: {known})"
-            ))
-        })
+        .ok_or_else(|| unknown_train_enrich_driver(id))
+}
+
+/// Job written when the operator names one driver and omits `--job`.
+pub fn driver_default_job(id: &str) -> Result<&'static str, ModelError> {
+    Ok(train_enrich_card(id)?.default_job.as_str())
+}
+
+/// Cards that prepare `job`. `--all-drivers` uses this list.
+pub fn train_enrich_drivers_for_job(job: &str) -> Result<Vec<&'static str>, ModelError> {
+    let kind = parse_enrich_job(job)?;
+    let ids: Vec<_> = REGISTRY
+        .iter()
+        .filter(|row| row.card.jobs.contains(&kind))
+        .map(|row| row.card.driver_id)
+        .collect();
+    if ids.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:job: no train/enrich driver prepares '{}'",
+            kind.as_str()
+        )));
+    }
+    Ok(ids)
 }
 
 pub fn parse_enrich_job(raw: &str) -> Result<EnrichJobKind, ModelError> {
@@ -319,9 +430,20 @@ pub fn render_train_enrich_catalog() -> String {
                 live: false,
                 note: "unresolved".into(),
             });
+        let jobs = card
+            .jobs
+            .iter()
+            .map(|job| job.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         lines.push(format!(
-            "  {:<20} status={:<12} integrates={} live={}",
-            card.driver_id, card.status, card.integrates, probe.live
+            "  {:<20} status={:<12} jobs={} default={} integrates={} live={}",
+            card.driver_id,
+            card.status,
+            jobs,
+            card.default_job.as_str(),
+            card.integrates,
+            probe.live
         ));
         lines.push(format!("    {}", card.notes));
     }
@@ -405,7 +527,21 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     refuse_pack(req.pack).map_err(map_feed)?;
     refuse_frontier_source_on_estate(&req.pack.source_drivers, req.estate).map_err(map_feed)?;
     let kind = parse_enrich_job(req.job)?;
-    let job = enrich_job(req.pack, req.estate, kind)?;
+    let card = train_enrich_card(req.driver_id)?;
+    if !card.jobs.contains(&kind) {
+        let allowed = card
+            .jobs
+            .iter()
+            .map(|job| job.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        return Err(ModelError::Other(format!(
+            "refuse:job: {} prepares {allowed}; got {}",
+            card.driver_id,
+            kind.as_str()
+        )));
+    }
+    let job = enrich_job(req.pack, req.estate, kind, req.out_dir)?;
     refuse_job_text(&job)?;
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
@@ -437,7 +573,7 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     };
     let prepare_json = to_pretty(&doc)?;
     files.push(("prepare.json".into(), prepare_json));
-    let next = next_markdown(driver.id(), &job, req.out_dir, &names, &prepared.steps);
+    let next = next_markdown(driver.id(), &job, &job.out_dir, &names, &prepared.steps);
     files.push(("NEXT.md".into(), next));
     for (name, body) in &files {
         refuse_sacred_and_sku(name, body)?;
@@ -592,6 +728,7 @@ fn enrich_job(
     pack: &PackManifest,
     estate: &Estate,
     kind: EnrichJobKind,
+    out_dir: &Path,
 ) -> Result<EnrichJob, ModelError> {
     let purpose = {
         let note = pack.note.trim();
@@ -607,13 +744,7 @@ fn enrich_job(
         kind.as_str()
     );
     let base_model = resolve_seated_base_model(estate, pack)?;
-    let host_class_affinity = pack
-        .host_class_affinity
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(pack.host_class.as_str())
-        .to_string();
+    let host_class_affinity = resolve_host_class_affinity(estate, pack);
     let job = EnrichJob {
         kind,
         pack_id: pack.id.clone(),
@@ -623,8 +754,48 @@ fn enrich_job(
         host_class_affinity,
         source_paths: pack.source_paths.clone(),
         source_drivers: pack.source_drivers.clone(),
+        out_dir: absolute_path(out_dir),
     };
     Ok(job)
+}
+
+/// Pack affinity, then the seated binding's `params.host_class`, then the pack host class.
+fn resolve_host_class_affinity(estate: &Estate, pack: &PackManifest) -> String {
+    if let Some(affinity) = pack
+        .host_class_affinity
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return affinity.to_string();
+    }
+    if let Some(host) = estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == SEAT_ID)
+        .and_then(|binding| binding.params.get("host_class"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return host.to_string();
+    }
+    let host = pack.host_class.trim();
+    if host.is_empty() {
+        "any".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+fn absolute_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(path),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 fn refuse_job_text(job: &EnrichJob) -> Result<(), ModelError> {
@@ -757,7 +928,8 @@ fn next_markdown(
     let modelfile = out_dir.join("Modelfile");
     let manifest_json = out_dir.join("manifest.json");
     let manifest_yaml = out_dir.join("manifest.yaml");
-    let (handoff, import_path, path_note) = if driver_id == "ollama-modelfile" {
+    let config = out_dir.join("axolotl.yml");
+    let (handoff, import_line, path_note) = if driver_id == "ollama-modelfile" {
         (
             format!(
                 "Run this on the seated host. This factory does not run it.\n\
@@ -768,8 +940,12 @@ fn next_markdown(
                 modelfile = modelfile.display(),
                 base = job.base_model,
             ),
-            modelfile,
-            "Path is the Modelfile this prepare wrote.",
+            format!(
+                "estate enrich import-prepared --estate <estate.yaml> --prepared {out} --tag {tag} --path {path}\n",
+                out = out_dir.display(),
+                path = modelfile.display(),
+            ),
+            "Path is the Modelfile this prepare wrote.".to_string(),
         )
     } else if driver_id == "external-manifest" {
         (
@@ -785,14 +961,49 @@ fn next_markdown(
                 json = manifest_json.display(),
                 yaml = manifest_yaml.display(),
             ),
-            manifest_json,
-            "Point --path at the weights file you loaded. Until then, manifest.json is the portable hatch.",
+            format!(
+                "estate enrich import-prepared --estate <estate.yaml> --prepared {out} --tag {tag} --path {path}\n",
+                out = out_dir.display(),
+                path = manifest_json.display(),
+            ),
+            "Point --path at the weights file you loaded. Until then, manifest.json is the portable hatch.".to_string(),
+        )
+    } else if driver_id == AXOLOTL_LORA_ID {
+        let command = axolotl_train_command(&config);
+        (
+            format!(
+                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it.\n\
+                 \n\
+                 {command}\n\
+                 \n\
+                 {host}\n\
+                 \n\
+                 {dataset}\n\
+                 \n\
+                 base_model in axolotl.yml is {base}. Axolotl expects a Hugging Face repo id or a local weights directory. This factory did not download weights.\n\
+                 \n\
+                 Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {base} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.\n\
+                 \n\
+                 Unsloth can train a LoRA from dataset.jsonl in its own process (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
+                host = axolotl_host_note(&job.host_class_affinity),
+                dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
+                base = job.base_model,
+            ),
+            format!(
+                "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
+                out = out_dir.display(),
+            ),
+            "Point --adapter at the Axolotl output directory (adapter_config.json inside it) or at a merged GGUF file.".to_string(),
         )
     } else {
         (
             format!("{steps}\n"),
-            out_dir.join("prepare.json"),
-            "Point --path at the file you loaded on the seated runtime.",
+            format!(
+                "estate enrich import-prepared --estate <estate.yaml> --prepared {out} --tag {tag} --path {path}\n",
+                out = out_dir.display(),
+                path = out_dir.join("prepare.json").display(),
+            ),
+            "Point --path at the file you loaded on the seated runtime.".to_string(),
         )
     };
     format!(
@@ -814,7 +1025,7 @@ fn next_markdown(
          \n\
          After that model exists, record a binding proposal, then stage it. apply-proposal does not apply. estate plan and estate apply --require-plan write the source estate only when require-plan succeeds.\n\
          \n\
-         estate enrich import-prepared --estate <estate.yaml> --prepared {out} --tag {tag} --path {import_path}\n\
+         {import_line}\
          \n\
          estate enrich apply-proposal --estate <estate.yaml> --prepared {out} --tag {tag} --state-dir <state-dir>\n\
          \n\
@@ -830,7 +1041,6 @@ fn next_markdown(
         pack = job.pack_id,
         kind = job.kind.as_str(),
         out = out_dir.display(),
-        import_path = import_path.display(),
         schema = PREPARE_SCHEMA,
     )
 }
@@ -845,6 +1055,177 @@ fn dataset_lines(paths: &[String]) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     }
+}
+
+/// Supported CUDA hosts for the Axolotl GPU path. Apple Silicon can hold the recipe.
+const AXOLOTL_TRAIN_HOSTS: &[&str] = &["consumer-nvidia", "rented-nvidia"];
+
+fn axolotl_host_note(affinity: &str) -> String {
+    match affinity {
+        "consumer-nvidia" | "rented-nvidia" => format!(
+            "{affinity} is a supported train host for {AXOLOTL_LORA_ID}. Run axolotl train on that CUDA host."
+        ),
+        "apple-silicon" => format!(
+            "host_class_affinity is apple-silicon. This recipe can be prepared on that machine. Axolotl's GPU path expects a CUDA host ({}). This factory does not write an MLX trainer.",
+            AXOLOTL_TRAIN_HOSTS.join(" or ")
+        ),
+        "any" => format!(
+            "host_class_affinity is any. Run axolotl train on {}. An apple-silicon machine can hold this recipe. Axolotl's GPU path expects CUDA. This factory does not write an MLX trainer.",
+            AXOLOTL_TRAIN_HOSTS.join(" or ")
+        ),
+        other => format!(
+            "host_class_affinity is {other}. Supported train hosts for {AXOLOTL_LORA_ID} are {}. Axolotl's GPU path expects CUDA. This factory does not write an MLX trainer.",
+            AXOLOTL_TRAIN_HOSTS.join(" and ")
+        ),
+    }
+}
+
+fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
+    if stub {
+        "dataset.jsonl is a stub of example rows because the pack source_paths list is empty. Replace those rows before axolotl train. This factory did not download a dataset.".into()
+    } else {
+        format!(
+            "dataset.jsonl is a scaffold. Each row names a pack source path ({}). Copy real completions into those rows. This factory did not read or download those files.",
+            paths.join(", ")
+        )
+    }
+}
+
+fn axolotl_train_command(config: &Path) -> String {
+    format!("axolotl train {}", shell_quote(config))
+}
+
+fn shell_quote(path: &Path) -> String {
+    let text = path.display().to_string();
+    if text
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\'))
+    {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    } else {
+        text
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AlpacaRow<'a> {
+    instruction: String,
+    input: &'a str,
+    output: &'a str,
+}
+
+/// Alpaca JSONL Axolotl already reads (`type: alpaca`, `ds_type: json`).
+fn axolotl_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
+    for path in &job.source_paths {
+        if path.trim().is_empty() {
+            return Err(ModelError::Other(
+                "refuse:dataset: source path is empty".into(),
+            ));
+        }
+    }
+    let stub = job.source_paths.is_empty();
+    let rows: Vec<AlpacaRow<'_>> = if stub {
+        vec![
+            AlpacaRow {
+                instruction: format!("You are the purpose-built SLM for pack {}.", job.pack_id),
+                input: "",
+                output: "Replace this example completion before training.",
+            },
+            AlpacaRow {
+                instruction: "Name the pack this recipe was prepared from.".into(),
+                input: "",
+                output: job.pack_id.as_str(),
+            },
+            AlpacaRow {
+                instruction: job.purpose.clone(),
+                input: "",
+                output: "Replace this example completion before training.",
+            },
+        ]
+    } else {
+        job.source_paths
+            .iter()
+            .map(|path| AlpacaRow {
+                instruction: format!(
+                    "Draft a specialist completion for pack {} using the source at this path.",
+                    job.pack_id
+                ),
+                input: path.as_str(),
+                output: "Replace this scaffold with a completion from that source. Cell One did not read the file.",
+            })
+            .collect()
+    };
+    if rows.is_empty() {
+        return Err(ModelError::Other(
+            "refuse:dataset: no dataset rows to write".into(),
+        ));
+    }
+    let mut body = String::new();
+    for row in &rows {
+        let line = serde_json::to_string(row)
+            .map_err(|err| ModelError::Other(format!("refuse:dataset: serialize row: {err}")))?;
+        body.push_str(&line);
+        body.push('\n');
+    }
+    Ok((body, stub))
+}
+
+fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
+    let dataset = job.out_dir.join("dataset.jsonl");
+    let prepared = job.out_dir.join("dataset_prepared");
+    let outputs = job.out_dir.join("outputs");
+    let scaffold = if stub { "stub" } else { "pack-source-paths" };
+    let host = yaml_comment_line(&axolotl_host_note(&job.host_class_affinity));
+    format!(
+        "# schema: {schema}\n\
+         # driver: {driver}\n\
+         # job: train\n\
+         # pack: {pack}\n\
+         # Recipe only. Cell One does not run axolotl, does not download weights, and does not rewrite the estate.\n\
+         # base_model is the seated model tag (same resolution as Modelfile FROM).\n\
+         # Axolotl expects a Hugging Face repo id or a local weights directory.\n\
+         # dataset_scaffold: {scaffold}\n\
+         # {host}\n\
+         base_model: {base}\n\
+         load_in_8bit: false\n\
+         load_in_4bit: true\n\
+         adapter: qlora\n\
+         lora_r: 16\n\
+         lora_alpha: 32\n\
+         lora_dropout: 0.05\n\
+         lora_target_linear: true\n\
+         datasets:\n  - path: {dataset}\n    ds_type: json\n    type: alpaca\n\
+         dataset_prepared_path: {prepared}\n\
+         val_set_size: 0.0\n\
+         output_dir: {outputs}\n\
+         sequence_len: 2048\n\
+         sample_packing: false\n\
+         pad_to_sequence_len: true\n\
+         micro_batch_size: 1\n\
+         gradient_accumulation_steps: 4\n\
+         num_epochs: 1\n\
+         optimizer: adamw_bnb_8bit\n\
+         lr_scheduler: cosine\n\
+         learning_rate: 0.0002\n\
+         bf16: auto\n\
+         tf32: false\n\
+         gradient_checkpointing: true\n\
+         warmup_ratio: 0.03\n\
+         logging_steps: 1\n\
+         evals_per_epoch: 0\n\
+         saves_per_epoch: 1\n",
+        schema = PREPARE_SCHEMA,
+        driver = AXOLOTL_LORA_ID,
+        pack = job.pack_id,
+        base = yaml_quote(&job.base_model),
+        dataset = yaml_quote(&dataset.display().to_string()),
+        prepared = yaml_quote(&prepared.display().to_string()),
+        outputs = yaml_quote(&outputs.display().to_string()),
+    )
+}
+
+fn yaml_comment_line(text: &str) -> String {
+    text.replace(['\n', '\r'], " ")
 }
 
 fn write_files(out_dir: &Path, files: &[(String, String)]) -> Result<(), ModelError> {
@@ -1105,6 +1486,132 @@ pub fn import_prepared(
         ],
     )?;
     Ok(proposal)
+}
+
+/// Adapter or merged weights from an Axolotl run, recorded on the same
+/// `local_slm` proposal `import_prepared` writes. Does not apply.
+pub struct ImportTrainedRequest<'a> {
+    pub estate: &'a Estate,
+    pub prepared_dir: &'a Path,
+    pub tag: &'a str,
+    pub adapter: &'a Path,
+    pub curator: &'a str,
+}
+
+pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingProposal, ModelError> {
+    refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
+    refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
+    let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
+    if doc.driver != AXOLOTL_LORA_ID {
+        return Err(ModelError::Other(format!(
+            "refuse:driver: import-trained reads an {AXOLOTL_LORA_ID} prepare, found '{}'",
+            doc.driver
+        )));
+    }
+    if doc.job != EnrichJobKind::Train.as_str() {
+        return Err(ModelError::Other(format!(
+            "refuse:job: import-trained expects job train, found '{}'",
+            doc.job
+        )));
+    }
+    let weights = resolve_adapter_artifact(req.adapter)?;
+    import_prepared(&ImportPreparedRequest {
+        estate: req.estate,
+        prepared_dir: req.prepared_dir,
+        tag: req.tag,
+        path: &weights,
+        curator: req.curator,
+    })
+}
+
+fn resolve_adapter_artifact(path: &Path) -> Result<PathBuf, ModelError> {
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is missing",
+                path.display()
+            )));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {}: {err}",
+                path.display()
+            )));
+        }
+    };
+    if meta.is_file() {
+        if is_adapter_file(path) {
+            return Ok(path.to_path_buf());
+        }
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is not a gguf, safetensors, or adapter config",
+            path.display()
+        )));
+    }
+    if meta.is_dir() {
+        for name in [
+            "adapter_config.json",
+            "adapter_model.safetensors",
+            "adapter_model.bin",
+        ] {
+            let candidate = path.join(name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+        if let Some(gguf) = first_dir_file_with_suffix(path, ".gguf")? {
+            return Ok(gguf);
+        }
+        let config = path.join("config.json");
+        if config.is_file() && first_dir_file_with_suffix(path, ".safetensors")?.is_some() {
+            return Ok(config);
+        }
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has no adapter_config.json, adapter weights, or gguf",
+            path.display()
+        )));
+    }
+    Err(ModelError::Other(format!(
+        "refuse:adapter: {} is not a file or directory",
+        path.display()
+    )))
+}
+
+fn is_adapter_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".gguf")
+        || lower.ends_with(".safetensors")
+        || lower == "adapter_config.json"
+        || lower == "adapter_model.bin"
+}
+
+fn first_dir_file_with_suffix(dir: &Path, suffix: &str) -> Result<Option<PathBuf>, ModelError> {
+    let mut matches = Vec::new();
+    let entries = std::fs::read_dir(dir)
+        .map_err(|err| ModelError::Other(format!("refuse:adapter: {}: {err}", dir.display())))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            ModelError::Other(format!("refuse:adapter: {}: {err}", dir.display()))
+        })?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if name.ends_with(suffix) {
+            matches.push(path);
+        }
+    }
+    matches.sort();
+    Ok(matches.into_iter().next())
 }
 
 fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
@@ -1524,9 +2031,7 @@ pub enum EnrichStageCommit {
 /// Validate `binding-proposal.json` and write a staged estate that `estate plan`
 /// and `estate apply --require-plan` already consume. Does not apply. Does not
 /// write the source estate.
-pub fn apply_proposal(
-    req: &ApplyProposalRequest<'_>,
-) -> Result<ApplyProposalOutcome, ModelError> {
+pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOutcome, ModelError> {
     if points_at_stage_file(req.estate_path, req.state_dir) {
         return Err(ModelError::Other(
             "refuse:stage: --estate must be the source estate, not enrich-stage/staged-estate.yaml"
@@ -1538,8 +2043,7 @@ pub fn apply_proposal(
     let proposal_path = req.prepared_dir.join(BINDING_PROPOSAL_JSON);
     let proposal = parse_binding_proposal(&proposal_path)?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
-    if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job
-    {
+    if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job {
         return Err(ModelError::Other(
             "refuse:prepare: prepare.json does not match the binding proposal".into(),
         ));
@@ -1618,12 +2122,10 @@ pub fn apply_proposal(
             proposal.estate_hash
         )));
     }
-    let yaml = estate_schema::render_estate_yaml(&staged_estate).map_err(|err| {
-        ModelError::Other(format!("refuse:binding: staged estate: {err}"))
-    })?;
-    let parsed = estate_schema::load_estate_str(&yaml).map_err(|err| {
-        ModelError::Other(format!("refuse:binding: staged estate: {err}"))
-    })?;
+    let yaml = estate_schema::render_estate_yaml(&staged_estate)
+        .map_err(|err| ModelError::Other(format!("refuse:binding: staged estate: {err}")))?;
+    let parsed = estate_schema::load_estate_str(&yaml)
+        .map_err(|err| ModelError::Other(format!("refuse:binding: staged estate: {err}")))?;
     let staged_hash = estate_schema::estate_hash(&parsed);
     let source_estate = canonical_string(req.estate_path)?;
     let stage_dir = enrich_stage_dir(req.state_dir);
@@ -1669,7 +2171,10 @@ pub fn apply_proposal(
     let staged_tmp = stage_dir.join("staged-estate.yaml.tmp");
     let json_tmp = stage_dir.join("stage.json.tmp");
     std::fs::write(&staged_tmp, &yaml).map_err(|err| {
-        ModelError::Other(format!("refuse:stage-write: {}: {err}", staged_tmp.display()))
+        ModelError::Other(format!(
+            "refuse:stage-write: {}: {err}",
+            staged_tmp.display()
+        ))
     })?;
     std::fs::write(&json_tmp, &json).map_err(|err| {
         ModelError::Other(format!("refuse:stage-write: {}: {err}", json_tmp.display()))
@@ -1680,9 +2185,8 @@ pub fn apply_proposal(
             staged_estate_path.display()
         ))
     })?;
-    std::fs::rename(&json_tmp, stage_dir.join(STAGE_JSON)).map_err(|err| {
-        ModelError::Other(format!("refuse:stage-write: stage.json: {err}"))
-    })?;
+    std::fs::rename(&json_tmp, stage_dir.join(STAGE_JSON))
+        .map_err(|err| ModelError::Other(format!("refuse:stage-write: stage.json: {err}")))?;
     Ok(ApplyProposalOutcome::Staged(stage))
 }
 
@@ -1734,17 +2238,12 @@ pub fn commit_enrich_stage(
         )));
     }
     let bytes = std::fs::read(&staged_path).map_err(|err| {
-        ModelError::Other(format!(
-            "refuse:stage: {}: {err}",
-            staged_path.display()
-        ))
+        ModelError::Other(format!("refuse:stage: {}: {err}", staged_path.display()))
     })?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| {
-        ModelError::Other("refuse:stage: staged estate is not utf-8".into())
-    })?;
-    let parsed = estate_schema::load_estate_str(text).map_err(|err| {
-        ModelError::Other(format!("refuse:stage: staged estate: {err}"))
-    })?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| ModelError::Other("refuse:stage: staged estate is not utf-8".into()))?;
+    let parsed = estate_schema::load_estate_str(text)
+        .map_err(|err| ModelError::Other(format!("refuse:stage: staged estate: {err}")))?;
     if estate_schema::estate_hash(&parsed) != applied_hash {
         return Err(ModelError::Other(
             "refuse:stage: staged estate hash changed before write-back".into(),
@@ -1766,9 +2265,8 @@ pub fn commit_enrich_stage(
         stage.auto_apply = false;
         stage.promoted = false;
         let json = to_pretty(&stage)?;
-        std::fs::write(stage_json_path(state_dir), json).map_err(|err| {
-            ModelError::Other(format!("refuse:stage-write: stage.json: {err}"))
-        })?;
+        std::fs::write(stage_json_path(state_dir), json)
+            .map_err(|err| ModelError::Other(format!("refuse:stage-write: stage.json: {err}")))?;
     }
     if already {
         Ok(EnrichStageCommit::Already { source })
@@ -1784,19 +2282,11 @@ fn parse_binding_proposal(path: &Path) -> Result<EnrichBindingProposal, ModelErr
             path.display()
         )));
     }
-    let text = std::fs::read_to_string(path).map_err(|err| {
-        ModelError::Other(format!(
-            "refuse:proposal: {}: {err}",
-            path.display()
-        ))
-    })?;
+    let text = std::fs::read_to_string(path)
+        .map_err(|err| ModelError::Other(format!("refuse:proposal: {}: {err}", path.display())))?;
     refuse_raw_secrets(&text).map_err(map_feed)?;
-    let proposal: EnrichBindingProposal = serde_json::from_str(&text).map_err(|err| {
-        ModelError::Other(format!(
-            "refuse:proposal: {}: {err}",
-            path.display()
-        ))
-    })?;
+    let proposal: EnrichBindingProposal = serde_json::from_str(&text)
+        .map_err(|err| ModelError::Other(format!("refuse:proposal: {}: {err}", path.display())))?;
     if proposal.schema != BINDING_PROPOSAL_SCHEMA {
         return Err(ModelError::Other(format!(
             "refuse:proposal: schema '{}' is not {BINDING_PROPOSAL_SCHEMA}",
@@ -1842,7 +2332,10 @@ fn proposed_model_binding(
             "refuse:binding: proposed id must stay local_slm".into(),
         ));
     }
-    let class = obj.get("class").and_then(|value| value.as_str()).unwrap_or("");
+    let class = obj
+        .get("class")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if class == "frontier" {
         return Err(ModelError::Other(
             "refuse:frontier-invent: binding proposal class is frontier".into(),
@@ -1853,24 +2346,31 @@ fn proposed_model_binding(
             "refuse:binding: local_slm class is not local".into(),
         ));
     }
-    let driver = obj.get("driver").and_then(|value| value.as_str()).unwrap_or("");
+    let driver = obj
+        .get("driver")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if driver != seat.driver || proposal.seated_driver != seat.driver || driver.trim().is_empty() {
         return Err(ModelError::Other(
             "refuse:binding: proposed driver must stay the seated local_slm driver".into(),
         ));
     }
     refuse_sacred_and_sku("seated driver", driver)?;
-    let wired = obj.get("wired").and_then(|value| value.as_bool()).ok_or_else(|| {
-        ModelError::Other("refuse:binding: wired must be a bool".into())
-    })?;
+    let wired = obj
+        .get("wired")
+        .and_then(|value| value.as_bool())
+        .ok_or_else(|| ModelError::Other("refuse:binding: wired must be a bool".into()))?;
     if wired != seat.wired {
         return Err(ModelError::Other(
             "refuse:binding: proposed wired does not match the seat".into(),
         ));
     }
-    let params = obj.get("params").and_then(|value| value.as_object()).ok_or_else(|| {
-        ModelError::Other("refuse:binding: local_slm params must be an object".into())
-    })?;
+    let params = obj
+        .get("params")
+        .and_then(|value| value.as_object())
+        .ok_or_else(|| {
+            ModelError::Other("refuse:binding: local_slm params must be an object".into())
+        })?;
     let seat_params = match &seat.params {
         serde_json::Value::Object(map) => map.clone(),
         serde_json::Value::Null => serde_json::Map::new(),
@@ -1907,7 +2407,10 @@ fn proposed_model_binding(
             "refuse:binding: params.{key} is not on the seat"
         )));
     }
-    let model = params.get("model").and_then(|value| value.as_str()).unwrap_or("");
+    let model = params
+        .get("model")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if model != tag || model != proposal.local_tag {
         return Err(ModelError::Other(format!(
             "refuse:binding: params.model '{model}' must be {tag}"
@@ -1966,13 +2469,11 @@ fn load_stage(state_dir: &Path) -> Result<Option<EnrichBindingStage>, ModelError
             path.display()
         )));
     }
-    let text = std::fs::read_to_string(&path).map_err(|err| {
-        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
-    })?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|err| ModelError::Other(format!("refuse:stage: {}: {err}", path.display())))?;
     refuse_raw_secrets(&text).map_err(map_feed)?;
-    let stage: EnrichBindingStage = serde_json::from_str(&text).map_err(|err| {
-        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
-    })?;
+    let stage: EnrichBindingStage = serde_json::from_str(&text)
+        .map_err(|err| ModelError::Other(format!("refuse:stage: {}: {err}", path.display())))?;
     if stage.schema != BINDING_STAGE_SCHEMA {
         return Err(ModelError::Other(format!(
             "refuse:stage: schema '{}' is not {BINDING_STAGE_SCHEMA}",
@@ -1998,12 +2499,10 @@ fn staged_file_matches(stage: &EnrichBindingStage) -> Result<bool, ModelError> {
     if !path.is_file() {
         return Ok(false);
     }
-    let text = std::fs::read_to_string(path).map_err(|err| {
-        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
-    })?;
-    let estate = estate_schema::load_estate_str(&text).map_err(|err| {
-        ModelError::Other(format!("refuse:stage: {}: {err}", path.display()))
-    })?;
+    let text = std::fs::read_to_string(path)
+        .map_err(|err| ModelError::Other(format!("refuse:stage: {}: {err}", path.display())))?;
+    let estate = estate_schema::load_estate_str(&text)
+        .map_err(|err| ModelError::Other(format!("refuse:stage: {}: {err}", path.display())))?;
     Ok(estate_schema::estate_hash(&estate) == stage.staged_estate_hash)
 }
 
@@ -2025,9 +2524,8 @@ fn same_file(left: &Path, right: &Path) -> bool {
 }
 
 fn canonical_path(path: &Path) -> Result<PathBuf, ModelError> {
-    std::fs::canonicalize(path).map_err(|err| {
-        ModelError::Other(format!("refuse:path: {}: {err}", path.display()))
-    })
+    std::fs::canonicalize(path)
+        .map_err(|err| ModelError::Other(format!("refuse:path: {}: {err}", path.display())))
 }
 
 fn canonical_string(path: &Path) -> Result<String, ModelError> {
@@ -2038,10 +2536,7 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), ModelError> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|err| {
-                ModelError::Other(format!(
-                    "refuse:stage-write: {}: {err}",
-                    parent.display()
-                ))
+                ModelError::Other(format!("refuse:stage-write: {}: {err}", parent.display()))
             })?;
         }
     }
@@ -2129,6 +2624,17 @@ mod tests {
             .collect();
         assert!(ids.contains(&"ollama-modelfile"));
         assert!(ids.contains(&"external-manifest"));
+        assert!(ids.contains(&AXOLOTL_LORA_ID));
+        let axolotl = train_enrich_card(AXOLOTL_LORA_ID).unwrap();
+        assert_eq!(axolotl.default_job, EnrichJobKind::Train);
+        assert!(axolotl.jobs.contains(&EnrichJobKind::Train));
+        assert!(!axolotl.jobs.contains(&EnrichJobKind::Enrich));
+        let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
+        assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
+        assert_eq!(enrich_ids.len(), 2);
+        let train_ids = train_enrich_drivers_for_job("train").unwrap();
+        assert!(train_ids.contains(&AXOLOTL_LORA_ID));
+        assert_eq!(train_ids.len(), 3);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -2144,7 +2650,225 @@ mod tests {
         let rendered = render_train_enrich_catalog();
         assert!(rendered.contains("ollama-modelfile"), "{rendered}");
         assert!(rendered.contains("external-manifest"), "{rendered}");
+        assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
+        assert!(rendered.contains("default=train"), "{rendered}");
+    }
+
+    #[test]
+    fn axolotl_lora_prepares_a_recipe_and_imports_the_adapter() {
+        let root = tmp("axolotl");
+        let pack = fixture_pack();
+        let estate = seated_estate("llama3");
+        let out = root.join("recipe");
+        let doc = run(AXOLOTL_LORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, AXOLOTL_LORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        for name in [
+            "axolotl.yml",
+            "dataset.jsonl",
+            "PREPARE.md",
+            "NEXT.md",
+            "prepare.json",
+        ] {
+            assert!(doc.artifacts.iter().any(|item| item == name), "{name}");
+            assert!(out.join(name).is_file(), "{name}");
+        }
+        let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
+        assert!(yaml.contains("base_model: \"llama3\""), "{yaml}");
+        assert!(yaml.contains("adapter: qlora"), "{yaml}");
+        assert!(yaml.contains("load_in_4bit: true"), "{yaml}");
+        assert!(yaml.contains("type: alpaca"), "{yaml}");
+        assert!(
+            yaml.contains("  - path:") && yaml.contains("\n    ds_type: json\n    type: alpaca\n"),
+            "{yaml}"
+        );
+        let dataset_path = out.join("dataset.jsonl");
+        assert!(yaml.contains(&dataset_path.display().to_string()), "{yaml}");
+        assert!(
+            yaml.contains("dataset_scaffold: pack-source-paths"),
+            "{yaml}"
+        );
+        let jsonl = std::fs::read_to_string(&dataset_path).unwrap();
+        assert!(jsonl.contains("feed/events.jsonl"), "{jsonl}");
+        assert_eq!(jsonl.lines().count(), 1, "{jsonl}");
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let config = out.join("axolotl.yml");
+        assert!(
+            next.contains(&format!("axolotl train {}", config.display())),
+            "{next}"
+        );
+        assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains("unslothai/unsloth"), "{next}");
+        assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(next.contains("consumer-nvidia"), "{next}");
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        assert!(
+            prepare_md.contains("axolotl train axolotl.yml"),
+            "{prepare_md}"
+        );
+        assert!(prepare_md.contains("did not run axolotl"), "{prepare_md}");
+
+        let enrich_out = root.join("enrich-job");
+        let err = run(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &enrich_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!enrich_out.exists());
+
+        let mut blank = pack.clone();
+        blank.source_paths = vec!["".into()];
+        let blank_out = root.join("blank-path");
+        let err = run(
+            AXOLOTL_LORA_ID,
+            &blank,
+            &estate,
+            &blank_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:dataset"), "{err}");
+        assert!(!blank_out.exists());
+
+        let mut empty = pack.clone();
+        empty.source_paths.clear();
+        let stub_out = root.join("stub");
+        let stub = run(
+            AXOLOTL_LORA_ID,
+            &empty,
+            &estate,
+            &stub_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(stub.job, "train");
+        let stub_jsonl = std::fs::read_to_string(stub_out.join("dataset.jsonl")).unwrap();
+        assert_eq!(stub_jsonl.lines().count(), 3, "{stub_jsonl}");
+        let stub_next = std::fs::read_to_string(stub_out.join("NEXT.md")).unwrap();
+        assert!(
+            stub_next.contains("source_paths list is empty"),
+            "{stub_next}"
+        );
+
+        let mut apple = pack.clone();
+        apple.host_class_affinity = Some("apple-silicon".into());
+        let apple_out = root.join("apple");
+        run(
+            AXOLOTL_LORA_ID,
+            &apple,
+            &estate,
+            &apple_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let apple_next = std::fs::read_to_string(apple_out.join("NEXT.md")).unwrap();
+        assert!(apple_next.contains("apple-silicon"), "{apple_next}");
+        assert!(apple_next.contains("CUDA"), "{apple_next}");
+        assert!(
+            apple_next.contains("does not write an MLX trainer"),
+            "{apple_next}"
+        );
+
+        let mut affinity_off = pack.clone();
+        affinity_off.host_class_affinity = None;
+        let mut nvidia = estate.clone();
+        nvidia
+            .model_bindings
+            .iter_mut()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap()
+            .params
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "host_class".into(),
+                serde_json::Value::String("consumer-nvidia".into()),
+            );
+        let host_out = root.join("host");
+        let hosted = run(
+            AXOLOTL_LORA_ID,
+            &affinity_off,
+            &nvidia,
+            &host_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(hosted.host_class_affinity, "consumer-nvidia");
+
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapter_model.safetensors"), "weights").unwrap();
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.driver, AXOLOTL_LORA_ID);
+        assert_eq!(proposal.job, "train");
+        assert_eq!(proposal.binding_id, "local_slm");
+        assert!(!proposal.auto_apply && !proposal.promoted && !proposal.estate_rewritten);
+        assert!(proposal.local_path.ends_with("adapter_config.json"));
+        assert!(out.join("binding-proposal.json").is_file());
+
+        let gguf = root.join("merged.gguf");
+        std::fs::write(&gguf, "gguf-fixture").unwrap();
+        let _ = std::fs::remove_file(out.join("binding-proposal.json"));
+        let from_file = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &gguf,
+            curator: "jason",
+        })
+        .unwrap();
+        assert!(from_file.local_path.ends_with("merged.gguf"));
+
+        let missing = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &root.join("no-adapter"),
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(missing.to_string().contains("refuse:adapter"), "{missing}");
+
+        let ollama_out = root.join("ollama");
+        run(
+            "ollama-modelfile",
+            &pack,
+            &estate,
+            &ollama_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        let wrong = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &ollama_out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(wrong.to_string().contains("refuse:driver"), "{wrong}");
+        assert!(!ollama_out.join("binding-proposal.json").is_file());
     }
 
     #[test]
@@ -2850,7 +3574,8 @@ mod tests {
         );
         assert!(!root.join("missing-state").join("enrich-stage").exists());
 
-        let wrong = apply_proposal(&req(&estate, &source, &prepared, "other-tag", &state, None)).unwrap_err();
+        let wrong = apply_proposal(&req(&estate, &source, &prepared, "other-tag", &state, None))
+            .unwrap_err();
         assert!(wrong.to_string().contains("refuse:tag"), "{wrong}");
         assert!(!state.join("enrich-stage").exists());
 
@@ -2928,10 +3653,7 @@ mod tests {
             None,
         ))
         .unwrap_err();
-        assert!(
-            stale.to_string().contains("refuse:estate-hash"),
-            "{stale}"
-        );
+        assert!(stale.to_string().contains("refuse:estate-hash"), "{stale}");
         assert!(!state.join("enrich-stage").exists());
         assert_eq!(std::fs::read(&source).unwrap(), before);
 
@@ -2981,8 +3703,9 @@ mod tests {
             Some("cell-enrich-overnight-traces")
         );
         let facts = enrich_join_facts(&state.join("enrich")).unwrap().unwrap();
-        assert!(facts.iter().any(|fact| fact.kind == "proposal"
-            && fact.local_tag == "cell-enrich-overnight-traces"));
+        assert!(facts.iter().any(
+            |fact| fact.kind == "proposal" && fact.local_tag == "cell-enrich-overnight-traces"
+        ));
 
         let again = apply_proposal(&req(
             &estate,
@@ -3029,16 +3752,15 @@ mod tests {
         )
         .unwrap();
         assert!(receipt.applied && receipt.estate_rewritten && !receipt.auto_apply);
-        let already =
-            apply_proposal(&req(
-                &bound,
-                &source,
-                &prepared,
-                "cell-enrich-overnight-traces",
-                &state,
-                None,
-            ))
-            .unwrap();
+        let already = apply_proposal(&req(
+            &bound,
+            &source,
+            &prepared,
+            "cell-enrich-overnight-traces",
+            &state,
+            None,
+        ))
+        .unwrap();
         assert!(
             matches!(already, ApplyProposalOutcome::Noop { ref reason } if reason.contains("already bound")),
             "{already:?}"
@@ -3050,10 +3772,9 @@ mod tests {
 
     #[test]
     fn binding_stage_snapshot_stays_unapplied() {
-        let snap: EnrichBindingStage = serde_json::from_str(include_str!(
-            "../../../schema/enrich-binding-stage.v0.json"
-        ))
-        .unwrap();
+        let snap: EnrichBindingStage =
+            serde_json::from_str(include_str!("../../../schema/enrich-binding-stage.v0.json"))
+                .unwrap();
         assert_eq!(snap.schema, BINDING_STAGE_SCHEMA);
         assert!(!snap.auto_apply && !snap.promoted && !snap.applied && !snap.estate_rewritten);
         assert_eq!(snap.binding_id, "local_slm");
