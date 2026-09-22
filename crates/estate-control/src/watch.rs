@@ -267,6 +267,25 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
             }
         }
     }
+    // Missing model-actual.json is not a failure. Printing a binding
+    // count for a missing file would invent zero. A present file that
+    // does not parse is FAIL. A note would still print "factory ready".
+    // estate drift already refused that file.
+    let model_path = state_dir.join("model-actual.json");
+    if model_path.exists() {
+        match read_model_actual(&model_path) {
+            Ok(actual) => {
+                println!(
+                    "  ok    model-actual.json bindings={}",
+                    actual.bindings.len()
+                )
+            }
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err);
+            }
+        }
+    }
 
     println!("\nFrontier model");
     println!("--------------");
@@ -532,6 +551,11 @@ fn cell_catalog_binding_problem(state_dir: &Path) -> Option<String> {
         .map(|err| err.to_string()),
         Err(err) => Some(err.to_string()),
     }
+}
+
+fn read_model_actual(path: &Path) -> Result<model_estate::ModelActual, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("model-actual.json: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("model-actual.json: {e}"))
 }
 
 fn unreadable_cell_catalog(err: &str) -> String {
