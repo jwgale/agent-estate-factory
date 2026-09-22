@@ -151,6 +151,9 @@ pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
     // A missing file is not a prior suspended state. Journal `from` stays
     // empty. The default record is not a file.
     let prev = prior_lifecycle(state_dir)?;
+    // A spawned cloud-agent lease is not a dead session. Refuse before
+    // sessions drop and before the lease file is restamped unspawned.
+    crate::refuse_spawned_cloud_placement(state_dir)?;
     stop_runtime(state_dir)?;
     crate::mark_leases_unspawned(state_dir)?;
     let record = LifecycleRecord {
@@ -298,6 +301,32 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e.action == "resume"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn suspend_does_not_unstamp_a_spawned_cloud_lease() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        std::fs::create_dir_all(state.join("sessions")).unwrap();
+        crate::record_placements(&estate, &state).unwrap();
+        let mut actual = crate::load_placements(&state).unwrap().unwrap();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+            }
+        }
+        crate::write_placements(&state, &actual).unwrap();
+        let err = suspend(&state).unwrap_err().to_string();
+        assert!(err.contains("refuse:cloud-spawned"), "{err}");
+        assert!(state.join("sessions").is_dir());
+        assert!(!lifecycle_path(&state).exists());
+        let still = crate::load_placements(&state).unwrap().unwrap();
+        assert!(still
+            .leases
+            .iter()
+            .any(|l| l.kind == "cloud-agent" && l.spawned));
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -339,7 +339,12 @@ pub fn load_placements(state_dir: &Path) -> Result<Option<PlacementActual>, Supe
 }
 
 /// Sessions/PIDs died. Keep the lease file; mark every lease unspawned.
+///
+/// A spawned cloud-agent lease is not a session that died. Refuse before
+/// the rewrite. A missing file is not a spawned lease. A wired box lease
+/// still drops `spawned`.
 pub fn mark_leases_unspawned(state_dir: &Path) -> Result<Option<PlacementActual>, SupervisorError> {
+    refuse_spawned_cloud_placement(state_dir)?;
     let Some(mut actual) = load_placements(state_dir)? else {
         return Ok(None);
     };
@@ -1005,6 +1010,40 @@ mod tests {
         assert!(lease.wired);
         let released = CloudAgentDriver.release(&lease);
         assert!(!released.spawned);
+    }
+
+    #[test]
+    fn unspawn_does_not_restamp_a_spawned_cloud_lease() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-place-spawned-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+            }
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let before = std::fs::read_to_string(tmp.join("placement-actual.json")).unwrap();
+        let err = mark_leases_unspawned(&tmp).unwrap_err().to_string();
+        assert!(err.contains("refuse:cloud-spawned"), "{err}");
+        assert!(err.contains("cursor-cloud"), "{err}");
+        let after = std::fs::read_to_string(tmp.join("placement-actual.json")).unwrap();
+        assert_eq!(before, after);
+        let still = load_placements(&tmp).unwrap().unwrap();
+        assert!(still
+            .leases
+            .iter()
+            .any(|l| l.kind == "cloud-agent" && l.spawned));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
