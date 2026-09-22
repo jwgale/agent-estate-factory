@@ -2,7 +2,7 @@
 
 One local walk: **scrubbed trace → pack → propose → accept**.
 
-Start here: [`../README.md`](../README.md) · product story: [`NORTH-STAR.md`](NORTH-STAR.md) · operator walk (gate-90 → this loop → `make real-world`): [`OPERATOR-DAY.md`](OPERATOR-DAY.md). This walk is fixtures, not a live-box proof. Parked Mac / GPU / cloud-spawn: [`DAY90-PLUS.md`](DAY90-PLUS.md). Distillation is a non-goal; packs here are edit instructions.
+Start here: [`../README.md`](../README.md) · [`NORTH-STAR.md`](NORTH-STAR.md) · operator walk (gate-90 → this loop → `make real-world`): [`OPERATOR-DAY.md`](OPERATOR-DAY.md). This walk is fixtures. Parked rows: [`DAY90-PLUS.md`](DAY90-PLUS.md). Accept writes curator edit instructions. It does not rewrite the estate.
 
 ```bash
 make feed-loop

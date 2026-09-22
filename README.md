@@ -2,7 +2,7 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Not a Grok Bot clone. Not a training or distillation lab. Not an AI gateway. Not LM Studio. Feed packs are curator edit instructions, not training.
+Lanes stay sacred. You plan, then apply. Frontier and local are equal class. Packs are curator edit instructions. Control does not complete.
 
 **Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
@@ -36,9 +36,9 @@ These exist as stubs, experimental catalog cards, or declared-only rows. They ar
 | Native MLX | Catalog card is a stub. Ollama-on-Mac is the supported Apple path. |
 | vLLM / TRT | Experimental catalog cards. Unset endpoint is SKIP. Not live-ok. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. It does not spawn. |
-| Convey hop transport | `estate convey` is a lease-bound mesh. There is no real hop transport. |
-| Distillation / LoRA / dataset pipelines | Non-goal. Enrich packs are curator edit instructions. |
-| AI gateway / LM Studio | Non-goal. Control does not complete. |
+| `estate convey` | Lease-bound hop stub. It records a lease. It does not move a hop. |
+| Packs | Curator edit instructions. `policy: manual`. Accept does not rewrite the estate. |
+| Control | Does not complete. Charter anti-shrink includes an AI gateway and LM Studio. |
 
 Recorded live proofs, including the MacBook Air specialist `Pong`: [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md). Parking lot: [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
@@ -64,17 +64,17 @@ Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate
 
 ## What works tonight vs stubs
 
-This is a factory, not a gateway, not LM Studio, not a shrink-to-frontier proxy. Origin is not in the loop. GitHub is SoT.
+GitHub is the source of truth. Control does not complete. Packs are curator edit instructions.
 
 | Works tonight (local cargo) | Still outside the product |
 | --- | --- |
 | `estate validate` / `plan` / `apply` on `examples/estate.yaml` and the host matrix | Multi-box control plane |
 | `estate suspend` / `resume` / `status` / `history` / `reconcile` | Auto-heal / rewrite of leases |
-| `estate packs` propose + accept — edit instructions, not training | Feed auto-promote; curator UI |
+| `estate packs` propose + accept — curator edit instructions | Promote stays refused; no curator UI |
 | `make gate-90` local entrypoint; `make feed-loop` fixtures | Actions expansion (Jason lock) |
 | `make real-world` — check + vanilla doctor; live SKIP without an endpoint | Not in smoke, gate-90, or Actions |
 | `estate doctor --strict` and the dual-layer sacred demo (Sanctum is not Cyera) | Dual PE |
-| `estate convey` lease-bound mesh; local `estate audit export` | Real hop transport; remote audit upload |
+| `estate convey` lease-bound hop stub; local `estate audit export` | Hop transport; remote audit upload |
 | Ollama + `CELL_LOCAL_ENDPOINT` + llama.cpp | Experimental catalog cards — [parked](#parked--not-the-product) |
 | Profile-dir isolation and placement leases under `.cell/` | Containers |
 
@@ -146,7 +146,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Ollama-first | First green local path. llama.cpp is swap-proof. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work does not silently fall through to frontier. Feed: `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. Edit instructions, not training. Live drop zone: [`packs/`](packs/). |
+| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions, not training data. Live drop zone: [`packs/`](packs/). |
 | Supported | Ollama (+ llama.cpp) green on the box. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver, not a fork. |
 | Apple | Ollama-on-Mac is the supported path. |
@@ -208,11 +208,11 @@ Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actua
 | Piece | State |
 | --- | --- |
 | Isolation | Profile dirs (not containers). Trait is swappable. |
-| Conveyor HTTP | `POST /v0/check` only. Capability mesh is a lease-bound stub (`estate convey`). Not a gateway. |
+| Conveyor HTTP | `POST /v0/check` only. `estate convey` is a lease-bound hop stub. |
 | Frontier `xai_grok` | Wired driver. Live when `XAI_API_KEY` is set. Tests use mock/HTTP fake. |
 | Local `local_slm` | Wired `ollama` driver + `CELL_LOCAL_ENDPOINT`. `mock-local` speaks the protocol. |
 | llama.cpp | Swap-proof card; same specialist protocol. |
-| Enrich packs | Curator jason, policy manual. Edit instructions, not training. Import does not rewrite the estate. |
+| Enrich packs | Curator jason, policy manual. Curator edit instructions, not training data. Import does not rewrite the estate. |
 | Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
 | A10–A12 | Beachhead on `main`: feed packs + import, suspend/resume + placement leases, gated/auditable apply. |
 | MLX / vLLM / TRT / cloud spawn / convey transport | Parked. See [Parked / not the product](#parked--not-the-product). |

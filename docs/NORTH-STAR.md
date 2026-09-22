@@ -6,26 +6,26 @@ Charter is the source of truth for locked defaults: [`../charter.md`](../charter
 
 ## What Cell One is
 
-A factory on one box. The estate declares Horizon, Research, and Sanctum on separate lanes. You plan, then apply. The control plane does not complete a model call.
+One estate on one box. Horizon, Research, and Sanctum are separate lanes. You plan, then apply. Control does not complete.
 
-Frontier (`xai_grok`) and local (`local_slm`, Ollama-first) are equal class in the same estate. Estate-bound local work fail-closes when local is down. It does not silently fall through to frontier.
+Frontier (`xai_grok`) and local (`local_slm`, Ollama-first) are equal class in the same estate. Local work refuses when local is down (`model.local.down`). It does not fall through to frontier.
 
-Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom are not agents. Sanctum is first-class and is not Cyera.
+Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom are not agents. Sanctum is not Cyera.
 
-Enrich packs are manual. Jason curates. `estate packs accept` writes edit instructions. Those instructions are not a training set, and accept does not rewrite `examples/estate.yaml` by itself.
+Packs are manual. The curator is Jason. `estate packs accept` writes curator edit instructions. Accept does not rewrite `examples/estate.yaml`.
 
-Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+ is proof on a real box, plus stubs that stay parked.
+Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+ is a recorded proof on a real box, plus stubs that stay parked.
 
-## What it is not
+## Boundaries
 
-- A Grok Bot clone
-- A training lab, a distillation pipeline, or a purpose-built SLM factory (no LoRA, no dataset build)
-- An AI gateway or LM Studio
-- Dual PE, a vault, or a multi-box control plane
-- Native MLX, vLLM, or TensorRT as the product
-- A cloud-agent spawner (`cursor-cloud` is declared, not spawned)
-- A real convey hop transport (the mesh is lease-bound)
-- Auto-promote or a curator UI
+The charter anti-shrink list stands. In estate words:
+
+- A pack is a curator edit instruction. Accept does not rewrite the estate.
+- Control does not complete.
+- `estate convey` is a lease-bound hop stub. It records a lease. It does not move a hop.
+- A `cursor-cloud` placement is a declared lease. Apply does not spawn it.
+- Native MLX, vLLM, and TRT stay parked stubs.
+- Promote stays refused. There is no curator UI.
 
 ## Operator loop
 
@@ -33,7 +33,7 @@ Local gate first. Live steps are opt-in and SKIP-safe.
 
 1. **`make gate-90`** — local entrypoint. Runs smoke (that includes `make day90`), then `estate doctor --strict`, then the checklist. No Mac, no GPU, no API key. Stays off GitHub Actions.
 2. **`make day90`** — already inside gate-90. Status, plan, dry-run, apply, reconcile on an isolated cell.
-3. **`make feed-loop`** — fixtures only. Scrubbed trace, then pack, propose, and accept. Edit instructions, not training. Not in smoke.
+3. **`make feed-loop`** — fixtures only. Scrubbed trace, then pack, propose, and accept. Accept writes curator edit instructions. Not in smoke.
 4. **Live probes** — `make real-world` after the gate. It prints the north-star line, runs `cargo check --workspace --locked` (the same check as `make check`), and runs vanilla `estate doctor` on the checkout that holds `examples/estate.yaml`. If `CELL_LOCAL_ENDPOINT` is unset, live probes and the Ollama specialist print SKIP and the command exits 0. If it is set, the same env as [`LIVE-PROBES.md`](LIVE-PROBES.md) runs `estate probes --live` and `estate specialist --driver ollama --prompt "Reply with the single word pong."`.
 
 `make real-world` is not in `make smoke`, `make gate-90`, or GitHub Actions. Hosted CI stays one `pull_request` job: `cargo check --workspace --locked`.

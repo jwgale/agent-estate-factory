@@ -202,7 +202,7 @@ pub(crate) enum Command {
         #[arg(long)]
         text: Option<String>,
     },
-    /// Capability mesh: declare hop, lease-bound call. Not a gateway.
+    /// Lease-bound hop stub. Declare a hop, then a lease-bound call.
     Convey {
         #[command(subcommand)]
         command: ConveyCommand,

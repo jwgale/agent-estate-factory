@@ -15,7 +15,7 @@ Day 90+ is real-world proof plus parked stubs, not more beachhead invent.
 One page: [`NORTH-STAR.md`](NORTH-STAR.md). Opt-in ladder after
 `make gate-90`: `make real-world` (SKIP without `CELL_LOCAL_ENDPOINT`;
 not a PASS; not in smoke or Actions). Feed packs stay curator edit
-instructions. Distillation and a gateway stay non-goals. Mac specialist
+instructions. Control does not complete. Mac specialist
 complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
 ## On `main` (PR #1–#82)

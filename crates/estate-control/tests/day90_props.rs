@@ -184,7 +184,7 @@ fn real_world_kit_skips_live_steps_and_stays_off_gates() {
     let page = std::fs::read_to_string(root.join("docs/NORTH-STAR.md")).unwrap();
     assert!(page.contains(north));
     assert!(page.contains("make real-world"));
-    assert!(page.contains("Distillation") || page.contains("distillation"));
+    assert!(page.contains("curator edit instructions"));
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(readme.contains(north));
     assert!(readme.lines().nth(2) == Some(north));

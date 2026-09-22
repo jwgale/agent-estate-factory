@@ -200,7 +200,7 @@ Propose and accept refuse a frontier source_driver when the estate has no
 frontier binding (refuse:frontier-invent). They do not invent one.
 Import refuses the same way, before an accepted pack or a redaction report.
 The redaction report is kind counts. It is not a secret and not the schema card.
-estate.yaml is never rewritten.
+Accept writes curator edit instructions. estate.yaml is never rewritten.
 See docs/FEED-LOOP.md.
 ";
 
