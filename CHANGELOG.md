@@ -65,6 +65,10 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## This slice — spine links
+
+- North star, ubiquitous language, charter, and README point at the prepare page [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md) and the walks [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md). `estate help enrich` names the journeys page. No new command. No trainer. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice
 
 - Train/enrich beachhead. `TrainEnrichDriver` in `model-estate`. Drivers: `ollama-modelfile` (Modelfile + `ollama create` steps) and `external-manifest` (JSON/YAML). `estate enrich prepare` writes artifacts under `.cell/enrich/` or `--out`. Sacred, SKU, curator, missing pack, and frontier-invent refuse before write. Does not train, POST, auto-promote, or rewrite `estate.yaml`.

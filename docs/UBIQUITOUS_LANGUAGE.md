@@ -1,6 +1,6 @@
 # Ubiquitous language
 
-Canonical Cell One words. Locked defaults stay in [`../charter.md`](../charter.md). `estate help north-star` and `estate help charter` print the product sentence.
+Canonical Cell One words. Locked defaults stay in [`../charter.md`](../charter.md). `estate help north-star` and `estate help charter` print the product sentence. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Terms
 
@@ -34,7 +34,7 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate.
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### purpose-built SLM
 
@@ -46,7 +46,7 @@ Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `st
 
 ### train/enrich facilitation
 
-The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate.
+The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### frontier
 
@@ -101,7 +101,7 @@ Both are first-class:
 1. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant.
 2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. Train and distill stay the suite direction. No GPU training stack ships here.
+Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. Train and distill stay the suite direction. No GPU training stack ships here. Ollama is the local-run seat. The suite is that portable seat and facilitation of purpose-built SLMs. Integrate the driver that already does the job. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Aliases to avoid
 
@@ -128,7 +128,7 @@ Sacred spellings that refuse: `cyera` / `cyera_ci` → `cyera-ci`; `rust_classro
 
 ## help
 
-On `main`: status, plan, apply, reconcile, feed-loop (`feed`), backup, frontier, day90-mixed (`mixed`), north-star (`northstar`), charter, enrich (`train`). `north-star` and `charter` print one page. `enrich` and `train` print the prepare page. An unknown topic is `refuse:help-topic`.
+On `main`: status, plan, apply, reconcile, feed-loop (`feed`), backup, frontier, day90-mixed (`mixed`), north-star (`northstar`), charter, enrich (`train`). `north-star` and `charter` print one page. `enrich` and `train` print the prepare page. An unknown topic is `refuse:help-topic`. Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Planes
 
