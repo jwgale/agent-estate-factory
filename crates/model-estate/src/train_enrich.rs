@@ -2,8 +2,9 @@
 //!
 //! The local runtime stays a seat. Ollama is today's entrant. This module
 //! does not shell out, does not POST a train job, and does not rewrite the
-//! estate. `unsloth-qlora` writes the Unsloth QLoRA script the operator runs
-//! outside the factory. `axolotl-lora` writes the Axolotl YAML recipe.
+//! estate. `llamafactory-qlora` writes the LLaMA-Factory QLoRA recipe the
+//! operator runs outside the factory. `axolotl-lora` writes the Axolotl YAML
+//! recipe. Unsloth stays a NEXT.md pointer, not a card.
 //! `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
@@ -142,21 +143,21 @@ const REGISTRY: &[RegisteredDriver] = &[
     },
     RegisteredDriver {
         card: TrainEnrichCard {
-            driver_id: UNSLOTH_QLORA_ID,
+            driver_id: LLAMAFACTORY_QLORA_ID,
             status: "integration",
-            integrates: "unsloth QLoRA SFT script",
-            notes: "Primary single-GPU train card. Writes train_unsloth.py and instruct chat dataset.jsonl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            integrates: "llamafactory-cli train QLoRA recipe",
+            notes: "Primary train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA), dataset_info.json, and instruct chat dataset.jsonl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
-        build: || Box::new(UnslothQloraDriver),
+        build: || Box::new(LlamaFactoryQloraDriver),
     },
     RegisteredDriver {
         card: TrainEnrichCard {
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
             integrates: "axolotl train LoRA/QLoRA recipe",
-            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. Default job is train. Does not shell out. The single-GPU card is unsloth-qlora.",
+            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. Default job is train. Does not shell out. The durable recipe card is llamafactory-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -168,21 +169,24 @@ struct OllamaModelfileDriver;
 
 struct ExternalManifestDriver;
 
-struct UnslothQloraDriver;
+struct LlamaFactoryQloraDriver;
 
 struct AxolotlLoraDriver;
 
-/// Primary train card. Unsloth already runs QLoRA SFT on one CUDA GPU. This id writes that script.
-pub const UNSLOTH_QLORA_ID: &str = "unsloth-qlora";
+/// Primary train card. LLaMA-Factory already trains QLoRA from a YAML recipe. This id writes that recipe.
+pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
 
 /// YAML train card. Axolotl already trains from a config. This id writes that recipe.
 pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
 
-const TRAIN_RECIPE_DRIVERS: &[&str] = &[UNSLOTH_QLORA_ID, AXOLOTL_LORA_ID];
+const TRAIN_RECIPE_DRIVERS: &[&str] = &[LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID];
 
-/// Smoke-scale context. Unsloth's fine-tuning guide uses 2048 for a longer test.
-const UNSLOTH_MAX_SEQ: u32 = 512;
-const UNSLOTH_LORA_R: u32 = 16;
+/// Smoke-scale cutoff. LLaMA-Factory SFT examples use 2048 for a longer run.
+const LLAMAFACTORY_CUTOFF_LEN: u32 = 512;
+const LLAMAFACTORY_LORA_RANK: u32 = 16;
+const LLAMAFACTORY_LORA_ALPHA: u32 = 32;
+const LLAMAFACTORY_SEED: u32 = 42;
+const LLAMAFACTORY_DATASET_NAME: &str = "cell_enrich";
 
 impl TrainEnrichDriver for OllamaModelfileDriver {
     fn id(&self) -> &'static str {
@@ -277,9 +281,9 @@ impl TrainEnrichDriver for ExternalManifestDriver {
     }
 }
 
-impl TrainEnrichDriver for UnslothQloraDriver {
+impl TrainEnrichDriver for LlamaFactoryQloraDriver {
     fn id(&self) -> &'static str {
-        UNSLOTH_QLORA_ID
+        LLAMAFACTORY_QLORA_ID
     }
 
     fn status(&self) -> &'static str {
@@ -289,36 +293,49 @@ impl TrainEnrichDriver for UnslothQloraDriver {
     fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
         if job.kind != EnrichJobKind::Train {
             return Err(ModelError::Other(format!(
-                "refuse:job: {UNSLOTH_QLORA_ID} prepares train; got {}",
+                "refuse:job: {LLAMAFACTORY_QLORA_ID} prepares train; got {}",
                 job.kind.as_str()
             )));
         }
-        let (dataset, stub) = unsloth_dataset_jsonl(job)?;
-        let script = unsloth_train_script(job, stub);
-        let host = unsloth_host_note(&job.host_class_affinity);
-        let data_note = unsloth_dataset_note(stub, &job.source_paths);
+        let (dataset, stub) = chat_dataset_jsonl(job)?;
+        let recipe = llamafactory_recipe_yaml(job, stub);
+        let export = llamafactory_export_yaml(job);
+        let info = llamafactory_dataset_info();
+        let host = llamafactory_host_note(&job.host_class_affinity);
+        let data_note = llamafactory_dataset_note(stub, &job.source_paths);
+        let template = llamafactory_template(&job.base_model);
         let steps = format!(
-            "This step wrote train_unsloth.py and dataset.jsonl. The script is QLoRA (`load_in_4bit=True`, LoRA r={rank}, `max_seq_length` {seq}). It did not run python, did not train, and did not rewrite the estate.\n\
+            "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`). It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
              \n\
              {host}\n\
              \n\
+             This card expects CUDA LLaMA-Factory.\n\
+             \n\
              {data_note}\n\
              \n\
-             MODEL_NAME is {base}. That is the seated model tag, the same resolution as Modelfile FROM. Unsloth expects a Hugging Face repo id. Prefer an instruct model, often an unsloth/*-bnb-4bit id. If {base} is only an Ollama tag, edit MODEL_NAME before you train. This factory did not download weights.\n\
+             model_name_or_path is {base}. That is the seated model tag, the same resolution as Modelfile FROM. LLaMA-Factory expects a Hugging Face repo id or a local weights directory. If {base} is only an Ollama tag, set model_name_or_path in recipe.yaml and export.yaml before you train. This factory did not download weights.\n\
              \n\
-             From this directory, after Unsloth is installed on a CUDA host:\n\
+             template is {template}. That hint comes from the seated tag. Confirm it matches the model. Use that same chat template when you seat the model.\n\
              \n\
-             pip install unsloth\n\
-             python train_unsloth.py\n\
+             A later preference stage is a recipe flag (`stage: dpo` or `stage: orpo`, with `ranking: true` in dataset_info.json). This card does not build that dataset.\n\
              \n\
-             The copy-paste line with the script path is in NEXT.md. Ollama stays the local-run seat after the adapter exists. This factory does not export GGUF.\n",
-            rank = UNSLOTH_LORA_R,
-            seq = UNSLOTH_MAX_SEQ,
+             From this directory, after LLaMA-Factory is installed on a CUDA host:\n\
+             \n\
+             pip install llamafactory\n\
+             llamafactory-cli train recipe.yaml\n\
+             llamafactory-cli export export.yaml\n\
+             \n\
+             The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
+            rank = LLAMAFACTORY_LORA_RANK,
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
             base = job.base_model,
+            template = template,
         );
         Ok(DriverPrepare {
             files: vec![
-                ("train_unsloth.py".into(), script),
+                ("recipe.yaml".into(), recipe),
+                ("export.yaml".into(), export),
+                ("dataset_info.json".into(), info),
                 ("dataset.jsonl".into(), dataset),
             ],
             steps,
@@ -1040,41 +1057,60 @@ fn next_markdown(
             ),
             "Point --path at the weights file you loaded. Until then, manifest.json is the portable hatch.".to_string(),
         )
-    } else if driver_id == UNSLOTH_QLORA_ID {
-        let script = out_dir.join("train_unsloth.py");
-        let command = unsloth_train_command(&script);
+    } else if driver_id == LLAMAFACTORY_QLORA_ID {
+        let recipe = out_dir.join("recipe.yaml");
+        let export = out_dir.join("export.yaml");
+        let train_command = llamafactory_train_command(&recipe);
+        let export_command = llamafactory_export_command(&export);
+        let template = llamafactory_template(&job.base_model);
         (
             format!(
-                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it.\n\
+                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
                  \n\
-                 pip install unsloth\n\
-                 {command}\n\
+                 pip install llamafactory\n\
+                 {train_command}\n\
+                 {export_command}\n\
                  \n\
-                 If that pip line does not match the CUDA wheel on the box, use the install page: https://unsloth.ai/docs/get-started/install\n\
+                 If that pip line does not match the CUDA install on the box, use the official install: https://github.com/hiyouga/LLaMA-Factory#installation\n\
+                 SFT: https://llamafactory.readthedocs.io/en/latest/getting_started/sft.html\n\
+                 Merge: https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html\n\
                  \n\
                  {host}\n\
                  \n\
+                 This card expects CUDA LLaMA-Factory.\n\
+                 \n\
                  {dataset}\n\
                  \n\
-                 MODEL_NAME in train_unsloth.py is {base}. Unsloth expects a Hugging Face repo id. Prefer an instruct model, often an unsloth/*-bnb-4bit id. This factory did not download weights.\n\
+                 model_name_or_path in recipe.yaml is {base}. LLaMA-Factory expects a Hugging Face repo id or a local weights directory. This factory did not download weights.\n\
                  \n\
-                 The script saves the LoRA adapter in its output directory (adapter_config.json and the adapter weights). Ollama stays the local-run seat. Unsloth documents GGUF and Ollama export. This factory does not export and does not run ollama create.\n\
-                 https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf\n\
-                 https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama\n\
-                 Their local GGUF call, which you run yourself after training:\n\
-                 model.save_pretrained_gguf(\"directory\", tokenizer, quantization_method=\"q4_k_m\")\n\
-                 Then create tag {tag} on Ollama from the Modelfile Unsloth writes, or FROM the GGUF.\n\
+                 template in recipe.yaml and export.yaml is {template}. Confirm it matches the model. Train and seat share the same chat template. When you seat on Ollama, the Modelfile TEMPLATE (or the GGUF chat template) must be that same chat format. This factory does not write a second template.\n\
+                 \n\
+                 Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF, or FROM {base} plus ADAPTER for the adapter directory. This factory does not run ollama create.\n\
+                 \n\
+                 After that tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.\n\
+                 \n\
+                 A later preference stage is a recipe flag (stage: dpo or stage: orpo, with ranking: true in dataset_info.json). This card does not build that dataset.\n\
+                 \n\
+                 ## Faster single-GPU alternate\n\
+                 \n\
+                 On Nvidia only, Unsloth QLoRA is a faster single-GPU path. This card does not call Unsloth and does not write a script.\n\
+                 https://unsloth.ai/docs/get-started/fine-tuning-llms-guide\n\
+                 https://unsloth.ai/docs/get-started/install\n\
+                 https://github.com/unslothai/unsloth\n\
                  \n\
                  axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
-                host = unsloth_host_note(&job.host_class_affinity),
-                dataset = unsloth_dataset_note(job.source_paths.is_empty(), &job.source_paths),
+                host = llamafactory_host_note(&job.host_class_affinity),
+                dataset = llamafactory_dataset_note(job.source_paths.is_empty(), &job.source_paths),
                 base = job.base_model,
+                template = template,
+                train_command = train_command,
+                export_command = export_command,
             ),
             format!(
                 "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
                 out = out_dir.display(),
             ),
-            "Point --adapter at the Unsloth output directory (adapter_config.json inside it) or at a GGUF Unsloth saved.".to_string(),
+            "Point --adapter at the LLaMA-Factory output directory (adapter_config.json inside it), the merged export (config.json plus safetensors), or a GGUF you converted.".to_string(),
         )
     } else if driver_id == AXOLOTL_LORA_ID {
         let command = axolotl_train_command(&config);
@@ -1092,7 +1128,8 @@ fn next_markdown(
                  \n\
                  Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {base} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.\n\
                  \n\
-                 unsloth-qlora is the single-GPU QLoRA card (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
+                 llamafactory-qlora is the durable LLaMA-Factory recipe. This card does not call LLaMA-Factory.\n\
+                 Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
                 dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
                 base = job.base_model,
@@ -1165,7 +1202,7 @@ fn dataset_lines(paths: &[String]) -> String {
     }
 }
 
-/// CUDA hosts for Unsloth and Axolotl. Apple Silicon can hold the recipe.
+/// CUDA hosts for LLaMA-Factory and Axolotl. Apple Silicon can hold the recipe.
 const CUDA_TRAIN_HOSTS: &[&str] = &["consumer-nvidia", "rented-nvidia"];
 
 fn cuda_train_host_note(driver_id: &str, affinity: &str, command: &str) -> String {
@@ -1191,8 +1228,8 @@ fn axolotl_host_note(affinity: &str) -> String {
     cuda_train_host_note(AXOLOTL_LORA_ID, affinity, "axolotl train")
 }
 
-fn unsloth_host_note(affinity: &str) -> String {
-    cuda_train_host_note(UNSLOTH_QLORA_ID, affinity, "python train_unsloth.py")
+fn llamafactory_host_note(affinity: &str) -> String {
+    cuda_train_host_note(LLAMAFACTORY_QLORA_ID, affinity, "llamafactory-cli train")
 }
 
 fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
@@ -1206,9 +1243,9 @@ fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
     }
 }
 
-fn unsloth_dataset_note(stub: bool, paths: &[String]) -> String {
+fn llamafactory_dataset_note(stub: bool, paths: &[String]) -> String {
     if stub {
-        "dataset.jsonl is a stub of example instruct chats because the pack source_paths list is empty. Replace those rows before python train_unsloth.py. This factory did not download a dataset.".into()
+        "dataset.jsonl is a stub of example instruct chats because the pack source_paths list is empty. Replace those rows before llamafactory-cli train. This factory did not download a dataset.".into()
     } else {
         format!(
             "dataset.jsonl is an instruct chat scaffold. Each row names a pack source path ({}). Copy real assistant replies into those rows. This factory did not read or download those files.",
@@ -1221,12 +1258,12 @@ fn axolotl_train_command(config: &Path) -> String {
     format!("axolotl train {}", shell_quote(config))
 }
 
-fn unsloth_train_command(script: &Path) -> String {
-    format!("python {}", shell_quote(script))
+fn llamafactory_train_command(recipe: &Path) -> String {
+    format!("llamafactory-cli train {}", shell_quote(recipe))
 }
 
-fn python_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into())
+fn llamafactory_export_command(export_yaml: &Path) -> String {
+    format!("llamafactory-cli export {}", shell_quote(export_yaml))
 }
 
 fn shell_quote(path: &Path) -> String {
@@ -1335,9 +1372,8 @@ fn chat_row(user: String, assistant: String) -> ChatRow {
     }
 }
 
-/// Instruct chat JSONL. Unsloth SFT reads a `messages` column and the script
-/// applies the tokenizer chat template into `text`.
-fn unsloth_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
+/// Instruct chat JSONL. LLaMA-Factory reads it as sharegpt (`messages` of `role` / `content`).
+fn chat_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
     refuse_blank_source_paths(&job.source_paths)?;
     let stub = job.source_paths.is_empty();
     let rows: Vec<ChatRow> = if stub {
@@ -1384,117 +1420,128 @@ fn unsloth_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> 
     Ok((body, stub))
 }
 
-fn unsloth_train_script(job: &EnrichJob, stub: bool) -> String {
-    let dataset = job.out_dir.join("dataset.jsonl");
+/// Small hint from the seated tag. Confirm it before train. Seat the same chat format.
+fn llamafactory_template(base_model: &str) -> &'static str {
+    let name = base_model.to_ascii_lowercase();
+    if name.contains("qwen3") {
+        "qwen3"
+    } else if name.contains("qwen") {
+        "qwen"
+    } else if name.contains("llama3") || name.contains("llama-3") {
+        "llama3"
+    } else if name.contains("mistral") {
+        "mistral"
+    } else if name.contains("gemma") {
+        "gemma"
+    } else if name.contains("phi") {
+        "phi"
+    } else {
+        "default"
+    }
+}
+
+fn llamafactory_dataset_info() -> String {
+    format!(
+        "{{\n  \"{name}\": {{\n    \"file_name\": \"dataset.jsonl\",\n    \"formatting\": \"sharegpt\",\n    \"columns\": {{\n      \"messages\": \"messages\"\n    }},\n    \"tags\": {{\n      \"role_tag\": \"role\",\n      \"content_tag\": \"content\",\n      \"user_tag\": \"user\",\n      \"assistant_tag\": \"assistant\"\n    }}\n  }}\n}}\n",
+        name = LLAMAFACTORY_DATASET_NAME,
+    )
+}
+
+fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
+    let template = llamafactory_template(&job.base_model);
     let outputs = job.out_dir.join("outputs");
     let scaffold = if stub { "stub" } else { "pack-source-paths" };
-    let host = yaml_comment_line(&unsloth_host_note(&job.host_class_affinity));
-    let template = r#"# schema: cell-one.enrich-prepare.v0
-# driver: unsloth-qlora
-# job: train
-# pack: @@PACK@@
-# dataset_scaffold: @@SCAFFOLD@@
-# @@HOST@@
-# Recipe only. Cell One does not run this file, does not install Unsloth, and does not rewrite the estate.
-# MODEL_NAME is the seated model tag (same resolution as Modelfile FROM).
-# Unsloth expects a Hugging Face repo id. Prefer an instruct model.
-# QLoRA defaults match Unsloth's SFT guide: load_in_4bit, LoRA r, adamw_8bit.
-# https://unsloth.ai/docs/get-started/fine-tuning-llms-guide
-# Smoke-scale context is @@MAX_SEQ@@. That guide uses 2048 for a longer test. Raise MAX_SEQ_LENGTH before a real run.
-
-from unsloth import FastLanguageModel
-from datasets import load_dataset
-from trl import SFTConfig, SFTTrainer
-
-MODEL_NAME = @@MODEL@@
-MAX_SEQ_LENGTH = @@MAX_SEQ@@
-DATASET_PATH = @@DATASET@@
-OUTPUT_DIR = @@OUTPUT@@
-LORA_R = @@LORA_R@@
-
-
-def main():
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
-        max_seq_length=MAX_SEQ_LENGTH,
-        dtype=None,
-        load_in_4bit=True,
+    let host = yaml_comment_line(&llamafactory_host_note(&job.host_class_affinity));
+    format!(
+        "# schema: {schema}\n\
+         # driver: {driver}\n\
+         # job: train\n\
+         # pack: {pack}\n\
+         # Recipe only. Cell One does not run llamafactory-cli, does not download weights, and does not call CUDA.\n\
+         # model_name_or_path is the seated model tag (same resolution as Modelfile FROM).\n\
+         # LLaMA-Factory expects a Hugging Face repo id or a local weights directory.\n\
+         # template is a hint from that tag. Confirm it matches the model.\n\
+         # Use this same chat template when you seat the model.\n\
+         # dataset_scaffold: {scaffold}\n\
+         # {host}\n\
+         # QLoRA is finetuning_type lora plus quantization_bit 4.\n\
+         # Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n\
+         model_name_or_path: {base}\n\
+         trust_remote_code: true\n\
+         stage: sft\n\
+         # Later preference stage is a recipe flag. Not built here.\n\
+         # stage: dpo\n\
+         # or stage: orpo\n\
+         # with ranking: true on the dataset in dataset_info.json\n\
+         do_train: true\n\
+         finetuning_type: lora\n\
+         lora_rank: {rank}\n\
+         lora_alpha: {alpha}\n\
+         lora_target: all\n\
+         quantization_bit: 4\n\
+         quantization_method: bitsandbytes\n\
+         dataset: {dataset_name}\n\
+         dataset_dir: {dataset_dir}\n\
+         template: {template}\n\
+         cutoff_len: {cutoff}\n\
+         packing: true\n\
+         preprocessing_num_workers: 1\n\
+         dataloader_num_workers: 1\n\
+         output_dir: {outputs}\n\
+         logging_steps: 1\n\
+         save_steps: 50\n\
+         overwrite_output_dir: true\n\
+         save_only_model: false\n\
+         report_to: none\n\
+         per_device_train_batch_size: 1\n\
+         gradient_accumulation_steps: 4\n\
+         learning_rate: 1.0e-4\n\
+         num_train_epochs: 1.0\n\
+         lr_scheduler_type: cosine\n\
+         warmup_ratio: 0.03\n\
+         bf16: true\n\
+         seed: {seed}\n",
+        schema = PREPARE_SCHEMA,
+        driver = LLAMAFACTORY_QLORA_ID,
+        pack = job.pack_id,
+        cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        rank = LLAMAFACTORY_LORA_RANK,
+        alpha = LLAMAFACTORY_LORA_ALPHA,
+        seed = LLAMAFACTORY_SEED,
+        base = yaml_quote(&job.base_model),
+        dataset_name = LLAMAFACTORY_DATASET_NAME,
+        dataset_dir = yaml_quote(&job.out_dir.display().to_string()),
+        outputs = yaml_quote(&outputs.display().to_string()),
     )
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=LORA_R,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-        lora_alpha=LORA_R,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
+}
+
+fn llamafactory_export_yaml(job: &EnrichJob) -> String {
+    let template = llamafactory_template(&job.base_model);
+    let adapter = job.out_dir.join("outputs");
+    let export_dir = job.out_dir.join("export");
+    format!(
+        "# schema: {schema}\n\
+         # driver: {driver}\n\
+         # Merge only. Leave this file unquantized. Do not merge a quantized base.\n\
+         # Point model_name_or_path at the unquantized Hugging Face repo or local weights you trained from.\n\
+         # adapter_name_or_path is the train output_dir.\n\
+         # LLaMA-Factory does not export GGUF. Convert the merge with llama.cpp if you want an Ollama GGUF.\n\
+         # template must match recipe.yaml. Train and seat share one chat template.\n\
+         model_name_or_path: {base}\n\
+         adapter_name_or_path: {adapter}\n\
+         template: {template}\n\
+         trust_remote_code: true\n\
+         finetuning_type: lora\n\
+         export_dir: {export_dir}\n\
+         export_size: 5\n\
+         export_device: cpu\n\
+         export_legacy_format: false\n",
+        schema = PREPARE_SCHEMA,
+        driver = LLAMAFACTORY_QLORA_ID,
+        base = yaml_quote(&job.base_model),
+        adapter = yaml_quote(&adapter.display().to_string()),
+        export_dir = yaml_quote(&export_dir.display().to_string()),
     )
-    dataset = load_dataset("json", data_files=DATASET_PATH, split="train")
-
-    def to_text(examples):
-        texts = []
-        for messages in examples["messages"]:
-            texts.append(
-                tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=False,
-                )
-            )
-        return {"text": texts}
-
-    dataset = dataset.map(to_text, batched=True)
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=dataset,
-        args=SFTConfig(
-            output_dir=OUTPUT_DIR,
-            max_seq_length=MAX_SEQ_LENGTH,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=4,
-            num_train_epochs=1,
-            learning_rate=2e-4,
-            logging_steps=1,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="linear",
-            warmup_steps=5,
-            seed=3407,
-            report_to="none",
-            packing=False,
-        ),
-    )
-    trainer.train()
-    model.save_pretrained(OUTPUT_DIR)
-    tokenizer.save_pretrained(OUTPUT_DIR)
-    # GGUF and Ollama export stay in Unsloth's docs. This script does not export.
-    # https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf
-    # https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama
-    # model.save_pretrained_gguf("directory", tokenizer, quantization_method="q4_k_m")
-
-
-if __name__ == "__main__":
-    main()
-"#;
-    template
-        .replace("@@PACK@@", &yaml_comment_line(&job.pack_id))
-        .replace("@@SCAFFOLD@@", scaffold)
-        .replace("@@HOST@@", &host)
-        .replace("@@MAX_SEQ@@", &UNSLOTH_MAX_SEQ.to_string())
-        .replace("@@LORA_R@@", &UNSLOTH_LORA_R.to_string())
-        .replace("@@MODEL@@", &python_string(&job.base_model))
-        .replace("@@DATASET@@", &python_string(&dataset.display().to_string()))
-        .replace("@@OUTPUT@@", &python_string(&outputs.display().to_string()))
 }
 
 fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
@@ -1815,8 +1862,8 @@ pub fn import_prepared(
     Ok(proposal)
 }
 
-/// Adapter or merged weights from an Axolotl run, recorded on the same
-/// `local_slm` proposal `import_prepared` writes. Does not apply.
+/// Adapter or merged weights from a LLaMA-Factory or Axolotl run, recorded on
+/// the same `local_slm` proposal `import_prepared` writes. Does not apply.
 pub struct ImportTrainedRequest<'a> {
     pub estate: &'a Estate,
     pub prepared_dir: &'a Path,
@@ -2952,20 +2999,21 @@ mod tests {
             .collect();
         assert!(ids.contains(&"ollama-modelfile"));
         assert!(ids.contains(&"external-manifest"));
-        assert!(ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(ids.contains(&AXOLOTL_LORA_ID));
-        let unsloth = train_enrich_card(UNSLOTH_QLORA_ID).unwrap();
-        assert_eq!(unsloth.default_job, EnrichJobKind::Train);
-        assert!(unsloth.jobs.contains(&EnrichJobKind::Train));
-        assert!(!unsloth.jobs.contains(&EnrichJobKind::Enrich));
+        assert!(!ids.contains(&"unsloth-qlora"));
+        let factory = train_enrich_card(LLAMAFACTORY_QLORA_ID).unwrap();
+        assert_eq!(factory.default_job, EnrichJobKind::Train);
+        assert!(factory.jobs.contains(&EnrichJobKind::Train));
+        assert!(!factory.jobs.contains(&EnrichJobKind::Enrich));
         let axolotl = train_enrich_card(AXOLOTL_LORA_ID).unwrap();
         assert_eq!(axolotl.default_job, EnrichJobKind::Train);
         let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
-        assert!(!enrich_ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(!enrich_ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
-        assert!(train_ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(train_ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
         assert_eq!(train_ids.len(), 4);
         for card in train_enrich_catalog() {
@@ -2983,25 +3031,28 @@ mod tests {
         let rendered = render_train_enrich_catalog();
         assert!(rendered.contains("ollama-modelfile"), "{rendered}");
         assert!(rendered.contains("external-manifest"), "{rendered}");
-        assert!(rendered.contains(UNSLOTH_QLORA_ID), "{rendered}");
+        assert!(rendered.contains(LLAMAFACTORY_QLORA_ID), "{rendered}");
+        assert!(!rendered.contains("unsloth-qlora"), "{rendered}");
         assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
         assert!(rendered.contains("default=train"), "{rendered}");
     }
 
     #[test]
-    fn unsloth_qlora_prepares_a_script_and_imports_the_adapter() {
-        let root = tmp("unsloth");
+    fn llamafactory_qlora_prepares_a_recipe_and_imports_the_adapter() {
+        let root = tmp("llamafactory");
         let pack = fixture_pack();
         let estate = seated_estate("llama3");
-        let out = root.join("script");
-        let doc = run(UNSLOTH_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        let out = root.join("recipe");
+        let doc = run(LLAMAFACTORY_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
         assert_eq!(doc.job, "train");
-        assert_eq!(doc.driver, UNSLOTH_QLORA_ID);
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
         assert_eq!(doc.base_model, "llama3");
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
         for name in [
-            "train_unsloth.py",
+            "recipe.yaml",
+            "export.yaml",
+            "dataset_info.json",
             "dataset.jsonl",
             "PREPARE.md",
             "NEXT.md",
@@ -3010,55 +3061,69 @@ mod tests {
             assert!(doc.artifacts.iter().any(|item| item == name), "{name}");
             assert!(out.join(name).is_file(), "{name}");
         }
-        let script = std::fs::read_to_string(out.join("train_unsloth.py")).unwrap();
-        assert!(script.contains("load_in_4bit=True"), "{script}");
-        assert!(script.contains("LORA_R = 16"), "{script}");
-        assert!(script.contains("MAX_SEQ_LENGTH = 512"), "{script}");
-        assert!(script.contains("MODEL_NAME = \"llama3\""), "{script}");
-        assert!(script.contains("from unsloth import FastLanguageModel"), "{script}");
-        assert!(script.contains("report_to=\"none\""), "{script}");
-        assert!(script.contains("# model.save_pretrained_gguf"), "{script}");
-        assert!(
-            script.lines().all(|line| {
-                !line.contains("save_pretrained_gguf") || line.trim_start().starts_with('#')
-            }),
-            "GGUF export stays a comment: {script}"
-        );
-        let compiled = std::process::Command::new("python3")
-            .args(["-m", "py_compile", &out.join("train_unsloth.py").display().to_string()])
-            .output()
-            .expect("python3");
-        assert!(
-            compiled.status.success(),
-            "{}",
-            String::from_utf8_lossy(&compiled.stderr)
-        );
+        assert!(!out.join("train_unsloth.py").exists());
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(recipe.contains("model_name_or_path: \"llama3\""), "{recipe}");
+        assert!(recipe.contains("stage: sft"), "{recipe}");
+        assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("lora_rank: 16"), "{recipe}");
+        assert!(recipe.contains("packing: true"), "{recipe}");
+        assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
+        assert!(recipe.contains("template: llama3"), "{recipe}");
+        assert!(recipe.contains("dataset: cell_enrich"), "{recipe}");
+        assert!(recipe.contains("seed: 42"), "{recipe}");
+        assert!(recipe.contains("# stage: dpo"), "{recipe}");
+        assert!(recipe.contains("# or stage: orpo"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(export.contains("template: llama3"), "{export}");
+        assert!(export.contains("finetuning_type: lora"), "{export}");
+        let info = std::fs::read_to_string(out.join("dataset_info.json")).unwrap();
+        assert!(info.contains("\"formatting\": \"sharegpt\""), "{info}");
+        assert!(info.contains("\"messages\": \"messages\""), "{info}");
         let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
         assert!(jsonl.contains("\"messages\""), "{jsonl}");
         assert!(jsonl.contains("\"role\":\"user\""), "{jsonl}");
         assert!(jsonl.contains("feed/events.jsonl"), "{jsonl}");
         assert_eq!(jsonl.lines().count(), 1, "{jsonl}");
         let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-        let script_path = out.join("train_unsloth.py");
+        let recipe_path = out.join("recipe.yaml");
+        let export_path = out.join("export.yaml");
         assert!(
-            next.contains(&format!("python {}", script_path.display())),
+            next.contains(&format!("llamafactory-cli train {}", recipe_path.display())),
             "{next}"
         );
-        assert!(next.contains("pip install unsloth"), "{next}");
+        assert!(
+            next.contains(&format!("llamafactory-cli export {}", export_path.display())),
+            "{next}"
+        );
+        assert!(next.contains("pip install llamafactory"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
-        assert!(next.contains("saving-to-ollama"), "{next}");
-        assert!(next.contains("saving-to-gguf"), "{next}");
+        assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(next.contains("same chat template"), "{next}");
+        assert!(next.contains("smoke eval"), "{next}");
+        assert!(next.contains("Faster single-GPU alternate"), "{next}");
+        assert!(next.contains("unsloth.ai/docs"), "{next}");
         assert!(next.contains("axolotl-lora"), "{next}");
+        assert!(!next.contains("unsloth-qlora"), "{next}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
-        assert!(prepare_md.contains("python train_unsloth.py"), "{prepare_md}");
-        assert!(prepare_md.contains("did not run python"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("llamafactory-cli train recipe.yaml"),
+            "{prepare_md}"
+        );
+        assert!(
+            prepare_md.contains("did not run llamafactory-cli"),
+            "{prepare_md}"
+        );
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
-        assert!(!prepare_json.contains("python train"), "{prepare_json}");
+        assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
+        assert!(prepare_json.contains("\"job\": \"train\""), "{prepare_json}");
 
         let enrich_out = root.join("enrich-job");
         let err = run(
-            UNSLOTH_QLORA_ID,
+            LLAMAFACTORY_QLORA_ID,
             &pack,
             &estate,
             &enrich_out,
@@ -3073,7 +3138,7 @@ mod tests {
         empty.source_paths.clear();
         let stub_out = root.join("stub");
         run(
-            UNSLOTH_QLORA_ID,
+            LLAMAFACTORY_QLORA_ID,
             &empty,
             &estate,
             &stub_out,
@@ -3093,7 +3158,7 @@ mod tests {
         apple.host_class_affinity = Some("apple-silicon".into());
         let apple_out = root.join("apple");
         run(
-            UNSLOTH_QLORA_ID,
+            LLAMAFACTORY_QLORA_ID,
             &apple,
             &estate,
             &apple_out,
@@ -3103,7 +3168,7 @@ mod tests {
         .unwrap();
         let apple_next = std::fs::read_to_string(apple_out.join("NEXT.md")).unwrap();
         assert!(apple_next.contains("apple-silicon"), "{apple_next}");
-        assert!(apple_next.contains("expects a CUDA host"), "{apple_next}");
+        assert!(apple_next.contains("CUDA LLaMA-Factory"), "{apple_next}");
         assert!(
             apple_next.contains("does not write an MLX trainer"),
             "{apple_next}"
@@ -3120,7 +3185,7 @@ mod tests {
             curator: "jason",
         })
         .unwrap();
-        assert_eq!(proposal.driver, UNSLOTH_QLORA_ID);
+        assert_eq!(proposal.driver, LLAMAFACTORY_QLORA_ID);
         assert_eq!(proposal.binding_id, "local_slm");
         assert!(proposal.local_path.ends_with("adapter_config.json"));
         assert!(!proposal.auto_apply && !proposal.estate_rewritten);

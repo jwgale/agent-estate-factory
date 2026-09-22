@@ -180,7 +180,7 @@ enrich-prepare:
 enrich-live-prove:
 	bash scripts/enrich-live-prove.sh
 
-# Opt-in Unsloth script and Axolotl recipe. Does not run either trainer.
+# Opt-in LLaMA-Factory recipe and Axolotl recipe. Does not run either trainer.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 train-prepare:
 	bash scripts/train-prepare.sh

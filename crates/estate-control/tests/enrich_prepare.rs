@@ -59,7 +59,7 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("TrainEnrichDriver"), "{body}");
         assert!(body.contains("ollama-modelfile"), "{body}");
         assert!(body.contains("external-manifest"), "{body}");
-        assert!(body.contains("unsloth-qlora"), "{body}");
+        assert!(body.contains("llamafactory-qlora"), "{body}");
         assert!(body.contains("axolotl-lora"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
@@ -86,7 +86,8 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(drivers.status.success(), "{listed}");
     assert!(listed.contains("ollama-modelfile"), "{listed}");
     assert!(listed.contains("external-manifest"), "{listed}");
-    assert!(listed.contains("unsloth-qlora"), "{listed}");
+    assert!(listed.contains("llamafactory-qlora"), "{listed}");
+    assert!(!listed.contains("unsloth-qlora"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
     assert!(listed.contains("default=train"), "{listed}");
@@ -403,6 +404,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("ollama-modelfile"));
     assert!(!dispatch.contains("external-manifest"));
     assert!(!dispatch.contains("axolotl-lora"));
+    assert!(!dispatch.contains("llamafactory-qlora"));
     assert!(!dispatch.contains("unsloth-qlora"));
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
     assert!(
@@ -411,8 +413,8 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(makefile.contains("scripts/train-prepare.sh"));
     let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
-    assert!(train_script.contains("unsloth-qlora"), "{train_script}");
-    assert!(train_script.contains("python train_unsloth.py") || train_script.contains("train_unsloth.py"), "{train_script}");
+    assert!(train_script.contains("llamafactory-qlora"), "{train_script}");
+    assert!(train_script.contains("llamafactory-cli train"), "{train_script}");
     assert!(train_script.contains("axolotl-lora"), "{train_script}");
     assert!(train_script.contains("axolotl train"), "{train_script}");
     assert!(train_script.contains("SKIP live train"), "{train_script}");
@@ -1265,10 +1267,10 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
     assert!(all_text.contains("prepared=4"), "{all_text}");
-    assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
+    assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
     assert!(state
-        .join("enrich/overnight-traces/unsloth-qlora/train_unsloth.py")
+        .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
     assert!(state
         .join("enrich/overnight-traces/axolotl-lora/axolotl.yml")
@@ -1337,14 +1339,14 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
 }
 
 #[test]
-fn unsloth_qlora_prepare_and_import_trained_leave_the_estate() {
-    let root = tmp("unsloth-cli");
+fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
+    let root = tmp("llamafactory-cli");
     let seated = write_seated_estate(&root, "llama3");
     let seated_path = seated.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let before = estate_bytes();
-    let out = root.join("script");
+    let out = root.join("recipe");
 
     let prepared = estate_bin()
         .args([
@@ -1357,7 +1359,7 @@ fn unsloth_qlora_prepare_and_import_trained_leave_the_estate() {
             "--pack",
             &pack,
             "--driver",
-            "unsloth-qlora",
+            "llamafactory-qlora",
             "--out",
             &out.display().to_string(),
         ])
@@ -1367,26 +1369,33 @@ fn unsloth_qlora_prepare_and_import_trained_leave_the_estate() {
     assert!(prepared.status.success(), "{prepared_text}");
     assert!(prepared_text.contains("job=train"), "{prepared_text}");
     assert!(
-        prepared_text.contains("driver=unsloth-qlora"),
+        prepared_text.contains("driver=llamafactory-qlora"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("python "), "{prepared_text}");
-    assert!(prepared_text.contains("pip install unsloth"), "{prepared_text}");
-    let script = std::fs::read_to_string(out.join("train_unsloth.py")).unwrap();
-    assert!(script.contains("load_in_4bit=True"), "{script}");
-    assert!(script.contains("LORA_R = 16"), "{script}");
-    assert!(script.contains("MAX_SEQ_LENGTH = 512"), "{script}");
+    assert!(
+        prepared_text.contains("llamafactory-cli train "),
+        "{prepared_text}"
+    );
+    assert!(
+        prepared_text.contains("pip install llamafactory"),
+        "{prepared_text}"
+    );
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+    assert!(recipe.contains("lora_rank: 16"), "{recipe}");
+    assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
     let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
     assert!(jsonl.contains("\"messages\""), "{jsonl}");
     let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
     assert!(
         next.contains(&format!(
-            "python {}",
-            out.join("train_unsloth.py").display()
+            "llamafactory-cli train {}",
+            out.join("recipe.yaml").display()
         )),
         "{next}"
     );
-    assert!(next.contains("saving-to-ollama"), "{next}");
+    assert!(next.contains("llamafactory-cli export "), "{next}");
+    assert!(next.contains("Faster single-GPU alternate"), "{next}");
     assert_eq!(estate_bytes(), before);
 
     let enrich_job = estate_bin()
@@ -1400,7 +1409,7 @@ fn unsloth_qlora_prepare_and_import_trained_leave_the_estate() {
             "--pack",
             &pack,
             "--driver",
-            "unsloth-qlora",
+            "llamafactory-qlora",
             "--job",
             "enrich",
             "--out",
@@ -1436,7 +1445,7 @@ fn unsloth_qlora_prepare_and_import_trained_leave_the_estate() {
     let imported_text = text(&imported);
     assert!(imported.status.success(), "{imported_text}");
     assert!(
-        imported_text.contains("driver=unsloth-qlora"),
+        imported_text.contains("driver=llamafactory-qlora"),
         "{imported_text}"
     );
     assert!(
