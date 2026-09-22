@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#34 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#52 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (Mac specialist complete, native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
 
@@ -78,7 +78,7 @@ estate doctor --strict
 | Live probe runbook + dry shapes | green | [`LIVE-PROBES.md`](LIVE-PROBES.md); SKIP vs would-live fixture, no network |
 | OpenAI / Ollama live adapter | green | GET `/v1/models` or `/api/tags`; in-process mock; SKIP without env |
 | Specialist chat round-trip | green | `HttpLocal` posts request text; `model-estate specialist`; llama.cpp OpenAI smoke; mock HTTP |
-| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion`; mock-locked + ready for Ollama |
+| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion` in tests (mock-locked). 5090 `Pong` is already recorded. Mac complete is not recorded. `READY_FOR_LIVE_TEST` no |
 | OpenAI empty content fallthrough | green | empty/missing OpenAI content tries `/api/chat`; both-fail names status + model + pull |
 | Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
@@ -88,7 +88,7 @@ estate doctor --strict
 | Local down does not call frontier | green | `--driver ollama` unset or failed local chat; frontier mock gets no POST |
 | Mixed plan + apply | green | `plan` then `apply --require-plan` on mixed fixture; catalog names `grok-4.7`; no POST; no live key |
 | Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
-| Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
+| Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down. `mlx` / `vllm` / `trt` refuse a frontier POST and are not live-ok |
 | `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture, then validate + status on `examples/hosts/frontier-http.yaml`; no live key; not in smoke / Actions |
 | Frontier model on status / doctor | green | Binding line only when `params.model` is set. Schema card stays `grok-4.7`. Cell catalog after apply copies the bound model, or `model=-` when the binding sets none. Plan and dry-run print that bound model. No frontier binding is `refuse:frontier-invent` on plan, dry-run, reconcile, and resume, before those commands write. A cell catalog model that disagrees with the binding is `refuse:frontier-model` on status, doctor, and live apply before apply writes. `estate catalog` labels the schema card and will not overwrite a catalog whose model is not that card. `make day90-mixed` prints the bound model. A local-only estate in that walk is `refuse:frontier-invent`. Resume and pause-proof refuse a cell catalog that disagrees with the binding before they write. Pause-proof does not invent a cell catalog |
 | Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; a frontier tag with no frontier binding is `refuse:frontier-invent` on propose, accept, and import (before an accepted pack or redaction report); a mixed-fixture import keeps the tag and writes kind counts with no raw secret; promote stays off |
