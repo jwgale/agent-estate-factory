@@ -89,7 +89,7 @@ if [[ -f "$STATE/placement-actual.json" ]]; then
   echo "FAIL  mixed dry-run wrote placement-actual.json"
   exit 1
 fi
-"${ESTATE[@]}" catalog --out "$STATE/catalog.json" >/tmp/fixtures-catalog.out
+"${ESTATE[@]}" catalog --out "$STATE/schema-catalog.json" >/tmp/fixtures-catalog.out
 if ! grep -q "http-remote" /tmp/fixtures-catalog.out || ! grep -q "ollama" /tmp/fixtures-catalog.out; then
   echo "FAIL  catalog must list http-remote and ollama"
   exit 1

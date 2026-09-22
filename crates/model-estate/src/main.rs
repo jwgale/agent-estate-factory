@@ -105,10 +105,14 @@ fn run() -> Result<()> {
         ),
         Command::MockLocal { bind } => serve_specialist_forever(&bind).map_err(anyhow::Error::msg),
         Command::Catalog { out } => {
-            println!("{}", render_catalog());
             if let Some(path) = out {
+                model_estate::refuse_schema_catalog_overwrite(&path)
+                    .map_err(|err| anyhow::anyhow!("{err}"))?;
                 let written = model_estate::write_catalog(&path)?;
+                println!("{}", render_catalog());
                 println!("wrote catalog file {}", written.display());
+            } else {
+                println!("{}", render_catalog());
             }
             Ok(())
         }

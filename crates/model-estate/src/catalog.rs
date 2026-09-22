@@ -432,6 +432,44 @@ pub fn write_catalog(path: &std::path::Path) -> std::io::Result<std::path::PathB
     write_catalog_file(path, &catalog_file())
 }
 
+/// Schema dump must not replace a catalog whose frontier model is not the
+/// schema card. A missing file is not a disagreement. The schema card is
+/// not a binding.
+pub fn refuse_schema_catalog_overwrite(path: &std::path::Path) -> Result<(), crate::ModelError> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(path).map_err(|err| {
+        crate::ModelError::Other(format!(
+            "refuse:frontier-model: catalog unreadable ({err}); schema card is not the binding"
+        ))
+    })?;
+    let existing = crate::frontier_model_from_catalog_json(&text).map_err(|err| {
+        crate::ModelError::Other(format!(
+            "refuse:frontier-model: catalog unreadable ({err}); schema card is not the binding"
+        ))
+    })?;
+    let norm = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    };
+    let existing = norm(existing.as_deref());
+    let schema = norm(Some(catalog_file().frontier.model.as_str()));
+    if existing == schema {
+        return Ok(());
+    }
+    fn show(value: &Option<String>) -> &str {
+        value.as_deref().unwrap_or("-")
+    }
+    Err(crate::ModelError::Other(format!(
+        "refuse:frontier-model: will not overwrite catalog model={} with schema card model={}; schema card is not the binding",
+        show(&existing),
+        show(&schema)
+    )))
+}
+
 /// Cell catalog for an apply/resume. Frontier model is the binding's
 /// `params.model`, or empty when the binding does not set one. Does not
 /// copy the schema card default `grok-4.7`.
@@ -498,7 +536,7 @@ pub fn render_catalog() -> String {
         ));
     }
     lines.push(format!(
-        "  {:<12} model={:<12} status={:<12} streaming={} tools={} vision={} completion={} {}",
+        "  schema {:<12} model={:<12} status={:<12} streaming={} tools={} vision={} completion={} {} (schema card, not a binding)",
         FRONTIER_CARD.driver_id,
         FRONTIER_CARD.model,
         FRONTIER_CARD.status,
@@ -798,6 +836,7 @@ mod tests {
         );
         let rendered = render_catalog();
         assert!(rendered.contains("model=grok-4.7"), "{rendered}");
+        assert!(rendered.contains("schema card, not a binding"), "{rendered}");
         assert!(rendered.contains("completion=64"), "{rendered}");
         let committed = include_str!("../../../schema/local-catalog.v0.json");
         let file: CatalogFile = serde_json::from_str(committed).unwrap();
@@ -819,5 +858,41 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ModelError::Experimental(_)));
         assert!(err.is_local_down());
+    }
+
+    #[test]
+    fn schema_catalog_overwrite_does_not_invent_a_binding() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-schema-catalog-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fresh = dir.join("fresh.json");
+        refuse_schema_catalog_overwrite(&fresh).unwrap();
+        write_catalog(&fresh).unwrap();
+        let body = std::fs::read_to_string(&fresh).unwrap();
+        assert!(body.contains("\"model\": \"grok-4.7\""), "{body}");
+        refuse_schema_catalog_overwrite(&fresh).unwrap();
+
+        let cell = dir.join("catalog.json");
+        let mut bound = catalog_file();
+        bound.frontier.model.clear();
+        super::write_catalog_file(&cell, &bound).unwrap();
+        let err = refuse_schema_catalog_overwrite(&cell).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:frontier-model"), "{text}");
+        assert!(text.contains("catalog model=-"), "{text}");
+        assert!(text.contains("schema card model=grok-4.7"), "{text}");
+        assert!(text.contains("schema card is not the binding"), "{text}");
+        let still = std::fs::read_to_string(&cell).unwrap();
+        assert!(still.contains("\"model\": \"\""), "{still}");
+        assert!(!still.contains("\"model\": \"grok-4.7\""), "{still}");
+
+        std::fs::write(&cell, "not-json").unwrap();
+        let bad = refuse_schema_catalog_overwrite(&cell).unwrap_err();
+        assert!(bad.to_string().contains("unreadable"), "{bad}");
+        assert_eq!(std::fs::read_to_string(&cell).unwrap(), "not-json");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
