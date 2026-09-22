@@ -54,6 +54,7 @@ pub(crate) fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Re
         .with_context(|| format!("load {}", path.display()))?;
     model_estate::frontier_plan_view(&parsed).map_err(|e| anyhow::anyhow!("{e}"))?;
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    crate::plan_apply::refuse_apply_catalog_mismatch(&estate, state_dir)?;
     let (actual, record) = resume(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
     record_placements(&estate, state_dir)?;
@@ -94,7 +95,7 @@ pub(crate) fn cmd_policy_check(path: &Path, action: &str, hop: Option<&str>) -> 
     }
     let pack = load_policy(path).map_err(|e| anyhow::anyhow!("{e}"))?;
     policy_allows(&pack, action, hop).map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("policy ok action={action} hop={}", hop.unwrap_or("-"));
+    println!("policy ok action={action} hop={}", hop.unwrap_or("-")));
     Ok(())
 }
 
@@ -163,6 +164,7 @@ pub(crate) fn cmd_restore(
 
 pub(crate) fn cmd_pause_proof(estate_path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
     let estate = load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    crate::plan_apply::refuse_apply_catalog_mismatch(&estate, state_dir)?;
     let proof = pause_kit_proof(&estate, state_dir, roots_base)?;
     println!("{}", serde_json::to_string_pretty(&proof)?);
     if proof.cloud_spawned || !proof.leases_survived || !proof.in_sync {
