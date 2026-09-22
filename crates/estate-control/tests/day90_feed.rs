@@ -323,3 +323,127 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     assert_eq!(edit["applied_to_estate"], false);
     let _ = std::fs::remove_dir_all(&work);
 }
+
+#[test]
+fn propose_and_accept_refuse_frontier_source_without_a_frontier_binding() {
+    let root = tmp("invent");
+    let feed = root.join("feed");
+    let drop = root.join("drop");
+    let accepted = root.join("accepted");
+    let proposed = root.join("proposed");
+    let estate = root.join("local-only.yaml");
+    std::fs::write(
+        &estate,
+        "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n",
+    )
+    .unwrap();
+    seed(&feed);
+    let pack = estate_bin()
+        .args([
+            "feed",
+            "pack",
+            "--feed-dir",
+            &feed.display().to_string(),
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--id",
+            "overnight-traces",
+        ])
+        .output()
+        .unwrap();
+    assert!(pack.status.success(), "{}", String::from_utf8_lossy(&pack.stderr));
+
+    let propose = estate_bin()
+        .args([
+            "packs",
+            "propose",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &accepted.display().to_string(),
+            "--proposed-dir",
+            &proposed.display().to_string(),
+            "--estate",
+            &estate.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let propose_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&propose.stdout),
+        String::from_utf8_lossy(&propose.stderr)
+    );
+    assert!(!propose.status.success(), "{propose_text}");
+    assert!(
+        propose_text.contains("refuse:frontier-invent"),
+        "{propose_text}"
+    );
+    assert!(!propose_text.contains("grok-4.7"), "{propose_text}");
+    assert!(!proposed.join("overnight-traces.proposal.json").exists());
+
+    let locked = repo_root().join("examples/estate.yaml");
+    let before = std::fs::read(&locked).unwrap();
+    let ok = estate_bin()
+        .args([
+            "packs",
+            "propose",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &accepted.display().to_string(),
+            "--proposed-dir",
+            &proposed.display().to_string(),
+            "--estate",
+            &locked.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert_eq!(before, std::fs::read(&locked).unwrap());
+
+    let accept = estate_bin()
+        .args([
+            "packs",
+            "accept",
+            "--id",
+            "overnight-traces",
+            "--curator",
+            "jason",
+            "--proposed-dir",
+            &proposed.display().to_string(),
+            "--accepted-dir",
+            &accepted.display().to_string(),
+            "--estate",
+            &estate.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let accept_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&accept.stdout),
+        String::from_utf8_lossy(&accept.stderr)
+    );
+    assert!(!accept.status.success(), "{accept_text}");
+    assert!(
+        accept_text.contains("refuse:frontier-invent"),
+        "{accept_text}"
+    );
+    assert!(!accept_text.contains("grok-4.7"), "{accept_text}");
+    assert!(!accepted.join("overnight-traces.enrich-edit.json").exists());
+    assert!(!accepted.join("overnight-traces.enrich-edit.md").exists());
+    assert_eq!(before, std::fs::read(&locked).unwrap());
+    let _ = std::fs::remove_dir_all(&root);
+}

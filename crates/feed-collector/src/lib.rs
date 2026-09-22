@@ -39,6 +39,10 @@ pub enum FeedError {
     BadSourcePath(String),
     #[error("refuse:source-driver: '{0}'")]
     BadSourceDriver(String),
+    #[error(
+        "refuse:frontier-invent: no frontier binding; will not invent a frontier source_driver"
+    )]
+    FrontierInvent,
     #[error("refuse:curator: curator '{provided}' does not match locked curator '{want}'")]
     WrongCurator { provided: String, want: String },
 }
@@ -694,6 +698,59 @@ pub fn refuse_source_driver_list(
     Ok(())
 }
 
+/// `source_drivers` may name `frontier` only when the estate has a frontier
+/// binding. Does not add a driver and does not copy the schema card.
+pub fn refuse_frontier_source_on_estate(
+    drivers: &[String],
+    estate: &estate_schema::Estate,
+) -> Result<(), FeedError> {
+    if !drivers.iter().any(|d| d == "frontier") {
+        return Ok(());
+    }
+    let bound = estate
+        .model_bindings
+        .iter()
+        .any(|b| b.class == estate_schema::ModelClass::Frontier);
+    if bound {
+        return Ok(());
+    }
+    Err(FeedError::FrontierInvent)
+}
+
+/// Load the pack propose would copy, then refuse an invented frontier driver.
+/// Does not write a proposal.
+pub fn refuse_propose_frontier_invent(
+    drop_dir: &Path,
+    accepted_dir: &Path,
+    id: &str,
+    estate: &estate_schema::Estate,
+) -> Result<(), FeedError> {
+    refuse_pack_id(id)?;
+    let pack = match load_pack_loose(accepted_dir, id) {
+        Ok(p) => p,
+        Err(FeedError::MissingPack(_)) => load_pack_loose(drop_dir, id)?,
+        Err(e) => return Err(e),
+    };
+    refuse_pack(&pack)?;
+    refuse_frontier_source_on_estate(&pack.source_drivers, estate)
+}
+
+/// Read the proposal accept would copy. Missing file is not this refuse.
+/// Does not write enrich-edit instructions.
+pub fn refuse_accept_frontier_invent(
+    proposed_dir: &Path,
+    id: &str,
+    estate: &estate_schema::Estate,
+) -> Result<(), FeedError> {
+    let src = proposed_dir.join(format!("{id}.proposal.json"));
+    if !src.is_file() {
+        return Ok(());
+    }
+    let proposal: EnrichProposal = serde_json::from_str(&std::fs::read_to_string(&src)?)
+        .map_err(|e| FeedError::Parse(e.to_string()))?;
+    refuse_frontier_source_on_estate(&proposal.diff.source_drivers, estate)
+}
+
 /// Index label after the tag matches the counts. Empty stays `-`.
 /// A missing tag with a nonzero frontier or local count is refuse, not `-`.
 fn index_drivers_label(drivers: &[String], counts: &PathCounts) -> Result<String, FeedError> {
@@ -1106,6 +1163,7 @@ pub fn propose_enrich(
         Err(e) => return Err(e),
     };
     refuse_pack(&pack)?;
+    refuse_frontier_source_on_estate(&pack.source_drivers, estate)?;
     if pack.promoted {
         return Err(FeedError::NoAutoPromote);
     }
@@ -1758,5 +1816,83 @@ mod tests {
         assert!(!accepted.join("dirty-pack.pack.json").exists());
         assert!(!accepted.join("dirty-pack.redaction.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn propose_refuses_frontier_source_without_a_frontier_binding() {
+        let feed = tmp();
+        let traces = feed.join("traces");
+        let drop = feed.join("drop");
+        let accepted = feed.join("accepted");
+        let proposed = feed.join("proposed");
+        append_event(
+            &traces,
+            &ScrubbedEvent {
+                kind: "model.frontier.complete".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("allow".into()),
+                object_class: Some("frontier".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        append_event(
+            &traces,
+            &ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        materialize_from_feed(&traces, &drop, "overnight-traces").unwrap();
+        let mut local_only =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        local_only
+            .model_bindings
+            .retain(|b| b.class != estate_schema::ModelClass::Frontier);
+        std::fs::create_dir_all(&proposed).unwrap();
+        std::fs::write(proposed.join("SENTINEL"), "keep\n").unwrap();
+        let err = propose_enrich(&drop, &accepted, &proposed, "overnight-traces", &local_only)
+            .unwrap_err();
+        assert!(matches!(err, FeedError::FrontierInvent), "{err}");
+        assert!(err.to_string().contains("refuse:frontier-invent"), "{err}");
+        assert!(!err.to_string().contains("grok-4.7"), "{err}");
+        assert!(!proposed.join("overnight-traces.proposal.json").exists());
+        assert!(!proposed.join("INDEX.md").exists());
+        assert_eq!(
+            std::fs::read_to_string(proposed.join("SENTINEL")).unwrap(),
+            "keep\n"
+        );
+
+        let local_traces = feed.join("local-traces");
+        let local_drop = feed.join("local-drop");
+        append_event(
+            &local_traces,
+            &ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        materialize_from_feed(&local_traces, &local_drop, "local-only").unwrap();
+        let (proposal, path) =
+            propose_enrich(&local_drop, &accepted, &proposed, "local-only", &local_only).unwrap();
+        assert_eq!(proposal.diff.source_drivers, vec!["local".to_string()]);
+        assert!(
+            !proposal.diff.source_drivers.iter().any(|d| d == "frontier"),
+            "local-only proposal must not invent a frontier source_driver: {:?}",
+            proposal.diff.source_drivers
+        );
+        assert!(path.is_file());
+        let _ = std::fs::remove_dir_all(&feed);
     }
 }

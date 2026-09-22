@@ -3,8 +3,8 @@
 
 use anyhow::{bail, Result};
 use feed_collector::{
-    refuse_curator, refuse_pack_id, refuse_source_driver_list, EnrichProposal, FeedError,
-    LOCKED_CURATOR,
+    refuse_curator, refuse_frontier_source_on_estate, refuse_pack_id, refuse_source_driver_list,
+    EnrichProposal, FeedError, LOCKED_CURATOR,
 };
 use std::path::{Path, PathBuf};
 
@@ -84,6 +84,7 @@ pub fn accept_proposal(
         .into());
     }
     refuse_source_driver_list(&proposal.diff.source_drivers, &proposal.diff.path_counts)?;
+    refuse_frontier_source_on_estate(&proposal.diff.source_drivers, estate)?;
     let drivers = proposal.diff.source_drivers.clone();
     let yaml_snippet = format!(
         "  - id: {}\n    description: accepted proposal {} (paste by hand; factory will not rewrite the estate)\n    # source_drivers: {}\n",
@@ -311,6 +312,94 @@ mod tests {
             std::fs::read(accepted.join("overnight-traces.enrich-edit.json")).unwrap(),
             "a refused accept must not rewrite the edit instructions"
         );
+        let _ = std::fs::remove_dir_all(&feed);
+    }
+
+    #[test]
+    fn accept_refuses_frontier_source_without_a_frontier_binding() {
+        use feed_collector::{append_event, materialize_from_feed, propose_enrich, ScrubbedEvent};
+
+        let feed = std::env::temp_dir().join(format!(
+            "cell-one-accept-invent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&feed);
+        let traces = feed.join("feed");
+        let drop = feed.join("drop");
+        let accepted = feed.join("accepted");
+        let proposed = feed.join("proposed");
+        append_event(
+            &traces,
+            &ScrubbedEvent {
+                kind: "model.frontier.complete".into(),
+                agent_id: Some("horizon".into()),
+                decision: Some("allow".into()),
+                object_class: Some("frontier".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        materialize_from_feed(&traces, &drop, "overnight-traces").unwrap();
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        propose_enrich(&drop, &accepted, &proposed, "overnight-traces", &estate).unwrap();
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|b| b.class != estate_schema::ModelClass::Frontier);
+        std::fs::create_dir_all(&accepted).unwrap();
+        let sentinel = accepted.join("overnight-traces.enrich-edit.json");
+        std::fs::write(&sentinel, "keep\n").unwrap();
+        let err = accept_proposal(
+            &proposed,
+            &accepted,
+            "overnight-traces",
+            "jason",
+            "jason",
+            &local_only,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:frontier-invent"), "{err}");
+        assert!(!err.to_string().contains("grok-4.7"), "{err}");
+        assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "keep\n");
+
+        let local_traces = feed.join("local-feed");
+        let local_drop = feed.join("local-drop");
+        append_event(
+            &local_traces,
+            &ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: String::new(),
+            },
+        )
+        .unwrap();
+        materialize_from_feed(&local_traces, &local_drop, "local-only").unwrap();
+        propose_enrich(&local_drop, &accepted, &proposed, "local-only", &estate).unwrap();
+        let (accept, _) = accept_proposal(
+            &proposed,
+            &accepted,
+            "local-only",
+            "jason",
+            "jason",
+            &local_only,
+        )
+        .unwrap();
+        assert_eq!(accept.source_drivers, vec!["local".to_string()]);
+        let edit = std::fs::read_to_string(accepted.join("local-only.enrich-edit.json")).unwrap();
+        assert!(
+            !edit.contains("frontier"),
+            "local-only accept must not invent frontier: {edit}"
+        );
+        assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "keep\n");
         let _ = std::fs::remove_dir_all(&feed);
     }
 }

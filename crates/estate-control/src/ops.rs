@@ -5,12 +5,13 @@ use conveyor_proxy::{
 };
 use estate_schema::{
     describe_placements,
-    estate_hash, list_plans, load_estate,
+    estate_hash, list_plans, load_estate, load_estate_unvalidated,
     load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed,
-    propose_enrich, refuse_promote, write_pack_index, LOCKED_CURATOR,
+    propose_enrich, refuse_promote, refuse_propose_frontier_invent, write_pack_index,
+    LOCKED_CURATOR,
 };
 use floor_supervisor::{
     backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events,
@@ -467,6 +468,9 @@ pub(crate) fn cmd_packs_propose(
     proposed_dir: &Path,
     estate_path: &Path,
 ) -> Result<()> {
+    let parsed = load_estate_unvalidated(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    refuse_propose_frontier_invent(drop_dir, accepted_dir, id, &parsed)?;
     let estate = load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     let before = crate::helpers::read_estate_text(estate_path)?;

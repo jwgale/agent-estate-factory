@@ -1,8 +1,8 @@
 //! Day 90+ heal / accept / probe polish. Never auto-applies. Never rewrites the estate.
 
 use anyhow::{bail, Context, Result};
-use estate_schema::load_estate;
-use feed_collector::LOCKED_CURATOR;
+use estate_schema::{load_estate, load_estate_unvalidated};
+use feed_collector::{refuse_accept_frontier_invent, LOCKED_CURATOR};
 use floor_supervisor::{
     load_placements, reconcile_placements, render_reconcile, write_reconcile,
 };
@@ -108,6 +108,9 @@ pub(crate) fn cmd_packs_accept(
     estate_path: &Path,
     curator: &str,
 ) -> Result<()> {
+    let parsed = load_estate_unvalidated(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    refuse_accept_frontier_invent(proposed_dir, id, &parsed)?;
     let estate = load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     let before = crate::helpers::read_estate_text(estate_path)?;

@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #43 (this slice)
+
+- `packs propose` and `packs accept` refuse (`refuse:frontier-invent`) when `source_drivers` names `frontier` and the estate has no frontier binding. They do not write the proposal or the enrich-edit file, and they do not copy the schema card.
+- A pack that is only `local` still proposes and accepts as `local`. It does not gain a frontier driver.
+- No new CLI. Smoke and gate-90 unchanged.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #42 (this slice)
 
 - `estate plan` and `apply --dry-run` print `frontier plan: model=` from the binding (`model=-` when `params.model` is unset). They do not copy the schema card and they do not read `CELL_FRONTIER_MODEL`.
