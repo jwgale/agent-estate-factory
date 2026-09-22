@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#56 plus this slice)
+## On `main` (PR #1-#57 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -190,13 +190,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `estate status` and `estate doctor` refuse (`refuse:frontier-model`) when the cell `catalog.json` does not parse. They do that before the cell catalog success line. Apply, resume, and pause-proof already refused an unreadable catalog. A missing catalog is not a disagreement. The schema card stays the schema card. The refuse does not invent `grok-4.7`.
 
-## This slice
+## #57 in plain English
 
 [`LIVE-PROBES.md`](LIVE-PROBES.md) holds a result row for Mac `estate specialist` complete. The coordinator is running that command. The row is **Pending**, not **PASS**, until a completion is pasted. Do not invent `pong` or `Pong` for the Mac. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. The Mac command from #55 stays the only open hand-off. This slice does not add another live test.
 
+## This slice
+
+`estate status` refuses (`refuse:proposal-unreadable`) when a `*.proposal.json` does not parse, or its id does not match the filename. It does that before the status page. A missing proposals directory is not a proposal. A parsed proposal still lists. The filename is not the proposal.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#57 (plain English)
+## Bug fixes on #10-#58 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -247,6 +251,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | [`LIVE-PROBES.md`](LIVE-PROBES.md) has the MacBook Air and 5090-class copy-paste (`~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`). READY yes for the Mac command only. The 5090 `Pong` stays recorded. |
 | #56 | Status and doctor treated a cell `catalog.json` that does not parse as a note and still exited 0. Apply already refused that file. | Status and doctor are `refuse:frontier-model` before the cell success line. A missing catalog is not a disagreement. READY no. |
 | #57 | The live-probe page had the Mac specialist command and no place to write the result, so a later edit could mark PASS before a completion was pasted. | The result row is **Pending**. It is not a PASS. Paste the completion before changing it. READY no. The #55 Mac command stays the open hand-off. |
+| #58 | Status listed an unreadable `*.proposal.json` by filename and still printed the page. | That file is `refuse:proposal-unreadable` before the status page. A missing directory is not a proposal. A parsed proposal still lists. READY no. |
 
 ## Known-good local commands
 
