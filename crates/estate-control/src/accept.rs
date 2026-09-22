@@ -336,11 +336,11 @@ mod tests {
             &traces,
             &ScrubbedEvent {
                 kind: "model.frontier.complete".into(),
+                agent_id: Some("horizon".into()),
                 decision: Some("allow".into()),
                 object_class: Some("frontier".into()),
                 note: None,
                 ts: String::new(),
-                agent_id: Some("horizon".into()),
             },
         )
         .unwrap();
