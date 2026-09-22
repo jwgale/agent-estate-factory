@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #42 (this slice)
+
+- `estate plan` and `apply --dry-run` print `frontier plan: model=` from the binding (`model=-` when `params.model` is unset). They do not copy the schema card and they do not read `CELL_FRONTIER_MODEL`.
+- An estate with no frontier binding refuses (`refuse:frontier-invent`) before any plan file or dry-run preview. That refuse does not invent a frontier `source_driver` or `grok-4.7`.
+- No new CLI. Smoke and gate-90 unchanged.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #41 (this slice)
 
 - Apply and resume write the cell `catalog.json` frontier model from the estate binding. No `params.model` stays empty. Status prints `catalog frontier: cell model=-`. Doctor does not report that file as `grok-4.7`.
