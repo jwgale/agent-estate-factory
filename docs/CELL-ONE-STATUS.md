@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#51 plus this slice)
+## On `main` (PR #1-#52 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -170,15 +170,19 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 `estate feed import` and `estate packs import` refuse (`refuse:frontier-invent`) when the pack tags a frontier source driver and the estate has no frontier binding. They do that before an accepted pack, a redaction report, or an index rewrite. A missing frontier tag still imports. `CELL_FRONTIER_MODEL` is not a binding. The redaction report is kind counts: a present report must parse, and the command does not invent zero counts. A mixed-fixture import keeps `source_drivers` frontier and local. The report does not store a raw secret and does not invent `grok-4.7`.
 
-## This slice
+## #52 in plain English
 
 `estate backup` and `estate restore` refuse before they write. A cell `catalog.json` whose frontier model disagrees with the binding is `refuse:frontier-model`. A frontier `source_driver` on an estate with no frontier binding is `refuse:frontier-invent`. A desired snapshot whose sacred set disagrees with the estate is `refuse:sacred-mismatch`. A missing catalog is not a disagreement. A local-only pack still archives. `CELL_FRONTIER_MODEL` is not the binding, and the refuse does not invent `grok-4.7` unless the catalog file itself names that model. No new CLI. No new smoke or gate-90 step.
+
+## This slice
+
+`docs/GATE-90.md` stops calling the Ollama complete path ready. The mock completion stays green. The 5090 `Pong` stays recorded. Mac complete stays unrecorded. `mlx`, `vllm`, and `trt` refuse a frontier POST and are not live-ok. `docs/DAY90-PLUS.md` parks vLLM and TRT with the other stubs. `READY_FOR_LIVE_TEST` is yes only when a concrete command on the live-probe page is still unblocked. None is. No new CLI. No new smoke or gate-90 step.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#52 (plain English)
+## Bug fixes on #10-#53 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -224,6 +228,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #50 | Resume rewrote a cell catalog that disagreed with the binding, and pause-proof kept going. A schema-card `grok-4.7` could sit on an unset model through the pause kit. | That disagreement is `refuse:frontier-model` before resume or pause-proof writes. A missing catalog is not a disagreement. Pause-proof does not invent a cell catalog. A matching empty catalog still resumes with an empty model. READY no. |
 | #51 | Import copied a frontier `source_driver` onto an estate with no frontier binding, and a bad redaction file could print counts of zero. | That copy is `refuse:frontier-invent` before the accepted pack or redaction report. A present report must parse. A local-only pack still imports. A mixed-fixture import keeps the tag. READY no. |
 | #52 | Backup and restore copied a cell catalog that disagreed with the binding, and a frontier `source_driver`, onto an estate with no frontier binding. A desired snapshot could name sacred exclusions the estate does not. | Those are `refuse:frontier-model`, `refuse:frontier-invent`, and `refuse:sacred-mismatch` before the archive or the restore write. A local-only pack still archives. A missing catalog is not a disagreement. READY no. |
+| #53 | The gate called Ollama specialist complete ready, and the parking lot did not name vLLM or TRT, so a stub card could be read as a live hand-off. | The completion row is mock-locked. 5090 `Pong` stays recorded. Mac complete stays unrecorded. vLLM and TRT are parked and not live-ok. READY no. |
 
 ## Known-good local commands
 

@@ -32,10 +32,16 @@ These already ran. Do not re-ping. They are not required to keep `make gate-90` 
 
 ## Parked — still not green
 
+`READY_FOR_LIVE_TEST` is yes only for a concrete command in
+[`LIVE-PROBES.md`](LIVE-PROBES.md) that Jason has not run. Every recorded
+proof and every parked row on this page is no.
+
 | Item | What exists today | What is not true |
 | --- | --- | --- |
 | Mac specialist | Optional. Same `estate specialist --driver ollama` command as the recorded 5090 complete. | Not recorded on a Mac. Do not mark it green. Do not ping. |
-| Native MLX | Catalog card is a stub. `CELL_MLX_ENDPOINT` is only an OpenAI-compatible server, if you set it. | Native `specialist()` is not Supported. No Mac in CI. |
+| Native MLX | Catalog card is a stub. `CELL_MLX_ENDPOINT` is only an OpenAI-compatible server, if you set it. | Native `specialist()` is not Supported. No Mac in CI. Not live-ok. |
+| vLLM | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
+| TRT | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
 | Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. `estate status` says declared, not spawned. | Floor does not spawn. Locked off until Jason accepts a spawn driver. |
 
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
