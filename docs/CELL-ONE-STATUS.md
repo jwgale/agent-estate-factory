@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#57 plus this slice)
+## On `main` (PR #1-#58 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -194,13 +194,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 [`LIVE-PROBES.md`](LIVE-PROBES.md) holds a result row for Mac `estate specialist` complete. The coordinator is running that command. The row is **Pending**, not **PASS**, until a completion is pasted. Do not invent `pong` or `Pong` for the Mac. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. The Mac command from #55 stays the only open hand-off. This slice does not add another live test.
 
-## This slice
+## #58 in plain English
 
 `estate status` refuses (`refuse:proposal-unreadable`) when a `*.proposal.json` does not parse, or its id does not match the filename. It does that before the status page. A missing proposals directory is not a proposal. A parsed proposal still lists. The filename is not the proposal.
 
+## This slice
+
+`estate doctor` FAILs a present `conveyor-mesh.json` that does not parse, or whose hop `host_class` is not a class. It does that before `factory ready`. A missing mesh is not a failure: no expired hop leases. A note is not a pass.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#58 (plain English)
+## Bug fixes on #10-#59 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -252,6 +256,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #56 | Status and doctor treated a cell `catalog.json` that does not parse as a note and still exited 0. Apply already refused that file. | Status and doctor are `refuse:frontier-model` before the cell success line. A missing catalog is not a disagreement. READY no. |
 | #57 | The live-probe page had the Mac specialist command and no place to write the result, so a later edit could mark PASS before a completion was pasted. | The result row is **Pending**. It is not a PASS. Paste the completion before changing it. READY no. The #55 Mac command stays the open hand-off. |
 | #58 | Status listed an unreadable `*.proposal.json` by filename and still printed the page. | That file is `refuse:proposal-unreadable` before the status page. A missing directory is not a proposal. A parsed proposal still lists. READY no. |
+| #59 | Doctor printed a note for an unreadable conveyor mesh and could still say factory ready. A mesh with no placement file was not read. | That file is FAIL before factory ready. A missing mesh is not a failure. A hop host class that is not a class is the same FAIL. READY no. |
 
 ## Known-good local commands
 
