@@ -157,20 +157,24 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
                     fails.push(format!("expired {}", lease.placement_id));
                 }
             }
-            match list_expired_hop_leases(state_dir, hop_now_unix()) {
-                Ok(hops) if hops.is_empty() => println!("  ok    no expired hop leases"),
-                Ok(hops) => {
-                    for hop in hops {
-                        println!("  FAIL  refuse:expired: hop {}", hop.hop_id);
-                        fails.push(format!("expired hop {}", hop.hop_id));
-                    }
-                }
-                Err(err) => {
-                    println!("  note  hop leases: {err}");
-                }
-            }
         }
         Ok(None) => println!("  note  no placement-actual.json"),
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+        }
+    }
+    // Missing mesh is empty, not a failure. A present file that does not
+    // parse, or a hop host_class that is not a class, is FAIL. A note
+    // would still print "factory ready".
+    match list_expired_hop_leases(state_dir, hop_now_unix()) {
+        Ok(hops) if hops.is_empty() => println!("  ok    no expired hop leases"),
+        Ok(hops) => {
+            for hop in hops {
+                println!("  FAIL  refuse:expired: hop {}", hop.hop_id);
+                fails.push(format!("expired hop {}", hop.hop_id));
+            }
+        }
         Err(err) => {
             println!("  FAIL  {err}");
             fails.push(err.to_string());
