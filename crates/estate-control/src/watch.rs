@@ -180,6 +180,19 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
             fails.push(err.to_string());
         }
     }
+    // Missing lifecycle.json is the default record, not a file. Printing
+    // that default would invent suspended. A present file that does not
+    // parse is FAIL. A note would still print "factory ready".
+    let life_path = floor_supervisor::lifecycle_path(state_dir);
+    if life_path.exists() {
+        match load_lifecycle(state_dir) {
+            Ok(life) => println!("  ok    lifecycle.json state={}", life.state.as_str()),
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+            }
+        }
+    }
 
     println!("\nFrontier model");
     println!("--------------");
