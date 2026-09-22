@@ -266,6 +266,7 @@ pub(crate) fn cmd_apply(
             refuse_lease_host_classes(&places)?;
         }
     }
+    refuse_apply_catalog_mismatch(&estate, state_dir)?;
     if dry_run {
         return cmd_apply_dry_run(
             &estate,
@@ -408,6 +409,32 @@ pub(crate) fn cmd_apply(
         );
     }
     println!("{}", describe_placements(&estate));
+    Ok(())
+}
+
+/// Cell `catalog.json` versus the estate being applied. Missing file is
+/// not a disagreement. A present file that does not parse, or whose
+/// frontier model disagrees, refuses before any apply write. The schema
+/// card is not the binding. `--force` does not bypass this.
+fn refuse_apply_catalog_mismatch(
+    estate: &estate_schema::Estate,
+    state_dir: &Path,
+) -> Result<()> {
+    let path = state_dir.join("catalog.json");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))?;
+    let catalog = model_estate::frontier_model_from_catalog_json(&text).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:frontier-model: cell catalog unreadable ({err}); schema card is not the binding"
+        )
+    })?;
+    let bound =
+        model_estate::bound_frontier_model(estate).map_err(|err| anyhow::anyhow!("{err}"))?;
+    model_estate::refuse_catalog_frontier_mismatch(bound.as_deref(), catalog.as_deref())
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
     Ok(())
 }
 
