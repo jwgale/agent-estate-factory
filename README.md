@@ -2,13 +2,13 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Today's beachhead is curator packs and the specialist path. Packs are curator edit instructions. Control does not complete.
+Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. `estate enrich prepare` writes artifacts (Ollama Modelfile today, a portable manifest for the next trainer). Packs stay curator edit instructions. Control does not complete.
 
-**Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
+**Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
 Day 0–90 is on `main` (A1–A4, A5–A9, A10–A12 beachhead) on the same Horizon / Research / Sanctum estate. Day 90+ is real-world proof on Jason's boxes, plus parked stubs. Pause-safe. Charter (locked defaults): [`charter.md`](charter.md).
 
-Opt-in, off the gate: `make real-world`, `estate help frontier`, and `make day90-mixed`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
+Opt-in, off the gate: `make real-world`, `estate help frontier`, `make day90-mixed`, `estate help enrich`, and `make enrich-prepare`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked. Enrich prepare writes artifacts and does not train.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
 
@@ -21,8 +21,9 @@ make gate-60
 make gate-90      # local Day-90 entrypoint: smoke + day90 + doctor --strict + checklist
 make feed-loop    # fixtures only: scrubbed trace → pack → propose → accept
 make real-world   # opt-in live-box ladder: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT
+make enrich-prepare # opt-in: Modelfile + external manifest; not a live train; not in smoke or gate-90
 make operator-day # fixtures only: suspend → plan → apply → feed import → resume
-estate help       # Day-90 topics, including north-star and charter
+estate help       # Day-90 topics, including north-star, charter, and enrich
 ```
 
 Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` / `make real-world` stay local. Do not add `cargo test`, `make gate-90`, or `make real-world` to Actions — gate-90 wraps the local test suite. Walk without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md). Product page: [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md). Words: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). `.cell/` paths: [`docs/cell-layout.md`](docs/cell-layout.md).
@@ -146,7 +147,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 | Ollama-first | Today's entrant in the local-runtime seat: the `ollama` driver. llama.cpp swaps on the same protocol. The seat stays open. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work stops on `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. Today's beachhead, with the specialist path. Suite goal: facilitate train/enrich of purpose-built small models. Drop zone: [`packs/`](packs/). |
+| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. `estate enrich prepare` writes artifacts from a pack and does not train. Drop zone: [`packs/`](packs/). See [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). |
 | Supported | `ollama` and llama.cpp green on the box. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver choice. |
 | Apple | Ollama-on-Mac is the supported Apple runtime. Same `ollama` driver. |

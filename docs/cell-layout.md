@@ -21,6 +21,7 @@ placement / lifecycle / sessions, `estate-control` suggest / audit export,
 | `sessions.jsonl` | durable journal | Append-only spawn / unspawn / suspend / resume. Not SoT. Survives pause. |
 | `apply-audit.jsonl` | durable | Gated apply history. Cloud-agent spawned is always refuse. |
 | `catalog.json` | regenerable | Portable local catalog dump. File SoT is `schema/local-catalog.v0.json`. |
+| `enrich/{pack_id}/{driver}/` | regenerable artifacts | `estate enrich prepare` default. Writes `prepare.json` (`cell-one.enrich-prepare.v0`), `PREPARE.md`, and driver files (`Modelfile`, or `manifest.json` + `manifest.yaml`). Does not rewrite the estate. Does not train. Not copied by backup. `--out` can point at `packs/prepared/` instead. |
 | `model-actual.json` | regenerable | Binding actual after apply. |
 | `conveyor-mesh.json` | durable | Capability mesh (not a gateway). Also split as hops + leases below. |
 | `conveyor-hops.json` | durable | Declared hops. |

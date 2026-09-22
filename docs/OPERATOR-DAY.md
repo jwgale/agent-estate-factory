@@ -75,7 +75,18 @@ make day90-mixed
 
 `make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml` on an isolated cell: status, plan, apply with a plan, status, doctor. It then validates `examples/hosts/frontier-http.yaml` and prints status. Both name `model: grok-4.7` on the frontier `http-remote` binding. The host file is not applied and is not a host-class alias. It is not on `make smoke` or fixtures-check. `examples/estate.yaml` stays hash-locked and does not invent a binding model. No live key. A sacred prompt still refuses when `CELL_FRONTIER_MODEL` is a hardware SKU; the SKU model path is not the refusal.
 
-## 4. Backup rotate
+## 4. Enrich prepare (opt-in, not a train)
+
+Not part of `make smoke` or `make gate-90`.
+
+```bash
+estate help enrich
+make enrich-prepare
+```
+
+`make enrich-prepare` uses `examples/fixtures/specialist-overnight.pack.json` and writes both drivers under `target/enrich-prepare-cell`. You get a Modelfile plus `ollama create` steps, and a portable manifest. The script does not call Ollama and does not change `examples/estate.yaml`. Page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
+
+## 5. Backup rotate
 
 Use an isolated cell so the walk does not touch a real `.cell/`.
 

@@ -49,6 +49,7 @@ const VANILLA_REQUIRED: &[&str] = &[
     "schema/estate-plan.v0.json",
     "schema/feed-cursor.v0.json",
     "schema/enrich-proposal.v0.json",
+    "schema/train-enrich.v0.json",
     "schema/apply-dry-run.v0.json",
     "schema/session-journal.v0.json",
     "schema/policy.v0.json",

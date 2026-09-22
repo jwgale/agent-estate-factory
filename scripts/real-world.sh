@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs."
+echo "train/enrich: make enrich-prepare writes artifacts only (docs/TRAIN-ENRICH.md). Not a live train."
 echo
 
 echo "== cargo check --workspace --locked (make check) =="

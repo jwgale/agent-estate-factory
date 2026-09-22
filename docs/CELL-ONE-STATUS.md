@@ -19,6 +19,10 @@ not a PASS; not in smoke or Actions). Feed packs stay curator edit
 instructions. Control does not complete. Mac specialist
 complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
+## Train/enrich prepare (this slice)
+
+You can prepare an enrich job for a purpose-built SLM. `estate enrich prepare` reads a pack and writes files. The default driver writes an Ollama Modelfile and the `ollama create` command in `PREPARE.md`. A second driver writes a portable manifest a later trainer can read. The factory does not run the trainer, does not call Ollama, and does not change `estate.yaml`. Promote stays off. A sacred line, a hardware SKU, a missing pack, the wrong curator, or a frontier tag with no frontier binding stops before those files exist. `make enrich-prepare` checks both drivers on a throwaway directory. It is not part of smoke or GitHub Actions. `READY_FOR_LIVE_TEST`: no. Page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
+
 ## On `main` (PR #1–#82)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
@@ -381,7 +385,8 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #81 | `convey expire --forget` dropped an expired spawned cloud hop lease. | That lease is a refuse before the list and before the rewrite. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop. READY no. |
 | #82 | `convey leases` printed hop lease JSON when a cloud-mesh hop lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing mesh is not a spawned lease. The mesh is not rewritten. READY no. |
 | #84 | The README led with the Day-90 gate and catalog experiments, so the one-box factory was easy to miss. | North-star one-pager. `make real-world` is opt-in: check, vanilla doctor, live SKIP without an endpoint. Not in smoke or Actions. Distillation and a gateway stay non-goals. READY no. |
-| this slice | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Local runtime is an ecosystem seat; Ollama is today's entrant. Purpose-built SLM train/enrich is facilitated. Beachhead stays packs and the specialist path. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. READY no. |
+| #85 | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Local runtime is an ecosystem seat; Ollama is today's entrant. Purpose-built SLM train/enrich is facilitated. Beachhead stays packs and the specialist path. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. READY no. |
+| this slice | Packs and the specialist path were the only train/enrich beachhead. Nothing wrote a Modelfile or a portable trainer manifest. | `TrainEnrichDriver` prepares artifacts. `ollama-modelfile` joins Ollama create. `external-manifest` is the hatch. Sacred, SKU, curator, missing pack, and frontier-invent refuse before write. No train POST. No estate rewrite. `make enrich-prepare` is opt-in. READY no. |
 
 ## Known-good local commands
 
@@ -397,7 +402,8 @@ make fixtures-check   # fixture files only
 make doctor-strict    # pre-merge extras
 make check            # cargo check --workspace --locked (same as Actions)
 make real-world       # opt-in: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT (not in smoke)
-estate help           # Day-90 topics, including frontier and day90-mixed
+make enrich-prepare   # opt-in: Modelfile + external manifest; not a live train (not in smoke)
+estate help           # Day-90 topics, including enrich, frontier, and day90-mixed
 ```
 
 `make gate-90` does not invoke `gh` or GitHub Actions.

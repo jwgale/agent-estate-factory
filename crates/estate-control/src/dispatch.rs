@@ -3,7 +3,7 @@ use clap::Parser;
 use estate_schema::{describe, load_estate_unvalidated, validate};
 use std::path::Path;
 
-use crate::cli::{AuditCommand, Cli, Command, ConveyCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
+use crate::cli::{AuditCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
 use crate::ops::*;
 use crate::plan_apply::*;
 use crate::watch::*;
@@ -177,6 +177,28 @@ pub(crate) fn run() -> Result<()> {
             ConveyCommand::Leases { state_dir } => cmd_convey_leases(&state_dir),
             ConveyCommand::Sync { state_dir } => cmd_convey_sync(&state_dir),
             ConveyCommand::Expire { state_dir, forget } => cmd_convey_expire(&state_dir, forget),
+        },
+        Command::Enrich { command } => match command {
+            EnrichCommand::Prepare {
+                estate,
+                pack,
+                packs_dir,
+                driver,
+                out,
+                state_dir,
+                job,
+                curator,
+            } => crate::enrich::cmd_enrich_prepare(
+                &estate,
+                &pack,
+                &packs_dir,
+                &driver,
+                out.as_deref(),
+                &state_dir,
+                &job,
+                &curator,
+            ),
+            EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },
         Command::Packs { command } => match command {
             PacksCommand::List { drop_dir } => cmd_feed_list(&drop_dir),

@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory charter
 
-Status: Day 0–90 **on main** (A1–A4 locked, A5–A9 locked, Day 61–90 beachhead toward A10–A12). Day 90+ is **real-world proof** plus parked stubs — not more beachhead invent. Edits to this file are how defaults change. Factory altitude, not a product spine. Locked defaults below are unchanged.
+Status: Day 0–90 **on main** (A1–A4 locked, A5–A9 locked, Day 61–90 beachhead toward A10–A12). Day 90+ is **real-world proof** plus parked stubs, and a train/enrich facilitation beachhead (`TrainEnrichDriver` prepares artifacts; it does not run a trainer). Edits to this file are how defaults change. Factory altitude, not a product spine. Locked SLM runtime defaults below are unchanged.
 
 Schema (desired-state shape): [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json)  
 Example estate: [`examples/estate.yaml`](examples/estate.yaml)  
@@ -25,6 +25,7 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 10. **Pause-safe SoT:** charter, estate file, schema, lane roots, `plans/`, gate reports. Disposable: PIDs, warm desktops/session dirs, caches. Apply writes regenerable `actual-state.json`, `desired-snapshot.yaml`, `model-actual.json`, `placement-actual.json`. Operator lifecycle (`estate suspend` / `resume`) writes durable `.cell/lifecycle.json` + `lifecycle.jsonl` — not estate SoT. Apply may be gated on a covering plan (`--require-plan` / `--require-fresh-plan`) and is audited.
 11. **Language:** Rust default on the hot path (conveyor allow/deny, isolation, supervisor core, mixed-path authorize). Escape hatches allowed. Not forever-Rust. Model drivers are traits; the local specialist process may be any language.
 12. **Day 61–90 beachhead (toward A10–A12, not a full workday):** feed materializes candidate enrich packs (manual, no auto-promote). Operator suspend/resume is file-durable. Plans are the human control surface (PR-reviewable blast-radius). `placements[]` declares `box` and a `cloud-agent` stub so Day-90 operator day is not schema-blocked. Floor does not spawn cloud agents. Wave 3 adds `estate reconcile`, `estate packs propose` (never applied), multi-host fixture, and local `estate audit export`. Overnight assumptions: [`docs/overnight-decisions.md`](docs/overnight-decisions.md).
+13. **Day 90+ train/enrich beachhead:** `TrainEnrichDriver` lives in the data plane (`model-estate`). `estate enrich prepare` writes artifacts. `ollama-modelfile` joins the seated Ollama runtime (`ollama create`, Modelfile `FROM` + `SYSTEM`). `external-manifest` is a portable JSON/YAML hatch for a later trainer. A third entrant is another catalog card. This does not run LoRA/SFT/DPO, does not POST a train job, does not auto-promote, and does not rewrite the estate. Locked SLM runtime rules above stay closed. Operator page: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md).
 
 ## Flexibility (must survive)
 
@@ -35,6 +36,7 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 - Compiled intentions are pure functions of the estate (plus hash). No silent policy learning.
 - Local specialist endpoint is config (`CELL_LOCAL_ENDPOINT`), not a compiled host.
 - Swap the local *runtime* (Ollama ↔ llama.cpp ↔ later MLX) through catalog / route / bind. Do not fork the product per GPU or SoC.
+- Swap the train/enrich driver (`ollama-modelfile`, `external-manifest`, a later entrant) by registering a `TrainEnrichDriver` card. Floor core and control dispatch do not learn the trainer.
 
 ## Anti-shrink
 
