@@ -108,7 +108,11 @@ a line count. A journal file that does not parse is FAIL before factory
 ready. A parsed file prints its line count. A missing
 actual-state.json is not a failure, and doctor does not invent a
 session count. A state file that does not parse is FAIL before factory
-ready. A parsed file prints its session count. Cloud-agent
+ready. A parsed file prints its session count. A missing
+desired-snapshot.yaml is not a failure, and doctor does not invent a
+frontier model from it. A snapshot that does not parse is FAIL before
+factory ready when no cell catalog is present. A parsed snapshot prints
+its name. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
