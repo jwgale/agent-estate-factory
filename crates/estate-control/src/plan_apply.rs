@@ -412,11 +412,11 @@ pub(crate) fn cmd_apply(
     Ok(())
 }
 
-/// Cell `catalog.json` versus the estate being applied. Missing file is
-/// not a disagreement. A present file that does not parse, or whose
-/// frontier model disagrees, refuses before any apply write. The schema
-/// card is not the binding. `--force` does not bypass this.
-fn refuse_apply_catalog_mismatch(
+/// Cell `catalog.json` versus the estate being applied, resumed, or
+/// pause-proved. Missing file is not a disagreement. A present file that
+/// does not parse, or whose frontier model disagrees, refuses before any
+/// write. The schema card is not the binding. `--force` does not bypass this.
+pub(crate) fn refuse_apply_catalog_mismatch(
     estate: &estate_schema::Estate,
     state_dir: &Path,
 ) -> Result<()> {

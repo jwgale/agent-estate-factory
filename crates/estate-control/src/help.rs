@@ -145,6 +145,8 @@ host-class-mismatch, cloud-spawned, sacred-id, expired.
 An estate with no frontier binding refuses (refuse:frontier-invent)
 before reconcile.json, a suggest patch, or a resume catalog write.
 It does not invent a frontier source_driver or the schema card.
+A cell catalog that disagrees with the binding is refuse:frontier-model
+before resume or pause-proof writes. The schema card is not the binding.
 Jason still edits leases / the estate by hand.
 ";
 
