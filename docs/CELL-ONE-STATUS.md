@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#46 plus this slice)
+## On `main` (PR #1-#47 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -150,17 +150,21 @@ Apply and resume write the cell catalog frontier model from the estate binding. 
 
 `estate reconcile` and `estate resume` refuse (`refuse:frontier-invent`) when the estate has no frontier binding. They do that before `reconcile.json`, a suggest patch, or a resume catalog write. The schema card and `CELL_FRONTIER_MODEL` are not copied. An estate that already has a frontier binding still reconciles and resumes. Unset `params.model` stays empty.
 
-## This slice
+## #47 in plain English
 
 Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.json` frontier model disagrees with the binding. It does that before leases, an unchanged audit, or a catalog rewrite. A missing catalog is not a disagreement. A matching catalog still applies. `--force` does not overwrite the disagreement. The schema card is not the binding.
 
-No new CLI. Smoke and `make gate-90` unchanged.
+## This slice
+
+`estate models` prints `model=-` when the binding sets no model, even if `CELL_FRONTIER_MODEL` is `grok-4.7`. `estate catalog` still dumps the schema card and labels it `(schema card, not a binding)`. It refuses (`refuse:frontier-model`) before overwriting a catalog whose frontier model is not that card. A missing file still receives the schema dump. An unset binding stays empty.
+
+Operator-day and fixtures-check write that schema dump beside the cell catalog. They do not plant `grok-4.7` onto a bound cell. No new CLI. No new smoke or gate-90 step.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#47 (plain English)
+## Bug fixes on #10-#48 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -201,6 +205,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #45 | A cell catalog could name `grok-4.7` (the schema card) while the binding set no model, and status and doctor still looked successful. | That disagreement is `refuse:frontier-model` before the cell success line. Empty and missing stay `model=-`. The schema card stays labeled schema. READY no. |
 | #46 | Reconcile and resume still ran on an estate with no frontier binding, and resume could write a cell catalog from the schema card. | That estate is `refuse:frontier-invent` before `reconcile.json`, a suggest patch, or a resume catalog write. A frontier binding with no model still resumes, and the cell model stays empty. READY no. |
 | #47 | Live apply rewrote a cell catalog that disagreed with the binding, including a schema-card `grok-4.7` on an unset model. | That disagreement is `refuse:frontier-model` before leases, an unchanged audit, or a catalog rewrite. A missing catalog still applies. `--force` does not overwrite it. READY no. |
+| #48 | `estate catalog` wrote the schema card `grok-4.7` over a cell catalog whose binding set no model. `estate models` could be read as that card when `CELL_FRONTIER_MODEL` was set. | Models print `model=-` for an unset binding. Catalog labels the schema card and refuses the overwrite. A missing file still gets the schema dump. READY no. |
 
 ## Known-good local commands
 
