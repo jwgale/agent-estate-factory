@@ -956,3 +956,128 @@ fn status_and_doctor_refuse_a_cell_catalog_that_disagrees_with_the_binding() {
     );
     let _ = std::fs::remove_dir_all(&mixed_state);
 }
+
+#[test]
+fn reconcile_and_resume_refuse_inventing_frontier_without_a_binding() {
+    let root = repo_root();
+    let bin = env!("CARGO_BIN_EXE_estate");
+    let dir = tmp("reconcile-resume-invent");
+    let estate = dir.join("local-only.yaml");
+    std::fs::write(
+        &estate,
+        "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n",
+    )
+    .unwrap();
+
+    let run = |args: &[&str], state: &std::path::Path| {
+        let out = Command::new(bin)
+            .args(args)
+            .env_remove("XAI_API_KEY")
+            .env_remove("CELL_FRONTIER_ENDPOINT")
+            .env_remove("CELL_LOCAL_ENDPOINT")
+            .env("CELL_FRONTIER_MODEL", "grok-4.7")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let names: Vec<_> = std::fs::read_dir(state)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        (out.status.success(), text, names)
+    };
+
+    let state = dir.join("refused");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate_s = estate.display().to_string();
+    let state_s = state.display().to_string();
+    for args in [
+        vec!["reconcile", "--estate", &estate_s, "--state-dir", &state_s],
+        vec![
+            "reconcile",
+            "--suggest",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+        ],
+        vec![
+            "resume",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+            "--roots-base",
+            &state_s,
+        ],
+    ] {
+        let (ok, text, names) = run(&args, &state);
+        assert!(!ok, "{text}");
+        assert!(text.contains("refuse:frontier-invent"), "{text}");
+        assert!(
+            text.contains("will not invent a frontier source_driver"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("grok-4.7"),
+            "refuse must not copy the schema card or CELL_FRONTIER_MODEL: {text}"
+        );
+        assert!(
+            !text.contains("source_drivers=frontier"),
+            "{text}"
+        );
+        assert!(
+            names.is_empty(),
+            "refused {} must not write: {names:?}",
+            args[0]
+        );
+    }
+
+    let bound_state = dir.join("bound");
+    std::fs::create_dir_all(&bound_state).unwrap();
+    let locked = root.join("examples/estate.yaml");
+    let (ok, text, _) = run(
+        &[
+            "resume",
+            "--estate",
+            &locked.display().to_string(),
+            "--state-dir",
+            &bound_state.display().to_string(),
+            "--roots-base",
+            &bound_state.display().to_string(),
+        ],
+        &bound_state,
+    );
+    assert!(ok, "{text}");
+    assert!(
+        !text.contains("refuse:frontier-invent"),
+        "a frontier binding with no model still resumes: {text}"
+    );
+    let catalog = std::fs::read_to_string(bound_state.join("catalog.json")).unwrap();
+    assert!(
+        !catalog.contains("grok-4.7"),
+        "resume must not copy the schema card when the binding sets no model: {catalog}"
+    );
+    let (ok, text, names) = run(
+        &[
+            "reconcile",
+            "--suggest",
+            "--estate",
+            &locked.display().to_string(),
+            "--state-dir",
+            &bound_state.display().to_string(),
+        ],
+        &bound_state,
+    );
+    assert!(ok, "{text}");
+    assert!(names.iter().any(|n| n == "reconcile.json"), "{names:?}");
+    assert!(
+        names.iter().any(|n| n == "reconcile-suggest.md"),
+        "{names:?}"
+    );
+    assert!(!text.contains("grok-4.7"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
