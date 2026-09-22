@@ -338,7 +338,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(parsed.as_deref(), Some("grok-4.7"));
-        assert!(frontier_model_from_catalog_json(r#"{\"cards\":[]}"#)
+        assert!(frontier_model_from_catalog_json(r#"{"cards":[]}"#)
             .unwrap()
             .is_none());
         assert!(frontier_model_from_catalog_json("not-json").is_err());
