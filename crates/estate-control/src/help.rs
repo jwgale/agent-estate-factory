@@ -97,7 +97,10 @@ mesh as no expired hop leases. A mesh that does not parse, or a hop
 host class that is not a class, is FAIL before factory ready. A missing
 lifecycle.json is not a failure, and doctor does not invent suspended.
 A lifecycle file that does not parse is FAIL before factory ready. A
-parsed file prints its state. A missing apply-audit.jsonl is not a
+parsed file prints its state. Status does not invent suspended for a
+missing lifecycle.json. It prints paused: - and lifecycle: -. A
+lifecycle file that does not parse is a refuse before the status page.
+A parsed file prints paused and its state. A missing apply-audit.jsonl is not a
 failure, and doctor does not invent a line count. An audit file that
 does not parse is FAIL before factory ready. A parsed file prints its
 line count. A missing lifecycle.jsonl is not a failure, and doctor

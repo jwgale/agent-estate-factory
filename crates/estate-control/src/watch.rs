@@ -322,7 +322,15 @@ pub(crate) fn cmd_status(
     root: &Path,
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
-    let life = load_lifecycle(state_dir)?;
+    // Missing lifecycle.json is the default record, not a file. Printing
+    // that default would invent suspended and durable=true. A present
+    // file that does not parse is refuse before the page. A parsed file
+    // prints its state. estate doctor already refuses that file.
+    let life = if floor_supervisor::lifecycle_path(state_dir).exists() {
+        Some(load_lifecycle(state_dir)?)
+    } else {
+        None
+    };
     let report = drift_with_roots(&estate, state_dir, Some(roots_base))?;
     let places = load_placements(state_dir)?;
     if let Some(actual) = places.as_ref() {
@@ -375,14 +383,25 @@ pub(crate) fn cmd_status(
     {
         doctor = "FAIL (1)".into();
     }
-    let paused = life.state == floor_supervisor::LifecycleState::Suspended;
-
     println!("Cell One status");
     println!("===============");
     println!("estate: {} ({})", estate.name, path.display());
     println!("hash: {}", estate_hash(&estate));
-    println!("paused: {}", if paused { "yes" } else { "no" });
-    println!("lifecycle: {} (durable={})", life.state.as_str(), life.durable);
+    match life {
+        None => {
+            println!("paused: -");
+            println!("lifecycle: -");
+        }
+        Some(life) => {
+            let paused = life.state == floor_supervisor::LifecycleState::Suspended;
+            println!("paused: {}", if paused { "yes" } else { "no" });
+            println!(
+                "lifecycle: {} (durable={})",
+                life.state.as_str(),
+                life.durable
+            );
+        }
+    }
     println!(
         "leases: {lease_n} (box={box_n} cloud-agent={cloud_n} spawned={spawned_n})"
     );
