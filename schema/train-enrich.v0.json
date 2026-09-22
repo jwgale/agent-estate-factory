@@ -8,9 +8,9 @@
   "host_class_affinity": "any",
   "source_paths": ["feed/events.jsonl"],
   "source_drivers": [],
-  "artifacts": ["Modelfile", "PREPARE.md", "prepare.json"],
+  "artifacts": ["Modelfile", "NEXT.md", "PREPARE.md", "prepare.json"],
   "promoted": false,
   "auto_apply": false,
   "estate_rewritten": false,
-  "note": "Prepared artifacts only. Does not train, does not POST, does not rewrite the estate, does not auto-promote. external-manifest writes manifest.json and manifest.yaml (base_model, purpose, host_class_affinity, dataset_paths) for a later trainer."
+  "note": "Prepared artifacts only. Does not train, does not POST, does not rewrite the estate, does not auto-promote. NEXT.md is the operator handoff. external-manifest writes manifest.json and manifest.yaml (base_model, purpose, host_class_affinity, dataset_paths) for a later trainer."
 }

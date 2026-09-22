@@ -65,6 +65,14 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## This slice — prepare, list, import-prepared
+
+- `estate enrich prepare --all-drivers` writes every `TrainEnrichDriver` card into sibling directories. One refuse writes none of them. Each directory gains `NEXT.md`: artifact paths, the exact handoff (`ollama create … -f <Modelfile>` or the external manifest files), the `import-prepared` line, and fail-closed reminders. Prepare still does not shell out, train, POST, promote, or rewrite `estate.yaml`.
+- `estate enrich list` reads `{state_dir}/enrich/{pack}/{driver}/prepare.json` and prints pack, driver, job, tag, and out path. A missing directory is `refuse:enrich-index`. List does not create it and does not write.
+- `estate enrich import-prepared` checks `prepare.json`, the tag `cell-enrich-{pack_id}`, and an operator file. It writes `binding-proposal.json` and `binding-proposal.md` (`cell-one.enrich-binding-proposal.v0`) for the existing `local_slm` seat. Paste the snippet, then `estate plan` and `estate apply --require-plan`. Sacred, SKU, curator, missing path, and frontier-invent refuse before that proposal exists. `auto_apply` stays false.
+- Opt-in `make enrich-prepare` walks prepare, list, and import on a throwaway directory. Not in smoke, gate-90, or Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — spine links
 
 - North star, ubiquitous language, charter, and README point at the prepare page [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md) and the walks [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md). `estate help enrich` names the journeys page. No new command. No trainer. `READY_FOR_LIVE_TEST`: no.

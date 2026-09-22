@@ -6,7 +6,7 @@ Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
-This page adds no command, no crate, and no trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page.
+Commands on this page: `estate enrich prepare`, `estate enrich list`, and `estate enrich import-prepared`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page.
 
 ## What stays fixed
 
@@ -53,6 +53,30 @@ SYSTEM You are the Cell One specialist for this pack. Answer the job and stop.
 ollama create cell-one-specialist -f Modelfile
 ```
 
+### Factory loop
+
+The same join, with the factory writing the files and the proposal. Prepare does not run `ollama create`. List reads `.cell/enrich` and refuses when that directory is missing. Import writes a proposal for the existing `local_slm` seat. You still paste, then plan and apply.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack.json> \
+  --all-drivers \
+  --state-dir .cell
+
+estate enrich list --state-dir .cell
+
+ollama create cell-enrich-<pack-id> -f .cell/enrich/<pack-id>/ollama-modelfile/Modelfile
+
+estate enrich import-prepared \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/ollama-modelfile \
+  --tag cell-enrich-<pack-id> \
+  --path .cell/enrich/<pack-id>/ollama-modelfile/Modelfile
+```
+
+`NEXT.md` in the prepared directory has those paths filled in. The tag is `cell-enrich-{pack_id}`. A different tag is `refuse:tag`. A hardware SKU or a sacred token in the tag or the file is a refuse before `binding-proposal.json` exists. The proposal's `auto_apply` is false. `examples/estate.yaml` on `main` stays hash-locked. Paste the snippet into the lab estate, then `estate plan` and `estate apply --require-plan`.
+
 4. Point the seat at that process and complete once. Same verb as the recorded live rows.
 
 ```bash
@@ -98,7 +122,7 @@ Plan the driver edit before apply. The id string `local_slm` does not change, so
 
 ## 3. Hand an external manifest to a trainer
 
-GPU training stays off this factory. `estate enrich prepare --driver external-manifest` writes a portable JSON/YAML hatch. See [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Jason also writes an operator note and hands that file to a trainer outside the factory. The factory does not parse that note, apply it, or store it as estate source of truth.
+GPU training stays off this factory. `estate enrich prepare --driver external-manifest` writes a portable JSON/YAML hatch. `--all-drivers` writes that hatch next to the Modelfile. See [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `NEXT.md` names `manifest.json` and `manifest.yaml`. Jason hands those files to a trainer outside the factory. The factory does not parse an operator note, apply it, or store it as estate source of truth. When weights return, load them on the seated runtime as `cell-enrich-{pack_id}` and run `estate enrich import-prepared` with `--path` pointing at that file. The proposal still waits for plan and apply.
 
 Write it outside the estate file and outside `.cell/`. Name the file `external-manifest.md`. Copy the accept file for the pack id, curator, policy, `source_drivers`, and estate hash. `host_class` and `job` come from the estate binding you apply. `serve_with` and `serve_as` are notes for the trainer: which entrant will load the weights, and the slug from journey 1.
 

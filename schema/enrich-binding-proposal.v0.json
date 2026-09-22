@@ -1,0 +1,35 @@
+{
+  "schema": "cell-one.enrich-binding-proposal.v0",
+  "curator": "jason",
+  "policy": "manual",
+  "auto_apply": false,
+  "promoted": false,
+  "estate_rewritten": false,
+  "estate_name": "cell-one-synthetic",
+  "estate_hash": "sha256:documentary",
+  "prepared_dir": ".cell/enrich/overnight-traces/ollama-modelfile",
+  "pack_id": "overnight-traces",
+  "driver": "ollama-modelfile",
+  "job": "enrich",
+  "local_tag": "cell-enrich-overnight-traces",
+  "local_path": ".cell/enrich/overnight-traces/ollama-modelfile/Modelfile",
+  "binding_id": "local_slm",
+  "seated_driver": "ollama",
+  "content_scanned": true,
+  "proposed_binding": {
+    "id": "local_slm",
+    "class": "local",
+    "driver": "ollama",
+    "wired": true,
+    "params": {
+      "host_class": "any",
+      "endpoint_env": "CELL_LOCAL_ENDPOINT",
+      "job": "policy-precheck",
+      "model": "cell-enrich-overnight-traces",
+      "prepared_pack": "overnight-traces",
+      "prepared_driver": "ollama-modelfile"
+    }
+  },
+  "paste_yaml": "# Replace the existing local_slm binding. The id stays local_slm. This file is not applied.\n- id: local_slm\n  class: local\n  driver: \"ollama\"\n  wired: true\n  params:\n    model: \"cell-enrich-overnight-traces\"\n",
+  "note": "Proposal only. auto_apply=false. Replace the existing local_slm binding with the snippet, then estate plan and estate apply --require-plan. import-prepared does not apply, does not promote, and does not rewrite the estate."
+}

@@ -473,10 +473,14 @@ pub(crate) enum EnrichCommand {
         pack: PathBuf,
         #[arg(long, default_value = "packs")]
         packs_dir: PathBuf,
-        /// TrainEnrichDriver id. Default joins the seated Ollama runtime.
-        #[arg(long, default_value = "ollama-modelfile")]
-        driver: String,
+        /// TrainEnrichDriver id. Omit for the first catalog card. Not with --all-drivers.
+        #[arg(long)]
+        driver: Option<String>,
+        /// Prepare every registered driver into sibling directories.
+        #[arg(long, default_value_t = false)]
+        all_drivers: bool,
         /// Final directory. Default: `{state_dir}/enrich/{pack_id}/{driver}`.
+        /// With --all-drivers, each driver writes to `{out}/{driver}`.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
@@ -484,6 +488,28 @@ pub(crate) enum EnrichCommand {
         /// `enrich` (default) or `train`. A label on the artifact. Does not run a trainer.
         #[arg(long, default_value = "enrich")]
         job: String,
+        /// Import gate. Must match locked curator `jason`.
+        #[arg(long, default_value = "jason")]
+        curator: String,
+    },
+    /// List prepared packs under `{state_dir}/enrich`. Does not create the directory.
+    List {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Validate a prepare dir and write a local_slm binding proposal. Does not apply.
+    ImportPrepared {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Directory that holds prepare.json.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.
+        #[arg(long)]
+        tag: String,
+        /// File the operator loaded (Modelfile or returned weights). Must exist.
+        #[arg(long)]
+        path: PathBuf,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,

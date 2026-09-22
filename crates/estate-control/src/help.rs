@@ -317,19 +317,36 @@ Default job is enrich. Prepare writes artifacts. It does not train.
   estate enrich drivers
   estate enrich prepare --estate examples/estate.yaml \\
     --pack examples/fixtures/specialist-overnight.pack.json \\
-    --driver ollama-modelfile
-  estate enrich prepare --pack examples/fixtures/specialist-overnight.pack.json \\
-    --driver external-manifest --out target/enrich-manifest
+    --all-drivers --state-dir .cell
+  estate enrich list --state-dir .cell
+  estate enrich import-prepared --estate examples/estate.yaml \\
+    --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
+    --tag cell-enrich-overnight-traces \\
+    --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
   make enrich-prepare
 
 TrainEnrichDriver lives in the data plane (model-estate).
 Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM)
 and external-manifest (portable JSON/YAML, no vendor lock).
 A later entrant adds one catalog card. Floor and control dispatch
-do not match driver ids.
+do not match driver ids. --all-drivers prepares every card into
+sibling directories. Omit --driver for the first card.
+
+Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
+NEXT.md has the handoff command, artifact paths, and fail-closed
+reminders. The factory does not shell out to ollama create.
+
+estate enrich list reads {state}/enrich and refuses when that
+directory is missing. It does not create the directory.
+
+estate enrich import-prepared checks prepare.json plus the tag and
+path you created outside the factory. It writes binding-proposal.json
+and binding-proposal.md for the existing local_slm seat. Paste the
+snippet, then estate plan and estate apply --require-plan.
+import-prepared does not apply.
 
 Default out is .cell/enrich/{pack}/{driver}. See docs/cell-layout.md.
-Alternate: --out (for example packs/prepared/).
+With --all-drivers and --out, each driver writes to {out}/{driver}.
 Sacred text, a hardware SKU, a missing pack, the wrong curator, and a
 frontier source_driver with no frontier binding refuse before any write.
 estate.yaml is not rewritten. Promote stays off. No train POST.
