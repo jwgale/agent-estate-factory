@@ -92,7 +92,9 @@ A cell catalog that disagrees is `refuse:frontier-model`. A cell catalog
 that does not parse is the same refuse, before the cell success line.
 A missing catalog is not a disagreement. An unreadable proposal file
 is `refuse:proposal-unreadable` before the status page. A missing
-proposals directory is not a proposal. Cloud-agent
+proposals directory is not a proposal. Doctor treats a missing conveyor
+mesh as no expired hop leases. A mesh that does not parse, or a hop
+host class that is not a class, is FAIL before factory ready. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
