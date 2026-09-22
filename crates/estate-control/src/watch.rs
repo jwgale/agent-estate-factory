@@ -436,13 +436,16 @@ pub(crate) fn cmd_status(
     }
     print_catalog_frontier("cell", &cell_catalog);
     println!("in_sync: {}", report.in_sync);
-    println!("cloud-agent: declared, not spawned");
+    // A spawned cloud-agent lease is a refuse before the line that
+    // would say it is not spawned. An empty list still prints that
+    // line. The lease file is not rewritten.
     if !report.spawned_cloud_agents.is_empty() {
         bail!(
             "cloud-agent lease spawned (fail closed): {}",
             report.spawned_cloud_agents.join(", ")
         );
     }
+    println!("cloud-agent: declared, not spawned");
     Ok(())
 }
 
