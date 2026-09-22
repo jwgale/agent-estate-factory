@@ -193,6 +193,30 @@ fn snapshot_sacred_refuses(
     Ok(Vec::new())
 }
 
+/// A missing placement file is not a spawned cloud lease. A present file
+/// that does not parse is a refuse before the archive. A spawned
+/// cloud-agent lease is `refuse:cloud-spawned` so the backup meta cannot
+/// record `cloud_agent_spawned: false` over that file.
+fn placement_spawn_refuses(cell_dir: &Path) -> Result<Vec<String>, SupervisorError> {
+    let path = cell_dir.join("placement-actual.json");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let Some(actual) = load_placements(cell_dir)? else {
+        return Ok(Vec::new());
+    };
+    let mut hits = Vec::new();
+    for lease in &actual.leases {
+        if lease.kind == "cloud-agent" && lease.spawned {
+            hits.push(format!(
+                "refuse:cloud-spawned: lease '{}' is spawned",
+                lease.placement_id
+            ));
+        }
+    }
+    Ok(hits)
+}
+
 fn cell_inconsistencies(
     cell_dir: &Path,
     plans_dir: Option<&Path>,
@@ -206,5 +230,6 @@ fn cell_inconsistencies(
         roots.push(plans.to_path_buf());
     }
     refuses.extend(frontier_driver_refuses(&roots, &bound)?);
+    refuses.extend(placement_spawn_refuses(cell_dir)?);
     Ok(refuses)
 }
