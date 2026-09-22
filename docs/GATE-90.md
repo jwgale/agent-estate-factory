@@ -90,7 +90,7 @@ estate doctor --strict
 | Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
 | `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture, then validate + status on `examples/hosts/frontier-http.yaml`; no live key; not in smoke / Actions |
-| Frontier model on status / doctor | green | Binding line only when `params.model` is set. Schema card stays `grok-4.7`. Cell catalog after apply copies the bound model, or `model=-` when the binding sets none. Plan and dry-run print that bound model. No frontier binding is `refuse:frontier-invent`. A cell catalog model that disagrees with the binding is `refuse:frontier-model`; the schema card is not that binding |
+| Frontier model on status / doctor | green | Binding line only when `params.model` is set. Schema card stays `grok-4.7`. Cell catalog after apply copies the bound model, or `model=-` when the binding sets none. Plan and dry-run print that bound model. No frontier binding is `refuse:frontier-invent` on plan, dry-run, reconcile, and resume, before those commands write. A cell catalog model that disagrees with the binding is `refuse:frontier-model`; the schema card is not that binding |
 | Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; a frontier tag with no frontier binding is `refuse:frontier-invent`; promote stays off |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
@@ -103,7 +103,7 @@ estate doctor --strict
 Green above does not mean a box ran. Recorded proofs are not parked, and they are not required again.
 
 | Item | State |
-| --- | --- |
+| --- | --- | --- |
 | Frontier `grok-4.7` live PASS | Recorded. `READY_FOR_LIVE_TEST` no. Not required for `make gate-90`. |
 | 5090-class probes + specialist `Pong` | Recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Not native MLX. Not required for the gate. |
 | Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
