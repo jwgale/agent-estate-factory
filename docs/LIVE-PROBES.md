@@ -1,8 +1,13 @@
 # Live probes (hand-off page)
 
+Real-world testing is a recorded live proof on Jason's boxes plus a green
+local gate (`make gate-90`). This page is the paste target. Distillation
+and an AI gateway are non-goals. Product story: [`NORTH-STAR.md`](NORTH-STAR.md).
+
 Copy-paste for Jason at a Mac or a Linux/5090-class box. CI never sets
 these variables. Without an endpoint, `estate probes --live` prints SKIP
-and exits 0.
+and exits 0. `make real-world` does the same for its live steps and does
+not invent PASS. That command is not in smoke, `make gate-90`, or Actions.
 
 Parked status: [`DAY90-PLUS.md`](DAY90-PLUS.md). Dry shapes (no network):
 `schema/live-probe-shapes.v0.json`.

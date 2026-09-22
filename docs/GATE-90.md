@@ -32,7 +32,7 @@ estate doctor --strict
 | Omit-locked sacred file still refuses Cyera CI | green | `--sacred sacred-omit-locked.yaml` |
 | Sanctum-as-Cyera display-name bleed | green | `refuse-sanctum-as-cyera.yaml` |
 | Thin `make gate-90` | green | smoke + day90 + checklist print |
-| README Day-90 operator entrypoint | green | leads with `make gate-90` |
+| README Day-90 operator entrypoint | green | north-star first; start-here still names `make gate-90` |
 | `make feed-loop` | green | scrubbed trace → pack `source_drivers` frontier+local → propose → accept; no live keys |
 | Feed cursor durability | green | schema + packed_id + rematerialize keeps cursor |
 | Placement-actual refuse round-trip | green | every reconcile refuse code, schema preserved |
@@ -115,6 +115,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | Auto-promote / curator UI | Locked off / not built. |
 | vLLM / TRT | Experimental catalog cards until Jason verifies. |
 | Actions | One compile-only job forever unless Jason expands it. |
+| `make real-world` | Opt-in ladder after the gate. SKIP without `CELL_LOCAL_ENDPOINT`. Not in smoke or Actions. Not a PASS. |
 
 Fail closed: sacred exclusions, SKU in ids (including probe ids), unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote, Sanctum-as-Cyera bleed, omit-locked sacred file.
 

@@ -1,13 +1,23 @@
 # Cell One status (for Jason)
 
-Snapshot of **what is on `main` after this merge**. Not a live-box report.
+Snapshot of **what is on `main` through PR #82**. Tip honesty: `convey leases`
+refuses a spawned cloud hop before it prints JSON. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
-Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
--> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
+Read with [`../README.md`](../README.md) -> [`NORTH-STAR.md`](NORTH-STAR.md)
+-> [`OPERATOR-DAY.md`](OPERATOR-DAY.md) -> [`GATE-90.md`](GATE-90.md).
+Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#81 plus this slice)
+## Vision reset
+
+Day 90+ is real-world proof plus parked stubs, not more beachhead invent.
+One page: [`NORTH-STAR.md`](NORTH-STAR.md). Opt-in ladder after
+`make gate-90`: `make real-world` (SKIP without `CELL_LOCAL_ENDPOINT`;
+not a PASS; not in smoke or Actions). Feed packs stay curator edit
+instructions. Distillation and a gateway stay non-goals.
+
+## On `main` (PR #1–#82)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -292,7 +302,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#80 plus this slice (plain English)
+## Bug fixes on #10–#82 plus this slice (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -367,7 +377,8 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #79 | `convey call` said a cloud hop was not spawned, and restamped a missing hop lease to `spawned: false`, when the placement lease was spawned. | That lease is a refuse before the message and before the restamp. A missing file is not a spawned lease. An unspawned cloud hop still refuses as declared, not spawned. READY no. |
 | #80 | `convey declare` wrote a cloud hop lease with `spawned: false` when that placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud hop still declares. The placement file is not rewritten. READY no. |
 | #81 | `convey expire --forget` dropped an expired spawned cloud hop lease. | That lease is a refuse before the list and before the rewrite. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop. READY no. |
-| this slice | `convey leases` printed hop lease JSON when a cloud-mesh hop lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing mesh is not a spawned lease. The mesh is not rewritten. READY no. |
+| #82 | `convey leases` printed hop lease JSON when a cloud-mesh hop lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing mesh is not a spawned lease. The mesh is not rewritten. READY no. |
+| this slice | The README led with the Day-90 gate and catalog experiments, so the one-box factory was easy to miss. | North-star one-pager. `make real-world` is opt-in: check, vanilla doctor, live SKIP without an endpoint. Not in smoke or Actions. Distillation and a gateway stay non-goals. READY no. |
 
 ## Known-good local commands
 
@@ -382,6 +393,7 @@ make day90-mixed      # opt-in mixed fixture; not in smoke or gate-90
 make fixtures-check   # fixture files only
 make doctor-strict    # pre-merge extras
 make check            # cargo check --workspace --locked (same as Actions)
+make real-world       # opt-in: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT (not in smoke)
 estate help           # Day-90 topics, including frontier and day90-mixed
 ```
 

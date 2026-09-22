@@ -1,12 +1,18 @@
 # Day 90+ — parked until Jason has boxes
 
+Real-world testing is a recorded live proof on Jason's boxes plus a green
+local gate (`make gate-90`). Distillation, LoRA, dataset pipelines, and an
+AI gateway are non-goals. The opt-in ladder after the gate is
+`make real-world`. It is not in smoke or Actions. Unset
+`CELL_LOCAL_ENDPOINT` prints SKIP and exits 0. That SKIP is not a proof.
+
 This is a parking lot, not a progress report. Nothing in the live-box list
 below is green. Do not treat probe paths, catalog cards, or env-var names as
 proof that a Mac, a GPU, or a cloud spawn ran.
 
 `make gate-90` is the Day-90 operator entrypoint. It stays local. Hosted CI
 stays compile-only. Live `grok-4.7` / GPU / Mac are not required to keep
-`make smoke` / `make gate-90` green.
+`make smoke` / `make gate-90` green. Product story: [`NORTH-STAR.md`](NORTH-STAR.md).
 
 ## Green without a box
 
