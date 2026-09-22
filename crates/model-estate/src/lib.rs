@@ -13,7 +13,7 @@ mod path;
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
     bind_local, card, catalog, catalog_file, catalog_probes, catalog_probes_live, parse_host_class, parse_runtime,
-    catalog_bound_to_estate, render_catalog, route, write_bound_catalog, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
+    catalog_bound_to_estate, refuse_schema_catalog_overwrite, render_catalog, route, write_bound_catalog, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
     FrontierCaps, FrontierCard, FrontierCatalogCard, HostClass, LocalRuntime, SupportStatus,
     CATALOG, FRONTIER_CARD,
 };
@@ -338,7 +338,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(parsed.as_deref(), Some("grok-4.7"));
-        assert!(frontier_model_from_catalog_json(r#"{"cards":[]}"#)
+        assert!(frontier_model_from_catalog_json(r#"{\"cards\":[]}"#)
             .unwrap()
             .is_none());
         assert!(frontier_model_from_catalog_json("not-json").is_err());
