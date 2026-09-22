@@ -13,7 +13,7 @@ mod path;
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
     bind_local, card, catalog, catalog_file, catalog_probes, catalog_probes_live, parse_host_class, parse_runtime,
-    render_catalog, route, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
+    catalog_bound_to_estate, render_catalog, route, write_bound_catalog, write_catalog, CatalogCard, CatalogFile, CatalogFileCard, DriverCaps,
     FrontierCaps, FrontierCard, FrontierCatalogCard, HostClass, LocalRuntime, SupportStatus,
     CATALOG, FRONTIER_CARD,
 };
@@ -63,6 +63,29 @@ pub fn ping(estate: &Estate, binding_id: &str) -> Result<(), ModelError> {
         return Err(ModelError::NotWired(binding.id.clone()));
     }
     Ok(())
+}
+
+/// Frontier binding ids whose `params.model` is set. No catalog default.
+/// One distinct model, or none. Two different models refuse. A SKU refuses.
+pub fn bound_frontier_model(estate: &Estate) -> Result<Option<String>, ModelError> {
+    let mut unique = Vec::new();
+    for (_, model) in estate_frontier_models(estate) {
+        if estate_schema::contains_sku(&model) {
+            return Err(ModelError::Other(format!(
+                "refuse:frontier-model: binding model '{model}' encodes a hardware SKU"
+            )));
+        }
+        if !unique.iter().any(|have: &String| have == &model) {
+            unique.push(model);
+        }
+    }
+    match unique.len() {
+        0 => Ok(None),
+        1 => Ok(unique.pop()),
+        _ => Err(ModelError::Other(
+            "refuse:frontier-model: frontier bindings name more than one model".into(),
+        )),
+    }
 }
 
 /// Frontier binding ids whose `params.model` is set. No catalog default.
@@ -245,6 +268,43 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(frontier_model_from_catalog_json("not-json").is_err());
+    }
+
+    #[test]
+    fn bound_catalog_prints_the_binding_model_or_nothing() {
+        let unbound = catalog_bound_to_estate(&estate()).unwrap();
+        assert!(
+            unbound.frontier.model.is_empty(),
+            "unbound estate must not copy schema grok-4.7: {}",
+            unbound.frontier.model
+        );
+        assert!(
+            !unbound.frontier.notes.contains("grok-4.7"),
+            "{}",
+            unbound.frontier.notes
+        );
+        assert_eq!(unbound.cards.len(), catalog_file().cards.len());
+
+        let named = load_estate_str(include_str!(
+            "../../../examples/fixtures/mixed-frontier-local.yaml"
+        ))
+        .unwrap();
+        assert_eq!(
+            catalog_bound_to_estate(&named).unwrap().frontier.model,
+            "grok-4.7"
+        );
+
+        let mut split = named.clone();
+        split.model_bindings.push(estate_schema::ModelBinding {
+            id: "other_frontier".into(),
+            class: estate_schema::ModelClass::Frontier,
+            driver: "http-remote".into(),
+            params: serde_json::json!({ "model": "other-model" }),
+            wired: true,
+        });
+        let err = catalog_bound_to_estate(&split).unwrap_err();
+        assert!(err.to_string().contains("refuse:frontier-model"), "{err}");
+        assert_eq!(catalog_file().frontier.model, "grok-4.7");
     }
 
     #[test]
