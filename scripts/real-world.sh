@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opt-in real-world kit. Not in make smoke / make gate-90 / GitHub Actions.
-# Unset CELL_LOCAL_ENDPOINT: live steps SKIP and exit 0. Does not invent PASS.
+# Unset CELL_LOCAL_ENDPOINT: live steps SKIP and exit 0. A SKIP is not a success line.
 # Does not read or print the frontier API key.
 set -euo pipefail
 
