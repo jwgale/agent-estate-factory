@@ -81,6 +81,7 @@ pub(crate) fn cmd_feed_pack(feed_dir: &Path, drop_dir: &Path, id: &str) -> Resul
 }
 
 pub(crate) fn cmd_catalog(out: &Path) -> Result<()> {
+    model_estate::refuse_schema_catalog_overwrite(out).map_err(|err| anyhow::anyhow!("{err}"))?;
     let written = model_estate::write_catalog(out)?;
     println!("{}", model_estate::render_catalog());
     println!("wrote catalog file {}", written.display());
