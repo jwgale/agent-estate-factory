@@ -91,6 +91,18 @@ fn help_topics_cover_day90_loop() {
     assert!(apply.status.success(), "{apply_text}");
     assert!(apply_text.contains("estate help apply"));
 
+    for topic in ["north-star", "charter", "northstar"] {
+        let out = estate_bin().args(["help", topic]).output().unwrap();
+        let body = text(&out);
+        assert!(out.status.success(), "{topic}: {body}");
+        assert!(body.contains("Agent Estate Factory"), "{topic}: {body}");
+        assert!(body.contains("Not a gateway"), "{topic}: {body}");
+        assert!(body.contains("charter.md"), "{topic}: {body}");
+        assert!(body.contains("make gate-90"), "{topic}: {body}");
+        assert!(body.contains("\n  make day90\n"), "{topic}: {body}");
+        assert!(body.contains("docs/LIVE-PROBES.md"), "{topic}: {body}");
+    }
+
     let bad = estate_bin().args(["help", "gateway"]).output().unwrap();
     let bad_text = text(&bad);
     assert!(!bad.status.success(), "unknown topic must refuse");
