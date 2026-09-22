@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#50 plus this slice)
+## On `main` (PR #1-#51 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -166,15 +166,19 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 `estate resume` and `estate pause-proof` refuse (`refuse:frontier-model`) when the cell `catalog.json` frontier model disagrees with the binding. They do that before resume writes leases or a catalog, and before pause-proof applies. A missing catalog is not a disagreement. A matching empty catalog still resumes, and the cell model stays empty. `pause-proof` does not invent a cell catalog. `CELL_FRONTIER_MODEL` is not the binding.
 
+## #51 in plain English
+
+`estate feed import` and `estate packs import` refuse (`refuse:frontier-invent`) when the pack tags a frontier source driver and the estate has no frontier binding. They do that before an accepted pack, a redaction report, or an index rewrite. A missing frontier tag still imports. `CELL_FRONTIER_MODEL` is not a binding. The redaction report is kind counts: a present report must parse, and the command does not invent zero counts. A mixed-fixture import keeps `source_drivers` frontier and local. The report does not store a raw secret and does not invent `grok-4.7`.
+
 ## This slice
 
-`estate feed import` and `estate packs import` refuse (`refuse:frontier-invent`) when the pack tags a frontier source driver and the estate has no frontier binding. They do that before an accepted pack, a redaction report, or an index rewrite. A missing frontier tag still imports. `CELL_FRONTIER_MODEL` is not a binding. The redaction report is kind counts: a present report must parse, and the command does not invent zero counts. A mixed-fixture import keeps `source_drivers` frontier and local. The report does not store a raw secret and does not invent `grok-4.7`. No new CLI. No new smoke or gate-90 step.
+`estate backup` and `estate restore` refuse before they write. A cell `catalog.json` whose frontier model disagrees with the binding is `refuse:frontier-model`. A frontier `source_driver` on an estate with no frontier binding is `refuse:frontier-invent`. A desired snapshot whose sacred set disagrees with the estate is `refuse:sacred-mismatch`. A missing catalog is not a disagreement. A local-only pack still archives. `CELL_FRONTIER_MODEL` is not the binding, and the refuse does not invent `grok-4.7` unless the catalog file itself names that model. No new CLI. No new smoke or gate-90 step.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#51 (plain English)
+## Bug fixes on #10-#52 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -219,6 +223,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #49 | `make day90-mixed` printed the bound model on status and doctor but did not lock the plan line, and it never walked a local-only estate. | The mixed plan line is `frontier plan: model=grok-4.7 source_drivers=frontier,local`. A throwaway local-only estate is `refuse:frontier-invent`. Live apply writes no catalog. Status does not print a frontier binding. Doctor does not print a cell catalog model. READY no. |
 | #50 | Resume rewrote a cell catalog that disagreed with the binding, and pause-proof kept going. A schema-card `grok-4.7` could sit on an unset model through the pause kit. | That disagreement is `refuse:frontier-model` before resume or pause-proof writes. A missing catalog is not a disagreement. Pause-proof does not invent a cell catalog. A matching empty catalog still resumes with an empty model. READY no. |
 | #51 | Import copied a frontier `source_driver` onto an estate with no frontier binding, and a bad redaction file could print counts of zero. | That copy is `refuse:frontier-invent` before the accepted pack or redaction report. A present report must parse. A local-only pack still imports. A mixed-fixture import keeps the tag. READY no. |
+| #52 | Backup and restore copied a cell catalog that disagreed with the binding, and a frontier `source_driver`, onto an estate with no frontier binding. A desired snapshot could name sacred exclusions the estate does not. | Those are `refuse:frontier-model`, `refuse:frontier-invent`, and `refuse:sacred-mismatch` before the archive or the restore write. A local-only pack still archives. A missing catalog is not a disagreement. READY no. |
 
 ## Known-good local commands
 

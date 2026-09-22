@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #51 (this slice)
+
+- `estate backup` and `estate restore` refuse before they write. A cell catalog whose frontier model disagrees with the binding is `refuse:frontier-model`. A frontier `source_driver` with no frontier binding is `refuse:frontier-invent`. A desired snapshot whose sacred set disagrees is `refuse:sacred-mismatch`.
+- A missing catalog is not a disagreement. A local-only pack still archives. `CELL_FRONTIER_MODEL` is not the binding. The refuse does not invent `grok-4.7` unless that model is already in the catalog file.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #50 (this slice)
 
 - `estate packs import` and `estate feed import` refuse (`refuse:frontier-invent`) when the pack tags `frontier` and the estate has no frontier binding. They do that before an accepted pack, a redaction report, or an index rewrite.

@@ -1,5 +1,7 @@
 use anyhow::{bail, Context, Result};
-use estate_schema::{check_policy_file, load_and_install_sacred_file, load_estate, Estate};
+use estate_schema::{
+    check_policy_file, load_and_install_sacred_file, load_estate_unvalidated, Estate,
+};
 use std::path::Path;
 
 /// Present estate file must read. Empty-on-error would hide a rewrite
@@ -10,11 +12,14 @@ pub(crate) fn read_estate_text(path: &Path) -> Result<String> {
 
 /// Missing estate file is optional. A file that exists but does not parse
 /// is refuse — backup/restore must not invent a locked-only sacred set.
+/// Cell One shape is an apply gate. The parsed estate is enough for a
+/// local-only file to hit `refuse:frontier-invent` before validation.
 pub(crate) fn load_estate_if_present(path: &Path) -> Result<Option<Estate>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    let estate =
+        load_estate_unvalidated(path).with_context(|| format!("load {}", path.display()))?;
     Ok(Some(estate))
 }
 

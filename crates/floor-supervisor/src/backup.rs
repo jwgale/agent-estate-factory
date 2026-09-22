@@ -1,10 +1,15 @@
 //! Timestamped `.cell/` archive. Pause-safe. Not a remote upload.
 //!
 //! Restores refuse on sacred mismatch. Dry-run writes nothing.
+//! A catalog that disagrees with the binding, a frontier `source_driver`
+//! with no frontier binding, and a snapshot sacred set that disagrees
+//! refuse before the archive or the restore write. The schema card is
+//! not the binding.
 
 use crate::{load_desired_snapshot, load_placements, SupervisorError};
 use estate_schema::{
-    canonical_host_class_opt, is_sacred_name, locked_sacred_ids, normalize_name, Estate,
+    canonical_host_class_opt, contains_sku, is_sacred_name, locked_sacred_ids, normalize_name,
+    Estate, ModelClass,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -187,6 +192,8 @@ pub fn prune_cell_backups(
     })
 }
 
+include!("backup_honesty.rs");
+
 /// Copy durable `.cell/` files (and optional plans) to a timestamped folder.
 pub fn backup_cell(
     state_dir: &Path,
@@ -194,6 +201,10 @@ pub fn backup_cell(
     out_dir: &Path,
     estate: Option<&Estate>,
 ) -> Result<(PathBuf, CellBackup), SupervisorError> {
+    let refuses = cell_inconsistencies(state_dir, plans_dir, estate)?;
+    if !refuses.is_empty() {
+        return Err(SupervisorError::Other(refuses.join("; ")));
+    }
     std::fs::create_dir_all(out_dir)?;
     let dest = out_dir.join(format!("cell-backup-{}", stamp()));
     std::fs::create_dir_all(dest.join("cell"))?;
@@ -339,6 +350,13 @@ pub fn restore_cell(
         );
     }
     let cell_src = archive.join("cell");
+    let plans_src_for_check = archive.join("plans");
+    let plans_for_check = if plans_src_for_check.exists() {
+        Some(plans_src_for_check.as_path())
+    } else {
+        None
+    };
+    refuses.extend(cell_inconsistencies(&cell_src, plans_for_check, current)?);
     let mut files = Vec::new();
     if cell_src.is_dir() {
         for name in DURABLE_FILES {
@@ -427,7 +445,7 @@ pub fn render_restore(report: &RestoreReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{apply_with_profile_dir, load_placements};
+    use crate::{apply_with_profile_dir, load_desired_snapshot, load_placements, write_desired_snapshot};
 
     fn example() -> Estate {
         estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
@@ -672,4 +690,6 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    include!("backup_honesty_tests.rs");
 }
