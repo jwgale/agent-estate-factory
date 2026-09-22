@@ -65,6 +65,11 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #53 (this slice)
+
+- `estate probes --live` does not print `live ok` for `mlx`, `vllm`, or `trt`. An answering HTTP endpoint stays `not live-ok`. Ollama, llama.cpp, and http-remote still print `live ok` when their endpoint answers.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #52 (this slice)
 
 - `docs/GATE-90.md` does not call the Ollama complete path ready. Mock completion stays green. The 5090 `Pong` is already recorded. Mac complete is not. `mlx` / `vllm` / `trt` refuse a frontier POST and are not live-ok.

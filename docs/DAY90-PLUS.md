@@ -51,9 +51,10 @@ has no Mac and no GPU. Jason's Mac PASSed Ollama `probes --live`. His
 5090 PASSed probes and specialist `Pong`. Native MLX `specialist()`
 stays stub. Mac specialist chat is not recorded.
 
-When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path;
-MLX stays a stub until he verifies it. Set `CELL_MLX_ENDPOINT` (or
-`CELL_LOCAL_ENDPOINT`) and run `estate probes --live`. Until then: SKIP.
+When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path.
+MLX stays a stub. `estate probes --live` does not print `live ok` for
+mlx, vllm, or trt, even when `CELL_MLX_ENDPOINT` or `CELL_LOCAL_ENDPOINT`
+is set. Supported cards SKIP until an endpoint is set.
 
 When Jason has a consumer RTX or a rented Nvidia box: set
 `CELL_LOCAL_ENDPOINT` or `CELL_RENTED_ENDPOINT` and run `estate probes --live`.

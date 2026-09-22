@@ -11,8 +11,8 @@ pub struct DriverProbe {
     pub status: String,
     pub host_class: String,
     pub bindable: bool,
-    /// False unless `estate probes --live` / `CELL_LIVE_PROBE` and an endpoint answers.
-    /// CI never sets this. Missing endpoints are SKIP, not a fail.
+    /// False unless `estate probes --live` and a supported card's endpoint answers.
+    /// Stub and experimental cards stay false. Missing endpoints are SKIP, not a fail.
     pub live_probed: bool,
     pub note: String,
 }
@@ -110,8 +110,25 @@ pub enum LiveOverlay<'a> {
     Down(&'a str),
 }
 
+fn refuses_live_ok(probe: &DriverProbe) -> bool {
+    matches!(probe.status.as_str(), "stub" | "experimental")
+}
+
+fn mark_not_live_ok(mut probe: DriverProbe) -> DriverProbe {
+    probe.live_probed = false;
+    probe.note = format!(
+        "{} not live-ok (stub or experimental card; HTTP ping is not a live proof)",
+        probe.note
+    );
+    probe
+}
+
 /// Apply SKIP / would-live / down without touching the network.
+/// Stub and experimental cards never become `live ok`.
 pub fn apply_live_overlay(mut probe: DriverProbe, overlay: LiveOverlay<'_>) -> DriverProbe {
+    if matches!(overlay, LiveOverlay::WouldLive) && refuses_live_ok(&probe) {
+        return mark_not_live_ok(probe);
+    }
     match overlay {
         LiveOverlay::Skip => {
             probe.live_probed = false;
@@ -133,7 +150,14 @@ pub fn apply_live_overlay(mut probe: DriverProbe, overlay: LiveOverlay<'_>) -> D
 }
 
 /// Overlay a live result. `None` endpoint is SKIP (exit-safe for CI / Mac-less boxes).
+/// `mlx` / `vllm` / `trt` do not ping and do not print `live ok`.
 pub fn enrich_with_live(probe: DriverProbe, endpoint: Option<&str>) -> DriverProbe {
+    if refuses_live_ok(&probe) {
+        return match endpoint {
+            None => apply_live_overlay(probe, LiveOverlay::Skip),
+            Some(_) => mark_not_live_ok(probe),
+        };
+    }
     match endpoint {
         None => apply_live_overlay(probe, LiveOverlay::Skip),
         Some(ep) => match ping_live_endpoint(ep) {
