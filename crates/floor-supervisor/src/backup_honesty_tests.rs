@@ -16,7 +16,7 @@
             backup_cell(&state, None, &root.join("backups"), Some(&estate)).unwrap();
         std::fs::write(
             state.join("catalog.json"),
-            "{\"frontier\",{\"model\":\"not-the-card\"}}\n",
+            "{\"frontier\":{\"model\":\"not-the-card\"}}\n",
         )
         .unwrap();
         let before = list_cell_backups(&root.join("backups")).unwrap().len();
