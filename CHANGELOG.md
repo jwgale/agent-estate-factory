@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — LLaMA-Factory QLoRA method token
+
+- `llamafactory-qlora` writes `quantization_method: bnb`. LLaMA-Factory 0.9 selects the 4-bit bitsandbytes branch only for that token.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — LLaMA-Factory QLoRA is the train card
 
 - `llamafactory-qlora` is the primary train `TrainEnrichDriver`. `estate enrich prepare --driver llamafactory-qlora` writes `recipe.yaml` (SFT QLoRA, 4-bit, LoRA rank 16, `cutoff_len` 512, packing on), `export.yaml`, `dataset_info.json`, instruct chat `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with `pip install llamafactory`, `llamafactory-cli train`, and `llamafactory-cli export`, and `prepare.json` (`job: train`). The factory does not run the CLI, does not download weights, and does not call CUDA.

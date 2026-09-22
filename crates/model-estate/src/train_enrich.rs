@@ -1465,6 +1465,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
          # dataset_scaffold: {scaffold}\n\
          # {host}\n\
          # QLoRA is finetuning_type lora plus quantization_bit 4.\n\
+         # quantization_method is bnb. That is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch.\n\
          # Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n\
          model_name_or_path: {base}\n\
          trust_remote_code: true\n\
@@ -1479,7 +1480,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
          lora_alpha: {alpha}\n\
          lora_target: all\n\
          quantization_bit: 4\n\
-         quantization_method: bitsandbytes\n\
+         quantization_method: bnb\n\
          dataset: {dataset_name}\n\
          dataset_dir: {dataset_dir}\n\
          template: {template}\n\
@@ -3044,7 +3045,15 @@ mod tests {
         let pack = fixture_pack();
         let estate = seated_estate("llama3");
         let out = root.join("recipe");
-        let doc = run(LLAMAFACTORY_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
         assert_eq!(doc.job, "train");
         assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
         assert_eq!(doc.base_model, "llama3");
@@ -3063,10 +3072,18 @@ mod tests {
         }
         assert!(!out.join("train_unsloth.py").exists());
         let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
-        assert!(recipe.contains("model_name_or_path: \"llama3\""), "{recipe}");
+        assert!(
+            recipe.contains("model_name_or_path: \"llama3\""),
+            "{recipe}"
+        );
         assert!(recipe.contains("stage: sft"), "{recipe}");
         assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
         assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(
+            !recipe.contains("quantization_method: bitsandbytes"),
+            "{recipe}"
+        );
         assert!(recipe.contains("lora_rank: 16"), "{recipe}");
         assert!(recipe.contains("packing: true"), "{recipe}");
         assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
@@ -3095,7 +3112,10 @@ mod tests {
             "{next}"
         );
         assert!(
-            next.contains(&format!("llamafactory-cli export {}", export_path.display())),
+            next.contains(&format!(
+                "llamafactory-cli export {}",
+                export_path.display()
+            )),
             "{next}"
         );
         assert!(next.contains("pip install llamafactory"), "{next}");
@@ -3119,7 +3139,10 @@ mod tests {
         );
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
-        assert!(prepare_json.contains("\"job\": \"train\""), "{prepare_json}");
+        assert!(
+            prepare_json.contains("\"job\": \"train\""),
+            "{prepare_json}"
+        );
 
         let enrich_out = root.join("enrich-job");
         let err = run(
