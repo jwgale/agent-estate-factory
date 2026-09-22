@@ -105,7 +105,10 @@ does not invent a line count. A history file that does not parse is
 FAIL before factory ready. A parsed file prints its line count.
 A missing sessions.jsonl is not a failure, and doctor does not invent
 a line count. A journal file that does not parse is FAIL before factory
-ready. A parsed file prints its line count. Cloud-agent
+ready. A parsed file prints its line count. A missing
+actual-state.json is not a failure, and doctor does not invent a
+session count. A state file that does not parse is FAIL before factory
+ready. A parsed file prints its session count. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
