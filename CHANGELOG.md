@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #50 (this slice)
+
+- `estate packs import` and `estate feed import` refuse (`refuse:frontier-invent`) when the pack tags `frontier` and the estate has no frontier binding. They do that before an accepted pack, a redaction report, or an index rewrite.
+- A local-only pack still imports. A mixed-fixture import keeps `source_drivers` frontier and local and writes a redaction report of kind counts. The report does not store a raw secret and does not invent `grok-4.7`. `CELL_FRONTIER_MODEL` is not the binding.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #49 (this slice)
 
 - `estate resume` and `estate pause-proof` refuse (`refuse:frontier-model`) when the cell `catalog.json` frontier model disagrees with the binding. They do that before leases or a catalog write.
