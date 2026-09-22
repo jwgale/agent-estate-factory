@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#54 plus this slice)
+## On `main` (PR #1-#55 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -182,15 +182,17 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 `estate probes --live` does not print `live ok` for `mlx`, `vllm`, or `trt`. A stub or experimental card stays `live_probed=false` and says `not live-ok`, even when an HTTP endpoint answers. Ollama, llama.cpp, and http-remote still print `live ok` when their endpoint answers. No new CLI. No new smoke or gate-90 step.
 
+## #55 in plain English
+
+Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. `READY_FOR_LIVE_TEST` is yes for that Mac command only.
+
 ## This slice
 
-Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`.
+`estate status` and `estate doctor` refuse (`refuse:frontier-model`) when the cell `catalog.json` does not parse. They do that before the cell catalog success line. Apply, resume, and pause-proof already refused an unreadable catalog. A missing catalog is not a disagreement. The schema card stays the schema card. The refuse does not invent `grok-4.7`.
 
-`READY_FOR_LIVE_TEST`: **yes** for that Mac command only.
+`READY_FOR_LIVE_TEST`: no.
 
-Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
-
-## Bug fixes on #10-#55 (plain English)
+## Bug fixes on #10-#56 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -239,6 +241,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #53 | The gate called Ollama specialist complete ready, and the parking lot did not name vLLM or TRT, so a stub card could be read as a live hand-off. | The completion row is mock-locked. 5090 `Pong` stays recorded. Mac complete stays unrecorded. vLLM and TRT are parked and not live-ok. READY no. |
 | #54 | `mlx` could print `live ok` by falling back to `CELL_LOCAL_ENDPOINT`. vLLM and TRT could do the same when their endpoint answered. | Stub and experimental probes stay `not live-ok` and do not open that ping. Supported cards still print `live ok`. READY no. |
 | #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | [`LIVE-PROBES.md`](LIVE-PROBES.md) has the MacBook Air and 5090-class copy-paste (`~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`). READY yes for the Mac command only. The 5090 `Pong` stays recorded. |
+| #56 | Status and doctor treated a cell `catalog.json` that does not parse as a note and still exited 0. Apply already refused that file. | Status and doctor are `refuse:frontier-model` before the cell success line. A missing catalog is not a disagreement. READY no. |
 
 ## Known-good local commands
 
