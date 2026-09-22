@@ -19,6 +19,6 @@ Primary gate is local (or this cloud-agent VM). Hosted CI is one `pull_request` 
 
 ## Product locks
 
-Factory altitude only. Equal-class frontier + local. Sacred exclusions (Cyera CI, Rust classroom) stay dual-layer. Ollama-first, portable `local_slm`, fail closed when local is down. Not a gateway. Not LM Studio.
+Factory altitude only. Equal-class frontier + local. Sacred exclusions (Cyera CI, Rust classroom) stay dual-layer. The local runtime is an ecosystem seat on portable `local_slm` (Ollama today; llama.cpp swaps; catalog/route/bind take the next entrant). Fail closed when local is down. Integrate a driver that already does the job. Suite goal: facilitate train/enrich of purpose-built small models. Beachhead today: enrich packs and the specialist path. Not a gateway. Not LM Studio-alone. Not an Ollama wrapper-as-product. Not a Grok Bot clone.
 
-Details: `charter.md`, `README.md`, `CONTRIBUTING.md`.
+Details: `charter.md`, `README.md`, `docs/UBIQUITOUS_LANGUAGE.md`, `CONTRIBUTING.md`.

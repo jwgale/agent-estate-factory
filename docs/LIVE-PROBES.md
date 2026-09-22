@@ -1,8 +1,9 @@
 # Live probes (hand-off page)
 
 Real-world testing is a recorded live proof on Jason's boxes plus a green
-local gate (`make gate-90`). This page is the paste target. Distillation
-and an AI gateway are non-goals. Product story: [`NORTH-STAR.md`](NORTH-STAR.md).
+local gate (`make gate-90`). This page is the paste target. An AI gateway
+stays out of altitude. Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md).
+Product page: [`NORTH-STAR.md`](NORTH-STAR.md).
 
 Copy-paste for Jason at a Mac or a Linux/5090-class box. CI never sets
 these variables. Without an endpoint, `estate probes --live` prints SKIP

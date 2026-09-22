@@ -5,6 +5,7 @@ refuses a spawned cloud hop before it prints JSON. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
 Read with [`../README.md`](../README.md) -> [`NORTH-STAR.md`](NORTH-STAR.md)
+-> [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md)
 -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md) -> [`GATE-90.md`](GATE-90.md).
 Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
@@ -379,7 +380,8 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #80 | `convey declare` wrote a cloud hop lease with `spawned: false` when that placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud hop still declares. The placement file is not rewritten. READY no. |
 | #81 | `convey expire --forget` dropped an expired spawned cloud hop lease. | That lease is a refuse before the list and before the rewrite. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop. READY no. |
 | #82 | `convey leases` printed hop lease JSON when a cloud-mesh hop lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing mesh is not a spawned lease. The mesh is not rewritten. READY no. |
-| this slice | The README led with the Day-90 gate and catalog experiments, so the one-box factory was easy to miss. | North-star one-pager. `make real-world` is opt-in: check, vanilla doctor, live SKIP without an endpoint. Not in smoke or Actions. Distillation and a gateway stay non-goals. READY no. |
+| #84 | The README led with the Day-90 gate and catalog experiments, so the one-box factory was easy to miss. | North-star one-pager. `make real-world` is opt-in: check, vanilla doctor, live SKIP without an endpoint. Not in smoke or Actions. Distillation and a gateway stay non-goals. READY no. |
+| this slice | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Local runtime is an ecosystem seat; Ollama is today's entrant. Purpose-built SLM train/enrich is facilitated. Beachhead stays packs and the specialist path. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. READY no. |
 
 ## Known-good local commands
 

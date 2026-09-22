@@ -65,12 +65,18 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
-## After PR #82
+## This slice
+
+- Canonical glossary: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). A local runtime is an ecosystem seat. Ollama is today's entrant; catalog/route/bind take the next process. Suite goal: facilitate train/enrich of purpose-built small models. Beachhead today: enrich packs and the specialist path. No training stack. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone.
+- `estate help north-star` / `charter` match that page. README and [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) use the same words.
+- `READY_FOR_LIVE_TEST`: no.
+
+## After PR #83
 
 - `estate help north-star` (alias `northstar`) and `estate help charter` print the locked product sentence, short anti-shrink bullets, and pointers to `charter.md`, `make gate-90`, `make day90`, and `docs/LIVE-PROBES.md`.
 - Unknown help topics still refuse. Not on smoke or `gate-90`. No Actions change. `READY_FOR_LIVE_TEST`: no.
 
-## This slice
+## After PR #84
 
 - Vision reset. README leads with the one-box north-star. [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) is the one-page product story. Experimental catalog cards (MLX / vLLM / TRT), cloud-agent spawn, and the lease-bound hop stub sit under "Parked / not the product". Packs stay curator edit instructions. Control does not complete.
 - Charter status line: Day 0–90 is on `main`. Day 90+ is real-world proof plus parked stubs. Locked defaults are unchanged.

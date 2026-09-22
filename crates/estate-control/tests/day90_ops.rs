@@ -101,6 +101,13 @@ fn help_topics_cover_day90_loop() {
         assert!(body.contains("make gate-90"), "{topic}: {body}");
         assert!(body.contains("\n  make day90\n"), "{topic}: {body}");
         assert!(body.contains("docs/LIVE-PROBES.md"), "{topic}: {body}");
+        assert!(body.contains("purpose-built"), "{topic}: {body}");
+        assert!(body.contains("local runtime"), "{topic}: {body}");
+        assert!(body.contains("entrant"), "{topic}: {body}");
+        assert!(body.contains("Beachhead today"), "{topic}: {body}");
+        assert!(body.contains("No training stack"), "{topic}: {body}");
+        assert!(!body.contains("Not a distillation"), "{topic}: {body}");
+        assert!(!body.contains("training lab"), "{topic}: {body}");
     }
 
     let bad = estate_bin().args(["help", "gateway"]).output().unwrap();

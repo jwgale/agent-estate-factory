@@ -1,8 +1,10 @@
 # Day 90+ — parked until Jason has boxes
 
 Real-world testing is a recorded live proof on Jason's boxes plus a green
-local gate (`make gate-90`). Distillation, LoRA, dataset pipelines, and an
-AI gateway are non-goals. The opt-in ladder after the gate is
+local gate (`make gate-90`). An AI gateway stays out of altitude. Facilitation of train and
+enrich for purpose-built small models is the suite goal
+([`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md)). Today's beachhead is packs
+and the specialist path. The opt-in ladder after the gate is
 `make real-world`. It is not in smoke or Actions. Unset
 `CELL_LOCAL_ENDPOINT` prints SKIP and exits 0. That SKIP is not a proof.
 
