@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #56 (this slice)
+
+- [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) holds a Mac `estate specialist` result row. It is **Pending**, not **PASS**, until a completion is pasted. Do not invent `pong` or `Pong` for the Mac.
+- The #55 Mac command stays the open hand-off. This slice does not add another live test.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #55 (this slice)
 
 - `estate status` and `estate doctor` refuse (`refuse:frontier-model`) when the cell `catalog.json` does not parse. They do that before the cell catalog success line. Apply, resume, and pause-proof already refused. A missing catalog is not a disagreement.
