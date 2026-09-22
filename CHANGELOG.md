@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Unsloth QLoRA is the train card
+
+- `unsloth-qlora` is the primary train `TrainEnrichDriver`. `estate enrich prepare --driver unsloth-qlora` writes `train_unsloth.py` (QLoRA 4-bit, LoRA r=16, `max_seq_length` 512), instruct chat `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with `pip install unsloth` and `python train_unsloth.py`, and `prepare.json` (`job: train`). The factory does not run the script, does not install Unsloth, and does not export GGUF.
+- `axolotl-lora` stays the YAML recipe card for a config-driven or multi-GPU run. It still does not run Axolotl.
+- `import-trained` accepts either train recipe and writes the same `local_slm` proposal. Ollama seating stays outside the factory. GGUF and Ollama export stay on Unsloth's docs (`save_pretrained_gguf`).
+- Train hosts are `consumer-nvidia` and `rented-nvidia`. `apple-silicon` can prepare. `NEXT.md` says the card expects CUDA. `make train-prepare` prints `SKIP live train` and is off smoke, `gate-90`, and Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Axolotl train recipe
 
 - `axolotl-lora` is a `TrainEnrichDriver` card beside `ollama-modelfile` and `external-manifest`. `estate enrich prepare --driver axolotl-lora` writes `axolotl.yml` (QLoRA: `load_in_4bit` and `adapter: qlora`), `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with the exact `axolotl train` line, and `prepare.json` (`job: train`). The factory does not run Axolotl, does not download a dataset, and does not rewrite `estate.yaml`.

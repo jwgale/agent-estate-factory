@@ -2,8 +2,9 @@
 //!
 //! The local runtime stays a seat. Ollama is today's entrant. This module
 //! does not shell out, does not POST a train job, and does not rewrite the
-//! estate. `axolotl-lora` writes an Axolotl recipe the operator runs outside
-//! the factory. `external-manifest` stays the vendor-neutral hatch.
+//! estate. `unsloth-qlora` writes the Unsloth QLoRA script the operator runs
+//! outside the factory. `axolotl-lora` writes the Axolotl YAML recipe.
+//! `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
 use crate::error::ModelError;
@@ -141,10 +142,21 @@ const REGISTRY: &[RegisteredDriver] = &[
     },
     RegisteredDriver {
         card: TrainEnrichCard {
+            driver_id: UNSLOTH_QLORA_ID,
+            status: "integration",
+            integrates: "unsloth QLoRA SFT script",
+            notes: "Primary single-GPU train card. Writes train_unsloth.py and instruct chat dataset.jsonl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(UnslothQloraDriver),
+    },
+    RegisteredDriver {
+        card: TrainEnrichCard {
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
             integrates: "axolotl train LoRA/QLoRA recipe",
-            notes: "Writes axolotl.yml and dataset.jsonl for Axolotl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. Default job is train. Does not shell out. The single-GPU card is unsloth-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -156,10 +168,21 @@ struct OllamaModelfileDriver;
 
 struct ExternalManifestDriver;
 
+struct UnslothQloraDriver;
+
 struct AxolotlLoraDriver;
 
-/// Registered train card. Axolotl already trains LoRA/QLoRA. This id writes that recipe.
+/// Primary train card. Unsloth already runs QLoRA SFT on one CUDA GPU. This id writes that script.
+pub const UNSLOTH_QLORA_ID: &str = "unsloth-qlora";
+
+/// YAML train card. Axolotl already trains from a config. This id writes that recipe.
 pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
+
+const TRAIN_RECIPE_DRIVERS: &[&str] = &[UNSLOTH_QLORA_ID, AXOLOTL_LORA_ID];
+
+/// Smoke-scale context. Unsloth's fine-tuning guide uses 2048 for a longer test.
+const UNSLOTH_MAX_SEQ: u32 = 512;
+const UNSLOTH_LORA_R: u32 = 16;
 
 impl TrainEnrichDriver for OllamaModelfileDriver {
     fn id(&self) -> &'static str {
@@ -248,6 +271,55 @@ impl TrainEnrichDriver for ExternalManifestDriver {
             files: vec![
                 ("manifest.json".into(), json),
                 ("manifest.yaml".into(), yaml),
+            ],
+            steps,
+        })
+    }
+}
+
+impl TrainEnrichDriver for UnslothQloraDriver {
+    fn id(&self) -> &'static str {
+        UNSLOTH_QLORA_ID
+    }
+
+    fn status(&self) -> &'static str {
+        "integration"
+    }
+
+    fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        if job.kind != EnrichJobKind::Train {
+            return Err(ModelError::Other(format!(
+                "refuse:job: {UNSLOTH_QLORA_ID} prepares train; got {}",
+                job.kind.as_str()
+            )));
+        }
+        let (dataset, stub) = unsloth_dataset_jsonl(job)?;
+        let script = unsloth_train_script(job, stub);
+        let host = unsloth_host_note(&job.host_class_affinity);
+        let data_note = unsloth_dataset_note(stub, &job.source_paths);
+        let steps = format!(
+            "This step wrote train_unsloth.py and dataset.jsonl. The script is QLoRA (`load_in_4bit=True`, LoRA r={rank}, `max_seq_length` {seq}). It did not run python, did not train, and did not rewrite the estate.\n\
+             \n\
+             {host}\n\
+             \n\
+             {data_note}\n\
+             \n\
+             MODEL_NAME is {base}. That is the seated model tag, the same resolution as Modelfile FROM. Unsloth expects a Hugging Face repo id. Prefer an instruct model, often an unsloth/*-bnb-4bit id. If {base} is only an Ollama tag, edit MODEL_NAME before you train. This factory did not download weights.\n\
+             \n\
+             From this directory, after Unsloth is installed on a CUDA host:\n\
+             \n\
+             pip install unsloth\n\
+             python train_unsloth.py\n\
+             \n\
+             The copy-paste line with the script path is in NEXT.md. Ollama stays the local-run seat after the adapter exists. This factory does not export GGUF.\n",
+            rank = UNSLOTH_LORA_R,
+            seq = UNSLOTH_MAX_SEQ,
+            base = job.base_model,
+        );
+        Ok(DriverPrepare {
+            files: vec![
+                ("train_unsloth.py".into(), script),
+                ("dataset.jsonl".into(), dataset),
             ],
             steps,
         })
@@ -968,6 +1040,42 @@ fn next_markdown(
             ),
             "Point --path at the weights file you loaded. Until then, manifest.json is the portable hatch.".to_string(),
         )
+    } else if driver_id == UNSLOTH_QLORA_ID {
+        let script = out_dir.join("train_unsloth.py");
+        let command = unsloth_train_command(&script);
+        (
+            format!(
+                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it.\n\
+                 \n\
+                 pip install unsloth\n\
+                 {command}\n\
+                 \n\
+                 If that pip line does not match the CUDA wheel on the box, use the install page: https://unsloth.ai/docs/get-started/install\n\
+                 \n\
+                 {host}\n\
+                 \n\
+                 {dataset}\n\
+                 \n\
+                 MODEL_NAME in train_unsloth.py is {base}. Unsloth expects a Hugging Face repo id. Prefer an instruct model, often an unsloth/*-bnb-4bit id. This factory did not download weights.\n\
+                 \n\
+                 The script saves the LoRA adapter in its output directory (adapter_config.json and the adapter weights). Ollama stays the local-run seat. Unsloth documents GGUF and Ollama export. This factory does not export and does not run ollama create.\n\
+                 https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf\n\
+                 https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama\n\
+                 Their local GGUF call, which you run yourself after training:\n\
+                 model.save_pretrained_gguf(\"directory\", tokenizer, quantization_method=\"q4_k_m\")\n\
+                 Then create tag {tag} on Ollama from the Modelfile Unsloth writes, or FROM the GGUF.\n\
+                 \n\
+                 axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
+                host = unsloth_host_note(&job.host_class_affinity),
+                dataset = unsloth_dataset_note(job.source_paths.is_empty(), &job.source_paths),
+                base = job.base_model,
+            ),
+            format!(
+                "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
+                out = out_dir.display(),
+            ),
+            "Point --adapter at the Unsloth output directory (adapter_config.json inside it) or at a GGUF Unsloth saved.".to_string(),
+        )
     } else if driver_id == AXOLOTL_LORA_ID {
         let command = axolotl_train_command(&config);
         (
@@ -984,7 +1092,7 @@ fn next_markdown(
                  \n\
                  Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {base} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.\n\
                  \n\
-                 Unsloth can train a LoRA from dataset.jsonl in its own process (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
+                 unsloth-qlora is the single-GPU QLoRA card (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
                 dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
                 base = job.base_model,
@@ -1057,27 +1165,34 @@ fn dataset_lines(paths: &[String]) -> String {
     }
 }
 
-/// Supported CUDA hosts for the Axolotl GPU path. Apple Silicon can hold the recipe.
-const AXOLOTL_TRAIN_HOSTS: &[&str] = &["consumer-nvidia", "rented-nvidia"];
+/// CUDA hosts for Unsloth and Axolotl. Apple Silicon can hold the recipe.
+const CUDA_TRAIN_HOSTS: &[&str] = &["consumer-nvidia", "rented-nvidia"];
 
-fn axolotl_host_note(affinity: &str) -> String {
+fn cuda_train_host_note(driver_id: &str, affinity: &str, command: &str) -> String {
+    let hosts_or = CUDA_TRAIN_HOSTS.join(" or ");
+    let hosts_and = CUDA_TRAIN_HOSTS.join(" and ");
     match affinity {
         "consumer-nvidia" | "rented-nvidia" => format!(
-            "{affinity} is a supported train host for {AXOLOTL_LORA_ID}. Run axolotl train on that CUDA host."
+            "{affinity} is a supported train host for {driver_id}. Run {command} on that CUDA host."
         ),
         "apple-silicon" => format!(
-            "host_class_affinity is apple-silicon. This recipe can be prepared on that machine. Axolotl's GPU path expects a CUDA host ({}). This factory does not write an MLX trainer.",
-            AXOLOTL_TRAIN_HOSTS.join(" or ")
+            "host_class_affinity is apple-silicon. This recipe can be prepared on that machine. This card expects a CUDA host ({hosts_or}). This factory does not write an MLX trainer."
         ),
         "any" => format!(
-            "host_class_affinity is any. Run axolotl train on {}. An apple-silicon machine can hold this recipe. Axolotl's GPU path expects CUDA. This factory does not write an MLX trainer.",
-            AXOLOTL_TRAIN_HOSTS.join(" or ")
+            "host_class_affinity is any. Run {command} on {hosts_or}. An apple-silicon machine can hold this recipe. This card expects CUDA. This factory does not write an MLX trainer."
         ),
         other => format!(
-            "host_class_affinity is {other}. Supported train hosts for {AXOLOTL_LORA_ID} are {}. Axolotl's GPU path expects CUDA. This factory does not write an MLX trainer.",
-            AXOLOTL_TRAIN_HOSTS.join(" and ")
+            "host_class_affinity is {other}. Supported train hosts for {driver_id} are {hosts_and}. This card expects a CUDA host. This factory does not write an MLX trainer."
         ),
     }
+}
+
+fn axolotl_host_note(affinity: &str) -> String {
+    cuda_train_host_note(AXOLOTL_LORA_ID, affinity, "axolotl train")
+}
+
+fn unsloth_host_note(affinity: &str) -> String {
+    cuda_train_host_note(UNSLOTH_QLORA_ID, affinity, "python train_unsloth.py")
 }
 
 fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
@@ -1091,8 +1206,27 @@ fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
     }
 }
 
+fn unsloth_dataset_note(stub: bool, paths: &[String]) -> String {
+    if stub {
+        "dataset.jsonl is a stub of example instruct chats because the pack source_paths list is empty. Replace those rows before python train_unsloth.py. This factory did not download a dataset.".into()
+    } else {
+        format!(
+            "dataset.jsonl is an instruct chat scaffold. Each row names a pack source path ({}). Copy real assistant replies into those rows. This factory did not read or download those files.",
+            paths.join(", ")
+        )
+    }
+}
+
 fn axolotl_train_command(config: &Path) -> String {
     format!("axolotl train {}", shell_quote(config))
+}
+
+fn unsloth_train_command(script: &Path) -> String {
+    format!("python {}", shell_quote(script))
+}
+
+fn python_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into())
 }
 
 fn shell_quote(path: &Path) -> String {
@@ -1114,15 +1248,20 @@ struct AlpacaRow<'a> {
     output: &'a str,
 }
 
-/// Alpaca JSONL Axolotl already reads (`type: alpaca`, `ds_type: json`).
-fn axolotl_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
-    for path in &job.source_paths {
+fn refuse_blank_source_paths(paths: &[String]) -> Result<(), ModelError> {
+    for path in paths {
         if path.trim().is_empty() {
             return Err(ModelError::Other(
                 "refuse:dataset: source path is empty".into(),
             ));
         }
     }
+    Ok(())
+}
+
+/// Alpaca JSONL Axolotl already reads (`type: alpaca`, `ds_type: json`).
+fn axolotl_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
+    refuse_blank_source_paths(&job.source_paths)?;
     let stub = job.source_paths.is_empty();
     let rows: Vec<AlpacaRow<'_>> = if stub {
         vec![
@@ -1168,6 +1307,194 @@ fn axolotl_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> 
         body.push('\n');
     }
     Ok((body, stub))
+}
+
+#[derive(Serialize)]
+struct ChatTurn {
+    role: &'static str,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ChatRow {
+    messages: Vec<ChatTurn>,
+}
+
+fn chat_row(user: String, assistant: String) -> ChatRow {
+    ChatRow {
+        messages: vec![
+            ChatTurn {
+                role: "user",
+                content: user,
+            },
+            ChatTurn {
+                role: "assistant",
+                content: assistant,
+            },
+        ],
+    }
+}
+
+/// Instruct chat JSONL. Unsloth SFT reads a `messages` column and the script
+/// applies the tokenizer chat template into `text`.
+fn unsloth_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
+    refuse_blank_source_paths(&job.source_paths)?;
+    let stub = job.source_paths.is_empty();
+    let rows: Vec<ChatRow> = if stub {
+        vec![
+            chat_row(
+                format!("You are the purpose-built SLM for pack {}.", job.pack_id),
+                "Replace this example reply before training.".into(),
+            ),
+            chat_row(
+                "Name the pack this recipe was prepared from.".into(),
+                job.pack_id.clone(),
+            ),
+            chat_row(
+                job.purpose.clone(),
+                "Replace this example reply before training.".into(),
+            ),
+        ]
+    } else {
+        job.source_paths
+            .iter()
+            .map(|path| {
+                chat_row(
+                    format!(
+                        "Draft a specialist reply for pack {} using the source at {path}. Cell One did not read that file.",
+                        job.pack_id
+                    ),
+                    "Replace this scaffold with a reply from that source.".into(),
+                )
+            })
+            .collect()
+    };
+    if rows.is_empty() {
+        return Err(ModelError::Other(
+            "refuse:dataset: no dataset rows to write".into(),
+        ));
+    }
+    let mut body = String::new();
+    for row in &rows {
+        let line = serde_json::to_string(row)
+            .map_err(|err| ModelError::Other(format!("refuse:dataset: serialize row: {err}")))?;
+        body.push_str(&line);
+        body.push('\n');
+    }
+    Ok((body, stub))
+}
+
+fn unsloth_train_script(job: &EnrichJob, stub: bool) -> String {
+    let dataset = job.out_dir.join("dataset.jsonl");
+    let outputs = job.out_dir.join("outputs");
+    let scaffold = if stub { "stub" } else { "pack-source-paths" };
+    let host = yaml_comment_line(&unsloth_host_note(&job.host_class_affinity));
+    let template = r#"# schema: cell-one.enrich-prepare.v0
+# driver: unsloth-qlora
+# job: train
+# pack: @@PACK@@
+# dataset_scaffold: @@SCAFFOLD@@
+# @@HOST@@
+# Recipe only. Cell One does not run this file, does not install Unsloth, and does not rewrite the estate.
+# MODEL_NAME is the seated model tag (same resolution as Modelfile FROM).
+# Unsloth expects a Hugging Face repo id. Prefer an instruct model.
+# QLoRA defaults match Unsloth's SFT guide: load_in_4bit, LoRA r, adamw_8bit.
+# https://unsloth.ai/docs/get-started/fine-tuning-llms-guide
+# Smoke-scale context is @@MAX_SEQ@@. That guide uses 2048 for a longer test. Raise MAX_SEQ_LENGTH before a real run.
+
+from unsloth import FastLanguageModel
+from datasets import load_dataset
+from trl import SFTConfig, SFTTrainer
+
+MODEL_NAME = @@MODEL@@
+MAX_SEQ_LENGTH = @@MAX_SEQ@@
+DATASET_PATH = @@DATASET@@
+OUTPUT_DIR = @@OUTPUT@@
+LORA_R = @@LORA_R@@
+
+
+def main():
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=MODEL_NAME,
+        max_seq_length=MAX_SEQ_LENGTH,
+        dtype=None,
+        load_in_4bit=True,
+    )
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=LORA_R,
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+        lora_alpha=LORA_R,
+        lora_dropout=0,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=3407,
+    )
+    dataset = load_dataset("json", data_files=DATASET_PATH, split="train")
+
+    def to_text(examples):
+        texts = []
+        for messages in examples["messages"]:
+            texts.append(
+                tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+            )
+        return {"text": texts}
+
+    dataset = dataset.map(to_text, batched=True)
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=dataset,
+        args=SFTConfig(
+            output_dir=OUTPUT_DIR,
+            max_seq_length=MAX_SEQ_LENGTH,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=4,
+            num_train_epochs=1,
+            learning_rate=2e-4,
+            logging_steps=1,
+            optim="adamw_8bit",
+            weight_decay=0.01,
+            lr_scheduler_type="linear",
+            warmup_steps=5,
+            seed=3407,
+            report_to="none",
+            packing=False,
+        ),
+    )
+    trainer.train()
+    model.save_pretrained(OUTPUT_DIR)
+    tokenizer.save_pretrained(OUTPUT_DIR)
+    # GGUF and Ollama export stay in Unsloth's docs. This script does not export.
+    # https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf
+    # https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama
+    # model.save_pretrained_gguf("directory", tokenizer, quantization_method="q4_k_m")
+
+
+if __name__ == "__main__":
+    main()
+"#;
+    template
+        .replace("@@PACK@@", &yaml_comment_line(&job.pack_id))
+        .replace("@@SCAFFOLD@@", scaffold)
+        .replace("@@HOST@@", &host)
+        .replace("@@MAX_SEQ@@", &UNSLOTH_MAX_SEQ.to_string())
+        .replace("@@LORA_R@@", &UNSLOTH_LORA_R.to_string())
+        .replace("@@MODEL@@", &python_string(&job.base_model))
+        .replace("@@DATASET@@", &python_string(&dataset.display().to_string()))
+        .replace("@@OUTPUT@@", &python_string(&outputs.display().to_string()))
 }
 
 fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
@@ -1502,9 +1829,10 @@ pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingPro
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
-    if doc.driver != AXOLOTL_LORA_ID {
+    if !TRAIN_RECIPE_DRIVERS.contains(&doc.driver.as_str()) {
         return Err(ModelError::Other(format!(
-            "refuse:driver: import-trained reads an {AXOLOTL_LORA_ID} prepare, found '{}'",
+            "refuse:driver: import-trained reads a train recipe ({}), found '{}'",
+            TRAIN_RECIPE_DRIVERS.join(", "),
             doc.driver
         )));
     }
@@ -2624,17 +2952,22 @@ mod tests {
             .collect();
         assert!(ids.contains(&"ollama-modelfile"));
         assert!(ids.contains(&"external-manifest"));
+        assert!(ids.contains(&UNSLOTH_QLORA_ID));
         assert!(ids.contains(&AXOLOTL_LORA_ID));
+        let unsloth = train_enrich_card(UNSLOTH_QLORA_ID).unwrap();
+        assert_eq!(unsloth.default_job, EnrichJobKind::Train);
+        assert!(unsloth.jobs.contains(&EnrichJobKind::Train));
+        assert!(!unsloth.jobs.contains(&EnrichJobKind::Enrich));
         let axolotl = train_enrich_card(AXOLOTL_LORA_ID).unwrap();
         assert_eq!(axolotl.default_job, EnrichJobKind::Train);
-        assert!(axolotl.jobs.contains(&EnrichJobKind::Train));
-        assert!(!axolotl.jobs.contains(&EnrichJobKind::Enrich));
         let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
+        assert!(!enrich_ids.contains(&UNSLOTH_QLORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
+        assert!(train_ids.contains(&UNSLOTH_QLORA_ID));
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
-        assert_eq!(train_ids.len(), 3);
+        assert_eq!(train_ids.len(), 4);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -2650,9 +2983,147 @@ mod tests {
         let rendered = render_train_enrich_catalog();
         assert!(rendered.contains("ollama-modelfile"), "{rendered}");
         assert!(rendered.contains("external-manifest"), "{rendered}");
+        assert!(rendered.contains(UNSLOTH_QLORA_ID), "{rendered}");
         assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
         assert!(rendered.contains("default=train"), "{rendered}");
+    }
+
+    #[test]
+    fn unsloth_qlora_prepares_a_script_and_imports_the_adapter() {
+        let root = tmp("unsloth");
+        let pack = fixture_pack();
+        let estate = seated_estate("llama3");
+        let out = root.join("script");
+        let doc = run(UNSLOTH_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, UNSLOTH_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        for name in [
+            "train_unsloth.py",
+            "dataset.jsonl",
+            "PREPARE.md",
+            "NEXT.md",
+            "prepare.json",
+        ] {
+            assert!(doc.artifacts.iter().any(|item| item == name), "{name}");
+            assert!(out.join(name).is_file(), "{name}");
+        }
+        let script = std::fs::read_to_string(out.join("train_unsloth.py")).unwrap();
+        assert!(script.contains("load_in_4bit=True"), "{script}");
+        assert!(script.contains("LORA_R = 16"), "{script}");
+        assert!(script.contains("MAX_SEQ_LENGTH = 512"), "{script}");
+        assert!(script.contains("MODEL_NAME = \"llama3\""), "{script}");
+        assert!(script.contains("from unsloth import FastLanguageModel"), "{script}");
+        assert!(script.contains("report_to=\"none\""), "{script}");
+        assert!(script.contains("# model.save_pretrained_gguf"), "{script}");
+        assert!(
+            script.lines().all(|line| {
+                !line.contains("save_pretrained_gguf") || line.trim_start().starts_with('#')
+            }),
+            "GGUF export stays a comment: {script}"
+        );
+        let compiled = std::process::Command::new("python3")
+            .args(["-m", "py_compile", &out.join("train_unsloth.py").display().to_string()])
+            .output()
+            .expect("python3");
+        assert!(
+            compiled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
+        assert!(jsonl.contains("\"messages\""), "{jsonl}");
+        assert!(jsonl.contains("\"role\":\"user\""), "{jsonl}");
+        assert!(jsonl.contains("feed/events.jsonl"), "{jsonl}");
+        assert_eq!(jsonl.lines().count(), 1, "{jsonl}");
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let script_path = out.join("train_unsloth.py");
+        assert!(
+            next.contains(&format!("python {}", script_path.display())),
+            "{next}"
+        );
+        assert!(next.contains("pip install unsloth"), "{next}");
+        assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains("saving-to-ollama"), "{next}");
+        assert!(next.contains("saving-to-gguf"), "{next}");
+        assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(next.contains("axolotl-lora"), "{next}");
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        assert!(prepare_md.contains("python train_unsloth.py"), "{prepare_md}");
+        assert!(prepare_md.contains("did not run python"), "{prepare_md}");
+        let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
+        assert!(!prepare_json.contains("python train"), "{prepare_json}");
+
+        let enrich_out = root.join("enrich-job");
+        let err = run(
+            UNSLOTH_QLORA_ID,
+            &pack,
+            &estate,
+            &enrich_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!enrich_out.exists());
+
+        let mut empty = pack.clone();
+        empty.source_paths.clear();
+        let stub_out = root.join("stub");
+        run(
+            UNSLOTH_QLORA_ID,
+            &empty,
+            &estate,
+            &stub_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let stub_jsonl = std::fs::read_to_string(stub_out.join("dataset.jsonl")).unwrap();
+        assert_eq!(stub_jsonl.lines().count(), 3, "{stub_jsonl}");
+        let stub_next = std::fs::read_to_string(stub_out.join("NEXT.md")).unwrap();
+        assert!(
+            stub_next.contains("source_paths list is empty"),
+            "{stub_next}"
+        );
+
+        let mut apple = pack.clone();
+        apple.host_class_affinity = Some("apple-silicon".into());
+        let apple_out = root.join("apple");
+        run(
+            UNSLOTH_QLORA_ID,
+            &apple,
+            &estate,
+            &apple_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let apple_next = std::fs::read_to_string(apple_out.join("NEXT.md")).unwrap();
+        assert!(apple_next.contains("apple-silicon"), "{apple_next}");
+        assert!(apple_next.contains("expects a CUDA host"), "{apple_next}");
+        assert!(
+            apple_next.contains("does not write an MLX trainer"),
+            "{apple_next}"
+        );
+
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.driver, UNSLOTH_QLORA_ID);
+        assert_eq!(proposal.binding_id, "local_slm");
+        assert!(proposal.local_path.ends_with("adapter_config.json"));
+        assert!(!proposal.auto_apply && !proposal.estate_rewritten);
     }
 
     #[test]

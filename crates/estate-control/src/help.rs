@@ -291,7 +291,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. axolotl-lora writes an Axolotl LoRA/QLoRA recipe. This page does not run a trainer.
+- estate enrich prepare writes artifacts. unsloth-qlora writes a Unsloth QLoRA script. axolotl-lora writes the YAML recipe. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -315,16 +315,16 @@ const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
 estate help train prints this page. Job field is train or enrich.
-Default job is enrich. axolotl-lora defaults to train. --all-drivers
-defaults to enrich and includes a card only when that job is allowed.
-Prepare writes artifacts. It does not train.
+Default job is enrich. unsloth-qlora and axolotl-lora default to train.
+--all-drivers defaults to enrich and includes a card only when that job
+is allowed. Prepare writes artifacts. It does not train.
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\
     --pack <accepted-pack-id> --state-dir .cell
   estate enrich prepare --estate <your-estate.yaml> \\
     --pack examples/fixtures/specialist-overnight.pack.json \\
-    --driver axolotl-lora --job train --state-dir .cell
+    --driver unsloth-qlora --job train --state-dir .cell
   estate enrich prepare --estate <your-estate.yaml> \\
     --pack examples/fixtures/specialist-overnight.pack.json \\
     --all-drivers --state-dir .cell
@@ -334,7 +334,7 @@ Prepare writes artifacts. It does not train.
     --tag cell-enrich-overnight-traces \\
     --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
   estate enrich import-trained --estate <your-estate.yaml> \\
-    --prepared .cell/enrich/overnight-traces/axolotl-lora \\
+    --prepared .cell/enrich/overnight-traces/unsloth-qlora \\
     --tag cell-enrich-overnight-traces \\
     --adapter <adapter-dir-or-gguf>
   estate enrich apply-proposal --estate <your-estate.yaml> \\
@@ -346,8 +346,10 @@ Prepare writes artifacts. It does not train.
 
 TrainEnrichDriver lives in the data plane (model-estate).
 Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM),
-external-manifest (portable JSON/YAML, no vendor lock), and
-axolotl-lora (Axolotl axolotl.yml + dataset.jsonl; default job train).
+external-manifest (portable JSON/YAML, no vendor lock),
+unsloth-qlora (Unsloth train_unsloth.py + instruct chat dataset.jsonl;
+default job train), and axolotl-lora (Axolotl axolotl.yml + dataset.jsonl;
+default job train).
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card the job
 allows, into sibling directories. Omit --driver on prepare for the
@@ -372,10 +374,10 @@ path you created outside the factory. It writes binding-proposal.json
 and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
-estate enrich import-trained is that same proposal for an axolotl-lora
-prepare. --adapter is an adapter directory or a merged GGUF. It does
-not apply. apply-proposal, plan, and apply --require-plan stay the
-join. Ollama stays the local-run seat.
+estate enrich import-trained is that same proposal for an unsloth-qlora
+or axolotl-lora prepare whose job is train. --adapter is an adapter
+directory or a merged GGUF. It does not apply. apply-proposal, plan,
+and apply --require-plan stay the join. Ollama stays the local-run seat.
 
 estate enrich apply-proposal reads that proposal, checks it against
 prepare.json, and writes {state}/enrich-stage/staged-estate.yaml.
@@ -400,8 +402,9 @@ Point --estate at a lab copy. examples/estate.yaml on main stays hash-locked.
 apply-proposal and import-prepared leave the source estate unchanged.
 Promote stays off. No train POST.
 
-Opt-in walk: make enrich-prepare. make train-prepare writes an
-Axolotl recipe under /tmp and does not run Axolotl. Neither is part of
+Opt-in walk: make enrich-prepare. make train-prepare writes a
+Unsloth script and an Axolotl recipe under /tmp and does not run either
+trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.

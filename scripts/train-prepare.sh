@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Train prepare fixture: example pack -> Axolotl recipe, then import-trained.
-# Throwaway dir. No Axolotl binary. No GPU. No live train.
+# Train prepare fixture: example pack -> Unsloth script, plus an Axolotl recipe.
+# Throwaway dir. No Unsloth install. No Axolotl binary. No GPU. No live train.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
 
@@ -43,7 +43,7 @@ if needle not in text:
 open(dest, "w").write(text.replace(needle, needle + '      model: "llama3"\n', 1))
 PY
 
-echo "== train-prepare (Axolotl recipe only; not a live train) =="
+echo "== train-prepare (Unsloth script and Axolotl recipe; not a live train) =="
 echo "workdir: $WORKDIR"
 echo "SKIP live train"
 
@@ -52,7 +52,7 @@ set +e
 estate enrich prepare \
   --estate "$ESTATE" \
   --pack "$PACK" \
-  --driver axolotl-lora \
+  --driver unsloth-qlora \
   --job train \
   --out "$WORKDIR/stock" \
   >/tmp/train-prepare-stock.out 2>/tmp/train-prepare-stock.err
@@ -72,43 +72,39 @@ if [[ -e "$WORKDIR/stock" ]]; then
   exit 1
 fi
 
-echo "-- axolotl-lora default job is train --"
+echo "-- unsloth-qlora default job is train --"
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
-  --driver axolotl-lora \
-  --out "$WORKDIR/axolotl"
+  --driver unsloth-qlora \
+  --out "$WORKDIR/unsloth"
 
-test -f "$WORKDIR/axolotl/axolotl.yml"
-test -f "$WORKDIR/axolotl/dataset.jsonl"
-test -f "$WORKDIR/axolotl/PREPARE.md"
-test -f "$WORKDIR/axolotl/NEXT.md"
-test -f "$WORKDIR/axolotl/prepare.json"
-grep -q "adapter: qlora" "$WORKDIR/axolotl/axolotl.yml"
-grep -q "load_in_4bit: true" "$WORKDIR/axolotl/axolotl.yml"
-grep -q 'base_model: "llama3"' "$WORKDIR/axolotl/axolotl.yml"
-python3 - "$WORKDIR/axolotl/axolotl.yml" <<'PY'
-import sys
-text = open(sys.argv[1]).read()
-needle = "\n  - path: "
-if needle not in text or "\n    ds_type: json\n    type: alpaca\n" not in text:
-    raise SystemExit("FAIL  axolotl.yml datasets list is not indented")
-PY
-grep -q "feed/events.jsonl" "$WORKDIR/axolotl/dataset.jsonl"
-grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
-grep -q "import-trained" "$WORKDIR/axolotl/NEXT.md"
-grep -q "axolotl train axolotl.yml" "$WORKDIR/axolotl/PREPARE.md"
-if grep -q "axolotl train" "$WORKDIR/axolotl/prepare.json"; then
+test -f "$WORKDIR/unsloth/train_unsloth.py"
+test -f "$WORKDIR/unsloth/dataset.jsonl"
+test -f "$WORKDIR/unsloth/PREPARE.md"
+test -f "$WORKDIR/unsloth/NEXT.md"
+test -f "$WORKDIR/unsloth/prepare.json"
+grep -q "load_in_4bit=True" "$WORKDIR/unsloth/train_unsloth.py"
+grep -q "LORA_R = 16" "$WORKDIR/unsloth/train_unsloth.py"
+grep -q "MAX_SEQ_LENGTH = 512" "$WORKDIR/unsloth/train_unsloth.py"
+grep -q 'MODEL_NAME = "llama3"' "$WORKDIR/unsloth/train_unsloth.py"
+grep -q "feed/events.jsonl" "$WORKDIR/unsloth/dataset.jsonl"
+grep -q "python $WORKDIR/unsloth/train_unsloth.py" "$WORKDIR/unsloth/NEXT.md"
+grep -q "pip install unsloth" "$WORKDIR/unsloth/NEXT.md"
+grep -q "saving-to-ollama" "$WORKDIR/unsloth/NEXT.md"
+grep -q "python train_unsloth.py" "$WORKDIR/unsloth/PREPARE.md"
+if grep -q "python train" "$WORKDIR/unsloth/prepare.json"; then
   echo "FAIL  prepare.json must not embed a train command"
   exit 1
 fi
+python3 -m py_compile "$WORKDIR/unsloth/train_unsloth.py"
 
-python3 - "$WORKDIR/axolotl/prepare.json" "$WORKDIR/axolotl/dataset.jsonl" <<'PY'
+python3 - "$WORKDIR/unsloth/prepare.json" "$WORKDIR/unsloth/dataset.jsonl" <<'PY'
 import json, sys
 prepare = json.load(open(sys.argv[1]))
 if prepare.get("schema") != "cell-one.enrich-prepare.v0":
     raise SystemExit(f"FAIL  schema={prepare.get('schema')}")
-if prepare.get("driver") != "axolotl-lora":
+if prepare.get("driver") != "unsloth-qlora":
     raise SystemExit(f"FAIL  driver={prepare.get('driver')}")
 if prepare.get("job") != "train":
     raise SystemExit(f"FAIL  job={prepare.get('job')}")
@@ -119,7 +115,7 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
 if prepare.get("estate_rewritten") is not False:
     raise SystemExit("FAIL  prepare.json claims an estate rewrite")
 artifacts = prepare.get("artifacts", [])
-for name in ("axolotl.yml", "dataset.jsonl", "NEXT.md", "PREPARE.md", "prepare.json"):
+for name in ("train_unsloth.py", "dataset.jsonl", "NEXT.md", "PREPARE.md", "prepare.json"):
     if name not in artifacts:
         raise SystemExit(f"FAIL  artifacts missing {name}: {artifacts}")
 rows = [line for line in open(sys.argv[2]) if line.strip()]
@@ -127,24 +123,27 @@ if not rows:
     raise SystemExit("FAIL  dataset.jsonl is empty")
 for line in rows:
     row = json.loads(line)
-    for key in ("instruction", "input", "output"):
-        if key not in row:
-            raise SystemExit(f"FAIL  dataset row missing {key}")
+    messages = row.get("messages")
+    if not isinstance(messages, list) or len(messages) < 2:
+        raise SystemExit(f"FAIL  chat row: {row}")
+    roles = [item.get("role") for item in messages]
+    if "user" not in roles or "assistant" not in roles:
+        raise SystemExit(f"FAIL  chat roles: {roles}")
 PY
 
-echo "-- enrich job on axolotl-lora refuses before write --"
+echo "-- enrich job on unsloth-qlora refuses before write --"
 set +e
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
-  --driver axolotl-lora \
+  --driver unsloth-qlora \
   --job enrich \
   --out "$WORKDIR/enrich-job" \
   >/tmp/train-prepare-enrich.out 2>/tmp/train-prepare-enrich.err
 enrich_rc=$?
 set -e
 if [[ "$enrich_rc" -eq 0 ]]; then
-  echo "FAIL  --job enrich on axolotl-lora must refuse"
+  echo "FAIL  --job enrich on unsloth-qlora must refuse"
   exit 1
 fi
 if ! grep -q "refuse:job" /tmp/train-prepare-enrich.out /tmp/train-prepare-enrich.err; then
@@ -157,25 +156,43 @@ if [[ -e "$WORKDIR/enrich-job" ]]; then
   exit 1
 fi
 
-echo "-- import-trained records the adapter on local_slm --"
+echo "-- axolotl-lora still writes a YAML recipe --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --job train \
+  --out "$WORKDIR/axolotl"
+test -f "$WORKDIR/axolotl/axolotl.yml"
+grep -q "adapter: qlora" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "load_in_4bit: true" "$WORKDIR/axolotl/axolotl.yml"
+python3 - "$WORKDIR/axolotl/axolotl.yml" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+if "\n  - path: " not in text or "\n    ds_type: json\n    type: alpaca\n" not in text:
+    raise SystemExit("FAIL  axolotl.yml datasets list is not indented")
+PY
+grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
+
+echo "-- import-trained records the Unsloth adapter on local_slm --"
 ADAPTER="$WORKDIR/adapter"
 mkdir -p "$ADAPTER"
 printf '{}\n' > "$ADAPTER/adapter_config.json"
 estate enrich import-trained \
   --estate "$SEATED" \
-  --prepared "$WORKDIR/axolotl" \
+  --prepared "$WORKDIR/unsloth" \
   --tag cell-enrich-overnight-traces \
   --adapter "$ADAPTER" \
   | tee "$WORKDIR/import.out"
-test -f "$WORKDIR/axolotl/binding-proposal.json"
+test -f "$WORKDIR/unsloth/binding-proposal.json"
 grep -q "import-trained did not apply" "$WORKDIR/import.out"
 grep -q "auto_apply=false" "$WORKDIR/import.out"
-python3 - "$WORKDIR/axolotl/binding-proposal.json" <<'PY'
+python3 - "$WORKDIR/unsloth/binding-proposal.json" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
 if doc.get("schema") != "cell-one.enrich-binding-proposal.v0":
     raise SystemExit(f"FAIL  schema={doc.get('schema')}")
-if doc.get("driver") != "axolotl-lora" or doc.get("job") != "train":
+if doc.get("driver") != "unsloth-qlora" or doc.get("job") != "train":
     raise SystemExit(f"FAIL  driver={doc.get('driver')} job={doc.get('job')}")
 if doc.get("binding_id") != "local_slm":
     raise SystemExit(f"FAIL  binding_id={doc.get('binding_id')}")
@@ -194,4 +211,4 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (Axolotl recipe and import-trained; SKIP live train)"
+echo "PASS  train-prepare (Unsloth script, Axolotl recipe, import-trained; SKIP live train)"

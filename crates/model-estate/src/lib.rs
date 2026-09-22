@@ -46,6 +46,7 @@ pub use train_enrich::{
     EnrichPrepareDoc, EnrichStageCommit, ImportPreparedRequest, ImportTrainedRequest,
     PrepareEnrichRequest, PreparedEntry, TrainEnrichCard, TrainEnrichDriver, TrainEnrichProbe,
     AXOLOTL_LORA_ID, BINDING_PROPOSAL_SCHEMA, BINDING_STAGE_SCHEMA, PREPARE_SCHEMA,
+    UNSLOTH_QLORA_ID,
 };
 
 use estate_schema::{Estate, ModelBinding, ModelClass};

@@ -485,7 +485,7 @@ pub(crate) enum EnrichCommand {
         out: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on axolotl-lora, `enrich` otherwise). `--all-drivers` defaults to enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on unsloth-qlora and axolotl-lora, `enrich` otherwise). `--all-drivers` defaults to enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
@@ -509,7 +509,7 @@ pub(crate) enum EnrichCommand {
         all_drivers: bool,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on axolotl-lora, `enrich` otherwise). With no `--driver`, the default job is enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on unsloth-qlora and axolotl-lora, `enrich` otherwise). With no `--driver`, the default job is enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
@@ -542,7 +542,7 @@ pub(crate) enum EnrichCommand {
     ImportTrained {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
-        /// Directory that holds an axolotl-lora prepare.json with job train.
+        /// Directory that holds a unsloth-qlora or axolotl-lora prepare.json with job train.
         #[arg(long)]
         prepared: PathBuf,
         /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.

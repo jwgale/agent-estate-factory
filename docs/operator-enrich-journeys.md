@@ -6,7 +6,7 @@ Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
-Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, `estate enrich import-trained`, and `estate enrich apply-proposal`. No new crate. The factory does not run Axolotl. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page. The opt-in `ollama create` handoff is [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, `estate enrich import-trained`, and `estate enrich apply-proposal`. No new crate. The factory does not run Unsloth or Axolotl. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page. The opt-in `ollama create` handoff is [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ## What stays fixed
 
@@ -154,45 +154,51 @@ The trainer trains on their own hardware. Weights come back to the operator. Jou
 
 No dataset pipeline and no trainer crate ship with this page.
 
-## 4. Train a LoRA with Axolotl, then seat it
+## 4. Train a QLoRA with Unsloth, then seat it
 
-Axolotl already trains LoRA and QLoRA. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `axolotl train`.
+On one consumer or rented Nvidia box, Unsloth already runs QLoRA supervised fine-tuning. This journey writes that script from a pack and brings the adapter back onto `local_slm`. The factory does not run `python train_unsloth.py`.
 
 `<your-estate.yaml>` is a lab copy. It needs `params.model` on `local_slm` (a model the seat already has, such as `llama3`) or a pack `model_hint` that is already a model tag. `examples/estate.yaml` on `main` stays hash-locked. A binding id as `FROM` is `refuse:base-model`.
 
-The train hosts for this card are `consumer-nvidia` and `rented-nvidia`. Prepare on `apple-silicon` still writes the files. `NEXT.md` says the GPU path expects CUDA. There is no MLX trainer in this journey.
+The train hosts for this card are `consumer-nvidia` and `rented-nvidia`. Prepare on `apple-silicon` still writes the files. `NEXT.md` says the card expects a CUDA host. There is no MLX trainer in this journey.
 
 ```bash
 estate enrich prepare \
   --estate <your-estate.yaml> \
   --pack <pack-id> \
-  --driver axolotl-lora \
+  --driver unsloth-qlora \
   --job train \
   --state-dir .cell
 ```
 
-That writes `.cell/enrich/<pack-id>/axolotl-lora/axolotl.yml` and `dataset.jsonl`. `prepare.json` says `job` `train`, and `promoted`, `auto_apply`, and `estate_rewritten` stay false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
+That writes `.cell/enrich/<pack-id>/unsloth-qlora/train_unsloth.py` and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The script is 4-bit QLoRA with LoRA `r=16` and a short `max_seq_length` of 512. `prepare.json` says `job` `train`, and `promoted`, `auto_apply`, and `estate_rewritten` stay false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
 
-On the CUDA host, run the line from `NEXT.md`:
+On the CUDA host, run the lines from `NEXT.md`:
 
 ```bash
-axolotl train .cell/enrich/<pack-id>/axolotl-lora/axolotl.yml
+pip install unsloth
+python .cell/enrich/<pack-id>/unsloth-qlora/train_unsloth.py
 ```
 
-If `base_model` in the yaml is only an Ollama tag, point it at a Hugging Face repo or a local weights directory before that command. This factory does not download weights.
+If `MODEL_NAME` is only an Ollama tag, point it at a Hugging Face instruct repo before that command. An `unsloth/*-bnb-4bit` id is the usual choice. This factory does not download weights. If `pip install unsloth` does not match the CUDA wheel, use https://unsloth.ai/docs/get-started/install.
 
-When Axolotl finishes, the adapter directory (it contains `adapter_config.json`) or a merged GGUF is the handoff. Seat the tag on Ollama yourself, then record the join. `import-trained` writes `binding-proposal.json` for the existing `local_slm` seat. It does not apply.
+The script saves the adapter under `outputs/` (`adapter_config.json` inside it). Ollama stays the seat. Unsloth documents GGUF and Ollama export. This factory does not export.
+
+- https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf
+- https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama
+
+After you create tag `cell-enrich-<pack-id>` on Ollama, record the join. `import-trained` writes `binding-proposal.json` for the existing `local_slm` seat. It does not apply.
 
 ```bash
 estate enrich import-trained \
   --estate <your-estate.yaml> \
-  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --prepared .cell/enrich/<pack-id>/unsloth-qlora \
   --tag cell-enrich-<pack-id> \
   --adapter <adapter-dir-or-gguf>
 
 estate enrich apply-proposal \
   --estate <your-estate.yaml> \
-  --prepared .cell/enrich/<pack-id>/axolotl-lora \
+  --prepared .cell/enrich/<pack-id>/unsloth-qlora \
   --tag cell-enrich-<pack-id> \
   --state-dir .cell
 
@@ -200,7 +206,9 @@ estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
 estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
 ```
 
-A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate. Opt-in check, with no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
+A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate.
+
+When you want a YAML recipe or a multi-GPU run, prepare `axolotl-lora` the same way. It writes `axolotl.yml` and an Alpaca `dataset.jsonl`. On the CUDA host, run `axolotl train` on that yaml. `import-trained` takes that directory too. Opt-in check, with no Unsloth process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
 
 ## 5. Fail-closed moments
 
@@ -218,11 +226,11 @@ Text over 16KiB refuses before the POST. Credentials stay in the environment (`X
 
 Build rule (`integrate-vs-invent`): a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver.
 
-Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use Axolotl when the job is a LoRA/QLoRA train: `axolotl-lora` writes the recipe, and you run `axolotl train` outside the factory (journey 4).
+Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use Unsloth when the job is QLoRA on one Nvidia box: `unsloth-qlora` writes the script, and you run `python train_unsloth.py` outside the factory (journey 4). Use Axolotl when you want that same job as a YAML recipe: `axolotl-lora` writes `axolotl.yml`, and you run `axolotl train` outside the factory.
 
 A new driver earns a catalog card when `ollama` and llama.cpp both lack the job. The card goes through catalog, route, and bind. The binding id stays `local_slm`. Floor core does not gain a vendor string. The driver stays a trait. The specialist process may be any language. Jason verifies before the card is Supported. Until that verification, the card stays stub or experimental and fails closed.
 
-Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a Grok Bot clone, a chat UI, a weight browser. Axolotl stays the trainer. This factory writes the recipe and does not run it.
+Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a Grok Bot clone, a chat UI, a weight browser. Unsloth and Axolotl stay the trainers. This factory writes the script or the recipe and does not run it.
 
 Control does not complete. Completion stays on the data plane (`estate specialist`, `model-estate`).
 
