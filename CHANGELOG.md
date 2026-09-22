@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #66 (this slice)
+
+- `estate status` refuses (`refuse:model-actual`) when a present `model-actual.json` does not parse. It does that before the status page. A missing file is not a failure, and status does not invent a binding count.
+- A file that parses is not a new status line. `estate drift` already refused that file. `estate doctor` already FAILs it before `factory ready`.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #65 (this slice)
 
 - `estate doctor` FAILs a present `model-actual.json` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a binding count.

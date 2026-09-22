@@ -361,6 +361,13 @@ pub(crate) fn cmd_status(
     });
     let proposals = list_open_proposals(&packs_dir.join("proposed"))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Missing model-actual.json is not a failure. Printing a binding
+    // count for a missing file would invent zero. A present file that
+    // does not parse is refuse before the page. estate drift already
+    // refused that file. A parsed file is not a status line.
+    model_estate::drift_bindings(&estate, state_dir).map_err(|err| {
+        anyhow::anyhow!("refuse:model-actual: model-actual.json: {err}")
+    })?;
     let policy_present = policy.is_file();
     let mut doctor = doctor_summary_line(root, state_dir);
     if cell_catalog_disagrees_with_estate(&estate, &state_dir.join("catalog.json")).is_some()
