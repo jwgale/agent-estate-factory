@@ -184,11 +184,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
         &root.join("schema/local-catalog.v0.json"),
         &mut fails,
     );
-    print_doctor_frontier(
-        "catalog.json",
-        &state_dir.join("catalog.json"),
-        &mut fails,
-    );
+    doctor_cell_frontier(state_dir, &mut fails);
 
     println!("\nHealth");
     println!("------");
@@ -256,7 +252,12 @@ pub(crate) fn cmd_status(
     let proposals = list_open_proposals(&packs_dir.join("proposed"))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let policy_present = policy.is_file();
-    let doctor = doctor_summary_line(root, state_dir);
+    let mut doctor = doctor_summary_line(root, state_dir);
+    if cell_catalog_disagrees_with_estate(&estate, &state_dir.join("catalog.json")).is_some()
+        && doctor.starts_with("ok ")
+    {
+        doctor = "FAIL (1)".into();
+    }
     let paused = life.state == floor_supervisor::LifecycleState::Suspended;
 
     println!("Cell One status");
@@ -293,7 +294,11 @@ pub(crate) fn cmd_status(
         println!("frontier: {id} model={model}");
     }
     print_catalog_frontier("schema", &root.join("schema/local-catalog.v0.json"));
-    print_catalog_frontier("cell", &state_dir.join("catalog.json"));
+    let cell_catalog = state_dir.join("catalog.json");
+    if let Some(err) = cell_catalog_disagrees_with_estate(&estate, &cell_catalog) {
+        bail!("{err}");
+    }
+    print_catalog_frontier("cell", &cell_catalog);
     println!("in_sync: {}", report.in_sync);
     println!("cloud-agent: declared, not spawned");
     if !report.spawned_cloud_agents.is_empty() {
@@ -316,6 +321,83 @@ fn print_catalog_frontier(source: &str, path: &Path) {
     }
 }
 
+fn cell_catalog_disagrees_with_estate(
+    estate: &estate_schema::Estate,
+    path: &Path,
+) -> Option<String> {
+    if !path.is_file() {
+        return None;
+    }
+    let catalog = read_catalog_frontier(path).ok()?;
+    match model_estate::bound_frontier_model(estate) {
+        Ok(bound) => model_estate::refuse_catalog_frontier_mismatch(
+            bound.as_deref(),
+            catalog.as_deref(),
+        )
+        .err()
+        .map(|err| err.to_string()),
+        Err(err) => Some(err.to_string()),
+    }
+}
+
+fn doctor_cell_frontier(state_dir: &Path, fails: &mut Vec<String>) {
+    let path = state_dir.join("catalog.json");
+    if !path.is_file() {
+        return;
+    }
+    let catalog = match read_catalog_frontier(&path) {
+        Ok(model) => model,
+        Err(err) => {
+            println!("  note  catalog.json frontier model unreadable ({err})");
+            return;
+        }
+    };
+    if let Some(model) = catalog.as_ref() {
+        if estate_schema::contains_sku(model) {
+            println!("  FAIL  catalog.json model={model} encodes a hardware SKU");
+            fails.push("catalog.json frontier model encodes a SKU".into());
+        }
+    }
+    let snap = match floor_supervisor::load_desired_snapshot(state_dir) {
+        Ok(snap) => snap,
+        Err(err) => {
+            println!("  FAIL  desired-snapshot.yaml: {err}");
+            fails.push(format!("desired-snapshot.yaml: {err}"));
+            return;
+        }
+    };
+    let Some(estate) = snap else {
+        match catalog.as_deref() {
+            Some(model) => println!(
+                "  note  catalog.json model={model} is not a binding (no desired snapshot)"
+            ),
+            None => println!("  note  catalog.json has no frontier model"),
+        }
+        return;
+    };
+    match model_estate::bound_frontier_model(&estate) {
+        Ok(bound) => {
+            if let Err(err) = model_estate::refuse_catalog_frontier_mismatch(
+                bound.as_deref(),
+                catalog.as_deref(),
+            ) {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+                return;
+            }
+        }
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+            return;
+        }
+    }
+    match catalog.as_deref() {
+        Some(model) => println!("  ok    catalog.json model={model}"),
+        None => println!("  note  catalog.json has no frontier model"),
+    }
+}
+
 fn print_doctor_frontier(label: &str, path: &Path, fails: &mut Vec<String>) {
     if !path.is_file() {
         return;
@@ -328,6 +410,28 @@ fn print_doctor_frontier(label: &str, path: &Path, fails: &mut Vec<String>) {
         Ok(Some(model)) => println!("  ok    {label} model={model}"),
         Ok(None) => println!("  note  {label} has no frontier model"),
         Err(err) => println!("  note  {label} frontier model unreadable ({err})"),
+    }
+}
+
+fn cell_catalog_binding_problem(state_dir: &Path) -> Option<String> {
+    let path = state_dir.join("catalog.json");
+    if !path.is_file() {
+        return None;
+    }
+    let catalog = read_catalog_frontier(&path).ok()?;
+    let estate = match floor_supervisor::load_desired_snapshot(state_dir) {
+        Ok(Some(estate)) => estate,
+        Ok(None) => return None,
+        Err(err) => return Some(format!("desired-snapshot.yaml: {err}")),
+    };
+    match model_estate::bound_frontier_model(&estate) {
+        Ok(bound) => model_estate::refuse_catalog_frontier_mismatch(
+            bound.as_deref(),
+            catalog.as_deref(),
+        )
+        .err()
+        .map(|err| err.to_string()),
+        Err(err) => Some(err.to_string()),
     }
 }
 
@@ -370,6 +474,9 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
                 fails += 1;
             }
         }
+    }
+    if cell_catalog_binding_problem(state_dir).is_some() {
+        fails += 1;
     }
     if fails == 0 {
         "ok (compile-only CI; schemas present)".into()
