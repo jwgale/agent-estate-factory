@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#65 plus this slice)
+## On `main` (PR #1-#66 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -226,13 +226,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `estate doctor` FAILs a present `desired-snapshot.yaml` that does not parse when no cell catalog is present. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a frontier model from it. A file that parses prints `desired-snapshot.yaml name=` from the file. When a cell catalog is present, doctor already reads this snapshot. `estate apply` already refused an unreadable snapshot.
 
-## This slice
+## #66 in plain English
 
 `estate doctor` FAILs a present `model-actual.json` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a binding count. A file that parses prints `model-actual.json bindings=` from the file. `estate drift` already refused that file.
 
+## This slice
+
+`estate status` refuses (`refuse:model-actual`) when a present `model-actual.json` does not parse. It does that before the status page. A missing file is not a failure, and status does not invent a binding count. A file that parses is not a new status line. `estate drift` already refused that file. `estate doctor` already FAILs it before `factory ready`.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#66 (plain English)
+## Bug fixes on #10-#67 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -292,6 +296,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #64 | Doctor treated a present `actual-state.json` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero sessions. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero sessions. A parsed file prints its session count. READY no. |
 | #65 | Doctor treated a present `desired-snapshot.yaml` that does not parse as a layout note when no cell catalog was present, and could still say factory ready. A missing file could be read as a frontier model. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as a frontier model. A parsed file prints its name. READY no. |
 | #66 | Doctor ignored a present `model-actual.json` that does not parse and could still say factory ready. A missing file could be read as zero bindings. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero bindings. A parsed file prints its binding count. READY no. |
+| #67 | Status printed the page when a present `model-actual.json` did not parse. A missing file could be read as zero bindings. | That file is `refuse:model-actual` before the status page. A missing file is not a failure and is not invented as zero bindings. A parsed file is not a new status line. READY no. |
 
 ## Known-good local commands
 
