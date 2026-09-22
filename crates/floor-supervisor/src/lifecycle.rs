@@ -139,23 +139,33 @@ fn persist_transition(
     )
 }
 
+fn prior_lifecycle(state_dir: &Path) -> Result<Option<LifecycleRecord>, SupervisorError> {
+    if lifecycle_path(state_dir).exists() {
+        Ok(Some(load_lifecycle(state_dir)?))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
-    let prev = load_lifecycle(state_dir)?;
+    // A missing file is not a prior suspended state. Journal `from` stays
+    // empty. The default record is not a file.
+    let prev = prior_lifecycle(state_dir)?;
     stop_runtime(state_dir)?;
     crate::mark_leases_unspawned(state_dir)?;
     let record = LifecycleRecord {
         schema: default_lifecycle_schema(),
         version: LIFECYCLE_VERSION,
         state: LifecycleState::Suspended,
-        desired_hash: prev.desired_hash.clone(),
-        estate_name: prev.estate_name.clone(),
+        desired_hash: prev.as_ref().and_then(|p| p.desired_hash.clone()),
+        estate_name: prev.as_ref().and_then(|p| p.estate_name.clone()),
         suspended_at: Some(now_rfc3339()),
-        resumed_at: prev.resumed_at.clone(),
+        resumed_at: prev.as_ref().and_then(|p| p.resumed_at.clone()),
         durable: true,
         note: "Suspended. Sessions and PIDs discarded. Estate, lanes, plans, lifecycle.json stay."
             .into(),
     };
-    persist_transition(state_dir, Some(&prev), &record, "suspend")?;
+    persist_transition(state_dir, prev.as_ref(), &record, "suspend")?;
     crate::journal_session(
         state_dir,
         "suspend",
@@ -168,20 +178,20 @@ pub fn suspend(state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
 }
 
 pub fn mark_running(estate: &Estate, state_dir: &Path) -> Result<LifecycleRecord, SupervisorError> {
-    let prev = load_lifecycle(state_dir)?;
+    let prev = prior_lifecycle(state_dir)?;
     let record = LifecycleRecord {
         schema: default_lifecycle_schema(),
         version: LIFECYCLE_VERSION,
         state: LifecycleState::Running,
         desired_hash: Some(estate_hash(estate)),
         estate_name: Some(estate.name.clone()),
-        suspended_at: prev.suspended_at.clone(),
+        suspended_at: prev.as_ref().and_then(|p| p.suspended_at.clone()),
         resumed_at: Some(now_rfc3339()),
         durable: true,
         note: "Applied from estate file. Runtime regenerable. Cloud-agent placements not spawned."
             .into(),
     };
-    persist_transition(state_dir, Some(&prev), &record, "apply")?;
+    persist_transition(state_dir, prev.as_ref(), &record, "apply")?;
     Ok(record)
 }
 
@@ -190,22 +200,24 @@ pub fn resume(
     state_dir: &Path,
     roots_base: &Path,
 ) -> Result<(ActualState, LifecycleRecord), SupervisorError> {
-    let prev = load_lifecycle(state_dir)?;
     let actual = apply_with_profile_dir(estate, state_dir, roots_base)?;
     crate::record_placements(estate, state_dir)?;
+    // Apply writes lifecycle.json first. This resume line records that
+    // file, not the missing-file default.
+    let prev = prior_lifecycle(state_dir)?;
     let record = LifecycleRecord {
         schema: default_lifecycle_schema(),
         version: LIFECYCLE_VERSION,
         state: LifecycleState::Running,
         desired_hash: Some(estate_hash(estate)),
         estate_name: Some(estate.name.clone()),
-        suspended_at: prev.suspended_at.clone(),
+        suspended_at: prev.as_ref().and_then(|p| p.suspended_at.clone()),
         resumed_at: Some(now_rfc3339()),
         durable: true,
         note: "Resumed from estate file. Runtime is regenerable. Cloud-agent placements not spawned."
             .into(),
     };
-    persist_transition(state_dir, Some(&prev), &record, "resume")?;
+    persist_transition(state_dir, prev.as_ref(), &record, "resume")?;
     crate::journal_session(
         state_dir,
         "resume",
@@ -356,6 +368,46 @@ mod tests {
             "apply mark_running must not overwrite garbage lifecycle.json"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_lifecycle_does_not_journal_from_suspended() {
+        let estate = example();
+        let root = tmp();
+        let state = root.join("state");
+        mark_running(&estate, &state).unwrap();
+        let events = list_lifecycle_events(&state).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, "apply");
+        assert_eq!(events[0].from, None);
+        assert_eq!(events[0].to, "running");
+
+        let root_suspend = tmp();
+        let state_suspend = root_suspend.join("state");
+        std::fs::create_dir_all(&state_suspend).unwrap();
+        suspend(&state_suspend).unwrap();
+        let events = list_lifecycle_events(&state_suspend).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, "suspend");
+        assert_eq!(events[0].from, None);
+        assert_eq!(events[0].to, "suspended");
+
+        let root_resume = tmp();
+        let state_resume = root_resume.join("state");
+        resume(&estate, &state_resume, &root_resume).unwrap();
+        let events = list_lifecycle_events(&state_resume).unwrap();
+        assert_eq!(events[0].action, "apply");
+        assert_eq!(events[0].from, None);
+        assert_eq!(events[0].to, "running");
+        assert_eq!(events[1].action, "resume");
+        assert_eq!(events[1].from.as_deref(), Some("running"));
+        resume(&estate, &state_resume, &root_resume).unwrap();
+        let events = list_lifecycle_events(&state_resume).unwrap();
+        assert_eq!(events.last().unwrap().from.as_deref(), Some("running"));
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root_suspend);
+        let _ = std::fs::remove_dir_all(&root_resume);
     }
 
     #[test]
