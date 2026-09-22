@@ -67,6 +67,12 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## This slice
 
+- `estate convey declare` refuses before it writes a cloud hop lease when that placement lease is spawned. It does not record `spawned: false`.
+- A missing placement file is not a spawned lease. An unspawned cloud hop still declares as not spawned. The placement file is not rewritten.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
+## After PR #79
+
 - `estate convey call` does not say a cloud hop is not spawned when the placement lease is spawned. A missing hop lease is not restamped to `spawned: false`.
 - A missing placement file is not a spawned lease. An unspawned cloud hop still refuses as declared, not spawned.
 - No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
