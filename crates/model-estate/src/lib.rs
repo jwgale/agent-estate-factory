@@ -9,6 +9,7 @@ mod frontier;
 mod local;
 mod mock;
 mod path;
+mod train_enrich;
 
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
 pub use catalog::{
@@ -34,6 +35,12 @@ pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
 };
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
+pub use train_enrich::{
+    default_enrich_out, load_enrich_pack, parse_enrich_job, prepare_enrich,
+    render_train_enrich_catalog, resolve_train_enrich_driver, train_enrich_catalog, EnrichJob,
+    EnrichJobKind, EnrichPrepareDoc, PrepareEnrichRequest, TrainEnrichCard, TrainEnrichDriver,
+    TrainEnrichProbe, PREPARE_SCHEMA,
+};
 
 use estate_schema::{Estate, ModelBinding, ModelClass};
 

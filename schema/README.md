@@ -11,6 +11,8 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 
 `source_drivers` is an additive v0 field on `pack.v0.json`, `specialist-pack.v0.json`, and `enrich-proposal.v0.json`. Values are only `frontier` and `local`, sorted and unique, and they must match `path_counts`. A missing field deserializes to `[]`, so older packs stay valid. A rename, a new driver string, or a required non-empty list is a v1. `cell-one.enrich-accept.v0` copies that same list into the edit instructions. It does not invent a class and it does not rewrite the estate.
 
+`train-enrich.v0.json` is the prepare envelope (`cell-one.enrich-prepare.v0`). `promoted`, `auto_apply`, and `estate_rewritten` stay false. `ollama-modelfile` adds a Modelfile. `external-manifest` adds `manifest.json` and `manifest.yaml` (`base_model`, `purpose`, `host_class_affinity`, `dataset_paths`). A new required field on this envelope is a v1.
+
 `examples/estate.yaml` hash is locked at `sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930` (see `estate-schema` `example_estate_hash_is_locked`). YAML comments are ok. Renames need a new hash.
 
 ## v0 files
@@ -29,6 +31,7 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 | `pack.v0.json` | `cell-one.pack.v0` | Feed pack drop zone |
 | `specialist-pack.v0.json` | `cell-one.specialist-pack.v0` | Additive pack metadata |
 | `enrich-proposal.v0.json` | `cell-one.enrich-proposal.v0` | Propose, never apply |
+| `train-enrich.v0.json` | `cell-one.enrich-prepare.v0` | `estate enrich prepare` artifacts. Does not train |
 | `feed-cursor.v0.json` | `cell-one.feed-cursor.v0` | Feed watermark |
 | `policy.v0.json` | `cell-one.policy.v0` | Deny/allow stub |
 | `cell-backup.v0.json` | `cell-one.cell-backup.v0` | Local cell archive |

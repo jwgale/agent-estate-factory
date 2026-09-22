@@ -34,15 +34,19 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack today: edit instructions Jason pastes into the estate. `policy: manual`. That pack, with the specialist path, is today's beachhead. The suite goal is wider: facilitate train and distill of purpose-built small-parameter models. No training stack ships on `main`.
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate.
 
 ### purpose-built SLM
 
 A small-parameter model crafted for one job. Open-source SLMs will get more common. The suite facilitates training and enrichment of these models. The outcome belongs to the estate.
 
+### TrainEnrichDriver
+
+Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `status` and `probe`. Cards on `main`: `ollama-modelfile` (integrate Ollama `create` / Modelfile `FROM` + `SYSTEM`) and `external-manifest` (portable JSON/YAML for a later trainer). A third train/enrich entrant is another card. Floor and control dispatch do not match driver ids.
+
 ### train/enrich facilitation
 
-The factory makes room for training and enrichment of purpose-built SLMs. Today's beachhead is enrich packs and the specialist path (`estate specialist`, `local_slm`). Catalog, route, and bind stay the seam. This page adds no trainer, no dataset pipeline, and no new crate.
+The factory makes room for training and enrichment of purpose-built SLMs. The durable beachhead is `TrainEnrichDriver`, curator packs, and the specialist path (`estate specialist`, `local_slm`). Prepare writes artifacts. A GPU training stack, a dataset downloader, and a LoRA/SFT/DPO loop stay unshipped. No new crate.
 
 ### frontier
 
@@ -64,11 +68,11 @@ Local down audits `model.local.down`. Estate-bound local work stops.
 
 ### entrant
 
-A process that can fill the local-runtime seat. `ollama` is the entrant on `main`. llama.cpp enters on the same specialist protocol. A later process enters through catalog / route / bind.
+A process that can fill the local-runtime seat. `ollama` is the entrant on `main`. llama.cpp enters on the same specialist protocol. A later process enters through catalog / route / bind. A train/enrich entrant is separate: another `TrainEnrichDriver` card. It does not replace the seat.
 
 ### integrate-vs-invent
 
-Build rule. A feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver. A from-scratch local server waits until the entrant does not already do the job.
+Build rule. A feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver. Ollama already creates a model from a Modelfile. `ollama-modelfile` writes that file. A from-scratch local server, and a from-scratch trainer, wait until the entrant does not already do the job.
 
 ### sacred
 
@@ -97,7 +101,7 @@ Both are first-class:
 1. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant.
 2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Beachhead on `main`: the seated drivers, enrich packs, and the specialist path. Train and distill stay the suite direction. No training stack ships here.
+Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. Train and distill stay the suite direction. No GPU training stack ships here.
 
 ## Aliases to avoid
 
@@ -124,7 +128,7 @@ Sacred spellings that refuse: `cyera` / `cyera_ci` → `cyera-ci`; `rust_classro
 
 ## help
 
-On `main`: status, plan, apply, reconcile, feed-loop (`feed`), backup, frontier, day90-mixed (`mixed`), north-star (`northstar`), charter. `north-star` and `charter` print one page. An unknown topic is `refuse:help-topic`.
+On `main`: status, plan, apply, reconcile, feed-loop (`feed`), backup, frontier, day90-mixed (`mixed`), north-star (`northstar`), charter, enrich (`train`). `north-star` and `charter` print one page. `enrich` and `train` print the prepare page. An unknown topic is `refuse:help-topic`.
 
 ## Planes
 

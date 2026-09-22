@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(
     name = "estate",
     about = "Cell One estate-control: validate, plan, apply, drift. Specialist complete is a thin HttpLocal delegate, not a gateway.",
-    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
+    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter | enrich\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
     disable_help_subcommand = true
 )]
 pub(crate) struct Cli {
@@ -211,6 +211,11 @@ pub(crate) enum Command {
     Packs {
         #[command(subcommand)]
         command: PacksCommand,
+    },
+    /// Prepare train/enrich artifacts. Does not train, promote, or rewrite the estate.
+    Enrich {
+        #[command(subcommand)]
+        command: EnrichCommand,
     },
     /// List expired placement leases. Apply/resume refuse them.
     Expire {
@@ -455,6 +460,36 @@ pub(crate) enum PacksCommand {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum EnrichCommand {
+    /// Write artifacts for a seated runtime or a portable manifest.
+    Prepare {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Pack id, or a path to a pack JSON file.
+        #[arg(long)]
+        pack: PathBuf,
+        #[arg(long, default_value = "packs")]
+        packs_dir: PathBuf,
+        /// TrainEnrichDriver id. Default joins the seated Ollama runtime.
+        #[arg(long, default_value = "ollama-modelfile")]
+        driver: String,
+        /// Final directory. Default: `{state_dir}/enrich/{pack_id}/{driver}`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// `enrich` (default) or `train`. A label on the artifact. Does not run a trainer.
+        #[arg(long, default_value = "enrich")]
+        job: String,
+        /// Import gate. Must match locked curator `jason`.
+        #[arg(long, default_value = "jason")]
+        curator: String,
+    },
+    /// List registered TrainEnrichDriver cards. Does not prepare.
+    Drivers,
 }
 
 #[derive(Subcommand)]

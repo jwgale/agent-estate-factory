@@ -67,6 +67,13 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## This slice
 
+- Train/enrich beachhead. `TrainEnrichDriver` in `model-estate`. Drivers: `ollama-modelfile` (Modelfile + `ollama create` steps) and `external-manifest` (JSON/YAML). `estate enrich prepare` writes artifacts under `.cell/enrich/` or `--out`. Sacred, SKU, curator, missing pack, and frontier-invent refuse before write. Does not train, POST, auto-promote, or rewrite `estate.yaml`.
+- `estate help enrich` (alias `train`). Opt-in `make enrich-prepare`. Not in smoke, gate-90, or Actions.
+- Schema [`schema/train-enrich.v0.json`](schema/train-enrich.v0.json) (`cell-one.enrich-prepare.v0`). Docs: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md).
+- `READY_FOR_LIVE_TEST`: no.
+
+## After PR #85
+
 - Canonical glossary: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). A local runtime is an ecosystem seat. Ollama is today's entrant; catalog/route/bind take the next process. Suite goal: facilitate train/enrich of purpose-built small models. Beachhead today: enrich packs and the specialist path. No training stack. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone.
 - `estate help north-star` / `charter` match that page. README and [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) use the same words.
 - `READY_FOR_LIVE_TEST`: no.

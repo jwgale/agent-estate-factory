@@ -74,6 +74,13 @@ fn glossary_keeps_purpose_built_slm_in_suite() {
         "glossary must name the ollama driver"
     );
     assert!(
+        glossary.contains("TrainEnrichDriver"),
+        "glossary must name TrainEnrichDriver"
+    );
+    assert!(glossary.contains("purpose-built SLM"));
+    assert!(glossary.contains("ollama-modelfile"));
+    assert!(glossary.contains("external-manifest"));
+    assert!(
         !glossary.contains("Not a distillation"),
         "glossary must not ban distillation"
     );
@@ -101,7 +108,14 @@ fn glossary_keeps_purpose_built_slm_in_suite() {
     assert!(readme.contains("purpose-built"));
     assert!(readme.contains("docs/UBIQUITOUS_LANGUAGE.md"));
     assert!(help.contains("purpose-built"));
+    assert!(help.contains("estate help enrich"));
     assert!(plus.contains("purpose-built"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("purpose-built"));
+    assert!(train.contains("TrainEnrichDriver"));
+    assert!(train.contains("external-manifest"));
+    assert!(train.contains("ollama create"));
+    assert!(!train.contains("READY_FOR_LIVE_TEST: yes"), "{train}");
     for slop in ["delve", "it's worth noting", "rather than"] {
         assert!(!glossary.to_lowercase().contains(slop), "glossary slop: {slop}");
         assert!(!north.to_lowercase().contains(slop), "north-star slop: {slop}");
