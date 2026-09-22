@@ -45,8 +45,8 @@ That SKIP is not a PASS. If the endpoint is set, it runs
 `estate specialist --driver ollama --prompt "Reply with the single word pong."`
 with the env already in the shell (same names as
 [`LIVE-PROBES.md`](LIVE-PROBES.md)). It does not print the frontier API
-key. It does not mark Mac specialist complete. Recorded proofs stay on
-the live-probes page.
+key. It does not invent a completion. The MacBook Air `Pong` is already
+recorded on the live-probes page.
 
 ## 2. `make feed-loop`
 

@@ -47,6 +47,6 @@ Both of these, together:
 - The local gate is green: `make gate-90` on the box.
 - A live command's output is pasted into [`LIVE-PROBES.md`](LIVE-PROBES.md) from Jason's Mac or Linux box.
 
-A SKIP is not ready. A catalog card is not ready. `READY_FOR_LIVE_TEST` is yes only for a concrete command on that page that has not been pasted yet. Recorded rows stay recorded: frontier `pong`, 5090-class probes, 5090-class specialist `Pong`, and Mac `probes --live`. Mac `estate specialist` complete stays pending until a completion is pasted. Do not mark it PASS from the other box.
+A SKIP is not ready. A catalog card is not ready. `READY_FOR_LIVE_TEST` is yes only for a concrete command on that page that has not been pasted yet. Recorded rows stay recorded: frontier `pong`, 5090-class probes, 5090-class specialist `Pong`, Mac `probes --live`, and Mac `estate specialist` `"completion": "Pong"` (reason `compat completion`, MacBook Air, tip `2ab78a4`). `READY_FOR_LIVE_TEST` for that Mac command is no. Native MLX stays a stub.
 
-This page does not invent that paste.
+This page does not invent a proof that was not pasted.

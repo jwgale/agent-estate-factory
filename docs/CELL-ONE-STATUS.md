@@ -15,7 +15,8 @@ Day 90+ is real-world proof plus parked stubs, not more beachhead invent.
 One page: [`NORTH-STAR.md`](NORTH-STAR.md). Opt-in ladder after
 `make gate-90`: `make real-world` (SKIP without `CELL_LOCAL_ENDPOINT`;
 not a PASS; not in smoke or Actions). Feed packs stay curator edit
-instructions. Distillation and a gateway stay non-goals.
+instructions. Distillation and a gateway stay non-goals. Mac specialist
+complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
 ## On `main` (PR #1–#82)
 
@@ -120,7 +121,7 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 ## #35–#37 in plain English
 
-#35. `estate specialist --driver frontier` already refused without `XAI_API_KEY`. Stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT` for a missing key and for a hardware SKU in the model id. The SKU still refuses before any POST. `docs/GATE-90.md` and `docs/DAY90-PLUS.md` separate green factory checks, recorded live proofs, and parked rows. Mac specialist complete is optional and not recorded. Native MLX stays a stub. Cloud-agent spawn stays off.
+#35. `estate specialist --driver frontier` already refused without `XAI_API_KEY`. Stderr names `CELL_FRONTIER_MODEL` and `CELL_FRONTIER_ENDPOINT` for a missing key and for a hardware SKU in the model id. The SKU still refuses before any POST. `docs/GATE-90.md` and `docs/DAY90-PLUS.md` separate green factory checks, recorded live proofs, and parked rows. At #35, Mac specialist complete was optional and not recorded. It is now a recorded PASS (`Pong` on the MacBook Air). Native MLX stays a stub. Cloud-agent spawn stays off.
 
 #36. Pack `INDEX.md` and `estate feed list` / `estate packs list` print `drivers=frontier,local` when the pack has both classes, and `drivers=-` when it has none. An empty pack does not invent `frontier`. Writing a drop pack, importing one, and listing the drop return an error if the INDEX rewrite fails. `make feed-loop` greps that line. There is no `make feed-loop-mixed`.
 
@@ -186,7 +187,7 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 ## #53 in plain English
 
-`docs/GATE-90.md` stops calling the Ollama complete path ready. The mock completion stays green. The 5090 `Pong` stays recorded. Mac complete stays unrecorded. `mlx`, `vllm`, and `trt` refuse a frontier POST and are not live-ok. `docs/DAY90-PLUS.md` parks vLLM and TRT with the other stubs. `READY_FOR_LIVE_TEST` is yes only when a concrete command on the live-probe page is still unblocked. None is.
+`docs/GATE-90.md` stops calling the Ollama complete path ready. The mock completion stays green. The 5090 `Pong` stays recorded. At #53, Mac complete was still unrecorded. It is now a recorded PASS (`"completion": "Pong"` on the MacBook Air, tip `2ab78a4`). `mlx`, `vllm`, and `trt` refuse a frontier POST and are not live-ok. `docs/DAY90-PLUS.md` parks vLLM and TRT with the other stubs. `READY_FOR_LIVE_TEST` for the Mac command is no.
 
 ## #54 in plain English
 
@@ -194,7 +195,7 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 ## #55 in plain English
 
-Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. `READY_FOR_LIVE_TEST` is yes for that Mac command only.
+Mac `estate specialist` complete is a recorded **PASS** on the MacBook Air (`"completion": "Pong"`, reason `compat completion`, tip `2ab78a4`). [`LIVE-PROBES.md`](LIVE-PROBES.md) keeps the copy-paste: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. `READY_FOR_LIVE_TEST` for that Mac command is no.
 
 ## #56 in plain English
 
@@ -202,7 +203,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 ## #57 in plain English
 
-[`LIVE-PROBES.md`](LIVE-PROBES.md) holds a result row for Mac `estate specialist` complete. The coordinator is running that command. The row is **Pending**, not **PASS**, until a completion is pasted. Do not invent `pong` or `Pong` for the Mac. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. The Mac command from #55 stays the only open hand-off. This slice does not add another live test.
+[`LIVE-PROBES.md`](LIVE-PROBES.md) holds the Mac `estate specialist` result. The pasted completion is **PASS** (`"completion": "Pong"`, reason `compat completion`, tip `2ab78a4`). `READY_FOR_LIVE_TEST` for that command is no. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`.
 
 ## #58 in plain English
 
@@ -348,11 +349,11 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #50 | Resume rewrote a cell catalog that disagreed with the binding, and pause-proof kept going. A schema-card `grok-4.7` could sit on an unset model through the pause kit. | That disagreement is `refuse:frontier-model` before resume or pause-proof writes. A missing catalog is not a disagreement. Pause-proof does not invent a cell catalog. A matching empty catalog still resumes with an empty model. READY no. |
 | #51 | Import copied a frontier `source_driver` onto an estate with no frontier binding, and a bad redaction file could print counts of zero. | That copy is `refuse:frontier-invent` before the accepted pack or redaction report. A present report must parse. A local-only pack still imports. A mixed-fixture import keeps the tag. READY no. |
 | #52 | Backup and restore copied a cell catalog that disagreed with the binding, and a frontier `source_driver`, onto an estate with no frontier binding. A desired snapshot could name sacred exclusions the estate does not. | Those are `refuse:frontier-model`, `refuse:frontier-invent`, and `refuse:sacred-mismatch` before the archive or the restore write. A local-only pack still archives. A missing catalog is not a disagreement. READY no. |
-| #53 | The gate called Ollama specialist complete ready, and the parking lot did not name vLLM or TRT, so a stub card could be read as a live hand-off. | The completion row is mock-locked. 5090 `Pong` stays recorded. Mac complete stays unrecorded. vLLM and TRT are parked and not live-ok. READY no. |
+| #53 | The gate called Ollama specialist complete ready, and the parking lot did not name vLLM or TRT, so a stub card could be read as a live hand-off. | The completion row is mock-locked. 5090 `Pong` stays recorded. Mac complete is a recorded PASS (`Pong`, MacBook Air, tip `2ab78a4`). vLLM and TRT are parked and not live-ok. READY no. |
 | #54 | `mlx` could print `live ok` by falling back to `CELL_LOCAL_ENDPOINT`. vLLM and TRT could do the same when their endpoint answered. | Stub and experimental probes stay `not live-ok` and do not open that ping. Supported cards still print `live ok`. READY no. |
-| #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | [`LIVE-PROBES.md`](LIVE-PROBES.md) has the MacBook Air and 5090-class copy-paste (`~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`). READY yes for the Mac command only. The 5090 `Pong` stays recorded. |
+| #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | The MacBook Air completion is a recorded PASS (`"completion": "Pong"`, reason `compat completion`, tip `2ab78a4`). READY no. The 5090 `Pong` stays recorded. |
 | #56 | Status and doctor treated a cell `catalog.json` that does not parse as a note and still exited 0. Apply already refused that file. | Status and doctor are `refuse:frontier-model` before the cell success line. A missing catalog is not a disagreement. READY no. |
-| #57 | The live-probe page had the Mac specialist command and no place to write the result, so a later edit could mark PASS before a completion was pasted. | The result row is **Pending**. It is not a PASS. Paste the completion before changing it. READY no. The #55 Mac command stays the open hand-off. |
+| #57 | The live-probe page had the Mac specialist command and no place to write the result, so a later edit could mark PASS before a completion was pasted. | The result row is **PASS** (`"completion": "Pong"`). READY no. The 5090 `Pong` stays recorded. |
 | #58 | Status listed an unreadable `*.proposal.json` by filename and still printed the page. | That file is `refuse:proposal-unreadable` before the status page. A missing directory is not a proposal. A parsed proposal still lists. READY no. |
 | #59 | Doctor printed a note for an unreadable conveyor mesh and could still say factory ready. A mesh with no placement file was not read. | That file is FAIL before factory ready. A missing mesh is not a failure. A hop host class that is not a class is the same FAIL. READY no. |
 | #60 | Doctor treated a present `lifecycle.json` that does not parse as a layout note and could still say factory ready. A missing file could be read as `suspended`. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as `suspended`. A parsed file prints its state. READY no. |
@@ -422,11 +423,12 @@ Isolated loops without live boxes:
 Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 `estate.yaml` is never rewritten by rematerialize.
 
+Mac specialist complete is a recorded **PASS** on the MacBook Air: `"completion": "Pong"`, reason `compat completion`, tip `2ab78a4`. `READY_FOR_LIVE_TEST` for that command is no. Details: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+
 ## Still parked (not green)
 
 | Item | State |
 | --- | --- |
-| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is **Pending** on [`LIVE-PROBES.md`](LIVE-PROBES.md) until a completion is pasted. Do not mark it green. |
 | Native MLX | `specialist()` stays stub. Not the Ollama-on-Mac probe. |
 | Live consumer / rented GPU | 5090 probes and specialist `Pong` are recorded. Not required to re-run for gates. Not native MLX. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |

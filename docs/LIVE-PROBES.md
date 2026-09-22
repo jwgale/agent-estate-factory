@@ -29,41 +29,50 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 | Box | Command | Result |
 | --- | --- | --- |
 | Mac (Apple Silicon) | `estate probes --live` against Ollama-on-Mac | **PASS.** `live ok` on the Ollama HTTP adapter. Native `mlx` `specialist()` stays Stub. |
+| Mac (Apple Silicon, MacBook Air) | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`, `"reason": "compat completion"`. Tip `2ab78a4`. |
 | Linux 5090-class (`consumer-nvidia` / `rented-nvidia`) | `estate probes --live` | **PASS.** `live ok (openai /v1/models)`. That GET is not a chat proof. |
 | Linux 5090-class | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`. Empty OpenAI `message.content` fell through to `/api/chat`. |
 | Env-gated key (no box name) | `estate specialist --driver frontier` model `grok-4.7` | **PASS.** `"completion": "pong"`, `"reason": "frontier completion"`. Key never printed. Ran with env-gated `XAI_API_KEY`. |
 
-Not recorded: Mac `estate specialist` chat (same command as the 5090 PASS),
-native MLX. Frontier `grok-4.7` specialist is recorded above. The Mac chat
-result belongs in the slot below. It is not a PASS until a completion is pasted.
+Not recorded: native MLX. Frontier `grok-4.7` specialist and the Mac
+specialist complete are recorded above. The Mac `Pong` is that Mac run.
+It is not copied from the 5090 row.
 
 `READY_FOR_LIVE_TEST` for the rows above: **no**. Those runs are recorded.
 
-## Mac specialist result slot (pending)
+## Mac specialist result (recorded)
 
-Coordinator is running the Mac command. This row is shaped like a recorded
-PASS and stays **Pending** until that completion is pasted here. Do not
-invent `pong` or `Pong` for the Mac. Do not mark this row **PASS** from
-the 5090 result.
+Ran on Jason's MacBook Air against tip `2ab78a4`. Same command as the
+5090 row. Native MLX stays stub.
 
 | Box | Command | Result |
 | --- | --- | --- |
-| Mac (Apple Silicon) | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **Pending.** Not a PASS. Completion not pasted. |
+| Mac (Apple Silicon) | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **PASS.** `"completion": "Pong"`. |
 
-Mac `estate specialist` complete is not recorded. Both boxes are up.
-`READY_FOR_LIVE_TEST`: **yes** for that Mac command only (the #55 hand-off).
-This slot does not open a second live test. The 5090 block below is the
-same verb; that `Pong` is already recorded.
+```json
+{
+  "allow": true,
+  "redacted_text": "Reply with the single word pong.",
+  "reason": "compat completion",
+  "job": "complete",
+  "completion": "Pong"
+}
+```
 
-## Mac specialist complete (run tonight)
+`READY_FOR_LIVE_TEST`: **no**. That Mac command is recorded. The 5090
+block below is the same verb; that `Pong` was already recorded.
 
-Unrecorded on the MacBook Air. Ollama-on-Mac `probes --live` already
-PASSed. Native MLX stays stub. `mlx`, `vllm`, and `trt` stay `not live-ok`.
-This command does not ping those cards.
+## Mac specialist complete (recorded)
 
-`READY_FOR_LIVE_TEST`: **yes**.
+Recorded on the MacBook Air against tip `2ab78a4`. Ollama-on-Mac
+`probes --live` already PASSed. Native MLX stays stub. `mlx`, `vllm`,
+and `trt` stay `not live-ok`. This command does not ping those cards.
+
+`READY_FOR_LIVE_TEST`: **no**.
 
 ### MacBook Air
+
+Already recorded: `"allow": true`, `"job": "complete"`, `"reason": "compat completion"`, `"completion": "Pong"`.
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -336,9 +345,9 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
   --endpoint http://127.0.0.1:8080 --prompt "Reply with the single word pong."
 ```
 
-Mac `estate specialist` chat is the command in "Mac specialist complete (run tonight)".
-The result slot is **Pending** until a completion is pasted. It is not a PASS.
-`READY_FOR_LIVE_TEST`: **yes** for that Mac command. The 5090 `Pong` row stays recorded.
+Mac `estate specialist` chat is the command in "Mac specialist complete (recorded)".
+That MacBook Air run is **PASS** (`"completion": "Pong"`, reason `compat completion`).
+`READY_FOR_LIVE_TEST`: **no** for that Mac command. The 5090 `Pong` row stays recorded.
 
 ## Frontier (grok-4.7)
 
@@ -504,4 +513,5 @@ Down local is `local:down` / `model.local.down`. No silent `grok-4.7` fallback.
 | Empty models list `live ok` | A pulled model; only the HTTP server is up |
 | `estate specialist` `completion` on mock-local (`mock:...`) | A live Ollama chat Jason ran |
 | `estate specialist` `completion` against Ollama | Native MLX |
-| 5090 `completion` `Pong` | Native MLX, or a Mac specialist chat |
+| 5090 `completion` `Pong` | Native MLX. The Mac `Pong` is a separate recorded row. |
+| Mac `completion` `Pong` | Native MLX |

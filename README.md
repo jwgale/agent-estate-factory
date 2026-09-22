@@ -40,7 +40,7 @@ These exist as stubs, experimental catalog cards, or declared-only rows. They ar
 | Distillation / LoRA / dataset pipelines | Non-goal. Enrich packs are curator edit instructions. |
 | AI gateway / LM Studio | Non-goal. Control does not complete. |
 
-Live Mac specialist complete is still unrecorded. Recorded proofs and the paste slot: [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md). Parking lot: [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
+Recorded live proofs, including the MacBook Air specialist `Pong`: [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md). Parking lot: [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
 ## Day-90 operator entrypoint
 

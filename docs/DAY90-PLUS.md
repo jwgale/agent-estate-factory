@@ -34,7 +34,8 @@ These already ran. Do not re-ping. They are not required to keep `make gate-90` 
 | --- | --- | --- |
 | Frontier `grok-4.7` | `completion` `pong`, reason `frontier completion`. Key never printed. | `READY_FOR_LIVE_TEST` is no. CI has no key. |
 | 5090-class GPU | `probes --live` PASS and `estate specialist --driver ollama` `Pong` are recorded. Host class is `consumer-nvidia` or `rented-nvidia`. | Not native MLX. Not a binding id. Not required for the gate. |
-| Mac probes | Ollama-on-Mac `probes --live` PASS. | That is not a Mac specialist complete. |
+| Mac probes | Ollama-on-Mac `probes --live` PASS. | That GET is not the specialist complete. |
+| Mac specialist | MacBook Air `estate specialist --driver ollama` `"completion": "Pong"`, reason `compat completion`. Tip `2ab78a4`. | Native MLX stays stub. `READY_FOR_LIVE_TEST` is no. |
 
 ## Parked — still not green
 
@@ -44,7 +45,6 @@ proof and every parked row on this page is no.
 
 | Item | What exists today | What is not true |
 | --- | --- | --- |
-| Mac specialist | Same `estate specialist --driver ollama` command as the recorded 5090 complete. Copy-paste (`PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`) is on [`LIVE-PROBES.md`](LIVE-PROBES.md). | Not recorded on a Mac. Do not mark it green. |
 | Native MLX | Catalog card is a stub. `CELL_MLX_ENDPOINT` is only an OpenAI-compatible server, if you set it. | Native `specialist()` is not Supported. No Mac in CI. Not live-ok. |
 | vLLM | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
 | TRT | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
@@ -53,9 +53,9 @@ proof and every parked row on this page is no.
 Exact env vars and commands: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 Adapter is on `main`. `estate specialist --driver ollama --prompt` is
 the live complete verb (same `HttpLocal` helper). This factory VM still
-has no Mac and no GPU. Jason's Mac PASSed Ollama `probes --live`. His
-5090 PASSed probes and specialist `Pong`. Native MLX `specialist()`
-stays stub. Mac specialist chat is not recorded.
+has no Mac and no GPU. Jason's Mac PASSed Ollama `probes --live` and
+Mac specialist `Pong` (`compat completion`, tip `2ab78a4`). His 5090
+PASSed probes and specialist `Pong`. Native MLX `specialist()` stays stub.
 
 When Jason has an Apple Silicon box: Ollama-on-Mac is the Supported path.
 MLX stays a stub. `estate probes --live` does not print `live ok` for
