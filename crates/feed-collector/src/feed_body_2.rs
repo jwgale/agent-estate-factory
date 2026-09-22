@@ -1,4 +1,3 @@
-
 /// Index label after the tag matches the counts. Empty stays `-`.
 /// A missing tag with a nonzero frontier or local count is refuse, not `-`.
 fn index_drivers_label(drivers: &[String], counts: &PathCounts) -> Result<String, FeedError> {
@@ -209,9 +208,23 @@ pub fn list_open_proposals(proposed_dir: &Path) -> Result<Vec<String>, FeedError
             .and_then(|s| s.to_str())
             .unwrap_or_default()
             .trim_end_matches(".proposal.json");
-        if !stem.is_empty() {
-            ids.push(stem.to_string());
+        if stem.is_empty() {
+            continue;
         }
+        let text = std::fs::read_to_string(&path)?;
+        let proposal: EnrichProposal = serde_json::from_str(&text).map_err(|e| {
+            FeedError::Parse(format!(
+                "refuse:proposal-unreadable: {} ({e}); a filename is not an open proposal",
+                path.display()
+            ))
+        })?;
+        if proposal.id != stem {
+            return Err(FeedError::Parse(format!(
+                "refuse:proposal-unreadable: id {} does not match {stem}",
+                proposal.id
+            )));
+        }
+        ids.push(proposal.id);
     }
     Ok(ids)
 }
