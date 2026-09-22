@@ -38,7 +38,7 @@ proof and every parked row on this page is no.
 
 | Item | What exists today | What is not true |
 | --- | --- | --- |
-| Mac specialist | Optional. Same `estate specialist --driver ollama` command as the recorded 5090 complete. | Not recorded on a Mac. Do not mark it green. Do not ping. |
+| Mac specialist | Same `estate specialist --driver ollama` command as the recorded 5090 complete. Copy-paste (`PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`) is on [`LIVE-PROBES.md`](LIVE-PROBES.md). | Not recorded on a Mac. Do not mark it green. |
 | Native MLX | Catalog card is a stub. `CELL_MLX_ENDPOINT` is only an OpenAI-compatible server, if you set it. | Native `specialist()` is not Supported. No Mac in CI. Not live-ok. |
 | vLLM | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
 | TRT | Experimental catalog card. Unset endpoint is SKIP. | Not live-ok. `READY_FOR_LIVE_TEST` is no. |
