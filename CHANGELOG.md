@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #52 (this slice)
+
+- `docs/GATE-90.md` does not call the Ollama complete path ready. Mock completion stays green. The 5090 `Pong` is already recorded. Mac complete is not. `mlx` / `vllm` / `trt` refuse a frontier POST and are not live-ok.
+- `docs/DAY90-PLUS.md` parks vLLM and TRT with native MLX. `READY_FOR_LIVE_TEST` is yes only when a concrete live-probe command is still unblocked. None is.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #51 (this slice)
 
 - `estate backup` and `estate restore` refuse before they write. A cell catalog whose frontier model disagrees with the binding is `refuse:frontier-model`. A frontier `source_driver` with no frontier binding is `refuse:frontier-invent`. A desired snapshot whose sacred set disagrees is `refuse:sacred-mismatch`.
@@ -364,7 +370,7 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## Still stubbed
 
-MLX / vLLM / TRT live runtimes (probe path only). Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI. See `docs/DAY90-PLUS.md`.
+MLX stays a stub. vLLM and TRT stay experimental catalog cards, not live-ok. Cloud-agent spawn. Convey hop transport (lease-bound mesh only). Auto-promote. Curator UI. See `docs/DAY90-PLUS.md`.
 
 ## How to run
 
