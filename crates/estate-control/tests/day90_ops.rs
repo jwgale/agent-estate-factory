@@ -103,6 +103,9 @@ fn help_topics_cover_day90_loop() {
         assert!(body.contains("docs/LIVE-PROBES.md"), "{topic}: {body}");
         assert!(body.contains("purpose-built"), "{topic}: {body}");
         assert!(body.contains("local runtime"), "{topic}: {body}");
+        assert!(body.contains("entrant"), "{topic}: {body}");
+        assert!(body.contains("Beachhead today"), "{topic}: {body}");
+        assert!(body.contains("No training stack"), "{topic}: {body}");
         assert!(!body.contains("Not a distillation"), "{topic}: {body}");
         assert!(!body.contains("training lab"), "{topic}: {body}");
     }

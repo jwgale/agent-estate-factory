@@ -8,7 +8,7 @@ Locked defaults: [`../charter.md`](../charter.md). Words: [`UBIQUITOUS_LANGUAGE.
 
 One estate. One box. Lanes: Horizon, Research, Sanctum. You plan, then apply. Control does not complete.
 
-Frontier (`xai_grok`) and local (`local_slm`) are equal-class bindings. Ollama is a local runtime on the `ollama` driver. llama.cpp swaps on the same specialist protocol. Local down audits `model.local.down` and stops.
+Frontier (`xai_grok`) and local (`local_slm`) are equal-class bindings. The local runtime is an ecosystem seat. Ollama is today's entrant. llama.cpp swaps on the same specialist protocol. Local down audits `model.local.down` and stops.
 
 Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom stay out. Sanctum stays a lane.
 
@@ -16,10 +16,12 @@ Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom stay out. San
 
 Both jobs are first-class.
 
-1. Portable local runtimes in the estate flow. Drivers: `ollama`, `llama.cpp`, later others. Ollama runs models. The estate is the product.
-2. Train and enrich purpose-built small-parameter models for a specific purpose.
+1. A local runtime is an ecosystem seat. Ollama fills it today. Another process can fill it tomorrow. Catalog, route, and bind take any entrant. Integrate that driver.
+2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Enrich today is curator packs. The curator is Jason. `estate packs accept` writes curator edit instructions. Jason pastes them into the estate file. Train and distill are the suite goal. Promote stays refused.
+Today's beachhead is curator packs and the specialist path. The curator is Jason. `estate packs accept` writes curator edit instructions. Jason pastes them into the estate file. Promote stays refused. No training stack ships on `main`.
+
+Build rule: a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that integration.
 
 Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+ is a recorded proof on a real box, plus parked stubs.
 
@@ -29,7 +31,7 @@ Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+
 - `estate convey` is a lease-bound hop stub.
 - A `cursor-cloud` placement is a declared lease. Floor records the lease.
 - Native MLX, vLLM, and TRT stay parked catalog cards.
-- Anti-shrink: Ollama wrapper, LM Studio, chat UI, weight browser, AI gateway, MCP catalog, Grok Bot clone, agent farm, frontier-proxy-only, local-studio-only.
+- Anti-shrink: Ollama wrapper-as-product, LM Studio-alone, AI gateway, Grok Bot clone. Also MCP catalog, chat UI, weight browser, agent farm, frontier-proxy-only, local-studio-only.
 
 ## Operator loop
 

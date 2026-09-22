@@ -2,7 +2,7 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Suite: portable local runtimes (`ollama`, `llama.cpp`, later others) in the estate flow, and train/enrich of purpose-built small models. Ollama is a local runtime on `local_slm`. The estate is the product. Packs are curator edit instructions. Control does not complete.
+Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Today's beachhead is curator packs and the specialist path. Packs are curator edit instructions. Control does not complete.
 
 **Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
@@ -78,7 +78,7 @@ GitHub is the source of truth.
 | `ollama` and llama.cpp on `CELL_LOCAL_ENDPOINT` | Experimental catalog cards — [parked](#parked) |
 | Profile-dir isolation and placement leases under `.cell/` | Containers |
 
-Anti-shrink: AI gateway, MCP catalog, Ollama wrapper, LM Studio, chat UI, weight browser, Grok Bot clone, agent farm, frontier-proxy-only, local-studio-only. Promote stays manual. `cursor-cloud` stays a declared lease. Train and enrich of purpose-built small models stays in the suite.
+Anti-shrink: AI gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. Also MCP catalog, chat UI, weight browser, agent farm, frontier-proxy-only, local-studio-only. Promote stays manual. `cursor-cloud` stays a declared lease. Train/enrich facilitation of purpose-built small models stays in the suite.
 
 ## Day-60 gate demo (A5–A9)
 
@@ -143,10 +143,10 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 
 | Rule | Meaning |
 | --- | --- |
-| Ollama-first | First supported local runtime: the `ollama` driver. llama.cpp swaps on the same protocol. The estate is the product. |
+| Ollama-first | Today's entrant in the local-runtime seat: the `ollama` driver. llama.cpp swaps on the same protocol. The seat stays open. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
 | Fail closed | Estate-bound local work stops on `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. Suite goal: train and enrich purpose-built small models. Drop zone: [`packs/`](packs/). |
+| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. Today's beachhead, with the specialist path. Suite goal: facilitate train/enrich of purpose-built small models. Drop zone: [`packs/`](packs/). |
 | Supported | `ollama` and llama.cpp green on the box. |
 | Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver choice. |
 | Apple | Ollama-on-Mac is the supported Apple runtime. Same `ollama` driver. |

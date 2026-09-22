@@ -381,7 +381,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #81 | `convey expire --forget` dropped an expired spawned cloud hop lease. | That lease is a refuse before the list and before the rewrite. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop. READY no. |
 | #82 | `convey leases` printed hop lease JSON when a cloud-mesh hop lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing mesh is not a spawned lease. The mesh is not rewritten. READY no. |
 | #84 | The README led with the Day-90 gate and catalog experiments, so the one-box factory was easy to miss. | North-star one-pager. `make real-world` is opt-in: check, vanilla doctor, live SKIP without an endpoint. Not in smoke or Actions. Distillation and a gateway stay non-goals. READY no. |
-| this slice | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Ollama is a local runtime. Purpose-built SLM train/enrich is the suite goal. Anti-shrink stays gateway, Ollama wrapper, LM Studio, Grok Bot clone, agent farm. READY no. |
+| this slice | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Local runtime is an ecosystem seat; Ollama is today's entrant. Purpose-built SLM train/enrich is facilitated. Beachhead stays packs and the specialist path. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. READY no. |
 
 ## Known-good local commands
 

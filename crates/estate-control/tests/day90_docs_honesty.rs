@@ -60,6 +60,9 @@ fn glossary_keeps_purpose_built_slm_in_suite() {
         "purpose-built",
         "local runtime",
         "lease-bound hop stub",
+        "entrant",
+        "integrate-vs-invent",
+        "facilitation",
     ] {
         assert!(
             glossary.to_lowercase().contains(term),
@@ -93,6 +96,7 @@ fn glossary_keeps_purpose_built_slm_in_suite() {
         );
     }
     assert!(north.contains("purpose-built"));
+    assert!(north.contains("entrant"));
     assert!(north.contains("UBIQUITOUS_LANGUAGE.md"));
     assert!(readme.contains("purpose-built"));
     assert!(readme.contains("docs/UBIQUITOUS_LANGUAGE.md"));

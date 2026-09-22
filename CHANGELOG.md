@@ -67,7 +67,7 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## This slice
 
-- Canonical glossary: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). Ollama is a local runtime (`ollama` driver). The estate is the product. Suite goal: portable local runtimes, and train/enrich of purpose-built small models. Anti-shrink stays gateway, Ollama wrapper, LM Studio, Grok Bot clone, agent farm, frontier-proxy-only, local-studio-only.
+- Canonical glossary: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). A local runtime is an ecosystem seat. Ollama is today's entrant; catalog/route/bind take the next process. Suite goal: facilitate train/enrich of purpose-built small models. Beachhead today: enrich packs and the specialist path. No training stack. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone.
 - `estate help north-star` / `charter` match that page. README and [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) use the same words.
 - `READY_FOR_LIVE_TEST`: no.
 

@@ -34,11 +34,15 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack today: edit instructions Jason pastes into the estate. The suite goal is wider: train and distill purpose-built small-parameter models for a specific purpose. No trainer command ships on `main`.
+Curator work on a pack today: edit instructions Jason pastes into the estate. `policy: manual`. That pack, with the specialist path, is today's beachhead. The suite goal is wider: facilitate train and distill of purpose-built small-parameter models. No training stack ships on `main`.
 
 ### purpose-built SLM
 
-A small-parameter model crafted for one job. The suite trains and enriches these models. The outcome belongs to the estate.
+A small-parameter model crafted for one job. Open-source SLMs will get more common. The suite facilitates training and enrichment of these models. The outcome belongs to the estate.
+
+### train/enrich facilitation
+
+The factory makes room for training and enrichment of purpose-built SLMs. Today's beachhead is enrich packs and the specialist path (`estate specialist`, `local_slm`). Catalog, route, and bind stay the seam. This page adds no trainer, no dataset pipeline, and no new crate.
 
 ### frontier
 
@@ -46,17 +50,25 @@ Equal-class model binding. Cell One id `xai_grok`. Driver `frontier-http`. Live 
 
 ### local
 
-Equal-class model binding. Cell One id `local_slm`. Class `local`. The binding is the estate contract. The process behind it is a local runtime.
+Equal-class model binding. Cell One id `local_slm`. Class `local`. The binding is the estate contract. The process behind it sits in the local-runtime seat.
 
-### local runtime
+### local runtime (driver)
 
-Software that runs a model on a host. Drivers on the estate flow: `ollama`, `llama.cpp`, later others. `ollama` is the first supported driver. llama.cpp swaps on the same specialist protocol. Endpoint: `CELL_LOCAL_ENDPOINT`.
+A local runtime is an ecosystem seat, held by a driver. Software on a host runs a model. Catalog, route, and bind take any entrant. Endpoint: `CELL_LOCAL_ENDPOINT`.
 
-Ollama is local-run software. It lets a user run models. It is an example implementation of a local runtime. The estate is the product. The binding id stays `local_slm`.
+Ollama fills the seat today. Another process can fill it tomorrow. llama.cpp is the swap-proof entrant on the same specialist protocol. Ollama is local-run software: it lets a user run models. The estate is the product. The binding id stays `local_slm`.
 
-Supported means `ollama` and llama.cpp are green on the box. vLLM and TRT stay experimental catalog cards. Native MLX stays a stub. Apple path: Ollama-on-Mac uses the same `ollama` driver.
+Supported means the seated driver is green on the box. Today that is `ollama` and llama.cpp. vLLM and TRT stay experimental catalog cards. Native MLX stays a stub. Apple path: Ollama-on-Mac uses the `ollama` driver in that seat.
 
 Local down audits `model.local.down`. Estate-bound local work stops.
+
+### entrant
+
+A process that can fill the local-runtime seat. `ollama` is the entrant on `main`. llama.cpp enters on the same specialist protocol. A later process enters through catalog / route / bind.
+
+### integrate-vs-invent
+
+Build rule. A feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver. A from-scratch local server waits until the entrant does not already do the job.
 
 ### sacred
 
@@ -82,10 +94,10 @@ Where agents run. `box` is this Cell One. `cloud-agent` (`cursor-cloud`) is a de
 
 Both are first-class:
 
-1. Incorporate Ollama-like local runtimes into the estate flow. Portable drivers: `ollama`, `llama.cpp`, later others.
-2. Train and enrich purpose-built small-parameter models crafted for a specific purpose.
+1. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant.
+2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 
-Shipped today: wired local runtimes, and manual curator packs. Train and distill stay the suite direction.
+Beachhead on `main`: the seated drivers, enrich packs, and the specialist path. Train and distill stay the suite direction. No training stack ships here.
 
 ## Aliases to avoid
 
@@ -94,7 +106,8 @@ Draft word on the left. Charter term on the right.
 | Draft word | Charter term |
 | --- | --- |
 | gateway, AI gateway, MCP catalog | control does not complete; conveyor allow/deny |
-| Ollama wrapper, Ollama-only studio, LM Studio, chat UI, weight browser | local runtime driver inside the estate |
+| Ollama wrapper-as-product | local-runtime seat; integrate the driver |
+| LM Studio-alone, chat UI, weight browser | local-runtime seat inside the estate |
 | Grok Bot clone, agent farm, computer-use farm | estate; lanes Horizon / Research / Sanctum |
 | frontier-proxy-only | equal-class frontier and local; `model.local.down` |
 | local-studio-only | equal-class bindings; purpose-built SLM stays in the suite |

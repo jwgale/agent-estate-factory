@@ -276,14 +276,14 @@ One-box Agent Estate Factory — plan/apply IaC, sacred isolation
 frontier+local, manual enrich packs.
 
 Suite (first-class):
-- Portable local runtimes in the estate flow. Drivers: ollama, llama.cpp, later others.
-- Ollama is local-run software. It is a driver. The estate is the product.
-- Train and enrich purpose-built small-parameter models for a specific purpose.
-- Enrich today: curator packs, policy manual. Train and distill are the suite goal.
+- A local runtime is an ecosystem seat. Ollama is today's entrant. Catalog / route / bind take the next process.
+- Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
+- Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
+- Beachhead today: curator packs and the specialist path. No training stack on this page.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
-- Not an Ollama wrapper. Not LM Studio. Not a chat UI or a weight browser.
+- Not an Ollama wrapper-as-product. Not LM Studio-alone.
 - Not a Grok Bot clone. Not an agent farm.
 - Not frontier-proxy-only. Not a local-studio-only shrink.
 - Enrich packs stay manual. The curator accepts by hand.
