@@ -429,12 +429,43 @@ pub fn catalog_file() -> CatalogFile {
 }
 
 pub fn write_catalog(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    write_catalog_file(path, &catalog_file())
+}
+
+/// Cell catalog for an apply/resume. Frontier model is the binding's
+/// `params.model`, or empty when the binding does not set one. Does not
+/// copy the schema card default `grok-4.7`.
+pub fn catalog_bound_to_estate(estate: &estate_schema::Estate) -> Result<CatalogFile, ModelError> {
+    let mut file = catalog_file();
+    let shown = match crate::bound_frontier_model(estate)? {
+        Some(model) => model,
+        None => String::new(),
+    };
+    file.frontier.model = shown.clone();
+    let label = if shown.is_empty() { "-" } else { shown.as_str() };
+    file.frontier.notes = format!(
+        "A7 chat. Bound model {label}. Needs XAI_API_KEY. No stream, tools, or vision. reasoning_effort xhigh is docs-only and is not sent. Local down does not fall through."
+    );
+    Ok(file)
+}
+
+pub fn write_bound_catalog(
+    path: &std::path::Path,
+    estate: &estate_schema::Estate,
+) -> std::io::Result<std::path::PathBuf> {
+    let file = catalog_bound_to_estate(estate).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+    })?;
+    write_catalog_file(path, &file)
+}
+
+fn write_catalog_file(path: &std::path::Path, file: &CatalogFile) -> std::io::Result<std::path::PathBuf> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
     }
-    let body = serde_json::to_string_pretty(&catalog_file()).map_err(|e| {
+    let body = serde_json::to_string_pretty(file).map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, e)
     })?;
     std::fs::write(path, body)?;
