@@ -11,26 +11,117 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `TrainEnrichDriver` | Data-plane trait in `model-estate`. `id()`, `prepare(job)`, catalog `status` / `probe`. |
 | `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. `FROM` is the seated model. Does not shell out. |
 | `external-manifest` | Portable JSON and YAML. Base model ref, purpose, host class affinity, dataset path hints from the pack `source_paths`. No vendor lock. `NEXT.md` names the files to hand off. |
-| `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` line, and the fail-closed reminders. |
+| `llamafactory-qlora` | Primary train card. Writes `recipe.yaml` (LLaMA-Factory SFT QLoRA: `quantization_bit: 4`, LoRA rank 16, `cutoff_len` 512, `packing: true`), `export.yaml`, `dataset_info.json`, and instruct chat `dataset.jsonl`. Default job is `train`. `NEXT.md` has `pip install llamafactory`, `llamafactory-cli train`, and `llamafactory-cli export`. Does not shell out. |
+| `axolotl-lora` | YAML recipe for a config-driven or multi-GPU run. Writes `axolotl.yml` (QLoRA: `load_in_4bit: true`, `adapter: qlora`) and Alpaca `dataset.jsonl`. Default job is `train`. `NEXT.md` has the exact `axolotl train` line. Does not shell out. |
+| `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` or `import-trained` line, and the fail-closed reminders. |
 | `estate enrich drivers` | Prints the catalog. `live=false`. A probe here does not train. |
-| `estate enrich prepare --all-drivers` | One call. Each registered card writes a sibling directory. A refuse writes none of them. |
+| `estate enrich prepare --all-drivers` | One call. Each card the job allows writes a sibling directory. A refuse writes none of them. The enrich default skips `llamafactory-qlora` and `axolotl-lora`. `--job train` includes them. |
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
-| `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card. Does not apply. |
+| `estate enrich import-trained` | Same proposal, for a `llamafactory-qlora` or `axolotl-lora` prepare whose job is `train`. `--adapter` is an adapter directory or a merged GGUF / safetensors file. Does not apply. |
+| `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card the job allows. The default job is enrich, so the train cards wait for `--job train`. Does not apply. |
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
 | `make enrich-prepare` | Opt-in fixture walk. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
+| `make train-prepare` | Opt-in LLaMA-Factory recipe and Axolotl recipe. Prints `SKIP live train`. Does not run either trainer. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
 | `make enrich-live-prove` | Opt-in seated handoff. Runs `ollama create` when the seat is up, then removes the tag. Not a factory-wide live test. Off smoke, `gate-90`, and Actions. |
 
-Job field: `enrich` (default) or `train`. The field is a label on the artifact. Both jobs only prepare.
+Job field: `enrich` (default) or `train`. `llamafactory-qlora` and `axolotl-lora` default to `train` and refuse `enrich`. Both jobs only prepare. The factory does not run a trainer.
 
 Default output is `.cell/enrich/{pack_id}/{driver}/`. Pass `--out` to write somewhere else, including `packs/prepared/`. Layout: [`cell-layout.md`](cell-layout.md). Schema: [`../schema/train-enrich.v0.json`](../schema/train-enrich.v0.json) (`cell-one.enrich-prepare.v0`).
 
 ## Facilitated vs invented
 
-Ollama already creates a model from a Modelfile. This factory writes that file and the next command. It does not invent a local inference server and it does not invent a GPU training stack.
+Ollama already creates a model from a Modelfile. This factory writes that file and the next command. It does not invent a local inference server.
 
-A full LoRA / SFT / DPO loop, a dataset downloader, and a GPU scheduler stay out of this beachhead.
+LLaMA-Factory already runs QLoRA supervised fine-tuning from a YAML recipe. `llamafactory-qlora` writes that recipe and the `llamafactory-cli train` line. Axolotl already trains from a YAML recipe, including multi-GPU runs. `axolotl-lora` writes that recipe and the `axolotl train` line. Neither card shells out. Unsloth QLoRA stays a `NEXT.md` pointer for a faster single-GPU Nvidia run. This factory does not invent an in-process trainer, a dataset downloader, a GGUF exporter, or a GPU scheduler.
+
+## Train / fine-tune
+
+Supported train hosts for `llamafactory-qlora` and `axolotl-lora` are `consumer-nvidia` and `rented-nvidia`. `host_class_affinity` comes from the pack when that field is set, otherwise from `params.host_class` on `local_slm`, otherwise from the pack `host_class`. An `apple-silicon` affinity still prepares. `NEXT.md` says the LLaMA-Factory card expects CUDA LLaMA-Factory. This factory does not write an MLX trainer.
+
+`model_name_or_path` in `recipe.yaml`, and `base_model` in `axolotl.yml`, are the seated model tag. Same resolution as Modelfile `FROM`: a pack `model_hint` that is already a model tag, otherwise `params.model` on the local binding. The binding id `local_slm` is `refuse:base-model` and writes nothing. LLaMA-Factory and Axolotl expect a Hugging Face repo id or a local weights directory. If the seated tag is only an Ollama name, edit that field before you train. This factory does not download weights and does not map the tag.
+
+On `llamafactory-qlora`, `dataset.jsonl` is instruct chat JSONL (`messages` of `role` and `content`). `dataset_info.json` marks it sharegpt so LLaMA-Factory applies the recipe `template`. That same chat template is what you seat. On `axolotl-lora`, `dataset.jsonl` is Alpaca JSONL (`instruction`, `input`, `output`), which Axolotl reads with `type: alpaca` and `ds_type: json`. When the pack has `source_paths`, each row names one of those paths. The factory does not read or download the files. When `source_paths` is empty, the file is a three-row stub and `NEXT.md` says to replace the rows. An empty source path string is `refuse:dataset`.
+
+The LLaMA-Factory recipe is QLoRA (`finetuning_type: lora`, `quantization_bit: 4`, `lora_rank: 16`, `packing: true`). `cutoff_len` is `512` so a first run stays short. Official SFT examples use `2048` for a longer run. Raise that field before a real run. A later preference stage (`stage: dpo` or `stage: orpo`, with `ranking: true` in `dataset_info.json`) is a comment in the recipe. This card does not build that dataset. The Axolotl recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`). On the CUDA host you can edit the yaml to 8-bit LoRA (`load_in_8bit: true`, `load_in_4bit: false`, `adapter: lora`) before you run Axolotl.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id-or-pack.json> \
+  --driver llamafactory-qlora \
+  --job train \
+  --state-dir .cell
+```
+
+Omitting `--job` on `--driver llamafactory-qlora` is the same train job. `--job enrich` is `refuse:job` and writes nothing. `--all-drivers --job train` writes both train cards next to the Modelfile and the external manifest. `--all-drivers` without `--job` stays on `enrich` and skips the train cards.
+
+The output directory is `.cell/enrich/{pack_id}/llamafactory-qlora/`:
+
+| File | Role |
+| --- | --- |
+| `recipe.yaml` | LLaMA-Factory SFT QLoRA recipe. Dataset dir and output dir are absolute. |
+| `export.yaml` | Merge recipe. No `quantization_bit`. |
+| `dataset_info.json` | ShareGPT column map for `dataset.jsonl`. |
+| `dataset.jsonl` | Instruct chat scaffold. |
+| `PREPARE.md` | What this step wrote, including `llamafactory-cli train recipe.yaml` from that directory. |
+| `NEXT.md` | `pip install llamafactory`, `llamafactory-cli train <absolute>/recipe.yaml`, `llamafactory-cli export`, the seat note, and the import line. |
+| `prepare.json` | `job` is `train`. `promoted`, `auto_apply`, and `estate_rewritten` are false. |
+
+Run the commands from `NEXT.md` on a CUDA host. This factory does not run them.
+
+```bash
+pip install llamafactory
+llamafactory-cli train .cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml
+llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-qlora/export.yaml
+```
+
+If that pip line does not match the CUDA install on the box, follow https://github.com/hiyouga/LLaMA-Factory#installation. The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Merge with the export file. Do not set `quantization_bit` on that merge, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF, or `FROM` the base plus `ADAPTER` for the adapter directory. Use the same chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create` and does not run that smoke eval.
+
+On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This card does not call Unsloth and does not write a script.
+
+`axolotl-lora` is the same loop with a YAML recipe. Use it when you want a config file or a multi-GPU run.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id-or-pack.json> \
+  --driver axolotl-lora \
+  --job train \
+  --state-dir .cell
+
+axolotl train .cell/enrich/<pack-id>/axolotl-lora/axolotl.yml
+```
+
+That directory holds `axolotl.yml` and an Alpaca `dataset.jsonl`. `val_set_size` is `0.0` so a short scaffold does not try to split an eval set. Axolotl writes the adapter under `output_dir` in the yaml.
+
+When the adapter directory or a GGUF exists, record the join. The prepared directory is the one you trained from.
+
+```bash
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --tag cell-enrich-<pack-id> \
+  --adapter <adapter-dir-or-gguf>
+
+estate enrich apply-proposal \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --tag cell-enrich-<pack-id> \
+  --state-dir .cell
+
+estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
+estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
+```
+
+`import-trained` writes the same `binding-proposal.json` as `import-prepared`. A prepare that is not `llamafactory-qlora` or `axolotl-lora`, a job that is not `train`, or an adapter path with no `adapter_config.json`, adapter weights, or GGUF is a refuse before that proposal exists. `apply-proposal` does not apply. The source estate is written only when `estate apply --require-plan` succeeds. Point `--estate` at a lab copy. `examples/estate.yaml` on `main` stays hash-locked. There is no second apply path and no auto-promote.
+
+```bash
+make train-prepare
+```
+
+Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`) and sets `params.model: llama3` on that copy. Asserts `recipe.yaml`, the chat `dataset.jsonl`, the `llamafactory-cli train` line in `NEXT.md`, `prepare.json` with `job` `train`, and that `axolotl.yml` still has an indented datasets list. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run LLaMA-Factory or Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 ```bash
 estate enrich from-pack \
@@ -111,15 +202,15 @@ estate enrich prepare \
 
 `manifest.json` and `manifest.yaml` are the market-shift hatch. A later trainer reads `base_model`, `purpose`, `host_class_affinity`, and `dataset_paths`. Cell One does not call that trainer. When weights come back, load them on the seated runtime as `cell-enrich-{pack_id}` and point `import-prepared --path` at that file.
 
-## Add a third entrant
+## Add another entrant
 
-1. Implement `TrainEnrichDriver` in `model-estate` (a sibling of the two drivers).
-2. Add one `RegisteredDriver` card in `crates/model-estate/src/train_enrich.rs`.
+1. Implement `TrainEnrichDriver` in `model-estate` (a sibling of the cards already registered).
+2. Add one `RegisteredDriver` card in `crates/model-estate/src/train_enrich.rs`. Set `jobs` and `default_job` so `--all-drivers` includes the card only when the job allows it.
 3. Leave floor-supervisor and `estate-control` dispatch alone. They pass the driver id through.
 
 `estate enrich drivers` prints the new card. No estate file change is required to register it.
 
-llama.cpp on a host already reads an INI preset (`llama-server --models-preset`). That preset needs a GGUF path or a Hugging Face repo. This estate does not carry either, so no third card ships here. `external-manifest` stays the portable hatch until a pack or binding names that file.
+llama.cpp on a host already reads an INI preset (`llama-server --models-preset`). That preset needs a GGUF path or a Hugging Face repo. This estate does not carry either, so that preset stays off this catalog. `external-manifest` stays the portable hatch until a pack or binding names that file.
 
 ## Refuse
 
@@ -135,6 +226,10 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Unknown driver id | `refuse:driver` |
 | `--driver` and `--all-drivers` together | `refuse:driver` |
 | Job is not `train` or `enrich` | `refuse:job` |
+| `llamafactory-qlora` or `axolotl-lora` with `--job enrich` | `refuse:job` |
+| A train source path is empty | `refuse:dataset` |
+| `import-trained` on a prepare that is not a train recipe with job `train` | `refuse:driver` or `refuse:job` |
+| Adapter path is missing, or has no adapter config, weights, or GGUF | `refuse:adapter` |
 | `{state_dir}/enrich` is missing on list | `refuse:enrich-index` |
 | `prepare.json` missing, unreadable, or flagged promoted | `refuse:missing-prepare`, `refuse:prepare-unreadable`, `refuse:prepared` |
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |

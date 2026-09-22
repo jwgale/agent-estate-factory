@@ -197,7 +197,7 @@ pub(crate) fn run() -> Result<()> {
                 all_drivers,
                 out.as_deref(),
                 &state_dir,
-                &job,
+                job.as_deref(),
                 &curator,
             ),
             EnrichCommand::FromPack {
@@ -216,7 +216,7 @@ pub(crate) fn run() -> Result<()> {
                 driver.as_deref(),
                 all_drivers,
                 &state_dir,
-                &job,
+                job.as_deref(),
                 &curator,
             ),
             EnrichCommand::List { state_dir } => crate::enrich::cmd_enrich_list(&state_dir),
@@ -231,6 +231,19 @@ pub(crate) fn run() -> Result<()> {
                 &prepared,
                 &tag,
                 &path,
+                &curator,
+            ),
+            EnrichCommand::ImportTrained {
+                estate,
+                prepared,
+                tag,
+                adapter,
+                curator,
+            } => crate::enrich::cmd_enrich_import_trained(
+                &estate,
+                &prepared,
+                &tag,
+                &adapter,
                 &curator,
             ),
             EnrichCommand::ApplyProposal {

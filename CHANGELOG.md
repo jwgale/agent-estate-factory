@@ -2,6 +2,32 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — LLaMA-Factory QLoRA is the train card
+
+- `llamafactory-qlora` is the primary train `TrainEnrichDriver`. `estate enrich prepare --driver llamafactory-qlora` writes `recipe.yaml` (SFT QLoRA, 4-bit, LoRA rank 16, `cutoff_len` 512, packing on), `export.yaml`, `dataset_info.json`, instruct chat `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with `pip install llamafactory`, `llamafactory-cli train`, and `llamafactory-cli export`, and `prepare.json` (`job: train`). The factory does not run the CLI, does not download weights, and does not call CUDA.
+- `axolotl-lora` stays the YAML recipe card for a config-driven or multi-GPU run. It still does not run Axolotl.
+- Unsloth QLoRA is a `NEXT.md` pointer on the LLaMA-Factory card (Nvidia only). It is not a registered driver.
+- `import-trained` accepts either train recipe and writes the same `local_slm` proposal. Ollama seating stays outside the factory. Merge drops `quantization_bit`. GGUF conversion stays with llama.cpp after that merge.
+- Train hosts are `consumer-nvidia` and `rented-nvidia`. `apple-silicon` can prepare. `NEXT.md` says the card expects CUDA LLaMA-Factory. `make train-prepare` prints `SKIP live train` and is off smoke, `gate-90`, and Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
+## This slice — Unsloth QLoRA is the train card
+
+- `unsloth-qlora` is the primary train `TrainEnrichDriver`. `estate enrich prepare --driver unsloth-qlora` writes `train_unsloth.py` (QLoRA 4-bit, LoRA r=16, `max_seq_length` 512), instruct chat `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with `pip install unsloth` and `python train_unsloth.py`, and `prepare.json` (`job: train`). The factory does not run the script, does not install Unsloth, and does not export GGUF.
+- `axolotl-lora` stays the YAML recipe card for a config-driven or multi-GPU run. It still does not run Axolotl.
+- `import-trained` accepts either train recipe and writes the same `local_slm` proposal. Ollama seating stays outside the factory. GGUF and Ollama export stay on Unsloth's docs (`save_pretrained_gguf`).
+- Train hosts are `consumer-nvidia` and `rented-nvidia`. `apple-silicon` can prepare. `NEXT.md` says the card expects CUDA. `make train-prepare` prints `SKIP live train` and is off smoke, `gate-90`, and Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
+## This slice — Axolotl train recipe
+
+- `axolotl-lora` is a `TrainEnrichDriver` card beside `ollama-modelfile` and `external-manifest`. `estate enrich prepare --driver axolotl-lora` writes `axolotl.yml` (QLoRA: `load_in_4bit` and `adapter: qlora`), `dataset.jsonl`, `PREPARE.md`, `NEXT.md` with the exact `axolotl train` line, and `prepare.json` (`job: train`). The factory does not run Axolotl, does not download a dataset, and does not rewrite `estate.yaml`.
+- Default job for that card is `train`. `--job enrich` is `refuse:job` and writes nothing. `--all-drivers` includes the card when the job is `train`. The enrich default still prepares the other two cards.
+- `estate enrich import-trained` checks an adapter directory or a merged GGUF and writes the same `local_slm` binding proposal as `import-prepared`. `apply-proposal`, `plan`, and `apply --require-plan` stay the join. Ollama stays the local-run seat.
+- Train hosts for the card are `consumer-nvidia` and `rented-nvidia`. `apple-silicon` can prepare; `NEXT.md` says the Axolotl GPU path expects CUDA. No MLX trainer.
+- Opt-in `make train-prepare` asserts the recipe, the `axolotl train` line, `prepare.json` `job=train`, and an untouched `examples/estate.yaml`. It prints `SKIP live train`. Off smoke, `gate-90`, and Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — seated FROM, from-pack, live prove
 
 - Keeps `estate enrich apply-proposal`. The proposal still stages `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. The source estate is written only when that apply succeeds. Status and doctor still name a pending join. `auto_apply` stays false.
