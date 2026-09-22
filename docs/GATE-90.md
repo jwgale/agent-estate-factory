@@ -61,7 +61,7 @@ estate doctor --strict
 | Call / status / leases / reconcile on SKU `host_class` | green | `refuse:bad-host-class`; no rewrite to `any`; record writes nothing |
 | Tampered mesh / restore SKU `host_class` | green | call/list/expire/sync and restore `refuse:bad-host-class`; no write |
 | Leases / status refuse before print | green | SKU actual is not dumped, then refused |
-| Backup / restore estate parse | green | present-but-garbage estate file refuses; no locked-only invent |
+| Backup / restore estate parse | green | present-but-garbage estate file refuses; no locked-only invent; a catalog that disagrees with the binding, a frontier source_driver with no frontier binding, and a snapshot sacred set that disagrees all refuse before the archive or the restore write |
 | Feed redaction report | green | pack + `redaction.json` never store the raw secret |
 | Journals append-only | green | suspend / resume / `expire --forget` do not truncate jsonl |
 | Floor src SKU needles | green | `doctor --strict` floor scan stays clean (`not-a-host` in src tests) |
