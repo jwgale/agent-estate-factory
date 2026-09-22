@@ -9,7 +9,8 @@ use feed_collector::{import_pack_for, refuse_import_pack};
 use floor_supervisor::{
     append_apply_audit, apply_dry_run, apply_with_profile_dir, classify_apply, list_expired_leases,
     load_desired_snapshot, load_lifecycle, load_placements, mark_running, now_unix,
-    record_placements, refuse_expired_leases, refuse_lease_host_classes, render_dry_run,
+    record_placements, refuse_expired_leases, refuse_lease_host_classes,
+    refuse_spawned_cloud_placement, render_dry_run,
     ApplyAudit, ApplyIdentity,
 };
 use std::path::Path;
@@ -262,6 +263,8 @@ pub(crate) fn cmd_apply(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     load_lifecycle(state_dir)?;
+    // Even --force. A spawned cloud lease is not restamped to unspawned.
+    refuse_spawned_cloud_placement(state_dir).map_err(|e| anyhow::anyhow!("{e}"))?;
     if !force {
         if let Some(places) = load_placements(state_dir)? {
             refuse_lease_host_classes(&places)?;
