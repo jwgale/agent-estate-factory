@@ -249,6 +249,24 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
             }
         }
     }
+    // Missing desired-snapshot.yaml is not a failure. When catalog.json
+    // is present, the frontier check already reads this file. A snapshot
+    // with no catalog that does not parse is still FAIL. A note would
+    // still print "factory ready". A parsed file prints its name and
+    // does not invent a frontier model.
+    let snap_path = state_dir.join("desired-snapshot.yaml");
+    if snap_path.exists() && !state_dir.join("catalog.json").is_file() {
+        match floor_supervisor::load_desired_snapshot(state_dir) {
+            Ok(Some(estate)) => {
+                println!("  ok    desired-snapshot.yaml name={}", estate.name)
+            }
+            Ok(None) => {}
+            Err(err) => {
+                println!("  FAIL  {err}");
+                fails.push(err.to_string());
+            }
+        }
+    }
 
     println!("\nFrontier model");
     println!("--------------");
