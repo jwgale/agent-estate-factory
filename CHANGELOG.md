@@ -65,6 +65,13 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #47 (this slice)
+
+- `estate models` prints `model=-` when the binding sets no model. `CELL_FRONTIER_MODEL=grok-4.7` does not become the binding.
+- `estate catalog` labels the schema card `(schema card, not a binding)`. It refuses (`refuse:frontier-model`) before overwriting a catalog whose frontier model is not that card. A missing file still receives the schema dump. An unset binding stays empty.
+- Operator-day and fixtures-check write that schema dump beside the cell catalog. Same checks. No new CLI. No new smoke or gate-90 step.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #46 (this slice)
 
 - Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.json` frontier model disagrees with the binding. It does that before leases, an unchanged audit, or a catalog rewrite. A missing catalog is not a disagreement. `--force` does not overwrite it.
