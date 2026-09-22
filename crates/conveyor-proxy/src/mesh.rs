@@ -50,6 +50,8 @@ pub enum MeshError {
     Expired(String),
     #[error("refuse:sacred-id: hop/placement '{0}' is a sacred exclusion")]
     SacredId(String),
+    #[error("refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {0}")]
+    CloudSpawned(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -414,8 +416,22 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
 /// Derive hops from durable placement leases. Pause-safe; no live spawn.
 /// Matching kinds (`box` → box, `cloud-agent` → cloud-mesh) upsert hops.
 /// Manually declared hops with other ids stay. Sacred ids refuse.
+///
+/// A spawned cloud-agent placement is still spawned. `CloudMeshHop::declare`
+/// hardcodes `spawned: false`, and the box formula
+/// `place.spawned && hop.wired` is not this path. Refuse before a hop lease
+/// records that lie. A missing placement file is an empty list, not a spawned
+/// lease. The placement file is not rewritten.
 pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
+    let spawned: Vec<String> = places
+        .iter()
+        .filter(|place| hop_kind_for_placement(&place.kind) == Some("cloud-mesh") && place.spawned)
+        .map(|place| place.placement_id.clone())
+        .collect();
+    if !spawned.is_empty() {
+        return Err(MeshError::CloudSpawned(spawned.join(", ")));
+    }
     let mut mesh = load_interpreted_mesh(state_dir)?;
     for place in &places {
         let Some(_) = hop_kind_for_placement(&place.kind) else {
@@ -794,6 +810,96 @@ mod tests {
         let call = call_hop(&dir, "cell-one-box", "lane-tool").unwrap();
         assert!(call.allow);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sync_does_not_invent_unspawned_on_a_spawned_cloud_lease() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "kept-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
+        let mesh_before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let hops_before = std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap();
+        let leases_before = std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap();
+
+        let write_cloud = |spawned: bool, wired: bool| {
+            let body = serde_json::json!({
+                "schema": "cell-one.placement-actual.v0",
+                "desired_hash": "sha256:test",
+                "leases": [
+                    {
+                        "placement_id": "cell-one-box",
+                        "kind": "box",
+                        "host_class": "any",
+                        "spawned": true,
+                        "wired": true
+                    },
+                    {
+                        "placement_id": "cursor-cloud",
+                        "kind": "cloud-agent",
+                        "host_class": "any",
+                        "spawned": spawned,
+                        "wired": wired
+                    }
+                ]
+            })
+            .to_string();
+            std::fs::write(dir.join("placement-actual.json"), &body).unwrap();
+            body
+        };
+
+        for wired in [false, true] {
+            let placement = write_cloud(true, wired);
+            let err = sync_from_placements(&dir).unwrap_err();
+            assert!(matches!(err, MeshError::CloudSpawned(_)), "{err}");
+            let msg = err.to_string();
+            assert!(msg.starts_with("refuse:cloud-spawned"), "{msg}");
+            assert!(msg.contains("cursor-cloud"), "{msg}");
+            assert!(
+                !msg.contains("spawned\": false") && !msg.contains("spawned: false"),
+                "{msg}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
+                placement
+            );
+            assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), mesh_before);
+            assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+            assert_eq!(
+                std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
+                leases_before
+            );
+        }
+
+        let empty = tmp();
+        let missing = sync_from_placements(&empty).unwrap();
+        assert!(missing.leases.is_empty());
+
+        let unspawned = write_cloud(false, false);
+        let mesh = sync_from_placements(&dir).unwrap();
+        let cloud = mesh
+            .leases
+            .iter()
+            .find(|l| l.hop_id == "cursor-cloud")
+            .unwrap();
+        assert!(!cloud.spawned);
+        assert!(!cloud.granted);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
+            unspawned
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     #[test]

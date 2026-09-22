@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#76 plus this slice)
+## On `main` (PR #1-#77 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -270,13 +270,17 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 
 `estate suspend` and `floor suspend` refuse before they drop sessions or rewrite leases when a cloud-agent lease is spawned. They do not restamp that lease to unspawned. A missing placement file is not a spawned lease. A wired box lease still drops `spawned` on suspend.
 
-## This slice
+## #77 in plain English
 
 `estate expire` refuses before it lists leases or forgets them when an expired cloud-agent lease is spawned. `expire --forget` does not drop that row. A missing placement file is not a spawned lease. An expired box lease still drops when no spawned cloud row is in that drop.
 
+## This slice
+
+`estate convey sync` refuses before it writes a cloud hop lease when the placement lease is spawned. It does not record that hop as `spawned: false`. A missing placement file is not a spawned lease. An unspawned cloud placement still syncs. The placement file is not rewritten.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#77 (plain English)
+## Bug fixes on #10-#77 plus this slice (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -347,6 +351,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #75 | Pause-proof printed the clean kit JSON, including "Cloud-agent not spawned", and then failed when the cell was drifted. | That drift is a refuse before the JSON. The error names the drift notes. An in-sync proof still prints. READY no. |
 | #76 | Suspend restamped a spawned cloud-agent lease to unspawned after it had already dropped sessions. | That lease is a refuse before sessions drop and before the lease rewrite. A missing file is not a spawned lease. A wired box lease still drops. READY no. |
 | #77 | `expire --forget` dropped an expired spawned cloud-agent lease, so the next apply could record a fresh unspawned row. | That lease is a refuse before the list and before the rewrite. A missing file is not a spawned lease. An expired box still drops when that cloud row is not in the drop. READY no. |
+| this slice | `convey sync` wrote a cloud hop lease with `spawned: false` when the placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud placement still syncs. The placement file is not rewritten. READY no. |
 
 ## Known-good local commands
 

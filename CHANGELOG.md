@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## This slice
+
+- `estate convey sync` refuses before it writes a cloud hop lease when the placement lease is spawned. It does not record that hop as `spawned: false`.
+- A missing placement file is not a spawned lease. An unspawned cloud placement still syncs. The placement file is not rewritten.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #76 (this slice)
 
 - `estate expire` refuses before it lists leases or forgets them when an expired cloud-agent lease is spawned. `expire --forget` does not drop that row.
