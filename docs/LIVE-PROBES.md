@@ -31,13 +31,73 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 Not recorded: Mac `estate specialist` chat (same command as the 5090 PASS),
 native MLX. Frontier `grok-4.7` specialist is recorded above.
 
-`READY_FOR_LIVE_TEST` for the rows above: **no**. Mac complete is the same
-`estate specialist --driver ollama` verb already proven on 5090. Do not ping.
+`READY_FOR_LIVE_TEST` for the rows above: **no**. Those runs are recorded.
+
+Mac `estate specialist` complete is not recorded. Both boxes are up.
+`READY_FOR_LIVE_TEST`: **yes** for that Mac command only. The 5090 block
+below is the same verb; that `Pong` is already recorded.
+
+## Mac specialist complete (run tonight)
+
+Unrecorded on the MacBook Air. Ollama-on-Mac `probes --live` already
+PASSed. Native MLX stays stub. `mlx`, `vllm`, and `trt` stay `not live-ok`.
+This command does not ping those cards.
+
+`READY_FOR_LIVE_TEST`: **yes**.
+
+### MacBook Air
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+export CELL_LOCAL_MODEL=llama3
+estate specialist --driver ollama --prompt "Reply with the single word pong."
+```
+
+From a checkout when `estate` is not on `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+export CELL_LOCAL_MODEL=llama3
+cargo run -q -p estate-control -- specialist --driver ollama \
+  --prompt "Reply with the single word pong."
+```
+
+Expect exit 0, `"allow": true`, `"job": "complete"`, and a non-empty
+`"completion"` (often `pong` / `Pong`). Empty `completion` is refuse.
+If the model is missing: `ollama pull llama3`.
+
+### Linux 5090-class (box is open)
+
+Already recorded: `"completion": "Pong"`. Same env. Do not put `5090`
+in a binding id. Host class is `consumer-nvidia` or `rented-nvidia`.
+`READY_FOR_LIVE_TEST` for this recorded row: **no**. Run it to confirm
+the open box still answers.
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+export CELL_LOCAL_MODEL=llama3
+estate specialist --driver ollama --prompt "Reply with the single word pong."
+```
+
+From a checkout when `estate` is not on `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+export CELL_LOCAL_MODEL=llama3
+cargo run -q -p estate-control -- specialist --driver ollama \
+  --prompt "Reply with the single word pong."
+```
 
 Opt-in helper (requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke):
 
 ```bash
+export PATH="$HOME/.cargo/bin:$PATH"
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
+export CELL_LOCAL_MODEL=llama3
 make live-specialist
 ```
 
@@ -232,8 +292,9 @@ completion refuses. No silent allow.
 This is the one new command. Same `CELL_LOCAL_ENDPOINT` as the #23 probe.
 
 ```bash
+export PATH="$HOME/.cargo/bin:$PATH"
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
-# after `ollama pull llama3`, or: export CELL_LOCAL_MODEL=llama3
+export CELL_LOCAL_MODEL=llama3
 cargo run -q -p estate-control -- specialist --driver ollama \
   --prompt "Reply with the single word pong."
 ```
@@ -257,8 +318,8 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
   --endpoint http://127.0.0.1:8080 --prompt "Reply with the single word pong."
 ```
 
-Mac `estate specialist` chat is the same command as the 5090 PASS.
-`READY_FOR_LIVE_TEST`: **no**.
+Mac `estate specialist` chat is the command in "Mac specialist complete (run tonight)".
+`READY_FOR_LIVE_TEST`: **yes** for that Mac command. The 5090 `Pong` row stays recorded.
 
 ## Frontier (grok-4.7)
 
@@ -307,8 +368,9 @@ Same command as Mac. This is the retry after the 5090 box hit
 `driver unreachable: openai chat: empty message.content`.
 
 ```bash
+export PATH="$HOME/.cargo/bin:$PATH"
 export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
-# optional: export CELL_LOCAL_MODEL=<id from ollama list>
+export CELL_LOCAL_MODEL=llama3
 cargo run -q -p estate-control -- specialist --driver ollama \
   --prompt "Reply with the single word pong."
 ```
