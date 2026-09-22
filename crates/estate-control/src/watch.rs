@@ -20,6 +20,20 @@ pub(crate) fn cmd_expire(state_dir: &Path, forget: bool) -> Result<()> {
         println!("no expired leases under {}", state_dir.display());
         return Ok(());
     }
+    // An expired spawned cloud-agent lease is still spawned. Refuse
+    // before the list and before forget rewrites the file. A missing
+    // file is not a spawned lease. An expired box still lists.
+    let spawned: Vec<&str> = expired
+        .iter()
+        .filter(|l| l.kind == "cloud-agent" && l.spawned)
+        .map(|l| l.placement_id.as_str())
+        .collect();
+    if !spawned.is_empty() {
+        bail!(
+            "refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {}",
+            spawned.join(", ")
+        );
+    }
     println!("expired leases ({})", expired.len());
     for lease in &expired {
         println!(
