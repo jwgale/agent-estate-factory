@@ -1,6 +1,7 @@
 mod accept;
 mod cli;
 mod dispatch;
+mod enrich;
 mod doctor_strict;
 mod heal;
 mod help;

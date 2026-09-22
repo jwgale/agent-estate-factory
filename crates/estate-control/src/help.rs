@@ -14,6 +14,7 @@ const TOPICS: &[&str] = &[
     "day90-mixed",
     "north-star",
     "charter",
+    "enrich",
 ];
 
 pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
@@ -58,6 +59,10 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             print!("{NORTH_STAR}");
             Ok(())
         }
+        Some("enrich") | Some("train") => {
+            print!("{ENRICH}");
+            Ok(())
+        }
         Some(other) => {
             eprintln!("unknown help topic: {other}");
             eprintln!("topics: {}", TOPICS.join(", "));
@@ -82,12 +87,15 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
   estate help day90-mixed
   estate help north-star
   estate help charter
+  estate help enrich
 
 Entrypoint: make gate-90
 Loop:       make day90
 Mixed:      make day90-mixed
 Feed walk:  make feed-loop
 Frontier:   estate specialist --driver frontier
+Enrich:     estate enrich prepare
+Walk:       make enrich-prepare
 ";
 
 const STATUS: &str = "\
@@ -279,7 +287,8 @@ Suite (first-class):
 - A local runtime is an ecosystem seat. Ollama is today's entrant. Catalog / route / bind take the next process.
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
-- Beachhead today: curator packs and the specialist path. No training stack on this page.
+- Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
+- estate enrich prepare writes artifacts. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -297,4 +306,34 @@ Pointers:
 
 This page does not plan, apply, or probe. Off make smoke,
 make gate-90, and Actions.
+";
+
+const ENRICH: &str = "\
+enrich — train/enrich prepare
+=============================
+estate help train prints this page. Job field is train or enrich.
+Default job is enrich. Prepare writes artifacts. It does not train.
+
+  estate enrich drivers
+  estate enrich prepare --estate examples/estate.yaml \\
+    --pack examples/fixtures/specialist-overnight.pack.json \\
+    --driver ollama-modelfile
+  estate enrich prepare --pack examples/fixtures/specialist-overnight.pack.json \\
+    --driver external-manifest --out target/enrich-manifest
+  make enrich-prepare
+
+TrainEnrichDriver lives in the data plane (model-estate).
+Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM)
+and external-manifest (portable JSON/YAML, no vendor lock).
+A later entrant adds one catalog card. Floor and control dispatch
+do not match driver ids.
+
+Default out is .cell/enrich/{pack}/{driver}. See docs/cell-layout.md.
+Alternate: --out (for example packs/prepared/).
+Sacred text, a hardware SKU, a missing pack, the wrong curator, and a
+frontier source_driver with no frontier binding refuse before any write.
+estate.yaml is not rewritten. Promote stays off. No train POST.
+
+Opt-in walk: make enrich-prepare. Not part of make smoke, make gate-90,
+or Actions. Docs: docs/TRAIN-ENRICH.md. Words: docs/UBIQUITOUS_LANGUAGE.md.
 ";
