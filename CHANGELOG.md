@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #69 (this slice)
+
+- Apply, resume, and suspend do not journal `from: suspended` when `lifecycle.json` was missing. That `from` stays empty.
+- A present file still supplies `from`. A file that does not parse is a refuse before the write. The loader default is not a prior state.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #68 (this slice)
 
 - `floor status` does not invent `suspended` when `lifecycle.json` is missing. It prints `lifecycle: -`.
