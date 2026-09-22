@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#79 plus this slice)
+## On `main` (PR #1-#80 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -282,13 +282,17 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 
 `estate convey call` does not say a cloud hop is not spawned when the placement lease is spawned. A missing hop lease is not restamped to `spawned: false`. A missing placement file is not a spawned lease. An unspawned cloud hop still refuses as declared, not spawned. The placement file is not rewritten.
 
-## This slice
+## #80 in plain English
 
 `estate convey declare` refuses before it writes a cloud hop lease when that placement lease is spawned. It does not record `spawned: false`. A missing placement file is not a spawned lease. An unspawned cloud hop still declares as not spawned. The placement file is not rewritten.
 
+## This slice
+
+`estate convey expire` refuses before it lists or forgets an expired cloud hop lease that is spawned. `expire --forget` does not drop that row. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#79 plus this slice (plain English)
+## Bug fixes on #10-#80 plus this slice (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -361,7 +365,8 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #77 | `expire --forget` dropped an expired spawned cloud-agent lease, so the next apply could record a fresh unspawned row. | That lease is a refuse before the list and before the rewrite. A missing file is not a spawned lease. An expired box still drops when that cloud row is not in the drop. READY no. |
 | #78 | `convey sync` wrote a cloud hop lease with `spawned: false` when the placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud placement still syncs. The placement file is not rewritten. READY no. |
 | #79 | `convey call` said a cloud hop was not spawned, and restamped a missing hop lease to `spawned: false`, when the placement lease was spawned. | That lease is a refuse before the message and before the restamp. A missing file is not a spawned lease. An unspawned cloud hop still refuses as declared, not spawned. READY no. |
-| this slice | `convey declare` wrote a cloud hop lease with `spawned: false` when that placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud hop still declares. The placement file is not rewritten. READY no. |
+| #80 | `convey declare` wrote a cloud hop lease with `spawned: false` when that placement lease was spawned. | That lease is a refuse before the hop write. A missing file is not a spawned lease. An unspawned cloud hop still declares. The placement file is not rewritten. READY no. |
+| this slice | `convey expire --forget` dropped an expired spawned cloud hop lease. | That lease is a refuse before the list and before the rewrite. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop. READY no. |
 
 ## Known-good local commands
 

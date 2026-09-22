@@ -576,11 +576,31 @@ pub fn hop_lease_is_expired(lease: &HopLease, now: u64) -> bool {
     lease.expires_at.map(|exp| now >= exp).unwrap_or(false)
 }
 
+/// An expired spawned cloud hop lease is still spawned. Refuse before a
+/// list that looks droppable, and before forget rewrites the mesh.
+/// A missing mesh is an empty lease list, not a spawned lease. An expired
+/// box hop still drops when no spawned cloud row is in that drop.
+fn refuse_expired_spawned_cloud_hop(leases: &[HopLease], now: u64) -> Result<(), MeshError> {
+    let spawned: Vec<String> = leases
+        .iter()
+        .filter(|lease| {
+            hop_lease_is_expired(lease, now) && hop_is_cloud(&lease.kind) && lease.spawned
+        })
+        .map(|lease| lease.hop_id.clone())
+        .collect();
+    if spawned.is_empty() {
+        return Ok(());
+    }
+    Err(MeshError::CloudSpawned(spawned.join(", ")))
+}
+
 pub fn list_expired_hop_leases(
     state_dir: &Path,
     now: u64,
 ) -> Result<Vec<HopLease>, MeshError> {
-    Ok(load_interpreted_mesh(state_dir)?
+    let mesh = load_interpreted_mesh(state_dir)?;
+    refuse_expired_spawned_cloud_hop(&mesh.leases, now)?;
+    Ok(mesh
         .leases
         .into_iter()
         .filter(|l| hop_lease_is_expired(l, now))
@@ -588,9 +608,14 @@ pub fn list_expired_hop_leases(
 }
 
 /// Drop expired hop leases. Hop decls stay so call can restamp. Does not spawn.
+///
+/// An expired spawned cloud hop lease is still spawned. Refuse before the
+/// rewrite. A missing mesh is not a spawned lease. An expired box hop still
+/// drops when no spawned cloud row is in that drop.
 pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshError> {
     let mut mesh = load_interpreted_mesh(state_dir)?;
     let now = hop_now_unix();
+    refuse_expired_spawned_cloud_hop(&mesh.leases, now)?;
     let mut forgotten = Vec::new();
     mesh.leases.retain(|l| {
         if hop_lease_is_expired(l, now) {
@@ -1417,6 +1442,88 @@ mod tests {
         assert_eq!(lease.ttl_secs, Some(1));
         assert!(lease.expires_at.is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn forget_does_not_drop_an_expired_spawned_cloud_hop() {
+        let dir = tmp();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cursor-cloud".into(),
+                kind: "cloud-mesh".into(),
+                capability: "mesh-stub".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: Some(1),
+            },
+        )
+        .unwrap();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "short-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: Some(1),
+            },
+        )
+        .unwrap();
+        let now = hop_now_unix();
+        let mut mesh = load_mesh(&dir).unwrap();
+        for lease in &mut mesh.leases {
+            lease.issued_at = Some(now.saturating_sub(10));
+            lease.expires_at = Some(now.saturating_sub(1));
+            if lease.hop_id == "cursor-cloud" {
+                lease.spawned = true;
+            }
+        }
+        persist_mesh(&dir, &mesh).unwrap();
+        let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let hops_before = std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap();
+        let leases_before = std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap();
+
+        let listed = list_expired_hop_leases(&dir, now).unwrap_err();
+        assert!(matches!(listed, MeshError::CloudSpawned(_)), "{listed}");
+        assert!(listed.to_string().starts_with("refuse:cloud-spawned"), "{listed}");
+        assert!(listed.to_string().contains("cursor-cloud"), "{listed}");
+        let forgotten = forget_expired_hop_leases(&dir).unwrap_err();
+        assert!(matches!(forgotten, MeshError::CloudSpawned(_)), "{forgotten}");
+        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
+            leases_before
+        );
+
+        let mut mesh = load_mesh(&dir).unwrap();
+        for lease in &mut mesh.leases {
+            if lease.hop_id == "cursor-cloud" {
+                lease.expires_at = Some(now.saturating_add(3600));
+                lease.spawned = true;
+            }
+        }
+        persist_mesh(&dir, &mesh).unwrap();
+        let forgotten = forget_expired_hop_leases(&dir).unwrap();
+        assert_eq!(forgotten, vec!["short-box".to_string()]);
+        let after = load_mesh(&dir).unwrap();
+        let cloud = after
+            .leases
+            .iter()
+            .find(|l| l.hop_id == "cursor-cloud")
+            .unwrap();
+        assert!(cloud.spawned);
+        assert!(after.hops.iter().any(|h| h.id == "short-box"));
+
+        let empty = tmp();
+        assert!(list_expired_hop_leases(&empty, now).unwrap().is_empty());
+        assert!(forget_expired_hop_leases(&empty).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     #[test]
