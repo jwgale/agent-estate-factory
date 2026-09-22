@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-A10–A12 plus overnight waves are **on `main`** (PR #1–#52 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
+A10–A12 plus overnight waves are **on `main`** (PR #1–#54 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
 `make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (Mac specialist complete, native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
 
@@ -78,7 +78,7 @@ estate doctor --strict
 | Live probe runbook + dry shapes | green | [`LIVE-PROBES.md`](LIVE-PROBES.md); SKIP vs would-live fixture, no network |
 | OpenAI / Ollama live adapter | green | GET `/v1/models` or `/api/tags`; in-process mock; SKIP without env |
 | Specialist chat round-trip | green | `HttpLocal` posts request text; `model-estate specialist`; llama.cpp OpenAI smoke; mock HTTP |
-| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion` in tests (mock-locked). 5090 `Pong` is already recorded. Mac complete is not recorded. `READY_FOR_LIVE_TEST` no |
+| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion` in tests (mock-locked). 5090 `Pong` is already recorded. Mac complete is not recorded. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). |
 | OpenAI empty content fallthrough | green | empty/missing OpenAI content tries `/api/chat`; both-fail names status + model + pull |
 | Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
@@ -106,7 +106,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | --- | --- |
 | Frontier `grok-4.7` live PASS | Recorded. `READY_FOR_LIVE_TEST` no. Not required for `make gate-90`. |
 | 5090-class probes + specialist `Pong` | Recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Not native MLX. Not required for the gate. |
-| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
+| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). Do not mark it green. |
 | Native MLX | Parked. `specialist()` stays stub. No Mac in CI. |
 | Cloud-agent spawn | Parked. Declared only. Floor does not spawn. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. Not an auto-heal. |
