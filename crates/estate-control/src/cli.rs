@@ -492,6 +492,30 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value = "jason")]
         curator: String,
     },
+    /// Prepare an accepted pack into `{state_dir}/enrich`. Same refuses as prepare. Does not apply.
+    FromPack {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Pack id, or a path to a pack JSON file. An id is read from the drop or `accepted/`.
+        #[arg(long)]
+        pack: PathBuf,
+        #[arg(long, default_value = "packs")]
+        packs_dir: PathBuf,
+        /// One TrainEnrichDriver id. Omit to prepare every card. Not with --all-drivers.
+        #[arg(long)]
+        driver: Option<String>,
+        /// Prepare every registered driver. This is the default when --driver is omitted.
+        #[arg(long, default_value_t = false)]
+        all_drivers: bool,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// `enrich` (default) or `train`. A label on the artifact. Does not run a trainer.
+        #[arg(long, default_value = "enrich")]
+        job: String,
+        /// Import gate. Must match locked curator `jason`.
+        #[arg(long, default_value = "jason")]
+        curator: String,
+    },
     /// List prepared packs under `{state_dir}/enrich`. Does not create the directory.
     List {
         #[arg(long, default_value = ".cell")]

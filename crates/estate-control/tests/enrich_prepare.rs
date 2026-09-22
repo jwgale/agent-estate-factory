@@ -12,8 +12,10 @@ fn estate_bin() -> Command {
 }
 
 fn tmp(name: &str) -> PathBuf {
-    let path = repo_root().join(format!(
-        "target/test-enrich-{}-{}",
+    // Keep the throwaway dir off the checkout. A GPU token in the
+    // checkout path would trip refuse:sku-banned on the out directory.
+    let path = std::env::temp_dir().join(format!(
+        "cell-one-enrich-cli-{}-{}",
         name,
         std::process::id()
     ));
@@ -38,6 +40,16 @@ fn estate_bytes() -> String {
     std::fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap()
 }
 
+fn write_seated_estate(dir: &std::path::Path, model: &str) -> PathBuf {
+    let needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n";
+    let src = estate_bytes();
+    assert!(src.contains(needle), "local_slm params block moved");
+    let seated = src.replacen(needle, &format!("{needle}      model: \"{model}\"\n"), 1);
+    let path = dir.join("seated-estate.yaml");
+    std::fs::write(&path, seated).unwrap();
+    path
+}
+
 #[test]
 fn help_enrich_and_train_name_the_seam() {
     for topic in ["enrich", "train"] {
@@ -48,7 +60,12 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("ollama-modelfile"), "{body}");
         assert!(body.contains("external-manifest"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
+        assert!(body.contains("make enrich-live-prove"), "{body}");
+        assert!(body.contains("estate enrich from-pack"), "{body}");
+        assert!(body.contains("refuse:base-model"), "{body}");
+        assert!(body.contains("params.model"), "{body}");
         assert!(body.contains("docs/TRAIN-ENRICH.md"), "{body}");
+        assert!(body.contains("docs/LIVE-PROBES.md"), "{body}");
         assert!(body.contains("--all-drivers"), "{body}");
         assert!(body.contains("estate enrich list"), "{body}");
         assert!(body.contains("import-prepared"), "{body}");
@@ -72,9 +89,37 @@ fn help_enrich_and_train_name_the_seam() {
 fn prepare_both_drivers_and_refuses_without_writing() {
     let root = tmp("cli");
     let estate = fixture("examples/estate.yaml");
+    let seated = write_seated_estate(&root, "llama3");
+    let seated_path = seated.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let before = estate_bytes();
+
+    let stock_out = root.join("stock");
+    let stock = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &estate,
+            "--pack",
+            &pack,
+            "--driver",
+            "ollama-modelfile",
+            "--out",
+            &stock_out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let stock_text = text(&stock);
+    assert!(!stock.status.success(), "{stock_text}");
+    assert!(stock_text.contains("refuse:base-model"), "{stock_text}");
+    assert!(
+        !stock_out.exists(),
+        "stock estate must not write FROM local_slm"
+    );
 
     let ollama_out = root.join("ollama");
     let ollama = estate_bin()
@@ -84,7 +129,7 @@ fn prepare_both_drivers_and_refuses_without_writing() {
             "enrich",
             "prepare",
             "--estate",
-            &estate,
+            &seated_path,
             "--pack",
             &pack,
             "--driver",
@@ -102,7 +147,9 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         "{ollama_text}"
     );
     let modelfile = std::fs::read_to_string(ollama_out.join("Modelfile")).unwrap();
-    assert!(modelfile.contains("FROM local_slm"), "{modelfile}");
+    assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+    assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
+    assert!(ollama_text.contains("base=llama3"), "{ollama_text}");
     let steps = std::fs::read_to_string(ollama_out.join("PREPARE.md")).unwrap();
     assert!(
         steps.contains("ollama create cell-enrich-overnight-traces -f Modelfile"),
@@ -127,7 +174,7 @@ fn prepare_both_drivers_and_refuses_without_writing() {
             "enrich",
             "prepare",
             "--estate",
-            &estate,
+            &seated_path,
             "--pack",
             &pack,
             "--driver",
@@ -196,7 +243,7 @@ fn prepare_both_drivers_and_refuses_without_writing() {
             "enrich",
             "prepare",
             "--estate",
-            &estate,
+            &seated_path,
             "--pack",
             &sacred_pack.display().to_string(),
             "--out",
@@ -307,13 +354,28 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         makefile.contains("enrich-prepare:"),
         "Makefile missing enrich-prepare"
     );
+    assert!(
+        makefile.contains("enrich-live-prove:"),
+        "Makefile missing enrich-live-prove"
+    );
     assert!(makefile.contains("scripts/enrich-prepare.sh"));
+    assert!(makefile.contains("scripts/enrich-live-prove.sh"));
     let script = std::fs::read_to_string(root.join("scripts/enrich-prepare.sh")).unwrap();
     assert!(script.contains("ollama-modelfile"), "{script}");
     assert!(script.contains("external-manifest"), "{script}");
     assert!(script.contains("--all-drivers"), "{script}");
     assert!(script.contains("import-prepared"), "{script}");
     assert!(script.contains("Do not add to make smoke or GitHub Actions"));
+    assert!(script.contains("FROM llama3"));
+    assert!(script.contains("refuse:base-model"));
+    let live = std::fs::read_to_string(root.join("scripts/enrich-live-prove.sh")).unwrap();
+    assert!(live.contains("ollama create"), "{live}");
+    assert!(live.contains("from-pack"), "{live}");
+    assert!(live.contains("import-prepared"), "{live}");
+    assert!(live.contains("ollama show"), "{live}");
+    assert!(live.contains("not a factory-wide live test"), "{live}");
+    assert!(live.contains("Do not add to make smoke"), "{live}");
+    assert!(!live.contains("READY_FOR_LIVE_TEST: yes"), "{live}");
     for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
@@ -323,6 +385,10 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         assert!(
             !body.contains("enrich-prepare"),
             "{rel} must not run enrich-prepare"
+        );
+        assert!(
+            !body.contains("enrich-live-prove"),
+            "{rel} must not run enrich-live-prove"
         );
     }
     let dispatch =
@@ -337,6 +403,8 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
 fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
     let root = tmp("loop");
     let estate = fixture("examples/estate.yaml");
+    let seated = write_seated_estate(&root, "llama3");
+    let seated_path = seated.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let before = estate_bytes();
@@ -372,7 +440,7 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
             "enrich",
             "prepare",
             "--estate",
-            &estate,
+            &seated_path,
             "--pack",
             &pack,
             "--all-drivers",
@@ -395,6 +463,12 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
     let ollama = state.join("enrich/overnight-traces/ollama-modelfile");
     let manifest = state.join("enrich/overnight-traces/external-manifest");
     assert!(ollama.join("Modelfile").is_file());
+    let both_modelfile = std::fs::read_to_string(ollama.join("Modelfile")).unwrap();
+    assert!(both_modelfile.contains("FROM llama3\n"), "{both_modelfile}");
+    assert!(
+        !both_modelfile.contains("FROM local_slm"),
+        "{both_modelfile}"
+    );
     assert!(ollama.join("NEXT.md").is_file());
     assert!(manifest.join("manifest.json").is_file());
     let next = std::fs::read_to_string(manifest.join("NEXT.md")).unwrap();
@@ -464,7 +538,7 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
             "enrich",
             "import-prepared",
             "--estate",
-            &estate,
+            &seated_path,
             "--prepared",
             &ollama.display().to_string(),
             "--tag",
@@ -509,8 +583,7 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let example = repo_root().join("examples/estate.yaml");
     let example_before = std::fs::read(&example).unwrap();
-    let lab = root.join("estate.yaml");
-    std::fs::copy(&example, &lab).unwrap();
+    let lab = write_seated_estate(&root, "llama3");
     let lab_before = std::fs::read(&lab).unwrap();
     let state = root.join("state");
     let plans = root.join("plans");
@@ -534,6 +607,9 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         .unwrap();
     assert!(prepared.status.success(), "{}", text(&prepared));
     let dir = state.join("enrich/overnight-traces/ollama-modelfile");
+    let modelfile = std::fs::read_to_string(dir.join("Modelfile")).unwrap();
+    assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+    assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
 
     let imported = estate_bin()
         .args([
@@ -805,4 +881,237 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         joined_text.contains("enrich_stage: applied=true"),
         "{joined_text}"
     );
+}
+
+#[test]
+fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
+    let root = tmp("from-pack");
+    let seated = write_seated_estate(&root, "llama3");
+    let seated_path = seated.display().to_string();
+    let sacred = fixture("policy/sacred.yaml");
+    let pack_src = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+    let accepted = root.join("packs/accepted");
+    std::fs::create_dir_all(&accepted).unwrap();
+    std::fs::copy(&pack_src, accepted.join("overnight-traces.pack.json")).unwrap();
+    let before = estate_bytes();
+    let state = root.join("state");
+
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            "overnight-traces",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("enrich from-pack:"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("prepared=2"), "{prepared_text}");
+    assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
+    let modelfile = state.join("enrich/overnight-traces/ollama-modelfile/Modelfile");
+    let body = std::fs::read_to_string(&modelfile).unwrap();
+    assert!(body.contains("FROM llama3\n"), "{body}");
+    assert!(!body.contains("FROM local_slm"), "{body}");
+    assert!(state
+        .join("enrich/overnight-traces/external-manifest/manifest.json")
+        .is_file());
+    assert_eq!(
+        estate_bytes(),
+        before,
+        "from-pack rewrote examples/estate.yaml"
+    );
+
+    let one = root.join("one");
+    let driver = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack_src.display().to_string(),
+            "--driver",
+            "ollama-modelfile",
+            "--state-dir",
+            &one.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let driver_text = text(&driver);
+    assert!(driver.status.success(), "{driver_text}");
+    assert!(driver_text.contains("prepared=1"), "{driver_text}");
+    assert!(one
+        .join("enrich/overnight-traces/ollama-modelfile/Modelfile")
+        .is_file());
+    assert!(!one
+        .join("enrich/overnight-traces/external-manifest")
+        .exists());
+
+    let both = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            "overnight-traces",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--all-drivers",
+            "--driver",
+            "ollama-modelfile",
+            "--state-dir",
+            &root.join("both").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let both_text = text(&both);
+    assert!(!both.status.success(), "{both_text}");
+    assert!(both_text.contains("refuse:driver"), "{both_text}");
+    assert!(!root.join("both/enrich").exists());
+
+    let mut sacred_doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
+    sacred_doc["id"] = serde_json::json!("sacred-pack");
+    sacred_doc["note"] = serde_json::Value::String("please mention cyera".into());
+    std::fs::write(
+        accepted.join("sacred-pack.pack.json"),
+        serde_json::to_string_pretty(&sacred_doc).unwrap(),
+    )
+    .unwrap();
+    let sacred_run = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            "sacred-pack",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--state-dir",
+            &root.join("sacred-state").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let sacred_text = text(&sacred_run);
+    assert!(!sacred_run.status.success(), "{sacred_text}");
+    assert!(sacred_text.contains("refuse:sacred"), "{sacred_text}");
+    assert!(!root.join("sacred-state/enrich").exists());
+
+    let mut sku_doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
+    sku_doc["id"] = serde_json::json!("sku-pack");
+    sku_doc["model_hint"] = serde_json::Value::String("rtx-5090".into());
+    std::fs::write(
+        accepted.join("sku-pack.pack.json"),
+        serde_json::to_string_pretty(&sku_doc).unwrap(),
+    )
+    .unwrap();
+    let sku_run = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            "sku-pack",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--state-dir",
+            &root.join("sku-state").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let sku_text = text(&sku_run);
+    assert!(!sku_run.status.success(), "{sku_text}");
+    assert!(sku_text.to_ascii_lowercase().contains("sku"), "{sku_text}");
+    assert!(!root.join("sku-state/enrich").exists());
+
+    let curator = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &seated_path,
+            "--pack",
+            "overnight-traces",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--curator",
+            "ada",
+            "--state-dir",
+            &root.join("curator-state").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let curator_text = text(&curator);
+    assert!(!curator.status.success(), "{curator_text}");
+    assert!(curator_text.contains("refuse:curator"), "{curator_text}");
+    assert!(!root.join("curator-state/enrich").exists());
+
+    let local_estate = root.join("local-only.yaml");
+    std::fs::write(
+        &local_estate,
+        "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n    params:\n      model: \"llama3\"\nenrich_packs:\n  curator: jason\n  policy: manual\n",
+    )
+    .unwrap();
+    let mut frontier_doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
+    frontier_doc["id"] = serde_json::json!("frontier-pack");
+    frontier_doc["source_drivers"] = serde_json::json!(["frontier"]);
+    frontier_doc["path_counts"]["frontier"] = serde_json::json!(1);
+    std::fs::write(
+        accepted.join("frontier-pack.pack.json"),
+        serde_json::to_string_pretty(&frontier_doc).unwrap(),
+    )
+    .unwrap();
+    let frontier = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "from-pack",
+            "--estate",
+            &local_estate.display().to_string(),
+            "--pack",
+            "frontier-pack",
+            "--packs-dir",
+            &root.join("packs").display().to_string(),
+            "--state-dir",
+            &root.join("frontier-state").display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let frontier_text = text(&frontier);
+    assert!(!frontier.status.success(), "{frontier_text}");
+    assert!(
+        frontier_text.contains("refuse:frontier-invent"),
+        "{frontier_text}"
+    );
+    assert!(!root.join("frontier-state/enrich").exists());
+    assert_eq!(estate_bytes(), before);
 }

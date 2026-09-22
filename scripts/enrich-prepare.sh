@@ -9,7 +9,9 @@ cd "$ROOT"
 
 unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOINT
 
-WORKDIR="${WORKDIR:-$ROOT/target/enrich-prepare-cell}"
+# Throwaway dir stays out of the checkout. prepare refuses a hardware SKU
+# anywhere in the output path, including a parent directory name.
+WORKDIR="${WORKDIR:-${TMPDIR:-/tmp}/cell-one-enrich-prepare}"
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 PACK="${PACK:-$ROOT/examples/fixtures/specialist-overnight.pack.json}"
 BIN="${ESTATE_BIN:-}"
@@ -30,14 +32,48 @@ fi
 BEFORE="$(cksum "$ESTATE")"
 rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR"
+SEATED="$WORKDIR/estate.yaml"
+python3 - "$ESTATE" "$SEATED" <<'PY'
+import sys
+src, dest = sys.argv[1:]
+text = open(src).read()
+needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n"
+if needle not in text:
+    raise SystemExit("FAIL  local_slm params block missing")
+open(dest, "w").write(text.replace(needle, needle + '      model: "llama3"\n', 1))
+PY
 
 echo "== enrich-prepare (fixtures only; not a live train) =="
 echo "workdir: $WORKDIR"
 echo "SKIP live train (prepare writes artifacts only; not a PASS)"
 
-echo "-- ollama-modelfile --"
+echo "-- stock estate refuses a binding-id FROM --"
+set +e
 estate enrich prepare \
   --estate "$ESTATE" \
+  --pack "$PACK" \
+  --driver ollama-modelfile \
+  --out "$WORKDIR/stock" \
+  >/tmp/enrich-prepare-stock.out 2>/tmp/enrich-prepare-stock.err
+stock_rc=$?
+set -e
+if [[ "$stock_rc" -eq 0 ]]; then
+  echo "FAIL  stock estate must refuse:base-model"
+  exit 1
+fi
+if ! grep -q "refuse:base-model" /tmp/enrich-prepare-stock.out /tmp/enrich-prepare-stock.err; then
+  echo "FAIL  stock estate did not refuse:base-model"
+  cat /tmp/enrich-prepare-stock.out /tmp/enrich-prepare-stock.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/stock" ]]; then
+  echo "FAIL  stock estate wrote an output directory"
+  exit 1
+fi
+
+echo "-- ollama-modelfile --"
+estate enrich prepare \
+  --estate "$SEATED" \
   --pack "$PACK" \
   --driver ollama-modelfile \
   --job enrich \
@@ -45,7 +81,7 @@ estate enrich prepare \
 
 echo "-- external-manifest --"
 estate enrich prepare \
-  --estate "$ESTATE" \
+  --estate "$SEATED" \
   --pack "$PACK" \
   --driver external-manifest \
   --job enrich \
@@ -55,7 +91,11 @@ test -f "$WORKDIR/ollama/Modelfile"
 test -f "$WORKDIR/ollama/PREPARE.md"
 test -f "$WORKDIR/ollama/NEXT.md"
 test -f "$WORKDIR/ollama/prepare.json"
-grep -q "FROM local_slm" "$WORKDIR/ollama/Modelfile"
+grep -q "FROM llama3" "$WORKDIR/ollama/Modelfile"
+if grep -q "FROM local_slm" "$WORKDIR/ollama/Modelfile"; then
+  echo "FAIL  Modelfile FROM is the binding id"
+  exit 1
+fi
 grep -q "ollama create cell-enrich-overnight-traces -f Modelfile" "$WORKDIR/ollama/PREPARE.md"
 grep -q "ollama create cell-enrich-overnight-traces -f $WORKDIR/ollama/Modelfile" "$WORKDIR/ollama/NEXT.md"
 grep -q "import-prepared" "$WORKDIR/ollama/NEXT.md"
@@ -93,7 +133,7 @@ PY
 echo "-- missing pack refuses before write --"
 set +e
 estate enrich prepare \
-  --estate "$ESTATE" \
+  --estate "$SEATED" \
   --pack missing-enrich-pack \
   --packs-dir "$WORKDIR/none" \
   --out "$WORKDIR/missing" \
@@ -117,7 +157,7 @@ fi
 echo "-- all-drivers, list, import-prepared --"
 CELL="$WORKDIR/cell"
 estate enrich prepare \
-  --estate "$ESTATE" \
+  --estate "$SEATED" \
   --pack "$PACK" \
   --all-drivers \
   --state-dir "$CELL"
@@ -155,7 +195,7 @@ fi
 PREPARED="$CELL/enrich/overnight-traces/ollama-modelfile"
 set +e
 estate enrich import-prepared \
-  --estate "$ESTATE" \
+  --estate "$SEATED" \
   --prepared "$PREPARED" \
   --tag other-tag \
   --path "$PREPARED/Modelfile" \
@@ -177,7 +217,7 @@ if [[ -f "$PREPARED/binding-proposal.json" ]]; then
 fi
 
 estate enrich import-prepared \
-  --estate "$ESTATE" \
+  --estate "$SEATED" \
   --prepared "$PREPARED" \
   --tag cell-enrich-overnight-traces \
   --path "$PREPARED/Modelfile" \
@@ -205,8 +245,10 @@ if params.get("model") != "cell-enrich-overnight-traces":
 PY
 
 echo "-- apply-proposal, plan, require-plan apply --"
+# The proposal hash is the seated copy. Stage and require-plan apply that
+# same content. examples/estate.yaml stays the hash-locked file.
 LAB="$WORKDIR/lab-estate.yaml"
-cp "$ESTATE" "$LAB"
+cp "$SEATED" "$LAB"
 LAB_BEFORE="$(cksum "$LAB")"
 MANIFEST="$CELL/enrich/overnight-traces/external-manifest"
 

@@ -2,6 +2,15 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — seated FROM, from-pack, live prove
+
+- Keeps `estate enrich apply-proposal`. The proposal still stages `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. The source estate is written only when that apply succeeds. Status and doctor still name a pending join. `auto_apply` stays false.
+- `ollama-modelfile` writes `FROM` as the seated model. That is `params.model` on the local binding, or a pack `model_hint` that is already a model tag (`llama3`). The binding id `local_slm` is not a model tag. A missing seated name is `refuse:base-model` and writes nothing. Sacred, SKU, curator, and frontier-invent still refuse before write.
+- `estate enrich from-pack` prepares an accepted pack (id in `packs/` or `packs/accepted/`, or a pack JSON path) into `{state_dir}/enrich`. Omitting `--driver` prepares every card. Same refuses. Does not apply, train, or rewrite `estate.yaml`.
+- Opt-in `make enrich-live-prove` copies the example estate into `/tmp/cell-one-enrich-live-prove`, sets `params.model` from the seat, runs `from-pack`, `ollama create`, `ollama show`, and `import-prepared`, then removes the tag. `examples/estate.yaml` stays untouched. Seat down prints `SKIP` and exits 0. Not in smoke, `gate-90`, or Actions. A hardware SKU anywhere in the output path still refuses.
+- No third train/enrich card. llama.cpp already reads an INI preset, and that preset needs a GGUF path this estate does not carry.
+- `READY_FOR_LIVE_TEST`: no. The live script is an opt-in seated-runtime enrich handoff. It is not a factory-wide live test.
+
 ## Day 0–30 (PR #1)
 
 One-box factory proving A1–A4. Horizon / Research / Sanctum on separate lanes. Sacred exclusions (Cyera CI, Rust classroom) fail closed. Isolation is a driver (profile-dir today). No live provider required. Dual PE, vault, multi-box, and AI-gateway stay out of altitude.
