@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#60 plus this slice)
+## On `main` (PR #1-#61 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -206,13 +206,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `estate doctor` FAILs a present `lifecycle.json` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent `suspended`. A file that parses prints `lifecycle.json state=` from the file. `suspended` is not a failure.
 
-## This slice
+## #61 in plain English
 
 `estate doctor` FAILs a present `apply-audit.jsonl` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a line count. A file that parses prints `apply-audit.jsonl lines=` from the file.
 
+## This slice
+
+`estate doctor` FAILs a present `lifecycle.jsonl` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a line count. A file that parses prints `lifecycle.jsonl lines=` from the file. `estate history` already refused that file.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#61 (plain English)
+## Bug fixes on #10-#62 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -267,6 +271,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #59 | Doctor printed a note for an unreadable conveyor mesh and could still say factory ready. A mesh with no placement file was not read. | That file is FAIL before factory ready. A missing mesh is not a failure. A hop host class that is not a class is the same FAIL. READY no. |
 | #60 | Doctor treated a present `lifecycle.json` that does not parse as a layout note and could still say factory ready. A missing file could be read as `suspended`. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as `suspended`. A parsed file prints its state. READY no. |
 | #61 | Doctor treated a present `apply-audit.jsonl` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero lines. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero lines. A parsed file prints its line count. READY no. |
+| #62 | Doctor treated a present `lifecycle.jsonl` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero lines. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero lines. A parsed file prints its line count. READY no. |
 
 ## Known-good local commands
 
