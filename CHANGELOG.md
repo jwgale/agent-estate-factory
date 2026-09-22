@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #54 (this slice)
+
+- Mac `estate specialist` complete is still unrecorded. [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`.
+- The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx` / `vllm` / `trt` stay `not live-ok`.
+- `READY_FOR_LIVE_TEST`: yes for that Mac command only. No new CLI. No new smoke or gate-90 step.
+
 ## After PR #53 (this slice)
 
 - `estate probes --live` does not print `live ok` for `mlx`, `vllm`, or `trt`. An answering HTTP endpoint stays `not live-ok`. Ollama, llama.cpp, and http-remote still print `live ok` when their endpoint answers.
