@@ -90,7 +90,7 @@ estate doctor --strict
 | Frontier catalog card | green | sibling card on `schema/local-catalog.v0.json`; model `grok-4.7`; completion 64; not a local probe |
 | Local specialist stays off frontier | green | `ollama` / `http-remote` up, `llama.cpp` down, `mlx` / `vllm` / `trt` refuse; frontier mock gets no POST |
 | `make day90-mixed` | green | isolated plan → `apply --require-plan` on the mixed fixture, then validate + status on `examples/hosts/frontier-http.yaml`; no live key; not in smoke / Actions |
-| Frontier model on status / doctor | green | `grok-4.7` when catalog or estate binding names it; default estate does not invent a binding model |
+| Frontier model on status / doctor | green | Binding line only when `params.model` is set. Schema card stays `grok-4.7`. Cell catalog after apply copies the bound model, or `model=-` when the binding sets none |
 | Feed source drivers | green | pack `source_drivers` is frontier and/or local and matches `path_counts`; INDEX refuses a missing tag when counts are nonzero; propose and accept copy the same tag into `enrich-edit.json`; promote stays off |
 | Apply + specialist fixture | green | apply records `local_slm`; mock complete on the same operator cell |
 | Overlay omit-locked KEEP (property) | green | `locked: []` / overlay collision cannot drop hardcoded ids |
