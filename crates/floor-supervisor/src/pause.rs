@@ -72,6 +72,9 @@ pub fn pause_kit_proof(
         ));
     }
     let drift = crate::drift_with_roots(estate, state_dir, Some(roots_base))?;
+    // A drifted cell is not a clean pause proof. Do not return the
+    // success note, and do not claim the kit finished in sync.
+    refuse_pause_drift(&drift)?;
     Ok(PauseProof {
         schema: "cell-one.pause-proof.v0".into(),
         applied: true,
@@ -80,9 +83,23 @@ pub fn pause_kit_proof(
         resumed: true,
         leases_survived,
         cloud_spawned,
-        in_sync: drift.in_sync,
+        in_sync: true,
         note: "Pause-kit proof. Leases restored from disk. Cloud-agent not spawned.".into(),
     })
+}
+
+fn refuse_pause_drift(drift: &crate::DriftReport) -> Result<(), SupervisorError> {
+    if drift.in_sync {
+        return Ok(());
+    }
+    let detail = if drift.notes.is_empty() {
+        "drift".to_string()
+    } else {
+        drift.notes.join("; ")
+    };
+    Err(SupervisorError::Other(format!(
+        "pause-proof: drift (fail closed): {detail}"
+    )))
 }
 
 #[cfg(test)]
@@ -140,5 +157,36 @@ mod tests {
         assert!(!proof.cloud_spawned);
         assert!(proof.in_sync);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn unsynced_drift_is_not_a_clean_pause_note() {
+        let drift = crate::DriftReport {
+            in_sync: false,
+            desired_hash: "h".into(),
+            actual_hash: Some("h".into()),
+            missing_agents: vec!["not-the-card".into()],
+            extra_agents: vec![],
+            mismatched_sessions: vec![],
+            missing_session_dirs: vec![],
+            missing_lane_roots: vec![],
+            missing_leases: vec![],
+            extra_leases: vec![],
+            spawned_cloud_agents: vec![],
+            lease_kind_mismatch: vec![],
+            host_class_mismatch: vec![],
+            notes: vec!["missing sessions: not-the-card".into()],
+        };
+        let err = refuse_pause_drift(&drift).unwrap_err().to_string();
+        assert!(err.contains("pause-proof: drift (fail closed)"));
+        assert!(err.contains("missing sessions: not-the-card"));
+        assert!(!err.contains("Cloud-agent not spawned"));
+        assert!(!err.contains("cell-one.pause-proof.v0"));
+        let synced = crate::DriftReport {
+            in_sync: true,
+            notes: vec!["actual-state matches desired estate".into()],
+            ..drift
+        };
+        assert!(refuse_pause_drift(&synced).is_ok());
     }
 }

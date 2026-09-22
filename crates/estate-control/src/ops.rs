@@ -166,10 +166,12 @@ pub(crate) fn cmd_pause_proof(estate_path: &Path, state_dir: &Path, roots_base: 
     let estate = load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     crate::plan_apply::refuse_apply_catalog_mismatch(&estate, state_dir)?;
     let proof = pause_kit_proof(&estate, state_dir, roots_base)?;
-    println!("{}", serde_json::to_string_pretty(&proof)?);
+    // Drift, a spawned cloud lease, or lost leases is a refuse before
+    // the proof JSON. That JSON's note is the clean kit, not a failure.
     if proof.cloud_spawned || !proof.leases_survived || !proof.in_sync {
         bail!("pause-proof failed");
     }
+    println!("{}", serde_json::to_string_pretty(&proof)?);
     Ok(())
 }
 
