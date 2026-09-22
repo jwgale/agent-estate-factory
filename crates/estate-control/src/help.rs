@@ -189,7 +189,7 @@ Equal-class frontier card. Not a fallback when local is down.
 
 Requires XAI_API_KEY. Model is grok-4.7 (CELL_FRONTIER_MODEL or XAI_MODEL).
 estate catalog dumps that schema card and labels it as not a binding.
-It will not overwrite a catalog whose frontier model is not that card.
+It will not overwrite a catalog whose frontier model is not the card.
 An unset binding stays empty. The schema card is not copied into it.
 Optional CELL_FRONTIER_ENDPOINT (default https://api.x.ai/v1).
 Unset key refuses. Sacred text and hardware SKUs refuse before any POST.
