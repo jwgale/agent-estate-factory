@@ -328,7 +328,10 @@ fn cell_catalog_disagrees_with_estate(
     if !path.is_file() {
         return None;
     }
-    let catalog = read_catalog_frontier(path).ok()?;
+    let catalog = match read_catalog_frontier(path) {
+        Ok(catalog) => catalog,
+        Err(err) => return Some(unreadable_cell_catalog(&err)),
+    };
     match model_estate::bound_frontier_model(estate) {
         Ok(bound) => model_estate::refuse_catalog_frontier_mismatch(
             bound.as_deref(),
@@ -348,7 +351,9 @@ fn doctor_cell_frontier(state_dir: &Path, fails: &mut Vec<String>) {
     let catalog = match read_catalog_frontier(&path) {
         Ok(model) => model,
         Err(err) => {
-            println!("  note  catalog.json frontier model unreadable ({err})");
+            let msg = unreadable_cell_catalog(&err);
+            println!("  FAIL  {msg}");
+            fails.push(msg);
             return;
         }
     };
@@ -418,7 +423,10 @@ fn cell_catalog_binding_problem(state_dir: &Path) -> Option<String> {
     if !path.is_file() {
         return None;
     }
-    let catalog = read_catalog_frontier(&path).ok()?;
+    let catalog = match read_catalog_frontier(&path) {
+        Ok(catalog) => catalog,
+        Err(err) => return Some(unreadable_cell_catalog(&err)),
+    };
     let estate = match floor_supervisor::load_desired_snapshot(state_dir) {
         Ok(Some(estate)) => estate,
         Ok(None) => return None,
@@ -433,6 +441,12 @@ fn cell_catalog_binding_problem(state_dir: &Path) -> Option<String> {
         .map(|err| err.to_string()),
         Err(err) => Some(err.to_string()),
     }
+}
+
+fn unreadable_cell_catalog(err: &str) -> String {
+    format!(
+        "refuse:frontier-model: cell catalog unreadable ({err}); schema card is not the binding"
+    )
 }
 
 fn read_catalog_frontier(path: &Path) -> std::result::Result<Option<String>, String> {
