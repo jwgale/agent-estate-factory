@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#40 plus this slice)
+## On `main` (PR #1-#41 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -126,19 +126,21 @@ or `/api/tags`. Jason was pinged for live Ollama probes.
 
 `examples/hosts/frontier-http.yaml` names `model: grok-4.7` on a frontier `http-remote` binding, next to a local `ollama` card. It is not a host-class alias. `examples/estate.yaml` stays hash-locked. A frontier specialist prompt that mentions Cyera or Rust classroom still refuses as sacred when `CELL_FRONTIER_MODEL` is a hardware SKU.
 
+## #41 in plain English
+
+`make day90-mixed` validates `examples/hosts/frontier-http.yaml` and prints status (`frontier: frontier_http model=grok-4.7`). It does not apply that file or invent a cell catalog. `estate models` prints `model=grok-4.7` or `model=-`. The host file stays off fixtures-check, smoke, and `make gate-90`.
+
 ## This slice
 
-`make day90-mixed` validates `examples/hosts/frontier-http.yaml` and prints status. The frontier line is `frontier: frontier_http model=grok-4.7`. A greenfield status does not invent a cell catalog. The walk does not apply that file and does not rewrite `examples/estate.yaml`. The file stays off fixtures-check, smoke, and `make gate-90`.
+Apply and resume write the cell catalog frontier model from the estate binding. A binding with no `params.model` leaves that field empty. Status prints `catalog frontier: cell model=-`. Doctor does not report that cell as `grok-4.7`. The schema catalog card stays `grok-4.7`. Two different frontier models refuse instead of picking one. `estate catalog` still dumps the schema card.
 
-`estate models` prints `model=grok-4.7` when the binding sets it, and `model=-` when it does not. The default estate does not gain a binding model.
-
-No new CLI.
+No new CLI. Smoke and `make gate-90` unchanged.
 
 `READY_FOR_LIVE_TEST`: **no**. No new live surface.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#41 (plain English)
+## Bug fixes on #10-#42 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -173,6 +175,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #39 | Frontier sacred refuse did not lock the same no-invented-completion check as local, and Rust classroom was not in that prompt test. The operator start page did not point at frontier help or `make day90-mixed`. | Both drivers refuse Cyera and Rust classroom before POST and do not invent a completion. README and OPERATOR-DAY point at the opt-in help and mixed walk. The mixed fixture already names `grok-4.7`. The hash-locked estate file is unchanged. READY no. |
 | #40 | Host estates did not name `model: grok-4.7` on frontier `http-remote`. A sacred prompt plus a SKU `CELL_FRONTIER_MODEL` was not locked as sacred-first. | `examples/hosts/frontier-http.yaml` names that binding. The hash-locked estate file is unchanged. Sacred refuse still wins over the SKU model id, with no POST and no invented completion. READY no. |
 | #41 | The host fixture was not on an opt-in walk. `estate models` hid `params.model`, so a catalog card could be read as the binding. | `make day90-mixed` validates the host file and status prints `frontier: frontier_http model=grok-4.7`. No apply, no cell catalog, hash-locked estate unchanged. `estate models` prints `model=grok-4.7` or `model=-`. Not in smoke or fixtures-check. READY no. |
+| #42 | Apply copied the schema card `grok-4.7` into the cell catalog even when the frontier binding set no model. Status and doctor then printed that model. | The cell catalog frontier model is the binding's `params.model`, or empty. Status prints `model=-`. Doctor does not call that cell `grok-4.7`. The schema card is unchanged. Two different models refuse. READY no. |
 
 ## Known-good local commands
 
