@@ -336,4 +336,5 @@ estate.yaml is not rewritten. Promote stays off. No train POST.
 
 Opt-in walk: make enrich-prepare. Not part of make smoke, make gate-90,
 or Actions. Docs: docs/TRAIN-ENRICH.md. Words: docs/UBIQUITOUS_LANGUAGE.md.
+Journeys: docs/operator-enrich-journeys.md.
 ";

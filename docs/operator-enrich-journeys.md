@@ -2,7 +2,7 @@
 
 Walks for the suite goal: facilitate train and enrich of purpose-built small-parameter models. Today's beachhead is enrich packs and the specialist path. No training stack ships on `main`.
 
-Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md`](NORTH-STAR.md). Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Live paste target: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md`](NORTH-STAR.md). Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Prepare command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Live paste target: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
@@ -42,7 +42,7 @@ estate apply --estate <your-estate.yaml> --require-plan
 
 The pasted entry is an id and a description. `source_drivers` stays a comment on the instruction file.
 
-3. On the host, write an Ollama Modelfile. The factory does not write this file. `FROM` is a model Ollama already has, or weights a trainer returned (journey 3). `SYSTEM` is the curator text for that pack's job (`policy-precheck`, `redact`, or `complete`). Keep `cyera`, `rust-classroom`, and `rust_classroom` out of the file. The model name is a slug. A hardware SKU in that name refuses when the specialist runs.
+3. On the host, the Modelfile is `FROM` plus `SYSTEM`. `estate enrich prepare` writes that file and the `ollama create` line. It does not shell out. You can write the same file by hand. Command page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `FROM` is a model Ollama already has, or weights a trainer returned (journey 3). `SYSTEM` is the curator text for that pack's job (`policy-precheck`, `redact`, or `complete`). Keep `cyera`, `rust-classroom`, and `rust_classroom` out of the file. The model name is a slug. A hardware SKU in that name refuses when the specialist runs.
 
 ```text
 FROM llama3
@@ -98,7 +98,7 @@ Plan the driver edit before apply. The id string `local_slm` does not change, so
 
 ## 3. Hand an external manifest to a trainer
 
-GPU training stays off this factory. Jason writes an external manifest and hands that file to a trainer outside the factory. The factory does not parse the file, apply it, or store it as estate source of truth.
+GPU training stays off this factory. `estate enrich prepare --driver external-manifest` writes a portable JSON/YAML hatch. See [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Jason also writes an operator note and hands that file to a trainer outside the factory. The factory does not parse that note, apply it, or store it as estate source of truth.
 
 Write it outside the estate file and outside `.cell/`. Name the file `external-manifest.md`. Copy the accept file for the pack id, curator, policy, `source_drivers`, and estate hash. `host_class` and `job` come from the estate binding you apply. `serve_with` and `serve_as` are notes for the trainer: which entrant will load the weights, and the slug from journey 1.
 
