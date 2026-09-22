@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #63 (this slice)
+
+- `estate doctor` FAILs a present `actual-state.json` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a session count.
+- A file that parses prints `actual-state.json sessions=` from the file. `estate status` already refused that file through drift.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #62 (this slice)
 
 - `estate doctor` FAILs a present `sessions.jsonl` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a line count.

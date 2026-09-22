@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#62 plus this slice)
+## On `main` (PR #1-#63 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -214,13 +214,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `estate doctor` FAILs a present `lifecycle.jsonl` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a line count. A file that parses prints `lifecycle.jsonl lines=` from the file. `estate history` already refused that file.
 
-## This slice
+## #63 in plain English
 
 `estate doctor` FAILs a present `sessions.jsonl` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a line count. A file that parses prints `sessions.jsonl lines=` from the file. `estate sessions` already refused that file.
 
+## This slice
+
+`estate doctor` FAILs a present `actual-state.json` that does not parse. It does that before `factory ready`. A missing file is not a failure, and doctor does not invent a session count. A file that parses prints `actual-state.json sessions=` from the file. `estate status` already refused that file through drift.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#63 (plain English)
+## Bug fixes on #10-#64 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -277,6 +281,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #61 | Doctor treated a present `apply-audit.jsonl` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero lines. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero lines. A parsed file prints its line count. READY no. |
 | #62 | Doctor treated a present `lifecycle.jsonl` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero lines. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero lines. A parsed file prints its line count. READY no. |
 | #63 | Doctor treated a present `sessions.jsonl` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero lines. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero lines. A parsed file prints its line count. READY no. |
+| #64 | Doctor treated a present `actual-state.json` that does not parse as a layout note and could still say factory ready. A missing file could be read as zero sessions. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero sessions. A parsed file prints its session count. READY no. |
 
 ## Known-good local commands
 
