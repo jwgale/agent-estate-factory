@@ -24,6 +24,10 @@ pub(crate) fn cmd_plan(
     reviewed: bool,
     reviewed_dir: &Path,
 ) -> Result<()> {
+    let parsed = estate_schema::load_estate_unvalidated(path)
+        .with_context(|| format!("desired {}", path.display()))?;
+    let frontier_plan = model_estate::frontier_plan_view(&parsed)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let desired = load_estate(path).with_context(|| format!("desired {}", path.display()))?;
     let previous = match against {
         Some(p) => Some(load_estate(p).with_context(|| format!("against {}", p.display()))?),
@@ -32,6 +36,7 @@ pub(crate) fn cmd_plan(
     let plan = diff_estates(&desired, previous.as_ref());
     let written = write_plan(plans_dir, &plan)?;
     print!("{}", render_plan(&plan));
+    println!("{}", model_estate::render_frontier_plan(&frontier_plan));
     println!("Wrote {}", written.display());
     if !plan_is_reviewable(&plan) {
         bail!("plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
@@ -239,6 +244,11 @@ pub(crate) fn cmd_apply(
     curator: &str,
     force: bool,
 ) -> Result<()> {
+    if dry_run {
+        let parsed = estate_schema::load_estate_unvalidated(path)
+            .with_context(|| format!("load {}", path.display()))?;
+        model_estate::frontier_plan_view(&parsed).map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     enforce_policy(policy, "apply", None)?;
     if let Some(id) = import_pack_id {
@@ -411,6 +421,8 @@ pub(crate) fn cmd_apply_dry_run(
     roots_base: &Path,
     force: bool,
 ) -> Result<()> {
+    let frontier_plan =
+        model_estate::frontier_plan_view(estate).map_err(|e| anyhow::anyhow!("{e}"))?;
     let hash = estate_hash(estate);
     let covering = covering_plan(plans_dir, &hash)?;
     let last_applied = load_desired_snapshot(state_dir)?
@@ -450,6 +462,7 @@ pub(crate) fn cmd_apply_dry_run(
         bail!("dry-run must not write leases or state files");
     }
     print!("{}", render_dry_run(&report));
+    println!("{}", model_estate::render_frontier_plan(&frontier_plan));
     println!("estate: {}", path.display());
     if !extra_refuses.is_empty() {
         for line in &extra_refuses {
