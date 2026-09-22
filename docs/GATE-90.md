@@ -103,7 +103,7 @@ estate doctor --strict
 Green above does not mean a box ran. Recorded proofs are not parked, and they are not required again.
 
 | Item | State |
-| --- | --- | --- |
+| --- | --- |
 | Frontier `grok-4.7` live PASS | Recorded. `READY_FOR_LIVE_TEST` no. Not required for `make gate-90`. |
 | 5090-class probes + specialist `Pong` | Recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Not native MLX. Not required for the gate. |
 | Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Do not mark it green. |
