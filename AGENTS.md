@@ -19,6 +19,6 @@ Primary gate is local (or this cloud-agent VM). Hosted CI is one `pull_request` 
 
 ## Product locks
 
-Factory altitude only. Equal-class frontier + local. Sacred exclusions (Cyera CI, Rust classroom) stay dual-layer. Ollama-first, portable `local_slm`, fail closed when local is down. Not a gateway. Not LM Studio.
+Factory altitude only. Equal-class frontier + local. Sacred exclusions (Cyera CI, Rust classroom) stay dual-layer. Ollama is a local runtime on portable `local_slm` (driver `ollama`; llama.cpp swaps). Fail closed when local is down. Suite goal: those runtimes in the estate flow, and train/enrich of purpose-built small models. Not a gateway. Not LM Studio. Not an Ollama wrapper.
 
-Details: `charter.md`, `README.md`, `CONTRIBUTING.md`.
+Details: `charter.md`, `README.md`, `docs/UBIQUITOUS_LANGUAGE.md`, `CONTRIBUTING.md`.

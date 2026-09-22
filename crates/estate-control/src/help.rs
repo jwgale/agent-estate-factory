@@ -269,24 +269,32 @@ const NORTH_STAR: &str = "\
 north-star — Agent Estate Factory
 =================================
 charter prints this same page. charter.md is the source of truth.
+Words: docs/UBIQUITOUS_LANGUAGE.md.
 
 One-box Agent Estate Factory — plan/apply IaC, sacred isolation
 (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class
 frontier+local, manual enrich packs.
 
+Suite (first-class):
+- Portable local runtimes in the estate flow. Drivers: ollama, llama.cpp, later others.
+- Ollama is local-run software. It is a driver. The estate is the product.
+- Train and enrich purpose-built small-parameter models for a specific purpose.
+- Enrich today: curator packs, policy manual. Train and distill are the suite goal.
+
 Anti-shrink:
-- Not a gateway. Not LM Studio.
-- Not a Grok Bot clone.
-- Not a distillation or training lab.
-- Not an eval harness, a computer-use farm, or an approval-gate product.
+- Not a gateway. Not an MCP catalog.
+- Not an Ollama wrapper. Not LM Studio. Not a chat UI or a weight browser.
+- Not a Grok Bot clone. Not an agent farm.
+- Not frontier-proxy-only. Not a local-studio-only shrink.
 - Enrich packs stay manual. The curator accepts by hand.
 
 Pointers:
   charter.md
+  docs/UBIQUITOUS_LANGUAGE.md
   make gate-90
   make day90
   docs/LIVE-PROBES.md
 
-This page does not plan, apply, or probe. Not part of make smoke,
-make gate-90, or Actions.
+This page does not plan, apply, or probe. Off make smoke,
+make gate-90, and Actions.
 ";

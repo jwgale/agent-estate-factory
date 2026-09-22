@@ -2,13 +2,13 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Lanes stay sacred. You plan, then apply. Frontier and local are equal class. Packs are curator edit instructions. Control does not complete.
+Suite: portable local runtimes (`ollama`, `llama.cpp`, later others) in the estate flow, and train/enrich of purpose-built small models. Ollama is a local runtime on `local_slm`. The estate is the product. Packs are curator edit instructions. Control does not complete.
 
-**Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
+**Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
 Day 0–90 is on `main` (A1–A4, A5–A9, A10–A12 beachhead) on the same Horizon / Research / Sanctum estate. Day 90+ is real-world proof on Jason's boxes, plus parked stubs. Pause-safe. Charter (locked defaults): [`charter.md`](charter.md).
 
-Opt-in, not in the gate: `make real-world`, `estate help frontier`, and `make day90-mixed`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
+Opt-in, off the gate: `make real-world`, `estate help frontier`, and `make day90-mixed`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
 
@@ -22,23 +22,23 @@ make gate-90      # local Day-90 entrypoint: smoke + day90 + doctor --strict + c
 make feed-loop    # fixtures only: scrubbed trace → pack → propose → accept
 make real-world   # opt-in live-box ladder: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT
 make operator-day # fixtures only: suspend → plan → apply → feed import → resume
-estate help       # Day-90 topic pages (status / plan / apply / reconcile / feed-loop / backup / frontier / day90-mixed)
+estate help       # Day-90 topics, including north-star and charter
 ```
 
-Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` / `make real-world` stay local. Do not add `cargo test`, `make gate-90`, or `make real-world` to Actions — gate-90 wraps the local test suite. Walk without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md). One-page product story: [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md). `.cell/` paths: [`docs/cell-layout.md`](docs/cell-layout.md).
+Hosted CI is **compile-only** (`cargo check --workspace --locked` on `pull_request`). Real `cargo test --workspace` and `make gate*` / `make smoke` / `make real-world` stay local. Do not add `cargo test`, `make gate-90`, or `make real-world` to Actions — gate-90 wraps the local test suite. Walk without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md). Product page: [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md). Words: [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md). `.cell/` paths: [`docs/cell-layout.md`](docs/cell-layout.md).
 
-## Parked / not the product
+## Parked
 
-These exist as stubs, experimental catalog cards, or declared-only rows. They are not Cell One.
+Stubs, experimental catalog cards, and declared-only rows.
 
-| Item | What is true |
+| Item | State |
 | --- | --- |
-| Native MLX | Catalog card is a stub. Ollama-on-Mac is the supported Apple path. |
-| vLLM / TRT | Experimental catalog cards. Unset endpoint is SKIP. Not live-ok. |
-| Cloud-agent spawn | `cursor-cloud` is declared. Floor records a lease. It does not spawn. |
-| `estate convey` | Lease-bound hop stub. It records a lease. It does not move a hop. |
-| Packs | Curator edit instructions. `policy: manual`. Accept does not rewrite the estate. |
-| Control | Does not complete. Charter anti-shrink includes an AI gateway and LM Studio. |
+| Native MLX | Catalog stub. Ollama-on-Mac is the supported Apple runtime (`ollama` driver). |
+| vLLM / TRT | Experimental catalog cards. Unset endpoint is SKIP. Probe string stays `not live-ok`. |
+| Cloud-agent spawn | `cursor-cloud` is a declared lease. Floor records the lease. Spawn stays parked. |
+| `estate convey` | Lease-bound hop stub. |
+| Packs | Curator edit instructions. `policy: manual`. Jason pastes them into the estate. |
+| Control | Control does not complete. |
 
 Recorded live proofs, including the MacBook Air specialist `Pong`: [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md). Parking lot: [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md). Morning brief (21 Sep): [`docs/MORNING-BRIEF-2026-09-21.md`](docs/MORNING-BRIEF-2026-09-21.md).
 
@@ -62,23 +62,23 @@ Walk both loops without live boxes: [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.m
 
 Locked defaults: [`charter.md`](charter.md). Documentary schema: [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json). Fail-closed SoT: the Rust validator. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Lease files: [`docs/cell-layout.md`](docs/cell-layout.md).
 
-## What works tonight vs stubs
+## Works tonight
 
-GitHub is the source of truth. Control does not complete. Packs are curator edit instructions.
+GitHub is the source of truth.
 
-| Works tonight (local cargo) | Still outside the product |
+| On this checkout | Held |
 | --- | --- |
 | `estate validate` / `plan` / `apply` on `examples/estate.yaml` and the host matrix | Multi-box control plane |
-| `estate suspend` / `resume` / `status` / `history` / `reconcile` | Auto-heal / rewrite of leases |
-| `estate packs` propose + accept — curator edit instructions | Promote stays refused; no curator UI |
+| `estate suspend` / `resume` / `status` / `history` / `reconcile` | Auto-heal of leases |
+| `estate packs` propose + accept — curator edit instructions | Promote stays refused |
 | `make gate-90` local entrypoint; `make feed-loop` fixtures | Actions expansion (Jason lock) |
-| `make real-world` — check + vanilla doctor; live SKIP without an endpoint | Not in smoke, gate-90, or Actions |
+| `make real-world` — check + vanilla doctor; live SKIP without an endpoint | Off smoke, gate-90, and Actions |
 | `estate doctor --strict` and the dual-layer sacred demo (Sanctum is not Cyera) | Dual PE |
 | `estate convey` lease-bound hop stub; local `estate audit export` | Hop transport; remote audit upload |
-| Ollama + `CELL_LOCAL_ENDPOINT` + llama.cpp | Experimental catalog cards — [parked](#parked--not-the-product) |
+| `ollama` and llama.cpp on `CELL_LOCAL_ENDPOINT` | Experimental catalog cards — [parked](#parked) |
 | Profile-dir isolation and placement leases under `.cell/` | Containers |
 
-Do not turn this into an AI gateway. Do not auto-promote enrich packs. Do not spawn `cursor-cloud`.
+Anti-shrink: AI gateway, MCP catalog, Ollama wrapper, LM Studio, chat UI, weight browser, Grok Bot clone, agent farm, frontier-proxy-only, local-studio-only. Promote stays manual. `cursor-cloud` stays a declared lease. Train and enrich of purpose-built small models stays in the suite.
 
 ## Day-60 gate demo (A5–A9)
 
@@ -129,7 +129,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
   --payload "Reply with the single word pong."
 ```
 
-`estate-control` lists bindings and env *names* only. The exception is the thin `estate specialist` complete delegate (`HttpLocal`, not a gateway). See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
+`estate-control` lists bindings and env *names* only. The thin `estate specialist` complete delegate is `HttpLocal` on the data plane. See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
 
 | Gate | What you should see |
 | --- | --- |
@@ -143,13 +143,13 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
 
 | Rule | Meaning |
 | --- | --- |
-| Ollama-first | First green local path. llama.cpp is swap-proof. |
+| Ollama-first | First supported local runtime: the `ollama` driver. llama.cpp swaps on the same protocol. The estate is the product. |
 | Remote pattern | Local process on a host; other machines set `CELL_LOCAL_ENDPOINT`. |
-| Fail closed | Estate-bound local work does not silently fall through to frontier. Feed: `model.local.down`. |
-| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions, not training data. Live drop zone: [`packs/`](packs/). |
-| Supported | Ollama (+ llama.cpp) green on the box. |
-| Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver, not a fork. |
-| Apple | Ollama-on-Mac is the supported path. |
+| Fail closed | Estate-bound local work stops on `model.local.down`. |
+| Enrich packs | Jason curates; `policy: manual`. Curator edit instructions. Suite goal: train and enrich purpose-built small models. Drop zone: [`packs/`](packs/). |
+| Supported | `ollama` and llama.cpp green on the box. |
+| Portable hosts | `consumer-nvidia` / `apple-silicon` / `rented-nvidia` / `any`. Hardware is a driver choice. |
+| Apple | Ollama-on-Mac is the supported Apple runtime. Same `ollama` driver. |
 
 Do not put `5090`, `4090`, or `m3-max` in estate binding ids **or probe ids**. A 5090 box is one `rented-nvidia` host. Native MLX, vLLM, and TRT stay parked catalog cards.
 
@@ -162,8 +162,8 @@ CI never sets these. `estate probes --live` (or `CELL_LIVE_PROBE=1`) SKIPs when 
 | Variable | Use |
 | --- | --- |
 | `CELL_LIVE_PROBE` | `1` / `true` / `yes` to opt into live HTTP |
-| `CELL_LOCAL_ENDPOINT` | Ollama / llama.cpp / http-remote (`GET /v1/models` or `/api/tags`) |
-| `CELL_RENTED_ENDPOINT` | Alias for a rented (or any) box. Not a SKU. |
+| `CELL_LOCAL_ENDPOINT` | `ollama`, llama.cpp, or http-remote (`GET /v1/models` or `/api/tags`) |
+| `CELL_RENTED_ENDPOINT` | Rented or any box. Probe ids stay free of hardware SKUs. |
 | `CELL_MLX_ENDPOINT` | Apple MLX; falls back to `CELL_LOCAL_ENDPOINT` |
 | `CELL_VLLM_ENDPOINT` | Experimental; unset = SKIP |
 | `CELL_TRT_ENDPOINT` | Experimental; unset = SKIP |
@@ -201,21 +201,21 @@ Workers call conveyor for allow/deny. Completions go through `model-estate`, whi
 ## Persist vs disposable
 
 Survives pause: charter, estate file, schema, `lanes/`, `plans/`, `plans/reviewed/`, `gate-reports/`, `.cell/lifecycle.json`, `.cell/lifecycle.jsonl`, `.cell/placement-actual.json`, `.cell/apply-audit.jsonl`, `.cell/sessions.jsonl`, `.cell/feed/feed-cursor.json`, `.cell/conveyor-mesh.json`, `.cell/conveyor-hops.json`, `.cell/conveyor-leases.json`.  
-Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`, `.cell/reconcile.json`, `.cell/reconcile.md`. Patch file only: `.cell/reconcile-suggest.md`. Local review: `.cell/audit-export/` (not uploaded). Cell archives live under `backups/`, not `.cell/`. See [`docs/cell-layout.md`](docs/cell-layout.md).
+Disposable: `.cell/runtime/`, `.cell/sessions/`, PIDs. Regenerable: `.cell/actual-state.json`, `.cell/desired-snapshot.yaml`, `.cell/model-actual.json`, `.cell/catalog.json`, `.cell/reconcile.json`, `.cell/reconcile.md`. Patch file only: `.cell/reconcile-suggest.md`. Local review stays in `.cell/audit-export/` on this box. Cell archives live under `backups/`. See [`docs/cell-layout.md`](docs/cell-layout.md).
 
-## What is stubbed vs live
+## Stubbed and wired
 
 | Piece | State |
 | --- | --- |
-| Isolation | Profile dirs (not containers). Trait is swappable. |
+| Isolation | Profile dirs. Trait is swappable. |
 | Conveyor HTTP | `POST /v0/check` only. `estate convey` is a lease-bound hop stub. |
 | Frontier `xai_grok` | Wired driver. Live when `XAI_API_KEY` is set. Tests use mock/HTTP fake. |
 | Local `local_slm` | Wired `ollama` driver + `CELL_LOCAL_ENDPOINT`. `mock-local` speaks the protocol. |
 | llama.cpp | Swap-proof card; same specialist protocol. |
-| Enrich packs | Curator jason, policy manual. Curator edit instructions, not training data. Import does not rewrite the estate. |
-| Feed | Scrubbed jsonl, both paths. Candidate packs. No auto-promote. |
+| Enrich packs | Curator jason, policy manual. Curator edit instructions. Jason pastes them into the estate. |
+| Feed | Scrubbed jsonl, both paths. Candidate packs. Promote stays refused. |
 | A10–A12 | Beachhead on `main`: feed packs + import, suspend/resume + placement leases, gated/auditable apply. |
-| MLX / vLLM / TRT / cloud spawn / convey transport | Parked. See [Parked / not the product](#parked--not-the-product). |
+| MLX / vLLM / TRT / cloud spawn / convey transport | Parked. See [Parked](#parked). |
 
 ## Sharp choices (Jev bait)
 
@@ -223,13 +223,13 @@ Day 0–30 locks kept: multi-crate, Rust validate SoT, own-lane free, vendor-out
 
 Day 60 additions:
 
-1. **`models:` on agents** is a deny-default allow-list (same shape as tools), not a new product surface.
-2. **Mixed path is data-plane only.** Control will not complete even when bindings are wired.
-3. **A8 is mandatory in-path** when a local binding is wired: no frontier-proxy-only shortcut.
-4. **Local protocol is HTTP JSON**, language-free and host-class-free. `mock-local` is a stand-in, not a studio.
+1. **`models:` on agents** is a deny-default allow-list, same shape as tools.
+2. **Mixed path is data-plane only.** Control does not complete when bindings are wired.
+3. **A8 is mandatory in-path** when a local binding is wired. Frontier-proxy-only stays refused.
+4. **Local protocol is HTTP JSON**, language-free and host-class-free. `mock-local` stands in for any host class.
 5. **Feed events omit prompts and keys**; they record kind/decision/byte counts only.
-6. **Live A7 without a local endpoint fails closed** (audited `model.local.down`) so the estate cannot shrink to frontier-only.
-7. **Hardware SKUs are banned** from binding ids/drivers. The supported path is Ollama or llama.cpp. MLX, vLLM, and TRT stay parked catalog cards.
+6. **Live A7 with local down** audits `model.local.down` and stops.
+7. **Hardware SKUs stay out** of binding ids and drivers. Supported runtimes: `ollama` and llama.cpp. MLX, vLLM, and TRT stay parked catalog cards.
 8. **Enrich packs stay manual.** Jason curates; feed does not auto-promote.
 
 Day 61–90 beachhead (local `make gate-90`):
