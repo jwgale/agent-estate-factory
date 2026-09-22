@@ -50,6 +50,9 @@ pub(crate) fn cmd_suspend(state_dir: &Path) -> Result<()> {
 }
 
 pub(crate) fn cmd_resume(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
+    let parsed = estate_schema::load_estate_unvalidated(path)
+        .with_context(|| format!("load {}", path.display()))?;
+    model_estate::frontier_plan_view(&parsed).map_err(|e| anyhow::anyhow!("{e}"))?;
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let (actual, record) = resume(&estate, state_dir, roots_base)?;
     model_estate::record_bindings(&estate, state_dir)?;
