@@ -58,10 +58,10 @@ SKIP. The command still exits 0 in all three cases. It does not invent
 success.
 
 Native `mlx` `specialist()` stays **Stub**. Mac live proof is
-**Ollama-on-Mac** (same `ollama` card) or any OpenAI-compatible MLX
-*server* on `CELL_MLX_ENDPOINT`. mlx also falls back to
-`CELL_LOCAL_ENDPOINT`, so an Ollama-on-Mac env may print mlx `live ok`.
-That is HTTP, not native MLX. The catalog card stays stub.
+**Ollama-on-Mac** (same `ollama` card). mlx still reads
+`CELL_MLX_ENDPOINT`, then `CELL_LOCAL_ENDPOINT`, but that HTTP ping is
+not a live proof. `mlx`, `vllm`, and `trt` stay `live_probed=false` and
+print `not live-ok`. They do not print `live ok`.
 
 ## Env
 
@@ -105,9 +105,10 @@ Exit 0. No `5090` / `4090` / `m3-max`.
 
 ### live ok (OpenAI-compatible `/v1/models`, including empty list)
 
-Ollama, llama.cpp, and http-remote share `CELL_LOCAL_ENDPOINT`. mlx may
-also show `live ok` because it falls back to that env. vLLM / TRT stay
-SKIP unless their own env is set.
+Ollama, llama.cpp, and http-remote share `CELL_LOCAL_ENDPOINT` and may
+print `live ok`. mlx falls back to that env and still prints
+`not live-ok`. vLLM / TRT do the same when their own env is set. Unset
+stays SKIP.
 
 ```
 live probe (SKIP without endpoints; not used in CI)
@@ -115,8 +116,8 @@ live probe (SKIP without endpoints; not used in CI)
     Ollama-first. Catalog-level probe; not a live ping. live ok (openai /v1/models)
   llama.cpp    status=swap-proof   bindable=true live_probed=true host_class=any
     llama.cpp swap-proof sibling. Same specialist protocol. live ok (openai /v1/models)
-  mlx          status=stub         bindable=false live_probed=true host_class=apple-silicon
-    Native MLX specialist() is stub. Live Mac proof is Ollama-on-Mac (or OpenAI-compatible) via the HTTP adapter. live ok (openai /v1/models)
+  mlx          status=stub         bindable=false live_probed=false host_class=apple-silicon
+    Native MLX specialist() is stub. Live Mac proof is Ollama-on-Mac (or OpenAI-compatible) via the HTTP adapter. not live-ok (stub or experimental card; HTTP ping is not a live proof)
   vllm         status=experimental bindable=false live_probed=false host_class=any
     Experimental until Jason verifies. Fail closed; no frontier fallback. SKIP (no endpoint env; CI never requires a live box)
   trt          status=experimental bindable=false live_probed=false host_class=any
@@ -138,8 +139,9 @@ live probe (SKIP without endpoints; not used in CI)
     Ollama-first. Catalog-level probe; not a live ping. down: http://127.0.0.1:1/v1/models: Connection Failed: Connect error: Connection refused (os error 111)
 ```
 
-llama.cpp / mlx / http-remote look the same. vLLM / TRT still SKIP
-without their env. Exit 0.
+llama.cpp and http-remote look the same. mlx, vLLM, and TRT stay
+`not live-ok` when an endpoint is set. They do not open that ping.
+Unset stays SKIP. Exit 0.
 
 ## Dry on this box (no GPU, no Jason)
 
@@ -347,8 +349,8 @@ cargo run -q -p estate-control -- probes --live
 
 Expect ollama / llama.cpp / http-remote: `live_probed=true` and
 `live ok (openai /v1/models)` or `live ok (ollama /api/tags)`.
-mlx may also print `live ok` (fallback to `CELL_LOCAL_ENDPOINT`).
-That is not native MLX.
+mlx stays `live_probed=false` and `not live-ok`. That fallback is not
+native MLX.
 
 Optional OpenAI-compatible MLX *server* (still not native MLX):
 
@@ -357,8 +359,8 @@ export CELL_MLX_ENDPOINT=http://127.0.0.1:8080
 cargo run -q -p estate-control -- probes --live
 ```
 
-Expect mlx: `status=stub bindable=false live_probed=true` if that server
-answers `/v1/models`. `specialist()` on the mlx card still refuses Stub.
+Expect mlx: `status=stub bindable=false live_probed=false` and
+`not live-ok`. `specialist()` on the mlx card still refuses Stub.
 
 ## Jason Linux / 5090-class (consumer-nvidia or rented-nvidia)
 
@@ -377,10 +379,10 @@ export CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434
 cargo run -q -p estate-control -- probes --live
 ```
 
-Expect ollama / llama.cpp / http-remote `live_probed=true`. vLLM SKIP
-unless `CELL_VLLM_ENDPOINT` is set.
+Expect ollama / llama.cpp / http-remote `live_probed=true`. vLLM and
+TRT stay SKIP when their env is unset, and `not live-ok` when it is set.
 
-Optional vLLM (experimental card; live ping only):
+Optional vLLM (experimental card; not live-ok):
 
 ```bash
 export CELL_VLLM_ENDPOINT=http://127.0.0.1:8000
@@ -417,7 +419,7 @@ Down local is `local:down` / `model.local.down`. No silent `grok-4.7` fallback.
 | --- | --- |
 | SKIP in CI or on this cloud box | A failed live test |
 | `live_probed=true` from `mock-local` | MLX Supported, or weights green |
-| mlx note `live ok` | Catalog card flipped off stub; native MLX |
+| mlx note `not live-ok` | Native MLX, or a catalog card flipped off stub |
 | Empty models list `live ok` | A pulled model; only the HTTP server is up |
 | `estate specialist` `completion` on mock-local (`mock:...`) | A live Ollama chat Jason ran |
 | `estate specialist` `completion` against Ollama | Native MLX |
