@@ -447,3 +447,208 @@ fn propose_and_accept_refuse_frontier_source_without_a_frontier_binding() {
     assert_eq!(before, std::fs::read(&locked).unwrap());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+fn quiet_env(cmd: &mut Command) -> &mut Command {
+    cmd.env_remove("XAI_API_KEY")
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+}
+
+#[test]
+fn import_keeps_mixed_drivers_and_refuses_frontier_invent() {
+    let root = tmp("import-mixed");
+    let feed = root.join("feed");
+    let drop = root.join("drop");
+    let accepted = root.join("accepted");
+    let mixed = repo_root().join("examples/fixtures/mixed-frontier-local.yaml");
+    let before = std::fs::read(&mixed).unwrap();
+    seed(&feed);
+
+    let pack = estate_bin()
+        .args([
+            "feed",
+            "pack",
+            "--feed-dir",
+            &feed.display().to_string(),
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--id",
+            "overnight-traces",
+        ])
+        .output()
+        .unwrap();
+    assert!(pack.status.success(), "{}", String::from_utf8_lossy(&pack.stderr));
+
+    let imported = quiet_env(&mut estate_bin())
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &accepted.display().to_string(),
+            "--estate",
+            &mixed.display().to_string(),
+            "--curator",
+            "jason",
+        ])
+        .output()
+        .unwrap();
+    let imported_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&imported.stdout),
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    assert!(imported.status.success(), "{imported_text}");
+    assert!(imported_text.contains("redaction report"), "{imported_text}");
+    assert!(imported_text.contains("redacted="), "{imported_text}");
+    assert!(imported_text.contains("raw_secrets_found="), "{imported_text}");
+    assert!(!imported_text.contains("grok-4.7"), "{imported_text}");
+    assert_eq!(before, std::fs::read(&mixed).unwrap());
+
+    let accepted_pack: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(accepted.join("overnight-traces.pack.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(accepted_pack["pack"]["promoted"], false);
+    assert_eq!(
+        accepted_pack["pack"]["source_drivers"],
+        serde_json::json!(["frontier", "local"])
+    );
+    let report =
+        std::fs::read_to_string(accepted.join("overnight-traces.redaction.json")).unwrap();
+    assert!(report.contains("cell-one.redaction.v0"), "{report}");
+    assert!(report.contains("Kind counts only"), "{report}");
+    assert!(!report.contains("grok-4.7"), "{report}");
+    assert!(!report.contains("sk-"), "{report}");
+    let pack_blob =
+        std::fs::read_to_string(accepted.join("overnight-traces.pack.json")).unwrap();
+    assert!(!pack_blob.contains("grok-4.7"), "{pack_blob}");
+    assert!(!pack_blob.contains("sk-"), "{pack_blob}");
+
+    let local_estate = root.join("local-only.yaml");
+    std::fs::write(
+        &local_estate,
+        "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n",
+    )
+    .unwrap();
+    let local_before = std::fs::read(&local_estate).unwrap();
+    let refused_dir = root.join("refused");
+    std::fs::create_dir_all(&refused_dir).unwrap();
+    std::fs::write(refused_dir.join("SENTINEL"), "keep\n").unwrap();
+    let refused = quiet_env(&mut estate_bin())
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "overnight-traces",
+            "--drop-dir",
+            &drop.display().to_string(),
+            "--accepted-dir",
+            &refused_dir.display().to_string(),
+            "--estate",
+            &local_estate.display().to_string(),
+            "--curator",
+            "jason",
+        ])
+        .output()
+        .unwrap();
+    let refused_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(
+        refused_text.contains("refuse:frontier-invent"),
+        "{refused_text}"
+    );
+    assert!(!refused_text.contains("grok-4.7"), "{refused_text}");
+    assert!(!refused_text.contains("redacted="), "{refused_text}");
+    assert!(!refused_dir.join("overnight-traces.pack.json").exists());
+    assert!(!refused_dir.join("overnight-traces.redaction.json").exists());
+    assert!(!refused_dir.join("import-audit.jsonl").exists());
+    assert_eq!(
+        std::fs::read_to_string(refused_dir.join("SENTINEL")).unwrap(),
+        "keep\n"
+    );
+    assert_eq!(local_before, std::fs::read(&local_estate).unwrap());
+
+    let local_feed = root.join("local-feed");
+    let local_drop = root.join("local-drop");
+    let local_accepted = root.join("local-accepted");
+    append_event(
+        &local_feed,
+        &ScrubbedEvent {
+            kind: "model.local.precheck".into(),
+            agent_id: Some("research".into()),
+            decision: Some("allow".into()),
+            object_class: Some("local".into()),
+            note: None,
+            ts: String::new(),
+        },
+    )
+    .unwrap();
+    let local_pack = estate_bin()
+        .args([
+            "feed",
+            "pack",
+            "--feed-dir",
+            &local_feed.display().to_string(),
+            "--drop-dir",
+            &local_drop.display().to_string(),
+            "--id",
+            "local-only",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        local_pack.status.success(),
+        "{}",
+        String::from_utf8_lossy(&local_pack.stderr)
+    );
+    let local_import = quiet_env(&mut estate_bin())
+        .args([
+            "packs",
+            "import",
+            "--id",
+            "local-only",
+            "--drop-dir",
+            &local_drop.display().to_string(),
+            "--accepted-dir",
+            &local_accepted.display().to_string(),
+            "--estate",
+            &local_estate.display().to_string(),
+            "--curator",
+            "jason",
+        ])
+        .output()
+        .unwrap();
+    let local_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&local_import.stdout),
+        String::from_utf8_lossy(&local_import.stderr)
+    );
+    assert!(local_import.status.success(), "{local_text}");
+    assert!(!local_text.contains("grok-4.7"), "{local_text}");
+    assert!(local_text.contains("redacted="), "{local_text}");
+    let local_blob: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(local_accepted.join("local-only.pack.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        local_blob["pack"]["source_drivers"],
+        serde_json::json!(["local"])
+    );
+    assert_eq!(local_blob["pack"]["promoted"], false);
+    let local_report =
+        std::fs::read_to_string(local_accepted.join("local-only.redaction.json")).unwrap();
+    assert!(local_report.contains("cell-one.redaction.v0"), "{local_report}");
+    assert!(!local_report.contains("grok-4.7"), "{local_report}");
+    assert_eq!(local_before, std::fs::read(&local_estate).unwrap());
+    assert_eq!(before, std::fs::read(&mixed).unwrap());
+    let _ = std::fs::remove_dir_all(&root);
+}
