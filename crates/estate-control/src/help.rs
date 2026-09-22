@@ -106,6 +106,11 @@ Writes reviewable markdown under plans/. Does not apply.
   estate plan export-pr --out plans/PR.md
 
 apply --require-plan / --require-fresh-plan read these files.
+
+The plan line prints the bound frontier model, or model=- when the binding
+sets none. It does not copy the schema card. An estate with no frontier
+binding refuses (refuse:frontier-invent) instead of inventing a frontier
+source_driver or catalog model. No live key.
 ";
 
 const APPLY: &str = "\
