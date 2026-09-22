@@ -257,6 +257,7 @@ pub(crate) fn cmd_apply(
             id,
             curator,
             &estate.enrich_packs.curator,
+            &estate,
         )
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
@@ -363,6 +364,7 @@ pub(crate) fn cmd_apply(
             &ids,
             curator,
             &estate.enrich_packs.curator,
+            &estate,
         )?;
         imported.push(id.to_string());
         println!(

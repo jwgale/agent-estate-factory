@@ -244,7 +244,11 @@ pub(crate) fn cmd_feed_import(
     estate_path: &Path,
     curator: &str,
 ) -> Result<()> {
-    let estate = load_estate(estate_path)
+    // Unvalidated on purpose. Cell One shape is an apply gate. A one-agent
+    // local-only estate must hit refuse:frontier-invent before that shape
+    // check, and a local-only pack must still import. CELL_FRONTIER_MODEL
+    // is not the binding.
+    let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     let ids: Vec<String> = estate
         .enrich_packs
@@ -260,6 +264,7 @@ pub(crate) fn cmd_feed_import(
         &ids,
         curator,
         &estate.enrich_packs.curator,
+        &estate,
     )?;
     let after = crate::helpers::read_estate_text(estate_path)?;
     if before != after {
@@ -276,20 +281,30 @@ pub(crate) fn cmd_feed_import(
         dest.display()
     );
     let redaction = accepted_dir.join(format!("{}.redaction.json", rec.pack.id));
-    if redaction.is_file() {
-        if let Ok(text) = std::fs::read_to_string(&redaction) {
-            println!("redaction report {}", redaction.display());
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                println!(
-                    "  redacted={} raw_secrets_found={}",
-                    v.get("redacted").and_then(|x| x.as_u64()).unwrap_or(0),
-                    v.get("raw_secrets_found")
-                        .and_then(|x| x.as_u64())
-                        .unwrap_or(0)
-                );
-            }
-        }
+    if !redaction.is_file() {
+        bail!(
+            "import wrote no redaction report at {}",
+            redaction.display()
+        );
     }
+    let text = std::fs::read_to_string(&redaction)
+        .with_context(|| format!("read redaction {}", redaction.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("parse redaction {}", redaction.display()))?;
+    let redacted = v.get("redacted").and_then(|x| x.as_u64()).with_context(|| {
+        format!("redaction {} missing redacted count", redaction.display())
+    })?;
+    let raw_found = v
+        .get("raw_secrets_found")
+        .and_then(|x| x.as_u64())
+        .with_context(|| {
+            format!(
+                "redaction {} missing raw_secrets_found",
+                redaction.display()
+            )
+        })?;
+    println!("redaction report {}", redaction.display());
+    println!("  redacted={redacted} raw_secrets_found={raw_found}");
     println!("estate file unchanged. Jason still lists pack ids on enrich_packs by hand.");
     Ok(())
 }
