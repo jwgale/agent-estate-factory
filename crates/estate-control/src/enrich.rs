@@ -54,8 +54,8 @@ pub(crate) fn cmd_enrich_prepare(
     }
     for (doc, (_, out_dir)) in docs.iter().zip(targets.iter()) {
         println!(
-            "enrich prepare: driver={} job={} pack={}",
-            doc.driver, doc.job, doc.pack_id
+            "enrich prepare: driver={} job={} pack={} base={}",
+            doc.driver, doc.job, doc.pack_id, doc.base_model
         );
         println!("  out: {}", out_dir.display());
         println!("  artifacts: {}", doc.artifacts.join(","));
@@ -70,6 +70,38 @@ pub(crate) fn cmd_enrich_prepare(
     }
     println!("prepared={}", docs.len());
     Ok(())
+}
+
+/// One command after an accepted pack: prepare into `{state_dir}/enrich`. Does not apply.
+pub(crate) fn cmd_enrich_from_pack(
+    estate_path: &Path,
+    pack: &Path,
+    packs_dir: &Path,
+    driver: Option<&str>,
+    all_drivers: bool,
+    state_dir: &Path,
+    job: &str,
+    curator: &str,
+) -> Result<()> {
+    if all_drivers && driver.is_some() {
+        bail!("refuse:driver: pass --driver or --all-drivers");
+    }
+    let all = driver.is_none();
+    println!(
+        "enrich from-pack: state={}/enrich (does not apply, does not train)",
+        state_dir.display()
+    );
+    cmd_enrich_prepare(
+        estate_path,
+        pack,
+        packs_dir,
+        driver,
+        all,
+        None,
+        state_dir,
+        job,
+        curator,
+    )
 }
 
 pub(crate) fn cmd_enrich_list(state_dir: &Path) -> Result<()> {

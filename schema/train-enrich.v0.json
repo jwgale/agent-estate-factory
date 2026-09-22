@@ -3,7 +3,7 @@
   "driver": "ollama-modelfile",
   "job": "enrich",
   "pack_id": "overnight-traces",
-  "base_model": "local_slm",
+  "base_model": "llama3",
   "purpose": "Specialist fixture. Import is explicit apply. Feed never auto-promotes. No raw secrets.",
   "host_class_affinity": "any",
   "source_paths": ["feed/events.jsonl"],

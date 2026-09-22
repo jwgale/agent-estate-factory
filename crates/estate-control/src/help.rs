@@ -95,7 +95,9 @@ Mixed:      make day90-mixed
 Feed walk:  make feed-loop
 Frontier:   estate specialist --driver frontier
 Enrich:     estate enrich prepare
+From pack:  estate enrich from-pack
 Walk:       make enrich-prepare
+Live prove: make enrich-live-prove
 ";
 
 const STATUS: &str = "\
@@ -315,25 +317,35 @@ estate help train prints this page. Job field is train or enrich.
 Default job is enrich. Prepare writes artifacts. It does not train.
 
   estate enrich drivers
-  estate enrich prepare --estate examples/estate.yaml \\
+  estate enrich from-pack --estate <your-estate.yaml> \\
+    --pack <accepted-pack-id> --state-dir .cell
+  estate enrich prepare --estate <your-estate.yaml> \\
     --pack examples/fixtures/specialist-overnight.pack.json \\
     --all-drivers --state-dir .cell
   estate enrich list --state-dir .cell
-  estate enrich import-prepared --estate examples/estate.yaml \\
+  estate enrich import-prepared --estate <your-estate.yaml> \\
     --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
     --tag cell-enrich-overnight-traces \\
     --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
-  estate enrich apply-proposal --estate examples/estate.yaml \\
+  estate enrich apply-proposal --estate <your-estate.yaml> \\
     --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
     --tag cell-enrich-overnight-traces --state-dir .cell
   make enrich-prepare
+  make enrich-live-prove
 
 TrainEnrichDriver lives in the data plane (model-estate).
 Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM)
 and external-manifest (portable JSON/YAML, no vendor lock).
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card into
-sibling directories. Omit --driver for the first card.
+sibling directories. Omit --driver on prepare for the first card.
+from-pack omits --driver to prepare every card into .cell/enrich.
+
+Modelfile FROM is the seated model. That is params.model on the
+local binding, or a pack model_hint that is already a model tag
+(for example llama3). The binding id local_slm is not a model tag.
+A missing seated name is refuse:base-model and writes nothing.
+examples/estate.yaml leaves params.model unset. A lab copy sets it.
 
 Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
 NEXT.md has the handoff command, artifact paths, and fail-closed
@@ -371,6 +383,10 @@ apply-proposal and import-prepared leave the source estate unchanged.
 Promote stays off. No train POST.
 
 Opt-in walk: make enrich-prepare. Not part of make smoke, make gate-90,
-or Actions. Docs: docs/TRAIN-ENRICH.md. Words: docs/UBIQUITOUS_LANGUAGE.md.
+or Actions. make enrich-live-prove runs ollama create on a throwaway
+cell when the seat is up, then removes the tag. It is an opt-in seated
+handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
+Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
+Words: docs/UBIQUITOUS_LANGUAGE.md.
 Journeys: docs/operator-enrich-journeys.md.
 ";

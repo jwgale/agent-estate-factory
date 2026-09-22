@@ -34,7 +34,7 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich from-pack` runs that prepare for an accepted pack into `.cell/enrich`. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Modelfile `FROM` is the seated model: `params.model` on the local binding, or a pack `model_hint` that is already a model tag. The binding id `local_slm` is not that tag. A missing seated name is `refuse:base-model`. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ### purpose-built SLM
 
@@ -42,7 +42,7 @@ A small-parameter model crafted for one job. Open-source SLMs will get more comm
 
 ### TrainEnrichDriver
 
-Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `status` and `probe`. Cards on `main`: `ollama-modelfile` (integrate Ollama `create` / Modelfile `FROM` + `SYSTEM`) and `external-manifest` (portable JSON/YAML for a later trainer). A third train/enrich entrant is another card. Floor and control dispatch do not match driver ids.
+Data-plane trait in `model-estate`. Methods: `id()`, `prepare(job)`, catalog `status` and `probe`. Cards on `main`: `ollama-modelfile` (integrate Ollama `create` / Modelfile `FROM` + `SYSTEM`; `FROM` is the seated model, never the binding id) and `external-manifest` (portable JSON/YAML for a later trainer). A third train/enrich entrant is another card. llama.cpp INI presets stay off this catalog until a pack or binding names a GGUF path. Floor and control dispatch do not match driver ids.
 
 ### train/enrich facilitation
 

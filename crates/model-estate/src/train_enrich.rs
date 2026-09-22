@@ -148,7 +148,7 @@ impl TrainEnrichDriver for OllamaModelfileDriver {
         }
         let name = local_enrich_tag(&job.pack_id);
         let body = format!(
-            "# schema: {schema}\n# driver: ollama-modelfile\n# job: {kind}\n# prepare writes this file. It does not run ollama.\nFROM {base}\nSYSTEM \"\"\"{system}\"\"\"\n",
+            "# schema: {schema}\n# driver: ollama-modelfile\n# job: {kind}\n# prepare writes this file. It does not run ollama.\n# FROM is the seated model name. The binding id is not a model tag.\nFROM {base}\nSYSTEM \"\"\"{system}\"\"\"\n",
             schema = PREPARE_SCHEMA,
             kind = job.kind.as_str(),
             base = job.base_model,
@@ -157,12 +157,13 @@ impl TrainEnrichDriver for OllamaModelfileDriver {
         let steps = format!(
             "This step wrote a Modelfile (FROM + SYSTEM). It did not run ollama, did not train, and did not rewrite the estate.\n\
              \n\
-             On the seated local runtime (Ollama today), after FROM names a model that runtime already has:\n\
+             On the seated local runtime (Ollama today). FROM is {base}. That model must already be present. This step did not pull weights.\n\
              \n\
              ollama create {name} -f Modelfile\n\
              \n\
              Dataset path hints from the pack (not downloaded):\n\
              {paths}\n",
+            base = job.base_model,
             paths = dataset_lines(&job.source_paths),
         );
         Ok(DriverPrepare {
@@ -404,7 +405,7 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     refuse_pack(req.pack).map_err(map_feed)?;
     refuse_frontier_source_on_estate(&req.pack.source_drivers, req.estate).map_err(map_feed)?;
     let kind = parse_enrich_job(req.job)?;
-    let job = enrich_job(req.pack, kind)?;
+    let job = enrich_job(req.pack, req.estate, kind)?;
     refuse_job_text(&job)?;
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
@@ -456,7 +457,142 @@ fn commit_staged(staged: &[StagedPrepare]) -> Result<Vec<EnrichPrepareDoc>, Mode
     Ok(staged.iter().map(|item| item.doc.clone()).collect())
 }
 
-fn enrich_job(pack: &PackManifest, kind: EnrichJobKind) -> Result<EnrichJob, ModelError> {
+const SEAT_ID: &str = "local_slm";
+
+/// Words that name a seat, a driver, or a class. They are not Ollama model tags.
+const RESERVED_MODEL_WORDS: &[&str] = &[
+    "local_slm",
+    "xai_grok",
+    "ollama",
+    "llama.cpp",
+    "llama-cpp",
+    "llama_cpp",
+    "mlx",
+    "vllm",
+    "trt",
+    "frontier-http",
+    "http-remote",
+    "mock-local",
+    "openai-compat",
+    "openai",
+    "frontier",
+    "local",
+];
+
+fn name_eq(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+}
+
+fn is_reserved_model_word(name: &str) -> bool {
+    RESERVED_MODEL_WORDS.iter().any(|word| name_eq(name, word))
+}
+
+fn is_binding_id(estate: &Estate, name: &str) -> bool {
+    name_eq(name, SEAT_ID)
+        || estate
+            .model_bindings
+            .iter()
+            .any(|binding| name_eq(&binding.id, name))
+}
+
+fn is_from_token(name: &str) -> bool {
+    !name.is_empty()
+        && !name
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '#' | '\\'))
+}
+
+/// A seated model tag Ollama can `FROM`. Binding ids and driver ids are not tags.
+fn is_seated_model_name(estate: &Estate, name: &str) -> bool {
+    let name = name.trim();
+    is_from_token(name) && !is_binding_id(estate, name) && !is_reserved_model_word(name)
+}
+
+fn select_local_binding<'a>(
+    estate: &'a Estate,
+    hint: Option<&str>,
+) -> Result<&'a estate_schema::ModelBinding, ModelError> {
+    if let Some(hint) = hint {
+        if let Some(binding) = estate
+            .model_bindings
+            .iter()
+            .find(|binding| name_eq(&binding.id, hint))
+        {
+            if binding.class != estate_schema::ModelClass::Local {
+                return Err(ModelError::Other(format!(
+                    "refuse:base-model: '{hint}' names binding '{}' which is not a local seat",
+                    binding.id
+                )));
+            }
+            return Ok(binding);
+        }
+    }
+    if let Some(binding) = estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == SEAT_ID && binding.class == estate_schema::ModelClass::Local)
+    {
+        return Ok(binding);
+    }
+    let mut locals = estate
+        .model_bindings
+        .iter()
+        .filter(|binding| binding.class == estate_schema::ModelClass::Local);
+    match (locals.next(), locals.next()) {
+        (Some(only), None) => Ok(only),
+        (None, _) => Err(ModelError::Other(
+            "refuse:binding: estate has no local_slm seat".into(),
+        )),
+        (Some(_), Some(_)) => Err(ModelError::Other(
+            "refuse:base-model: more than one local binding and the pack does not name one".into(),
+        )),
+    }
+}
+
+/// Modelfile `FROM` and manifest `base_model`. Never the binding id `local_slm`.
+fn resolve_seated_base_model(estate: &Estate, pack: &PackManifest) -> Result<String, ModelError> {
+    let hint = pack
+        .model_hint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(hint) = hint {
+        if is_seated_model_name(estate, hint) {
+            return Ok(hint.to_string());
+        }
+        if !is_binding_id(estate, hint) && !is_reserved_model_word(hint) {
+            return Err(ModelError::Other(format!(
+                "refuse:base-model: model_hint '{hint}' is not a seated model tag"
+            )));
+        }
+    }
+    let binding = select_local_binding(estate, hint)?;
+    let raw = binding
+        .params
+        .get("model")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if raw.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:base-model: local binding '{}' has no params.model. Set params.model to a model the seated runtime already has (for example llama3), or set the pack model_hint to that model name. The binding id is not a Modelfile FROM.",
+            binding.id
+        )));
+    }
+    if !is_seated_model_name(estate, raw) {
+        return Err(ModelError::Other(format!(
+            "refuse:base-model: params.model on '{}' is '{raw}', which is not a seated model tag. The binding id is not a Modelfile FROM.",
+            binding.id
+        )));
+    }
+    Ok(raw.to_string())
+}
+
+fn enrich_job(
+    pack: &PackManifest,
+    estate: &Estate,
+    kind: EnrichJobKind,
+) -> Result<EnrichJob, ModelError> {
     let purpose = {
         let note = pack.note.trim();
         if note.is_empty() {
@@ -470,13 +606,7 @@ fn enrich_job(pack: &PackManifest, kind: EnrichJobKind) -> Result<EnrichJob, Mod
         pack.id,
         kind.as_str()
     );
-    let base_model = pack
-        .model_hint
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("local_slm")
-        .to_string();
+    let base_model = resolve_seated_base_model(estate, pack)?;
     let host_class_affinity = pack
         .host_class_affinity
         .as_deref()
@@ -634,8 +764,9 @@ fn next_markdown(
                  \n\
                  ollama create {tag} -f {modelfile}\n\
                  \n\
-                 FROM must already name a model that runtime has. This factory did not pull weights.\n",
+                 FROM {base} must already be a model that runtime has. That name comes from params.model on the local binding, or from a pack model_hint that is already a model tag. The binding id is not a model tag. This factory did not pull weights.\n",
                 modelfile = modelfile.display(),
+                base = job.base_model,
             ),
             modelfile,
             "Path is the Modelfile this prepare wrote.",
@@ -1936,8 +2067,10 @@ mod tests {
     }
 
     fn tmp(name: &str) -> PathBuf {
-        let path = repo_root().join(format!(
-            "target/enrich-unit-{}-{}",
+        // Keep the throwaway dir off the checkout. A GPU token in the
+        // checkout path would trip refuse:sku-banned on the out directory.
+        let path = std::env::temp_dir().join(format!(
+            "cell-one-enrich-unit-{}-{}",
             name,
             std::process::id()
         ));
@@ -1953,6 +2086,21 @@ mod tests {
 
     fn fixture_estate() -> Estate {
         estate_schema::load_estate_unvalidated(&repo_root().join("examples/estate.yaml")).unwrap()
+    }
+
+    fn seated_estate(model: &str) -> Estate {
+        let mut estate = fixture_estate();
+        let binding = estate
+            .model_bindings
+            .iter_mut()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap();
+        binding
+            .params
+            .as_object_mut()
+            .unwrap()
+            .insert("model".into(), serde_json::Value::String(model.into()));
+        estate
     }
 
     fn run(
@@ -2003,7 +2151,7 @@ mod tests {
     fn both_drivers_prepare_fixture_without_training() {
         let root = tmp("happy");
         let pack = fixture_pack();
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let ollama_out = root.join("ollama");
         let doc = run(
             "ollama-modelfile",
@@ -2016,9 +2164,10 @@ mod tests {
         .unwrap();
         assert_eq!(doc.schema, PREPARE_SCHEMA);
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
-        assert_eq!(doc.base_model, "local_slm");
+        assert_eq!(doc.base_model, "llama3");
         let modelfile = std::fs::read_to_string(ollama_out.join("Modelfile")).unwrap();
-        assert!(modelfile.contains("FROM local_slm"), "{modelfile}");
+        assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+        assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
         assert!(modelfile.contains("SYSTEM \"\"\""), "{modelfile}");
         assert!(modelfile.contains("purpose-built SLM"), "{modelfile}");
         let steps = std::fs::read_to_string(ollama_out.join("PREPARE.md")).unwrap();
@@ -2058,7 +2207,7 @@ mod tests {
         assert!(manifest.contains("\"vendor\": null"), "{manifest}");
         assert!(manifest.contains("feed/events.jsonl"), "{manifest}");
         assert!(
-            manifest.contains("\"base_model\": \"local_slm\""),
+            manifest.contains("\"base_model\": \"llama3\""),
             "{manifest}"
         );
         let yaml = std::fs::read_to_string(manifest_out.join("manifest.yaml")).unwrap();
@@ -2075,7 +2224,7 @@ mod tests {
     #[test]
     fn refuse_paths_write_nothing() {
         let root = tmp("refuse");
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let mut sacred = fixture_pack();
         sacred.note = "please mention cyera".into();
         let sacred_out = root.join("sacred");
@@ -2196,7 +2345,7 @@ mod tests {
     fn prepare_all_writes_both_or_neither() {
         let root = tmp("all");
         let pack = fixture_pack();
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let ollama_out = root.join("ollama-modelfile");
         let manifest_out = root.join("external-manifest");
         let docs = prepare_enrich_set(&[
@@ -2281,7 +2430,7 @@ mod tests {
         assert!(!enrich.exists());
 
         let pack = fixture_pack();
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let out = default_enrich_out(&root, &pack.id, "ollama-modelfile");
         run("ollama-modelfile", &pack, &estate, &out, "enrich", "jason").unwrap();
         let manifest = default_enrich_out(&root, &pack.id, "external-manifest");
@@ -2316,7 +2465,7 @@ mod tests {
     fn import_prepared_writes_a_proposal_and_refuses_closed() {
         let root = tmp("import");
         let pack = fixture_pack();
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let prepared = root.join("prepared");
         run(
             "ollama-modelfile",
@@ -2490,6 +2639,136 @@ mod tests {
     }
 
     #[test]
+    fn seated_base_never_uses_the_binding_id() {
+        let root = tmp("base");
+        let stock = fixture_estate();
+        let pack = fixture_pack();
+        let stock_out = root.join("stock");
+        let err = run(
+            "ollama-modelfile",
+            &pack,
+            &stock,
+            &stock_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:base-model"), "{err}");
+        assert!(!stock_out.exists(), "binding id must not become FROM");
+
+        let hinted = {
+            let mut pack = fixture_pack();
+            pack.model_hint = Some("llama3".into());
+            pack
+        };
+        let hint_out = root.join("hint");
+        let doc = run(
+            "ollama-modelfile",
+            &hinted,
+            &stock,
+            &hint_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.base_model, "llama3");
+        let modelfile = std::fs::read_to_string(hint_out.join("Modelfile")).unwrap();
+        assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+        assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
+
+        let tagged = seated_estate("llama3:latest");
+        let tag_out = root.join("tag");
+        let doc = run(
+            "ollama-modelfile",
+            &pack,
+            &tagged,
+            &tag_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.base_model, "llama3:latest");
+        let tagged_file = std::fs::read_to_string(tag_out.join("Modelfile")).unwrap();
+        assert!(
+            tagged_file.contains("FROM llama3:latest\n"),
+            "{tagged_file}"
+        );
+
+        let mut driver_hint = fixture_pack();
+        driver_hint.model_hint = Some("ollama".into());
+        let driver_out = root.join("driver-hint");
+        let doc = run(
+            "external-manifest",
+            &driver_hint,
+            &tagged,
+            &driver_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.base_model, "llama3:latest");
+
+        let mut empty_hint = fixture_pack();
+        empty_hint.model_hint = None;
+        let empty_out = root.join("empty-hint");
+        let doc = run(
+            "ollama-modelfile",
+            &empty_hint,
+            &seated_estate("llama3"),
+            &empty_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.base_model, "llama3");
+
+        let bound_id = seated_estate("local_slm");
+        let bound_out = root.join("bound-id");
+        let err = run(
+            "ollama-modelfile",
+            &pack,
+            &bound_id,
+            &bound_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:base-model"), "{err}");
+        assert!(!bound_out.exists());
+
+        let sku_out = root.join("sku-param");
+        let err = run(
+            "ollama-modelfile",
+            &pack,
+            &seated_estate("rtx-5090"),
+            &sku_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("SKU") || err.to_string().contains("sku"),
+            "{err}"
+        );
+        assert!(!sku_out.exists());
+
+        let mut frontier_hint = fixture_pack();
+        frontier_hint.model_hint = Some("xai_grok".into());
+        let frontier_out = root.join("frontier-hint");
+        let err = run(
+            "ollama-modelfile",
+            &frontier_hint,
+            &seated_estate("llama3"),
+            &frontier_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:base-model"), "{err}");
+        assert!(!frontier_out.exists());
+    }
+
+    #[test]
     fn binding_proposal_snapshot_stays_unapplied() {
         let snap: EnrichBindingProposal = serde_json::from_str(include_str!(
             "../../../schema/enrich-binding-proposal.v0.json"
@@ -2505,7 +2784,7 @@ mod tests {
     fn apply_proposal_stages_plan_input_and_require_plan_writes_the_source() {
         let root = tmp("stage");
         let pack = fixture_pack();
-        let estate = fixture_estate();
+        let estate = seated_estate("llama3");
         let state = root.join("state");
         let prepared = default_enrich_out(&state, &pack.id, "ollama-modelfile");
         run(
@@ -2517,9 +2796,13 @@ mod tests {
             "jason",
         )
         .unwrap();
+        let from = std::fs::read_to_string(prepared.join("Modelfile")).unwrap();
+        assert!(from.contains("FROM llama3\n"), "{from}");
+        assert!(!from.contains("FROM local_slm"), "{from}");
         let source = root.join("estate.yaml");
         let example = repo_root().join("examples/estate.yaml");
-        std::fs::copy(&example, &source).unwrap();
+        let seated_yaml = estate_schema::render_estate_yaml(&estate).unwrap();
+        std::fs::write(&source, &seated_yaml).unwrap();
         let before = std::fs::read(&source).unwrap();
         let example_before = std::fs::read(&example).unwrap();
         let modelfile = prepared.join("Modelfile");

@@ -6,7 +6,7 @@ Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
-Commands on this page: `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, and `estate enrich apply-proposal`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page.
+Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, and `estate enrich apply-proposal`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page. The opt-in `ollama create` handoff is [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 ## What stays fixed
 
@@ -42,7 +42,7 @@ estate apply --estate <your-estate.yaml> --require-plan
 
 The pasted entry is an id and a description. `source_drivers` stays a comment on the instruction file.
 
-3. On the host, the Modelfile is `FROM` plus `SYSTEM`. `estate enrich prepare` writes that file and the `ollama create` line. It does not shell out. You can write the same file by hand. Command page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `FROM` is a model Ollama already has, or weights a trainer returned (journey 3). `SYSTEM` is the curator text for that pack's job (`policy-precheck`, `redact`, or `complete`). Keep `cyera`, `rust-classroom`, and `rust_classroom` out of the file. The model name is a slug. A hardware SKU in that name refuses when the specialist runs.
+3. On the host, the Modelfile is `FROM` plus `SYSTEM`. `estate enrich from-pack` (or `estate enrich prepare`) writes that file and the `ollama create` line. It does not shell out. You can write the same file by hand. Command page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `FROM` is a model Ollama already has (`params.model` on `local_slm`, or a pack `model_hint` that is already a model tag such as `llama3`), or weights a trainer returned (journey 3). The binding id `local_slm` is not that name. A missing seated name is `refuse:base-model`. `SYSTEM` is the curator text for that pack's job (`policy-precheck`, `redact`, or `complete`). Keep `cyera`, `rust-classroom`, and `rust_classroom` out of the file. A hardware SKU in that name refuses.
 
 ```text
 FROM llama3
@@ -58,10 +58,9 @@ ollama create cell-one-specialist -f Modelfile
 The same join, with the factory writing the files, the proposal, and the plan input. Prepare does not run `ollama create`. List reads `.cell/enrich` and refuses when that directory is missing. Import writes a proposal for the existing `local_slm` seat. `apply-proposal` stages that binding. You still run plan and apply.
 
 ```bash
-estate enrich prepare \
+estate enrich from-pack \
   --estate <your-estate.yaml> \
-  --pack <pack.json> \
-  --all-drivers \
+  --pack <pack-id> \
   --state-dir .cell
 
 estate enrich list --state-dir .cell

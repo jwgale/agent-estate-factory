@@ -9,16 +9,18 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | Piece | Role |
 | --- | --- |
 | `TrainEnrichDriver` | Data-plane trait in `model-estate`. `id()`, `prepare(job)`, catalog `status` / `probe`. |
-| `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. Does not shell out. |
+| `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. `FROM` is the seated model. Does not shell out. |
 | `external-manifest` | Portable JSON and YAML. Base model ref, purpose, host class affinity, dataset path hints from the pack `source_paths`. No vendor lock. `NEXT.md` names the files to hand off. |
 | `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` line, and the fail-closed reminders. |
 | `estate enrich drivers` | Prints the catalog. `live=false`. A probe here does not train. |
 | `estate enrich prepare --all-drivers` | One call. Each registered card writes a sibling directory. A refuse writes none of them. |
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
+| `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card. Does not apply. |
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
 | `make enrich-prepare` | Opt-in fixture walk. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
+| `make enrich-live-prove` | Opt-in seated handoff. Runs `ollama create` when the seat is up, then removes the tag. Not a factory-wide live test. Off smoke, `gate-90`, and Actions. |
 
 Job field: `enrich` (default) or `train`. The field is a label on the artifact. Both jobs only prepare.
 
@@ -31,14 +33,17 @@ Ollama already creates a model from a Modelfile. This factory writes that file a
 A full LoRA / SFT / DPO loop, a dataset downloader, and a GPU scheduler stay out of this beachhead.
 
 ```bash
-estate enrich prepare \
-  --estate examples/estate.yaml \
-  --pack examples/fixtures/specialist-overnight.pack.json \
-  --all-drivers \
+estate enrich from-pack \
+  --estate <your-estate.yaml> \
+  --pack overnight-traces \
   --state-dir .cell
 
 estate enrich list --state-dir .cell
 ```
+
+`from-pack` reads a pack id from `packs/` or `packs/accepted/`, or a pack JSON path. It writes `.cell/enrich/{pack_id}/{driver}/`. `--driver ollama-modelfile` writes one card. `--driver` together with `--all-drivers` is `refuse:driver`.
+
+`examples/estate.yaml` is hash-locked and does not set `params.model` on `local_slm`. The specialist fixture's `model_hint` is the binding id. Prepare on that pair is `refuse:base-model` and writes nothing. Copy the estate, set `params.model` to a model the seat already has, and prepare that copy. `make enrich-prepare` does this under `/tmp/cell-one-enrich-prepare` (or `$TMPDIR`) and leaves the example file alone.
 
 `list` prints one row per prepared driver. A missing `.cell/enrich` is `refuse:enrich-index`. The command does not create that directory.
 
@@ -48,7 +53,12 @@ estate enrich list --state-dir .cell
 ollama create cell-enrich-overnight-traces -f .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
 ```
 
-The local tag is `cell-enrich-{pack_id}`. `FROM` is the portable base ref (`model_hint`, or `local_slm` when the pack leaves the hint empty). The factory does not pull weights.
+The local tag is `cell-enrich-{pack_id}`. `FROM` is the seated model the runtime already has. Resolution order:
+
+1. Pack `model_hint`, when that hint is already a model tag (`llama3`). A hint must be a slug, so `llama3:latest` belongs on the binding, not the pack.
+2. Otherwise `params.model` on the local binding the hint names, or on `local_slm` when the hint is empty or a driver id such as `ollama`.
+
+The binding id `local_slm` is not a model tag. `params.model: local_slm` is `refuse:base-model`. A missing `params.model` with no model-tag hint is the same refuse, before any output directory. A hardware SKU in the resolved name is `refuse:sku-banned`. The factory does not pull weights.
 
 After that model exists, record the join. The tag must match. `--path` must be a file.
 
@@ -91,10 +101,13 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 
 ```bash
 estate enrich prepare \
+  --estate <your-estate.yaml> \
   --pack examples/fixtures/specialist-overnight.pack.json \
   --driver external-manifest \
   --out target/enrich-manifest
 ```
+
+`<your-estate.yaml>` needs `params.model` on `local_slm`, or a pack `model_hint` that is already a model tag. The hash-locked example has neither, so that pair is `refuse:base-model`.
 
 `manifest.json` and `manifest.yaml` are the market-shift hatch. A later trainer reads `base_model`, `purpose`, `host_class_affinity`, and `dataset_paths`. Cell One does not call that trainer. When weights come back, load them on the seated runtime as `cell-enrich-{pack_id}` and point `import-prepared --path` at that file.
 
@@ -105,6 +118,8 @@ estate enrich prepare \
 3. Leave floor-supervisor and `estate-control` dispatch alone. They pass the driver id through.
 
 `estate enrich drivers` prints the new card. No estate file change is required to register it.
+
+llama.cpp on a host already reads an INI preset (`llama-server --models-preset`). That preset needs a GGUF path or a Hugging Face repo. This estate does not carry either, so no third card ships here. `external-manifest` stays the portable hatch until a pack or binding names that file.
 
 ## Refuse
 
@@ -125,6 +140,7 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |
 | Operator path is missing or not a file | `refuse:path` |
 | Estate has no `local_slm` seat | `refuse:binding` |
+| `FROM` would be a binding id, a driver id, or empty | `refuse:base-model` |
 | `binding-proposal.json` is missing | `refuse:missing-proposal` |
 | Proposal schema, flags, or curator are wrong | `refuse:proposal` or `refuse:curator` |
 | `prepare.json` does not match the proposal | `refuse:prepare` |
@@ -140,8 +156,18 @@ Those prepare stops happen before the output directory is created. `--all-driver
 make enrich-prepare
 ```
 
-Uses `examples/fixtures/specialist-overnight.pack.json`. Writes both drivers under `target/enrich-prepare-cell`, then `estate enrich prepare --all-drivers`, `estate enrich list`, and `estate enrich import-prepared` on a throwaway state directory. It copies the example estate to that directory and runs `estate enrich apply-proposal`, `estate plan`, and `estate apply --require-plan` on the staged file. A missing proposal and an unset `--verify-local-tag` refuse before `enrich-stage/` exists. Apply without `--require-plan` leaves the lab copy unchanged. `--require-plan` writes `cell-enrich-overnight-traces` into that copy. `examples/estate.yaml` on `main` stays unchanged. Does not need an Ollama binary. The script prints `SKIP live train` because this walk is not a train.
+Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-enrich-prepare` (or `$TMPDIR`) and sets `params.model: llama3` on that copy. The output path must not contain a hardware SKU. The hash-locked example has no `params.model`, so prepare against it is `refuse:base-model` and writes nothing. The copy then runs both drivers, `estate enrich list`, and `estate enrich import-prepared`. Asserts `FROM llama3`, an external manifest, `NEXT.md`, the index, and a binding proposal. A wrong tag refuses before `binding-proposal.json` exists. It then runs `estate enrich apply-proposal`, `estate plan`, and `estate apply --require-plan` on that seated copy. A missing proposal and an unset `--verify-local-tag` refuse before `enrich-stage/` exists. Apply without `--require-plan` leaves the lab copy unchanged. `--require-plan` writes `cell-enrich-overnight-traces` into that copy. Leaves `examples/estate.yaml` unchanged. Does not need an Ollama binary. The script prints `SKIP live train` because this walk is not a train.
 
 `make real-world` points here and does not run a train. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md).
+
+## Opt-in live handoff
+
+```bash
+make enrich-live-prove
+```
+
+When `ollama list` works, the script copies the example estate into `/tmp/cell-one-enrich-live-prove` (or `$TMPDIR`), sets `params.model` from `CELL_LOCAL_MODEL` or from a model already on the seat (`llama3` when that tag is present), and runs `estate enrich from-pack --all-drivers`. It then runs `ollama create cell-enrich-<pack> -f Modelfile`, `ollama show`, `estate enrich import-prepared`, and removes the tag it created. `examples/estate.yaml` stays untouched. If `ollama` is missing or the seat is down, the script prints `SKIP` and exits 0. That skip is not a pass.
+
+This is an opt-in seated-runtime enrich handoff. It is not a factory-wide live test. It is not in `make smoke`, `make gate-90`, or GitHub Actions. Paste target: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
 `READY_FOR_LIVE_TEST`: no.

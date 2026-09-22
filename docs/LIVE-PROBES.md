@@ -129,6 +129,22 @@ export CELL_LOCAL_MODEL=llama3
 make live-specialist
 ```
 
+## Opt-in enrich handoff (seated runtime)
+
+`make enrich-live-prove` is a separate opt-in. It is not `estate probes --live` and it is not `estate specialist`. It prepares a throwaway cell, runs `ollama create cell-enrich-<pack> -f Modelfile` when Ollama is up, runs `estate enrich import-prepared`, checks the tag with `ollama show`, and deletes that tag. `examples/estate.yaml` stays untouched.
+
+`FROM` in that Modelfile is the seated model (`CELL_LOCAL_MODEL`, or `llama3` when `ollama list` has it, otherwise the first listed tag with `:latest` stripped). It is never the binding id `local_slm`. The example estate leaves `params.model` unset, so the script sets that field on a copy under `/tmp/cell-one-enrich-live-prove`. The output path must not contain a hardware SKU.
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+export CELL_LOCAL_MODEL=llama3
+make enrich-live-prove
+```
+
+Seat down, or `ollama` missing: the script prints `SKIP` and exits 0. That line is not a pass. A hardware SKU in the model name refuses.
+
+`READY_FOR_LIVE_TEST` stays no. This command is an opt-in seated-runtime enrich handoff only. It is not a factory-wide live test. It is not in `make smoke`, `make gate-90`, or GitHub Actions. Command page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
+
 ## What a live probe actually pings
 
 Not the Ollama chat UI. Not native MLX. Not `POST /v0/specialist`.

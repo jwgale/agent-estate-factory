@@ -2,13 +2,13 @@
 
 One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
 
-Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Ollama is the local-run seat. Integrate the driver that already does the job. `estate enrich prepare` writes artifacts (one driver, or `--all-drivers`). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal. `estate enrich apply-proposal` stages that binding for `estate plan` and `estate apply --require-plan`. The source estate is written when that apply succeeds. Packs stay curator edit instructions. Control does not complete. Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md).
+Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilitation of train/enrich for purpose-built small models. Ollama is the local-run seat. Integrate the driver that already does the job. `estate enrich prepare` writes artifacts (one driver, or `--all-drivers`). `estate enrich from-pack` does that for an accepted pack. Modelfile `FROM` is the seated model (`params.model` or a model-tag hint), never the binding id `local_slm`. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal. `estate enrich apply-proposal` stages that binding for `estate plan` and `estate apply --require-plan`. The source estate is written when that apply succeeds. Packs stay curator edit instructions. Control does not complete. Prepare: [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md). Walks: [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md).
 
 **Start here:** [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) · [`docs/UBIQUITOUS_LANGUAGE.md`](docs/UBIQUITOUS_LANGUAGE.md) · `make gate-90` (local Day-90 entrypoint) · [`docs/OPERATOR-DAY.md`](docs/OPERATOR-DAY.md) (gate-90 → day90 → feed-loop → `make real-world`) · [`docs/TRAIN-ENRICH.md`](docs/TRAIN-ENRICH.md) · [`docs/operator-enrich-journeys.md`](docs/operator-enrich-journeys.md) · [`docs/FEED-LOOP.md`](docs/FEED-LOOP.md) · [`docs/GATE-90.md`](docs/GATE-90.md) · [`docs/DAY90-PLUS.md`](docs/DAY90-PLUS.md) · [`docs/LIVE-PROBES.md`](docs/LIVE-PROBES.md) · [`CHANGELOG.md`](CHANGELOG.md). Snapshot: [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md).
 
 Day 0–90 is on `main` (A1–A4, A5–A9, A10–A12 beachhead) on the same Horizon / Research / Sanctum estate. Day 90+ is real-world proof on Jason's boxes, plus parked stubs. Pause-safe. Charter (locked defaults): [`charter.md`](charter.md).
 
-Opt-in, off the gate: `make real-world`, `estate help frontier`, `make day90-mixed`, `estate help enrich`, and `make enrich-prepare`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked. Enrich prepare writes artifacts and does not train.
+Opt-in, off the gate: `make real-world`, `estate help frontier`, `make day90-mixed`, `estate help enrich`, `make enrich-prepare`, and `make enrich-live-prove`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked and does not set `params.model` on `local_slm`. Enrich prepare writes artifacts and does not train. The live prove runs `ollama create` only when you ask, then removes the tag. It is not a factory-wide live test.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
 
@@ -22,6 +22,7 @@ make gate-90      # local Day-90 entrypoint: smoke + day90 + doctor --strict + c
 make feed-loop    # fixtures only: scrubbed trace → pack → propose → accept
 make real-world   # opt-in live-box ladder: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT
 make enrich-prepare # opt-in: Modelfile + external manifest; not a live train; not in smoke or gate-90
+make enrich-live-prove # opt-in: ollama create on a throwaway cell when the seat is up; not in smoke or gate-90
 make operator-day # fixtures only: suspend → plan → apply → feed import → resume
 estate help       # Day-90 topics, including north-star, charter, and enrich
 ```
