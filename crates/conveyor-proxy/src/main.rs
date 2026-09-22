@@ -175,6 +175,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Leases { state_dir } => {
+            // list_hop_leases refuses a spawned cloud hop before the JSON.
             let leases = list_hop_leases(&state_dir)?;
             if leases.is_empty() {
                 println!("no hop leases under {}", state_dir.display());

@@ -67,6 +67,11 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## This slice
 
+- `estate convey leases` refuses before it prints hop lease JSON when a cloud-mesh hop lease is spawned. An unspawned file still prints. A missing mesh still says there are no hop leases. The mesh is not rewritten.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
+## After PR #81
+
 - `estate convey expire` refuses before it lists or forgets an expired cloud hop lease that is spawned. `expire --forget` does not drop that row.
 - A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop.
 - No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.

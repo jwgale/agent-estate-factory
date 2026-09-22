@@ -406,6 +406,8 @@ pub(crate) fn cmd_convey_list(state_dir: &Path) -> Result<()> {
 }
 
 pub(crate) fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
+    // list_hop_leases refuses a spawned cloud hop before the JSON.
+    // An unspawned file still prints. A missing mesh is empty, not spawned.
     let leases = list_hop_leases(state_dir)?;
     if leases.is_empty() {
         println!("no hop leases under {}", state_dir.display());
