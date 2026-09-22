@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #48 (this slice)
+
+- `make day90-mixed` prints `frontier plan: model=grok-4.7 source_drivers=frontier,local` when the mixed fixture is bound. Apply, status, and doctor keep that bound model. `CELL_FRONTIER_MODEL` does not become the binding.
+- The same opt-in walk checks a throwaway local-only estate. Plan and dry-run are `refuse:frontier-invent`. Live apply writes no catalog and does not print `grok-4.7`. Status prints no frontier binding. Doctor does not print a cell catalog model.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #47 (this slice)
 
 - `estate models` prints `model=-` when the binding sets no model. `CELL_FRONTIER_MODEL=grok-4.7` does not become the binding.

@@ -211,5 +211,7 @@ status → plan → apply --require-plan → status → doctor.
 Then validates examples/hosts/frontier-http.yaml and prints status.
 That host binding names model grok-4.7 on http-remote. No apply. No live key.
 The script unsets XAI_API_KEY and CELL_*_ENDPOINT.
+It sets CELL_FRONTIER_MODEL and still prints grok-4.7 only from the binding.
+A local-only estate in that walk is refuse:frontier-invent.
 examples/estate.yaml stays hash-locked. Not part of fixtures-check.
 ";
