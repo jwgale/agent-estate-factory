@@ -2,7 +2,7 @@
 
 A10–A12 plus overnight waves are **on `main`** (PR #1–#54 plus this slice). Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). Real cargo test stays local. `make gate-90` is local on purpose - it wraps `cargo test --workspace`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md). Snapshot: [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md).
 
-`make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (Mac specialist complete, native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
+`make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
 
 ```bash
 make gate-90    # Day-90 operator entrypoint (local)
@@ -32,7 +32,7 @@ estate doctor --strict
 | Omit-locked sacred file still refuses Cyera CI | green | `--sacred sacred-omit-locked.yaml` |
 | Sanctum-as-Cyera display-name bleed | green | `refuse-sanctum-as-cyera.yaml` |
 | Thin `make gate-90` | green | smoke + day90 + checklist print |
-| README Day-90 operator entrypoint | green | leads with `make gate-90` |
+| README Day-90 operator entrypoint | green | north-star first; start-here still names `make gate-90` |
 | `make feed-loop` | green | scrubbed trace → pack `source_drivers` frontier+local → propose → accept; no live keys |
 | Feed cursor durability | green | schema + packed_id + rematerialize keeps cursor |
 | Placement-actual refuse round-trip | green | every reconcile refuse code, schema preserved |
@@ -78,9 +78,9 @@ estate doctor --strict
 | Live probe runbook + dry shapes | green | [`LIVE-PROBES.md`](LIVE-PROBES.md); SKIP vs would-live fixture, no network |
 | OpenAI / Ollama live adapter | green | GET `/v1/models` or `/api/tags`; in-process mock; SKIP without env |
 | Specialist chat round-trip | green | `HttpLocal` posts request text; `model-estate specialist`; llama.cpp OpenAI smoke; mock HTTP |
-| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion` in tests (mock-locked). 5090 `Pong` is already recorded. Mac complete is not recorded. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). |
+| Live specialist completion | green | `estate specialist --driver ollama --prompt` returns model `completion` in tests (mock-locked). 5090 `Pong` is already recorded. Mac complete is recorded (`Pong` on the MacBook Air, tip `2ab78a4`). Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). |
 | OpenAI empty content fallthrough | green | empty/missing OpenAI content tries `/api/chat`; both-fail names status + model + pull |
-| Recorded live proof notes | green | Mac probes + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
+| Recorded live proof notes | green | Mac probes + Mac specialist `Pong` + 5090 probes + 5090 `Pong` in LIVE-PROBES; not native MLX |
 | `make live-specialist` | green | requires `CELL_LOCAL_ENDPOINT`; refuse if unset; not in smoke / Actions |
 | Mixed estate mock dry-run | green | apply `--dry-run` write-free; `HttpLocal` posts `/v0/specialist` |
 | Frontier specialist (grok-4.7) | green | Live PASS recorded. Mock-locked. Sacred Cyera and Rust classroom refuse before POST, same as local, with no invented completion. A SKU `CELL_FRONTIER_MODEL` in that same request still refuses as sacred. No key in CI. `READY_FOR_LIVE_TEST` no |
@@ -106,7 +106,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | --- | --- |
 | Frontier `grok-4.7` live PASS | Recorded. `READY_FOR_LIVE_TEST` no. Not required for `make gate-90`. |
 | 5090-class probes + specialist `Pong` | Recorded in [`LIVE-PROBES.md`](LIVE-PROBES.md). Not native MLX. Not required for the gate. |
-| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). Do not mark it green. |
+| Mac specialist | Recorded. MacBook Air `"completion": "Pong"`, reason `compat completion`. Tip `2ab78a4`. `READY_FOR_LIVE_TEST` no. Not native MLX. |
 | Native MLX | Parked. `specialist()` stays stub. No Mac in CI. |
 | Cloud-agent spawn | Parked. Declared only. Floor does not spawn. |
 | `estate reconcile --suggest` | Patch file only. Jason still applies by hand. Not an auto-heal. |
@@ -115,6 +115,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | Auto-promote / curator UI | Locked off / not built. |
 | vLLM / TRT | Experimental catalog cards until Jason verifies. |
 | Actions | One compile-only job forever unless Jason expands it. |
+| `make real-world` | Opt-in ladder after the gate. SKIP without `CELL_LOCAL_ENDPOINT`. Not in smoke or Actions. Not a PASS. |
 
 Fail closed: sacred exclusions, SKU in ids (including probe ids), unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote, Sanctum-as-Cyera bleed, omit-locked sacred file.
 

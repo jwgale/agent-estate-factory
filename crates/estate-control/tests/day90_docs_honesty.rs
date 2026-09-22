@@ -16,8 +16,12 @@ fn gate_and_parking_lot_do_not_call_stubs_ready() {
         "gate must not call the Ollama complete path ready"
     );
     assert!(
-        gate.contains("Mac complete is not recorded"),
-        "gate must keep Mac complete unrecorded"
+        gate.contains("Mac complete is recorded"),
+        "gate must record the Mac specialist completion"
+    );
+    assert!(
+        !gate.contains("Mac complete is not recorded"),
+        "gate must not leave the Mac completion unrecorded"
     );
     assert!(
         gate.contains("not live-ok"),

@@ -134,6 +134,70 @@ fn makefile_contract_gate90_stays_local() {
 }
 
 #[test]
+fn real_world_kit_skips_live_steps_and_stays_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile_has_target(&makefile, "real-world"),
+        "Makefile missing real-world"
+    );
+    assert!(
+        makefile.contains("bash scripts/real-world.sh"),
+        "real-world must wrap scripts/real-world.sh"
+    );
+    assert!(
+        makefile.contains("Do not add to smoke or GitHub Actions"),
+        "real-world must stay off smoke / Actions"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/real-world.sh")).unwrap();
+    let north = "One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.";
+    assert!(script.contains(north), "script must print the north-star line");
+    assert!(script.contains("cargo check --workspace --locked"));
+    assert!(script.contains("examples/estate.yaml"));
+    assert!(script.contains("doctor"));
+    assert!(script.contains("probes --live"));
+    assert!(script.contains("--driver ollama"));
+    assert!(script.contains("SKIP live probes"));
+    assert!(script.contains("SKIP live specialist"));
+    assert!(script.contains("not a PASS"));
+    assert!(!script.contains("${XAI_API_KEY"));
+    assert!(!script.contains("$XAI_API_KEY"));
+    assert!(!script.contains("XAI_API_KEY="));
+    let pass_lines: Vec<_> = script.lines().filter(|line| line.contains("PASS")).collect();
+    assert!(
+        pass_lines.iter().all(|line| line.contains("not a PASS")),
+        "script must not invent PASS: {pass_lines:?}"
+    );
+
+    let smoke = std::fs::read_to_string(root.join("scripts/smoke.sh")).unwrap();
+    let gate = std::fs::read_to_string(root.join("scripts/day90-gate.sh")).unwrap();
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
+    for (name, text) in [("smoke", smoke.as_str()), ("gate-90", gate.as_str()), ("ci.yml", ci.as_str())]
+    {
+        assert!(
+            !text.contains("real-world"),
+            "{name} must not invoke real-world"
+        );
+    }
+
+    let page = std::fs::read_to_string(root.join("docs/NORTH-STAR.md")).unwrap();
+    assert!(page.contains(north));
+    assert!(page.contains("make real-world"));
+    assert!(page.contains("curator edit instructions"));
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains(north));
+    assert!(readme.lines().nth(2) == Some(north));
+
+    let syntax = std::process::Command::new("bash")
+        .args(["-n", "scripts/real-world.sh"])
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert!(syntax.success(), "real-world.sh must parse");
+}
+
+#[test]
 fn two_dry_runs_leave_identical_tree() {
     let root = tmp("dry");
     let state = root.join("state");

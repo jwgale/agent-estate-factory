@@ -1,10 +1,12 @@
-# Operator day (no live boxes)
+# Operator day
 
-A walk Jason can run on this box after Day 90. Fixtures only. It does not
-prove a Mac, a GPU, or a cloud spawn. Those rows stay parked in
-[`DAY90-PLUS.md`](DAY90-PLUS.md). Live probe hand-off (not green):
-[`LIVE-PROBES.md`](LIVE-PROBES.md). README start-here: [`../README.md`](../README.md).
-Feed-only walk (this is step 2): [`FEED-LOOP.md`](FEED-LOOP.md).
+A walk Jason can run on this box after Day 90. The numbered steps are fixtures.
+They do not prove a Mac, a GPU, or a cloud spawn. Those rows stay parked in
+[`DAY90-PLUS.md`](DAY90-PLUS.md). The live-box ladder after `make gate-90`
+is `make real-world` (below). Live paste target:
+[`LIVE-PROBES.md`](LIVE-PROBES.md). Product story:
+[`NORTH-STAR.md`](NORTH-STAR.md). README start-here: [`../README.md`](../README.md).
+Feed-only walk: [`FEED-LOOP.md`](FEED-LOOP.md).
 `.cell/` paths: [`cell-layout.md`](cell-layout.md).
 
 Hosted CI does **not** run this walk. See “Why `make gate-90` stays local”
@@ -25,6 +27,26 @@ spawn `cursor-cloud`. Does not auto-promote packs.
 
 Expect `GATE-90 GREEN (local only)`. Live probes print SKIP when `CELL_*`
 is unset.
+
+## Live-box ladder (after gate-90): `make real-world`
+
+Opt-in. Not part of `make smoke`, `make gate-90`, or GitHub Actions.
+
+```bash
+make real-world
+```
+
+Prints the north-star one-liner, runs `cargo check --workspace --locked`
+(same as `make check`), then vanilla `estate doctor` on this checkout
+(`examples/estate.yaml` lives here). If `CELL_LOCAL_ENDPOINT` is unset,
+live probes and the Ollama specialist print SKIP and the script exits 0.
+That SKIP is not a PASS. If the endpoint is set, it runs
+`estate probes --live` and
+`estate specialist --driver ollama --prompt "Reply with the single word pong."`
+with the env already in the shell (same names as
+[`LIVE-PROBES.md`](LIVE-PROBES.md)). It does not print the frontier API
+key. It does not invent a completion. The MacBook Air `Pong` is already
+recorded on the live-probes page.
 
 ## 2. `make feed-loop`
 

@@ -1,6 +1,6 @@
 # Cell One — Agent Estate Factory charter
 
-Status: Day 0–30 **A1–A4 locked**. Day 31–60 **A5–A9 locked**. Day 61–90 **beachhead toward A10–A12** (this file). Edits to this file are how defaults change. Factory altitude, not a product spine.
+Status: Day 0–90 **on main** (A1–A4 locked, A5–A9 locked, Day 61–90 beachhead toward A10–A12). Day 90+ is **real-world proof** plus parked stubs — not more beachhead invent. Edits to this file are how defaults change. Factory altitude, not a product spine. Locked defaults below are unchanged.
 
 Schema (desired-state shape): [`schema/estate.v0.schema.json`](schema/estate.v0.schema.json)  
 Example estate: [`examples/estate.yaml`](examples/estate.yaml)  

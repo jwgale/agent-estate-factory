@@ -67,6 +67,14 @@ No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply -
 
 ## This slice
 
+- Vision reset. README leads with the one-box north-star. [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md) is the one-page product story. Experimental catalog cards (MLX / vLLM / TRT), cloud-agent spawn, and the lease-bound hop stub sit under "Parked / not the product". Packs stay curator edit instructions. Control does not complete.
+- Charter status line: Day 0–90 is on `main`. Day 90+ is real-world proof plus parked stubs. Locked defaults are unchanged.
+- Opt-in `make real-world` (`scripts/real-world.sh`): north-star line, `cargo check --workspace --locked`, vanilla `estate doctor` on the checkout that holds `examples/estate.yaml`, then live probes and the Ollama specialist only when `CELL_LOCAL_ENDPOINT` is set. Unset prints SKIP and exits 0. Not in smoke, gate-90, or Actions. Does not print the frontier API key. Does not invent PASS.
+- Mac specialist complete is recorded on the MacBook Air against tip `2ab78a4`: `"completion": "Pong"`, reason `compat completion`. `READY_FOR_LIVE_TEST` for that command is no. Frontier `pong` and the 5090 `Pong` stay as already recorded. Native MLX stays a stub.
+- `READY_FOR_LIVE_TEST`: no.
+
+## After PR #82
+
 - `estate convey leases` refuses before it prints hop lease JSON when a cloud-mesh hop lease is spawned. An unspawned file still prints. A missing mesh still says there are no hop leases. The mesh is not rewritten.
 - No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
 
