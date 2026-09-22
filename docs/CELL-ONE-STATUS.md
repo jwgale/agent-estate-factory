@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#69 plus this slice)
+## On `main` (PR #1-#70 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -242,13 +242,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `floor status` (the `floor-supervisor` binary) does not invent `suspended` when `lifecycle.json` is missing. It prints `lifecycle: -`. A present file that does not parse is a refuse before that line. A file that parses prints `lifecycle:` and `durable=` from the file. `estate status` already prints `paused: -` for a missing file. The loader default stays for apply and resume.
 
-## This slice
+## #70 in plain English
 
 Apply, resume, and suspend do not journal `from: suspended` when `lifecycle.json` was missing. That `from` stays empty. A present file still supplies `from`. A file that does not parse is a refuse before the write. The loader default stays for a missing file that is not journaled as a prior state.
 
+## This slice
+
+`estate backup` and `estate restore` refuse before they write when `placement-actual.json` does not parse, or a cloud-agent lease in that file is spawned. A missing file is not a spawned lease. The archive meta does not record `cloud_agent_spawned: false` over that file.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#70 (plain English)
+## Bug fixes on #10-#71 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -312,6 +316,7 @@ Apply, resume, and suspend do not journal `from: suspended` when `lifecycle.json
 | #68 | Status printed `paused: yes` and `lifecycle: suspended (durable=true)` when `lifecycle.json` was missing. That is the default record, not a file. | A missing file prints `paused: -` and `lifecycle: -`. A present file that does not parse is a refuse before the status page. A parsed file prints its state. READY no. |
 | #69 | `floor status` printed `lifecycle: suspended durable=true` when `lifecycle.json` was missing. That is the default record, not a file. | A missing file prints `lifecycle: -`. A present file that does not parse is a refuse before that line. A parsed file prints its state. READY no. |
 | #70 | Apply, resume, and suspend journaled `from: suspended` when `lifecycle.json` was missing. That is the default record, not a prior state. | A missing file journals `from` empty. A present file supplies `from`. A file that does not parse is a refuse before the write. READY no. |
+| #71 | Backup wrote `cloud_agent_spawned: false` without reading `placement-actual.json`. An unreadable file or a spawned cloud-agent lease was still archived. | That file is a refuse before the archive or the restore write. A missing file is not a spawned lease. READY no. |
 
 ## Known-good local commands
 
