@@ -175,6 +175,10 @@ const BACKUP: &str = "\
 estate backup — local cell archive
 ==================================
 Timestamped backups/cell-backup-*. Restore refuses sacred mismatch.
+A cell catalog that disagrees with the binding refuses (refuse:frontier-model)
+before the archive or the restore write. A frontier source_driver with no
+frontier binding is refuse:frontier-invent. A desired snapshot whose sacred
+set disagrees is refuse:sacred-mismatch. The schema card is not the binding.
 
   estate backup --state-dir .cell --out backups
   estate backup --prune 5 --state-dir .cell --out backups
