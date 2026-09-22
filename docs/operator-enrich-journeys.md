@@ -6,7 +6,7 @@ Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md
 
 Fixture accept loop: [`FEED-LOOP.md`](FEED-LOOP.md). Seated drivers: [`operator-local.md`](operator-local.md).
 
-Commands on this page: `estate enrich prepare`, `estate enrich list`, and `estate enrich import-prepared`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page.
+Commands on this page: `estate enrich prepare`, `estate enrich list`, `estate enrich import-prepared`, and `estate enrich apply-proposal`. No new crate. No trainer. `READY_FOR_LIVE_TEST` stays no. Recorded specialist rows stay on the live-probes page.
 
 ## What stays fixed
 
@@ -55,7 +55,7 @@ ollama create cell-one-specialist -f Modelfile
 
 ### Factory loop
 
-The same join, with the factory writing the files and the proposal. Prepare does not run `ollama create`. List reads `.cell/enrich` and refuses when that directory is missing. Import writes a proposal for the existing `local_slm` seat. You still paste, then plan and apply.
+The same join, with the factory writing the files, the proposal, and the plan input. Prepare does not run `ollama create`. List reads `.cell/enrich` and refuses when that directory is missing. Import writes a proposal for the existing `local_slm` seat. `apply-proposal` stages that binding. You still run plan and apply.
 
 ```bash
 estate enrich prepare \
@@ -73,9 +73,18 @@ estate enrich import-prepared \
   --prepared .cell/enrich/<pack-id>/ollama-modelfile \
   --tag cell-enrich-<pack-id> \
   --path .cell/enrich/<pack-id>/ollama-modelfile/Modelfile
+
+estate enrich apply-proposal \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/ollama-modelfile \
+  --tag cell-enrich-<pack-id> \
+  --state-dir .cell
+
+estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
+estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
 ```
 
-`NEXT.md` in the prepared directory has those paths filled in. The tag is `cell-enrich-{pack_id}`. A different tag is `refuse:tag`. A hardware SKU or a sacred token in the tag or the file is a refuse before `binding-proposal.json` exists. The proposal's `auto_apply` is false. `examples/estate.yaml` on `main` stays hash-locked. Paste the snippet into the lab estate, then `estate plan` and `estate apply --require-plan`.
+`NEXT.md` in the prepared directory has those paths filled in. The tag is `cell-enrich-{pack_id}`. A different tag is `refuse:tag`. A hardware SKU or a sacred token in the tag or the file is a refuse before `binding-proposal.json` exists. The proposal's `auto_apply` is false. `apply-proposal` does not apply. It writes `.cell/enrich-stage/staged-estate.yaml`. The source estate changes when `estate apply --require-plan` succeeds. Apply without `--require-plan` leaves that file unchanged. `examples/estate.yaml` on `main` stays hash-locked. Point `--estate` at a lab copy. `--verify-local-tag` checks the seated runtime for the tag and is off unless you set it.
 
 4. Point the seat at that process and complete once. Same verb as the recorded live rows.
 
@@ -122,7 +131,7 @@ Plan the driver edit before apply. The id string `local_slm` does not change, so
 
 ## 3. Hand an external manifest to a trainer
 
-GPU training stays off this factory. `estate enrich prepare --driver external-manifest` writes a portable JSON/YAML hatch. `--all-drivers` writes that hatch next to the Modelfile. See [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `NEXT.md` names `manifest.json` and `manifest.yaml`. Jason hands those files to a trainer outside the factory. The factory does not parse an operator note, apply it, or store it as estate source of truth. When weights return, load them on the seated runtime as `cell-enrich-{pack_id}` and run `estate enrich import-prepared` with `--path` pointing at that file. The proposal still waits for plan and apply.
+GPU training stays off this factory. `estate enrich prepare --driver external-manifest` writes a portable JSON/YAML hatch. `--all-drivers` writes that hatch next to the Modelfile. See [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). `NEXT.md` names `manifest.json` and `manifest.yaml`. Jason hands those files to a trainer outside the factory. The factory does not parse an operator note, apply it, or store it as estate source of truth. When weights return, load them on the seated runtime as `cell-enrich-{pack_id}` and run `estate enrich import-prepared` with `--path` pointing at that file. `estate enrich apply-proposal` stages that proposal. Plan and `estate apply --require-plan` write the source estate.
 
 Write it outside the estate file and outside `.cell/`. Name the file `external-manifest.md`. Copy the accept file for the pack id, curator, policy, `source_drivers`, and estate hash. `host_class` and `job` come from the estate binding you apply. `serve_with` and `serve_as` are notes for the trainer: which entrant will load the weights, and the slug from journey 1.
 
@@ -142,7 +151,7 @@ serve_as: cell-one-specialist
 
 `host_class` is `consumer-nvidia`, `apple-silicon`, `rented-nvidia`, or `any`. `source_drivers` is `frontier` and/or `local`, copied from the accept file, and it has to match the pack's `path_counts`. `serve_with` names the entrant that will load the weights when they return: `ollama` today, `llama.cpp` after journey 2, or a later driver that has a catalog card. `serve_as` is the slug from journey 1. A SKU in `serve_as` or `pack_id` is refused when that name later hits a binding, a probe, or `CELL_LOCAL_MODEL`.
 
-The trainer trains on their own hardware. Weights come back to the operator. Journey 1 loads them with `ollama create`, or journey 2 points `CELL_LOCAL_ENDPOINT` at the other runtime. The pack id enters the estate only when Jason pastes it. Returned weights do not promote themselves.
+The trainer trains on their own hardware. Weights come back to the operator. Journey 1 loads them with `ollama create`, or journey 2 points `CELL_LOCAL_ENDPOINT` at the other runtime. The pack id still enters through the curator paste. The prepared tag enters when `apply-proposal` stages `local_slm` and `estate apply --require-plan` writes that file. Returned weights do not promote themselves.
 
 No dataset pipeline and no trainer crate ship with this page.
 

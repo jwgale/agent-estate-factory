@@ -115,9 +115,108 @@ pub(crate) fn cmd_enrich_import_prepared(
         "auto_apply={} promoted={} estate_rewritten={}",
         proposal.auto_apply, proposal.promoted, proposal.estate_rewritten
     );
-    println!("paste the local_slm snippet, then estate plan and estate apply --require-plan.");
+    println!(
+        "next: estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir <state-dir>",
+        estate_path.display(),
+        prepared_dir.display(),
+        tag
+    );
     println!("import-prepared did not apply.");
     Ok(())
+}
+
+pub(crate) fn cmd_enrich_apply_proposal(
+    estate_path: &Path,
+    prepared_dir: &Path,
+    tag: &str,
+    state_dir: &Path,
+    plans_dir: &Path,
+    curator: &str,
+    verify_local_tag: bool,
+) -> Result<()> {
+    let before = std::fs::read(estate_path)
+        .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
+    let estate = load_estate_unvalidated(estate_path)
+        .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
+    let verify_endpoint = if verify_local_tag {
+        Some(seated_endpoint(&estate)?)
+    } else {
+        None
+    };
+    let outcome = model_estate::apply_proposal(&model_estate::ApplyProposalRequest {
+        estate: &estate,
+        estate_path,
+        prepared_dir,
+        tag,
+        curator,
+        state_dir,
+        verify_endpoint: verify_endpoint.as_deref(),
+    })?;
+    let after = std::fs::read(estate_path)
+        .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
+    if before != after {
+        bail!("enrich apply-proposal must not rewrite the source estate");
+    }
+    match outcome {
+        model_estate::ApplyProposalOutcome::Noop { reason } => {
+            println!("{reason}");
+            println!("apply-proposal did not apply.");
+        }
+        model_estate::ApplyProposalOutcome::Staged(stage) => {
+            println!(
+                "enrich apply-proposal: pack={} binding={} tag={} seated_driver={}",
+                stage.pack_id, stage.binding_id, stage.local_tag, stage.seated_driver
+            );
+            println!("  source: {} (not rewritten)", estate_path.display());
+            println!("  staged: {}", stage.staged_estate);
+            println!(
+                "  stage: {}",
+                state_dir.join("enrich-stage").join("stage.json").display()
+            );
+            println!(
+                "auto_apply={} promoted={} estate_rewritten={} applied={}",
+                stage.auto_apply, stage.promoted, stage.estate_rewritten, stage.applied
+            );
+            println!(
+                "next: estate plan --estate {} --state-dir {} --plans-dir {}",
+                stage.staged_estate,
+                state_dir.display(),
+                plans_dir.display()
+            );
+            println!(
+                "next: estate apply --estate {} --state-dir {} --plans-dir {} --roots-base . --require-plan",
+                stage.staged_estate,
+                state_dir.display(),
+                plans_dir.display()
+            );
+            println!("apply-proposal did not apply.");
+        }
+    }
+    Ok(())
+}
+
+fn seated_endpoint(estate: &estate_schema::Estate) -> Result<String> {
+    let seat = estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == "local_slm")
+        .ok_or_else(|| anyhow::anyhow!("refuse:binding: estate has no local_slm seat"))?;
+    let env_name = seat
+        .params
+        .get("endpoint_env")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("CELL_LOCAL_ENDPOINT");
+    if estate_schema::contains_sku(env_name) || estate_schema::is_sacred_name(env_name) {
+        bail!("refuse:local-tag: endpoint env '{env_name}' is not a seated endpoint name");
+    }
+    match std::env::var(env_name) {
+        Ok(value) if !value.trim().is_empty() => Ok(value.trim().to_string()),
+        _ => bail!(
+            "refuse:local-tag: {env_name} is unset; --verify-local-tag needs the seated endpoint"
+        ),
+    }
 }
 
 fn prepare_targets(

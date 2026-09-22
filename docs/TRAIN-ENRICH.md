@@ -16,6 +16,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `estate enrich prepare --all-drivers` | One call. Each registered card writes a sibling directory. A refuse writes none of them. |
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
+| `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
 | `make enrich-prepare` | Opt-in fixture walk. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
 
@@ -59,14 +60,32 @@ estate enrich import-prepared \
   --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
 ```
 
-That writes `binding-proposal.json` and `binding-proposal.md` in the prepared directory. The snippet replaces the existing `local_slm` binding and keeps the id. `params.model` is the tag. Other params on that binding are copied. Paste it into the estate file you apply (leave the hash-locked example on `main` alone), then:
+That writes `binding-proposal.json` and `binding-proposal.md` in the prepared directory. The snippet names the existing `local_slm` seat and keeps the id. `params.model` is the tag. Other params on that binding are copied. `import-prepared` does not apply.
+
+Stage that proposal into the plan input. The source estate stays as it is.
 
 ```bash
-estate plan --estate <your-estate.yaml>
-estate apply --estate <your-estate.yaml> --require-plan
+estate enrich apply-proposal \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/overnight-traces/ollama-modelfile \
+  --tag cell-enrich-overnight-traces \
+  --state-dir .cell
 ```
 
-`import-prepared` does not run those commands. `auto_apply`, `promoted`, and `estate_rewritten` stay false. A catalog file is not written.
+That writes `.cell/enrich-stage/staged-estate.yaml` and `.cell/enrich-stage/stage.json` (`cell-one.enrich-binding-stage.v0`). `auto_apply` stays false. Running it again with the same tag and binding prints `no-op:`. A missing proposal, a prepare.json that does not match, a wrong tag, or a stale estate hash refuses before that directory exists.
+
+`--verify-local-tag` is off unless you pass it. When you do, the command reads the seat's `endpoint_env` (normally `CELL_LOCAL_ENDPOINT`) and checks that the seated runtime lists the tag, using the same OpenAI `/v1/models` or Ollama `/api/tags` read as the live probe. A down runtime or a missing tag refuses before the stage exists. The flag does not start a server.
+
+Then use the staged file with the commands you already use:
+
+```bash
+estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
+estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
+```
+
+`apply` without `--require-plan` converges the cell and leaves the source estate unchanged. `apply --require-plan` copies the staged estate onto `<your-estate.yaml>` only after that apply succeeds. Leave the hash-locked example on `main` alone; point `--estate` at a lab copy.
+
+`import-prepared` and `apply-proposal` do not run plan or apply. `auto_apply`, `promoted`, and the proposal's `estate_rewritten` stay false. A catalog file is not written by those two commands.
 
 ## Swap a driver
 
@@ -106,8 +125,14 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |
 | Operator path is missing or not a file | `refuse:path` |
 | Estate has no `local_slm` seat | `refuse:binding` |
+| `binding-proposal.json` is missing | `refuse:missing-proposal` |
+| Proposal schema, flags, or curator are wrong | `refuse:proposal` or `refuse:curator` |
+| `prepare.json` does not match the proposal | `refuse:prepare` |
+| Proposal hash does not match the estate | `refuse:estate-hash` |
+| A different pending stage is already on disk | `refuse:stage` |
+| `--verify-local-tag` and the tag is not seated, or the endpoint is unset | `refuse:local-tag` |
 
-Those prepare stops happen before the output directory is created. `--all-drivers` stages every card first, so one refuse leaves no sibling directory from that call. List does not create `.cell/enrich`. Import writes the proposal only after the gates pass.
+Those prepare stops happen before the output directory is created. `--all-drivers` stages every card first, so one refuse leaves no sibling directory from that call. List does not create `.cell/enrich`. Import writes the proposal only after the gates pass. `apply-proposal` writes `enrich-stage/` only after its gates pass. Same tag and binding again is a no-op and does not rewrite the stage.
 
 ## Opt-in walk
 
@@ -115,7 +140,7 @@ Those prepare stops happen before the output directory is created. `--all-driver
 make enrich-prepare
 ```
 
-Uses `examples/fixtures/specialist-overnight.pack.json`. Writes both drivers under `target/enrich-prepare-cell`, then `estate enrich prepare --all-drivers`, `estate enrich list`, and `estate enrich import-prepared` on a throwaway state directory. Asserts a Modelfile, an external manifest, `NEXT.md`, the index, and a binding proposal. A wrong tag refuses before `binding-proposal.json` exists. Leaves `examples/estate.yaml` unchanged. Does not need an Ollama binary. The script prints `SKIP live train` because this walk is not a train.
+Uses `examples/fixtures/specialist-overnight.pack.json`. Writes both drivers under `target/enrich-prepare-cell`, then `estate enrich prepare --all-drivers`, `estate enrich list`, and `estate enrich import-prepared` on a throwaway state directory. It copies the example estate to that directory and runs `estate enrich apply-proposal`, `estate plan`, and `estate apply --require-plan` on the staged file. A missing proposal and an unset `--verify-local-tag` refuse before `enrich-stage/` exists. Apply without `--require-plan` leaves the lab copy unchanged. `--require-plan` writes `cell-enrich-overnight-traces` into that copy. `examples/estate.yaml` on `main` stays unchanged. Does not need an Ollama binary. The script prints `SKIP live train` because this walk is not a train.
 
 `make real-world` points here and does not run a train. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md).
 

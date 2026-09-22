@@ -170,8 +170,8 @@ live-specialist:
 real-world:
 	bash scripts/real-world.sh
 
-# Opt-in enrich prepare, list, and binding proposal. No live train.
-# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+# Opt-in enrich prepare through apply-proposal, plan, and require-plan apply.
+# No live train. Local only. Do not add to smoke, gate-90, or GitHub Actions.
 enrich-prepare:
 	bash scripts/enrich-prepare.sh
 

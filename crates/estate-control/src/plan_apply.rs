@@ -314,17 +314,26 @@ pub(crate) fn cmd_apply(
             last_applied.unwrap_or_else(|| "-".into())
         );
     }
+    model_estate::refuse_staged_apply(path, state_dir, &hash, require_plan)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
     let identity = classify_apply(&estate, state_dir, roots_base)?;
     if import_pack_id.is_none() {
         match &identity {
             ApplyIdentity::Unchanged if !force => {
+                let note = enrich_stage_note(
+                    path,
+                    state_dir,
+                    require_plan,
+                    &hash,
+                    "unchanged: identical desired state; in_sync. No-op apply.",
+                )?;
                 let audit = ApplyAudit {
                     created_at: chrono_stamp(),
-                    desired_hash: hash,
+                    desired_hash: hash.clone(),
                     sessions: 0,
                     imported_packs: vec![],
                     require_plan,
-                    note: "unchanged: identical desired state; in_sync. No-op apply.".into(),
+                    note,
                     covering_plan: covering_stem,
                     cloud_agent_spawned: false,
                     fresh_plan: fresh,
@@ -382,13 +391,20 @@ pub(crate) fn cmd_apply(
     record_placements(&estate, state_dir)?;
     mark_running(&estate, state_dir)?;
     model_estate::write_bound_catalog(&state_dir.join("catalog.json"), &estate)?;
+    let note = enrich_stage_note(
+        path,
+        state_dir,
+        require_plan,
+        &hash,
+        "Apply audit. Estate file unchanged. Cloud-agent placements not spawned.",
+    )?;
     let audit = ApplyAudit {
         created_at: chrono_stamp(),
         desired_hash: hash,
         sessions: actual.sessions.len(),
         imported_packs: imported,
         require_plan,
-        note: "Apply audit. Estate file unchanged. Cloud-agent placements not spawned.".into(),
+        note,
         covering_plan: covering_stem,
         cloud_agent_spawned: false,
         fresh_plan: fresh,
@@ -475,6 +491,9 @@ pub(crate) fn cmd_apply_dry_run(
             "refuse:no-plan: no covering plan for {hash}; run estate plan first"
         ));
     }
+    if let Err(err) = model_estate::refuse_staged_apply(path, state_dir, &hash, require_plan) {
+        extra_refuses.push(err.to_string());
+    }
     if let Some(c) = covering.as_ref() {
         if (require_plan || require_fresh_plan) && !plan_is_reviewable(&c.plan) {
             extra_refuses.push(
@@ -512,4 +531,32 @@ pub(crate) fn cmd_apply_dry_run(
     }
     println!("dry-run ok (no writes)");
     Ok(())
+}
+
+fn enrich_stage_note(
+    path: &Path,
+    state_dir: &Path,
+    require_plan: bool,
+    hash: &str,
+    unchanged_note: &str,
+) -> Result<String> {
+    match model_estate::commit_enrich_stage(path, state_dir, require_plan, hash)
+        .map_err(|err| anyhow::anyhow!("{err}"))?
+    {
+        model_estate::EnrichStageCommit::Wrote { source } => {
+            println!("enrich stage wrote {}", source.display());
+            Ok(
+                "Apply audit. Enrich stage wrote the source estate under --require-plan. Cloud-agent placements not spawned."
+                    .into(),
+            )
+        }
+        model_estate::EnrichStageCommit::Held => {
+            println!("enrich stage held: source estate not written (pass --require-plan)");
+            Ok(
+                "Apply audit. Enrich stage held; source estate not written. Cloud-agent placements not spawned."
+                    .into(),
+            )
+        }
+        _ => Ok(unchanged_note.to_string()),
+    }
 }

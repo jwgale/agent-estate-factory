@@ -4,7 +4,7 @@ Real-world testing is a recorded live proof on Jason's boxes plus a green
 local gate (`make gate-90`). An AI gateway stays out of altitude. Facilitation of train and
 enrich for purpose-built small models is the suite goal
 ([`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md)). Today's beachhead is packs,
-the specialist path, and `estate enrich prepare` (artifacts only; `--all-drivers`, `estate enrich list`, and `import-prepared` as a `local_slm` proposal; no trainer).
+the specialist path, and `estate enrich prepare` (artifacts only; `--all-drivers`, `estate enrich list`, `import-prepared` as a `local_slm` proposal, and `apply-proposal` staging that proposal for `estate plan` / `estate apply --require-plan`; no trainer).
 `make enrich-prepare` is opt-in and not in smoke or `gate-90`. The opt-in ladder after the gate is
 `make real-world`. It is not in smoke or Actions. Unset
 `CELL_LOCAL_ENDPOINT` prints SKIP and exits 0. That SKIP is not a proof.
@@ -26,7 +26,7 @@ These stay green on this factory. They do not prove a Mac, a GPU, or a spawn.
 | `make gate-90` | Local only: smoke, `day90`, `doctor --strict`, checklist. Not on Actions. |
 | `make day90-mixed` | Opt-in fixture walk. Not in smoke or `gate-90`. No live key. |
 | `make feed-loop` | Fixture walk. Pack `source_drivers` is `frontier` then `local`. No live key. |
-| `make enrich-prepare` | Opt-in fixture. Writes a Modelfile and an external manifest. Does not train. Not in smoke or `gate-90`. |
+| `make enrich-prepare` | Opt-in fixture. Writes a Modelfile and an external manifest, then stages the join and applies it with `--require-plan` on a throwaway lab copy. Does not train. Not in smoke or `gate-90`. |
 | Frontier specialist in tests | Mock HTTP. Model id `grok-4.7`. Missing key and a SKU model refuse before POST and name `CELL_FRONTIER_MODEL` / `CELL_FRONTIER_ENDPOINT`. |
 | `estate help frontier` / `day90-mixed` | Topic pages. Not a live run. |
 

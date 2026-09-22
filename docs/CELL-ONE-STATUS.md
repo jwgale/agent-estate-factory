@@ -21,7 +21,7 @@ complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
 ## Train/enrich prepare (this slice)
 
-You can prepare an enrich job for a purpose-built SLM. `estate enrich prepare` reads a pack and writes files. `--all-drivers` writes every registered card into sibling directories, or writes none if one card refuses. Each directory has `prepare.json`, `PREPARE.md`, and `NEXT.md` (paths, the handoff command, fail-closed reminders). `estate enrich list` reads `.cell/enrich` and refuses when that directory is missing. After you create the local model outside the factory, `estate enrich import-prepared` checks the tag and the file and writes a `local_slm` binding proposal. Paste it, then `estate plan` and `estate apply --require-plan`. The factory does not run the trainer, does not call Ollama, does not apply, and does not change `estate.yaml`. Promote stays off. A sacred line, a hardware SKU, a missing pack, the wrong curator, or a frontier tag with no frontier binding stops before those files exist. `make enrich-prepare` checks the loop on a throwaway directory. It is not part of smoke or GitHub Actions. `READY_FOR_LIVE_TEST`: no. Page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
+You can prepare an enrich job for a purpose-built SLM. `estate enrich prepare` reads a pack and writes files. `--all-drivers` writes every registered card into sibling directories, or writes none if one card refuses. Each directory has `prepare.json`, `PREPARE.md`, and `NEXT.md` (paths, the handoff command, fail-closed reminders). `estate enrich list` reads `.cell/enrich` and refuses when that directory is missing. After you create the local model outside the factory, `estate enrich import-prepared` checks the tag and the file and writes a `local_slm` binding proposal. `estate enrich apply-proposal` stages that binding. `estate plan` and `estate apply --require-plan` write the source estate. Apply without `--require-plan` leaves the source unchanged. The factory does not run the trainer and does not call Ollama. `examples/estate.yaml` on `main` stays hash-locked. Promote stays off. A sacred line, a hardware SKU, a missing pack, the wrong curator, or a frontier tag with no frontier binding stops before those files exist. `make enrich-prepare` checks the loop on a throwaway directory. It is not part of smoke or GitHub Actions. `READY_FOR_LIVE_TEST`: no. Page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
 
 ## On `main` (PR #1–#82)
 
@@ -388,6 +388,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | #85 | `estate help north-star` banned a distillation lab, and Ollama read as the local product. | Glossary [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Local runtime is an ecosystem seat; Ollama is today's entrant. Purpose-built SLM train/enrich is facilitated. Beachhead stays packs and the specialist path. Anti-shrink stays gateway, Ollama wrapper-as-product, LM Studio-alone, Grok Bot clone. READY no. |
 | this slice | Packs and the specialist path were the only train/enrich beachhead. Nothing wrote a Modelfile or a portable trainer manifest. | `TrainEnrichDriver` prepares artifacts. `ollama-modelfile` joins Ollama create. `external-manifest` is the hatch. Sacred, SKU, curator, missing pack, and frontier-invent refuse before write. No train POST. No estate rewrite. `make enrich-prepare` is opt-in. READY no. |
 | prepare loop | Prepare wrote files and stopped. The operator had no index, and no proposal that joined a created local tag back to `local_slm`. | `--all-drivers` writes every card or none. `NEXT.md` has the handoff. `estate enrich list` reads `.cell/enrich` and refuses when the directory is missing. `estate enrich import-prepared` writes a binding proposal and does not apply. Sacred, SKU, curator, tag, path, and frontier-invent still refuse. READY no. |
+| apply-proposal | After import, the operator still pasted the `local_slm` snippet by hand. | `estate enrich apply-proposal` writes `.cell/enrich-stage/staged-estate.yaml` for the existing `estate plan` and `estate apply --require-plan`. The source estate is written only when that apply succeeds. Same tag again is a no-op. `--verify-local-tag` is off unless set. Status and doctor name a pending join. `make enrich-prepare` walks the throwaway lab copy. `examples/estate.yaml` stays hash-locked. READY no. |
 
 ## Known-good local commands
 
@@ -403,7 +404,7 @@ make fixtures-check   # fixture files only
 make doctor-strict    # pre-merge extras
 make check            # cargo check --workspace --locked (same as Actions)
 make real-world       # opt-in: check + vanilla doctor; live SKIP without CELL_LOCAL_ENDPOINT (not in smoke)
-make enrich-prepare   # opt-in: Modelfile + external manifest; not a live train (not in smoke)
+make enrich-prepare   # opt-in: prepare through require-plan apply on a throwaway lab copy (not in smoke)
 estate help           # Day-90 topics, including enrich, frontier, and day90-mixed
 ```
 

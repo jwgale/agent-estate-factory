@@ -514,6 +514,30 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value = "jason")]
         curator: String,
     },
+    /// Stage a binding proposal for estate plan and estate apply --require-plan.
+    /// Does not apply. Does not rewrite the source estate.
+    ApplyProposal {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Directory that holds binding-proposal.json and prepare.json.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Must match the proposal tag `cell-enrich-{pack_id}`.
+        #[arg(long)]
+        tag: String,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Printed on the next-step plan/apply lines. The stage is not a plan.
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        /// Import gate. Must match locked curator `jason`.
+        #[arg(long, default_value = "jason")]
+        curator: String,
+        /// Opt-in. Probe the seated runtime for `cell-enrich-{pack}` before staging.
+        /// Default off. Refuses when the tag is missing or the runtime is down.
+        #[arg(long, default_value_t = false)]
+        verify_local_tag: bool,
+    },
     /// List registered TrainEnrichDriver cards. Does not prepare.
     Drivers,
 }

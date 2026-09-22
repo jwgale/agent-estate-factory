@@ -323,6 +323,9 @@ Default job is enrich. Prepare writes artifacts. It does not train.
     --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
     --tag cell-enrich-overnight-traces \\
     --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
+  estate enrich apply-proposal --estate examples/estate.yaml \\
+    --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
+    --tag cell-enrich-overnight-traces --state-dir .cell
   make enrich-prepare
 
 TrainEnrichDriver lives in the data plane (model-estate).
@@ -341,15 +344,31 @@ directory is missing. It does not create the directory.
 
 estate enrich import-prepared checks prepare.json plus the tag and
 path you created outside the factory. It writes binding-proposal.json
-and binding-proposal.md for the existing local_slm seat. Paste the
-snippet, then estate plan and estate apply --require-plan.
+and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
+
+estate enrich apply-proposal reads that proposal, checks it against
+prepare.json, and writes {state}/enrich-stage/staged-estate.yaml.
+That file is the estate plan input. It does not apply and it does not
+rewrite the source estate. Then:
+
+  estate plan --estate {state}/enrich-stage/staged-estate.yaml
+  estate apply --estate {state}/enrich-stage/staged-estate.yaml --require-plan
+
+The source estate is written only when that apply succeeds.
+Same tag and binding again is a no-op. A mismatched prepare, a missing
+proposal, or the wrong tag refuses before the stage exists.
+--verify-local-tag is off unless you set it. When set, the seated
+runtime must list the tag (OpenAI /v1/models or Ollama /api/tags).
+A down runtime or a missing tag refuses before the stage exists.
 
 Default out is .cell/enrich/{pack}/{driver}. See docs/cell-layout.md.
 With --all-drivers and --out, each driver writes to {out}/{driver}.
 Sacred text, a hardware SKU, a missing pack, the wrong curator, and a
 frontier source_driver with no frontier binding refuse before any write.
-estate.yaml is not rewritten. Promote stays off. No train POST.
+Point --estate at a lab copy. examples/estate.yaml on main stays hash-locked.
+apply-proposal and import-prepared leave the source estate unchanged.
+Promote stays off. No train POST.
 
 Opt-in walk: make enrich-prepare. Not part of make smoke, make gate-90,
 or Actions. Docs: docs/TRAIN-ENRICH.md. Words: docs/UBIQUITOUS_LANGUAGE.md.

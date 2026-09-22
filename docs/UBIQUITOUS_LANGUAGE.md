@@ -34,7 +34,7 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 
 ### enrich
 
-Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card). `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. Prepare does not train, does not POST, and does not rewrite the estate. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ### purpose-built SLM
 

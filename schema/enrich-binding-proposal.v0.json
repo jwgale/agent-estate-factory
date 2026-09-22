@@ -31,5 +31,5 @@
     }
   },
   "paste_yaml": "# Replace the existing local_slm binding. The id stays local_slm. This file is not applied.\n- id: local_slm\n  class: local\n  driver: \"ollama\"\n  wired: true\n  params:\n    model: \"cell-enrich-overnight-traces\"\n",
-  "note": "Proposal only. auto_apply=false. Replace the existing local_slm binding with the snippet, then estate plan and estate apply --require-plan. import-prepared does not apply, does not promote, and does not rewrite the estate."
+  "note": "Proposal only. auto_apply=false. Next: estate enrich apply-proposal, then estate plan and estate apply --require-plan. import-prepared does not apply, does not promote, and does not rewrite the estate."
 }

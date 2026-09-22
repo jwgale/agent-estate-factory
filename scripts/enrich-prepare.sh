@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enrich prepare fixture: example pack -> Modelfile and external manifest.
+# Enrich prepare fixture: example pack -> Modelfile, proposal, staged plan, require-plan apply.
 # Throwaway dir. No Ollama binary. No live train. No GPU.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
@@ -204,10 +204,168 @@ if params.get("model") != "cell-enrich-overnight-traces":
     raise SystemExit(f"FAIL  model={params.get('model')}")
 PY
 
+echo "-- apply-proposal, plan, require-plan apply --"
+LAB="$WORKDIR/lab-estate.yaml"
+cp "$ESTATE" "$LAB"
+LAB_BEFORE="$(cksum "$LAB")"
+MANIFEST="$CELL/enrich/overnight-traces/external-manifest"
+
+set +e
+estate enrich apply-proposal \
+  --estate "$LAB" \
+  --prepared "$MANIFEST" \
+  --tag cell-enrich-overnight-traces \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  >/tmp/enrich-apply-missing.out 2>/tmp/enrich-apply-missing.err
+missing_proposal_rc=$?
+set -e
+if [[ "$missing_proposal_rc" -eq 0 ]]; then
+  echo "FAIL  missing proposal must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:missing-proposal" /tmp/enrich-apply-missing.out /tmp/enrich-apply-missing.err; then
+  echo "FAIL  missing proposal did not refuse:missing-proposal"
+  cat /tmp/enrich-apply-missing.out /tmp/enrich-apply-missing.err
+  exit 1
+fi
+if [[ -d "$CELL/enrich-stage" ]]; then
+  echo "FAIL  missing proposal wrote an enrich stage"
+  exit 1
+fi
+
+set +e
+estate enrich apply-proposal \
+  --estate "$LAB" \
+  --prepared "$PREPARED" \
+  --tag cell-enrich-overnight-traces \
+  --state-dir "$WORKDIR/verify-state" \
+  --plans-dir "$WORKDIR/plans" \
+  --verify-local-tag \
+  >/tmp/enrich-apply-verify.out 2>/tmp/enrich-apply-verify.err
+verify_rc=$?
+set -e
+if [[ "$verify_rc" -eq 0 ]]; then
+  echo "FAIL  verify-local-tag must refuse when the endpoint is unset"
+  exit 1
+fi
+if ! grep -q "refuse:local-tag" /tmp/enrich-apply-verify.out /tmp/enrich-apply-verify.err; then
+  echo "FAIL  verify-local-tag did not refuse:local-tag"
+  cat /tmp/enrich-apply-verify.out /tmp/enrich-apply-verify.err
+  exit 1
+fi
+if [[ -d "$WORKDIR/verify-state/enrich-stage" ]]; then
+  echo "FAIL  failed verify wrote an enrich stage"
+  exit 1
+fi
+
+estate enrich apply-proposal \
+  --estate "$LAB" \
+  --prepared "$PREPARED" \
+  --tag cell-enrich-overnight-traces \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  | tee "$WORKDIR/apply-proposal.out"
+grep -q "apply-proposal did not apply" "$WORKDIR/apply-proposal.out"
+grep -q "auto_apply=false" "$WORKDIR/apply-proposal.out"
+grep -q "require-plan" "$WORKDIR/apply-proposal.out"
+test -f "$CELL/enrich-stage/staged-estate.yaml"
+test -f "$CELL/enrich-stage/stage.json"
+if [[ "$(cksum "$LAB")" != "$LAB_BEFORE" ]]; then
+  echo "FAIL  apply-proposal rewrote the lab estate"
+  exit 1
+fi
+
+estate enrich apply-proposal \
+  --estate "$LAB" \
+  --prepared "$PREPARED" \
+  --tag cell-enrich-overnight-traces \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  | tee "$WORKDIR/apply-proposal-again.out"
+grep -q "no-op:" "$WORKDIR/apply-proposal-again.out"
+
+estate status \
+  --estate "$LAB" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  --root "$ROOT" \
+  | tee "$WORKDIR/status-pending.out"
+grep -q "enrich_binding: pending" "$WORKDIR/status-pending.out"
+grep -q "enrich_stage: applied=false" "$WORKDIR/status-pending.out"
+
+estate doctor --root "$ROOT" --state-dir "$CELL" | tee "$WORKDIR/doctor-pending.out"
+grep -q "source estate not written" "$WORKDIR/doctor-pending.out"
+grep -q "binding proposal" "$WORKDIR/doctor-pending.out"
+
+STAGED="$CELL/enrich-stage/staged-estate.yaml"
+estate plan \
+  --estate "$STAGED" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  | tee "$WORKDIR/plan.out"
+grep -q "local_slm" "$WORKDIR/plan.out"
+
+estate apply \
+  --dry-run \
+  --require-plan \
+  --estate "$STAGED" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  --roots-base "$WORKDIR"
+if [[ "$(cksum "$LAB")" != "$LAB_BEFORE" ]]; then
+  echo "FAIL  dry-run rewrote the lab estate"
+  exit 1
+fi
+
+estate apply \
+  --estate "$STAGED" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  --roots-base "$WORKDIR" \
+  | tee "$WORKDIR/apply-held.out"
+grep -q "enrich stage held" "$WORKDIR/apply-held.out"
+if [[ "$(cksum "$LAB")" != "$LAB_BEFORE" ]]; then
+  echo "FAIL  apply without --require-plan rewrote the lab estate"
+  exit 1
+fi
+
+estate apply \
+  --require-plan \
+  --estate "$STAGED" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  --roots-base "$WORKDIR" \
+  | tee "$WORKDIR/apply.out"
+grep -q "enrich stage wrote" "$WORKDIR/apply.out"
+grep -q "cell-enrich-overnight-traces" "$LAB"
+
+estate status \
+  --estate "$LAB" \
+  --state-dir "$CELL" \
+  --plans-dir "$WORKDIR/plans" \
+  --root "$ROOT" \
+  | tee "$WORKDIR/status-joined.out"
+grep -q "enrich_binding: local_slm model=cell-enrich-overnight-traces" "$WORKDIR/status-joined.out"
+grep -q "enrich_stage: applied=true" "$WORKDIR/status-joined.out"
+
+python3 - "$CELL/enrich-stage/stage.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("schema") != "cell-one.enrich-binding-stage.v0":
+    raise SystemExit(f"FAIL  stage schema={doc.get('schema')}")
+if doc.get("auto_apply") is not False or doc.get("promoted") is not False:
+    raise SystemExit("FAIL  stage must stay manual")
+if doc.get("applied") is not True or doc.get("estate_rewritten") is not True:
+    raise SystemExit("FAIL  require-plan apply did not record the source write")
+if doc.get("binding_id") != "local_slm":
+    raise SystemExit(f"FAIL  stage binding_id={doc.get('binding_id')}")
+PY
+
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then
   echo "FAIL  enrich-prepare rewrote the estate"
   exit 1
 fi
 
-echo "PASS  enrich-prepare (artifacts only; not a live train)"
+echo "PASS  enrich-prepare (staged join applied on the throwaway estate; not a live train)"
