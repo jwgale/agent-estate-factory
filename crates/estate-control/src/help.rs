@@ -189,7 +189,7 @@ Equal-class frontier card. Not a fallback when local is down.
 
 Requires XAI_API_KEY. Model is grok-4.7 (CELL_FRONTIER_MODEL or XAI_MODEL).
 estate catalog dumps that schema card and labels it as not a binding.
-It will not overwrite a catalog whose frontier model is not the card.
+It will not overwrite a catalog whose frontier model is not that card.
 An unset binding stays empty. The schema card is not copied into it.
 Optional CELL_FRONTIER_ENDPOINT (default https://api.x.ai/v1).
 Unset key refuses. Sacred text and hardware SKUs refuse before any POST.
@@ -211,5 +211,7 @@ status → plan → apply --require-plan → status → doctor.
 Then validates examples/hosts/frontier-http.yaml and prints status.
 That host binding names model grok-4.7 on http-remote. No apply. No live key.
 The script unsets XAI_API_KEY and CELL_*_ENDPOINT.
+It sets CELL_FRONTIER_MODEL and still prints grok-4.7 only from the binding.
+A local-only estate in that walk is refuse:frontier-invent.
 examples/estate.yaml stays hash-locked. Not part of fixtures-check.
 ";
