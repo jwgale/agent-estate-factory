@@ -224,7 +224,8 @@ pub fn catalog_probes() -> Vec<DriverProbe> {
         .collect()
 }
 
-/// Optional live HTTP overlay. Missing endpoints stay SKIP. Never fails closed for CI.
+/// Optional live HTTP overlay. Missing endpoints stay SKIP.
+/// Stub and experimental cards never print `live ok`. CI still exits 0.
 pub fn catalog_probes_live() -> Vec<DriverProbe> {
     catalog_probes()
         .into_iter()
@@ -799,11 +800,32 @@ mod tests {
         assert!(p.note.contains("live ok"), "{}", p.note);
         assert!(p.note.contains("/v1/models"), "{}", p.note);
         let down = crate::enrich_with_live(
-            crate::probe_runtime("mlx", LocalRuntime::Mlx, "apple-silicon"),
+            crate::probe_runtime("llama.cpp", LocalRuntime::LlamaCpp, "any"),
             Some("http://127.0.0.1:1"),
         );
         assert!(!down.live_probed);
-        assert!(down.note.contains("down"));
+        assert!(down.note.contains("down"), "{}", down.note);
+        assert!(!down.note.contains("live ok"), "{}", down.note);
+    }
+
+    #[test]
+    fn stub_and_experimental_probes_do_not_invent_live_ok() {
+        let server = crate::MockLocalServer::spawn().unwrap();
+        for (id, runtime, host) in [
+            ("mlx", LocalRuntime::Mlx, "apple-silicon"),
+            ("vllm", LocalRuntime::Vllm, "any"),
+            ("trt", LocalRuntime::Trt, "any"),
+        ] {
+            let base = crate::probe_runtime(id, runtime, host);
+            let hit = crate::enrich_with_live(base.clone(), Some(&server.endpoint()));
+            assert!(!hit.live_probed, "{}", hit.note);
+            assert!(!hit.note.contains("live ok"), "{}", hit.note);
+            assert!(hit.note.contains("not live-ok"), "{}", hit.note);
+            let forced = crate::apply_live_overlay(base, crate::LiveOverlay::WouldLive);
+            assert!(!forced.live_probed, "{}", forced.note);
+            assert!(!forced.note.contains("live ok"), "{}", forced.note);
+            assert!(forced.note.contains("not live-ok"), "{}", forced.note);
+        }
     }
 
     #[test]
