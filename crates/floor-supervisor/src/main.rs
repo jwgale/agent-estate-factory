@@ -171,12 +171,22 @@ fn main() -> Result<()> {
                     println!("run apply or resume to record leases");
                 }
                 Some(places) => {
-                    println!("{}", serde_json::to_string_pretty(&places)?);
+                    // A spawned cloud-agent lease is a refuse before the
+                    // placement JSON. An unspawned file still prints. The
+                    // lease file is not rewritten.
+                    let mut spawned = Vec::new();
                     for lease in &places.leases {
                         if lease.kind == "cloud-agent" && lease.spawned {
-                            anyhow::bail!("cloud-agent lease spawned (fail closed)");
+                            spawned.push(lease.placement_id.as_str());
                         }
                     }
+                    if !spawned.is_empty() {
+                        anyhow::bail!(
+                            "cloud-agent lease spawned (fail closed): {}",
+                            spawned.join(", ")
+                        );
+                    }
+                    println!("{}", serde_json::to_string_pretty(&places)?);
                 }
             }
         }
