@@ -29,13 +29,26 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 | Env-gated key (no box name) | `estate specialist --driver frontier` model `grok-4.7` | **PASS.** `"completion": "pong"`, `"reason": "frontier completion"`. Key never printed. Ran with env-gated `XAI_API_KEY`. |
 
 Not recorded: Mac `estate specialist` chat (same command as the 5090 PASS),
-native MLX. Frontier `grok-4.7` specialist is recorded above.
+native MLX. Frontier `grok-4.7` specialist is recorded above. The Mac chat
+result belongs in the slot below. It is not a PASS until a completion is pasted.
 
 `READY_FOR_LIVE_TEST` for the rows above: **no**. Those runs are recorded.
 
+## Mac specialist result slot (pending)
+
+Coordinator is running the Mac command. This row is shaped like a recorded
+PASS and stays **Pending** until that completion is pasted here. Do not
+invent `pong` or `Pong` for the Mac. Do not mark this row **PASS** from
+the 5090 result.
+
+| Box | Command | Result |
+| --- | --- | --- |
+| Mac (Apple Silicon) | `estate specialist --driver ollama --prompt "Reply with the single word pong."` | **Pending.** Not a PASS. Completion not pasted. |
+
 Mac `estate specialist` complete is not recorded. Both boxes are up.
-`READY_FOR_LIVE_TEST`: **yes** for that Mac command only. The 5090 block
-below is the same verb; that `Pong` is already recorded.
+`READY_FOR_LIVE_TEST`: **yes** for that Mac command only (the #55 hand-off).
+This slot does not open a second live test. The 5090 block below is the
+same verb; that `Pong` is already recorded.
 
 ## Mac specialist complete (run tonight)
 
@@ -319,6 +332,7 @@ cargo run -q -p estate-control -- specialist --driver llama.cpp \
 ```
 
 Mac `estate specialist` chat is the command in "Mac specialist complete (run tonight)".
+The result slot is **Pending** until a completion is pasted. It is not a PASS.
 `READY_FOR_LIVE_TEST`: **yes** for that Mac command. The 5090 `Pong` row stays recorded.
 
 ## Frontier (grok-4.7)

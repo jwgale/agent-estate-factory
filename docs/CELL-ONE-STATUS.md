@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#55 plus this slice)
+## On `main` (PR #1-#56 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -186,13 +186,17 @@ Live `estate apply` refuses (`refuse:frontier-model`) when the cell `catalog.jso
 
 Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PROBES.md) has the copy-paste for the MacBook Air and the open 5090-class box: `PATH` includes `~/.cargo/bin`, `CELL_LOCAL_ENDPOINT=http://127.0.0.1:11434`, `CELL_LOCAL_MODEL=llama3`, then `estate specialist --driver ollama --prompt "Reply with the single word pong."`. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. `READY_FOR_LIVE_TEST` is yes for that Mac command only.
 
-## This slice
+## #56 in plain English
 
 `estate status` and `estate doctor` refuse (`refuse:frontier-model`) when the cell `catalog.json` does not parse. They do that before the cell catalog success line. Apply, resume, and pause-proof already refused an unreadable catalog. A missing catalog is not a disagreement. The schema card stays the schema card. The refuse does not invent `grok-4.7`.
 
+## This slice
+
+[`LIVE-PROBES.md`](LIVE-PROBES.md) holds a result row for Mac `estate specialist` complete. The coordinator is running that command. The row is **Pending**, not **PASS**, until a completion is pasted. Do not invent `pong` or `Pong` for the Mac. The 5090 `Pong` stays recorded. Native MLX stays a stub. `mlx`, `vllm`, and `trt` stay `not live-ok`. The Mac command from #55 stays the only open hand-off. This slice does not add another live test.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#56 (plain English)
+## Bug fixes on #10-#57 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -242,6 +246,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #54 | `mlx` could print `live ok` by falling back to `CELL_LOCAL_ENDPOINT`. vLLM and TRT could do the same when their endpoint answered. | Stub and experimental probes stay `not live-ok` and do not open that ping. Supported cards still print `live ok`. READY no. |
 | #55 | The live-probe page told the operator not to run Mac specialist complete, while that command was still unrecorded and both boxes were up. | [`LIVE-PROBES.md`](LIVE-PROBES.md) has the MacBook Air and 5090-class copy-paste (`~/.cargo/bin`, `CELL_LOCAL_ENDPOINT`, `CELL_LOCAL_MODEL=llama3`). READY yes for the Mac command only. The 5090 `Pong` stays recorded. |
 | #56 | Status and doctor treated a cell `catalog.json` that does not parse as a note and still exited 0. Apply already refused that file. | Status and doctor are `refuse:frontier-model` before the cell success line. A missing catalog is not a disagreement. READY no. |
+| #57 | The live-probe page had the Mac specialist command and no place to write the result, so a later edit could mark PASS before a completion was pasted. | The result row is **Pending**. It is not a PASS. Paste the completion before changing it. READY no. The #55 Mac command stays the open hand-off. |
 
 ## Known-good local commands
 
@@ -288,7 +293,7 @@ Cloud-agent stays declared, not spawned. Feed never auto-promotes.
 
 | Item | State |
 | --- | --- |
-| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is not. Copy-paste is on [`LIVE-PROBES.md`](LIVE-PROBES.md). Do not mark it green. |
+| Mac specialist | Optional. Mac `probes --live` is recorded. Mac `estate specialist` complete is **Pending** on [`LIVE-PROBES.md`](LIVE-PROBES.md) until a completion is pasted. Do not mark it green. |
 | Native MLX | `specialist()` stays stub. Not the Ollama-on-Mac probe. |
 | Live consumer / rented GPU | 5090 probes and specialist `Pong` are recorded. Not required to re-run for gates. Not native MLX. |
 | Cloud-agent spawn | Declared only. Floor does not spawn. |
