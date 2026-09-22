@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use floor_supervisor::{
-    apply_with_profile_dir, list_lifecycle_events, load_lifecycle, load_placements, resume,
-    spawn_runtime_heartbeats, stop_runtime, suspend,
+    apply_with_profile_dir, lifecycle_path, list_lifecycle_events, load_lifecycle, load_placements,
+    resume, spawn_runtime_heartbeats, stop_runtime, suspend,
 };
 use std::path::PathBuf;
 
@@ -107,9 +107,21 @@ fn main() -> Result<()> {
         Command::Status { estate, state_dir } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
-            let life = load_lifecycle(&state_dir)?;
+            // Missing lifecycle.json is the default record, not a file.
+            // Printing that default would invent suspended and durable=true.
+            // A present file that does not parse refuses before this line.
+            let life = if lifecycle_path(&state_dir).exists() {
+                Some(load_lifecycle(&state_dir)?)
+            } else {
+                None
+            };
             let report = floor_supervisor::drift_with_roots(&loaded, &state_dir, None)?;
-            println!("lifecycle: {} durable={}", life.state.as_str(), life.durable);
+            match life {
+                None => println!("lifecycle: -"),
+                Some(life) => {
+                    println!("lifecycle: {} durable={}", life.state.as_str(), life.durable);
+                }
+            }
             println!("{}", serde_json::to_string_pretty(&report)?);
             if let Some(places) = load_placements(&state_dir)? {
                 println!("{}", serde_json::to_string_pretty(&places)?);

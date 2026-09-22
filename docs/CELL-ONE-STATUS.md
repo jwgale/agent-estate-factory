@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#67 plus this slice)
+## On `main` (PR #1-#68 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -234,13 +234,17 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 
 `estate status` refuses (`refuse:model-actual`) when a present `model-actual.json` does not parse. It does that before the status page. A missing file is not a failure, and status does not invent a binding count. A file that parses is not a new status line. `estate drift` already refused that file. `estate doctor` already FAILs it before `factory ready`.
 
-## This slice
+## #68 in plain English
 
 `estate status` does not invent `suspended` when `lifecycle.json` is missing. It prints `paused: -` and `lifecycle: -`. A present file that does not parse is a refuse before the status page. A file that parses prints `paused:` and `lifecycle:` from the file. `estate doctor` already refused that file and does not invent `suspended` for a missing one.
 
+## This slice
+
+`floor status` (the `floor-supervisor` binary) does not invent `suspended` when `lifecycle.json` is missing. It prints `lifecycle: -`. A present file that does not parse is a refuse before that line. A file that parses prints `lifecycle:` and `durable=` from the file. `estate status` already prints `paused: -` for a missing file. The loader default stays for apply and resume.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#68 (plain English)
+## Bug fixes on #10-#69 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -302,6 +306,7 @@ Mac `estate specialist` complete is still unrecorded. [`LIVE-PROBES.md`](LIVE-PR
 | #66 | Doctor ignored a present `model-actual.json` that does not parse and could still say factory ready. A missing file could be read as zero bindings. | That file is FAIL before factory ready. A missing file is not a failure and is not invented as zero bindings. A parsed file prints its binding count. READY no. |
 | #67 | Status printed the page when a present `model-actual.json` did not parse. A missing file could be read as zero bindings. | That file is `refuse:model-actual` before the status page. A missing file is not a failure and is not invented as zero bindings. A parsed file is not a new status line. READY no. |
 | #68 | Status printed `paused: yes` and `lifecycle: suspended (durable=true)` when `lifecycle.json` was missing. That is the default record, not a file. | A missing file prints `paused: -` and `lifecycle: -`. A present file that does not parse is a refuse before the status page. A parsed file prints its state. READY no. |
+| #69 | `floor status` printed `lifecycle: suspended durable=true` when `lifecycle.json` was missing. That is the default record, not a file. | A missing file prints `lifecycle: -`. A present file that does not parse is a refuse before that line. A parsed file prints its state. READY no. |
 
 ## Known-good local commands
 
