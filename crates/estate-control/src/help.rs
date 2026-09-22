@@ -90,7 +90,9 @@ policy present?, doctor line. The frontier line is the binding
 `params.model`. The schema card stays `grok-4.7` and is not the binding.
 A cell catalog that disagrees is `refuse:frontier-model`. A cell catalog
 that does not parse is the same refuse, before the cell success line.
-A missing catalog is not a disagreement. Cloud-agent
+A missing catalog is not a disagreement. An unreadable proposal file
+is `refuse:proposal-unreadable` before the status page. A missing
+proposals directory is not a proposal. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
