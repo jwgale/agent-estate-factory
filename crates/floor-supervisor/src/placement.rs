@@ -271,11 +271,27 @@ pub fn refuse_expired_leases(state_dir: &Path) -> Result<(), SupervisorError> {
 }
 
 /// Drop expired rows so apply can record fresh leases. Does not spawn.
+///
+/// An expired spawned cloud-agent lease is still spawned. Refuse before
+/// the rewrite. A missing file is not a spawned lease. An expired box
+/// lease still drops when no spawned cloud row is in that drop.
 pub fn forget_expired_leases(state_dir: &Path) -> Result<Vec<String>, SupervisorError> {
     let Some(mut actual) = load_placements(state_dir)? else {
         return Ok(Vec::new());
     };
     let now = now_unix();
+    let spawned: Vec<String> = actual
+        .leases
+        .iter()
+        .filter(|l| lease_is_expired(l, now) && l.kind == "cloud-agent" && l.spawned)
+        .map(|l| l.placement_id.clone())
+        .collect();
+    if !spawned.is_empty() {
+        return Err(SupervisorError::Other(format!(
+            "refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {}",
+            spawned.join(", ")
+        )));
+    }
     let mut forgotten = Vec::new();
     actual.leases.retain(|l| {
         if lease_is_expired(l, now) {
@@ -1043,6 +1059,82 @@ mod tests {
             .leases
             .iter()
             .any(|l| l.kind == "cloud-agent" && l.spawned));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn forget_does_not_drop_an_expired_spawned_cloud_lease() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-forget-spawned-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        let now = now_unix();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+                lease.expires_at = Some(now.saturating_sub(1));
+            }
+            if lease.kind == "box" {
+                lease.expires_at = Some(now.saturating_sub(1));
+            }
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let before = std::fs::read_to_string(tmp.join("placement-actual.json")).unwrap();
+        let err = forget_expired_leases(&tmp).unwrap_err().to_string();
+        assert!(err.contains("refuse:cloud-spawned"), "{err}");
+        assert!(err.contains("cursor-cloud"), "{err}");
+        let after = std::fs::read_to_string(tmp.join("placement-actual.json")).unwrap();
+        assert_eq!(before, after);
+        let still = load_placements(&tmp).unwrap().unwrap();
+        assert!(still
+            .leases
+            .iter()
+            .any(|l| l.kind == "cloud-agent" && l.spawned));
+        assert!(still.leases.iter().any(|l| l.kind == "box"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn forget_still_drops_an_expired_box_beside_an_unexpired_spawned_cloud() {
+        let estate =
+            estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "cell-one-forget-box-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut actual = record_placements(&estate, &tmp).unwrap();
+        let now = now_unix();
+        for lease in &mut actual.leases {
+            if lease.kind == "cloud-agent" {
+                lease.spawned = true;
+                lease.expires_at = Some(now.saturating_add(3600));
+            }
+            if lease.kind == "box" {
+                lease.expires_at = Some(now.saturating_sub(1));
+            }
+        }
+        write_placements(&tmp, &actual).unwrap();
+        let forgotten = forget_expired_leases(&tmp).unwrap();
+        assert!(forgotten.iter().any(|id| id == "cell-one-box"), "{forgotten:?}");
+        let still = load_placements(&tmp).unwrap().unwrap();
+        assert!(still
+            .leases
+            .iter()
+            .any(|l| l.kind == "cloud-agent" && l.spawned));
+        assert!(still.leases.iter().all(|l| l.kind != "box"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
