@@ -95,7 +95,7 @@ pub(crate) fn cmd_policy_check(path: &Path, action: &str, hop: Option<&str>) -> 
     }
     let pack = load_policy(path).map_err(|e| anyhow::anyhow!("{e}"))?;
     policy_allows(&pack, action, hop).map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("policy ok action={action} hop={}", hop.unwrap_or("-")));
+    println!("policy ok action={action} hop={}", hop.unwrap_or("-"));
     Ok(())
 }
 
