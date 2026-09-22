@@ -307,7 +307,7 @@ pub fn classify_secret_part(part: &str) -> Option<&'static str> {
 /// Redact PII-ish tokens: keys, bearer, emails, PEM, cloud tokens.
 pub fn looks_pii_token(token: &str) -> bool {
     let parts: Vec<&str> = token
-        .split(['=', ':', '/', '&', '?', "'", '\''])
+        .split(['=', ':', '/', '&', '?', '"', '\''])
         .filter(|p| !p.is_empty())
         .collect();
     for (i, part) in parts.iter().enumerate() {
@@ -369,7 +369,7 @@ pub fn redaction_report(text: &str) -> RedactionReport {
         *kinds.entry("pem".to_string()).or_insert(0) += 1;
         redacted += 1;
     }
-    for word in text.split([' ', '\n', '\t', ',', ';', '|', "'", '\'']) {
+    for word in text.split([' ', '\n', '\t', ',', ';', '|', '"', '\'']) {
         if looks_pii_token(word) {
             redacted += 1;
             let kind = word
