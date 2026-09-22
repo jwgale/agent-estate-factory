@@ -115,7 +115,10 @@ factory ready when no cell catalog is present. A parsed snapshot prints
 its name. A missing
 model-actual.json is not a failure, and doctor does not invent a
 binding count. A model file that does not parse is FAIL before factory
-ready. A parsed file prints its binding count. Cloud-agent
+ready. A parsed file prints its binding count. Status refuses that
+same file (`refuse:model-actual`) before the status page. A missing
+file is not a failure there either, and status does not invent a
+binding count. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
