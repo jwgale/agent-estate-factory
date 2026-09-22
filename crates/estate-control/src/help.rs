@@ -88,7 +88,9 @@ estate status — one-pager
 paused?, lease counts, expired, last plan, last apply, open proposals,
 policy present?, doctor line. The frontier line is the binding
 `params.model`. The schema card stays `grok-4.7` and is not the binding.
-A cell catalog that disagrees is `refuse:frontier-model`. Cloud-agent
+A cell catalog that disagrees is `refuse:frontier-model`. A cell catalog
+that does not parse is the same refuse, before the cell success line.
+A missing catalog is not a disagreement. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell
