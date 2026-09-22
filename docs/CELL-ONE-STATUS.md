@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#43 plus this slice)
+## On `main` (PR #1-#44 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -138,9 +138,13 @@ Apply and resume write the cell catalog frontier model from the estate binding. 
 
 `estate plan` and `apply --dry-run` print `frontier plan: model=` from the binding. Unset `params.model` stays `model=-`. They do not copy the schema card and they do not read `CELL_FRONTIER_MODEL`. An estate with no frontier binding refuses (`refuse:frontier-invent`) before a plan file or a dry-run preview, and that refuse does not invent a frontier `source_driver` or `grok-4.7`.
 
-## This slice
+## #44 in plain English
 
 `packs propose` and `packs accept` refuse (`refuse:frontier-invent`) when `source_drivers` names `frontier` and the estate has no frontier binding. They do not write the proposal or the enrich-edit file. A local-only pack stays `local`. The schema card is not copied.
+
+## This slice
+
+`estate status` and `estate doctor` refuse (`refuse:frontier-model`) when the cell `catalog.json` frontier model disagrees with the binding. Empty and missing are the same (`model=-`). The schema card stays `grok-4.7` and is not treated as the binding. A matching cell catalog still prints `model=grok-4.7` or `model=-`.
 
 No new CLI. Smoke and `make gate-90` unchanged.
 
@@ -148,7 +152,7 @@ No new CLI. Smoke and `make gate-90` unchanged.
 
 Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are file-name / host_class display / doctor reads, not serialize-then-write.
 
-## Bug fixes on #10-#44 (plain English)
+## Bug fixes on #10-#45 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -186,6 +190,7 @@ Remaining `unwrap_or_default` in estate-control / floor / conveyor / feed are fi
 | #42 | Apply copied the schema card `grok-4.7` into the cell catalog even when the frontier binding set no model. Status and doctor then printed that model. | The cell catalog frontier model is the binding's `params.model`, or empty. Status prints `model=-`. Doctor does not call that cell `grok-4.7`. The schema card is unchanged. Two different models refuse. READY no. |
 | #43 | Plan and dry-run never said which frontier model was bound, so a local-only estate could be planned while the schema card still said `grok-4.7`. | Plan and dry-run print the binding model, or `model=-`. No frontier binding is `refuse:frontier-invent` before any plan file. The schema card and `CELL_FRONTIER_MODEL` are not copied. READY no. |
 | #44 | Propose and accept copied a frontier `source_driver` onto an estate with no frontier binding. | That copy is `refuse:frontier-invent` before the proposal or enrich-edit file is written. A local-only pack stays `local`. READY no. |
+| #45 | A cell catalog could name `grok-4.7` (the schema card) while the binding set no model, and status and doctor still looked successful. | That disagreement is `refuse:frontier-model` before the cell success line. Empty and missing stay `model=-`. The schema card stays labeled schema. READY no. |
 
 ## Known-good local commands
 
