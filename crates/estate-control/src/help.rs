@@ -12,6 +12,8 @@ const TOPICS: &[&str] = &[
     "backup",
     "frontier",
     "day90-mixed",
+    "north-star",
+    "charter",
 ];
 
 pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
@@ -52,6 +54,10 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             print!("{DAY90_MIXED}");
             Ok(())
         }
+        Some("north-star") | Some("northstar") | Some("charter") => {
+            print!("{NORTH_STAR}");
+            Ok(())
+        }
         Some(other) => {
             eprintln!("unknown help topic: {other}");
             eprintln!("topics: {}", TOPICS.join(", "));
@@ -74,6 +80,8 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
   estate help backup
   estate help frontier
   estate help day90-mixed
+  estate help north-star
+  estate help charter
 
 Entrypoint: make gate-90
 Loop:       make day90
@@ -255,4 +263,30 @@ The script unsets XAI_API_KEY and CELL_*_ENDPOINT.
 It sets CELL_FRONTIER_MODEL and still prints grok-4.7 only from the binding.
 A local-only estate in that walk is refuse:frontier-invent.
 examples/estate.yaml stays hash-locked. Not part of fixtures-check.
+";
+
+const NORTH_STAR: &str = "\
+north-star — Agent Estate Factory
+=================================
+charter prints this same page. charter.md is the source of truth.
+
+One-box Agent Estate Factory — plan/apply IaC, sacred isolation
+(Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class
+frontier+local, manual enrich packs.
+
+Anti-shrink:
+- Not a gateway. Not LM Studio.
+- Not a Grok Bot clone.
+- Not a distillation or training lab.
+- Not an eval harness, a computer-use farm, or an approval-gate product.
+- Enrich packs stay manual. The curator accepts by hand.
+
+Pointers:
+  charter.md
+  make gate-90
+  make day90
+  docs/LIVE-PROBES.md
+
+This page does not plan, apply, or probe. Not part of make smoke,
+make gate-90, or Actions.
 ";
