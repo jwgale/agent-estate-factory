@@ -65,6 +65,12 @@ Isolated sacred overlay e2e: `sacred-omit-locked.yaml` (`locked: []`) still refu
 
 No new hole. `plan diff --allow-wider` / `plan export-pr` exits locked. `apply --dry-run` under refuse writes nothing (snapshot covers conveyor/sessions too). Curator: wrong → `refuse:curator`; accept missing flag is clap; import still defaults to jason. CELL-ONE-STATUS states #10–#13 in plain English.
 
+## After PR #73 (this slice)
+
+- Apply and resume refuse before they write when a cloud-agent lease is spawned, or `placement-actual.json` does not parse. They do not restamp that lease to unspawned. `--force` does not.
+- A missing file is not a spawned lease. An unspawned file still applies.
+- No new CLI. No new smoke or gate-90 step. `READY_FOR_LIVE_TEST`: no.
+
 ## After PR #72 (this slice)
 
 - `estate leases` and `floor leases` refuse before they print placement JSON when a cloud-agent lease is spawned.

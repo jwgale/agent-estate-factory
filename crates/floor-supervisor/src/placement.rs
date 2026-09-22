@@ -291,8 +291,31 @@ pub fn forget_expired_leases(state_dir: &Path) -> Result<Vec<String>, Supervisor
     Ok(forgotten)
 }
 
+/// A present spawned cloud-agent lease is a refuse before a rewrite.
+/// A missing file is not a spawned lease. A file that does not parse
+/// is a refuse. The caller must not replace that file with a fresh claim.
+pub fn refuse_spawned_cloud_placement(state_dir: &Path) -> Result<(), SupervisorError> {
+    let Some(actual) = load_placements(state_dir)? else {
+        return Ok(());
+    };
+    let mut hits = Vec::new();
+    for lease in &actual.leases {
+        if lease.kind == "cloud-agent" && lease.spawned {
+            hits.push(lease.placement_id.clone());
+        }
+    }
+    if hits.is_empty() {
+        return Ok(());
+    }
+    Err(SupervisorError::Other(format!(
+        "refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {}",
+        hits.join(", ")
+    )))
+}
+
 pub fn record_placements(estate: &Estate, state_dir: &Path) -> Result<PlacementActual, SupervisorError> {
     refuse_desired_host_class(estate)?;
+    refuse_spawned_cloud_placement(state_dir)?;
     std::fs::create_dir_all(state_dir)?;
     let actual = claim_leases(estate);
     write_placements(state_dir, &actual)?;

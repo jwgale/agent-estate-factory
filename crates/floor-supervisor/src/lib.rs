@@ -22,7 +22,7 @@ pub use placement::{
     append_apply_audit, apply_dry_run, claim_leases, driver_for, drift_placements,
     forget_expired_leases, lease_is_expired, list_apply_audits, list_expired_leases, load_placements,
     mark_leases_unspawned, now_unix, reconcile_placements, record_placements, refuse_expired_leases,
-    refuse_lease_host_classes,
+    refuse_lease_host_classes, refuse_spawned_cloud_placement,
     render_dry_run, render_reconcile, write_placements, write_reconcile, ApplyAudit, ApplyDryRun,
     BoxDriver, CloudAgentDriver, PlacementActual, PlacementDriver, PlacementDrift, PlacementLease,
     ReconcileReport, ReconcileRow, Refuse, DRY_RUN_SCHEMA, RECONCILE_SCHEMA,
@@ -168,6 +168,9 @@ pub fn apply(
     driver: &dyn IsolationDriver,
 ) -> Result<ActualState, SupervisorError> {
     estate_schema::validate(estate).map_err(SupervisorError::Invalid)?;
+    // A spawned cloud lease must not be rewritten as unspawned.
+    // A missing file is not that lease. An unreadable file is a refuse.
+    refuse_spawned_cloud_placement(state_dir)?;
     refuse_expired_leases(state_dir)?;
     std::fs::create_dir_all(state_dir)?;
     std::fs::create_dir_all(state_dir.join("sessions"))?;
