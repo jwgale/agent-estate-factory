@@ -7,7 +7,7 @@ Read with [`../README.md`](../README.md) -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md)
 -> [`GATE-90.md`](GATE-90.md). Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 
-## On `main` (PR #1-#72 plus this slice)
+## On `main` (PR #1-#73 plus this slice)
 
 Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
@@ -254,13 +254,17 @@ Apply, resume, and suspend do not journal `from: suspended` when `lifecycle.json
 
 `estate status` refuses before it prints `cloud-agent: declared, not spawned` when a cloud-agent lease is spawned. An unspawned cell still prints that line. The lease file is not rewritten.
 
-## This slice
+## #73 in plain English
 
 `estate leases` and `floor leases` refuse before they print placement JSON when a cloud-agent lease is spawned. An unspawned file still prints that JSON. A missing file still says there is no placement-actual. The lease file is not rewritten.
 
+## This slice
+
+Apply and resume refuse before they write when a cloud-agent lease is spawned, or `placement-actual.json` does not parse. They do not restamp that lease to unspawned. `--force` does not. A missing file is not a spawned lease. An unspawned file still applies.
+
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10-#73 (plain English)
+## Bug fixes on #10-#74 (plain English)
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -327,6 +331,7 @@ Apply, resume, and suspend do not journal `from: suspended` when `lifecycle.json
 | #71 | Backup wrote `cloud_agent_spawned: false` without reading `placement-actual.json`. An unreadable file or a spawned cloud-agent lease was still archived. | That file is a refuse before the archive or the restore write. A missing file is not a spawned lease. READY no. |
 | #72 | Status printed `cloud-agent: declared, not spawned` and then failed when a cloud-agent lease was spawned. | That lease is a refuse before the line. An unspawned cell still prints it. The lease file is not rewritten. READY no. |
 | #73 | `estate leases` and `floor leases` printed placement JSON and then failed when a cloud-agent lease was spawned. | That lease is a refuse before the JSON. An unspawned file still prints. A missing file is unchanged. The lease file is not rewritten. READY no. |
+| #74 | Apply and resume rewrote a spawned cloud-agent lease as unspawned and recorded that it was not spawned. `--force` did the same. An unreadable placement file could be replaced on `--force`. | That lease, and a file that does not parse, is a refuse before the write. A missing file is not a spawned lease. An unspawned file still applies. READY no. |
 
 ## Known-good local commands
 
