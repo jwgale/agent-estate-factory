@@ -483,6 +483,99 @@ fn day90_mixed_walks_plan_apply_and_names_grok_4_7() {
 }
 
 #[test]
+fn apply_does_not_copy_schema_grok_into_an_unbound_cell_catalog() {
+    let root = repo_root();
+    let state = root.join(format!(
+        "target/test-apply-unbound-model-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&state);
+    let plans = state.join("plans");
+    let estate = root.join("examples/estate.yaml");
+    let applied = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "apply",
+            "--estate",
+            &estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let apply_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&applied.stdout),
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert!(applied.status.success(), "{apply_text}");
+    let catalog = std::fs::read_to_string(state.join("catalog.json")).unwrap();
+    assert!(
+        !catalog.contains("grok-4.7"),
+        "cell catalog must not invent grok-4.7 when the binding has no model: {catalog}"
+    );
+    let status = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "status",
+            "--estate",
+            &estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--root",
+            &root.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&status.stdout),
+        String::from_utf8_lossy(&status.stderr)
+    );
+    assert!(status.status.success(), "{text}");
+    assert!(text.contains("catalog frontier: cell model=-"), "{text}");
+    assert!(
+        text.contains("catalog frontier: schema model=grok-4.7"),
+        "{text}"
+    );
+    assert!(!text.contains("frontier: xai_grok model="), "{text}");
+    let doctor = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "doctor",
+            "--root",
+            &root.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let doc = format!(
+        "{}{}",
+        String::from_utf8_lossy(&doctor.stdout),
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+    assert!(doctor.status.success(), "{doc}");
+    assert!(
+        doc.contains("schema/local-catalog.v0.json model=grok-4.7"),
+        "{doc}"
+    );
+    assert!(
+        !doc.contains("catalog.json model=grok-4.7"),
+        "doctor must not report an unbound cell as grok-4.7: {doc}"
+    );
+    assert!(doc.contains("catalog.json has no frontier model"), "{doc}");
+    let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
 fn status_does_not_invent_frontier_model_on_the_default_estate() {
     let root = repo_root();
     let state = root.join(format!(
