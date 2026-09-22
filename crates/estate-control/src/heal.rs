@@ -80,6 +80,9 @@ pub(crate) fn cmd_specialist(
 }
 
 pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path, suggest: bool) -> Result<()> {
+    let parsed = load_estate_unvalidated(path)
+        .with_context(|| format!("load {}", path.display()))?;
+    model_estate::frontier_plan_view(&parsed).map_err(|e| anyhow::anyhow!("{e}"))?;
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let before = load_placements(state_dir)?;
     let report = reconcile_placements(&estate, state_dir)?;
