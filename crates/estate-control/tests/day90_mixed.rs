@@ -764,3 +764,195 @@ fn local_only_plan_and_dry_run_refuse_inventing_frontier() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn status_and_doctor_refuse_a_cell_catalog_that_disagrees_with_the_binding() {
+    let root = repo_root();
+    let bin = env!("CARGO_BIN_EXE_estate");
+
+    let run = |args: &[String]| {
+        let out = Command::new(bin)
+            .args(args)
+            .env_remove("XAI_API_KEY")
+            .env_remove("CELL_FRONTIER_ENDPOINT")
+            .env_remove("CELL_LOCAL_ENDPOINT")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.success(), text)
+    };
+
+    let state = root.join(format!(
+        "target/test-catalog-mismatch-unbound-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&state);
+    let plans = state.join("plans");
+    let estate = root.join("examples/estate.yaml");
+    let (ok, apply_text) = run(&[
+        "apply".into(),
+        "--estate".into(),
+        estate.display().to_string(),
+        "--state-dir".into(),
+        state.display().to_string(),
+        "--roots-base".into(),
+        state.display().to_string(),
+        "--plans-dir".into(),
+        plans.display().to_string(),
+    ]);
+    assert!(ok, "{apply_text}");
+    let catalog_path = state.join("catalog.json");
+    let catalog = std::fs::read_to_string(&catalog_path).unwrap();
+    assert!(
+        catalog.contains("\"model\": \"\""),
+        "unbound apply must leave the frontier model empty: {catalog}"
+    );
+    let tampered = catalog.replacen("\"model\": \"\"", "\"model\": \"grok-4.7\"", 1);
+    std::fs::write(&catalog_path, &tampered).unwrap();
+
+    let status_args = [
+        "status".into(),
+        "--estate".into(),
+        estate.display().to_string(),
+        "--state-dir".into(),
+        state.display().to_string(),
+        "--roots-base".into(),
+        state.display().to_string(),
+        "--plans-dir".into(),
+        plans.display().to_string(),
+        "--root".into(),
+        root.display().to_string(),
+    ];
+    let (ok, text) = run(&status_args);
+    assert!(!ok, "{text}");
+    assert!(text.contains("refuse:frontier-model"), "{text}");
+    assert!(text.contains("cell catalog model=grok-4.7"), "{text}");
+    assert!(text.contains("binding model=-"), "{text}");
+    assert!(text.contains("schema card is not the binding"), "{text}");
+    assert!(
+        text.contains("catalog frontier: schema model=grok-4.7"),
+        "{text}"
+    );
+    assert!(text.contains("doctor: FAIL"), "{text}");
+    assert!(
+        !text.contains("catalog frontier: cell model=grok-4.7"),
+        "status must not print the schema model as the cell binding: {text}"
+    );
+
+    let (ok, doc) = run(&[
+        "doctor".into(),
+        "--root".into(),
+        root.display().to_string(),
+        "--state-dir".into(),
+        state.display().to_string(),
+    ]);
+    assert!(!ok, "{doc}");
+    assert!(doc.contains("refuse:frontier-model"), "{doc}");
+    assert!(doc.contains("cell catalog model=grok-4.7"), "{doc}");
+    assert!(doc.contains("binding model=-"), "{doc}");
+    assert!(
+        doc.contains("schema/local-catalog.v0.json model=grok-4.7"),
+        "{doc}"
+    );
+    assert!(
+        !doc.contains("ok    catalog.json model=grok-4.7"),
+        "doctor must not prefer the schema card: {doc}"
+    );
+
+    let restored = tampered.replacen("\"model\": \"grok-4.7\"", "\"model\": \"\"", 1);
+    std::fs::write(&catalog_path, restored).unwrap();
+    let (ok, text) = run(&status_args);
+    assert!(ok, "{text}");
+    assert!(text.contains("catalog frontier: cell model=-"), "{text}");
+    assert!(text.contains("doctor: ok"), "{text}");
+    let (ok, doc) = run(&[
+        "doctor".into(),
+        "--root".into(),
+        root.display().to_string(),
+        "--state-dir".into(),
+        state.display().to_string(),
+    ]);
+    assert!(ok, "{doc}");
+    assert!(doc.contains("catalog.json has no frontier model"), "{doc}");
+    let _ = std::fs::remove_dir_all(&state);
+
+    let mixed = root.join("examples/fixtures/mixed-frontier-local.yaml");
+    let mixed_state = root.join(format!(
+        "target/test-catalog-mismatch-mixed-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&mixed_state);
+    let mixed_plans = mixed_state.join("plans");
+    let (ok, plan_text) = run(&[
+        "plan".into(),
+        "--estate".into(),
+        mixed.display().to_string(),
+        "--plans-dir".into(),
+        mixed_plans.display().to_string(),
+        "--state-dir".into(),
+        mixed_state.display().to_string(),
+    ]);
+    assert!(ok, "{plan_text}");
+    let (ok, apply_text) = run(&[
+        "apply".into(),
+        "--require-plan".into(),
+        "--estate".into(),
+        mixed.display().to_string(),
+        "--state-dir".into(),
+        mixed_state.display().to_string(),
+        "--roots-base".into(),
+        root.display().to_string(),
+        "--plans-dir".into(),
+        mixed_plans.display().to_string(),
+    ]);
+    assert!(ok, "{apply_text}");
+    let mixed_catalog = mixed_state.join("catalog.json");
+    let body = std::fs::read_to_string(&mixed_catalog).unwrap();
+    assert!(
+        body.contains("\"model\": \"grok-4.7\""),
+        "mixed apply must copy the bound model: {body}"
+    );
+    let swapped = body.replacen("\"model\": \"grok-4.7\"", "\"model\": \"other-model\"", 1);
+    std::fs::write(&mixed_catalog, swapped).unwrap();
+    let (ok, text) = run(&[
+        "status".into(),
+        "--estate".into(),
+        mixed.display().to_string(),
+        "--state-dir".into(),
+        mixed_state.display().to_string(),
+        "--roots-base".into(),
+        root.display().to_string(),
+        "--plans-dir".into(),
+        mixed_plans.display().to_string(),
+        "--root".into(),
+        root.display().to_string(),
+    ]);
+    assert!(!ok, "{text}");
+    assert!(text.contains("refuse:frontier-model"), "{text}");
+    assert!(text.contains("cell catalog model=other-model"), "{text}");
+    assert!(text.contains("binding model=grok-4.7"), "{text}");
+    assert!(text.contains("frontier: frontier_http model=grok-4.7"), "{text}");
+    assert!(
+        !text.contains("catalog frontier: cell model="),
+        "status must refuse before the cell catalog line: {text}"
+    );
+    let (ok, doc) = run(&[
+        "doctor".into(),
+        "--root".into(),
+        root.display().to_string(),
+        "--state-dir".into(),
+        mixed_state.display().to_string(),
+    ]);
+    assert!(!ok, "{doc}");
+    assert!(doc.contains("cell catalog model=other-model"), "{doc}");
+    assert!(doc.contains("binding model=grok-4.7"), "{doc}");
+    assert!(
+        !doc.contains("ok    catalog.json model="),
+        "doctor must not print a disagreeing cell model as ok: {doc}"
+    );
+    let _ = std::fs::remove_dir_all(&mixed_state);
+}

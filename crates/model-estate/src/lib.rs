@@ -88,6 +88,33 @@ pub fn bound_frontier_model(estate: &Estate) -> Result<Option<String>, ModelErro
     }
 }
 
+/// Cell catalog frontier model versus the estate binding. The schema card
+/// is not an argument. Empty and missing are the same (`-`).
+pub fn refuse_catalog_frontier_mismatch(
+    bound: Option<&str>,
+    catalog: Option<&str>,
+) -> Result<(), ModelError> {
+    let norm = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    };
+    let bound = norm(bound);
+    let catalog = norm(catalog);
+    if bound == catalog {
+        return Ok(());
+    }
+    fn show(value: &Option<String>) -> &str {
+        value.as_deref().unwrap_or("-")
+    }
+    Err(ModelError::Other(format!(
+        "refuse:frontier-model: cell catalog model={} disagrees with binding model={}; schema card is not the binding",
+        show(&catalog),
+        show(&bound)
+    )))
+}
+
 /// Plan and dry-run view. Classes and `params.model` only. The schema
 /// catalog card is not a source, and neither is `CELL_FRONTIER_MODEL`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -352,6 +379,27 @@ mod tests {
         let err = catalog_bound_to_estate(&split).unwrap_err();
         assert!(err.to_string().contains("refuse:frontier-model"), "{err}");
         assert_eq!(catalog_file().frontier.model, "grok-4.7");
+    }
+
+    #[test]
+    fn catalog_frontier_model_must_match_the_binding() {
+        assert!(refuse_catalog_frontier_mismatch(None, None).is_ok());
+        assert!(refuse_catalog_frontier_mismatch(Some(""), Some("  ")).is_ok());
+        assert!(refuse_catalog_frontier_mismatch(Some("grok-4.7"), Some("grok-4.7")).is_ok());
+        let invented = refuse_catalog_frontier_mismatch(None, Some("grok-4.7")).unwrap_err();
+        let invented = invented.to_string();
+        assert!(invented.contains("refuse:frontier-model"), "{invented}");
+        assert!(invented.contains("cell catalog model=grok-4.7"), "{invented}");
+        assert!(invented.contains("binding model=-"), "{invented}");
+        assert!(
+            invented.contains("schema card is not the binding"),
+            "{invented}"
+        );
+        let other =
+            refuse_catalog_frontier_mismatch(Some("grok-4.7"), Some("other-model")).unwrap_err();
+        let other = other.to_string();
+        assert!(other.contains("cell catalog model=other-model"), "{other}");
+        assert!(other.contains("binding model=grok-4.7"), "{other}");
     }
 
     #[test]
