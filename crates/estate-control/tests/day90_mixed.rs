@@ -266,6 +266,10 @@ fn mixed_grok_4_7_validate_and_dry_run_does_not_post() {
         String::from_utf8_lossy(&dry.stderr)
     );
     assert!(dry.status.success(), "{mix}");
+    assert!(
+        mix.contains("frontier plan: model=grok-4.7 source_drivers=frontier,local"),
+        "{mix}"
+    );
     assert!(!state.join("placement-actual.json").exists(), "{mix}");
     assert!(!state.join("catalog.json").exists(), "{mix}");
     assert!(
@@ -653,4 +657,110 @@ fn live_specialist_helper_requires_endpoint_and_stays_off_smoke() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("CELL_LOCAL_ENDPOINT"), "{err}");
     assert!(err.contains("not in smoke"), "{err}");
+}
+
+#[test]
+fn local_only_plan_and_dry_run_refuse_inventing_frontier() {
+    let root = repo_root();
+    let dir = tmp("local-only-plan");
+    let estate = dir.join("local-only.yaml");
+    std::fs::write(
+        &estate,
+        "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n",
+    )
+    .unwrap();
+    let plans = dir.join("plans");
+    let state = dir.join("state");
+    let plan = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "plan",
+            "--estate",
+            &estate.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let plan_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&plan.stdout),
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    assert!(!plan.status.success(), "{plan_text}");
+    assert!(plan_text.contains("refuse:frontier-invent"), "{plan_text}");
+    assert!(
+        !plan_text.contains("grok-4.7"),
+        "local-only plan must not invent the schema or env model: {plan_text}"
+    );
+    assert!(
+        !plan_text.contains("source_drivers=frontier"),
+        "{plan_text}"
+    );
+    assert!(
+        !plans.join("INDEX.md").exists(),
+        "refused plan must not write a plan index"
+    );
+
+    let dry = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "apply",
+            "--dry-run",
+            "--estate",
+            &estate.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+            "--roots-base",
+            &state.display().to_string(),
+            "--plans-dir",
+            &plans.display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let dry_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&dry.stdout),
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert!(!dry.status.success(), "{dry_text}");
+    assert!(dry_text.contains("refuse:frontier-invent"), "{dry_text}");
+    assert!(!dry_text.contains("grok-4.7"), "{dry_text}");
+    assert!(!state.join("catalog.json").exists(), "{dry_text}");
+    assert!(!state.join("placement-actual.json").exists(), "{dry_text}");
+
+    let locked = root.join("examples/estate.yaml");
+    let bound = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "plan",
+            "--estate",
+            &locked.display().to_string(),
+            "--plans-dir",
+            &dir.join("bound-plans").display().to_string(),
+            "--state-dir",
+            &dir.join("bound-state").display().to_string(),
+        ])
+        .env_remove("XAI_API_KEY")
+        .env("CELL_FRONTIER_MODEL", "grok-4.7")
+        .output()
+        .unwrap();
+    let bound_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&bound.stdout),
+        String::from_utf8_lossy(&bound.stderr)
+    );
+    assert!(bound.status.success(), "{bound_text}");
+    assert!(
+        bound_text.contains("frontier plan: model=- source_drivers=frontier,local"),
+        "{bound_text}"
+    );
+    assert!(
+        !bound_text.contains("frontier plan: model=grok-4.7"),
+        "default estate plan must not copy the schema card or CELL_FRONTIER_MODEL: {bound_text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

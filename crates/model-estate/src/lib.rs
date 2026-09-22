@@ -88,6 +88,53 @@ pub fn bound_frontier_model(estate: &Estate) -> Result<Option<String>, ModelErro
     }
 }
 
+/// Plan and dry-run view. Classes and `params.model` only. The schema
+/// catalog card is not a source, and neither is `CELL_FRONTIER_MODEL`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontierPlanView {
+    pub model: String,
+    pub source_drivers: Vec<String>,
+}
+
+/// Refuse when the estate has no frontier binding. A missing `params.model`
+/// stays `model=-`. Never copies the schema card `grok-4.7`.
+pub fn frontier_plan_view(estate: &Estate) -> Result<FrontierPlanView, ModelError> {
+    if frontier_bindings(estate).is_empty() {
+        return Err(ModelError::Other(
+            "refuse:frontier-invent: no frontier binding; will not invent a frontier source_driver or catalog model".into(),
+        ));
+    }
+    let model = match bound_frontier_model(estate)? {
+        Some(model) => model,
+        None => "-".into(),
+    };
+    if model != "-" && !estate_frontier_models(estate).iter().any(|(_, have)| have == &model) {
+        return Err(ModelError::Other(format!(
+            "refuse:frontier-invent: plan model '{model}' is not on a frontier binding"
+        )));
+    }
+    let mut source_drivers = vec!["frontier".to_string()];
+    if !local_bindings(estate).is_empty() {
+        source_drivers.push("local".to_string());
+    }
+    Ok(FrontierPlanView {
+        model,
+        source_drivers,
+    })
+}
+
+pub fn render_frontier_plan(view: &FrontierPlanView) -> String {
+    let drivers = if view.source_drivers.is_empty() {
+        "-".to_string()
+    } else {
+        view.source_drivers.join(",")
+    };
+    format!(
+        "frontier plan: model={} source_drivers={drivers}",
+        view.model
+    )
+}
+
 /// Frontier binding ids whose `params.model` is set. No catalog default.
 pub fn estate_frontier_models(estate: &Estate) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -305,6 +352,60 @@ mod tests {
         let err = catalog_bound_to_estate(&split).unwrap_err();
         assert!(err.to_string().contains("refuse:frontier-model"), "{err}");
         assert_eq!(catalog_file().frontier.model, "grok-4.7");
+    }
+
+    #[test]
+    fn frontier_plan_refuses_a_local_only_estate_and_does_not_copy_the_schema_card() {
+        let unbound = frontier_plan_view(&estate()).unwrap();
+        assert_eq!(unbound.model, "-");
+        assert_eq!(
+            unbound.source_drivers,
+            vec!["frontier".to_string(), "local".to_string()]
+        );
+        let line = render_frontier_plan(&unbound);
+        assert_eq!(line, "frontier plan: model=- source_drivers=frontier,local");
+        assert!(
+            !line.contains("grok-4.7"),
+            "unbound plan must not copy the schema card: {line}"
+        );
+
+        let named = load_estate_str(include_str!(
+            "../../../examples/fixtures/mixed-frontier-local.yaml"
+        ))
+        .unwrap();
+        let mixed = frontier_plan_view(&named).unwrap();
+        assert_eq!(
+            render_frontier_plan(&mixed),
+            "frontier plan: model=grok-4.7 source_drivers=frontier,local"
+        );
+
+        let mut local_only = estate();
+        local_only
+            .model_bindings
+            .retain(|b| b.class != ModelClass::Frontier);
+        let err = frontier_plan_view(&local_only).unwrap_err();
+        assert!(
+            err.to_string().contains("refuse:frontier-invent"),
+            "{err}"
+        );
+        assert!(
+            !err.to_string().contains("grok-4.7"),
+            "refuse must not invent the schema model: {err}"
+        );
+
+        let mut split = named.clone();
+        split.model_bindings.push(estate_schema::ModelBinding {
+            id: "other_frontier".into(),
+            class: ModelClass::Frontier,
+            driver: "http-remote".into(),
+            params: serde_json::json!({ "model": "other-model" }),
+            wired: true,
+        });
+        let split_err = frontier_plan_view(&split).unwrap_err();
+        assert!(
+            split_err.to_string().contains("refuse:frontier-model"),
+            "{split_err}"
+        );
     }
 
     #[test]
