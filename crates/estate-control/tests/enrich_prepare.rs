@@ -460,6 +460,99 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
     }
 }
 
+#[test]
+fn cell_one_status_tip_names_pr_140_beachhead() {
+    let root = repo_root();
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    assert!(
+        !status.contains("through PR #82"),
+        "status tip must name PR #140, not through PR #82"
+    );
+    let head: String = status.lines().take(12).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("through PR #140"),
+        "status header must name tip through PR #140: {head}"
+    );
+    assert!(
+        head.contains("35a88139dea58528e4bc5c7b31708b9716ce091b"),
+        "status header must name the PR #140 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("READY_FOR_LIVE_TEST`: no") || head.contains("READY_FOR_LIVE_TEST: no"),
+        "status header must keep READY_FOR_LIVE_TEST no: {head}"
+    );
+    assert!(
+        !head.contains("READY_FOR_LIVE_TEST: yes") && !head.contains("READY_FOR_LIVE_TEST`: yes"),
+        "status header must not flip READY_FOR_LIVE_TEST: {head}"
+    );
+
+    let uniq = status
+        .split("## Train/enrich uniqueness (tip through PR #140)")
+        .nth(1)
+        .expect("uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(
+        uniq.contains("lf-beachhead-matrix.md"),
+        "uniqueness section must link the beachhead matrix"
+    );
+    assert!(uniq.contains("refuse:train-base"), "{uniq}");
+    assert!(uniq.contains("make qlora-journey"), "{uniq}");
+    assert!(uniq.contains("make lora-journey"), "{uniq}");
+    assert!(uniq.contains("make seat-journey"), "{uniq}");
+    assert!(uniq.contains("SKIP live train"), "{uniq}");
+    assert!(uniq.contains("extra_special_tokens"), "{uniq}");
+    assert!(
+        uniq.contains("READY_FOR_LIVE_TEST`: no") || uniq.contains("READY_FOR_LIVE_TEST: no"),
+        "{uniq}"
+    );
+    assert!(
+        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
+        "uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+    assert!(
+        uniq.contains("Kimi is not a row"),
+        "uniqueness section must leave Kimi off the matrix"
+    );
+    assert!(
+        !uniq.to_ascii_lowercase().contains("kimi/"),
+        "uniqueness section must not add a Kimi train base"
+    );
+    for family in [
+        "Phi-3 Instruct",
+        "Llama-3.2 Instruct",
+        "Gemma-2 Instruct",
+        "Mistral Instruct",
+        "Qwen2.5 Instruct",
+        "Qwen3 Instruct",
+        "DeepSeek-R1-Distill chat",
+        "GLM-4 Chat",
+    ] {
+        assert!(uniq.contains(family), "uniqueness section missing {family}");
+    }
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — Cell One status tip honesty through PR #140")
+        .nth(1)
+        .expect("CHANGELOG missing the tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("35a88139dea58528e4bc5c7b31708b9716ce091b"), "{slice}");
+    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+}
+
 fn fixture_paths_in(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;

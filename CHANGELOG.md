@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Cell One status tip honesty through PR #140
+
+- `docs/CELL-ONE-STATUS.md` names tip `35a88139dea58528e4bc5c7b31708b9716ce091b` (PR #140, the LLaMA-Factory LoRA and QLoRA beachhead matrix). The uniqueness section states the printed ladder (prepare, the `NEXT.md` train and export lines, `merge-adapt`, `gguf-convert`, `local-seat`, `import-trained`). The seat tag stays separate from the Hugging Face train base. A bare Ollama tag is `refuse:train-base`. The section points at [`docs/lf-beachhead-matrix.md`](docs/lf-beachhead-matrix.md): 8 families, each with a LoRA row and a QLoRA row. DeepSeek-R1-Distill chat and GLM-4 Chat pairs are closed. Kimi is not a row. `estate help enrich` and `estate help train` print that file. `make qlora-journey` and `make lora-journey` print `SKIP live train`. `make seat-journey` prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `gguf-convert` still returns `refuse:tokenizer` for a JSON list or JSON null under `extra_special_tokens`, and for a Qwen-family export missing `vocab.json` or `merges.txt`, and still names the HF-cache restore. `READY_FOR_LIVE_TEST`: no.
+- This slice does not add a train family, a fixture pack, a driver, or a journey. It does not add Kimi. It is not on `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked. The recorded 5090 tokenizer prove stays on `docs/local-seat.md`. This slice does not add a live GPU result.
+
 ## This slice — LLaMA-Factory LoRA and QLoRA beachhead matrix
 
 - `docs/lf-beachhead-matrix.md` lists each current LLaMA-Factory reproduce target: Phi-3 Instruct, Llama-3.2 Instruct, Gemma-2 Instruct, Mistral Instruct, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat. Each family has a `llamafactory-qlora` row and a `llamafactory-lora` row. The columns are family, card, train-base beachhead id, template, knobs (rank / packing / quant), and the smoke fixture path. QLoRA rows keep `lora_rank` 16, `packing` true, `quantization_method` `bnb`, and `quantization_bit` 4. LoRA rows keep `lora_rank` 8, `packing` false, and omit quantization keys. The smoke seat tag stays `llama3`. A bare Ollama seat tag stays `refuse:train-base`.
