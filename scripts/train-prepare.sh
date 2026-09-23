@@ -134,6 +134,8 @@ if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen
   echo "FAIL  qwen2.5 prepare took the qwen3 instruct reproduce note"
   exit 1
 fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/llamafactory/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/llamafactory/PREPARE.md"
 grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/llamafactory/recipe.yaml"
 if grep -q "quantization_method: bitsandbytes" "$WORKDIR/llamafactory/recipe.yaml"; then
@@ -317,6 +319,10 @@ if grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-lora/NEXT.md"; then
 fi
 if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare." "$WORKDIR/llamafactory-lora/NEXT.md" "$WORKDIR/llamafactory-lora/PREPARE.md"; then
   echo "FAIL  qwen2.5 LoRA prepare took the qwen3 instruct LoRA reproduce note"
+  exit 1
+fi
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/llamafactory-lora/NEXT.md" "$WORKDIR/llamafactory-lora/PREPARE.md"; then
+  echo "FAIL  qwen2.5 LoRA prepare took the Qwen2.5 Instruct QLoRA reproduce note"
   exit 1
 fi
 grep -q "pip install llamafactory" "$WORKDIR/llamafactory-lora/NEXT.md"
@@ -822,6 +828,10 @@ if grep -q "quantization_bit" "$WORKDIR/qwen3-qlora/export.yaml"; then
 fi
 grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/qwen3-qlora/NEXT.md"
 grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/qwen3-qlora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/qwen3-qlora/NEXT.md" "$WORKDIR/qwen3-qlora/PREPARE.md"; then
+  echo "FAIL  qwen3 prepare took the qwen2.5 instruct reproduce note"
+  exit 1
+fi
 if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/qwen3-qlora/NEXT.md" "$WORKDIR/qwen3-qlora/PREPARE.md"; then
   echo "FAIL  qwen3 prepare must keep READY_FOR_LIVE_TEST no"
   exit 1
@@ -836,6 +846,77 @@ if prepare.get("train_base_model") != "Qwen/Qwen3-4B-Instruct-2507":
 if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
     raise SystemExit("FAIL  qwen3 prepare must stay unpromoted")
 PY
+
+QWEN25_PACK="$ROOT/examples/fixtures/qwen25-instruct.pack.json"
+echo "-- qwen2.5 instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$QWEN25_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/qwen25-qlora"
+grep -q "^template: qwen$" "$WORKDIR/qwen25-qlora/recipe.yaml"
+grep -q "^template: qwen$" "$WORKDIR/qwen25-qlora/export.yaml"
+grep -q "^lora_rank: 16$" "$WORKDIR/qwen25-qlora/recipe.yaml"
+grep -q "^packing: true$" "$WORKDIR/qwen25-qlora/recipe.yaml"
+if grep -q "^template: qwen3_nothink$" "$WORKDIR/qwen25-qlora/recipe.yaml"; then
+  echo "FAIL  qwen2.5 instruct recipe used qwen3_nothink"
+  exit 1
+fi
+if grep -q "^template: qwen3$" "$WORKDIR/qwen25-qlora/recipe.yaml"; then
+  echo "FAIL  qwen2.5 instruct recipe used the qwen3 template"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/qwen25-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/qwen25-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/qwen25-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/qwen25-qlora/recipe.yaml"; then
+  echo "FAIL  qwen2.5 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/qwen25-qlora/export.yaml"; then
+  echo "FAIL  qwen2.5 export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/qwen25-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/qwen25-qlora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/qwen25-qlora/NEXT.md" "$WORKDIR/qwen25-qlora/PREPARE.md"; then
+  echo "FAIL  qwen2.5 fixture prepare wrote the qwen3 instruct reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/qwen25-qlora/NEXT.md" "$WORKDIR/qwen25-qlora/PREPARE.md"; then
+  echo "FAIL  qwen2.5 prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/qwen25-qlora/train.py" || -e "$WORKDIR/qwen25-qlora/train.sh" ]]; then
+  echo "FAIL  qwen2.5 prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/qwen25-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-qlora":
+    raise SystemExit(f"FAIL  qwen2.5 driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  qwen2.5 seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  qwen2.5 train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  qwen2.5 prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$QWEN25_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/qwen25-pack-lora"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/qwen25-pack-lora/NEXT.md" "$WORKDIR/qwen25-pack-lora/PREPARE.md"; then
+  echo "FAIL  qwen2.5 fixture on the LoRA card wrote the QLoRA reproduce note"
+  exit 1
+fi
+grep -q "^template: qwen$" "$WORKDIR/qwen25-pack-lora/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/qwen25-pack-lora/recipe.yaml"; then
+  echo "FAIL  qwen2.5 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
 
 QWEN3_LORA_PACK="$ROOT/examples/fixtures/qwen3-instruct-lora.pack.json"
 echo "-- qwen3 instruct lora reproduce target --"
