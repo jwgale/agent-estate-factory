@@ -464,8 +464,15 @@ lines write output_dir/merged. This factory does not run the merge.
 Axolotl does not write GGUF. Then gguf-convert prints
 python3 convert_hf_to_gguf.py with --outtype auto, local-seat prints
 ollama create, and import-trained records the adapter directory, that
-merged directory, or a .gguf file. unsloth-qlora and mlx-lm-lora stay
-off this print ladder (refuse:driver).
+merged directory, or a .gguf file. unsloth-qlora stays off this
+print ladder (refuse:driver). mlx-lm-lora prints its own fuse line.
+merge-adapt on that prepare prints mlx_lm.fuse. The adapter directory
+holds adapter_config.json and adapters.safetensors. --save-path is
+fused_model beside the prepare. --export-gguf writes
+ggml-model-f16.gguf inside that directory. local-seat prints the
+Ollama line for that GGUF file. The fused directory is MLX weights.
+This factory does not print a Hugging Face convert line for it and
+does not run fuse.
 
   estate enrich merge-adapt \\
     --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
@@ -586,7 +593,11 @@ cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
 estate enrich merge-adapt prints the external adapter merge for an
 axolotl-lora, axolotl-qlora, llamafactory-lora, or llamafactory-qlora
-train prepare. --adapter is an adapter directory (adapter_config.json).
+train prepare, and the mlx_lm.fuse line for an mlx-lm-lora train
+prepare on apple-silicon. --adapter is an adapter directory
+(adapter_config.json). On mlx-lm-lora that directory also holds
+adapters.safetensors. A PEFT adapter_model file, a missing weight
+file, another host, a symlink, and a wrong job still refuse.
 A merged Hugging Face directory or a GGUF is refuse:adapter. For
 Axolotl the printed line is axolotl merge-lora with --lora-model-dir.
 axolotl-qlora also prints --dequant. Axolotl writes output_dir/merged.
@@ -605,9 +616,13 @@ estate enrich gguf-convert prints the llama.cpp convert line for a
 merged Hugging Face directory (config.json and at least one
 .safetensors file whose name does not start with adapter_model) from
 a llamafactory-lora, llamafactory-qlora, axolotl-lora, or
-axolotl-qlora train prepare. An adapter directory, a directory that
-only holds export.yaml, a symlinked weights path, a symlinked marker,
-and a path that is already a GGUF are refuse:seat. The printed line is:
+axolotl-qlora train prepare. mlx-lm-lora does not use this script.
+gguf-convert on that prepare is refuse:seat. The documented GGUF path
+is mlx_lm.fuse --export-gguf, which writes ggml-model-f16.gguf. This
+factory does not invent a convert script. An adapter directory, a
+directory that only holds export.yaml, a symlinked weights path, a
+symlinked marker, and a path that is already a GGUF are refuse:seat.
+The printed line is:
 
   python3 convert_hf_to_gguf.py <merged-dir> --outfile <sibling>.gguf --outtype auto
 
@@ -631,6 +646,10 @@ Ollama stays the default print. --runtime llama.cpp selects those
 llama.cpp lines and still prints the Ollama line. A merged directory
 is not a llama.cpp seat: the report points at gguf-convert first and
 does not print llama-cli for the directory. Axolotl does not write that GGUF.
+mlx-lm-lora on apple-silicon seats one .gguf file, the file
+mlx_lm.fuse --export-gguf writes (default name ggml-model-f16.gguf).
+A fused MLX directory is refuse:seat. --adapter on that prepare is
+refuse:adapter. Another host is refuse:host.
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained

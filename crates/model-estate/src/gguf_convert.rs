@@ -6,6 +6,10 @@
 //! the GGUF. This module prints the command. It does not vendor the script,
 //! spawn it, or write a GGUF.
 //!
+//! `mlx-lm-lora` does not use this script. mlx-lm documents
+//! `mlx_lm.fuse --export-gguf`. This command refuses that prepare and names
+//! that flag. It does not invent a converter.
+//!
 //! `--outtype auto` is the script default in ggml-org/llama.cpp
 //! `convert_hf_to_gguf.py`: choices are f32, f16, bf16, q8_0, tq1_0, tq2_0,
 //! and auto, and the default is auto (the highest-fidelity 16-bit float
@@ -16,7 +20,8 @@ use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
 use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_sacred_and_sku, EnrichJobKind,
+    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
+    MLX_LM_LORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::path::{Path, PathBuf};
@@ -85,7 +90,8 @@ pub fn plan_gguf_convert(
     refuse_sacred_and_sku("prepared", &prepared_dir.display().to_string())?;
     refuse_sacred_and_sku("weights", &weights.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
-    if !is_post_merge_print_driver(&doc.driver) {
+    let mlx = doc.driver == MLX_LM_LORA_ID;
+    if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("gguf-convert", &doc.driver));
     }
     if doc.job != EnrichJobKind::Train.as_str() {
@@ -99,6 +105,10 @@ pub fn plan_gguf_convert(
         .clone()
         .ok_or_else(|| ModelError::Other("refuse:seat: prepare.json has no seat_tag".into()))?;
     let local_tag = local_enrich_tag(&doc.pack_id);
+    if mlx {
+        refuse_recipe_train_record(&doc, prepared_dir)?;
+        return Err(refuse_mlx_gguf_convert(weights));
+    }
     let shape = classify_weights(weights)?;
     let dir = match shape {
         WeightsShape::Merged { dir, .. } => dir,
@@ -157,6 +167,25 @@ pub fn plan_gguf_convert(
         local_seat_command: seat,
         report,
     })
+}
+
+fn refuse_mlx_gguf_convert(weights: &Path) -> ModelError {
+    match classify_weights(weights) {
+        Ok(WeightsShape::Gguf { file, .. }) => ModelError::Other(format!(
+            "refuse:seat: {} is a GGUF. gguf-convert does not print a converter for a file that is already GGUF. Seat this file with estate enrich local-seat --weights. mlx_lm.fuse --export-gguf is the documented way mlx-lm writes that file. This factory does not invent a convert script.",
+            file.display()
+        )),
+        Ok(WeightsShape::Merged { dir, .. }) => {
+            crate::merge_adapt::refuse_mlx_hf_weights("gguf-convert", &dir)
+        }
+        Err(err) if err.to_string().contains("is an adapter directory") => {
+            crate::merge_adapt::refuse_mlx_adapter_weights(weights)
+        }
+        Err(err) if err.to_string().contains("more than one shape") => {
+            crate::merge_adapt::refuse_mlx_mixed_weights(weights)
+        }
+        Err(err) => err,
+    }
 }
 
 fn map_feed(err: FeedError) -> ModelError {
@@ -486,9 +515,15 @@ mod tests {
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), false);
         let err = plan_gguf_convert(&root, &export).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("refuse:host"), "{err}");
         assert!(err.to_string().contains("mlx-lm-lora"), "{err}");
+        assert!(err.to_string().contains("apple-silicon"), "{err}");
         assert!(!err.to_string().contains("--outtype"), "{err}");
+        assert!(
+            !err.to_string().contains("python3 convert_hf_to_gguf.py"),
+            "{err}"
+        );
+        assert!(!err.to_string().contains("mlx_lm.fuse"), "{err}");
 
         write_prepare(&root, "ollama-modelfile", "enrich", Some("llama3"), false);
         let err = plan_gguf_convert(&root, &export).unwrap_err();
@@ -703,5 +738,135 @@ mod tests {
         let err = plan_gguf_convert(&root, &sacred).unwrap_err();
         assert!(err.to_string().contains("refuse:sacred"), "{err}");
         assert!(!err.to_string().contains("--outtype"), "{err}");
+    }
+
+    fn write_mlx(dir: &Path, job: &str, host: &str, promoted: bool) {
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"mlx-lm-lora\",\n\
+               \"job\": \"{job}\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"{host}\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [],\n\
+               \"promoted\": {promoted},\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+    }
+
+    fn write_mlx_md(dir: &Path) {
+        std::fs::write(
+            dir.join("MLX.md"),
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\nhost_class_affinity: apple-silicon\n",
+        )
+        .unwrap();
+    }
+
+    fn assert_no_convert_line(text: &str) {
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+        assert!(!text.contains("--outtype"), "{text}");
+    }
+
+    #[test]
+    fn mlx_gguf_convert_refuses_and_names_the_documented_export() {
+        let root = tmp("mlx-convert");
+        write_mlx(&root, "train", "apple-silicon", false);
+        write_mlx_md(&root);
+        let before = names(&root);
+
+        let gguf = root.join("ggml-model-f16.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let err = plan_gguf_convert(&root, &gguf).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("is a GGUF"), "{text}");
+        assert!(text.contains("estate enrich local-seat"), "{text}");
+        assert!(text.contains("--export-gguf"), "{text}");
+        assert_no_convert_line(&text);
+
+        let fused = root.join("fused_model");
+        merged(&fused);
+        let err = plan_gguf_convert(&root, &fused).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("MLX weights"), "{text}");
+        assert!(text.contains("ggml-model-f16.gguf"), "{text}");
+        assert!(text.contains("does not invent a convert script"), "{text}");
+        assert_no_convert_line(&text);
+        assert!(!text.contains("estate enrich gguf-convert --"), "{text}");
+
+        let adapter = root.join("adapters");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapters.safetensors"), b"w").unwrap();
+        let err = plan_gguf_convert(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("adapter directory"), "{text}");
+        assert!(text.contains("adapters.safetensors"), "{text}");
+        assert_no_convert_line(&text);
+
+        std::fs::write(fused.join("ggml-model-f16.gguf"), gguf_bytes()).unwrap();
+        let err = plan_gguf_convert(&root, &fused).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("more than one shape"), "{text}");
+        assert!(text.contains("ggml-model-f16.gguf"), "{text}");
+        assert_no_convert_line(&text);
+
+        let linked = root.join("linked-fused");
+        std::os::unix::fs::symlink(&fused, &linked).unwrap();
+        let err = plan_gguf_convert(&root, &linked).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert_no_convert_line(&err.to_string());
+
+        write_mlx(&root, "enrich", "apple-silicon", false);
+        let err = plan_gguf_convert(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert_no_convert_line(&err.to_string());
+
+        write_mlx(&root, "train", "apple-silicon", false);
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        let err = plan_gguf_convert(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("MLX.md"), "{err}");
+
+        let real = root.join("real-mlx.md");
+        write_mlx_md(&root);
+        std::fs::rename(root.join("MLX.md"), &real).unwrap();
+        std::os::unix::fs::symlink(&real, root.join("MLX.md")).unwrap();
+        let err = plan_gguf_convert(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+
+        write_mlx(&root, "train", "apple-silicon", true);
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        write_mlx_md(&root);
+        let err = plan_gguf_convert(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+
+        write_mlx(&root, "train", "rented-nvidia", false);
+        let err = plan_gguf_convert(&root, &fused).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(!err.to_string().contains("MLX weights"), "{err}");
+
+        let sacred = root.join("cyera-gguf");
+        std::fs::write(&sacred, gguf_bytes()).unwrap();
+        write_mlx(&root, "train", "apple-silicon", false);
+        let err = plan_gguf_convert(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        assert!(before.iter().all(|name| name != "export.gguf"));
+        assert!(!root.join("fused_model.gguf").exists());
     }
 }

@@ -74,6 +74,8 @@ fn install_traps(root: &std::path::Path) -> (PathBuf, PathBuf) {
         "python3",
         "llama-quantize",
         "convert_hf_to_gguf.py",
+        "mlx_lm.fuse",
+        "mlx_lm.lora",
     ] {
         let path = bin.join(name);
         std::fs::write(&path, &script).unwrap();
@@ -327,4 +329,71 @@ fn axolotl_prepare_prints_the_convert_line_and_refuses_the_adapter() {
         assert!(link_text.contains("symlink"), "{driver}: {link_text}");
         assert!(!root.join("spawned").exists(), "{driver}");
     }
+}
+
+fn write_mlx(dir: &std::path::Path, host: &str) {
+    let body = format!(
+        "{{\n\
+           \"schema\": \"cell-one.enrich-prepare.v0\",\n\
+           \"driver\": \"mlx-lm-lora\",\n\
+           \"job\": \"train\",\n\
+           \"pack_id\": \"overnight-traces\",\n\
+           \"base_model\": \"llama3\",\n\
+           \"seat_tag\": \"llama3\",\n\
+           \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n\
+           \"purpose\": \"fixture\",\n\
+           \"host_class_affinity\": \"{host}\",\n\
+           \"source_paths\": [],\n\
+           \"source_drivers\": [],\n\
+           \"artifacts\": [],\n\
+           \"promoted\": false,\n\
+           \"auto_apply\": false,\n\
+           \"estate_rewritten\": false,\n\
+           \"note\": \"test\"\n\
+         }}\n"
+    );
+    std::fs::write(dir.join("prepare.json"), body).unwrap();
+    std::fs::write(
+        dir.join("MLX.md"),
+        "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\nhost_class_affinity: apple-silicon\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn mlx_convert_refuses_and_does_not_spawn() {
+    let root = tmp("mlx");
+    write_mlx(&root, "apple-silicon");
+    let gguf = root.join("ggml-model-f16.gguf");
+    std::fs::write(&gguf, gguf_bytes()).unwrap();
+    let gguf_out = run_convert(&root, &gguf);
+    let gguf_text = text(&gguf_out);
+    assert!(!gguf_out.status.success(), "{gguf_text}");
+    assert!(gguf_text.contains("refuse:seat"), "{gguf_text}");
+    assert!(gguf_text.contains("is a GGUF"), "{gguf_text}");
+    assert!(gguf_text.contains("--export-gguf"), "{gguf_text}");
+    assert!(
+        !gguf_text.contains("python3 convert_hf_to_gguf.py"),
+        "{gguf_text}"
+    );
+    assert!(!gguf_text.contains("--outtype"), "{gguf_text}");
+
+    let fused = root.join("fused_model");
+    merged(&fused);
+    let fused_out = run_convert(&root, &fused);
+    let fused_text = text(&fused_out);
+    assert!(!fused_out.status.success(), "{fused_text}");
+    assert!(fused_text.contains("refuse:seat"), "{fused_text}");
+    assert!(fused_text.contains("MLX weights"), "{fused_text}");
+    assert!(!fused_text.contains("--outtype"), "{fused_text}");
+    assert!(!root.join("fused_model.gguf").exists());
+    assert!(!root.join("spawned").exists());
+
+    write_mlx(&root, "any");
+    let host_out = run_convert(&root, &gguf);
+    let host_text = text(&host_out);
+    assert!(!host_out.status.success(), "{host_text}");
+    assert!(host_text.contains("refuse:host"), "{host_text}");
+    assert!(!host_text.contains("mlx_lm.fuse"), "{host_text}");
+    assert!(!root.join("spawned").exists());
 }

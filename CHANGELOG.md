@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print the mlx-lm fuse ladder
+
+- `estate enrich merge-adapt` on an `mlx-lm-lora` train prepare prints the documented `mlx_lm.fuse` line when `--adapter` is the directory `mlx_lm.lora` writes (`adapter_config.json` and `adapters.safetensors`). `--model` is `prepare.json` `train_base_model`. `--adapter-path` is that directory. `--save-path` is `fused_model` beside the prepare (the `mlx_lm.fuse` default directory name). The same report prints `mlx_lm.fuse --export-gguf`. mlx-lm writes `ggml-model-f16.gguf` inside that directory (https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md). LORA.md limits that GGUF export to Mistral, Mixtral, and Llama style models in fp16. The report then names `estate enrich local-seat` for that file. The command does not fuse, does not shell out, does not write weights, and does not promote.
+- The fused directory is MLX weights. `gguf-convert` and `local-seat` do not treat it as a merged Hugging Face directory and do not print a llama.cpp convert line for it. A `.gguf` file on this prepare still prints the Ollama seat (`local-seat`) and is `refuse:seat` on `gguf-convert` because the file is already GGUF. `local-seat --adapter` stays `refuse:adapter` for this driver. `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, and `axolotl-qlora` keep their merge, convert, and seat lines. `unsloth-qlora` stays `refuse:driver`.
+- A missing `adapters.safetensors`, a PEFT `adapter_model` file, a symlink, a sacred token, a hardware SKU, the wrong job, and a host other than `apple-silicon` still refuse. A non-apple-silicon prepare still writes nothing (`refuse:host`).
+- `PREPARE.md`, `NEXT.md`, and `MLX.md` name this print ladder after the handoff train step.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Mistral Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `mistral` for `mistralai/Mistral-7B-Instruct-v0.1`, `mistralai/Mistral-7B-Instruct-v0.2`, and `mistralai/Mistral-7B-Instruct-v0.3`, including those ids as nested path segments and HF cache directories (`models--mistralai--Mistral-7B-Instruct-v0.3`). A Mistral-7B base uses that same template. Mistral-Small uses `mistral_small`. Mistral-Nemo uses `ministral`. Mixtral uses `mistral` and is not this reproduce target. LLaVA-NeXT-Mistral uses `llava_next_mistral`. Ministral, Ministral-3, Codestral, Devstral, and Pixtral stay off `mistral`. A short `mistral` stem does not take those other names. The names follow LLaMA-Factory `register_model_group` in `constants.py` and `mistral` in `template.py`. There is no `mistral_7` template.

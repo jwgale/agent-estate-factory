@@ -1,4 +1,4 @@
-//! Print-only adapter → merged Hugging Face directory handoff.
+//! Print-only adapter → merged weights handoff.
 //!
 //! Axolotl already merges a LoRA adapter with `axolotl merge-lora`
 //! ([getting started](https://docs.axolotl.ai/docs/getting-started.html)
@@ -9,18 +9,27 @@
 //! `merge_and_unload` plus `save_pretrained` is the documented adapter merge
 //! (https://huggingface.co/docs/peft/main/en/developer_guides/checkpoint).
 //! The directory for that save sits beside `outputs/` in the prepared tree.
+//! Those cards then print `gguf-convert` and `local-seat` for that Hugging
+//! Face directory.
 //!
-//! This module prints those lines, then the `gguf-convert` and `local-seat`
-//! lines for the merged directory. It does not merge, spawn, download, or
-//! write a directory.
+//! `mlx-lm-lora` prints mlx-lm's documented fuse. `mlx_lm.lora` writes
+//! `adapter_config.json` and `adapters.safetensors`. `mlx_lm.fuse` writes
+//! `fused_model/` (`--save-path` default). `--export-gguf` writes
+//! `ggml-model-f16.gguf` inside that directory
+//! (https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md).
+//! The fused directory is MLX weights. This card does not print
+//! `convert_hf_to_gguf.py` for it. `local-seat` is named for that GGUF file.
+//!
+//! This module prints those lines. It does not merge, fuse, spawn, download,
+//! or write a directory.
 
 use crate::error::ModelError;
 use crate::gguf_convert::{gguf_convert_cli, local_seat_cli, printed_convert_line};
 use crate::local_seat::{classify_adapter, shell_quote};
 use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_sacred_and_sku, EnrichJobKind, EnrichPrepareDoc,
-    AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID,
+    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
+    EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, MLX_LM_LORA_ID, MLX_LORA_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::io::Read;
@@ -28,8 +37,17 @@ use std::path::{Path, PathBuf};
 
 const CARD_MAX_BYTES: u64 = 1024 * 1024;
 
-/// Printed plan. `merged_dir` is the Hugging Face directory the external
-/// merge writes. This command does not create it.
+/// `--save-path` default in `mlx_lm.fuse`. LORA.md writes the fused model here.
+pub(crate) const MLX_FUSED_DIR_NAME: &str = "fused_model";
+/// `--gguf-path` default. `fuse.py` joins it with the save path.
+pub(crate) const MLX_GGUF_FILE_NAME: &str = "ggml-model-f16.gguf";
+/// Final adapter weights `mlx_lm.lora` writes and `load_adapters` reads.
+pub(crate) const MLX_ADAPTER_WEIGHTS: &str = "adapters.safetensors";
+
+/// Printed plan. `merged_dir` is the directory the external merge or fuse
+/// writes. For LLaMA-Factory and Axolotl that is a Hugging Face directory.
+/// For `mlx-lm-lora` it is the `mlx_lm.fuse` `--save-path` (`fused_model`).
+/// This command does not create it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeAdaptPlan {
     pub seat_tag: String,
@@ -40,8 +58,12 @@ pub struct MergeAdaptPlan {
     /// on the qlora card. LLaMA-Factory adapter path: the PEFT snippet.
     pub merge_commands: Vec<String>,
     pub merged_dir: PathBuf,
-    /// `python3 convert_hf_to_gguf.py` line `gguf-convert` would print.
+    /// Documented convert line. LLaMA-Factory and Axolotl print
+    /// `python3 convert_hf_to_gguf.py`. `mlx-lm-lora` prints
+    /// `mlx_lm.fuse --export-gguf`.
     pub convert_command: String,
+    /// `estate enrich gguf-convert` for a merged Hugging Face directory.
+    /// Empty on `mlx-lm-lora`: that command does not convert MLX weights.
     pub gguf_convert_command: String,
     pub local_seat_command: String,
     pub report: String,
@@ -76,7 +98,8 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
     refuse_sacred_and_sku("prepared", &prepared_dir.display().to_string())?;
     refuse_sacred_and_sku("adapter", &adapter.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
-    if !is_post_merge_print_driver(&doc.driver) {
+    let mlx = doc.driver == MLX_LM_LORA_ID;
+    if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("merge-adapt", &doc.driver));
     }
     if doc.job != EnrichJobKind::Train.as_str() {
@@ -93,12 +116,16 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
     if let Some(train) = doc.train_base_model.as_deref() {
         single_line("refuse:train-base", "train_base_model", train)?;
     }
-    let shape = classify_adapter(adapter)?;
     let local_tag = local_enrich_tag(&doc.pack_id);
-    let plan = if is_axolotl_driver(&doc.driver) {
-        plan_axolotl(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+    let plan = if mlx {
+        plan_mlx(prepared_dir, &doc, &seat_tag, &local_tag, adapter)?
     } else {
-        plan_peft(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+        let shape = classify_adapter(adapter)?;
+        if is_axolotl_driver(&doc.driver) {
+            plan_axolotl(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+        } else {
+            plan_peft(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+        }
     };
     refuse_sacred_and_sku("merge-adapt report", &plan.report)?;
     refuse_raw_secrets(&plan.report).map_err(map_feed)?;
@@ -245,6 +272,258 @@ fn plan_peft(
         local_seat_command: seat,
         report,
     })
+}
+
+fn plan_mlx(
+    prepared_dir: &Path,
+    doc: &EnrichPrepareDoc,
+    seat_tag: &str,
+    local_tag: &str,
+    adapter: &Path,
+) -> Result<MergeAdaptPlan, ModelError> {
+    refuse_recipe_train_record(doc, prepared_dir)?;
+    let train = doc.train_base_model.clone().ok_or_else(|| {
+        ModelError::Other(
+            "refuse:train-base: prepare.json has no train_base_model. mlx_lm.fuse --model is that train base. This factory does not invent a Hub repo and does not download weights.".into(),
+        )
+    })?;
+    refuse_sacred_and_sku("train base", &train)?;
+    let shape = classify_mlx_adapter(adapter)?;
+    let fused = mlx_fused_dir(prepared_dir);
+    let gguf = mlx_gguf_file(prepared_dir);
+    refuse_sacred_and_sku("fused", &fused.display().to_string())?;
+    refuse_sacred_and_sku("gguf", &gguf.display().to_string())?;
+    single_line(
+        "refuse:merge",
+        "fused directory",
+        &fused.display().to_string(),
+    )?;
+    single_line("refuse:merge", "gguf file", &gguf.display().to_string())?;
+    let fuse = printed_mlx_fuse_line(&train, &shape.dir, &fused, false);
+    let export = printed_mlx_fuse_line(&train, &shape.dir, &fused, true);
+    let seat = local_seat_cli(prepared_dir, &gguf);
+    let report = format!(
+        "merge-adapt: shape=mlx-adapter seat_tag={seat_tag} local_tag={local_tag}\n\
+         pack={pack_id}\n\
+         driver={driver}\n\
+         adapter={adapter}\n\
+         fused={fused}\n\
+         gguf={gguf}\n\
+         promoted=false auto_apply=false estate_rewritten=false\n\
+         \n\
+         mlx-lm documents fuse on {lora_doc}. The page shows `{documented}`. That default loads adapters from adapters/ and writes the fused model in fused_model/. fuse.py documents --adapter-path (default adapters) and --save-path (default fused_model). This adapter directory is {adapter}. It holds adapter_config.json and adapters.safetensors. Those are the two files mlx_lm.lora writes and mlx_lm.fuse loads. This print passes --model from prepare.json train_base_model, --adapter-path for this directory, and --save-path {fused}. The directory name fused_model is the documented default. It sits beside this prepare so the later seat line names one path. This factory does not create {fused}.\n\
+         \n\
+         {fuse}\n\
+         \n\
+         GGUF export is on that same page: `mlx_lm.fuse --export-gguf`. The file is {gguf}. That is the save path plus ggml-model-f16.gguf, the --gguf-path default. This print does not pass --gguf-path. LORA.md limits that export to Mistral, Mixtral, and Llama style models in fp16 precision. fuse.py raises when model_type is not llama, mixtral, or mistral. This factory does not read the model config and does not guess model_type from the train base. The fused directory is MLX weights (model.safetensors plus config.json). That is not a merged Hugging Face directory. This print does not include a llama.cpp convert line. That convert card stays on llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora. `mlx_lm.fuse --help` lists --dequantize and --gguf-path. This print does not add them.\n\
+         \n\
+         {export}\n\
+         \n\
+         After that file exists, local-seat prints the Ollama create line for the .gguf file, plus llama-cli -m and llama-server -m. Pass the file. A directory that also holds the fused weights matches more than one shape. --adapter does not print an Ollama ADAPTER Modelfile for an mlx adapter. import-trained records the adapter directory or that GGUF file. It does not promote.\n\
+         \n\
+         {seat}\n\
+         \n\
+         merge-adapt did not fuse and did not write {fused} or {gguf}.\n\
+         READY_FOR_LIVE_TEST: no.\n",
+        pack_id = doc.pack_id.as_str(),
+        driver = doc.driver.as_str(),
+        adapter = shape.dir.display(),
+        fused = fused.display(),
+        gguf = gguf.display(),
+        lora_doc = MLX_LORA_DOC,
+        documented = crate::train_enrich::MLX_FUSE_COMMAND,
+    );
+    Ok(MergeAdaptPlan {
+        seat_tag: seat_tag.to_string(),
+        local_tag: local_tag.to_string(),
+        pack_id: doc.pack_id.clone(),
+        driver: doc.driver.clone(),
+        merge_commands: vec![fuse, export.clone()],
+        merged_dir: fused,
+        convert_command: export,
+        gguf_convert_command: String::new(),
+        local_seat_command: seat,
+        report,
+    })
+}
+
+/// Documented `mlx_lm.fuse` line. `--export-gguf` is the LORA.md GGUF flag.
+pub(crate) fn printed_mlx_fuse_line(
+    train_base: &str,
+    adapter: &Path,
+    save: &Path,
+    export_gguf: bool,
+) -> String {
+    let mut line = format!(
+        "mlx_lm.fuse --model {} --adapter-path {} --save-path {}",
+        shell_quote(train_base),
+        shell_quote(&adapter.display().to_string()),
+        shell_quote(&save.display().to_string())
+    );
+    if export_gguf {
+        line.push_str(" --export-gguf");
+    }
+    line
+}
+
+pub(crate) fn mlx_fused_dir(prepared: &Path) -> PathBuf {
+    prepared.join(MLX_FUSED_DIR_NAME)
+}
+
+pub(crate) fn mlx_gguf_file(prepared: &Path) -> PathBuf {
+    mlx_fused_dir(prepared).join(MLX_GGUF_FILE_NAME)
+}
+
+/// Operator card appended to `mlx-lm-lora` `PREPARE.md` and `NEXT.md`.
+///
+/// The adapter directory is chosen when the operator runs `mlx_lm.lora`.
+/// This card names `merge-adapt` with `<adapter-dir>`. The fuse print fills
+/// that path. The save path and the GGUF file are known from this prepare.
+pub(crate) fn mlx_post_train_ladder(
+    out_dir: &Path,
+    seat_tag: &str,
+    pack_id: &str,
+    train_base: &str,
+) -> String {
+    let tag = local_enrich_tag(pack_id);
+    let fused = mlx_fused_dir(out_dir);
+    let gguf = mlx_gguf_file(out_dir);
+    let merge_cli = printed_merge_adapt_cli(out_dir, Path::new("<adapter-dir>"));
+    let fuse = printed_mlx_fuse_line(train_base, Path::new("<adapter-dir>"), &fused, false);
+    let export = printed_mlx_fuse_line(train_base, Path::new("<adapter-dir>"), &fused, true);
+    let seat_cli = local_seat_cli(out_dir, &gguf);
+    let prepared = shell_quote(&out_dir.display().to_string());
+    let gguf_q = shell_quote(&gguf.display().to_string());
+    let tag_q = shell_quote(&tag);
+    format!(
+        "\n\
+         ## After the mlx-lm train\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id this cell already runs. The create name is {tag}.\n\
+         \n\
+         Chain, outside this factory. This factory does not fuse, does not shell out, does not write weights, and does not promote.\n\
+         \n\
+         1. `mlx_lm.lora` writes the adapter directory. LORA.md says the default path is adapters/. `--adapter-path` changes it. That directory holds adapter_config.json and adapters.safetensors. `mlx_lm.fuse` loads those two files. A checkpoint named NNNNNNN_adapters.safetensors is not the file fuse loads. This factory does not choose the path.\n\
+         2. Print the fuse. `merge-adapt` checks that directory and prints the documented `mlx_lm.fuse` line ({lora_doc}). The page shows `{documented}`. That default loads adapters/ and writes fused_model/ in the working directory. fuse.py documents `--adapter-path` (default adapters) and `--save-path` (default fused_model). This print passes those flags. The fused directory is {fused}, beside this prepare. This factory does not create that directory.\n\
+         \n\
+         {merge_cli}\n\
+         \n\
+         That prints:\n\
+         \n\
+         {fuse}\n\
+         \n\
+         mlx-lm writes {fused}.\n\
+         3. Print the documented GGUF export. LORA.md shows `mlx_lm.fuse --export-gguf`. The file is {gguf} (`ggml-model-f16.gguf` inside the save path). `--gguf-path` changes the file name. This print keeps the default name. GGUF support on that page is limited to Mistral, Mixtral, and Llama style models in fp16 precision. fuse.py raises when model_type is not llama, mixtral, or mistral. This factory does not read the model config and does not guess model_type from the train base.\n\
+         \n\
+         {export}\n\
+         \n\
+         The fused directory is MLX weights (model.safetensors plus config.json). The Hugging Face convert card stays on the LLaMA-Factory and Axolotl prepares. This card does not point that card at {fused}. This factory does not invent a convert script.\n\
+         4. Seat the GGUF file. `local-seat` already accepts one .gguf file. Point `--weights` at {gguf}. It prints `ollama create` and `llama-cli -m` and `llama-server -m` for that file. It does not create the model. A directory that holds both the fused weights and the GGUF matches more than one shape. Pass the file. `--adapter` does not print an Ollama ADAPTER Modelfile for this driver.\n\
+         \n\
+         {seat_cli}\n\
+         \n\
+         5. Record the artifact. import-trained accepts the adapter directory or that GGUF file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter '<adapter-dir>'\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {gguf_q}\n\
+         \n\
+         READY_FOR_LIVE_TEST: no.\n",
+        seat = seat_tag,
+        tag = tag,
+        lora_doc = MLX_LORA_DOC,
+        documented = crate::train_enrich::MLX_FUSE_COMMAND,
+        fused = fused.display(),
+        gguf = gguf.display(),
+        prepared = prepared,
+        tag_q = tag_q,
+        gguf_q = gguf_q,
+    )
+}
+
+/// `mlx_lm.fuse` refuses a directory that is not the adapter it writes.
+fn classify_mlx_adapter(adapter: &Path) -> Result<crate::local_seat::AdapterDir, ModelError> {
+    let shape = classify_adapter(adapter)?;
+    if !shape.weights.is_empty() {
+        let names = shape.weights.join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has PEFT adapter weights ({names}). mlx_lm.lora writes {MLX_ADAPTER_WEIGHTS} beside adapter_config.json. mlx_lm.fuse loads {MLX_ADAPTER_WEIGHTS}. This factory does not treat adapter_model.safetensors as an mlx adapter.",
+            shape.dir.display()
+        )));
+    }
+    let weights = shape.dir.join(MLX_ADAPTER_WEIGHTS);
+    match std::fs::symlink_metadata(&weights) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside {}.",
+                weights.display(),
+                shape.dir.display()
+            )));
+        }
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is not a regular file. mlx_lm.fuse loads {MLX_ADAPTER_WEIGHTS} as a regular file.",
+                weights.display()
+            )));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} has adapter_config.json and no {MLX_ADAPTER_WEIGHTS}. mlx_lm.lora writes both. mlx_lm.fuse loads {MLX_ADAPTER_WEIGHTS}. A checkpoint file ending in _adapters.safetensors is not that file. This factory does not invent the weight file.",
+                shape.dir.display()
+            )));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {}: {err}",
+                weights.display()
+            )));
+        }
+    }
+    let file =
+        open_nofollow(&weights).map_err(|err| open_error(&weights, "refuse:adapter", err))?;
+    let meta = file.metadata().map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:adapter: cannot stat {}: {err}",
+            weights.display()
+        ))
+    })?;
+    if !meta.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is not a regular file. mlx_lm.fuse loads {MLX_ADAPTER_WEIGHTS} as a regular file.",
+            weights.display()
+        )));
+    }
+    Ok(shape)
+}
+
+/// Fused MLX weights are not a Hugging Face directory `gguf-convert` accepts.
+pub(crate) fn refuse_mlx_hf_weights(command: &str, dir: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:seat: {command} does not treat {} as a merged Hugging Face directory. mlx_lm.fuse writes MLX weights (model.safetensors) and config.json under its --save-path. LORA.md documents GGUF export as mlx_lm.fuse --export-gguf, which writes {MLX_GGUF_FILE_NAME} inside that directory. GGUF support there is limited to Mistral, Mixtral, and Llama style models in fp16. Seat that file with estate enrich local-seat --weights. Pass the file, not a directory that also holds the fused weights. estate enrich merge-adapt prints the fuse line. This factory does not invent a convert script.",
+        dir.display()
+    ))
+}
+
+pub(crate) fn refuse_mlx_adapter_weights(dir: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:seat: {} is an adapter directory. On mlx-lm-lora, --weights is the GGUF file mlx_lm.fuse --export-gguf writes ({MLX_GGUF_FILE_NAME}). --adapter does not print an Ollama ADAPTER Modelfile for an mlx adapter (adapter_config.json and {MLX_ADAPTER_WEIGHTS}). estate enrich merge-adapt prints the fuse line. This factory does not fuse.",
+        dir.display()
+    ))
+}
+
+pub(crate) fn refuse_mlx_adapter_seat() -> ModelError {
+    ModelError::Other(format!(
+        "refuse:adapter: mlx-lm-lora adapters are not an Ollama ADAPTER directory. mlx_lm.lora writes adapter_config.json and {MLX_ADAPTER_WEIGHTS}. Fuse with mlx_lm.fuse. estate enrich merge-adapt prints that line. Then pass {MLX_GGUF_FILE_NAME} to local-seat --weights. This factory does not print an ADAPTER Modelfile for this driver."
+    ))
+}
+
+/// A fused directory that also holds the exported GGUF matches two shapes.
+pub(crate) fn refuse_mlx_mixed_weights(path: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:seat: {} matches more than one shape. mlx_lm.fuse --export-gguf writes {MLX_GGUF_FILE_NAME} inside the fused directory, beside the MLX weights. Pass that file to local-seat --weights. This factory does not seat the directory and does not invent a convert script.",
+        path.display()
+    ))
 }
 
 fn header(
@@ -732,6 +1011,7 @@ mod tests {
             "{}",
             plan.report
         );
+        assert!(!plan.report.contains("mlx_lm.fuse"), "{}", plan.report);
         assert!(
             !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
             "{}",
@@ -897,6 +1177,7 @@ mod tests {
             "{}",
             plan.report
         );
+        assert!(!plan.report.contains("mlx_lm.fuse"), "{}", plan.report);
         assert!(plan.report.contains("no export.yaml"), "{}", plan.report);
         assert_eq!(plan.gguf_convert_command, gguf_convert_cli(&root, &merged));
         assert_eq!(plan.local_seat_command, local_seat_cli(&root, &merged));
@@ -970,7 +1251,10 @@ mod tests {
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), None, false);
         let err = plan_merge_adapt(&root, &adapter).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(err.to_string().contains("mlx-lm-lora"), "{err}");
+        assert!(err.to_string().contains("apple-silicon"), "{err}");
+        assert!(!err.to_string().contains("mlx_lm.fuse"), "{err}");
 
         write_prepare(
             &root,
@@ -1116,5 +1400,234 @@ mod tests {
         assert!(err.to_string().contains("refuse:merge"), "{err}");
         assert!(err.to_string().contains("symlink"), "{err}");
         assert!(!err.to_string().contains("merge_and_unload"), "{err}");
+    }
+
+    const MLX_TRAIN: &str = "Qwen/Qwen2.5-0.5B-Instruct";
+
+    fn write_mlx(dir: &Path, job: &str, host: &str, train: Option<&str>, promoted: bool) {
+        let train_line = match train {
+            Some(train) => format!("  \"train_base_model\": \"{train}\",\n"),
+            None => String::new(),
+        };
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"mlx-lm-lora\",\n\
+               \"job\": \"{job}\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               {train_line}\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"{host}\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [],\n\
+               \"promoted\": {promoted},\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+    }
+
+    fn write_mlx_md(dir: &Path, train: &str, host: &str) {
+        std::fs::write(
+            dir.join("MLX.md"),
+            format!(
+                "train_base_model: \"{train}\"\nseat_tag: \"llama3\"\nhost_class_affinity: {host}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    fn mlx_adapter(dir: &Path) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(dir.join(MLX_ADAPTER_WEIGHTS), b"not-a-real-tensor").unwrap();
+        dir.to_path_buf()
+    }
+
+    fn assert_no_hf_convert(text: &str) {
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+        assert!(!text.contains("estate enrich gguf-convert"), "{text}");
+        assert!(!text.contains("--outtype"), "{text}");
+    }
+
+    #[test]
+    fn mlx_adapter_prints_the_documented_fuse_and_writes_nothing() {
+        let root = tmp("mlx-fuse");
+        write_mlx(&root, "train", "apple-silicon", Some(MLX_TRAIN), false);
+        write_mlx_md(&root, MLX_TRAIN, "apple-silicon");
+        let adapter = mlx_adapter(&root.join("adapters"));
+        let before = names(&root);
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+        let canonical = std::fs::canonicalize(&adapter).unwrap();
+        let fused = root.join(MLX_FUSED_DIR_NAME);
+        let gguf = fused.join(MLX_GGUF_FILE_NAME);
+        let fuse = printed_mlx_fuse_line(MLX_TRAIN, &canonical, &fused, false);
+        let export = printed_mlx_fuse_line(MLX_TRAIN, &canonical, &fused, true);
+        assert_eq!(plan.driver, "mlx-lm-lora");
+        assert_eq!(plan.merged_dir, fused);
+        assert_eq!(plan.merge_commands, vec![fuse.clone(), export.clone()]);
+        assert_eq!(plan.convert_command, export);
+        assert!(plan.gguf_convert_command.is_empty());
+        assert_eq!(plan.local_seat_command, local_seat_cli(&root, &gguf));
+        assert!(plan.report.contains("shape=mlx-adapter"), "{}", plan.report);
+        assert!(plan.report.contains(&fuse), "{}", plan.report);
+        assert!(plan.report.contains(&export), "{}", plan.report);
+        assert!(
+            plan.report.contains("merge-adapt did not fuse"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
+            "{}",
+            plan.report
+        );
+        assert_no_hf_convert(&plan.report);
+        assert!(
+            plan.merge_commands
+                .iter()
+                .all(|line| !line.contains("--dequantize") && !line.contains("--gguf-path")),
+            "{:?}",
+            plan.merge_commands
+        );
+        assert!(!fused.exists());
+        assert!(!gguf.exists());
+        assert_eq!(names(&root), before);
+        assert_eq!(
+            std::fs::read(root.join("prepare.json")).unwrap(),
+            prepare_before
+        );
+    }
+
+    #[test]
+    fn mlx_fuse_refuses_the_wrong_shape_host_and_job() {
+        let root = tmp("mlx-refuse");
+        let adapter = mlx_adapter(&root.join("adapters"));
+
+        write_mlx(&root, "enrich", "apple-silicon", Some(MLX_TRAIN), false);
+        write_mlx_md(&root, MLX_TRAIN, "apple-silicon");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!err.to_string().contains("mlx_lm.fuse"), "{err}");
+
+        write_mlx(&root, "train", "consumer-nvidia", Some(MLX_TRAIN), false);
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        write_mlx(&root, "train", "apple-silicon", Some(MLX_TRAIN), false);
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("MLX.md"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        write_mlx_md(&root, "other/repo", "apple-silicon");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!err.to_string().contains("--export-gguf"), "{err}");
+
+        write_mlx_md(&root, MLX_TRAIN, "any");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+
+        let real_md = root.join("real-mlx.md");
+        std::fs::rename(root.join("MLX.md"), &real_md).unwrap();
+        std::os::unix::fs::symlink(&real_md, root.join("MLX.md")).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        write_mlx_md(&root, MLX_TRAIN, "apple-silicon");
+
+        write_mlx(&root, "train", "apple-silicon", Some(MLX_TRAIN), true);
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+        write_mlx(&root, "train", "apple-silicon", Some(MLX_TRAIN), false);
+
+        let config_only = root.join("config-only");
+        std::fs::create_dir_all(&config_only).unwrap();
+        std::fs::write(config_only.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(
+            config_only.join("0000001_adapters.safetensors"),
+            b"checkpoint",
+        )
+        .unwrap();
+        let err = plan_merge_adapt(&root, &config_only).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains(MLX_ADAPTER_WEIGHTS), "{err}");
+        assert!(err.to_string().contains("_adapters.safetensors"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        let peft = root.join("peft");
+        std::fs::create_dir_all(&peft).unwrap();
+        std::fs::write(peft.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(peft.join("adapter_model.safetensors"), b"peft").unwrap();
+        std::fs::write(peft.join(MLX_ADAPTER_WEIGHTS), b"mlx").unwrap();
+        let err = plan_merge_adapt(&root, &peft).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(
+            err.to_string().contains("adapter_model.safetensors"),
+            "{err}"
+        );
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        let linked_weights = root.join("linked-weights");
+        std::fs::create_dir_all(&linked_weights).unwrap();
+        std::fs::write(linked_weights.join("adapter_config.json"), "{}\n").unwrap();
+        let outside = root.join("outside.safetensors");
+        std::fs::write(&outside, b"escaped").unwrap();
+        std::os::unix::fs::symlink(&outside, linked_weights.join(MLX_ADAPTER_WEIGHTS)).unwrap();
+        let err = plan_merge_adapt(&root, &linked_weights).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        let linked_dir = root.join("linked-dir");
+        std::os::unix::fs::symlink(&adapter, &linked_dir).unwrap();
+        let err = plan_merge_adapt(&root, &linked_dir).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+
+        let gguf = root.join("weights.gguf");
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend_from_slice(&[0u8; 12]);
+        std::fs::write(&gguf, bytes).unwrap();
+        let err = plan_merge_adapt(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("GGUF"), "{err}");
+        assert!(!err.to_string().contains("--export-gguf"), "{err}");
+
+        let merged = root.join("hf-merged");
+        std::fs::create_dir_all(&merged).unwrap();
+        std::fs::write(merged.join("config.json"), "{}\n").unwrap();
+        std::fs::write(merged.join("model.safetensors"), b"w").unwrap();
+        let err = plan_merge_adapt(&root, &merged).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(!err.to_string().contains("--save-path"), "{err}");
+
+        let sacred = root.join("cyera-mlx");
+        mlx_adapter(&sacred);
+        let err = plan_merge_adapt(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        let sku = root.join("model-5090");
+        mlx_adapter(&sku);
+        let err = plan_merge_adapt(&root, &sku).unwrap_err();
+        assert!(err.to_string().contains("refuse:sku-banned"), "{err}");
+
+        assert!(!root.join(MLX_FUSED_DIR_NAME).exists());
     }
 }
