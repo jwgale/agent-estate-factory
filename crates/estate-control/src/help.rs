@@ -574,8 +574,12 @@ estate enrich local-seat validates that same merged directory
 llamafactory-qlora, axolotl-lora, or axolotl-qlora train prepare.
 adapter_model*.safetensors is not merged evidence. A symlinked weights
 path or a symlinked marker is refuse:seat. It prints the ollama create
-line. For a GGUF it also prints the Modelfile whose FROM is that file.
-Axolotl does not write that GGUF.
+line. For a GGUF it also prints the Modelfile whose FROM is that file,
+plus llama-cli -m and llama-server -m --port 8080 for that file.
+Ollama stays the default print. --runtime llama.cpp selects those
+llama.cpp lines and still prints the Ollama line. A merged directory
+is not a llama.cpp seat: the report points at gguf-convert first and
+does not print llama-cli for the directory. Axolotl does not write that GGUF.
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained
@@ -594,7 +598,9 @@ and ADAPTER that directory. --weights still refuses an adapter
 directory (refuse:seat). A merged export or a GGUF passed to --adapter
 is refuse:adapter. A symlinked adapter path or a symlinked marker is
 refused the same way. The command prints the ollama create line and
-does not run it.
+does not run it. llama.cpp does not load that adapter directory in one
+line. --runtime llama.cpp with --adapter is refuse:runtime. Another
+runtime name is refuse:runtime after the shape checks.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
@@ -633,8 +639,10 @@ export directory is refuse:seat.
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
     --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 
-That prints ollama create for cell-enrich-<pack-id>. It does not
-create the model.
+That prints ollama create for cell-enrich-<pack-id>. When --weights
+is the GGUF it also prints llama-cli -m and llama-server -m for that
+file. --runtime llama.cpp selects those lines. It does not create the
+model and does not run llama.cpp.
 
   estate enrich import-trained --estate <your-estate.yaml> \\
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\

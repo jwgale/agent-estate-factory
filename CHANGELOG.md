@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print a llama.cpp seat for an existing GGUF
+
+- `estate enrich local-seat` on a GGUF file, or a directory that holds one `.gguf` file, still prints the Ollama `ollama create` line. It also prints the documented llama.cpp lines `llama-cli -m <file>` and `llama-server -m <file> --port 8080`. `-m` names that GGUF. `--port 8080` is the llama-server example port. `--runtime llama.cpp` prints those lines first and still prints the Ollama line. Ollama stays the default print. The command does not run either program, does not write a file, and does not promote.
+- A merged Hugging Face directory still points at `gguf-convert` (`python3 convert_hf_to_gguf.py` with `--outtype auto`). The report does not print `llama-cli` or `llama-server` for that directory. `--runtime llama.cpp` on the directory says the same: convert first, then seat the sibling GGUF.
+- `--adapter` stays the Ollama `ADAPTER` print. llama.cpp does not load an `adapter_config.json` directory in one line, so `--runtime llama.cpp` with `--adapter` is `refuse:runtime` after the shape checks. A symlink, a bad shape, a sacred token, a hardware SKU, the wrong driver, and the wrong job still refuse on those existing paths. Another runtime name is `refuse:runtime`.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — print the no-merge adapter seat
 
 - `estate enrich local-seat --adapter <output_dir>` prints a Modelfile for an adapter directory (`adapter_config.json`, the same marker `import-trained` accepts for `trained_shape=adapter`, plus adapter weights when the train wrote them). `FROM` is `prepare.json` `seat_tag` (the same string as `base_model`). `ADAPTER` is that directory. The report then prints `ollama create cell-enrich-{pack} -f <dir>/Modelfile`. The command does not write the file, does not run the line, does not merge, and does not promote.

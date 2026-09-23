@@ -62,6 +62,10 @@ fn help_names_local_seat() {
     assert!(body.contains("<merged-hf-dir>"), "{body}");
     assert!(body.contains("--adapter"), "{body}");
     assert!(body.contains("ADAPTER"), "{body}");
+    assert!(body.contains("llama-cli -m"), "{body}");
+    assert!(body.contains("llama-server -m"), "{body}");
+    assert!(body.contains("--runtime llama.cpp"), "{body}");
+    assert!(body.contains("refuse:runtime"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
 }
@@ -592,6 +596,195 @@ fn adapter_seat_prints_the_modelfile_and_does_not_run_it() {
         .unwrap();
     let both_text = text(&both);
     assert!(!both.status.success(), "{both_text}");
+    assert!(!marker.exists());
+}
+
+#[test]
+fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
+    let root = tmp("gguf-cli");
+    let estate = write_train_estate(&root, "llama3", "Qwen/Qwen2.5-0.5B-Instruct");
+    let pack = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+    let out_dir = root.join("qlora");
+    let prepared = estate_bin()
+        .args([
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            pack.to_str().unwrap(),
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    let estate_before = std::fs::read(&estate).unwrap();
+
+    let dir = root.join("one");
+    std::fs::create_dir_all(&dir).unwrap();
+    let gguf = dir.join("model.gguf");
+    let mut bytes = b"GGUF".to_vec();
+    bytes.extend_from_slice(&[0u8; 12]);
+    std::fs::write(&gguf, &bytes).unwrap();
+    let before = dir_names(&dir);
+
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let marker = root.join("runtime-was-run");
+    for name in ["ollama", "llama-cli", "llama-server"] {
+        let script = bin.join(name);
+        std::fs::write(&script, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    let seat = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--weights",
+            dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let seat_text = text(&seat);
+    assert!(seat.status.success(), "{seat_text}");
+    assert!(seat_text.contains("shape=gguf"), "{seat_text}");
+    assert!(seat_text.contains("runtime=ollama"), "{seat_text}");
+    assert!(
+        seat_text.contains("ollama create cell-enrich-overnight-traces -f "),
+        "{seat_text}"
+    );
+    assert!(seat_text.contains("llama-cli -m "), "{seat_text}");
+    assert!(
+        seat_text.contains(gguf.file_name().unwrap().to_str().unwrap()),
+        "{seat_text}"
+    );
+    assert!(seat_text.contains("llama-server -m "), "{seat_text}");
+    assert!(seat_text.contains("--port 8080"), "{seat_text}");
+    assert!(seat_text.contains("READY_FOR_LIVE_TEST: no"), "{seat_text}");
+    let ollama_at = seat_text.find("ollama create").unwrap();
+    let cli_at = seat_text.find("llama-cli -m").unwrap();
+    assert!(ollama_at < cli_at, "{seat_text}");
+    assert!(
+        !marker.exists(),
+        "printed llama.cpp or ollama line was executed"
+    );
+    assert_eq!(dir_names(&dir), before);
+    assert!(!dir.join("Modelfile").exists());
+    assert_eq!(std::fs::read(&estate).unwrap(), estate_before);
+
+    let selected = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--weights",
+            gguf.to_str().unwrap(),
+            "--runtime",
+            "llama.cpp",
+        ])
+        .output()
+        .unwrap();
+    let selected_text = text(&selected);
+    assert!(selected.status.success(), "{selected_text}");
+    assert!(selected_text.contains("runtime=llama.cpp"), "{selected_text}");
+    assert!(selected_text.contains("llama-cli -m "), "{selected_text}");
+    assert!(selected_text.contains("ollama create"), "{selected_text}");
+    let cli_at = selected_text.find("llama-cli -m").unwrap();
+    let ollama_at = selected_text.find("ollama create").unwrap();
+    assert!(cli_at < ollama_at, "{selected_text}");
+    assert!(!marker.exists(), "selected runtime executed a program");
+    assert!(!root.join("Modelfile").exists());
+
+    let export = out_dir.join("export");
+    std::fs::create_dir_all(&export).unwrap();
+    std::fs::write(export.join("config.json"), "{}\n").unwrap();
+    std::fs::write(export.join("model.safetensors"), b"w").unwrap();
+    let merged = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--weights",
+            export.to_str().unwrap(),
+            "--runtime",
+            "llama.cpp",
+        ])
+        .output()
+        .unwrap();
+    let merged_text = text(&merged);
+    assert!(merged.status.success(), "{merged_text}");
+    assert!(merged_text.contains("shape=merged"), "{merged_text}");
+    assert!(merged_text.contains("convert_hf_to_gguf.py"), "{merged_text}");
+    assert!(
+        merged_text.contains("does not load this Hugging Face directory"),
+        "{merged_text}"
+    );
+    assert!(
+        !merged_text.lines().any(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("llama-cli ") || trimmed.starts_with("llama-server ")
+        }),
+        "{merged_text}"
+    );
+    assert!(merged_text.contains("ollama create"), "{merged_text}");
+    assert!(!export.join("export.gguf").exists());
+    assert!(!out_dir.join("export.gguf").exists());
+    assert!(!marker.exists());
+
+    let adapter = root.join("outputs");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    let refused = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--adapter",
+            adapter.to_str().unwrap(),
+            "--runtime",
+            "llama.cpp",
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:runtime"), "{refused_text}");
+    assert!(!refused_text.contains("llama-cli"), "{refused_text}");
+    assert!(!refused_text.contains("ollama create"), "{refused_text}");
+    assert!(!adapter.join("Modelfile").exists());
+    assert!(!marker.exists());
+
+    let other = estate_bin()
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--weights",
+            gguf.to_str().unwrap(),
+            "--runtime",
+            "mlx",
+        ])
+        .output()
+        .unwrap();
+    let other_text = text(&other);
+    assert!(!other.status.success(), "{other_text}");
+    assert!(other_text.contains("refuse:runtime"), "{other_text}");
+    assert!(other_text.contains("mlx"), "{other_text}");
+    assert!(!other_text.contains("llama-cli"), "{other_text}");
     assert!(!marker.exists());
 }
 

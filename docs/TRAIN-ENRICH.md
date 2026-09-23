@@ -40,7 +40,7 @@ estate enrich gguf-convert \
 
 That prints `python3 convert_hf_to_gguf.py` on the merged directory, with `--outfile` set to the sibling `export.gguf` and `--outtype auto`. Run that line from a llama.cpp checkout. A missing export directory is `refuse:seat`.
 
-4. Print the Ollama create. The command does not create the model.
+4. Print the Ollama create. When `--weights` is the GGUF, the same report also prints `llama-cli -m` and `llama-server -m` for that file. `--runtime llama.cpp` selects those lines. Ollama stays the default print. A merged directory still points at `gguf-convert` first. The command does not create the model and does not run llama.cpp.
 
 ```bash
 estate enrich local-seat \
@@ -48,7 +48,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 ```
 
-To seat the adapter in `outputs/` without a merge, pass `--adapter` instead of `--weights`. The command prints a Modelfile whose `FROM` is `prepare.json` `seat_tag` and whose `ADAPTER` is that directory, then the `ollama create` line. It does not run the line. `--weights` still refuses that adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
+To seat the adapter in `outputs/` without a merge, pass `--adapter` instead of `--weights`. The command prints a Modelfile whose `FROM` is `prepare.json` `seat_tag` and whose `ADAPTER` is that directory, then the `ollama create` line. It does not run the line. llama.cpp does not load that directory in one line. `--runtime llama.cpp` with `--adapter` is `refuse:runtime`. `--weights` still refuses that adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
 
 ```bash
 estate enrich local-seat \
@@ -495,7 +495,7 @@ python3 convert_hf_to_gguf.py <export-dir> --outfile <export-dir-sibling>.gguf -
 
 Then it prints `estate enrich local-seat` with `--weights` pointing at that sibling file. The command does not write the GGUF.
 
-`estate enrich local-seat` validates the directory or the GGUF and prints the create line. The create name is `cell-enrich-{pack_id}`. The seat tag is `prepare.json` `seat_tag` (the same string as `base_model`). The command does not create the model, does not shell out, and does not promote.
+`estate enrich local-seat` validates the directory or the GGUF and prints the create line. The create name is `cell-enrich-{pack_id}`. The seat tag is `prepare.json` `seat_tag` (the same string as `base_model`). A GGUF also prints `llama-cli -m <file>` and `llama-server -m <file> --port 8080`. `--runtime llama.cpp` selects those lines and still prints `ollama create`. A merged directory does not get a llama.cpp load line; the convert line stays first. The command does not create the model, does not shell out, and does not promote.
 
 ```bash
 estate enrich local-seat \

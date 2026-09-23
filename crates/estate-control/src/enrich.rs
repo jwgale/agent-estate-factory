@@ -6,7 +6,7 @@ use estate_schema::load_estate_unvalidated;
 use model_estate::{
     default_enrich_out, default_train_enrich_driver_id, driver_default_job,
     enrich_host_class_affinity, import_prepared, import_trained, list_prepared, load_enrich_pack,
-    plan_adapter_seat, plan_gguf_convert, plan_local_seat, prepare_enrich_set,
+    plan_adapter_seat_for, plan_gguf_convert, plan_local_seat_for, prepare_enrich_set,
     render_prepared_index, render_train_enrich_catalog, train_enrich_drivers_for_job,
     train_enrich_drivers_for_prepare, ImportPreparedRequest, ImportTrainedRequest,
     PrepareEnrichRequest,
@@ -17,10 +17,11 @@ pub(crate) fn cmd_enrich_local_seat(
     prepared_dir: &Path,
     weights: Option<&Path>,
     adapter: Option<&Path>,
+    runtime: &str,
 ) -> Result<()> {
     let plan = match (weights, adapter) {
-        (Some(weights), None) => plan_local_seat(prepared_dir, weights)?,
-        (None, Some(adapter)) => plan_adapter_seat(prepared_dir, adapter)?,
+        (Some(weights), None) => plan_local_seat_for(prepared_dir, weights, runtime)?,
+        (None, Some(adapter)) => plan_adapter_seat_for(prepared_dir, adapter, runtime)?,
         _ => bail!("refuse:seat: pass --weights or --adapter"),
     };
     print!("{}", plan.report);
