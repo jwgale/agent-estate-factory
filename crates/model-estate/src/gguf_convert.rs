@@ -23,10 +23,11 @@
 //! flag. It does not pass a quantization type.
 //!
 //! When `tokenizer_config.json` is already in the merged directory, a JSON
-//! list under `extra_special_tokens` is `refuse:tokenizer`. transformers
-//! calls `.keys()` on that value. A Qwen-family export missing `vocab.json`
-//! or `merges.txt` is the same refuse. Qwen-family is `config.json`
-//! `model_type` or `architectures`, or `tokenizer_class`, naming Qwen.
+//! list or JSON null under `extra_special_tokens` is `refuse:tokenizer`.
+//! transformers calls `.keys()` on that value. A Qwen-family export missing
+//! `vocab.json` or `merges.txt` is the same refuse. Qwen-family is
+//! `config.json` `model_type` or `architectures`, or `tokenizer_class`,
+//! naming Qwen.
 //! This module does not download tokenizer files, does not copy them, and
 //! does not run the script.
 
@@ -197,7 +198,10 @@ fn extra_special_tokens_problem(map: &serde_json::Map<String, Value>) -> Option<
         Value::Array(_) => Some(
             "tokenizer_config.json extra_special_tokens is a JSON list. transformers calls .keys() on that value and raises AttributeError ('list' object has no attribute 'keys')".into(),
         ),
-        Value::Object(_) | Value::Null => None,
+        Value::Object(_) => None,
+        Value::Null => Some(
+            "tokenizer_config.json extra_special_tokens is JSON null. transformers calls .keys() on that value".into(),
+        ),
         Value::String(_) => Some(
             "tokenizer_config.json extra_special_tokens is a JSON string. transformers calls .keys() on that value".into(),
         ),
@@ -1325,6 +1329,34 @@ mod tests {
         assert!(text.contains("AttributeError"), "{text}");
         assert!(text.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{text}");
         assert!(!text.contains("missing vocab.json"), "{text}");
+        assert_eq!(names(&export), before);
+        assert!(!export.join("tokenizer_config.json.bak").exists());
+        assert!(!root.join("export.gguf").exists());
+    }
+
+    #[test]
+    fn null_extra_special_tokens_refuses_and_writes_nothing() {
+        let root = tmp("null-tokens");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("config.json"), qwen_config()).unwrap();
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":null,\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+        )
+        .unwrap();
+        std::fs::write(export.join("vocab.json"), "{}\n").unwrap();
+        std::fs::write(export.join("merges.txt"), "a b\n").unwrap();
+        let before = names(&export);
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert_refuses_tokenizer(&err);
+        let text = err.to_string();
+        assert!(text.contains("JSON null"), "{text}");
+        assert!(!text.contains("JSON list"), "{text}");
+        assert!(!text.contains("missing vocab.json"), "{text}");
+        assert!(!text.contains("missing merges.txt"), "{text}");
+        assert!(text.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{text}");
         assert_eq!(names(&export), before);
         assert!(!export.join("tokenizer_config.json.bak").exists());
         assert!(!root.join("export.gguf").exists());

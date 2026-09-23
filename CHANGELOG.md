@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — refuse JSON null extra_special_tokens
+
+- `estate enrich gguf-convert` returns `refuse:tokenizer` when `extra_special_tokens` in `tokenizer_config.json` under `--weights` is JSON `null`. That value is a non-object, the same refuse as a list, a string, a bool, or a number. An absent key and a JSON object still pass this check. The command does not print `python3 convert_hf_to_gguf.py`, does not download weights, does not copy tokenizer files, and does not write `tokenizer_config.json.bak`. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Qwen2.5 Instruct LoRA reproduce target
 
 - `llamafactory-lora` infers LLaMA-Factory template `qwen` for `Qwen/Qwen2.5-0.5B-Instruct`, `Qwen/Qwen2.5-1.5B-Instruct`, `Qwen/Qwen2.5-3B-Instruct`, `Qwen/Qwen2.5-7B-Instruct`, `Qwen/Qwen2.5-14B-Instruct`, `Qwen/Qwen2.5-32B-Instruct`, `Qwen/Qwen2.5-72B-Instruct`, `Qwen/Qwen2.5-7B-Instruct-1M`, and `Qwen/Qwen2.5-14B-Instruct-1M`, including those ids as nested path segments and HF cache directories (`models--Qwen--Qwen2.5-0.5B-Instruct`). That is the same stem-bounded text group as the Qwen2.5 Instruct QLoRA prepare. `constants.py` registers that text group with `template="qwen"`. `template.py` registers `qwen`. There is no `qwen2_5` template. A Qwen2.5 base uses `qwen` and is not this reproduce target. A name that contains `thinking` is not this reproduce target. Qwen2 Instruct stays `qwen` and is not this reproduce target. Qwen2.5-Coder and Qwen2.5-Math stay `qwen` and are not this reproduce target. Qwen2.5-VL is the `qwen2_vl` group and is not this reproduce target. GPTQ and AWQ checkpoints are not this reproduce target. Qwen3 Instruct stays `qwen3_nothink`.

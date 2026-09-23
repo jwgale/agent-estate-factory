@@ -498,3 +498,46 @@ fn refuses_list_extra_special_tokens_without_spawning_or_copying() {
         before
     );
 }
+
+#[test]
+fn refuses_null_extra_special_tokens_without_spawning_or_copying() {
+    let root = tmp("null-tokenizer");
+    write_prepare(&root);
+    let export = root.join("export");
+    merged(&export);
+    std::fs::write(
+        export.join("config.json"),
+        "{\"model_type\":\"qwen2\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        export.join("tokenizer_config.json"),
+        "{\"extra_special_tokens\":null,\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+    )
+    .unwrap();
+    std::fs::write(export.join("vocab.json"), "{}\n").unwrap();
+    std::fs::write(export.join("merges.txt"), "a b\n").unwrap();
+    let before = std::fs::read(export.join("tokenizer_config.json")).unwrap();
+    let vocab_before = std::fs::read(export.join("vocab.json")).unwrap();
+    let merges_before = std::fs::read(export.join("merges.txt")).unwrap();
+    let out = run_convert(&root, &export);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:tokenizer"), "{body}");
+    assert!(body.contains("JSON null"), "{body}");
+    assert!(!body.contains("JSON list"), "{body}");
+    assert!(!body.contains("missing vocab.json"), "{body}");
+    assert!(!body.contains("missing merges.txt"), "{body}");
+    assert!(body.contains("tokenizer_config.json.bak"), "{body}");
+    assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
+    assert!(!body.contains("--outtype"), "{body}");
+    assert!(!root.join("export.gguf").exists());
+    assert!(!export.join("tokenizer_config.json.bak").exists());
+    assert!(!root.join("spawned").exists(), "convert tooling was spawned");
+    assert_eq!(
+        std::fs::read(export.join("tokenizer_config.json")).unwrap(),
+        before
+    );
+    assert_eq!(std::fs::read(export.join("vocab.json")).unwrap(), vocab_before);
+    assert_eq!(std::fs::read(export.join("merges.txt")).unwrap(), merges_before);
+}
