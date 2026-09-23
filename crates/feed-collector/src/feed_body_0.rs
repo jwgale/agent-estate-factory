@@ -102,6 +102,11 @@ pub struct PackManifest {
     /// Binding or driver hint (`ollama`, `local_slm`). Not a SKU.
     #[serde(default)]
     pub model_hint: Option<String>,
+    /// Hugging Face repo id (`namespace/name`) or a local directory of HF weights.
+    /// `llamafactory-qlora` writes this to `model_name_or_path`. An Ollama seat tag
+    /// (`llama3`, `llama3:latest`) is not a train base. Empty on older packs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub train_base_model: Option<String>,
     /// Classes that contributed events. Only `frontier` and `local`, sorted.
     /// Empty when the pack was not built from those events. Not a promote flag.
     #[serde(default)]

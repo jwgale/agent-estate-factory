@@ -491,6 +491,9 @@ pub(crate) enum EnrichCommand {
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
+        /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
+        #[arg(long)]
+        max_steps: Option<u32>,
     },
     /// Prepare an accepted pack into `{state_dir}/enrich`. Same refuses as prepare. Does not apply.
     FromPack {
@@ -515,6 +518,9 @@ pub(crate) enum EnrichCommand {
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
+        /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
+        #[arg(long)]
+        max_steps: Option<u32>,
     },
     /// List prepared packs under `{state_dir}/enrich`. Does not create the directory.
     List {

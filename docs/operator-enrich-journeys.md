@@ -158,7 +158,7 @@ No dataset pipeline and no trainer crate ship with this page.
 
 On a consumer or rented Nvidia box, LLaMA-Factory already runs QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`.
 
-`<your-estate.yaml>` is a lab copy. It needs `params.model` on `local_slm` (a model the seat already has, such as `llama3`) or a pack `model_hint` that is already a model tag. `examples/estate.yaml` on `main` stays hash-locked. A binding id as `FROM` is `refuse:base-model`.
+`<your-estate.yaml>` is a lab copy. It needs `params.model` on `local_slm` (a model the seat already has, such as `llama3`) or a pack `model_hint` that is already a model tag. It also needs a train base: pack field `train_base_model`, or `params.train_base_model` on that same binding. The train base is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. A 5090 smoke used `Qwen/Qwen2.5-0.5B-Instruct` while the seat tag stayed `llama3`. `examples/estate.yaml` on `main` stays hash-locked. A binding id as `FROM` is `refuse:base-model`. A missing train base, or a bare Ollama tag in that field, is `refuse:train-base`.
 
 The train hosts for this card are `consumer-nvidia` and `rented-nvidia`. Prepare on `apple-silicon` still writes the files. `NEXT.md` says the card expects CUDA LLaMA-Factory. There is no MLX trainer in this journey.
 
@@ -171,19 +171,22 @@ estate enrich prepare \
   --state-dir .cell
 ```
 
-That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, and a short `cutoff_len` of 512. `template` is a hint from the seated tag. Use that same chat template when you seat. `prepare.json` says `job` `train`, and `promoted`, `auto_apply`, and `estate_rewritten` stay false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
+That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, `quantization_method: bnb`, and a short `cutoff_len` of 512. `model_name_or_path` is the train base. `template` is inferred from that train base. Use that same chat template when you seat. `prepare.json` says `job` `train`, stores `seat_tag` and `train_base_model`, and keeps `promoted`, `auto_apply`, and `estate_rewritten` false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
+
+The default recipe is one epoch and does not set `max_steps`. A short gauge run is the same prepare with `--max-steps 10`. LLaMA-Factory then overrides `num_train_epochs`. When that count is under 50, `save_steps` matches it so a checkpoint is written during the short run.
 
 On the CUDA host, run the lines from `NEXT.md`:
 
 ```bash
 pip install llamafactory
+pip install 'bitsandbytes>=0.49'
 llamafactory-cli train .cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml
 llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-qlora/export.yaml
 ```
 
-If `model_name_or_path` is only an Ollama tag, point it at a Hugging Face repo or a local weights directory before that command. This factory does not download weights. If `pip install llamafactory` does not match the CUDA install, use https://github.com/hiyouga/LLaMA-Factory#installation.
+QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. On a consumer RTX host, keep the torch CUDA wheel you already installed. A 5090 smoke used torch 2.11.0+cu128 (CUDA 12.8) and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. If the torch wheel still does not match the CUDA install, use https://github.com/hiyouga/LLaMA-Factory#installation. This factory does not download weights and does not map the seat tag onto a Hub repo.
 
-The train saves the adapter under `outputs/` (`adapter_config.json` inside it). Merge with `export.yaml`. Do not set `quantization_bit` on that merge. LLaMA-Factory does not write GGUF. Convert the merge with llama.cpp if you want a GGUF, then seat on Ollama with `FROM` that GGUF, or `FROM` the base plus `ADAPTER`. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.
+The train saves the adapter under `outputs/` (`adapter_config.json` inside it). Merge with `export.yaml`. Do not set `quantization_bit` on that merge. LLaMA-Factory does not write GGUF. Convert the merge with llama.cpp if you want a GGUF, then seat on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER`. The seat tag is the id the cell already runs. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This journey does not register an Unsloth card and does not write a script.
 

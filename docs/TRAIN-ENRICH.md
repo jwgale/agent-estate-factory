@@ -11,7 +11,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `TrainEnrichDriver` | Data-plane trait in `model-estate`. `id()`, `prepare(job)`, catalog `status` / `probe`. |
 | `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. `FROM` is the seated model. Does not shell out. |
 | `external-manifest` | Portable JSON and YAML. Base model ref, purpose, host class affinity, dataset path hints from the pack `source_paths`. No vendor lock. `NEXT.md` names the files to hand off. |
-| `llamafactory-qlora` | Primary train card. Writes `recipe.yaml` (LLaMA-Factory SFT QLoRA: `quantization_bit: 4`, LoRA rank 16, `cutoff_len` 512, `packing: true`), `export.yaml`, `dataset_info.json`, and instruct chat `dataset.jsonl`. Default job is `train`. `NEXT.md` has `pip install llamafactory`, `llamafactory-cli train`, and `llamafactory-cli export`. Does not shell out. |
+| `llamafactory-qlora` | Primary train card. Writes `recipe.yaml` (LLaMA-Factory SFT QLoRA: `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank 16, `cutoff_len` 512, `packing: true`), `export.yaml`, `dataset_info.json`, and instruct chat `dataset.jsonl`. `model_name_or_path` is the train base. The Ollama seat tag stays separate. Default job is `train`. `NEXT.md` has `pip install llamafactory`, `pip install 'bitsandbytes>=0.49'`, `llamafactory-cli train`, and `llamafactory-cli export`. Does not shell out. |
 | `axolotl-lora` | YAML recipe for a config-driven or multi-GPU run. Writes `axolotl.yml` (QLoRA: `load_in_4bit: true`, `adapter: qlora`) and Alpaca `dataset.jsonl`. Default job is `train`. `NEXT.md` has the exact `axolotl train` line. Does not shell out. |
 | `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` or `import-trained` line, and the fail-closed reminders. |
 | `estate enrich drivers` | Prints the catalog. `live=false`. A probe here does not train. |
@@ -40,11 +40,19 @@ LLaMA-Factory already runs QLoRA supervised fine-tuning from a YAML recipe. `lla
 
 Supported train hosts for `llamafactory-qlora` and `axolotl-lora` are `consumer-nvidia` and `rented-nvidia`. `host_class_affinity` comes from the pack when that field is set, otherwise from `params.host_class` on `local_slm`, otherwise from the pack `host_class`. An `apple-silicon` affinity still prepares. `NEXT.md` says the LLaMA-Factory card expects CUDA LLaMA-Factory. This factory does not write an MLX trainer.
 
-`model_name_or_path` in `recipe.yaml`, and `base_model` in `axolotl.yml`, are the seated model tag. Same resolution as Modelfile `FROM`: a pack `model_hint` that is already a model tag, otherwise `params.model` on the local binding. The binding id `local_slm` is `refuse:base-model` and writes nothing. LLaMA-Factory and Axolotl expect a Hugging Face repo id or a local weights directory. If the seated tag is only an Ollama name, edit that field before you train. This factory does not download weights and does not map the tag.
+The seat tag and the LLaMA-Factory train base are two fields.
+
+The seat tag is the Ollama id for Modelfile `FROM`. Resolution: a pack `model_hint` that is already a model tag, otherwise `params.model` on the local binding. `prepare.json` stores it as `base_model` and `seat_tag`. The binding id `local_slm` is `refuse:base-model` and writes nothing.
+
+The train base is `model_name_or_path` in `recipe.yaml` and `export.yaml`. It is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights (an absolute path, or a path that starts with `./`). Set it on the pack as `train_base_model`, or on the local binding as `params.train_base_model`. The pack field wins when both are set. `prepare.json` stores it as `train_base_model`. `template` is inferred from that train base. A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct` with template `qwen`. That repo id is an example an operator supplies. This factory does not turn the seat tag `llama3` into a Llama-3 Hub repo, and it does not download weights.
+
+A missing train base, or a value that is still a bare Ollama tag (`llama3`, `llama3:latest`), is `refuse:train-base` and writes nothing. `--all-drivers --job train` refuses the whole set in that case, so no sibling directory is left behind.
+
+`base_model` in `axolotl.yml` stays the seat tag. Axolotl still expects a Hugging Face repo id or a local weights directory. When a train base is set, `NEXT.md` names it and tells you to edit `axolotl.yml` before you train. This card does not copy the train base into the Axolotl file.
 
 On `llamafactory-qlora`, `dataset.jsonl` is instruct chat JSONL (`messages` of `role` and `content`). `dataset_info.json` marks it sharegpt so LLaMA-Factory applies the recipe `template`. That same chat template is what you seat. On `axolotl-lora`, `dataset.jsonl` is Alpaca JSONL (`instruction`, `input`, `output`), which Axolotl reads with `type: alpaca` and `ds_type: json`. When the pack has `source_paths`, each row names one of those paths. The factory does not read or download the files. When `source_paths` is empty, the file is a three-row stub and `NEXT.md` says to replace the rows. An empty source path string is `refuse:dataset`.
 
-The LLaMA-Factory recipe is QLoRA (`finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, `lora_rank: 16`, `packing: true`). `bnb` is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch. `cutoff_len` is `512` so a first run stays short. Official SFT examples use `2048` for a longer run. Raise that field before a real run. A later preference stage (`stage: dpo` or `stage: orpo`, with `ranking: true` in `dataset_info.json`) is a comment in the recipe. This card does not build that dataset. The Axolotl recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`). On the CUDA host you can edit the yaml to 8-bit LoRA (`load_in_8bit: true`, `load_in_4bit: false`, `adapter: lora`) before you run Axolotl.
+The LLaMA-Factory recipe is QLoRA (`finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, `lora_rank: 16`, `packing: true`). `bnb` is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch. `cutoff_len` is `512` so a first run stays short. Official SFT examples use `2048` for a longer run. Raise that field before a real run. The default recipe sets `num_train_epochs: 1.0` and `save_steps: 50`, and leaves `max_steps` unset. A short gauge run passes `--max-steps 10`. LLaMA-Factory overrides `num_train_epochs` when `max_steps` is set. When that count is under 50, prepare also sets `save_steps` to the same count so a checkpoint exists during the short run. A later preference stage (`stage: dpo` or `stage: orpo`, with `ranking: true` in `dataset_info.json`) is a comment in the recipe. This card does not build that dataset. The Axolotl recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`). On the CUDA host you can edit the yaml to 8-bit LoRA (`load_in_8bit: true`, `load_in_4bit: false`, `adapter: lora`) before you run Axolotl.
 
 ```bash
 estate enrich prepare \
@@ -66,18 +74,23 @@ The output directory is `.cell/enrich/{pack_id}/llamafactory-qlora/`:
 | `dataset_info.json` | ShareGPT column map for `dataset.jsonl`. |
 | `dataset.jsonl` | Instruct chat scaffold. |
 | `PREPARE.md` | What this step wrote, including `llamafactory-cli train recipe.yaml` from that directory. |
-| `NEXT.md` | `pip install llamafactory`, `llamafactory-cli train <absolute>/recipe.yaml`, `llamafactory-cli export`, the seat note, and the import line. |
-| `prepare.json` | `job` is `train`. `promoted`, `auto_apply`, and `estate_rewritten` are false. |
+| `NEXT.md` | `pip install llamafactory`, `pip install 'bitsandbytes>=0.49'`, `llamafactory-cli train <absolute>/recipe.yaml`, `llamafactory-cli export`, the seat tag, the train base, the gauge note, and the import line. |
+| `prepare.json` | `job` is `train`. `base_model` and `seat_tag` are the Ollama id. `train_base_model` is the Hugging Face repo or local HF directory. `promoted`, `auto_apply`, and `estate_rewritten` are false. |
 
 Run the commands from `NEXT.md` on a CUDA host. This factory does not run them.
 
 ```bash
 pip install llamafactory
+pip install 'bitsandbytes>=0.49'
 llamafactory-cli train .cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml
 llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-qlora/export.yaml
 ```
 
-If that pip line does not match the CUDA install on the box, follow https://github.com/hiyouga/LLaMA-Factory#installation. The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Merge with the export file. Do not set `quantization_bit` on that merge, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF, or `FROM` the base plus `ADAPTER` for the adapter directory. Use the same chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create` and does not run that smoke eval.
+QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. Install bitsandbytes in that same environment. On a consumer RTX host, keep the torch CUDA wheel you already installed. A 5090 smoke used torch 2.11.0+cu128 (CUDA 12.8) and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. This factory does not install either package. If the torch wheel still does not match the CUDA install on the box, follow https://github.com/hiyouga/LLaMA-Factory#installation.
+
+A short gauge run adds `--max-steps 10` to the prepare command. The default recipe stays one epoch.
+
+The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Merge with the export file. Do not set `quantization_bit` on that merge, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER` for the adapter directory. The seat tag is the id the cell already runs. Use the chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create` and does not run that smoke eval.
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This card does not call Unsloth and does not write a script.
 
@@ -121,7 +134,7 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 make train-prepare
 ```
 
-Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`) and sets `params.model: llama3` on that copy. Asserts `recipe.yaml`, the chat `dataset.jsonl`, the `llamafactory-cli train` line in `NEXT.md`, `prepare.json` with `job` `train`, and that `axolotl.yml` still has an indented datasets list. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run LLaMA-Factory or Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`). A copy with only `params.model: llama3` is `refuse:train-base` and writes nothing. The success copy also sets `params.train_base_model` to `Qwen/Qwen2.5-0.5B-Instruct`. That prepare asserts `recipe.yaml` (`template: qwen`, `quantization_method: bnb`, no `max_steps`), the chat `dataset.jsonl`, the `llamafactory-cli train` line and the bitsandbytes install line in `NEXT.md`, and `prepare.json` with `job` `train`, `base_model` `llama3`, and that train base. A second prepare with `--max-steps 10` writes `max_steps` and `save_steps` 10. `axolotl.yml` still has an indented datasets list and still uses the seat tag. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run LLaMA-Factory or Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 ```bash
 estate enrich from-pack \
@@ -236,6 +249,8 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Operator path is missing or not a file | `refuse:path` |
 | Estate has no `local_slm` seat | `refuse:binding` |
 | `FROM` would be a binding id, a driver id, or empty | `refuse:base-model` |
+| `llamafactory-qlora` has no train base, or the value is still a bare Ollama tag, or `recipe.yaml` / `export.yaml` `model_name_or_path` does not match `prepare.json` `train_base_model` | `refuse:train-base` |
+| `--max-steps 0` | `refuse:max-steps` |
 | `binding-proposal.json` is missing | `refuse:missing-proposal` |
 | Proposal schema, flags, or curator are wrong | `refuse:proposal` or `refuse:curator` |
 | `prepare.json` does not match the proposal | `refuse:prepare` |
