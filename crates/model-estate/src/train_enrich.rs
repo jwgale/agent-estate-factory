@@ -168,7 +168,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: LLAMAFACTORY_QLORA_ID,
             status: "integration",
             integrates: "llamafactory-cli train QLoRA recipe",
-            notes: "QLoRA train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA, 4-bit bitsandbytes). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. 16-bit LoRA is llamafactory-lora. Train hosts are consumer-nvidia and rented-nvidia.",
+            notes: "QLoRA train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA, 4-bit bitsandbytes). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, merge-adapt prints llamafactory-cli export for export.yaml (examples/merge_lora/qwen3_lora_sft.yaml). It does not run the export. 16-bit LoRA is llamafactory-lora. Train hosts are consumer-nvidia and rented-nvidia.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -179,7 +179,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: LLAMAFACTORY_LORA_ID,
             status: "integration",
             integrates: "llamafactory-cli train LoRA recipe",
-            notes: "LoRA train card. Writes recipe.yaml (LLaMA-Factory SFT LoRA, no quantization, rank 8). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. Does not require bitsandbytes. Train hosts are consumer-nvidia and rented-nvidia.",
+            notes: "LoRA train card. Writes recipe.yaml (LLaMA-Factory SFT LoRA, no quantization, rank 8). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, merge-adapt prints llamafactory-cli export for export.yaml (examples/merge_lora/qwen3_lora_sft.yaml). It does not run the export. Does not require bitsandbytes. Train hosts are consumer-nvidia and rented-nvidia.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -348,7 +348,7 @@ fn llamafactory_method(driver_id: &str) -> Option<LlamaFactoryMethod> {
     }
 }
 
-fn is_llamafactory_driver(id: &str) -> bool {
+pub(crate) fn is_llamafactory_driver(id: &str) -> bool {
     llamafactory_method(id).is_some()
 }
 
@@ -7896,6 +7896,11 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("## Local seat after export"), "{next}");
+        assert!(next.contains("estate enrich merge-adapt"), "{next}");
+        assert!(
+            next.contains("examples/merge_lora/qwen3_lora_sft.yaml"),
+            "{next}"
+        );
         assert!(
             next.contains(&format!(
                 "estate enrich local-seat --prepared {} --adapter {}",

@@ -142,7 +142,9 @@ fn help_names_merge_adapt() {
     assert!(body.contains("--lora-model-dir"), "{body}");
     assert!(body.contains("--dequant"), "{body}");
     assert!(body.contains("outputs/merged"), "{body}");
-    assert!(body.contains("merge_and_unload"), "{body}");
+    assert!(body.contains("llamafactory-cli export"), "{body}");
+    assert!(body.contains("examples/merge_lora/qwen3_lora_sft.yaml"), "{body}");
+    assert!(body.contains("does not print PeftModel.merge_and_unload"), "{body}");
     assert!(body.contains("refuse:adapter"), "{body}");
     assert!(body.contains("does not merge"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
@@ -281,35 +283,198 @@ fn prepared_axolotl_lora_omits_dequant() {
     assert!(!root.join("spawned").exists());
 }
 
+fn prepare_lf(root: &std::path::Path, driver: &str) -> PathBuf {
+    let estate = write_train_estate(root, "llama3", "Qwen/Qwen2.5-0.5B-Instruct");
+    let pack = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+    let out_dir = root.join(driver);
+    let prepared = estate_bin()
+        .args([
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            pack.to_str().unwrap(),
+            "--driver",
+            driver,
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    out_dir
+}
+
+fn assert_lf_prepare_pages(out_dir: &std::path::Path) {
+    for name in ["NEXT.md", "PREPARE.md"] {
+        let page = std::fs::read_to_string(out_dir.join(name)).unwrap();
+        assert!(page.contains("estate enrich merge-adapt"), "{name}: {page}");
+        assert!(
+            page.contains("examples/merge_lora/qwen3_lora_sft.yaml"),
+            "{name}: {page}"
+        );
+        assert!(
+            page.contains(&format!(
+                "llamafactory-cli export {}",
+                out_dir.join("export.yaml").display()
+            )),
+            "{name}: {page}"
+        );
+        assert!(
+            page.contains(&format!(
+                "estate enrich gguf-convert --prepared {} --weights {}",
+                out_dir.display(),
+                out_dir.join("export").display()
+            )),
+            "{name}: {page}"
+        );
+        assert!(page.contains("READY_FOR_LIVE_TEST: no"), "{name}: {page}");
+        assert!(!page.contains("READY_FOR_LIVE_TEST: yes"), "{name}: {page}");
+        assert!(!page.contains("merge_and_unload"), "{name}: {page}");
+    }
+}
+
 #[test]
-fn llamafactory_adapter_prints_peft_and_spawns_nothing() {
-    let root = tmp("lf");
-    write_prepare(
-        &root,
-        "llamafactory-qlora",
-        Some("Qwen/Qwen2.5-0.5B-Instruct"),
-    );
-    let outputs = root.join("outputs");
+fn prepared_llamafactory_qlora_prints_export_and_spawns_nothing() {
+    let root = tmp("lf-qlora");
+    let out_dir = prepare_lf(&root, "llamafactory-qlora");
+    assert_lf_prepare_pages(&out_dir);
+    let outputs = out_dir.join("outputs");
     adapter_dir(&outputs);
-    let out = run_merge(&root, &root, &outputs);
+    let prepare_before = std::fs::read(out_dir.join("prepare.json")).unwrap();
+    let export_before = std::fs::read(out_dir.join("export.yaml")).unwrap();
+    let out = run_merge(&root, &out_dir, &outputs);
     let body = text(&out);
     assert!(out.status.success(), "{body}");
-    assert!(body.contains("merge_and_unload()"), "{body}");
-    assert!(body.contains("save_pretrained("), "{body}");
-    assert!(body.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{body}");
-    let merged = root.join("merged");
-    assert!(body.contains(&merged.display().to_string()), "{body}");
-    assert!(body.contains("no export.yaml"), "{body}");
-    assert!(!body.contains("axolotl merge-lora"), "{body}");
+    let export_yaml = out_dir.join("export.yaml");
+    let export_dir = out_dir.join("export");
     assert!(
         body.contains(&format!(
-            "estate enrich gguf-convert --prepared {} --weights {}",
-            root.display(),
-            merged.display()
+            "llamafactory-cli export {}",
+            export_yaml.display()
         )),
         "{body}"
     );
-    assert!(!merged.exists());
+    assert!(
+        body.contains("llamafactory-cli export examples/merge_lora/qwen3_lora_sft.yaml"),
+        "{body}"
+    );
+    assert!(body.contains("### model"), "{body}");
+    assert!(body.contains("### export"), "{body}");
+    assert!(body.contains("model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct"), "{body}");
+    assert!(body.contains("template: qwen"), "{body}");
+    assert!(body.contains("trust_remote_code: true"), "{body}");
+    assert!(body.contains("export_size: 5"), "{body}");
+    assert!(body.contains("export_device: cpu"), "{body}");
+    assert!(body.contains("export_legacy_format: false"), "{body}");
+    assert!(body.contains("llamafactory-qlora"), "{body}");
+    assert!(body.contains("shape=adapter"), "{body}");
+    assert!(body.contains("seat_tag=llama3"), "{body}");
+    assert!(body.contains(&export_dir.display().to_string()), "{body}");
+    assert!(
+        body.contains(&format!(
+            "python3 convert_hf_to_gguf.py {} --outfile {} --outtype auto",
+            export_dir.display(),
+            out_dir.join("export.gguf").display()
+        )),
+        "{body}"
+    );
+    assert!(
+        body.contains(&format!(
+            "estate enrich gguf-convert --prepared {} --weights {}",
+            out_dir.display(),
+            export_dir.display()
+        )),
+        "{body}"
+    );
+    assert!(
+        body.contains(&format!(
+            "estate enrich local-seat --prepared {} --weights {}",
+            out_dir.display(),
+            export_dir.display()
+        )),
+        "{body}"
+    );
+    assert!(!body.contains("merge_and_unload"), "{body}");
+    assert!(!body.contains("axolotl merge-lora"), "{body}");
+    assert!(!body.contains("mlx_lm.fuse"), "{body}");
+    assert!(!body.contains("save_pretrained_merged"), "{body}");
+    assert!(body.contains("merge-adapt did not merge"), "{body}");
+    assert!(body.contains("promoted=false"), "{body}");
+    assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{body}");
+    assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    assert!(!export_dir.exists());
+    assert!(!out_dir.join("export.gguf").exists());
+    assert!(!out_dir.join("merged").exists());
+    assert!(!root.join("spawned").exists(), "export tooling was spawned");
+    assert_eq!(
+        std::fs::read(out_dir.join("prepare.json")).unwrap(),
+        prepare_before
+    );
+    assert_eq!(
+        std::fs::read(out_dir.join("export.yaml")).unwrap(),
+        export_before
+    );
+}
+
+#[test]
+fn prepared_llamafactory_lora_prints_export_and_spawns_nothing() {
+    let root = tmp("lf-lora");
+    let out_dir = prepare_lf(&root, "llamafactory-lora");
+    assert_lf_prepare_pages(&out_dir);
+    let outputs = out_dir.join("outputs");
+    adapter_dir(&outputs);
+    let out = run_merge(&root, &out_dir, &outputs);
+    let body = text(&out);
+    assert!(out.status.success(), "{body}");
+    assert!(
+        body.contains(&format!(
+            "llamafactory-cli export {}",
+            out_dir.join("export.yaml").display()
+        )),
+        "{body}"
+    );
+    assert!(body.contains("llamafactory-lora"), "{body}");
+    assert!(body.contains("export_legacy_format: false"), "{body}");
+    assert!(!body.contains("quantization_bit:"), "{body}");
+    assert!(!body.contains("merge_and_unload"), "{body}");
+    assert!(!out_dir.join("export").exists());
+    assert!(!root.join("spawned").exists());
+}
+
+#[test]
+fn llamafactory_quantized_export_refuses_without_spawning() {
+    let root = tmp("lf-quant");
+    let out_dir = prepare_lf(&root, "llamafactory-qlora");
+    let outputs = out_dir.join("outputs");
+    adapter_dir(&outputs);
+    let export_path = out_dir.join("export.yaml");
+    let before = std::fs::read_to_string(&export_path).unwrap();
+    assert!(!before.lines().any(|line| {
+        let trimmed = line.trim();
+        !trimmed.starts_with('#') && trimmed.starts_with("quantization_bit:")
+    }));
+    std::fs::write(&export_path, format!("{before}quantization_bit: 4\n")).unwrap();
+    let out = run_merge(&root, &out_dir, &outputs);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:export"), "{body}");
+    assert!(body.contains("quantization_bit"), "{body}");
+    assert!(!body.contains("llamafactory-cli export "), "{body}");
+    assert!(!body.contains("merge_and_unload"), "{body}");
+    assert!(!out_dir.join("export").is_dir());
+    assert!(!root.join("spawned").exists());
+    let missing = out_dir.join("export.yaml");
+    std::fs::remove_file(&missing).unwrap();
+    let missing_out = run_merge(&root, &out_dir, &outputs);
+    let missing_text = text(&missing_out);
+    assert!(!missing_out.status.success(), "{missing_text}");
+    assert!(missing_text.contains("refuse:merge"), "{missing_text}");
+    assert!(missing_text.contains("export.yaml"), "{missing_text}");
+    assert!(missing_text.contains("is missing"), "{missing_text}");
+    assert!(!missing_text.contains("llamafactory-cli export "), "{missing_text}");
     assert!(!root.join("spawned").exists());
 }
 

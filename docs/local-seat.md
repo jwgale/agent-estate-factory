@@ -9,7 +9,7 @@ Ollama already creates a model from a Modelfile. llama.cpp already converts a Hu
 ## Chain
 
 1. `estate enrich prepare --driver llamafactory-lora` or `llamafactory-qlora` writes `export.yaml`. `prepare.json` records that path as `export_yaml`. The Ollama seat tag stays `base_model` and `seat_tag`. The train base stays `model_name_or_path`.
-2. On the CUDA host, run the `llamafactory-cli export` line from `NEXT.md`. `export_dir` in that file is the merged directory (`config.json` and at least one `.safetensors` file). Current LLaMA-Factory `export_model` writes `Modelfile` in that directory. The file starts with `FROM .` and carries TEMPLATE from the train chat template (`get_ollama_modelfile`). This factory does not write that Modelfile.
+2. `estate enrich merge-adapt` prints the `llamafactory-cli export` line for `export.yaml`. The yaml shape is `examples/merge_lora/qwen3_lora_sft.yaml`. On the CUDA host, run that line. `export_dir` in that file is the merged directory (`config.json` and at least one `.safetensors` file). Current LLaMA-Factory `export_model` writes `Modelfile` in that directory. The file starts with `FROM .` and carries TEMPLATE from the train chat template (`get_ollama_modelfile`). This factory does not write that Modelfile and does not run the export.
 3. When you want a GGUF, `estate enrich gguf-convert` prints the llama.cpp line for that directory. Run it from a llama.cpp checkout:
 
 ```bash

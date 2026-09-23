@@ -624,12 +624,15 @@ file, another host, a symlink, and a wrong job still refuse.
 A merged Hugging Face directory or a GGUF is refuse:adapter. For
 Axolotl the printed line is axolotl merge-lora with --lora-model-dir.
 axolotl-qlora also prints --dequant. Axolotl writes output_dir/merged.
-For a LLaMA-Factory adapter when export.yaml was not the merge, the
-print is the PEFT merge_and_unload snippet and save_pretrained to
-the prepared directory's merged folder, beside outputs. When
-export.yaml is present, the report also names llamafactory-cli export.
+For a LLaMA-Factory adapter the printed line is llamafactory-cli export
+on the prepare's export.yaml. The report lists the keys from
+examples/merge_lora/qwen3_lora_sft.yaml: model_name_or_path,
+adapter_name_or_path, template, trust_remote_code, export_dir,
+export_size, export_device, and export_legacy_format. LLaMA-Factory
+writes that export_dir. A missing export.yaml, a quantized export key,
+and a train base that does not match model_name_or_path refuse.
 The command does not merge, does not shell out, and does not promote.
-It then prints gguf-convert and local-seat for that merged directory.
+It then prints gguf-convert and local-seat for that export directory.
 
   estate enrich merge-adapt \\
     --prepared .cell/enrich/overnight-traces/axolotl-qlora \\

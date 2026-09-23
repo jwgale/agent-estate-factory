@@ -598,8 +598,8 @@ pub(crate) enum EnrichCommand {
         verify_local_tag: bool,
     },
     /// Print the external adapter merge into a Hugging Face directory.
-    /// Axolotl prints `axolotl merge-lora`. A LLaMA-Factory adapter when
-    /// export.yaml was not the merge prints the PEFT `merge_and_unload` snippet.
+    /// Axolotl prints `axolotl merge-lora`. A LLaMA-Factory adapter prints
+    /// `llamafactory-cli export` for export.yaml.
     /// unsloth-qlora prints `save_pretrained_merged` with `save_method` `merged_16bit`.
     /// Does not merge, does not shell out, and does not promote.
     MergeAdapt {

@@ -111,15 +111,26 @@ pub(crate) fn llamafactory_local_seat_note(
     let outfile = crate::gguf_convert::sibling_gguf_outfile(&export_dir);
     let gguf_convert = crate::gguf_convert::gguf_convert_cli(out_dir, &export_dir);
     let outputs = out_dir.join("outputs");
+    let merge_cli = crate::merge_adapt::printed_merge_adapt_cli(out_dir, &outputs);
+    let export_line = crate::merge_adapt::printed_llamafactory_export_line(&export_yaml);
+    let example_cmd = crate::merge_adapt::documented_llamafactory_export_example();
     format!(
         "\n\
          ## Local seat after export\n\
          \n\
          Seat tag is {seat}. That is the Ollama id this cell already runs. The create name is {tag}.\n\
          \n\
-         Chain, outside this factory. This factory does not shell out to ollama or llama.cpp, does not convert weights, and does not promote.\n\
+         Chain, outside this factory. This factory does not shell out to ollama, llama.cpp, or llamafactory-cli, does not convert weights, does not merge, and does not promote.\n\
          \n\
-         1. `llamafactory-cli export` writes the merged directory named in export.yaml (`export_dir`). Current LLaMA-Factory `export_model` also writes `Modelfile` in that directory (`FROM .`, plus TEMPLATE from the train chat template). This factory does not write that Modelfile and does not invent a second template.\n\
+         1. Print the export. `merge-adapt` checks the adapter directory and prints `llamafactory-cli export` for export.yaml. The README command is `{example_cmd}` ({merge_doc}). That example sets model_name_or_path, adapter_name_or_path, template, trust_remote_code, export_dir, export_size, export_device, and export_legacy_format. It does not set quantization_bit. This factory does not run the command and does not rewrite export.yaml.\n\
+         \n\
+         {merge_cli}\n\
+         \n\
+         That prints:\n\
+         \n\
+         {export_line}\n\
+         \n\
+         `llamafactory-cli export` writes the merged directory named in export.yaml (`export_dir`). Current LLaMA-Factory `export_model` also writes `Modelfile` in that directory (`FROM .`, plus TEMPLATE from the train chat template). This factory does not write that Modelfile and does not invent a second template.\n\
          2. Print the llama.cpp convert line for that merged directory. `gguf-convert` checks the directory and prints the command. It does not run it and does not write a GGUF.\n\
          \n\
          {gguf_convert}\n\
@@ -159,6 +170,10 @@ pub(crate) fn llamafactory_local_seat_note(
         export_yaml = export_yaml.display(),
         outfile = outfile.display(),
         outputs = outputs.display(),
+        example_cmd = example_cmd,
+        merge_doc = crate::merge_adapt::LLAMAFACTORY_MERGE_DOC,
+        merge_cli = merge_cli,
+        export_line = export_line,
     )
 }
 
