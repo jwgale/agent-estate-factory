@@ -4109,3 +4109,200 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
     assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
     assert_eq!(estate_bytes(), before);
 }
+
+#[test]
+fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in ["axolotl-qlora-journey:", "uniqueness-axolotl:"] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/axolotl-qlora-journey.sh"));
+    assert!(makefile.contains("scripts/uniqueness-axolotl.sh"));
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("axolotl-qlora-journey") && phony.contains("uniqueness-axolotl"),
+        "axolotl journey targets must be phony"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("axolotl-qlora-journey") && !gate90.contains("uniqueness-axolotl"),
+        "gate-90 must not run the axolotl journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("axolotl-qlora-journey") && !smoke.contains("uniqueness-axolotl"),
+        "smoke must not run the axolotl journey: {smoke}"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/axolotl-qlora-journey.sh")).unwrap();
+    for needle in [
+        "axolotl-qlora",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "llama3",
+        "adapter: qlora",
+        "load_in_4bit: true",
+        "sequence_len: 4096",
+        "lora_r: 32",
+        "examples/llama-3/qlora.yml",
+        "refuse:train-base",
+        "refuse:adapter",
+        "refuse:seat",
+        "refuse:tokenizer",
+        "adapter_config.json",
+        "model.safetensors",
+        "GGUF",
+        "SKIP live train",
+        "SKIP live convert",
+        "SKIP live seat",
+        "READY_FOR_LIVE_TEST: no",
+        "--dequant",
+        "CELL_SEAT_LIVE",
+        "CELL_TRAIN_LIVE",
+        "examples/estate.yaml",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "AXOLOTL_QLORA_PHASE",
+    ] {
+        assert!(script.contains(needle), "axolotl-qlora-journey missing {needle}");
+    }
+    let bad = script
+        .find("-- Qwen-shaped merged tokenizer is refuse:tokenizer --")
+        .expect("missing refuse:tokenizer step");
+    let replace = script
+        .find("-- replace the broken tokenizer with the good merged stub --")
+        .expect("missing good-stub replace");
+    let happy = script
+        .find("-- gguf-convert prints convert_hf_to_gguf.py --")
+        .expect("missing happy-path convert");
+    assert!(
+        bad < replace && replace < happy,
+        "refuse:tokenizer must run before the good stubs and the convert print"
+    );
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("echo")
+            || trimmed.starts_with("grep")
+            || trimmed.starts_with("if grep")
+            || trimmed.starts_with("if ! grep")
+            || trimmed.starts_with("require ")
+            || trimmed.contains("[[ -e")
+        {
+            return false;
+        }
+        trimmed.contains("axolotl ")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+    });
+    assert!(
+        !shells_out,
+        "axolotl-qlora-journey must not shell out to axolotl, llama.cpp, or ollama"
+    );
+
+    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-axolotl.sh")).unwrap();
+    assert!(chain.contains("AXOLOTL_QLORA_PHASE=prepare"));
+    assert!(chain.contains("AXOLOTL_QLORA_PHASE=seat"));
+    assert!(chain.contains("make axolotl-qlora-journey"));
+    assert!(chain.contains("set -euo pipefail"));
+    assert!(chain.contains("SKIP live train"));
+    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        chain.find("AXOLOTL_QLORA_PHASE=prepare") < chain.find("AXOLOTL_QLORA_PHASE=seat"),
+        "uniqueness-axolotl must run prepare-assert before the seat print"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("## 11. Axolotl QLoRA — popular-config print journey"));
+    assert!(journey.contains("make axolotl-qlora-journey"));
+    assert!(journey.contains("make uniqueness-axolotl"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("`make axolotl-qlora-journey`"));
+    assert!(train.contains("`make uniqueness-axolotl`"));
+    assert!(train.contains("adapter: qlora"));
+    assert!(train.contains("load_in_4bit: true"));
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains("make axolotl-qlora-journey"));
+    assert!(help.contains("make uniqueness-axolotl"));
+    assert!(help.contains("section 11"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " print-only Axolotl QLoRA uniqueness and seat journey");
+    let slice = changelog
+        .split("## This slice — print-only Axolotl QLoRA uniqueness and seat journey")
+        .nth(1)
+        .expect("CHANGELOG missing the axolotl journey slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make axolotl-qlora-journey",
+        "scripts/axolotl-qlora-journey.sh",
+        "make uniqueness-axolotl",
+        "adapter: qlora",
+        "load_in_4bit: true",
+        "sequence_len: 4096",
+        "lora_r: 32",
+        "refuse:train-base",
+        "refuse:adapter",
+        "refuse:seat",
+        "refuse:tokenizer",
+        "SKIP live train",
+        "SKIP live convert",
+        "SKIP live seat",
+        "does not add Kimi",
+        "43770130 3391",
+        "READY_FOR_LIVE_TEST",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
+    assert!(
+        cksum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {cksum_text}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("axolotl-qlora-journey") && !body.contains("uniqueness-axolotl"),
+            "{rel} must not run the axolotl journey"
+        );
+    }
+}

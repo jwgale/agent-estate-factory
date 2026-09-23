@@ -22,6 +22,8 @@ Print path once a merged export and a GGUF exist (Target C seat ladder): the sam
 
 `make uniqueness-prove-checklist` prints the ordered operator steps for the recorded PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) (Target C live uniqueness (5090-class)). Print-only. It does not train, convert, shell out to ollama, or promote, and it does not invent a new live PASS. `CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. It is not in `make smoke`, `make gate-90`, or GitHub Actions. It is not native MLX. After step 8 (`import-trained`, `trained_shape` `gguf`, `auto_apply=false`) it prints Standing next (estate). The proposal stays `auto_apply=false`. The factory does not apply the estate without an explicit operator `--require-plan` path. The curator path is `packs accept --curator jason`. No promote and no auto-promote. `examples/estate.yaml` stays unchanged unless the operator deliberately applies a plan. The coda names `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile` and does not execute them. The recorded PASS stays on that LIVE-PROBES section. The re-prove card is `make uniqueness-prove-checklist`.
 
+Axolotl QLoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on `axolotl-qlora`. Section 11. Opt-in check: `make axolotl-qlora-journey`. It checks `axolotl.yml` (`adapter: qlora`, `load_in_4bit: true`, `sequence_len` 4096, `lora_r` 32, train base in `base_model`) and prints the merge, convert, seat, and import lines against fixture stubs. It does not run Axolotl. `make uniqueness-axolotl` runs the prepare-assert phase, then the seat-print phase. Print-only. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions. Opt-in prepare walk: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the matrix knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row.
 
 ## What stays fixed
@@ -281,7 +283,7 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 
 `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` prints the same import for `outputs/` (adapter `adapter_config.json`), `export/` (`config.json` plus a `.safetensors` file whose name does not start with `adapter_model`, optional `Modelfile`), and one `.gguf` file or a directory with exactly one top-level `.gguf`. A directory with more than one is `refuse:adapter`. `prepare.json` records `trained_shape` and `trained_paths` on the same write as the proposal. A path that matches none of those shapes, or more than one, or a symlinked marker, is `refuse:adapter` before a new proposal exists. A sacred token or a hardware SKU still refuses. `apply --require-plan` is the only step that writes the source estate.
 
-When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` or `axolotl-qlora` the same way, including `--from-feed` when the sources are already on disk. Each card writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `axolotl-lora` is bf16 LoRA matching Axolotl `examples/llama-3/lora-1b.yml` (`adapter: lora`, `load_in_4bit: false`, `sequence_len` 2048, `micro_batch_size` 2, `gradient_accumulation_steps` 2, `lora_r` 16). `axolotl-qlora` is 4-bit QLoRA matching `examples/llama-3/qlora.yml` (`adapter: qlora`, `load_in_4bit: true`, `sequence_len` 4096, `micro_batch_size` 2, `gradient_accumulation_steps` 4, `lora_r` 32). `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`), and it stores the same `dataset_mode` fields. `PREPARE.md` and `NEXT.md` use the same dataset paragraph as the LLaMA-Factory cards. A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. A missing feed file with `--from-feed` is `refuse:dataset` and writes nothing. `--all-drivers --job train` writes the train base into both Axolotl yamls and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. A short gauge run passes `--max-steps`. `estate enrich merge-adapt` then prints `axolotl merge-lora` for the adapter directory. Axolotl writes `output_dir/merged`. `axolotl-qlora` also prints `--dequant`. This factory does not run the merge. Axolotl does not write GGUF. `NEXT.md` names `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` for that directory. `import-trained` also takes the adapter directory. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
+When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` or `axolotl-qlora` the same way, including `--from-feed` when the sources are already on disk. Each card writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `axolotl-lora` is bf16 LoRA matching Axolotl `examples/llama-3/lora-1b.yml` (`adapter: lora`, `load_in_4bit: false`, `sequence_len` 2048, `micro_batch_size` 2, `gradient_accumulation_steps` 2, `lora_r` 16). `axolotl-qlora` is 4-bit QLoRA matching `examples/llama-3/qlora.yml` (`adapter: qlora`, `load_in_4bit: true`, `sequence_len` 4096, `micro_batch_size` 2, `gradient_accumulation_steps` 4, `lora_r` 32). `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`), and it stores the same `dataset_mode` fields. `PREPARE.md` and `NEXT.md` use the same dataset paragraph as the LLaMA-Factory cards. A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. A missing feed file with `--from-feed` is `refuse:dataset` and writes nothing. `--all-drivers --job train` writes the train base into both Axolotl yamls and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. A short gauge run passes `--max-steps`. `estate enrich merge-adapt` then prints `axolotl merge-lora` for the adapter directory. Axolotl writes `output_dir/merged`. `axolotl-qlora` also prints `--dequant`. This factory does not run the merge. Axolotl does not write GGUF. `NEXT.md` names `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` for that directory. `import-trained` also takes the adapter directory. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`. Opt-in print check for the 4-bit Axolotl card: `make axolotl-qlora-journey` (section 11). `make uniqueness-axolotl` chains its prepare-assert phase and its seat-print phase. Neither runs Axolotl.
 
 ## 5. Fail-closed moments
 
@@ -610,3 +612,48 @@ make seat-journey-lora
 ```
 
 `make seat-journey` pins `SEAT_CARD=llamafactory-qlora`. `make seat-journey-lora` runs the same script with `SEAT_CARD=llamafactory-lora`. The prepare card is the unquantized LoRA recipe (template `qwen`, `lora_rank` 8, `packing: false`, no quantization keys, no bitsandbytes install line). The refuse path is the same: a missing adapter is `refuse:adapter`, a missing export or GGUF is `refuse:seat`, and the 5090-shaped export is `refuse:tokenizer` before the good stubs. The script does not copy tokenizer files, does not write `tokenizer_config.json.bak`, and does not print `python3 convert_hf_to_gguf.py` on that refuse. `import-trained` still records `trained_shape` `gguf` with `auto_apply=false`. It does not weaken those refuses. It does not train, merge, convert, seat, or promote.
+
+## 11. Axolotl QLoRA — popular-config print journey
+
+This is the print-only check for the 4-bit Axolotl card. Axolotl already trains from `examples/llama-3/qlora.yml`. This factory writes `axolotl.yml` and prints the next command. It does not install Axolotl, does not run `axolotl`, does not merge, does not run `convert_hf_to_gguf.py`, does not run `ollama create`, and does not promote.
+
+The prepare uses the overnight pack `examples/fixtures/specialist-overnight.pack.json` on a throwaway copy of `examples/estate.yaml`. The seat tag is `llama3`. The train base is `Qwen/Qwen2.5-0.5B-Instruct`. `axolotl.yml` sets `base_model` to that train base. The documented card is `adapter: qlora`, `load_in_8bit: false`, `load_in_4bit: true`, `sequence_len: 4096`, `micro_batch_size: 2`, `gradient_accumulation_steps: 4`, and `lora_r: 32`, matching Axolotl `examples/llama-3/qlora.yml`. `examples/estate.yaml` stays hash-locked.
+
+A seat tag with no train base is `refuse:train-base` and writes nothing. Before the stubs exist, `merge-adapt` on a missing `outputs/` is `refuse:adapter`. `gguf-convert` on a missing `outputs/merged` is `refuse:seat`. `local-seat` on a missing `outputs/merged.gguf` is `refuse:seat`. Those refuses write no merged directory and no GGUF.
+
+After `merge-adapt` prints `axolotl merge-lora` (the line without `--dequant`, and the `--dequant` line that writes a bf16 checkpoint), the script writes a Qwen-shaped directory under `outputs/merged`. `config.json` sets `model_type` to `qwen2` and `architectures` to `Qwen2ForCausalLM`. `tokenizer_config.json` sets `extra_special_tokens` to a JSON list. `vocab.json` and `merges.txt` are absent. `gguf-convert` returns `refuse:tokenizer` and does not print `python3 convert_hf_to_gguf.py`. The script then replaces that fixture with `config.json` `{}` plus `model.safetensors`. That safetensors name does not start with `adapter_model`.
+
+The good stubs under the prepared directory are:
+
+| Stub | What the printer needs |
+| --- | --- |
+| `outputs/adapter_config.json` | `merge-adapt` reads an adapter directory. Axolotl's `output_dir` is that directory. |
+| `outputs/merged/config.json` and `outputs/merged/model.safetensors` | A merged Hugging Face directory is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`. `gguf-convert` prints for that directory. |
+| `outputs/merged.gguf` | The first four bytes are `GGUF`. `local-seat` refuses a file that does not start with that magic. `import-trained` records the file. |
+
+`outputs/merged.gguf` stays beside `outputs/merged/`. A `.gguf` inside the merged directory makes that directory match two shapes.
+
+The printed lines for the overnight pack (`cell-enrich-overnight-traces`) are:
+
+```bash
+axolotl merge-lora <prepared>/axolotl.yml --lora-model-dir=<prepared>/outputs --dequant
+python3 convert_hf_to_gguf.py <prepared>/outputs/merged --outfile <prepared>/outputs/merged.gguf --outtype auto
+ollama create cell-enrich-overnight-traces -f <prepared>/outputs/Modelfile
+estate enrich import-trained --estate <your-estate.yaml> --prepared <prepared> --tag cell-enrich-overnight-traces --adapter <prepared>/outputs/merged.gguf
+```
+
+`local-seat` is print-only. It prints the Modelfile and does not write `<prepared>/outputs/Modelfile`. Write that file from the printed contents before `ollama create`. The report says this factory did not run `ollama create`. The proposal stays `auto_apply=false`. `import-trained` records `trained_shape` `gguf`. It does not apply the estate.
+
+The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` and `CELL_TRAIN_LIVE=1` do not start a convert or an `ollama create`. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make axolotl-qlora-journey
+```
+
+That opt-in script runs the prepare asserts and the seat prints in one process. `AXOLOTL_QLORA_PHASE=prepare` stops after the card check and the missing-path refuses. `AXOLOTL_QLORA_PHASE=seat` prints the fixture ladder.
+
+```bash
+make uniqueness-axolotl
+```
+
+That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make qlora-journey`, `make seat-journey`, or `make train-next`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
