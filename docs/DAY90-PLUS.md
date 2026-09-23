@@ -4,7 +4,7 @@ Real-world testing is a recorded live proof on Jason's boxes plus a green
 local gate (`make gate-90`). An AI gateway stays out of altitude. Facilitation of train and
 enrich for purpose-built small models is the suite goal
 ([`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md)). Today's beachhead is packs,
-the specialist path, and `estate enrich prepare` (artifacts only; `--all-drivers`, `from-pack`, seated Modelfile `FROM`, `llamafactory-lora` writes a LLaMA-Factory LoRA recipe with no quantization and does not run it, `llamafactory-qlora` writes a LLaMA-Factory QLoRA recipe and does not run it, `axolotl-lora` writes an Axolotl recipe and does not run it, `estate enrich list`, `import-prepared` and `import-trained` as a `local_slm` proposal, and `apply-proposal` staging that proposal for `estate plan` / `estate apply --require-plan`).
+the specialist path, and `estate enrich prepare` (artifacts only; `--all-drivers`, `from-pack`, seated Modelfile `FROM`, `llamafactory-lora` writes a LLaMA-Factory LoRA recipe with no quantization and does not run it, `llamafactory-qlora` writes a LLaMA-Factory QLoRA recipe and does not run it, `axolotl-lora` writes a bf16 Axolotl recipe and does not run it, `axolotl-qlora` writes a 4-bit Axolotl recipe and does not run it, `estate enrich list`, `import-prepared` and `import-trained` as a `local_slm` proposal, and `apply-proposal` staging that proposal for `estate plan` / `estate apply --require-plan`).
 `make enrich-prepare` is opt-in and not in smoke or `gate-90`. The opt-in ladder after the gate is
 `make real-world`. It is not in smoke or Actions. Unset
 `CELL_LOCAL_ENDPOINT` prints SKIP and exits 0. That SKIP is not a proof.

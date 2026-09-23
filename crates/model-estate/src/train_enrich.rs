@@ -5,7 +5,8 @@
 //! estate. `llamafactory-lora` writes the LLaMA-Factory LoRA recipe (16-bit
 //! base, no quantization). `llamafactory-qlora` writes the QLoRA recipe.
 //! The operator runs either recipe outside the factory. `axolotl-lora` writes
-//! the Axolotl YAML recipe. Every recipe card writes the train base, and keeps
+//! the bf16 Axolotl LoRA YAML. `axolotl-qlora` writes the 4-bit Axolotl YAML.
+//! Every recipe card writes the train base, and keeps
 //! the Ollama seat tag for Modelfile `FROM`. Unsloth stays a NEXT.md pointer,
 //! not a card.
 //! `external-manifest` stays the vendor-neutral hatch.
@@ -88,7 +89,7 @@ pub struct EnrichJob {
     pub base_model: String,
     /// Hugging Face repo id or a local HF weights directory. `llamafactory-lora`
     /// and `llamafactory-qlora` write this to `model_name_or_path`.
-    /// `axolotl-lora` writes it to `base_model`.
+    /// `axolotl-lora` and `axolotl-qlora` write it to `base_model`.
     /// Absent until the pack or the binding sets it.
     pub train_base_model: Option<String>,
     pub purpose: String,
@@ -98,7 +99,7 @@ pub struct EnrichJob {
     pub source_drivers: Vec<String>,
     /// Directory the artifacts will occupy. Path-bearing recipes use it for absolute paths.
     pub out_dir: PathBuf,
-    /// Explicit gauge cap for the LLaMA-Factory recipe. `None` leaves `max_steps` unset.
+    /// Explicit gauge cap. LLaMA-Factory and Axolotl both write `max_steps`. `None` leaves it unset.
     pub max_steps: Option<u32>,
     /// Train recipe cards set this. Other cards leave it unset.
     pub dataset: Option<DatasetMaterial>,
@@ -180,12 +181,23 @@ const REGISTRY: &[RegisteredDriver] = &[
         card: TrainEnrichCard {
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
-            integrates: "axolotl train LoRA/QLoRA recipe",
-            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. LLaMA-Factory LoRA is llamafactory-lora. LLaMA-Factory QLoRA is llamafactory-qlora.",
+            integrates: "axolotl train LoRA recipe",
+            notes: "bf16 LoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter lora, load_in_4bit false) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/lora-1b.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. 4-bit QLoRA is axolotl-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
-        build: || Box::new(AxolotlLoraDriver),
+        build: || Box::new(AxolotlDriver { method: AxolotlMethod::Lora }),
+    },
+    RegisteredDriver {
+        card: TrainEnrichCard {
+            driver_id: AXOLOTL_QLORA_ID,
+            status: "integration",
+            integrates: "axolotl train QLoRA recipe",
+            notes: "4-bit QLoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter qlora, load_in_4bit true) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/qlora.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. bf16 LoRA is axolotl-lora.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(AxolotlDriver { method: AxolotlMethod::Qlora }),
     },
 ];
 
@@ -197,7 +209,9 @@ struct LlamaFactoryDriver {
     method: LlamaFactoryMethod,
 }
 
-struct AxolotlLoraDriver;
+struct AxolotlDriver {
+    method: AxolotlMethod,
+}
 
 /// QLoRA train card. LLaMA-Factory already trains 4-bit QLoRA from a YAML recipe. This id writes that recipe.
 pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
@@ -205,8 +219,11 @@ pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
 /// LoRA train card. LLaMA-Factory already trains unquantized LoRA from a YAML recipe. This id writes that recipe.
 pub const LLAMAFACTORY_LORA_ID: &str = "llamafactory-lora";
 
-/// YAML train card. Axolotl already trains from a config. This id writes that recipe.
+/// bf16 LoRA YAML card. Axolotl already trains that shape from `examples/llama-3/lora-1b.yml`.
 pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
+
+/// 4-bit QLoRA YAML card. Axolotl already trains that shape from `examples/llama-3/qlora.yml`.
+pub const AXOLOTL_QLORA_ID: &str = "axolotl-qlora";
 
 /// Which LLaMA-Factory PEFT recipe a card writes. Selection is the driver id.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -258,8 +275,114 @@ fn is_llamafactory_driver(id: &str) -> bool {
     llamafactory_method(id).is_some()
 }
 
-const TRAIN_RECIPE_DRIVERS: &[&str] =
-    &[LLAMAFACTORY_QLORA_ID, LLAMAFACTORY_LORA_ID, AXOLOTL_LORA_ID];
+/// Which Axolotl PEFT recipe a card writes. Selection is the driver id.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AxolotlMethod {
+    /// bf16 LoRA. `examples/llama-3/lora-1b.yml`.
+    Lora,
+    /// 4-bit QLoRA. `examples/llama-3/qlora.yml`.
+    Qlora,
+}
+
+impl AxolotlMethod {
+    fn driver_id(self) -> &'static str {
+        match self {
+            Self::Lora => AXOLOTL_LORA_ID,
+            Self::Qlora => AXOLOTL_QLORA_ID,
+        }
+    }
+
+    fn example_file(self) -> &'static str {
+        match self {
+            Self::Lora => "examples/llama-3/lora-1b.yml",
+            Self::Qlora => "examples/llama-3/qlora.yml",
+        }
+    }
+
+    fn adapter(self) -> &'static str {
+        match self {
+            Self::Lora => "lora",
+            Self::Qlora => "qlora",
+        }
+    }
+
+    fn load_in_4bit(self) -> bool {
+        matches!(self, Self::Qlora)
+    }
+
+    /// `lora-1b.yml` sequence length. `qlora.yml` uses 4096.
+    fn sequence_len(self) -> u32 {
+        match self {
+            Self::Lora => 2048,
+            Self::Qlora => 4096,
+        }
+    }
+
+    /// Both public examples use 2.
+    fn micro_batch_size(self) -> u32 {
+        match self {
+            Self::Lora | Self::Qlora => 2,
+        }
+    }
+
+    /// `lora-1b.yml` uses 2. `qlora.yml` uses 4.
+    fn gradient_accumulation_steps(self) -> u32 {
+        match self {
+            Self::Lora => 2,
+            Self::Qlora => 4,
+        }
+    }
+
+    /// `lora-1b.yml` uses 16. `qlora.yml` uses 32.
+    fn lora_r(self) -> u32 {
+        match self {
+            Self::Lora => 16,
+            Self::Qlora => 32,
+        }
+    }
+
+    /// `lora-1b.yml` uses 32. `qlora.yml` uses 16.
+    fn lora_alpha(self) -> u32 {
+        match self {
+            Self::Lora => 32,
+            Self::Qlora => 16,
+        }
+    }
+
+    /// `lora-1b.yml` is one epoch. `qlora.yml` is four.
+    fn num_epochs(self) -> u32 {
+        match self {
+            Self::Lora => 1,
+            Self::Qlora => 4,
+        }
+    }
+
+    fn optimizer(self) -> &'static str {
+        match self {
+            Self::Lora => "adamw_8bit",
+            Self::Qlora => "paged_adamw_32bit",
+        }
+    }
+}
+
+fn axolotl_method(driver_id: &str) -> Option<AxolotlMethod> {
+    match driver_id {
+        AXOLOTL_LORA_ID => Some(AxolotlMethod::Lora),
+        AXOLOTL_QLORA_ID => Some(AxolotlMethod::Qlora),
+        _ => None,
+    }
+}
+
+fn is_axolotl_driver(id: &str) -> bool {
+    axolotl_method(id).is_some()
+}
+
+const TRAIN_RECIPE_DRIVERS: &[&str] = &[
+    LLAMAFACTORY_QLORA_ID,
+    LLAMAFACTORY_LORA_ID,
+    AXOLOTL_LORA_ID,
+    AXOLOTL_QLORA_ID,
+];
 
 fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
@@ -400,9 +523,9 @@ impl TrainEnrichDriver for LlamaFactoryDriver {
     }
 }
 
-impl TrainEnrichDriver for AxolotlLoraDriver {
+impl TrainEnrichDriver for AxolotlDriver {
     fn id(&self) -> &'static str {
-        AXOLOTL_LORA_ID
+        self.method.driver_id()
     }
 
     fn status(&self) -> &'static str {
@@ -410,9 +533,10 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
     }
 
     fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        let driver_id = self.method.driver_id();
         if job.kind != EnrichJobKind::Train {
             return Err(ModelError::Other(format!(
-                "refuse:job: {AXOLOTL_LORA_ID} prepares train; got {}",
+                "refuse:job: {driver_id} prepares train; got {}",
                 job.kind.as_str()
             )));
         }
@@ -420,30 +544,8 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
         let train_base = train_owned.as_str();
         let data = require_dataset(job)?;
         let dataset = data.alpaca_jsonl.clone();
-        let yaml = axolotl_recipe_yaml(job, &data.mode, train_base);
-        let host = axolotl_host_note(&job.host_class_affinity);
-        let data_note = dataset_card_note(ALPACA_DATASET_SHAPE, data);
-        let steps = format!(
-            "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, did not download weights, and did not rewrite the estate.\n\
-             \n\
-             {host}\n\
-             \n\
-             {data_note}\n\
-             \n\
-             Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
-             \n\
-             Train base is {train}. axolotl.yml sets base_model to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
-             \n\
-             To train full LoRA on that host, set `load_in_8bit: true`, `load_in_4bit: false`, and `adapter: lora` in axolotl.yml before you run it.\n\
-             \n\
-             From this directory:\n\
-             \n\
-             axolotl train axolotl.yml\n\
-             \n\
-             The copy-paste line with the config path is in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist.\n",
-            seat = job.base_model,
-            train = train_base,
-        );
+        let yaml = axolotl_recipe_yaml(job, &data.mode, train_base, self.method);
+        let steps = axolotl_prepare_steps(self.method, job, train_base, data);
         Ok(DriverPrepare {
             files: vec![
                 ("axolotl.yml".into(), yaml),
@@ -704,13 +806,12 @@ pub fn prepare_enrich_set(
         ));
     }
     if reqs.iter().any(|req| req.from_feed)
-        && !reqs
-            .iter()
-            .any(|req| is_train_recipe_driver(req.driver_id))
+        && !reqs.iter().any(|req| is_train_recipe_driver(req.driver_id))
     {
-        return Err(ModelError::Other(
-            "refuse:dataset: --from-feed applies to llamafactory-lora, llamafactory-qlora, and axolotl-lora. This prepare has no train recipe card. Omit --from-feed to keep the other cards.".into(),
-        ));
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: --from-feed applies to {}. This prepare has no train recipe card. Omit --from-feed to keep the other cards.",
+            TRAIN_RECIPE_DRIVERS.join(", ")
+        )));
     }
     let mut drivers = BTreeSet::new();
     let mut outs = BTreeSet::new();
@@ -1016,7 +1117,8 @@ fn normalize_max_steps(max_steps: Option<u32>) -> Result<Option<u32>, ModelError
     match max_steps {
         None => Ok(None),
         Some(0) => Err(ModelError::Other(
-            "refuse:max-steps: max_steps must be at least 1. Omit it for the one-epoch LLaMA-Factory recipe.".into(),
+            "refuse:max-steps: max_steps must be at least 1. Omit it for the one-epoch recipe."
+                .into(),
         )),
         Some(steps) => Ok(Some(steps)),
     }
@@ -1302,7 +1404,7 @@ fn next_markdown(
                  https://unsloth.ai/docs/get-started/install\n\
                  https://github.com/unslothai/unsloth\n\
                  \n\
-                 axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
+                 axolotl-lora is the bf16 LoRA YAML. axolotl-qlora is the 4-bit YAML. This card does not call Axolotl.\n",
                 host = llamafactory_host_note(driver_id, &job.host_class_affinity),
                 dataset = train_dataset_blurb(job, CHAT_DATASET_SHAPE),
                 seat = job.base_model,
@@ -1322,7 +1424,7 @@ fn next_markdown(
             ),
             "Point --adapter at the LLaMA-Factory output directory (adapter_config.json inside it), the merged export (config.json plus safetensors), or a GGUF you converted.".to_string(),
         )
-    } else if driver_id == AXOLOTL_LORA_ID {
+    } else if let Some(method) = axolotl_method(driver_id) {
         let command = axolotl_train_command(&config);
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         (
@@ -1330,6 +1432,9 @@ fn next_markdown(
                 "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
                  \n\
                  {command}\n\
+                 \n\
+                 Quickstart: https://docs.axolotl.ai/docs/getting-started.html\n\
+                 The handoff command is `axolotl train` on the yaml this prepare wrote.\n\
                  \n\
                  {host}\n\
                  \n\
@@ -1339,14 +1444,20 @@ fn next_markdown(
                  \n\
                  Train base is {train}. axolotl.yml sets base_model to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
                  \n\
+                 {shape}\n\
+                 \n\
+                 {gauge}\n\
+                 \n\
                  Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
                  llamafactory-lora is the unquantized LLaMA-Factory LoRA recipe. llamafactory-qlora is the 4-bit QLoRA recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
-                host = axolotl_host_note(&job.host_class_affinity),
+                host = axolotl_host_note(driver_id, &job.host_class_affinity),
                 dataset = train_dataset_blurb(job, ALPACA_DATASET_SHAPE),
                 seat = job.base_model,
                 train = train_base,
+                shape = axolotl_shape_note(method),
+                gauge = axolotl_gauge_note(method, job.max_steps),
             ),
             format!(
                 "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
@@ -1438,8 +1549,8 @@ fn cuda_train_host_note(driver_id: &str, affinity: &str, command: &str) -> Strin
     }
 }
 
-fn axolotl_host_note(affinity: &str) -> String {
-    cuda_train_host_note(AXOLOTL_LORA_ID, affinity, "axolotl train")
+fn axolotl_host_note(driver_id: &str, affinity: &str) -> String {
+    cuda_train_host_note(driver_id, affinity, "axolotl train")
 }
 
 fn llamafactory_host_note(driver_id: &str, affinity: &str) -> String {
@@ -1448,13 +1559,12 @@ fn llamafactory_host_note(driver_id: &str, affinity: &str) -> String {
 
 const CHAT_DATASET_SHAPE: &str =
     "dataset.jsonl is instruct chat JSONL (messages of role and content).";
-const ALPACA_DATASET_SHAPE: &str =
-    "dataset.jsonl is Alpaca JSONL (instruction, input, output).";
+const ALPACA_DATASET_SHAPE: &str = "dataset.jsonl is Alpaca JSONL (instruction, input, output).";
 
 fn require_dataset(job: &EnrichJob) -> Result<&DatasetMaterial, ModelError> {
-    job.dataset.as_ref().ok_or_else(|| {
-        ModelError::Other("refuse:dataset: train recipe has no dataset plan".into())
-    })
+    job.dataset
+        .as_ref()
+        .ok_or_else(|| ModelError::Other("refuse:dataset: train recipe has no dataset plan".into()))
 }
 
 fn dataset_card_note(shape: &str, data: &DatasetMaterial) -> String {
@@ -1853,9 +1963,7 @@ fn read_feed_source(
         )));
     }
     let meta = file.metadata().map_err(|err| {
-        ModelError::Other(format!(
-            "refuse:dataset: cannot stat {relative}: {err}"
-        ))
+        ModelError::Other(format!("refuse:dataset: cannot stat {relative}: {err}"))
     })?;
     if !meta.is_file() {
         return Err(missing_feed_source(relative, &candidate));
@@ -1932,9 +2040,8 @@ fn opened_file_path(file: &std::fs::File) -> std::io::Result<PathBuf> {
         return Err(std::io::Error::last_os_error());
     }
     let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
-    let text = std::str::from_utf8(&buf[..end]).map_err(|err| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, err)
-    })?;
+    let text = std::str::from_utf8(&buf[..end])
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     Ok(PathBuf::from(text))
 }
 
@@ -1990,7 +2097,9 @@ fn classify_instruct_line(
     // wrapped as `messages` or `instruction` is still refuse:frontier-invent.
     refuse_record_policy(estate, relative, line_no, value)?;
     if value.get("messages").is_some() {
-        return Ok(InstructLine::Row(chat_source_row(relative, line_no, value)?));
+        return Ok(InstructLine::Row(chat_source_row(
+            relative, line_no, value,
+        )?));
     }
     if value.get("instruction").is_some() {
         return Ok(InstructLine::Row(alpaca_source_row(
@@ -2015,7 +2124,8 @@ fn refuse_record_policy(
 ) -> Result<(), ModelError> {
     if let Some(event) = scrubbed_event_from_record(relative, line_no, value)? {
         if classify_path(&event) == "frontier" {
-            refuse_frontier_source_on_estate(&["frontier".to_string()], estate).map_err(map_feed)?;
+            refuse_frontier_source_on_estate(&["frontier".to_string()], estate)
+                .map_err(map_feed)?;
         }
     }
     refuse_json_text(&format!("{relative} line {line_no}"), value)
@@ -2099,11 +2209,14 @@ fn chat_source_row(
     line_no: usize,
     value: &serde_json::Value,
 ) -> Result<HydratedRow, ModelError> {
-    let messages = value.get("messages").and_then(|item| item.as_array()).ok_or_else(|| {
-        ModelError::Other(format!(
-            "refuse:dataset: {relative} line {line_no} messages is not an array"
-        ))
-    })?;
+    let messages = value
+        .get("messages")
+        .and_then(|item| item.as_array())
+        .ok_or_else(|| {
+            ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} messages is not an array"
+            ))
+        })?;
     if messages.is_empty() {
         return Err(ModelError::Other(format!(
             "refuse:dataset: {relative} line {line_no} messages is empty"
@@ -2113,7 +2226,11 @@ fn chat_source_row(
     let mut users = 0usize;
     let mut assistants = 0usize;
     for item in messages {
-        let role = item.get("role").and_then(|value| value.as_str()).unwrap_or("").trim();
+        let role = item
+            .get("role")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim();
         let content = item
             .get("content")
             .and_then(|value| value.as_str())
@@ -2313,7 +2430,11 @@ fn alpaca_from_turns(turns: &[ChatTurn]) -> AlpacaOwned {
     }
 }
 
-fn refuse_hydrated_text(relative: &str, line_no: usize, row: &HydratedRow) -> Result<(), ModelError> {
+fn refuse_hydrated_text(
+    relative: &str,
+    line_no: usize,
+    row: &HydratedRow,
+) -> Result<(), ModelError> {
     let field = format!("{relative} line {line_no}");
     refuse_sacred_and_sku(&field, &row.alpaca.instruction)?;
     refuse_sacred_and_sku(&field, &row.alpaca.input)?;
@@ -2709,8 +2830,13 @@ fn refuse_recipe_train_record(
             ("recipe.yaml", "model_name_or_path"),
             ("export.yaml", "model_name_or_path"),
         ]
-    } else {
+    } else if is_axolotl_driver(&doc.driver) {
         &[("axolotl.yml", "base_model")]
+    } else {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: {} has no train-base file to check",
+            doc.driver
+        )));
     };
     for (name, key) in checks {
         let path = prepared_dir.join(name);
@@ -3001,11 +3127,144 @@ fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str, driver_id: &str) 
     )
 }
 
-fn axolotl_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> String {
+const AXOLOTL_SAVE_STEPS: u32 = 50;
+
+fn yaml_bool(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn axolotl_save_steps(max_steps: u32) -> u32 {
+    if max_steps < AXOLOTL_SAVE_STEPS {
+        max_steps
+    } else {
+        AXOLOTL_SAVE_STEPS
+    }
+}
+
+/// Checkpoint block. Axolotl refuses `save_steps` together with `saves_per_epoch`.
+fn axolotl_checkpoint_yaml(max_steps: Option<u32>) -> String {
+    match max_steps {
+        Some(steps) => format!(
+            "# Gauge run. max_steps {steps} precedes num_epochs. save_steps and saves_per_epoch cannot both be set.\n\
+             max_steps: {steps}\n\
+             save_steps: {save}\n",
+            save = axolotl_save_steps(steps),
+        ),
+        None => "# num_epochs above is the full run. A short gauge run passes --max-steps. This file leaves max_steps unset.\n\
+             saves_per_epoch: 1\n"
+            .to_string(),
+    }
+}
+
+fn axolotl_shape_note(method: AxolotlMethod) -> String {
+    let example = method.example_file();
+    match method {
+        AxolotlMethod::Lora => format!(
+            "This card is bf16 LoRA (`adapter: lora`, `load_in_8bit: false`, `load_in_4bit: false`). It matches Axolotl `{example}`, the file the quickstart runs with `axolotl train`. That file leaves both load_in flags unset, which is the same bf16 LoRA. This card writes them false. `sequence_len` is {}, `micro_batch_size` is {}, `gradient_accumulation_steps` is {}, and `lora_r` is {}, matching that file. `lora_alpha` is {} and `lora_dropout` is 0.05, matching that file. `lora_target_linear` is true. That file lists Llama-3 projections. This card targets every linear module so a Qwen or Llama train base loads without a module-list edit. `num_epochs` is {}, `optimizer` is {}, `learning_rate` is 0.0002, and `warmup_ratio` is 0.1, matching that file. `sample_packing` is true, matching that file. `pad_to_sequence_len` stays unset, matching that file. `val_set_size` is 0.0 and `evals_per_epoch` is 0. That file uses 0.1 and 4. A short scaffold does not split an eval set, and Axolotl refuses eval settings when `val_set_size` is 0. That file sets `attn_implementation: flash_attention_2` and a Llama pad token. This card leaves both unset. The train base is not pinned to Llama-3, and this factory does not install flash attention. 4-bit QLoRA is `--driver axolotl-qlora`.",
+            method.sequence_len(),
+            method.micro_batch_size(),
+            method.gradient_accumulation_steps(),
+            method.lora_r(),
+            method.lora_alpha(),
+            method.num_epochs(),
+            method.optimizer(),
+            example = example,
+        ),
+        AxolotlMethod::Qlora => format!(
+            "This card is 4-bit QLoRA (`load_in_8bit: false`, `load_in_4bit: true`, `adapter: qlora`). It matches Axolotl `{example}`. `sequence_len` is {}, `micro_batch_size` is {}, `gradient_accumulation_steps` is {}, and `lora_r` is {}, matching that file. `lora_alpha` is {} and `lora_dropout` is 0.05, matching that file. `lora_target_linear` is true, matching that file. `num_epochs` is {}, `optimizer` is {}, `learning_rate` is 0.0002, and `warmup_ratio` is 0.1, matching that file. `sample_packing` is true, matching that file. `val_set_size` is 0.0, matching that file's 0. `evals_per_epoch` is 0. That file sets 4, which asks for eval on an empty split, and Axolotl refuses eval settings when `val_set_size` is 0. That file sets `attn_implementation: flash_attention_2` and a Llama pad token. This card leaves both unset. The train base is not pinned to Llama-3, and this factory does not install flash attention. bf16 LoRA is `--driver axolotl-lora`.",
+            method.sequence_len(),
+            method.micro_batch_size(),
+            method.gradient_accumulation_steps(),
+            method.lora_r(),
+            method.lora_alpha(),
+            method.num_epochs(),
+            method.optimizer(),
+            example = example,
+        ),
+    }
+}
+
+fn axolotl_gauge_note(method: AxolotlMethod, max_steps: Option<u32>) -> String {
+    let epochs = method.num_epochs();
+    let base = format!(
+        "A short gauge run does not need the full num_epochs ({epochs}). Re-prepare with `--max-steps 10`. Axolotl's `max_steps` precedes `num_epochs`: when both are set, training stops at `max_steps`. When that count is under {AXOLOTL_SAVE_STEPS}, this prepare sets `save_steps` to the same count and omits `saves_per_epoch`. Axolotl refuses to set both. The default recipe keeps `num_epochs` {epochs} and `saves_per_epoch` 1, and leaves `max_steps` unset."
+    );
+    match max_steps {
+        Some(steps) => format!("{base}\n\nThis recipe is a gauge run with max_steps {steps}."),
+        None => base,
+    }
+}
+
+fn axolotl_prepare_steps(
+    method: AxolotlMethod,
+    job: &EnrichJob,
+    train_base: &str,
+    data: &DatasetMaterial,
+) -> String {
+    let driver_id = method.driver_id();
+    let host = axolotl_host_note(driver_id, &job.host_class_affinity);
+    let data_note = dataset_card_note(ALPACA_DATASET_SHAPE, data);
+    let recipe_line = match method {
+        AxolotlMethod::Lora => format!(
+            "The recipe is bf16 LoRA (`adapter: lora`, `load_in_8bit: false`, `load_in_4bit: false`, `sequence_len` {}, `micro_batch_size` {}, `gradient_accumulation_steps` {}, `lora_r` {}).",
+            method.sequence_len(),
+            method.micro_batch_size(),
+            method.gradient_accumulation_steps(),
+            method.lora_r(),
+        ),
+        AxolotlMethod::Qlora => format!(
+            "The recipe is 4-bit QLoRA (`load_in_8bit: false`, `load_in_4bit: true`, `adapter: qlora`, `sequence_len` {}, `micro_batch_size` {}, `gradient_accumulation_steps` {}, `lora_r` {}).",
+            method.sequence_len(),
+            method.micro_batch_size(),
+            method.gradient_accumulation_steps(),
+            method.lora_r(),
+        ),
+    };
+    format!(
+        "This step wrote axolotl.yml and dataset.jsonl. {recipe_line} It did not run axolotl, did not train, did not download weights, and did not rewrite the estate.\n\
+         \n\
+         {host}\n\
+         \n\
+         {data_note}\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
+         \n\
+         Train base is {train}. axolotl.yml sets base_model to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+         \n\
+         {shape}\n\
+         \n\
+         {gauge}\n\
+         \n\
+         From this directory:\n\
+         \n\
+         axolotl train axolotl.yml\n\
+         \n\
+         The copy-paste line with the config path is in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist.\n",
+        seat = job.base_model,
+        train = train_base,
+        shape = axolotl_shape_note(method),
+        gauge = axolotl_gauge_note(method, job.max_steps),
+    )
+}
+
+fn axolotl_recipe_yaml(
+    job: &EnrichJob,
+    mode: &str,
+    train_base: &str,
+    method: AxolotlMethod,
+) -> String {
     let dataset = job.out_dir.join("dataset.jsonl");
     let prepared = job.out_dir.join("dataset_prepared");
     let outputs = job.out_dir.join("outputs");
-    let host = yaml_comment_line(&axolotl_host_note(&job.host_class_affinity));
+    let host = yaml_comment_line(&axolotl_host_note(
+        method.driver_id(),
+        &job.host_class_affinity,
+    ));
+    let gauge = axolotl_checkpoint_yaml(job.max_steps);
     format!(
         "# schema: {schema}\n\
          # driver: {driver}\n\
@@ -3019,45 +3278,58 @@ fn axolotl_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> String 
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
          # {host}\n\
+         # example: {example}\n\
+         # {shape}\n\
          base_model: {base}\n\
          load_in_8bit: false\n\
-         load_in_4bit: true\n\
-         adapter: qlora\n\
-         lora_r: 16\n\
-         lora_alpha: 32\n\
+         load_in_4bit: {load4}\n\
+         adapter: {adapter}\n\
+         lora_r: {rank}\n\
+         lora_alpha: {alpha}\n\
          lora_dropout: 0.05\n\
          lora_target_linear: true\n\
          datasets:\n  - path: {dataset}\n    ds_type: json\n    type: alpaca\n\
          dataset_prepared_path: {prepared}\n\
          val_set_size: 0.0\n\
          output_dir: {outputs}\n\
-         sequence_len: 2048\n\
-         sample_packing: false\n\
-         pad_to_sequence_len: true\n\
-         micro_batch_size: 1\n\
-         gradient_accumulation_steps: 4\n\
-         num_epochs: 1\n\
-         optimizer: adamw_bnb_8bit\n\
+         sequence_len: {seq}\n\
+         sample_packing: true\n\
+         micro_batch_size: {micro}\n\
+         gradient_accumulation_steps: {accum}\n\
+         num_epochs: {epochs}\n\
+         optimizer: {optimizer}\n\
          lr_scheduler: cosine\n\
          learning_rate: 0.0002\n\
          bf16: auto\n\
          tf32: false\n\
          gradient_checkpointing: true\n\
-         warmup_ratio: 0.03\n\
+         warmup_ratio: 0.1\n\
          logging_steps: 1\n\
          evals_per_epoch: 0\n\
-         saves_per_epoch: 1\n",
+         {gauge}",
         schema = PREPARE_SCHEMA,
-        driver = AXOLOTL_LORA_ID,
+        driver = method.driver_id(),
         pack = job.pack_id,
         seat = job.base_model,
         train_comment = train_base,
+        example = method.example_file(),
+        shape = yaml_comment_line(&axolotl_shape_note(method)),
         base = yaml_quote(train_base),
+        load4 = yaml_bool(method.load_in_4bit()),
+        adapter = method.adapter(),
+        rank = method.lora_r(),
+        alpha = method.lora_alpha(),
         dataset = yaml_quote(&dataset.display().to_string()),
         prepared = yaml_quote(&prepared.display().to_string()),
         outputs = yaml_quote(&outputs.display().to_string()),
+        seq = method.sequence_len(),
+        micro = method.micro_batch_size(),
+        accum = method.gradient_accumulation_steps(),
+        epochs = method.num_epochs(),
+        optimizer = method.optimizer(),
         mode = mode,
         host = host,
+        gauge = gauge,
     )
 }
 
@@ -4413,6 +4685,10 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
+    fn yaml_line(text: &str, expected: &str) -> bool {
+        text.lines().any(|line| line.trim() == expected)
+    }
+
     fn tmp(name: &str) -> PathBuf {
         // Keep the throwaway dir off the checkout. A GPU token in the
         // checkout path would trip refuse:sku-banned on the out directory.
@@ -4556,6 +4832,7 @@ mod tests {
         assert!(ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(ids.contains(&AXOLOTL_LORA_ID));
+        assert!(ids.contains(&AXOLOTL_QLORA_ID));
         assert!(!ids.contains(&"unsloth-qlora"));
         let factory = train_enrich_card(LLAMAFACTORY_QLORA_ID).unwrap();
         assert_eq!(factory.default_job, EnrichJobKind::Train);
@@ -4567,16 +4844,22 @@ mod tests {
         assert!(!lora.jobs.contains(&EnrichJobKind::Enrich));
         let axolotl = train_enrich_card(AXOLOTL_LORA_ID).unwrap();
         assert_eq!(axolotl.default_job, EnrichJobKind::Train);
+        let axolotl_qlora = train_enrich_card(AXOLOTL_QLORA_ID).unwrap();
+        assert_eq!(axolotl_qlora.default_job, EnrichJobKind::Train);
+        assert!(axolotl_qlora.jobs.contains(&EnrichJobKind::Train));
+        assert!(!axolotl_qlora.jobs.contains(&EnrichJobKind::Enrich));
         let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
         assert!(!enrich_ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(!enrich_ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
+        assert!(!enrich_ids.contains(&AXOLOTL_QLORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
         assert!(train_ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(train_ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
-        assert_eq!(train_ids.len(), 5);
+        assert!(train_ids.contains(&AXOLOTL_QLORA_ID));
+        assert_eq!(train_ids.len(), 6);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -4596,6 +4879,7 @@ mod tests {
         assert!(rendered.contains(LLAMAFACTORY_LORA_ID), "{rendered}");
         assert!(!rendered.contains("unsloth-qlora"), "{rendered}");
         assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
+        assert!(rendered.contains(AXOLOTL_QLORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
         assert!(rendered.contains("default=train"), "{rendered}");
     }
@@ -4779,8 +5063,14 @@ mod tests {
         assert!(next.contains("--from-feed"), "{next}");
         assert!(next.contains("not training data"), "{next}");
         assert!(next.contains("did not read"), "{next}");
-        assert!(prepare_md.contains("Dataset mode: scaffold"), "{prepare_md}");
-        assert!(prepare_md.contains("dataset_mode: scaffold"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("Dataset mode: scaffold"),
+            "{prepare_md}"
+        );
+        assert!(
+            prepare_md.contains("dataset_mode: scaffold"),
+            "{prepare_md}"
+        );
         assert!(recipe.contains("dataset_mode: scaffold"), "{recipe}");
 
         let enrich_out = root.join("enrich-job");
@@ -5558,7 +5848,10 @@ mod tests {
             "{prepare_md}"
         );
         assert!(!prepare_md.contains("bitsandbytes>=0.49"), "{prepare_md}");
-        assert!(prepare_md.contains("dataset_mode: scaffold"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("dataset_mode: scaffold"),
+            "{prepare_md}"
+        );
         assert!(prepare_md.contains("not training data"), "{prepare_md}");
         assert!(prepare_md.contains("--from-feed"), "{prepare_md}");
 
@@ -5669,10 +5962,7 @@ mod tests {
             "{hybrid_recipe}"
         );
 
-        let nested = with_train_base(
-            seated.clone(),
-            "/tmp/hf/Qwen3-4B-Instruct-2507/weights",
-        );
+        let nested = with_train_base(seated.clone(), "/tmp/hf/Qwen3-4B-Instruct-2507/weights");
         let nested_out = root.join("nested-weights");
         run(
             LLAMAFACTORY_LORA_ID,
@@ -5862,8 +6152,24 @@ mod tests {
         );
         assert!(!yaml.contains("meta-llama"), "{yaml}");
         assert!(yaml.contains("# seat_tag: llama3"), "{yaml}");
-        assert!(yaml.contains("adapter: qlora"), "{yaml}");
-        assert!(yaml.contains("load_in_4bit: true"), "{yaml}");
+        assert!(yaml_line(&yaml, "adapter: lora"), "{yaml}");
+        assert!(yaml_line(&yaml, "load_in_8bit: false"), "{yaml}");
+        assert!(yaml_line(&yaml, "load_in_4bit: false"), "{yaml}");
+        assert!(yaml_line(&yaml, "sequence_len: 2048"), "{yaml}");
+        assert!(yaml_line(&yaml, "micro_batch_size: 2"), "{yaml}");
+        assert!(yaml_line(&yaml, "gradient_accumulation_steps: 2"), "{yaml}");
+        assert!(yaml_line(&yaml, "lora_r: 16"), "{yaml}");
+        assert!(yaml_line(&yaml, "lora_alpha: 32"), "{yaml}");
+        assert!(yaml_line(&yaml, "sample_packing: true"), "{yaml}");
+        assert!(yaml_line(&yaml, "saves_per_epoch: 1"), "{yaml}");
+        assert!(
+            !yaml
+                .lines()
+                .any(|line| line.trim_start().starts_with("max_steps:")),
+            "{yaml}"
+        );
+        assert!(yaml.contains("examples/llama-3/lora-1b.yml"), "{yaml}");
+        assert!(!yaml.contains("adapter: qlora"), "{yaml}");
         assert!(yaml.contains("type: alpaca"), "{yaml}");
         assert!(
             yaml.contains("  - path:") && yaml.contains("\n    ds_type: json\n    type: alpaca\n"),
@@ -5985,7 +6291,7 @@ mod tests {
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
-        assert_eq!(all_docs.len(), 5);
+        assert_eq!(all_docs.len(), 6);
         let all_lora =
             std::fs::read_to_string(root.join("all-llamafactory-lora").join("recipe.yaml"))
                 .unwrap();
@@ -6108,7 +6414,10 @@ mod tests {
         assert!(stub_next.contains("dataset_mode: stub"), "{stub_next}");
         assert!(stub_next.contains("refuse:dataset"), "{stub_next}");
         let stub_prepare = std::fs::read_to_string(stub_out.join("PREPARE.md")).unwrap();
-        assert!(stub_prepare.contains("dataset_mode: stub"), "{stub_prepare}");
+        assert!(
+            stub_prepare.contains("dataset_mode: stub"),
+            "{stub_prepare}"
+        );
         let stub_doc = std::fs::read_to_string(stub_out.join("prepare.json")).unwrap();
         assert!(
             stub_doc.contains("\"dataset_mode\": \"stub\""),
@@ -6461,6 +6770,144 @@ mod tests {
     }
 
     #[test]
+    fn axolotl_qlora_matches_the_public_example_and_caps_steps() {
+        let root = tmp("axolotl-qlora");
+        let pack = fixture_pack();
+        let seated = seated_estate("llama3");
+        let blocked = root.join("seat-only");
+        let err = run(AXOLOTL_QLORA_ID, &pack, &seated, &blocked, "train", "jason").unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!blocked.exists());
+
+        let estate = with_train_base(seated, "Qwen/Qwen2.5-0.5B-Instruct");
+        let out = root.join("recipe");
+        let doc = run(AXOLOTL_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.driver, AXOLOTL_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
+        let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
+        assert!(
+            yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{yaml}"
+        );
+        assert!(yaml_line(&yaml, "adapter: qlora"), "{yaml}");
+        assert!(yaml_line(&yaml, "load_in_8bit: false"), "{yaml}");
+        assert!(yaml_line(&yaml, "load_in_4bit: true"), "{yaml}");
+        assert!(yaml_line(&yaml, "sequence_len: 4096"), "{yaml}");
+        assert!(yaml_line(&yaml, "micro_batch_size: 2"), "{yaml}");
+        assert!(yaml_line(&yaml, "gradient_accumulation_steps: 4"), "{yaml}");
+        assert!(yaml_line(&yaml, "lora_r: 32"), "{yaml}");
+        assert!(yaml_line(&yaml, "lora_alpha: 16"), "{yaml}");
+        assert!(yaml_line(&yaml, "num_epochs: 4"), "{yaml}");
+        assert!(yaml_line(&yaml, "optimizer: paged_adamw_32bit"), "{yaml}");
+        assert!(yaml_line(&yaml, "saves_per_epoch: 1"), "{yaml}");
+        assert!(
+            !yaml
+                .lines()
+                .any(|line| line.trim_start().starts_with("max_steps:")),
+            "{yaml}"
+        );
+        assert!(yaml.contains("examples/llama-3/qlora.yml"), "{yaml}");
+        assert!(
+            !yaml.contains("adapter: lora\n") && yaml.contains("adapter: qlora"),
+            "{yaml}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let config = out.join("axolotl.yml");
+        assert!(
+            next.contains(&format!("axolotl train {}", config.display())),
+            "{next}"
+        );
+        assert!(next.contains("examples/llama-3/qlora.yml"), "{next}");
+        assert!(next.contains("sequence_len"), "{next}");
+        assert!(next.contains("--max-steps 10"), "{next}");
+        assert!(next.contains("does not install flash attention"), "{next}");
+        assert!(
+            next.contains("attn_implementation: flash_attention_2"),
+            "{next}"
+        );
+        assert!(!next.contains("flash_attention: true"), "{next}");
+        assert!(
+            !yaml.lines().any(|line| {
+                let field = line.trim_start();
+                field.starts_with("attn_implementation:") || field.starts_with("flash_attention:")
+            }),
+            "{yaml}"
+        );
+        assert!(!next.contains("Edit axolotl.yml"), "{next}");
+
+        let gauge_out = root.join("gauge");
+        run_max(
+            AXOLOTL_QLORA_ID,
+            &pack,
+            &estate,
+            &gauge_out,
+            "train",
+            "jason",
+            Some(10),
+        )
+        .unwrap();
+        let gauge = std::fs::read_to_string(gauge_out.join("axolotl.yml")).unwrap();
+        assert!(yaml_line(&gauge, "max_steps: 10"), "{gauge}");
+        assert!(yaml_line(&gauge, "save_steps: 10"), "{gauge}");
+        assert!(
+            !gauge
+                .lines()
+                .any(|line| line.trim_start().starts_with("saves_per_epoch:")),
+            "{gauge}"
+        );
+        assert!(yaml_line(&gauge, "num_epochs: 4"), "{gauge}");
+        let gauge_next = std::fs::read_to_string(gauge_out.join("NEXT.md")).unwrap();
+        assert!(
+            gauge_next.contains("gauge run with max_steps 10"),
+            "{gauge_next}"
+        );
+
+        let zero = root.join("zero");
+        let err = run_max(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &zero,
+            "train",
+            "jason",
+            Some(0),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:max-steps"), "{err}");
+        assert!(!zero.exists());
+
+        let enrich_out = root.join("enrich-job");
+        let err = run(
+            AXOLOTL_QLORA_ID,
+            &pack,
+            &estate,
+            &enrich_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!enrich_out.exists());
+
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.driver, AXOLOTL_QLORA_ID);
+    }
+
+    #[test]
     fn from_feed_hydrates_fixture_rows_and_names_refuses() {
         let root = tmp("from-feed");
         let pack = fixture_pack();
@@ -6469,15 +6916,8 @@ mod tests {
         write_fixture_feed(&state);
 
         let quiet = root.join("quiet");
-        let quiet_doc = run_feed(
-            LLAMAFACTORY_QLORA_ID,
-            &pack,
-            &estate,
-            &quiet,
-            &state,
-            false,
-        )
-        .unwrap();
+        let quiet_doc =
+            run_feed(LLAMAFACTORY_QLORA_ID, &pack, &estate, &quiet, &state, false).unwrap();
         assert_eq!(quiet_doc.dataset_mode.as_deref(), Some("scaffold"));
         assert_eq!(quiet_doc.dataset_from_feed, Some(false));
         let quiet_jsonl = std::fs::read_to_string(quiet.join("dataset.jsonl")).unwrap();
@@ -6506,10 +6946,7 @@ mod tests {
         let missing_text = missing.to_string();
         assert!(missing_text.contains("refuse:dataset"), "{missing_text}");
         assert!(missing_text.contains("feed/events.jsonl"), "{missing_text}");
-        assert!(
-            missing_text.contains("does not download"),
-            "{missing_text}"
-        );
+        assert!(missing_text.contains("does not download"), "{missing_text}");
         assert!(!missing_out.exists(), "{}", missing_out.display());
 
         let missing_ax = root.join("missing-ax");
@@ -6547,15 +6984,17 @@ mod tests {
             })
             .collect();
         let set_err = prepare_enrich_set(&reqs).unwrap_err();
-        assert!(
-            set_err.to_string().contains("refuse:dataset"),
-            "{set_err}"
-        );
+        assert!(set_err.to_string().contains("refuse:dataset"), "{set_err}");
         for dir in &dirs {
             assert!(!dir.exists(), "{}", dir.display());
         }
 
-        for driver in [LLAMAFACTORY_LORA_ID, LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID] {
+        for driver in [
+            LLAMAFACTORY_LORA_ID,
+            LLAMAFACTORY_QLORA_ID,
+            AXOLOTL_LORA_ID,
+            AXOLOTL_QLORA_ID,
+        ] {
             let out = root.join(driver);
             let doc = run_feed(driver, &pack, &estate, &out, &state, true).unwrap();
             assert_eq!(doc.dataset_mode.as_deref(), Some("feed"));
@@ -6578,10 +7017,7 @@ mod tests {
             let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
             let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
             for card in [&next, &prepare_md] {
-                assert!(
-                    card.contains("dataset_mode: feed"),
-                    "{driver} {card}"
-                );
+                assert!(card.contains("dataset_mode: feed"), "{driver} {card}");
                 assert!(card.contains("refuse:dataset"), "{driver} {card}");
                 assert!(
                     card.contains("did not invent a completion"),
@@ -6597,9 +7033,12 @@ mod tests {
                 prepare_md.contains("Dataset from feed: true"),
                 "{prepare_md}"
             );
-            if driver == AXOLOTL_LORA_ID {
+            if is_axolotl_driver(driver) {
                 assert!(jsonl.contains("\"instruction\""), "{jsonl}");
-                assert!(jsonl.contains("\"output\":\"job=policy-precheck\""), "{jsonl}");
+                assert!(
+                    jsonl.contains("\"output\":\"job=policy-precheck\""),
+                    "{jsonl}"
+                );
                 let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
                 assert!(yaml.contains("dataset_mode: feed"), "{yaml}");
             } else {
@@ -6665,10 +7104,7 @@ mod tests {
             true,
         )
         .unwrap_err();
-        assert!(
-            unknown.to_string().contains("refuse:dataset"),
-            "{unknown}"
-        );
+        assert!(unknown.to_string().contains("refuse:dataset"), "{unknown}");
         assert!(
             unknown.to_string().contains("not an instruct row"),
             "{unknown}"
@@ -6706,10 +7142,7 @@ mod tests {
             true,
         )
         .unwrap_err();
-        assert!(
-            secret.to_string().contains("refuse:raw-secret"),
-            "{secret}"
-        );
+        assert!(secret.to_string().contains("refuse:raw-secret"), "{secret}");
         assert!(!root.join("secret").exists());
 
         std::fs::write(
@@ -6771,14 +7204,8 @@ mod tests {
             true,
         )
         .unwrap_err();
-        assert!(
-            escaped.to_string().contains("refuse:dataset"),
-            "{escaped}"
-        );
-        assert!(
-            escaped.to_string().contains("outside"),
-            "{escaped}"
-        );
+        assert!(escaped.to_string().contains("refuse:dataset"), "{escaped}");
+        assert!(escaped.to_string().contains("outside"), "{escaped}");
         assert!(!root.join("escaped").exists());
         // The refuse above is the opened fd, not a path that is closed and
         // reopened. Pin the same helper: an inside file stays under the state
@@ -6839,7 +7266,10 @@ mod tests {
         assert_eq!(alpaca_doc.dataset_rows, Some(1));
         assert_eq!(alpaca_doc.dataset_skipped, Some(0));
         let alpaca = std::fs::read_to_string(alpaca_out.join("dataset.jsonl")).unwrap();
-        assert!(alpaca.contains("\"instruction\":\"Name the pack\""), "{alpaca}");
+        assert!(
+            alpaca.contains("\"instruction\":\"Name the pack\""),
+            "{alpaca}"
+        );
         assert!(alpaca.contains("\"input\":\"overnight\""), "{alpaca}");
         assert!(
             alpaca.contains("\"output\":\"overnight-traces\""),
@@ -6875,6 +7305,10 @@ mod tests {
             ollama_err.to_string().contains("axolotl-lora"),
             "{ollama_err}"
         );
+        assert!(
+            ollama_err.to_string().contains("axolotl-qlora"),
+            "{ollama_err}"
+        );
         assert!(!ollama_out.exists());
     }
 
@@ -6906,7 +7340,8 @@ mod tests {
         );
         assert!(!root.join("sharegpt").exists());
 
-        let alpaca = "{\"kind\":\"model.frontier.complete\",\"instruction\":\"Say hi\",\"output\":\"hi\"}\n";
+        let alpaca =
+            "{\"kind\":\"model.frontier.complete\",\"instruction\":\"Say hi\",\"output\":\"hi\"}\n";
         std::fs::write(state.join("feed/events.jsonl"), alpaca).unwrap();
         let alpaca_err = run_feed(
             AXOLOTL_LORA_ID,
@@ -7028,15 +7463,7 @@ mod tests {
 
         std::fs::write(state.join("feed/b.jsonl"), &one).unwrap();
         let both = root.join("both");
-        let err = run_feed(
-            AXOLOTL_LORA_ID,
-            &pack,
-            &estate,
-            &both,
-            &state,
-            true,
-        )
-        .unwrap_err();
+        let err = run_feed(AXOLOTL_LORA_ID, &pack, &estate, &both, &state, true).unwrap_err();
         let text = err.to_string();
         assert!(text.contains("refuse:dataset"), "{text}");
         assert!(text.contains("together"), "{text}");

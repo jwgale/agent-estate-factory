@@ -291,7 +291,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the YAML recipe. This page does not run a trainer.
+- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -315,7 +315,7 @@ const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
 estate help train prints this page. Job field is train or enrich.
-Default job is enrich. llamafactory-lora, llamafactory-qlora, and axolotl-lora default to train.
+Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora default to train.
 --all-drivers defaults to enrich and includes a card only when that job
 is allowed. Prepare writes artifacts. It does not train.
 
@@ -353,7 +353,10 @@ external-manifest (portable JSON/YAML, no vendor lock),
 llamafactory-lora (LLaMA-Factory LoRA recipe.yaml, no quantization, rank 8;
 default job train; does not require bitsandbytes),
 llamafactory-qlora (LLaMA-Factory QLoRA recipe.yaml + instruct chat dataset.jsonl;
-default job train; requires bitsandbytes), and axolotl-lora (Axolotl axolotl.yml + dataset.jsonl;
+default job train; requires bitsandbytes), axolotl-lora (bf16 Axolotl axolotl.yml,
+sequence_len 2048, micro_batch_size 2, gradient_accumulation_steps 2, lora_r 16;
+default job train), and axolotl-qlora (4-bit Axolotl axolotl.yml, load_in_4bit true,
+sequence_len 4096, micro_batch_size 2, gradient_accumulation_steps 4, lora_r 32;
 default job train). Unsloth QLoRA is a NEXT.md pointer on the LLaMA-Factory
 cards, not a registered driver.
 A later entrant adds one catalog card. Floor and control dispatch
@@ -390,19 +393,24 @@ quantization_bit, lora_rank 8, packing false). Select QLoRA with
 lora_rank 16).
 A bare Ollama seat tag is refuse:train-base and writes nothing.
 This factory does not map the seat tag onto a Hub repo.
-axolotl-lora writes that same train base to base_model in axolotl.yml.
-prepare.json base_model and seat_tag stay the Ollama id for Modelfile FROM
-and for the adapter join.
+axolotl-lora and axolotl-qlora write that same train base to base_model in axolotl.yml.
+axolotl-lora is bf16 LoRA (adapter lora, load_in_4bit false), matching
+examples/llama-3/lora-1b.yml. axolotl-qlora is 4-bit QLoRA (adapter qlora,
+load_in_4bit true), matching examples/llama-3/qlora.yml. sequence_len,
+micro_batch_size, gradient_accumulation_steps, and lora_r are the values
+in those files. prepare.json base_model and seat_tag stay the Ollama id
+for Modelfile FROM and for the adapter join. NEXT.md names axolotl train.
 The LoRA card does not require bitsandbytes. QLoRA still needs
 bitsandbytes: pip install 'bitsandbytes>=0.49'.
-A short gauge run passes --max-steps 10. The default recipe leaves
+A short gauge run passes --max-steps 10. Axolotl writes max_steps and
+omits saves_per_epoch on that gauge. The default recipe leaves
 max_steps unset.
 
 dataset.jsonl defaults to a scaffold (or a three-row stub when the
 pack source_paths list is empty). prepare.json records dataset_mode,
 dataset_rows, dataset_from_feed, dataset_skipped, and
 dataset_read_paths. PREPARE.md and NEXT.md on llamafactory-lora,
-llamafactory-qlora, and axolotl-lora say those rows are not training
+llamafactory-qlora, axolotl-lora, and axolotl-qlora say those rows are not training
 data. Pass --from-feed to copy instruct
 rows that are already under --state-dir (for example
 .cell/feed/events.jsonl). A missing file is refuse:dataset and writes
@@ -428,7 +436,7 @@ and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
 estate enrich import-trained is that same proposal for a llamafactory-lora,
-llamafactory-qlora, or axolotl-lora prepare whose job is train. --adapter is an adapter
+llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare whose job is train. --adapter is an adapter
 directory or a merged GGUF. It does not apply. apply-proposal, plan,
 and apply --require-plan stay the join. Ollama stays the local-run seat.
 
@@ -455,9 +463,9 @@ Point --estate at a lab copy. examples/estate.yaml on main stays hash-locked.
 apply-proposal and import-prepared leave the source estate unchanged.
 Promote stays off. No train POST.
 
-Opt-in walk: make enrich-prepare. make train-prepare writes a
-LLaMA-Factory recipe and an Axolotl recipe under /tmp and does not run either
-trainer. Neither is part of
+Opt-in walk: make enrich-prepare. make train-prepare writes
+LLaMA-Factory LoRA and QLoRA recipes and Axolotl LoRA and QLoRA recipes
+under /tmp and does not run either trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.

@@ -103,7 +103,7 @@ pub struct PackManifest {
     #[serde(default)]
     pub model_hint: Option<String>,
     /// Hugging Face repo id (`namespace/name`) or a local directory of HF weights.
-    /// `llamafactory-qlora` writes this to `model_name_or_path`. `axolotl-lora` writes it to `base_model`. An Ollama seat tag
+    /// `llamafactory-lora` and `llamafactory-qlora` write this to `model_name_or_path`. `axolotl-lora` and `axolotl-qlora` write it to `base_model`. An Ollama seat tag
     /// (`llama3`, `llama3:latest`) is not a train base. Empty on older packs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub train_base_model: Option<String>,

@@ -70,6 +70,7 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("llamafactory-lora"), "{body}");
         assert!(body.contains("llamafactory-qlora"), "{body}");
         assert!(body.contains("axolotl-lora"), "{body}");
+        assert!(body.contains("axolotl-qlora"), "{body}");
         assert!(body.contains("does not require bitsandbytes"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
@@ -103,6 +104,7 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(listed.contains("llamafactory-lora"), "{listed}");
     assert!(!listed.contains("unsloth-qlora"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
+    assert!(listed.contains("axolotl-qlora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
     assert!(listed.contains("default=train"), "{listed}");
 }
@@ -418,6 +420,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("ollama-modelfile"));
     assert!(!dispatch.contains("external-manifest"));
     assert!(!dispatch.contains("axolotl-lora"));
+    assert!(!dispatch.contains("axolotl-qlora"));
     assert!(!dispatch.contains("llamafactory-qlora"));
     assert!(!dispatch.contains("llamafactory-lora"));
     assert!(!dispatch.contains("unsloth-qlora"));
@@ -443,7 +446,16 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         "{train_script}"
     );
     assert!(train_script.contains("axolotl-lora"), "{train_script}");
+    assert!(train_script.contains("axolotl-qlora"), "{train_script}");
     assert!(train_script.contains("axolotl train"), "{train_script}");
+    assert!(
+        train_script.contains("examples/llama-3/lora-1b.yml"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/llama-3/qlora.yml"),
+        "{train_script}"
+    );
     assert!(train_script.contains("SKIP live train"), "{train_script}");
     assert!(
         train_script.contains("job") && train_script.contains("train"),
@@ -1364,10 +1376,11 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=5"), "{all_text}");
+    assert!(all_text.contains("prepared=6"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
+    assert!(all_text.contains("driver=axolotl-qlora"), "{all_text}");
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
@@ -1379,10 +1392,35 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         "{all_yaml}"
     );
     assert!(
+        all_yaml.lines().any(|line| line == "adapter: lora"),
+        "{all_yaml}"
+    );
+    assert!(
+        all_yaml.lines().any(|line| line == "load_in_4bit: false"),
+        "{all_yaml}"
+    );
+    assert!(
         !all_yaml
             .lines()
             .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
         "{all_yaml}"
+    );
+    let all_ax_qlora =
+        std::fs::read_to_string(state.join("enrich/overnight-traces/axolotl-qlora/axolotl.yml"))
+            .unwrap();
+    assert!(
+        all_ax_qlora.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{all_ax_qlora}"
+    );
+    assert!(
+        all_ax_qlora.lines().any(|line| line == "adapter: qlora"),
+        "{all_ax_qlora}"
+    );
+    assert!(
+        all_ax_qlora
+            .lines()
+            .any(|line| line == "load_in_4bit: true"),
+        "{all_ax_qlora}"
     );
     let all_modelfile =
         std::fs::read_to_string(state.join("enrich/overnight-traces/ollama-modelfile/Modelfile"))
