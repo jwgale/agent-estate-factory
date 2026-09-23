@@ -2637,6 +2637,13 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         handoff.contains("mlx_lm.fuse --model <path_to_model>"),
         "{handoff}"
     );
+    assert!(handoff.contains("refuse:adapter"), "{handoff}");
+    assert!(
+        !handoff.contains(
+            "a merged directory that contains config.json and at least one .safetensors"
+        ),
+        "{handoff}"
+    );
     assert!(!out.join("dataset.jsonl").exists());
     assert!(!out.join("recipe.yaml").exists());
     assert!(out.read_dir().unwrap().all(|entry| {
@@ -2656,6 +2663,10 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
     assert!(next.contains("ggml-model-f16.gguf"), "{next}");
     assert!(next.contains("estate enrich merge-adapt"), "{next}");
     assert!(next.contains("## After the mlx-lm train"), "{next}");
+    assert!(next.contains("fused MLX"), "{next}");
+    assert!(next.contains("refuse:adapter"), "{next}");
+    assert!(!next.contains("--adapter <merged-dir>"), "{next}");
+    assert!(!next.contains("including fuse when you fused"), "{next}");
     assert!(!next.contains("python3 convert_hf_to_gguf.py"), "{next}");
     let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
     assert!(
@@ -2663,6 +2674,7 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         "{prepare_md}"
     );
     assert!(prepare_md.contains("--export-gguf"), "{prepare_md}");
+    assert!(prepare_md.contains("refuse:adapter"), "{prepare_md}");
     assert!(
         !prepare_md.contains("python3 convert_hf_to_gguf.py"),
         "{prepare_md}"

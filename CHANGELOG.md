@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — refuse fused MLX on import-trained
+
+- `estate enrich import-trained` on an `mlx-lm-lora` train prepare refuses a fused MLX directory (`refuse:adapter`). That directory is `config.json` and a `.safetensors` file whose name does not start with `adapter_model`. `mlx_lm.fuse` writes `model.safetensors` and `config.json`. A directory that also holds `ggml-model-f16.gguf` is the same refuse. The command does not record `trained_shape` `merged` and does not write a proposal.
+- The same command still records an adapter directory (`adapter_config.json`) or a GGUF path (one `.gguf` file, or a directory with exactly one top-level `.gguf`). Pass the file when the fused directory also holds the weights. `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, and `unsloth-qlora` still record a merged Hugging Face directory.
+- `MLX.md`, `PREPARE.md`, and `NEXT.md` name the adapter directory and the GGUF file. They do not tell the operator to point `import-trained` at the fused directory. `local-seat` and `gguf-convert` still refuse that directory (`refuse:seat`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Qwen3 Instruct LoRA reproduce target
 
 - `llamafactory-lora` infers LLaMA-Factory template `qwen3_nothink` for `Qwen/Qwen3-4B-Instruct-2507`, `Qwen/Qwen3-30B-A3B-Instruct-2507`, `Qwen/Qwen3-235B-A22B-Instruct-2507`, and `Qwen/Qwen3-Next-80B-A3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--Qwen--Qwen3-4B-Instruct-2507`). That is the same text group as the Qwen3 Instruct QLoRA prepare. `examples/train_lora/qwen3_lora_sft.yaml` sets `model_name_or_path` to `Qwen/Qwen3-4B-Instruct-2507` and `template: qwen3_nothink`, with `lora_rank: 8` and no quantization keys. A Qwen3 thinking or base checkpoint (`Qwen/Qwen3-4B`, `Qwen/Qwen3-4B-Thinking-2507`, `Qwen/Qwen3-4B-Base`, `Qwen/Qwen3-Next-80B-A3B-Thinking`) uses `qwen3`. Qwen2 and Qwen2.5, including `Qwen/Qwen2.5-0.5B-Instruct`, stay `qwen`.
