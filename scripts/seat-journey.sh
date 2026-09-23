@@ -9,6 +9,8 @@
 # CELL_SEAT_LIVE=1 does not start a live phase. Live convert and live seat
 # stay on the operator host.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
+# Resolves estate fail-closed: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then cargo on PATH. Does not invent a binary.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,12 +28,36 @@ TRAIN_BASE="Qwen/Qwen2.5-0.5B-Instruct"
 SEAT_TAG="llama3"
 TAG="cell-enrich-overnight-traces"
 
-estate() {
-  if [[ -n "$BIN" ]]; then
-    "$BIN" "$@"
-  else
-    cargo run -q -p estate-control -- "$@"
+# Fail closed when cargo is not on PATH.
+# Order: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then `cargo run -q -p estate-control --`.
+# A set ESTATE_BIN that is not executable does not fall through.
+resolve_estate() {
+  if [[ -n "${ESTATE_RESOLVED:-}" ]]; then
+    return 0
   fi
+  if [[ -n "$BIN" && -x "$BIN" ]]; then
+    ESTATE_CMD=("$BIN")
+  elif [[ -n "$BIN" ]]; then
+    echo "FAIL  ESTATE_BIN is set but not executable: $BIN" >&2
+    echo "FAIL  refusing $ROOT/target/release/estate and $ROOT/target/debug/estate" >&2
+    exit 1
+  elif [[ -x "$ROOT/target/release/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/release/estate")
+  elif [[ -x "$ROOT/target/debug/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/debug/estate")
+  elif command -v cargo >/dev/null 2>&1; then
+    ESTATE_CMD=(cargo run -q -p estate-control --)
+  else
+    echo "FAIL  estate binary unresolved. Set ESTATE_BIN, or build $ROOT/target/release/estate or $ROOT/target/debug/estate. cargo is not on PATH." >&2
+    exit 1
+  fi
+  ESTATE_RESOLVED=1
+}
+
+estate() {
+  resolve_estate
+  "${ESTATE_CMD[@]}" "$@"
 }
 
 if [[ ! -f "$PACK" ]]; then
@@ -77,6 +103,8 @@ echo "5. estate enrich import-trained --adapter <prepared>/export.gguf"
 echo "   Records trained_shape gguf and trained_paths."
 echo "   The proposal stays auto_apply=false. Does not apply the estate. Does not promote."
 echo
+
+resolve_estate
 
 BEFORE="$(cksum "$ESTATE")"
 rm -rf "$WORKDIR"

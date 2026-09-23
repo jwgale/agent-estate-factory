@@ -2,6 +2,8 @@
 # Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, the optional Unsloth handoff, and the optional mlx-lm handoff.
 # Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No Unsloth install. No mlx-lm install. No GPU. No live train.
 # Local only. Do not add to make smoke or GitHub Actions.
+# Resolves estate fail-closed: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then cargo on PATH. Does not invent a binary.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,12 +18,36 @@ ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 PACK="${PACK:-$ROOT/examples/fixtures/specialist-overnight.pack.json}"
 BIN="${ESTATE_BIN:-}"
 
-estate() {
-  if [[ -n "$BIN" ]]; then
-    "$BIN" "$@"
-  else
-    cargo run -q -p estate-control -- "$@"
+# Fail closed when cargo is not on PATH.
+# Order: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then `cargo run -q -p estate-control --`.
+# A set ESTATE_BIN that is not executable does not fall through.
+resolve_estate() {
+  if [[ -n "${ESTATE_RESOLVED:-}" ]]; then
+    return 0
   fi
+  if [[ -n "$BIN" && -x "$BIN" ]]; then
+    ESTATE_CMD=("$BIN")
+  elif [[ -n "$BIN" ]]; then
+    echo "FAIL  ESTATE_BIN is set but not executable: $BIN" >&2
+    echo "FAIL  refusing $ROOT/target/release/estate and $ROOT/target/debug/estate" >&2
+    exit 1
+  elif [[ -x "$ROOT/target/release/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/release/estate")
+  elif [[ -x "$ROOT/target/debug/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/debug/estate")
+  elif command -v cargo >/dev/null 2>&1; then
+    ESTATE_CMD=(cargo run -q -p estate-control --)
+  else
+    echo "FAIL  estate binary unresolved. Set ESTATE_BIN, or build $ROOT/target/release/estate or $ROOT/target/debug/estate. cargo is not on PATH." >&2
+    exit 1
+  fi
+  ESTATE_RESOLVED=1
+}
+
+estate() {
+  resolve_estate
+  "${ESTATE_CMD[@]}" "$@"
 }
 
 if [[ ! -f "$PACK" ]]; then
@@ -52,6 +78,8 @@ PY
 echo "== train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA; not a live train) =="
 echo "workdir: $WORKDIR"
 echo "SKIP live train"
+
+resolve_estate
 
 echo "-- stock estate refuses a binding-id base model --"
 set +e
