@@ -104,6 +104,7 @@ Train:      make train-prepare
 QLoRA walk: make qlora-journey
 LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
+Train next: make train-next
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -386,6 +387,7 @@ READY_FOR_LIVE_TEST stays no.
   make enrich-prepare
   make train-prepare
   make qlora-journey
+  make train-next
   make lora-journey
   make seat-journey
   make lf-beachhead-prepare
@@ -923,6 +925,10 @@ estate and does not promote. Opt-in ladder check:
 make qlora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer
 and does not convert. Not in make smoke, make gate-90, or Actions.
+The train step is make train-next. It prepares the same card and
+prints the NEXT.md llamafactory-cli train line. It prints
+SKIP live train. CELL_TRAIN_LIVE=1 stays print-only. It does not
+run a trainer. make uniqueness-ladder does not run it.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 8, Target C).
 
