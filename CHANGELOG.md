@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — optional Unsloth QLoRA handoff
+
+- `unsloth-qlora` is an optional `TrainEnrichDriver` card (`status=optional`). `estate enrich prepare --driver unsloth-qlora` writes `UNSLOTH.md`, `PREPARE.md`, `NEXT.md`, and `prepare.json`. `UNSLOTH.md` is an operator-owned handoff. It records the Ollama seat tag and the train base. It is not an Unsloth config and not a training script.
+- The card is the Nvidia-only QLoRA alternate for a faster single-GPU run. It is not the product. Portable local runtimes stay swappable. `NEXT.md` points at the Unsloth install page, the fine-tuning guide, and the README install line `uv pip install unsloth --torch-backend=auto`. This factory does not run that install, does not call Unsloth, and does not shell out.
+- A missing train base, a bare Ollama tag, or a seat-looking local leaf is `refuse:train-base` and writes nothing. `import-trained` accepts the prepare and refuses when `UNSLOTH.md` `train_base_model` or `seat_tag` does not match `prepare.json`.
+- This card does not write `dataset.jsonl`, a YAML recipe, or `max_steps`. `--from-feed` on this card alone is `refuse:dataset`. `--official-scale` on this card alone is `refuse:official-scale`. `--max-steps 0` is still `refuse:max-steps`. `--job enrich` is `refuse:job`. `--all-drivers --job train` writes the handoff beside the recipe cards. The enrich default skips it.
+- Deliberately not invented: an Unsloth script, a recipe DSL, ranks, sequence length, save knobs, a dataset writer, an official-scale cutoff, a download, or a trainer call. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — print the llama.cpp GGUF convert line
 
 - `estate enrich gguf-convert --prepared <dir> --weights <merged-export-dir>` checks a `llamafactory-lora` or `llamafactory-qlora` train prepare and prints the llama.cpp line `python3 convert_hf_to_gguf.py <dir> --outfile <sibling>.gguf --outtype auto`. `--outtype auto` is that script's default (highest-fidelity 16-bit float). The outfile is a sibling of the merged directory. The report then prints `estate enrich local-seat` for that sibling file. The command does not convert, does not shell out, and does not write a GGUF.

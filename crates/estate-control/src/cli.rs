@@ -485,19 +485,19 @@ pub(crate) enum EnrichCommand {
         out: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora, `enrich` otherwise). `--all-drivers` defaults to enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, and unsloth-qlora, `enrich` otherwise). `--all-drivers` defaults to enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
-        /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. Omit for the one-epoch recipe.
+        /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. unsloth-qlora does not write max_steps. Omit for the one-epoch recipe. `--max-steps 0` is refuse:max-steps.
         #[arg(long)]
         max_steps: Option<u32>,
-        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. Omit for the short recipe. `--max-steps` still overrides epochs.
+        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. unsloth-qlora does not implement it (`refuse:official-scale` when that card is alone). Omit for the short recipe. `--max-steps` still overrides epochs.
         #[arg(long, default_value_t = false)]
         official_scale: bool,
-        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.
+        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl on the train recipe cards. Omit to keep the scaffold. unsloth-qlora alone is refuse:dataset. Does not download.
         #[arg(long, default_value_t = false)]
         from_feed: bool,
     },
@@ -518,19 +518,19 @@ pub(crate) enum EnrichCommand {
         all_drivers: bool,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora, `enrich` otherwise). With no `--driver`, the default job is enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, and unsloth-qlora, `enrich` otherwise). With no `--driver`, the default job is enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
-        /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. Omit for the one-epoch recipe.
+        /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. unsloth-qlora does not write max_steps. Omit for the one-epoch recipe. `--max-steps 0` is refuse:max-steps.
         #[arg(long)]
         max_steps: Option<u32>,
-        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. Omit for the short recipe. `--max-steps` still overrides epochs.
+        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. unsloth-qlora does not implement it (`refuse:official-scale` when that card is alone). Omit for the short recipe. `--max-steps` still overrides epochs.
         #[arg(long, default_value_t = false)]
         official_scale: bool,
-        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.
+        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl on the train recipe cards. Omit to keep the scaffold. unsloth-qlora alone is refuse:dataset. Does not download.
         #[arg(long, default_value_t = false)]
         from_feed: bool,
     },
@@ -560,7 +560,7 @@ pub(crate) enum EnrichCommand {
     ImportTrained {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
-        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare.json with job train.
+        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare.json with job train.
         #[arg(long)]
         prepared: PathBuf,
         /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.

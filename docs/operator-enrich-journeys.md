@@ -217,7 +217,18 @@ QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,met
 
 The train saves the adapter under `outputs/` (`adapter_config.json` inside it). Merge with `export.yaml`. Do not set `quantization_bit` on that merge. LLaMA-Factory does not write GGUF. `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line for that merged directory (`--outtype auto`, outfile beside the directory). Then seat on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER`. The seat tag is the id the cell already runs. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.
 
-On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This journey does not register an Unsloth card and does not write a script.
+On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. The optional card is `unsloth-qlora`. It writes `UNSLOTH.md`, an operator-owned handoff, and does not write a script. `NEXT.md` points at the Unsloth install page and the fine-tuning guide. This factory does not call Unsloth.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id-or-pack.json> \
+  --driver unsloth-qlora \
+  --job train \
+  --state-dir .cell
+```
+
+A missing train base is `refuse:train-base`. `--official-scale` on this card alone is `refuse:official-scale`. `--from-feed` on this card alone is `refuse:dataset`. After you train outside the factory, `estate enrich import-trained --adapter` takes the artifact you saved.
 
 After you create tag `cell-enrich-<pack-id>` on Ollama, record the join. `import-trained` writes `binding-proposal.json` for the existing `local_slm` seat. It does not apply.
 
@@ -264,7 +275,7 @@ Text over 16KiB refuses before the POST. Credentials stay in the environment (`X
 
 Build rule (`integrate-vs-invent`): a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver.
 
-Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use LLaMA-Factory when the job is LoRA or QLoRA from a durable recipe: `llamafactory-lora` writes the unquantized recipe and `llamafactory-qlora` writes the 4-bit recipe, and you run `llamafactory-cli train` outside the factory (journey 4). Use Axolotl when you want a second YAML recipe or a multi-GPU run: `axolotl-lora` writes the bf16 LoRA `axolotl.yml` and `axolotl-qlora` writes the 4-bit `axolotl.yml`, and you run `axolotl train` outside the factory. Unsloth QLoRA stays a `NEXT.md` pointer on Nvidia, not a registered card.
+Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use LLaMA-Factory when the job is LoRA or QLoRA from a durable recipe: `llamafactory-lora` writes the unquantized recipe and `llamafactory-qlora` writes the 4-bit recipe, and you run `llamafactory-cli train` outside the factory (journey 4). Use Axolotl when you want a second YAML recipe or a multi-GPU run: `axolotl-lora` writes the bf16 LoRA `axolotl.yml` and `axolotl-qlora` writes the 4-bit `axolotl.yml`, and you run `axolotl train` outside the factory. Use `unsloth-qlora` when you want the optional Nvidia-only QLoRA handoff. That card writes `UNSLOTH.md` and does not write a script. You follow Unsloth's docs outside the factory.
 
 A new driver earns a catalog card when `ollama` and llama.cpp both lack the job. The card goes through catalog, route, and bind. The binding id stays `local_slm`. Floor core does not gain a vendor string. The driver stays a trait. The specialist process may be any language. Jason verifies before the card is Supported. Until that verification, the card stays stub or experimental and fails closed.
 

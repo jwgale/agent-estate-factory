@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, plus Axolotl LoRA and QLoRA.
-# Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No GPU. No live train.
+# Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, and the optional Unsloth handoff.
+# Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No Unsloth install. No GPU. No live train.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
 
@@ -708,6 +708,20 @@ if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/
   echo "FAIL  all-drivers axolotl-qlora still points base_model at the seat tag"
   exit 1
 fi
+test -f "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/UNSLOTH.md"
+test -f "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/NEXT.md"
+test -f "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/prepare.json"
+if [[ -e "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/train_unsloth.py" ]]; then
+  echo "FAIL  all-drivers unsloth-qlora must not write a script"
+  exit 1
+fi
+if [[ -e "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/dataset.jsonl" ]]; then
+  echo "FAIL  all-drivers unsloth-qlora must not write dataset.jsonl"
+  exit 1
+fi
+grep -q 'train_base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/UNSLOTH.md"
+grep -q 'seat_tag: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/UNSLOTH.md"
+grep -q "does not call Unsloth" "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/NEXT.md"
 grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
 test -f "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"
 grep -q "^lora_rank: 8$" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"
@@ -888,4 +902,112 @@ if ! grep -q "refuse:export" /tmp/train-prepare-quant-export.out /tmp/train-prep
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, official scale, feed hydrate, import-trained; SKIP live train)"
+echo "-- unsloth-qlora is an optional handoff and refuses a missing train base --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED_ONLY" \
+  --pack "$PACK" \
+  --driver unsloth-qlora \
+  --out "$WORKDIR/unsloth-seat-only" \
+  >/tmp/train-prepare-unsloth-seat.out 2>/tmp/train-prepare-unsloth-seat.err
+unsloth_seat_rc=$?
+set -e
+if [[ "$unsloth_seat_rc" -eq 0 ]]; then
+  echo "FAIL  unsloth-qlora without a train base must refuse:train-base"
+  exit 1
+fi
+if ! grep -q "refuse:train-base" /tmp/train-prepare-unsloth-seat.out /tmp/train-prepare-unsloth-seat.err; then
+  echo "FAIL  unsloth-qlora seat-only did not refuse:train-base"
+  cat /tmp/train-prepare-unsloth-seat.out /tmp/train-prepare-unsloth-seat.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/unsloth-seat-only" ]]; then
+  echo "FAIL  unsloth-qlora refuse wrote an output directory"
+  exit 1
+fi
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver unsloth-qlora \
+  --official-scale \
+  --out "$WORKDIR/unsloth-official" \
+  >/tmp/train-prepare-unsloth-official.out 2>/tmp/train-prepare-unsloth-official.err
+unsloth_official_rc=$?
+set -e
+if [[ "$unsloth_official_rc" -eq 0 ]]; then
+  echo "FAIL  --official-scale on unsloth-qlora must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:official-scale" /tmp/train-prepare-unsloth-official.out /tmp/train-prepare-unsloth-official.err; then
+  echo "FAIL  unsloth-qlora official-scale did not refuse:official-scale"
+  cat /tmp/train-prepare-unsloth-official.out /tmp/train-prepare-unsloth-official.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/unsloth-official" ]]; then
+  echo "FAIL  unsloth official-scale refuse wrote an output directory"
+  exit 1
+fi
+
+SEATED_CKSUM="$(cksum "$SEATED")"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver unsloth-qlora \
+  --out "$WORKDIR/unsloth"
+test -f "$WORKDIR/unsloth/UNSLOTH.md"
+test -f "$WORKDIR/unsloth/PREPARE.md"
+test -f "$WORKDIR/unsloth/NEXT.md"
+test -f "$WORKDIR/unsloth/prepare.json"
+if [[ -e "$WORKDIR/unsloth/train_unsloth.py" ]]; then
+  echo "FAIL  unsloth-qlora must not write train_unsloth.py"
+  exit 1
+fi
+if compgen -G "$WORKDIR/unsloth/"'*.py' > /dev/null; then
+  echo "FAIL  unsloth-qlora must not write a python script"
+  exit 1
+fi
+if [[ -e "$WORKDIR/unsloth/dataset.jsonl" || -e "$WORKDIR/unsloth/recipe.yaml" || -e "$WORKDIR/unsloth/axolotl.yml" ]]; then
+  echo "FAIL  unsloth-qlora must not write a recipe"
+  exit 1
+fi
+grep -q "operator-owned" "$WORKDIR/unsloth/UNSLOTH.md"
+grep -q "does not call Unsloth" "$WORKDIR/unsloth/UNSLOTH.md"
+grep -q "Nvidia-only" "$WORKDIR/unsloth/UNSLOTH.md"
+grep -q 'train_base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/unsloth/UNSLOTH.md"
+grep -q 'seat_tag: "llama3"' "$WORKDIR/unsloth/UNSLOTH.md"
+grep -q "https://unsloth.ai/docs/get-started/install" "$WORKDIR/unsloth/NEXT.md"
+grep -q "https://unsloth.ai/docs/get-started/fine-tuning-llms-guide" "$WORKDIR/unsloth/NEXT.md"
+grep -q "uv pip install unsloth --torch-backend=auto" "$WORKDIR/unsloth/NEXT.md"
+grep -q "import-trained" "$WORKDIR/unsloth/NEXT.md"
+grep -q "READY_FOR_LIVE_TEST: no" "$WORKDIR/unsloth/NEXT.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/unsloth/NEXT.md"; then
+  echo "FAIL  unsloth-qlora must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/unsloth/prepare.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("driver") != "unsloth-qlora" or doc.get("job") != "train":
+    raise SystemExit(f"FAIL  driver={doc.get('driver')} job={doc.get('job')}")
+if doc.get("base_model") != "llama3" or doc.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  seat={doc.get('base_model')} tag={doc.get('seat_tag')}")
+if doc.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  train_base={doc.get('train_base_model')}")
+if doc.get("dataset_mode") is not None:
+    raise SystemExit(f"FAIL  dataset_mode={doc.get('dataset_mode')}")
+if doc.get("promoted") is not False or doc.get("auto_apply") is not False or doc.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  unsloth prepare claims a promote or an estate rewrite")
+PY
+if [[ "$(cksum "$SEATED")" != "$SEATED_CKSUM" ]]; then
+  echo "FAIL  unsloth-qlora prepare rewrote the seated estate"
+  exit 1
+fi
+AFTER_UNSLOTH="$(cksum "$ESTATE")"
+if [[ "$BEFORE" != "$AFTER_UNSLOTH" ]]; then
+  echo "FAIL  unsloth-qlora prepare rewrote examples/estate.yaml"
+  exit 1
+fi
+
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, optional Unsloth handoff, official scale, feed hydrate, import-trained; SKIP live train)"
