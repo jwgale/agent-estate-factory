@@ -10,6 +10,8 @@ Commands on this page: `estate enrich from-pack`, `estate enrich prepare`, `esta
 
 Popular path (Target C): Qwen through LLaMA-Factory QLoRA, then a printed GGUF convert, a printed Ollama create, and `import-trained` to record the shape. Section 8. The seat tag and the train base stay separate. Opt-in check: `make qlora-journey`. It prints that ladder and checks the prepare artifacts. It does not train, does not convert, and does not promote.
 
+Unquantized path (Target A): Qwen through LLaMA-Factory LoRA, then a printed merge, a printed GGUF convert, a printed Ollama create, and `import-trained` to record the shape. Section 9. The seat tag and the train base stay separate. Opt-in check: `make lora-journey`. It prints that ladder and checks the prepare artifacts. It does not train, does not merge, does not convert, and does not promote.
+
 ## What stays fixed
 
 | Piece | Stays |
@@ -158,7 +160,7 @@ No trainer crate ships with this page. Prepare does not download a dataset. `--f
 
 ## 4. Train LoRA or QLoRA with LLaMA-Factory, then seat it
 
-On a consumer or rented Nvidia box, LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`. The popular Qwen QLoRA order, including the printed convert and the printed seat, is section 8.
+On a consumer or rented Nvidia box, LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`. The popular Qwen QLoRA order, including the printed convert and the printed seat, is section 8. The Qwen LoRA order, including the printed merge, the printed convert, and the printed seat, is section 9.
 
 Select the card with `--driver`. `llamafactory-lora` is the 16-bit LoRA quickstart (`examples/train_lora/qwen3_lora_sft.yaml` shape: `finetuning_type: lora`, no `quantization_bit`, `lora_rank` 8, `packing: false`). It does not require bitsandbytes. `llamafactory-qlora` is 4-bit QLoRA (`quantization_bit: 4`, `quantization_method: bnb`, rank 16) and still requires bitsandbytes. Both cards infer `template` by scanning path segments of the train base, starting at the last segment. A leaf such as `weights` or an HF snapshot hash uses the nearest ancestor that names a family. `Qwen/Qwen3-4B-Instruct-2507` uses `qwen3_nothink`. Other Qwen3 names use `qwen3`. `export.yaml` omits quantization on both. Prepare does not merge. `export.yaml` is the merge card, `adapter_name_or_path` matches recipe `output_dir`, and `NEXT.md` says the merge has not happened. `import-trained` refuses a real `quantization_bit` or `quantization_method` key on that file (`refuse:export`).
 
@@ -305,7 +307,7 @@ From [`../charter.md`](../charter.md):
 
 ## 7. Seat the merged export on Ollama
 
-After journey 4's `llamafactory-cli export`, the merged directory is `export_dir` from `export.yaml`. Current LLaMA-Factory writes `Modelfile` there (`FROM .`, plus the chat TEMPLATE). Print the convert line, then seat. This factory does not run llama.cpp or Ollama. Section 8 places this seat on the Qwen QLoRA ladder, after prepare and the `NEXT.md` train and export lines.
+After journey 4's `llamafactory-cli export`, the merged directory is `export_dir` from `export.yaml`. Current LLaMA-Factory writes `Modelfile` there (`FROM .`, plus the chat TEMPLATE). Print the convert line, then seat. This factory does not run llama.cpp or Ollama. Section 8 places this seat on the Qwen QLoRA ladder, after prepare and the `NEXT.md` train and export lines. Section 9 places this seat on the Qwen LoRA ladder the same way.
 
 ```bash
 estate enrich gguf-convert \
@@ -432,3 +434,110 @@ make qlora-journey
 ```
 
 That opt-in script prints this ladder, prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, the `NEXT.md` train and export lines, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
+## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat
+
+This is the unquantized path. LLaMA-Factory already runs LoRA supervised fine-tuning. llama.cpp already converts a merged Hugging Face directory to GGUF. Ollama already creates a model from a Modelfile. This factory writes the recipe and prints the next command. It does not train, does not merge, does not convert, does not create the model, and does not promote.
+
+The example that a 5090 smoke passed keeps two names. The seat tag is `llama3` (a model Ollama already has: `params.model` on `local_slm`, or a pack `model_hint` that is already a model tag). The train base is `Qwen/Qwen2.5-0.5B-Instruct` (pack `train_base_model`, or `params.train_base_model` on that same binding). `recipe.yaml` and `export.yaml` set `model_name_or_path` to the train base. `template` for that Qwen2.5 name is `qwen`. The seat tag stays `prepare.json` `base_model` and `seat_tag`. That smoke trained, exported, and seated this gauge from the files prepare wrote, with no hand-edits. A missing train base, a bare seat tag, or a local directory named like a seat tag is `refuse:train-base` and writes nothing. This factory does not map `llama3` onto a Hub repo and does not download weights. `<your-estate.yaml>` is a lab copy. `examples/estate.yaml` on `main` stays hash-locked.
+
+`dataset.jsonl` with no `--from-feed` is a scaffold (or a three-row stub when `source_paths` is empty). Those rows are not training data. `--from-feed` copies instruct rows that are already under the cell state directory. A missing file is `refuse:dataset` and writes nothing.
+
+### 1. Prepare
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id> \
+  --driver llamafactory-lora \
+  --job train \
+  --state-dir .cell
+```
+
+Omitting `--job` is the same train job. `--job enrich` is `refuse:job` and writes nothing. The output directory is `.cell/enrich/<pack-id>/llamafactory-lora/`.
+
+| File | What the Qwen card holds |
+| --- | --- |
+| `recipe.yaml` | SFT LoRA. `finetuning_type: lora`, no `quantization_bit`, no `quantization_method`, LoRA rank 8, `packing: false`, `cutoff_len` 512, `template: qwen` for `Qwen/Qwen2.5-0.5B-Instruct`. `model_name_or_path` is the train base. |
+| `export.yaml` | Merge card. Same train base and `template: qwen`. No `quantization_bit`. This prepare did not merge. |
+| `dataset.jsonl` | Instruct chat. `dataset_mode` is `scaffold` until `--from-feed`. |
+| `prepare.json` | `job` `train`. `seat_tag` `llama3`. `train_base_model` `Qwen/Qwen2.5-0.5B-Instruct`. `promoted`, `auto_apply`, and `estate_rewritten` are false. `trained_shape` is absent until step 5. |
+| `NEXT.md` | The train line, the export line, the merge-adapt line, the convert line, the seat line, and the import lines. |
+
+A short gauge run adds `--max-steps 10`. `--official-scale` writes the longer SFT scale from LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml` and leaves rank, packing, and the omitted quantization on this card. The default recipe stays one epoch. Command page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md).
+
+### 2. Train and export, outside this factory
+
+Run the lines `NEXT.md` prints. On a CUDA host (`consumer-nvidia` or `rented-nvidia`):
+
+```bash
+pip install llamafactory
+llamafactory-cli train .cell/enrich/<pack-id>/llamafactory-lora/recipe.yaml
+llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-lora/export.yaml
+```
+
+`estate enrich merge-adapt --prepared .cell/enrich/<pack-id>/llamafactory-lora --adapter .cell/enrich/<pack-id>/llamafactory-lora/outputs` prints that same `llamafactory-cli export` line and the keys from `examples/merge_lora/qwen3_lora_sft.yaml`. It does not run the export. `gguf-convert` and `local-seat` then print the next lines for `export/`.
+
+This LoRA path does not require bitsandbytes. `recipe.yaml` leaves the base at 16-bit and omits quantization. Prepare on `apple-silicon` still writes the files. `NEXT.md` says the card expects CUDA LLaMA-Factory. This factory does not install LLaMA-Factory and does not run `llamafactory-cli`.
+
+The train writes the adapter under `outputs/` (`adapter_config.json`). The merge writes `export/` (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`). Do not set `quantization_bit` on that merge. `import-trained` refuses a real `quantization_bit` or `quantization_method` key on `export.yaml` (`refuse:export`). LLaMA-Factory does not write GGUF.
+
+### 3. Print the GGUF convert
+
+After `llamafactory-cli export` exits 0, the merged directory is `export/`. Print the llama.cpp line. This command does not convert and does not write a GGUF. A missing directory, an adapter directory, or a path that is already a GGUF is `refuse:seat`.
+
+```bash
+estate enrich gguf-convert \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --weights .cell/enrich/<pack-id>/llamafactory-lora/export
+```
+
+That prints:
+
+```bash
+python3 convert_hf_to_gguf.py .cell/enrich/<pack-id>/llamafactory-lora/export --outfile .cell/enrich/<pack-id>/llamafactory-lora/export.gguf --outtype auto
+```
+
+Run that line from a llama.cpp checkout. `--outtype auto` is the script default (highest-fidelity 16-bit float). The outfile is a sibling of the merged directory. This factory does not choose a quantization type.
+
+### 4. Print the Ollama create
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --weights .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
+```
+
+The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
+
+To seat `outputs/` without a merge, pass `--adapter` instead of `--weights`. The printed Modelfile uses `FROM` `prepare.json` `seat_tag` and `ADAPTER` that directory. The command prints `ollama create` and does not run it. `--weights` still refuses the adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --adapter .cell/enrich/<pack-id>/llamafactory-lora/outputs
+```
+
+Page: [`local-seat.md`](local-seat.md).
+
+### 5. Record the shape
+
+`import-trained` writes `binding-proposal.json` for the existing `local_slm` seat and records `trained_shape` and `trained_paths` on that proposal and on `prepare.json`. It does not apply and does not promote. After the GGUF exists, point `--adapter` at that file. `trained_shape` is `gguf`.
+
+```bash
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --tag cell-enrich-<pack-id> \
+  --adapter .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
+```
+
+The same command records the other two shapes when that is the artifact you have. An adapter directory (`outputs/`, `adapter_config.json`) is `trained_shape` `adapter`. A merged directory (`export/`, `config.json` plus a non-adapter `.safetensors` file) is `trained_shape` `merged`. A path that matches none of those shapes, or more than one, is `refuse:adapter` before a new proposal exists. `NEXT.md` prints all three lines with the prepared directory filled in.
+
+`apply-proposal`, then `estate plan` and `estate apply --require-plan`, stay the join. Promote stays refused. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make lora-journey
+```
+
+That opt-in script prints this ladder, prepares `llamafactory-lora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, `template: qwen`, rank 8, `packing: false`, no quantization keys, the `NEXT.md` train and export lines, the printed merge-adapt line, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.

@@ -28,6 +28,7 @@ These stay green on this factory. They do not prove a Mac, a GPU, or a spawn.
 | `make feed-loop` | Fixture walk. Pack `source_drivers` is `frontier` then `local`. No live key. |
 | `make enrich-prepare` | Opt-in fixture. Writes a Modelfile (`FROM` is the seated model on a throwaway estate copy) and an external manifest, then stages the join and applies it with `--require-plan` on that copy. Does not train. Not in smoke or `gate-90`. |
 | `make qlora-journey` | Opt-in Target C ladder. Prints the Qwen / LLaMA-Factory QLoRA steps and checks prepare artifacts. Does not train, convert, or promote. Not in smoke or `gate-90`. |
+| `make lora-journey` | Opt-in Target A ladder. Prints the Qwen / LLaMA-Factory LoRA steps and checks prepare artifacts. Does not train, merge, convert, or promote. Not in smoke or `gate-90`. |
 | `make enrich-live-prove` | Opt-in seated handoff when Ollama is up. Not a factory-wide live test. Not in smoke or `gate-90`. Seat down prints SKIP. |
 | Frontier specialist in tests | Mock HTTP. Model id `grok-4.7`. Missing key and a SKU model refuse before POST and name `CELL_FRONTIER_MODEL` / `CELL_FRONTIER_ENDPOINT`. |
 | `estate help frontier` / `day90-mixed` | Topic pages. Not a live run. |

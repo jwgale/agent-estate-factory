@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Target A Qwen LoRA operator journey
+
+- The unquantized path is one ladder of commands that already exist: `estate enrich prepare --driver llamafactory-lora` (seat tag separate from the train base), the `NEXT.md` `llamafactory-cli train` and `llamafactory-cli export` lines, `estate enrich merge-adapt` (prints `llamafactory-cli export`), `estate enrich gguf-convert` (prints `python3 convert_hf_to_gguf.py` with `--outtype auto`), `estate enrich local-seat` (prints `ollama create`), and `estate enrich import-trained` (records `trained_shape` and `trained_paths`). A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct` on this card, then exported and seated that gauge from the files prepare wrote. `template` is `qwen`. The recipe omits `quantization_bit` and `quantization_method`. `lora_rank` is 8. `packing` is false. This path does not require bitsandbytes. A missing train base is `refuse:train-base`.
+- The walk is section 9 of `docs/operator-enrich-journeys.md`. `docs/TRAIN-ENRICH.md` and `estate help enrich` / `estate help train` print the same ladder.
+- `make lora-journey` prints that ladder and checks the prepare artifacts on a throwaway estate copy. A missing export is `refuse:seat` and writes no GGUF. The script does not run LLaMA-Factory, llama.cpp, or Ollama, and it does not promote. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Phi-3 Instruct LoRA reproduce target
 
 - `llamafactory-lora` infers LLaMA-Factory template `phi` for `microsoft/Phi-3-mini*`, `microsoft/Phi-3-medium*`, and Phi-3.5 (`microsoft/Phi-3.5-mini-instruct`, `microsoft/Phi-3.5-MoE-instruct`), including those ids as nested path segments and HF cache directories (`models--microsoft--Phi-3-mini-4k-instruct`). That is the same text group as the Phi-3 Instruct QLoRA prepare. Phi-3-small stays `phi_small`. Phi-4 stays `phi4`. Phi-4-mini stays `phi4_mini`. The names follow LLaMA-Factory `register_model_group` in `constants.py`.

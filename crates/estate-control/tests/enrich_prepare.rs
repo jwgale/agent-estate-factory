@@ -84,7 +84,13 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
         assert!(body.contains("make qlora-journey"), "{body}");
+        assert!(body.contains("make lora-journey"), "{body}");
         assert!(body.contains("Target C"), "{body}");
+        assert!(body.contains("Target A"), "{body}");
+        assert!(
+            body.contains("section 9, Target A"),
+            "{body}"
+        );
         assert!(body.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{body}");
         assert!(
             body.contains("examples/fixtures/qwen3-instruct.pack.json"),
@@ -137,6 +143,7 @@ fn help_enrich_and_train_name_the_seam() {
     let index = estate_bin().args(["help"]).output().unwrap();
     let index_text = text(&index);
     assert!(index_text.contains("estate help enrich"), "{index_text}");
+    assert!(index_text.contains("make lora-journey"), "{index_text}");
 
     let drivers = estate_bin().args(["enrich", "drivers"]).output().unwrap();
     let listed = text(&drivers);
@@ -647,6 +654,93 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     }
     let floor = std::fs::read_to_string(root.join("crates/floor-supervisor/src/lib.rs")).unwrap();
     assert!(!floor.contains("TrainEnrichDriver"));
+}
+
+#[test]
+fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.lines().any(|line| line.trim() == "lora-journey:"),
+        "Makefile missing lora-journey"
+    );
+    assert!(makefile.contains("scripts/lora-journey.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "lora-journey must stay off smoke, gate-90, and Actions"
+    );
+    let script = std::fs::read_to_string(root.join("scripts/lora-journey.sh")).unwrap();
+    for needle in [
+        "Target A",
+        "llamafactory-lora",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "llama3",
+        "template qwen",
+        "refuse:train-base",
+        "refuse:seat",
+        "SKIP live train",
+        "READY_FOR_LIVE_TEST: no",
+        "llamafactory-cli train",
+        "llamafactory-cli export",
+        "estate enrich merge-adapt",
+        "gguf-convert",
+        "local-seat",
+        "import-trained",
+        "python3 convert_hf_to_gguf.py",
+        "--outtype auto",
+        "does not require bitsandbytes",
+        "lora_rank: 8",
+        "packing: false",
+        "examples/estate.yaml",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "trained_shape",
+    ] {
+        assert!(script.contains(needle), "lora-journey missing {needle}");
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "lora-journey must keep READY_FOR_LIVE_TEST no"
+    );
+    assert!(
+        script.contains("bitsandbytes>=0.49"),
+        "lora-journey must refuse a bitsandbytes install line"
+    );
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("echo")
+            || trimmed.starts_with("grep")
+            || trimmed.starts_with("if grep")
+            || trimmed.starts_with("if ! grep")
+        {
+            return false;
+        }
+        trimmed.contains("llamafactory-cli")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+    });
+    assert!(
+        !shells_out,
+        "lora-journey must not shell out to llamafactory-cli, llama.cpp, or ollama"
+    );
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat"));
+    assert!(journey.contains("make lora-journey"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("## Target A — Qwen LoRA operator journey"));
+    assert!(train.contains("make lora-journey"));
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        let scrubbed = body.replace("qlora-journey", "");
+        assert!(
+            !scrubbed.contains("lora-journey"),
+            "{rel} must not run lora-journey"
+        );
+    }
 }
 
 #[test]
