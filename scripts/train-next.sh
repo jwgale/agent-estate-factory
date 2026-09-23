@@ -156,7 +156,7 @@ if ! grep -q -F -x "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/
   echo "FAIL  NEXT.md missing the later export line"
   exit 1
 fi
-if ! grep -q -F -x "READY_FOR_LIVE_TEST: no" "$PREPARED/NEXT.md"; then
+if ! grep -q -F -x "READY_FOR_LIVE_TEST: no." "$PREPARED/NEXT.md"; then
   echo "FAIL  NEXT.md must keep READY_FOR_LIVE_TEST no"
   exit 1
 fi
@@ -190,7 +190,7 @@ echo "Live train recipe from NEXT.md (not executed):"
 grep -F -x -e "pip install llamafactory" -e "pip install 'bitsandbytes>=0.49'" -e "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"
 echo
 echo "Later merge line in NEXT.md (not executed):"
-grep -F -x -e "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/NEXT.md"
+grep -F -x -m 1 -e "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/NEXT.md"
 echo
 echo "This target does not run the train line or the export line."
 
