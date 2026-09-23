@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — name JSON null in tokenizer guidance
+
+- `export_tokenizer_guidance` (the standing note on LLaMA-Factory `NEXT.md`, `PREPARE.md`, and the `merge-adapt` report) and `tokenizer_pass_note` name JSON null under `extra_special_tokens` as `refuse:tokenizer` beside a JSON list. JSON null is a non-object: transformers calls `.keys()` on that value. The list case still names `AttributeError: 'list' object has no attribute 'keys'`. `estate help enrich` names the same case. `docs/TRAIN-ENRICH.md`, `docs/local-seat.md`, `docs/operator-enrich-journeys.md`, and `docs/CELL-ONE-STATUS.md` name JSON null on the refuse rule beside the list. The 5090-shaped fixture stays a JSON list. The refuse check is unchanged: JSON null already returns `refuse:tokenizer`. An absent key and a JSON object still pass. The commands stay print-only. They do not download weights, do not copy tokenizer files, do not write `tokenizer_config.json.bak`, and do not spawn `convert_hf_to_gguf.py`. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — refuse JSON null extra_special_tokens
 
 - `estate enrich gguf-convert` returns `refuse:tokenizer` when `extra_special_tokens` in `tokenizer_config.json` under `--weights` is JSON `null`. That value is a non-object, the same refuse as a list, a string, a bool, or a number. An absent key and a JSON object still pass this check. The command does not print `python3 convert_hf_to_gguf.py`, does not download weights, does not copy tokenizer files, and does not write `tokenizer_config.json.bak`. `READY_FOR_LIVE_TEST`: no.
