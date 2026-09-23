@@ -817,6 +817,10 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         "extra_special_tokens",
         "tokenizer_config.json",
         "tokenizer_config.json.bak",
+        "HF cache snapshot",
+        "equivalent base checkout",
+        "into the export directory",
+        "re-run estate enrich gguf-convert",
         "missing vocab.json",
         "missing merges.txt",
         "model_type",
@@ -896,6 +900,13 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
     assert!(
         section_10.contains("5090-shaped") && section_10.contains("refuse:tokenizer"),
         "section 10 must name the refuse:tokenizer fixture"
+    );
+    assert!(
+        section_10.contains("HF cache snapshot")
+            && section_10.contains("equivalent base checkout")
+            && section_10.contains("into the export directory")
+            && section_10.contains("re-running `estate enrich gguf-convert`"),
+        "section 10 must name the HF cache restore and the gguf-convert re-run"
     );
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("## Target C seat ladder — fixture print path"));

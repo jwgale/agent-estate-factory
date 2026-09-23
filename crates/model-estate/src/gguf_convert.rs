@@ -28,8 +28,11 @@
 //! `vocab.json` or `merges.txt` is the same refuse. Qwen-family is
 //! `config.json` `model_type` or `architectures`, or `tokenizer_class`,
 //! naming Qwen.
-//! This module does not download tokenizer files, does not copy them, and
-//! does not run the script.
+//! That refuse names the operator restore: copy tokenizer files from the
+//! HF cache snapshot already on disk, or the equivalent base checkout, into
+//! the export directory, then re-run `estate enrich gguf-convert`.
+//! This module does not download tokenizer files, does not copy them, does
+//! not write `tokenizer_config.json.bak`, and does not run the script.
 
 use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
@@ -101,15 +104,16 @@ pub(crate) fn local_seat_cli(prepared: &Path, weights: &Path) -> String {
     )
 }
 
-/// Operator copy step. Names `train_base` when the prepare recorded one.
-/// Does not build a cache path and does not fetch.
+/// Operator restore after `refuse:tokenizer`. Names `train_base` when the
+/// prepare recorded one. Does not build a cache path, does not fetch, and
+/// does not copy files.
 pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
     let named = match train_base.trim() {
         "" => "the train base on this prepare".to_string(),
         base => format!("train base {base}"),
     };
     format!(
-        "Copy the tokenizer files from {named} already on disk (a local HF weights directory, or the HF cache snapshot for that repo). Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
+        "Copy the tokenizer files from {named} already on disk into the export directory. The source is the HF cache snapshot for that repo, or the equivalent base checkout (a local HF weights directory). Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. Then re-run estate enrich gguf-convert on that export directory. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
     )
 }
 
@@ -129,7 +133,7 @@ enum LoadedTokenizerConfig {
 
 fn inspect_export_tokenizer(dir: &Path, train_base: Option<&str>) -> Result<String, ModelError> {
     let path = dir.join("tokenizer_config.json");
-    let loaded = load_tokenizer_config(&path)?;
+    let loaded = load_tokenizer_config(&path, train_base)?;
     let class = match &loaded {
         LoadedTokenizerConfig::Object(map) => {
             json_string(map, "tokenizer_class").map(str::to_string)
@@ -264,7 +268,10 @@ fn optional_json_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
     }
 }
 
-fn load_tokenizer_config(path: &Path) -> Result<LoadedTokenizerConfig, ModelError> {
+fn load_tokenizer_config(
+    path: &Path,
+    train_base: Option<&str>,
+) -> Result<LoadedTokenizerConfig, ModelError> {
     match std::fs::symlink_metadata(path) {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(LoadedTokenizerConfig::Absent),
         Err(err) => Err(ModelError::Other(format!(
@@ -272,8 +279,9 @@ fn load_tokenizer_config(path: &Path) -> Result<LoadedTokenizerConfig, ModelErro
             path.display()
         ))),
         Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
-            "refuse:tokenizer: {} is a symlink. enrich does not follow a symlinked tokenizer_config.json. Copy a regular file from the train base already on disk. Keep the export tokenizer_config.json as tokenizer_config.json.bak. This factory does not download weights and does not copy the file.",
-            path.display()
+            "refuse:tokenizer: {} is a symlink. enrich does not follow a symlinked tokenizer_config.json. {}",
+            path.display(),
+            tokenizer_restore_sentence(train_base.unwrap_or(""))
         ))),
         Ok(meta) if !meta.is_file() => Err(ModelError::Other(format!(
             "refuse:tokenizer: {} is not a regular file.",
@@ -1297,14 +1305,39 @@ mod tests {
         "{\"model_type\":\"qwen2\",\"architectures\":[\"Qwen2ForCausalLM\"]}\n"
     }
 
-    fn assert_refuses_tokenizer(err: &impl std::fmt::Display) {
-        let text = err.to_string();
-        assert!(text.contains("refuse:tokenizer"), "{text}");
+    fn assert_names_hf_cache_restore(text: &str) {
+        assert!(text.contains("HF cache snapshot"), "{text}");
+        assert!(text.contains("equivalent base checkout"), "{text}");
+        assert!(text.contains("into the export directory"), "{text}");
+        assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
         assert!(text.contains("tokenizer_config.json.bak"), "{text}");
         assert!(text.contains("does not download weights"), "{text}");
         assert!(text.contains("does not copy those files"), "{text}");
         assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+    }
+
+    fn assert_refuses_tokenizer(err: &impl std::fmt::Display) {
+        let text = err.to_string();
+        assert!(text.contains("refuse:tokenizer"), "{text}");
+        assert_names_hf_cache_restore(&text);
         assert!(!text.contains("--outtype"), "{text}");
+    }
+
+    #[test]
+    fn tokenizer_restore_sentence_names_the_hf_cache_and_the_rerun() {
+        let named = super::tokenizer_restore_sentence("Qwen/Qwen2.5-0.5B-Instruct");
+        assert!(
+            named.contains("train base Qwen/Qwen2.5-0.5B-Instruct"),
+            "{named}"
+        );
+        assert_names_hf_cache_restore(&named);
+        let unnamed = super::tokenizer_restore_sentence("  ");
+        assert!(unnamed.contains("the train base on this prepare"), "{unnamed}");
+        assert_names_hf_cache_restore(&unnamed);
+        let guidance = super::export_tokenizer_guidance("Qwen/Qwen2.5-0.5B-Instruct");
+        assert!(guidance.contains("refuse:tokenizer"), "{guidance}");
+        assert!(guidance.contains("JSON null"), "{guidance}");
+        assert_names_hf_cache_restore(&guidance);
     }
 
     #[test]
@@ -1550,6 +1583,8 @@ mod tests {
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
         assert!(text.contains("symlink"), "{text}");
+        assert!(text.contains("HF cache snapshot"), "{text}");
+        assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
         assert!(!text.contains("JSON list"), "{text}");
         assert!(!text.contains("python3"), "{text}");
         assert!(!root.join("export.gguf").exists());

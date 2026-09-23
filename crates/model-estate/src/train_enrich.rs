@@ -8341,6 +8341,10 @@ mod tests {
         assert!(next.contains("vocab.json"), "{next}");
         assert!(next.contains("merges.txt"), "{next}");
         assert!(next.contains("tokenizer_config.json.bak"), "{next}");
+        assert!(next.contains("HF cache snapshot"), "{next}");
+        assert!(next.contains("equivalent base checkout"), "{next}");
+        assert!(next.contains("into the export directory"), "{next}");
+        assert!(next.contains("re-run estate enrich gguf-convert"), "{next}");
         assert!(next.contains("does not download weights"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
@@ -8377,6 +8381,8 @@ mod tests {
         assert!(prepare_md.contains("refuse:tokenizer"), "{prepare_md}");
         assert!(prepare_md.contains("extra_special_tokens"), "{prepare_md}");
         assert!(prepare_md.contains("tokenizer_config.json.bak"), "{prepare_md}");
+        assert!(prepare_md.contains("HF cache snapshot"), "{prepare_md}");
+        assert!(prepare_md.contains("re-run estate enrich gguf-convert"), "{prepare_md}");
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
         assert!(
@@ -15201,6 +15207,10 @@ mod tests {
         assert!(next.contains("vocab.json"), "{next}");
         assert!(next.contains("merges.txt"), "{next}");
         assert!(next.contains("tokenizer_config.json.bak"), "{next}");
+        assert!(next.contains("HF cache snapshot"), "{next}");
+        assert!(next.contains("equivalent base checkout"), "{next}");
+        assert!(next.contains("into the export directory"), "{next}");
+        assert!(next.contains("re-run estate enrich gguf-convert"), "{next}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             prepare_md.contains("omits quantization_bit"),

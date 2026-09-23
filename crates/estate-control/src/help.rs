@@ -734,8 +734,10 @@ null is the same refuse: transformers calls .keys() on that non-object
 value. A Qwen-family export missing vocab.json or merges.txt is the
 same refuse. Qwen-family is config.json model_type or architectures,
 or tokenizer_class, naming Qwen. Copy those tokenizer
-files from the train base already on disk and keep the export
-tokenizer_config.json as tokenizer_config.json.bak. This factory does
+files from the HF cache snapshot for the train base already on disk,
+or the equivalent base checkout, into the export directory. Keep the
+export tokenizer_config.json as tokenizer_config.json.bak. Then re-run
+estate enrich gguf-convert on that export directory. This factory does
 not download weights and does not copy the files.
 
   estate enrich gguf-convert \\
@@ -820,7 +822,10 @@ That prints python3 convert_hf_to_gguf.py with --outtype auto and an
 outfile beside the export directory. It does not convert. A missing
 export directory is refuse:seat. A JSON list or JSON null
 extra_special_tokens, or a Qwen-family export missing vocab.json or
-merges.txt, is refuse:tokenizer.
+merges.txt, is refuse:tokenizer. Copy the tokenizer files from the
+HF cache snapshot for the train base, or the equivalent base checkout,
+into the export directory. Keep the export tokenizer_config.json as
+tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
@@ -882,7 +887,10 @@ That prints python3 convert_hf_to_gguf.py with --outtype auto and an
 outfile beside the export directory. It does not convert. A missing
 export directory is refuse:seat. A JSON list or JSON null
 extra_special_tokens, or a Qwen-family export missing vocab.json or
-merges.txt, is refuse:tokenizer.
+merges.txt, is refuse:tokenizer. Copy the tokenizer files from the
+HF cache snapshot for the train base, or the equivalent base checkout,
+into the export directory. Keep the export tokenizer_config.json as
+tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
@@ -921,9 +929,12 @@ writes a 5090-shaped export. config.json sets model_type qwen2 and
 architectures Qwen2ForCausalLM. tokenizer_config.json sets
 extra_special_tokens to a JSON list. vocab.json and merges.txt are
 missing. gguf-convert on that directory is refuse:tokenizer and does
-not print the convert line. The script then replaces that fixture
-with config.json {} and model.safetensors. It does not copy tokenizer
-files and does not write tokenizer_config.json.bak.
+not print the convert line. The refuse names restoring tokenizer files
+from the HF cache snapshot for the train base, or the equivalent base
+checkout, into the export directory, then re-running estate enrich
+gguf-convert. The script then replaces that fixture with config.json {}
+and model.safetensors. It does not copy tokenizer files and does not
+write tokenizer_config.json.bak.
 
   estate enrich merge-adapt \\
     --prepared <prepared> --adapter <prepared>/outputs
