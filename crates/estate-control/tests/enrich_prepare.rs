@@ -610,7 +610,7 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
 }
 
 #[test]
-fn cell_one_status_tip_names_pr_151() {
+fn cell_one_status_tip_names_pr_153() {
     let root = repo_root();
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     assert!(
@@ -619,28 +619,48 @@ fn cell_one_status_tip_names_pr_151() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #151"
+        "status snapshot must name tip through PR #153"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
         "status snapshot must not freeze at PR #143"
     );
     assert!(
+        !status.contains("what is on `main` through PR #151"),
+        "status snapshot must not freeze at PR #151"
+    );
+    assert!(
         !status.contains("on tip through PR #142"),
-        "prepare walk stays PR #142; tip is PR #151"
+        "prepare walk stays PR #142; tip is PR #153"
     );
     let head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #151"),
-        "status header must name tip through PR #151: {head}"
+        head.contains("through PR #153"),
+        "status header must name tip through PR #153: {head}"
+    );
+    assert!(
+        !head.contains("through PR #151"),
+        "status header must not freeze tip at PR #151: {head}"
     );
     assert!(
         !head.contains("through PR #143"),
         "status header must not freeze tip at PR #143: {head}"
     );
     assert!(
-        head.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
-        "status header must name the PR #151 tip SHA: {head}"
+        head.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "status header must name the PR #153 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("PR #152") && head.contains("b4f9c321f2c21c4cac1eb24b8c5b002035318ce4"),
+        "status header must name the PR #152 tip-honesty SHA: {head}"
+    );
+    assert!(
+        head.contains("Target C live uniqueness") && head.contains("LIVE-PROBES.md"),
+        "status header must point at the recorded prove: {head}"
+    );
+    assert!(
+        !head.contains("/tmp/cell-one-target-c-live-20260923"),
+        "status header must point at the prove without the workdir: {head}"
     );
     assert!(
         head.contains("ESTATE_BIN")
@@ -752,7 +772,11 @@ fn cell_one_status_tip_names_pr_151() {
     );
     assert!(
         uniq.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
-        "uniqueness section must name the PR #151 tip SHA"
+        "uniqueness section must keep the PR #151 write-line SHA"
+    );
+    assert!(
+        uniq.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "uniqueness section must name the PR #153 recorded prove"
     );
     assert!(uniq.contains("modelfile_on_disk=true"), "{uniq}");
     assert!(uniq.contains("SKIP live train"), "{uniq}");
@@ -839,6 +863,40 @@ fn cell_one_status_tip_names_pr_151() {
         "{tip}"
     );
     assert!(!tip.to_ascii_lowercase().contains("kimi/"), "{tip}");
+
+    let tip153 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #153")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #153 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip153.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "{tip153}"
+    );
+    assert!(
+        tip153.contains("b4f9c321f2c21c4cac1eb24b8c5b002035318ce4"),
+        "{tip153}"
+    );
+    assert!(tip153.contains("PR #140"), "{tip153}");
+    assert!(tip153.contains("PR #142"), "{tip153}");
+    assert!(tip153.contains("via PR #143"), "{tip153}");
+    assert!(tip153.contains("PR #152"), "{tip153}");
+    assert!(tip153.contains("PR #153"), "{tip153}");
+    assert!(tip153.contains("LIVE-PROBES.md"), "{tip153}");
+    assert!(tip153.contains("GGUF print-only seats"), "{tip153}");
+    assert!(tip153.contains("make lf-beachhead-prepare"), "{tip153}");
+    assert!(
+        tip153.contains("READY_FOR_LIVE_TEST`: no") || tip153.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip153}"
+    );
+    assert!(
+        !tip153.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip153.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip153}"
+    );
+    assert!(!tip153.to_ascii_lowercase().contains("kimi/"), "{tip153}");
 }
 
 fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {

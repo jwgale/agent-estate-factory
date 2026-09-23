@@ -79,7 +79,8 @@ it.
 
 The tokenizer restore, the unwritten Modelfile, and the GGUF write line
 are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
-stays through PR #151. This row does not move that SHA.
+through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`) names this
+recorded PASS.
 
 Walk: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Seat: [`local-seat.md`](local-seat.md).
 
