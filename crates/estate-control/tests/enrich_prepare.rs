@@ -712,6 +712,7 @@ fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
             || trimmed.starts_with("grep")
             || trimmed.starts_with("if grep")
             || trimmed.starts_with("if ! grep")
+            || trimmed.contains("[[ -e")
         {
             return false;
         }
