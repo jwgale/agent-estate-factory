@@ -291,7 +291,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. This page does not run a trainer.
+- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. unsloth-qlora is an optional Nvidia-only NEXT handoff and does not write a script. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -315,7 +315,7 @@ const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
 estate help train prints this page. Job field is train or enrich.
-Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora default to train.
+Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, and unsloth-qlora default to train.
 --all-drivers defaults to enrich and includes a card only when that job
 is allowed. Prepare writes artifacts. It does not train.
 
@@ -359,10 +359,11 @@ default job train; does not require bitsandbytes),
 llamafactory-qlora (LLaMA-Factory QLoRA recipe.yaml + instruct chat dataset.jsonl;
 default job train; requires bitsandbytes), axolotl-lora (bf16 Axolotl axolotl.yml,
 sequence_len 2048, micro_batch_size 2, gradient_accumulation_steps 2, lora_r 16;
-default job train), and axolotl-qlora (4-bit Axolotl axolotl.yml, load_in_4bit true,
+default job train), axolotl-qlora (4-bit Axolotl axolotl.yml, load_in_4bit true,
 sequence_len 4096, micro_batch_size 2, gradient_accumulation_steps 4, lora_r 32;
-default job train). Unsloth QLoRA is a NEXT.md pointer on the LLaMA-Factory
-cards, not a registered driver.
+default job train), and unsloth-qlora (optional NEXT card, status optional,
+Nvidia-only QLoRA handoff; writes UNSLOTH.md; does not write a script,
+a recipe, or dataset.jsonl; does not call Unsloth; default job train).
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card the job
 allows, into sibling directories. Omit --driver on prepare for the
@@ -417,6 +418,10 @@ Rank, packing, and quantization stay on the selected LLaMA-Factory card.
 stay on their example files when that flag is set.
 Omit the flag for the short LLaMA-Factory recipe. A prepare with
 --official-scale and no train recipe card is refuse:official-scale.
+unsloth-qlora is not a recipe card. --official-scale on that card
+alone is refuse:official-scale. --from-feed on that card alone is
+refuse:dataset. The card does not write max_steps. --max-steps 0
+is still refuse:max-steps.
 
 export.yaml is the merge card. Prepare does not merge. NEXT.md says
 the merge has not happened, points at llamafactory-cli export, and
@@ -454,7 +459,7 @@ and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
 estate enrich import-trained is that same proposal for a llamafactory-lora,
-llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare whose job is train. --adapter
+llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare whose job is train. --adapter
 is one of three shapes. An adapter output_dir contains adapter_config.json
 (the recipe output_dir, outputs/). A merged export_dir contains config.json
 and at least one .safetensors file whose name does not start with

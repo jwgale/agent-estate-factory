@@ -71,6 +71,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("llamafactory-qlora"), "{body}");
         assert!(body.contains("axolotl-lora"), "{body}");
         assert!(body.contains("axolotl-qlora"), "{body}");
+        assert!(body.contains("unsloth-qlora"), "{body}");
+        assert!(body.contains("does not write a script"), "{body}");
+        assert!(body.contains("Nvidia-only"), "{body}");
+        assert!(body.contains("UNSLOTH.md"), "{body}");
         assert!(body.contains("does not require bitsandbytes"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
@@ -105,7 +109,8 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(listed.contains("external-manifest"), "{listed}");
     assert!(listed.contains("llamafactory-qlora"), "{listed}");
     assert!(listed.contains("llamafactory-lora"), "{listed}");
-    assert!(!listed.contains("unsloth-qlora"), "{listed}");
+    assert!(listed.contains("unsloth-qlora"), "{listed}");
+    assert!(listed.contains("status=optional"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("axolotl-qlora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
@@ -450,6 +455,12 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(train_script.contains("axolotl-lora"), "{train_script}");
     assert!(train_script.contains("axolotl-qlora"), "{train_script}");
+    assert!(train_script.contains("unsloth-qlora"), "{train_script}");
+    assert!(train_script.contains("UNSLOTH.md"), "{train_script}");
+    assert!(
+        train_script.contains("does not call Unsloth"),
+        "{train_script}"
+    );
     assert!(train_script.contains("axolotl train"), "{train_script}");
     assert!(
         train_script.contains("examples/llama-3/lora-1b.yml"),
@@ -1379,11 +1390,17 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=6"), "{all_text}");
+    assert!(all_text.contains("prepared=7"), "{all_text}");
+    assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-qlora"), "{all_text}");
+    let unsloth_dir = state.join("enrich/overnight-traces/unsloth-qlora");
+    assert!(unsloth_dir.join("UNSLOTH.md").is_file());
+    assert!(unsloth_dir.join("NEXT.md").is_file());
+    assert!(!unsloth_dir.join("train_unsloth.py").exists());
+    assert!(!unsloth_dir.join("dataset.jsonl").exists());
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
@@ -2183,4 +2200,152 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
     assert!(!imported.status.success(), "{imported_text}");
     assert!(imported_text.contains("refuse:export"), "{imported_text}");
     assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
+    let root = tmp("unsloth-cli");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let seated_bytes = std::fs::read_to_string(&seated).unwrap();
+    let seat_dir = root.join("seat-only-src");
+    std::fs::create_dir_all(&seat_dir).unwrap();
+    let seat_only = write_seated_estate(&seat_dir, "llama3");
+    let blocked = root.join("blocked");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seat_only.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "unsloth-qlora",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+    assert!(!blocked.exists());
+
+    let out = root.join("handoff");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "unsloth-qlora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("driver=unsloth-qlora"),
+        "{prepared_text}"
+    );
+    assert!(
+        prepared_text.contains("estate_rewritten=false"),
+        "{prepared_text}"
+    );
+    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+    assert_eq!(estate_bytes(), before);
+    let handoff = std::fs::read_to_string(out.join("UNSLOTH.md")).unwrap();
+    assert!(handoff.contains("operator-owned"), "{handoff}");
+    assert!(handoff.contains("does not call Unsloth"), "{handoff}");
+    assert!(
+        handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{handoff}"
+    );
+    assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+    assert!(!out.join("train_unsloth.py").exists());
+    assert!(!out.join("dataset.jsonl").exists());
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(next.contains("import-trained"), "{next}");
+    assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+    assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
+    assert!(
+        next.contains("https://unsloth.ai/docs/get-started/install"),
+        "{next}"
+    );
+
+    let official = root.join("official");
+    let official_out = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "unsloth-qlora",
+            "--official-scale",
+            "--out",
+            &official.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let official_text = text(&official_out);
+    assert!(!official_out.status.success(), "{official_text}");
+    assert!(
+        official_text.contains("refuse:official-scale"),
+        "{official_text}"
+    );
+    assert!(!official.exists());
+    assert_eq!(estate_bytes(), before);
+
+    let adapter = root.join("adapter");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    let imported = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated.display().to_string(),
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &adapter.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let imported_text = text(&imported);
+    assert!(imported.status.success(), "{imported_text}");
+    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
+    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+    assert_eq!(estate_bytes(), before);
+    let proposal = std::fs::read_to_string(out.join("binding-proposal.json")).unwrap();
+    assert!(
+        proposal.contains("\"driver\": \"unsloth-qlora\""),
+        "{proposal}"
+    );
+    assert!(
+        proposal.contains("\"estate_rewritten\": false"),
+        "{proposal}"
+    );
+    assert!(proposal.contains("\"promoted\": false"), "{proposal}");
 }
