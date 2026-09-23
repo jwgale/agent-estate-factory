@@ -413,8 +413,14 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(makefile.contains("scripts/train-prepare.sh"));
     let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
-    assert!(train_script.contains("llamafactory-qlora"), "{train_script}");
-    assert!(train_script.contains("llamafactory-cli train"), "{train_script}");
+    assert!(
+        train_script.contains("llamafactory-qlora"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("llamafactory-cli train"),
+        "{train_script}"
+    );
     assert!(train_script.contains("axolotl-lora"), "{train_script}");
     assert!(train_script.contains("axolotl train"), "{train_script}");
     assert!(train_script.contains("SKIP live train"), "{train_script}");
@@ -1382,6 +1388,11 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     );
     let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
     assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+    assert!(
+        !recipe.contains("quantization_method: bitsandbytes"),
+        "{recipe}"
+    );
     assert!(recipe.contains("lora_rank: 16"), "{recipe}");
     assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
     let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
