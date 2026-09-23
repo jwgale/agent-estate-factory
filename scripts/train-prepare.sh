@@ -648,6 +648,78 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  mistral prepare must stay unpromoted")
 PY
 
+MISTRAL_LORA_PACK="$ROOT/examples/fixtures/mistral-instruct-lora.pack.json"
+echo "-- mistral instruct lora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$MISTRAL_LORA_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/mistral-lora"
+grep -q "^template: mistral$" "$WORKDIR/mistral-lora/recipe.yaml"
+grep -q "^template: mistral$" "$WORKDIR/mistral-lora/export.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/mistral-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/mistral-lora/recipe.yaml"
+if grep -q "^template: mistral_" "$WORKDIR/mistral-lora/recipe.yaml"; then
+  echo "FAIL  mistral instruct LoRA recipe used a mistral_ template name"
+  exit 1
+fi
+if grep -q "^template: ministral" "$WORKDIR/mistral-lora/recipe.yaml"; then
+  echo "FAIL  mistral instruct LoRA recipe used the ministral template"
+  exit 1
+fi
+grep -q 'model_name_or_path: "mistralai/Mistral-7B-Instruct-v0.3"' "$WORKDIR/mistral-lora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/mistral-lora/recipe.yaml"; then
+  echo "FAIL  mistral LoRA recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/mistral-lora/recipe.yaml" "$WORKDIR/mistral-lora/export.yaml"; then
+  echo "FAIL  mistral LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/mistral-lora/recipe.yaml" "$WORKDIR/mistral-lora/export.yaml"; then
+  echo "FAIL  mistral LoRA recipe must omit quantization_method"
+  exit 1
+fi
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare." "$WORKDIR/mistral-lora/NEXT.md"
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare." "$WORKDIR/mistral-lora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA." "$WORKDIR/mistral-lora/NEXT.md" "$WORKDIR/mistral-lora/PREPARE.md"; then
+  echo "FAIL  mistral LoRA fixture prepare wrote the QLoRA reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/mistral-lora/NEXT.md" "$WORKDIR/mistral-lora/PREPARE.md"; then
+  echo "FAIL  mistral LoRA prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/mistral-lora/train.py" || -e "$WORKDIR/mistral-lora/train.sh" ]]; then
+  echo "FAIL  mistral LoRA prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/mistral-lora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-lora":
+    raise SystemExit(f"FAIL  mistral lora driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  mistral lora seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "mistralai/Mistral-7B-Instruct-v0.3":
+    raise SystemExit(f"FAIL  mistral lora train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  mistral lora prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$MISTRAL_LORA_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/mistral-lora-pack-qlora"
+if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare." "$WORKDIR/mistral-lora-pack-qlora/NEXT.md" "$WORKDIR/mistral-lora-pack-qlora/PREPARE.md"; then
+  echo "FAIL  mistral LoRA fixture on the QLoRA card wrote the LoRA reproduce note"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA." "$WORKDIR/mistral-lora-pack-qlora/NEXT.md"
+grep -q "quantization_method: bnb" "$WORKDIR/mistral-lora-pack-qlora/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/mistral-lora-pack-qlora/recipe.yaml"
+grep -q "^template: mistral$" "$WORKDIR/mistral-lora-pack-qlora/recipe.yaml"
+
 QWEN3_PACK="$ROOT/examples/fixtures/qwen3-instruct.pack.json"
 echo "-- qwen3 instruct qlora reproduce target --"
 estate enrich prepare \

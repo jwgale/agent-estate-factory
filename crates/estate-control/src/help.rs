@@ -450,11 +450,17 @@ Mistral-Small uses mistral_small. Mistral-Nemo uses ministral.
 Mixtral uses mistral and is not this reproduce target.
 LLaVA-NeXT-Mistral uses llava_next_mistral.
 Ministral, Ministral-3, Codestral, Devstral, and Pixtral stay off mistral.
-examples/fixtures/mistral-instruct.pack.json is the Mistral Instruct smoke pack.
+examples/fixtures/mistral-instruct.pack.json is the Mistral Instruct QLoRA smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA and still writes quantization_method bnb
 and quantization_bit 4. That reproduce line is QLoRA-only and only for a
 Mistral-7B Instruct id.
+examples/fixtures/mistral-instruct-lora.pack.json is the Mistral Instruct LoRA
+smoke pack. --driver llamafactory-lora on that pack is the non-quant twin
+of that QLoRA prepare. It writes template mistral, lora_rank 8, packing false,
+and no quantization_bit or quantization_method. That reproduce line is LoRA-only
+and only for a Mistral-7B Instruct id. A Mistral-7B base, Mistral-Small,
+Mistral-Nemo, Mixtral, and LLaVA-NeXT-Mistral do not get that line.
 Qwen/Qwen3-4B-Instruct-2507, Qwen/Qwen3-30B-A3B-Instruct-2507,
 Qwen/Qwen3-235B-A22B-Instruct-2507, and Qwen/Qwen3-Next-80B-A3B-Instruct
 use template qwen3_nothink. examples/train_lora/qwen3_lora_sft.yaml names

@@ -4007,6 +4007,28 @@ fn mistral_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) ->
     }
 }
 
+/// LoRA handoff when the train base is Mistral-7B Instruct (v0.1, v0.2, or v0.3).
+/// Empty for a Mistral-7B base, for Mixtral, for Mistral-Small, for Mistral-Nemo,
+/// for LLaVA-NeXT-Mistral, and for the QLoRA card.
+/// This is the non-quant twin of `mistral_qlora_reproduce_note`.
+/// The chat template is the same `mistral` name. There is no `mistral_7` template.
+/// `lora_rank` stays 8 and `packing` stays false. The recipe omits quantization keys.
+const MISTRAL_LORA_REPRODUCE_NOTE: &str = "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare. Mistral Instruct (mistralai/Mistral-7B-Instruct-v0.1, mistralai/Mistral-7B-Instruct-v0.2, and mistralai/Mistral-7B-Instruct-v0.3) uses LLaMA-Factory template mistral. There is no mistral_7 template. A Mistral-7B base checkpoint (Mistral-7B-v0.1, Mistral-7B-v0.2, and Mistral-7B-v0.3) uses that same template and is not this reproduce target. Mistral-Small uses template mistral_small. Mistral-Nemo uses template ministral. Mixtral uses template mistral and is not this reproduce target. LLaVA-NeXT-Mistral uses template llava_next_mistral. Ministral, Ministral-3, Codestral, Devstral, and Pixtral stay off mistral. This LoRA recipe omits quantization_bit and quantization_method, keeps lora_rank 8, and keeps packing false. The Phi-3 reproduce line stays on the QLoRA card. The Llama-3.2 Instruct, Gemma-2 Instruct, and Qwen3 Instruct LoRA lines are different train bases. The Mistral QLoRA note stays on the QLoRA card. The seat tag and the train base stay separate. This factory does not download weights.";
+
+fn mistral_lora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
+    if method != LlamaFactoryMethod::Lora {
+        return String::new();
+    }
+    let Some(segment) = llamafactory_template_segment(train_base) else {
+        return String::new();
+    };
+    if segment_is_mistral_instruct(segment) {
+        format!("{MISTRAL_LORA_REPRODUCE_NOTE}\n\n")
+    } else {
+        String::new()
+    }
+}
+
 /// QLoRA handoff when the train base is the LLaMA-Factory `qwen3_nothink` text group.
 /// Empty for Qwen3 thinking and base (`qwen3`), for Qwen2 and Qwen2.5 (`qwen`),
 /// for a broad instruct name that is not that group, and for the LoRA card.
@@ -4033,7 +4055,7 @@ fn qwen3_instruct_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &
 /// `examples/train_lora/qwen3_lora_sft.yaml` is the file this card matches:
 /// `model_name_or_path: Qwen/Qwen3-4B-Instruct-2507`, `template: qwen3_nothink`,
 /// `lora_rank: 8`, and no quantization keys.
-const QWEN3_INSTRUCT_LORA_REPRODUCE_NOTE: &str = "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare. Qwen3 Instruct (Qwen/Qwen3-4B-Instruct-2507, Qwen/Qwen3-30B-A3B-Instruct-2507, Qwen/Qwen3-235B-A22B-Instruct-2507, and Qwen/Qwen3-Next-80B-A3B-Instruct) uses LLaMA-Factory template qwen3_nothink. examples/train_lora/qwen3_lora_sft.yaml sets model_name_or_path to Qwen/Qwen3-4B-Instruct-2507 and template qwen3_nothink, with lora_rank 8 and no quantization_bit and no quantization_method. A Qwen3 thinking or base checkpoint (Qwen/Qwen3-4B, Qwen/Qwen3-4B-Thinking-2507, Qwen/Qwen3-4B-Base, and Qwen/Qwen3-Next-80B-A3B-Thinking) uses template qwen3 and is not this reproduce target. Qwen2 and Qwen2.5, including Qwen/Qwen2.5-0.5B-Instruct, stay template qwen and are not this reproduce target. Qwen3-VL Instruct and Qwen3-Omni Instruct are different LLaMA-Factory groups (qwen3_vl_nothink and qwen3_omni_nothink) and are not this reproduce target. The Phi-3, Llama-3.2, and Mistral reproduce lines stay on the QLoRA card. The Gemma-2 Instruct QLoRA line stays on the QLoRA card. This LoRA recipe omits quantization_bit and quantization_method. The seat tag and the train base stay separate. This factory does not download weights.";
+const QWEN3_INSTRUCT_LORA_REPRODUCE_NOTE: &str = "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare. Qwen3 Instruct (Qwen/Qwen3-4B-Instruct-2507, Qwen/Qwen3-30B-A3B-Instruct-2507, Qwen/Qwen3-235B-A22B-Instruct-2507, and Qwen/Qwen3-Next-80B-A3B-Instruct) uses LLaMA-Factory template qwen3_nothink. examples/train_lora/qwen3_lora_sft.yaml sets model_name_or_path to Qwen/Qwen3-4B-Instruct-2507 and template qwen3_nothink, with lora_rank 8 and no quantization_bit and no quantization_method. A Qwen3 thinking or base checkpoint (Qwen/Qwen3-4B, Qwen/Qwen3-4B-Thinking-2507, Qwen/Qwen3-4B-Base, and Qwen/Qwen3-Next-80B-A3B-Thinking) uses template qwen3 and is not this reproduce target. Qwen2 and Qwen2.5, including Qwen/Qwen2.5-0.5B-Instruct, stay template qwen and are not this reproduce target. Qwen3-VL Instruct and Qwen3-Omni Instruct are different LLaMA-Factory groups (qwen3_vl_nothink and qwen3_omni_nothink) and are not this reproduce target. The Phi-3 reproduce line stays on the QLoRA card. The Llama-3.2 Instruct, Gemma-2 Instruct, and Mistral Instruct LoRA lines are different train bases. This LoRA recipe omits quantization_bit and quantization_method. The seat tag and the train base stay separate. This factory does not download weights.";
 
 fn qwen3_instruct_lora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
     if method != LlamaFactoryMethod::Lora {
@@ -4055,7 +4077,7 @@ fn qwen3_instruct_lora_reproduce_note(method: LlamaFactoryMethod, train_base: &s
 /// LLaMA-Factory `constants.py` registers that Gemma-2 group with `template="gemma2"`.
 /// `examples/train_lora` does not ship a Gemma-2 yaml. Rank 8 and the omitted
 /// quantization keys are the `llamafactory-lora` card.
-const GEMMA2_LORA_REPRODUCE_NOTE: &str = "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare. Gemma-2 Instruct (google/gemma-2-2b-it, google/gemma-2-9b-it, and google/gemma-2-27b-it) uses LLaMA-Factory template gemma2. A Gemma-2 base checkpoint uses that same template and is not this reproduce target. Original Gemma (gemma-2b and gemma-7b) stays template gemma. Gemma-3 stays off gemma2. There is no gemma_2 template. This LoRA recipe omits quantization_bit and quantization_method and keeps lora_rank 8. The Phi-3, Llama-3.2, and Mistral reproduce lines stay on the QLoRA card. The Qwen3 Instruct LoRA line is a different train base. The seat tag and the train base stay separate. This factory does not download weights.";
+const GEMMA2_LORA_REPRODUCE_NOTE: &str = "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare. Gemma-2 Instruct (google/gemma-2-2b-it, google/gemma-2-9b-it, and google/gemma-2-27b-it) uses LLaMA-Factory template gemma2. A Gemma-2 base checkpoint uses that same template and is not this reproduce target. Original Gemma (gemma-2b and gemma-7b) stays template gemma. Gemma-3 stays off gemma2. There is no gemma_2 template. This LoRA recipe omits quantization_bit and quantization_method and keeps lora_rank 8. The Phi-3 reproduce line stays on the QLoRA card. The Llama-3.2 Instruct, Mistral Instruct, and Qwen3 Instruct LoRA lines are different train bases. The seat tag and the train base stay separate. This factory does not download weights.";
 
 fn gemma2_lora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
     if method != LlamaFactoryMethod::Lora {
@@ -4083,6 +4105,7 @@ fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String
 fn llamafactory_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String {
     let mut note = qlora_reproduce_notes(method, train_base);
     note.push_str(&gemma2_lora_reproduce_note(method, train_base));
+    note.push_str(&mistral_lora_reproduce_note(method, train_base));
     note.push_str(&qwen3_instruct_lora_reproduce_note(method, train_base));
     note.push_str(&llama32_lora_reproduce_note(method, train_base));
     note
@@ -11597,6 +11620,615 @@ mod tests {
         let frontier_out = root.join("frontier");
         let frontier = run_feed(
             LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &frontier_out,
+            &frontier_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!frontier_out.exists());
+    }
+
+    #[test]
+    fn mistral_lora_prepare_emits_template_and_keeps_the_seat_split() {
+        const MISTRAL_LORA_NOTE: &str =
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare.";
+        const MISTRAL_QLORA_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA.";
+        let root = tmp("mistral-instruct-lora");
+        let pack_path = repo_root().join("examples/fixtures/mistral-instruct-lora.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(pack.id, "mistral-instruct-lora");
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("mistralai/Mistral-7B-Instruct-v0.3")
+        );
+        assert_eq!(pack.model_hint.as_deref(), Some("llama3"));
+        assert!(!pack.promoted);
+        let estate = fixture_estate();
+        let out = root.join("lora");
+        let doc = run(LLAMAFACTORY_LORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_LORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("mistralai/Mistral-7B-Instruct-v0.3")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(
+            recipe.lines().any(|line| line.trim() == "template: mistral"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe
+                .lines()
+                .any(|line| line.trim().starts_with("template: mistral_")),
+            "{recipe}"
+        );
+        assert!(
+            !recipe
+                .lines()
+                .any(|line| line.trim().starts_with("template: ministral")),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "lora_alpha: 16"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "packing: false"),
+            "{recipe}"
+        );
+        assert!(
+            recipe
+                .lines()
+                .any(|line| line.trim() == "finetuning_type: lora"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains(
+                "Mistral-7B-Instruct is the reproduce target. A Mistral-7B base uses that same template."
+            ),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("Ministral, Ministral-3, Codestral, Devstral, and Pixtral are different groups. This scan does not label them mistral."),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("model_name_or_path: \"mistralai/Mistral-7B-Instruct-v0.3\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("\"llama3\"")
+            }),
+            "{recipe}"
+        );
+        assert!(recipe.contains("does not download weights"), "{recipe}");
+        assert!(recipe.contains("does not run llamafactory-cli"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(
+            export.lines().any(|line| line.trim() == "template: mistral"),
+            "{export}"
+        );
+        assert!(
+            !export.contains("quantization_bit") && !export.contains("quantization_method"),
+            "{export}"
+        );
+        assert!(
+            export.contains("model_name_or_path: \"mistralai/Mistral-7B-Instruct-v0.3\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(text.contains(MISTRAL_LORA_NOTE), "{text}");
+            assert!(
+                text.contains("uses LLaMA-Factory template mistral."),
+                "{text}"
+            );
+            assert!(text.contains("mistralai/Mistral-7B-Instruct-v0.3"), "{text}");
+            assert!(text.contains("mistralai/Mistral-7B-Instruct-v0.1"), "{text}");
+            assert!(text.contains("There is no mistral_7 template."), "{text}");
+            assert!(
+                text.contains("omits quantization_bit and quantization_method"),
+                "{text}"
+            );
+            assert!(text.contains("lora_rank 8"), "{text}");
+            assert!(text.contains("packing false"), "{text}");
+            assert!(!text.contains(MISTRAL_QLORA_NOTE), "{text}");
+            assert!(
+                !text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
+                ),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare."
+                ),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare."
+                ),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare."
+                ),
+                "{text}"
+            );
+            assert!(
+                !text.contains("quantization_bit: 4") && !text.contains("quantization_method: bnb"),
+                "{text}"
+            );
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("does not download weights"), "{text}");
+            assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+            assert!(
+                text.contains("did not run llamafactory-cli") || text.contains("does not run it"),
+                "{text}"
+            );
+        }
+        assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+        assert!(!out.join("train.py").exists());
+        assert!(!out.join("train.sh").exists());
+
+        let qlora_out = root.join("qlora");
+        let qlora = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &qlora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(qlora.base_model, "llama3");
+        assert_eq!(
+            qlora.train_base_model.as_deref(),
+            Some("mistralai/Mistral-7B-Instruct-v0.3")
+        );
+        let qlora_recipe = std::fs::read_to_string(qlora_out.join("recipe.yaml")).unwrap();
+        assert!(
+            qlora_recipe
+                .lines()
+                .any(|line| line.trim() == "template: mistral"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.contains("quantization_bit: 4"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.contains("quantization_method: bnb"),
+            "{qlora_recipe}"
+        );
+        let qlora_next = std::fs::read_to_string(qlora_out.join("NEXT.md")).unwrap();
+        let qlora_prepare = std::fs::read_to_string(qlora_out.join("PREPARE.md")).unwrap();
+        assert!(qlora_next.contains(MISTRAL_QLORA_NOTE), "{qlora_next}");
+        assert!(qlora_prepare.contains(MISTRAL_QLORA_NOTE), "{qlora_prepare}");
+        assert!(!qlora_next.contains(MISTRAL_LORA_NOTE), "{qlora_next}");
+        assert!(!qlora_prepare.contains(MISTRAL_LORA_NOTE), "{qlora_prepare}");
+
+        let bare = fixture_pack();
+        let seated = seated_estate("llama3");
+        for bad in ["llama3", "llama3:latest", "./llama3", "../llama3"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!(
+                "seat-{}",
+                bad.trim_start_matches('.').replace('/', "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!err.to_string().contains("mistralai/"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+        for bad in [
+            "./mistral-7b-instruct-v0.3",
+            "/opt/hf/mistral-7b-instruct-v0.3",
+        ] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!("leaf-{}", bad.replace('/', "_")));
+            let err = run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let nested_estate = with_train_base(
+            seated.clone(),
+            "./weights/mistralai/Mistral-7B-Instruct-v0.2/weights",
+        );
+        let nested_out = root.join("nested-v02");
+        let nested = run(
+            LLAMAFACTORY_LORA_ID,
+            &bare,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/mistralai/Mistral-7B-Instruct-v0.2/weights"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: mistral"),
+            "{nested_recipe}"
+        );
+        assert!(
+            !nested_recipe.contains("quantization_bit")
+                && !nested_recipe.contains("quantization_method"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "packing: false"),
+            "{nested_recipe}"
+        );
+        assert!(nested_recipe.contains(nested_train), "{nested_recipe}");
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        let nested_prepare = std::fs::read_to_string(nested_out.join("PREPARE.md")).unwrap();
+        assert!(nested_next.contains(MISTRAL_LORA_NOTE), "{nested_next}");
+        assert!(nested_prepare.contains(MISTRAL_LORA_NOTE), "{nested_prepare}");
+        assert!(!nested_next.contains(MISTRAL_QLORA_NOTE), "{nested_next}");
+
+        let cases = [
+            ("mistralai/Mistral-7B-Instruct-v0.1", "mistral", true),
+            ("mistralai/Mistral-7B-Instruct-v0.2", "mistral", true),
+            ("mistralai/Mistral-7B-Instruct-v0.3", "mistral", true),
+            ("mistralai/Mistral-7B-v0.1", "mistral", false),
+            ("mistralai/Mistral-7B-v0.3", "mistral", false),
+            ("alpindale/Mistral-7B-v0.2-hf", "mistral", false),
+            ("teknium/OpenHermes-2.5-Mistral-7B", "mistral", false),
+            ("unsloth/mistral-7b-instruct-v0.3", "mistral", true),
+            (
+                "/home/user/.cache/huggingface/hub/models--mistralai--Mistral-7B-Instruct-v0.3/snapshots/abc123def456",
+                "mistral",
+                true,
+            ),
+            (
+                "/home/user/.cache/huggingface/hub/models--mistralai--Mistral-7B-Instruct-v0.1/snapshots/abc123def789",
+                "mistral",
+                true,
+            ),
+            (
+                "/opt/hf/mistralai/Mistral-7B-Instruct-v0.3/weights",
+                "mistral",
+                true,
+            ),
+            (
+                "/tmp/qwen3-parent/Mistral-7B-Instruct-v0.2",
+                "mistral",
+                true,
+            ),
+            (
+                "/tmp/Mistral-7B-Instruct-v0.3/Qwen2.5-0.5B-Instruct",
+                "qwen",
+                false,
+            ),
+            (
+                "mistralai/Mistral-Small-24B-Instruct-2501",
+                "mistral_small",
+                false,
+            ),
+            (
+                "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                "mistral_small",
+                false,
+            ),
+            ("mistralai/Mistral-Nemo-Instruct-2407", "ministral", false),
+            ("mistralai/Mistral-Nemo-Base-2407", "ministral", false),
+            ("mistralai/Mixtral-8x7B-Instruct-v0.1", "mistral", false),
+            ("mistralai/Mixtral-8x7B-v0.1", "mistral", false),
+            (
+                "llava-hf/llava-v1.6-mistral-7b-hf",
+                "llava_next_mistral",
+                false,
+            ),
+            ("mistralai/Ministral-8B-Instruct-2410", "default", false),
+            (
+                "mistralai/Ministral-3-8B-Instruct-2512",
+                "default",
+                false,
+            ),
+            ("mistralai/Codestral-22B-v0.1", "default", false),
+            ("mistralai/Devstral-Small-2507", "default", false),
+            ("mistral-community/pixtral-12b", "default", false),
+            ("Qwen/Qwen2.5-0.5B-Instruct", "qwen", false),
+            ("Qwen/Qwen3-4B-Instruct-2507", "qwen3_nothink", false),
+            ("microsoft/Phi-3-mini-4k-instruct", "phi", false),
+            ("meta-llama/Llama-3.2-3B-Instruct", "llama3", false),
+            ("google/gemma-2-2b-it", "gemma2", false),
+        ];
+        for (idx, (train, template, note)) in cases.iter().enumerate() {
+            let case_estate = with_train_base(seated.clone(), train);
+            let case_out = root.join(format!("case-{idx}"));
+            let case_doc = run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &case_estate,
+                &case_out,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            assert_eq!(case_doc.base_model, "llama3", "{train}");
+            assert_eq!(case_doc.seat_tag.as_deref(), Some("llama3"), "{train}");
+            assert_eq!(
+                case_doc.train_base_model.as_deref(),
+                Some(*train),
+                "{train}"
+            );
+            assert!(!case_doc.promoted && !case_doc.auto_apply && !case_doc.estate_rewritten);
+            let case_recipe = std::fs::read_to_string(case_out.join("recipe.yaml")).unwrap();
+            let template_line = format!("template: {template}");
+            assert!(
+                case_recipe.lines().any(|line| line.trim() == template_line),
+                "{train}\n{case_recipe}"
+            );
+            assert!(
+                case_recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
+                "{train}"
+            );
+            assert!(
+                case_recipe
+                    .lines()
+                    .any(|line| line.trim() == "packing: false"),
+                "{train}"
+            );
+            assert!(
+                !case_recipe.contains("quantization_bit")
+                    && !case_recipe.contains("quantization_method"),
+                "{train}"
+            );
+            if *template != "mistral" {
+                assert!(
+                    !case_recipe
+                        .lines()
+                        .any(|line| line.trim() == "template: mistral"),
+                    "{train}\n{case_recipe}"
+                );
+            }
+            let case_export = std::fs::read_to_string(case_out.join("export.yaml")).unwrap();
+            assert!(
+                case_export.lines().any(|line| line.trim() == template_line),
+                "{train}\n{case_export}"
+            );
+            assert!(!case_export.contains("quantization_bit"), "{train}");
+            let case_next = std::fs::read_to_string(case_out.join("NEXT.md")).unwrap();
+            let case_prepare = std::fs::read_to_string(case_out.join("PREPARE.md")).unwrap();
+            assert_eq!(
+                case_next.contains(MISTRAL_LORA_NOTE),
+                *note,
+                "{train}\n{case_next}"
+            );
+            assert_eq!(
+                case_prepare.contains(MISTRAL_LORA_NOTE),
+                *note,
+                "{train}\n{case_prepare}"
+            );
+            assert!(!case_next.contains(MISTRAL_QLORA_NOTE), "{train}");
+            assert!(!case_next.contains("READY_FOR_LIVE_TEST: yes"), "{train}");
+            let qlora_case = root.join(format!("qlora-case-{idx}"));
+            run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &case_estate,
+                &qlora_case,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            let qlora_case_next = std::fs::read_to_string(qlora_case.join("NEXT.md")).unwrap();
+            let qlora_case_prepare =
+                std::fs::read_to_string(qlora_case.join("PREPARE.md")).unwrap();
+            assert!(
+                !qlora_case_next.contains(MISTRAL_LORA_NOTE),
+                "{train}\n{qlora_case_next}"
+            );
+            assert!(
+                !qlora_case_prepare.contains(MISTRAL_LORA_NOTE),
+                "{train}\n{qlora_case_prepare}"
+            );
+            assert_eq!(
+                qlora_case_next.contains(MISTRAL_QLORA_NOTE),
+                *note,
+                "{train}\n{qlora_case_next}"
+            );
+        }
+
+        let official = root.join("official");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_LORA_ID,
+            job: "train",
+            out_dir: &official,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let official_recipe = std::fs::read_to_string(official.join("recipe.yaml")).unwrap();
+        for line in [
+            "cutoff_len: 2048",
+            "num_train_epochs: 3.0",
+            "gradient_accumulation_steps: 8",
+            "warmup_ratio: 0.1",
+            "lora_rank: 8",
+            "packing: false",
+            "template: mistral",
+        ] {
+            assert!(
+                official_recipe.lines().any(|row| row.trim() == line),
+                "{line} missing from {official_recipe}"
+            );
+        }
+        assert!(
+            !official_recipe.contains("quantization_bit")
+                && !official_recipe.contains("quantization_method"),
+            "{official_recipe}"
+        );
+        let official_next = std::fs::read_to_string(official.join("NEXT.md")).unwrap();
+        assert!(official_next.contains(MISTRAL_LORA_NOTE), "{official_next}");
+        assert!(!official_next.contains(MISTRAL_QLORA_NOTE), "{official_next}");
+        assert!(
+            !official_next.contains("READY_FOR_LIVE_TEST: yes"),
+            "{official_next}"
+        );
+
+        let mut promoted_pack = pack.clone();
+        promoted_pack.promoted = true;
+        let promoted_out = root.join("promoted");
+        let promoted = run(
+            LLAMAFACTORY_LORA_ID,
+            &promoted_pack,
+            &estate,
+            &promoted_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(promoted.to_string().contains("refuse:pack"), "{promoted}");
+        assert!(
+            promoted.to_string().contains("no auto-promote"),
+            "{promoted}"
+        );
+        assert!(!promoted_out.exists());
+
+        let mut sacred_pack = pack.clone();
+        sacred_pack.id = "cyera".into();
+        let sacred_out = root.join("sacred-id");
+        let sacred = run(
+            LLAMAFACTORY_LORA_ID,
+            &sacred_pack,
+            &estate,
+            &sacred_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!sacred_out.exists());
+
+        let sacred_base = with_train_base(seated.clone(), "cyera/Mistral-7B-Instruct-v0.3");
+        let sacred_base_out = root.join("sacred-base");
+        let sacred_train = run(
+            LLAMAFACTORY_LORA_ID,
+            &bare,
+            &sacred_base,
+            &sacred_base_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            sacred_train.to_string().contains("refuse:sacred"),
+            "{sacred_train}"
+        );
+        assert!(!sacred_base_out.exists());
+
+        let sku_base = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf/5090/Mistral-7B-Instruct-v0.3",
+        );
+        let sku_out = root.join("sku-base");
+        let sku = run(
+            LLAMAFACTORY_LORA_ID,
+            &bare,
+            &sku_base,
+            &sku_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!sku_out.exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let frontier_state = root.join("frontier-cell");
+        std::fs::create_dir_all(frontier_state.join("feed")).unwrap();
+        std::fs::write(
+            frontier_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier_out = root.join("frontier");
+        let frontier = run_feed(
+            LLAMAFACTORY_LORA_ID,
             &pack,
             &local_only,
             &frontier_out,
