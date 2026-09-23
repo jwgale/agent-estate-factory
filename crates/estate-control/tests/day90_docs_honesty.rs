@@ -1415,7 +1415,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only local-seat Modelfile");
+    assert_eq!(head, " on-disk Modelfile is not a rewrite");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1510,6 +1510,81 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
             "{rel} must name $PREPARED/Modelfile"
         );
     }
+    let on_disk = "report uses the on-disk Modelfile when FROM already names the artifact";
+    let do_not_rewrite = "Do not write $PREPARED/Modelfile again";
+    for rel in [
+        "docs/local-seat.md",
+        "docs/TRAIN-ENRICH.md",
+        "docs/operator-enrich-journeys.md",
+        "crates/estate-control/src/help.rs",
+    ] {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap();
+        let flat = text.replace('`', "");
+        assert!(
+            flat.contains(on_disk),
+            "{rel} must say the report uses the on-disk Modelfile"
+        );
+        assert!(
+            flat.contains(do_not_rewrite),
+            "{rel} must not tell a merged seat to rewrite $PREPARED/Modelfile"
+        );
+    }
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    let general = help
+        .split("estate enrich local-seat validates")
+        .nth(1)
+        .expect("general local-seat blurb")
+        .split("Pass --adapter")
+        .next()
+        .unwrap();
+    assert!(
+        general.contains("On that GGUF print-only path,"),
+        "the general blurb must scope the print-only sentence to a GGUF"
+    );
+    assert!(general.contains(
+        "local-seat is print-only. It prints the Modelfile and does not write\n$PREPARED/Modelfile. Write that file from the printed contents before\nollama create."
+    ));
+    let merged_at = general
+        .find("--weights .cell/enrich/overnight-traces/llamafactory-qlora/export\n")
+        .expect("merged --weights export example");
+    assert!(
+        !general[merged_at..].contains("Write that file from the printed contents"),
+        "the merged --weights export example must not carry the print-only write line"
+    );
+    assert!(
+        general[merged_at..].replace('\n', " ").contains(on_disk),
+        "the merged example must say the report uses the on-disk Modelfile"
+    );
+    let write_at = general
+        .find("Write that file from the printed contents")
+        .unwrap();
+    assert!(
+        general[..write_at].contains("On that GGUF print-only path"),
+        "the write line in the general blurb stays on the GGUF print-only path"
+    );
+
+    let seat_page = std::fs::read_to_string(root.join("docs/local-seat.md")).unwrap();
+    let step4 = seat_page
+        .split("4. Seat with Ollama")
+        .nth(1)
+        .expect("local-seat chain step 4")
+        .split("5. After")
+        .next()
+        .unwrap()
+        .replace('`', "");
+    assert!(step4.contains(
+        "local-seat is print-only. It prints the Modelfile and does not write $PREPARED/Modelfile. Write that file from the printed contents before ollama create."
+    ));
+    assert!(step4.contains(on_disk), "{step4}");
+    assert!(step4.contains(do_not_rewrite), "{step4}");
+    let step4_write = step4
+        .find("Write that file from the printed contents")
+        .unwrap();
+    assert!(
+        step4[..step4_write].contains("GGUF"),
+        "chain step 4 must name the GGUF before the write line"
+    );
 
     let source =
         std::fs::read_to_string(root.join("crates/model-estate/src/local_seat.rs")).unwrap();
@@ -1551,6 +1626,26 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .find("2. `estate enrich gguf-convert`")
         .expect("seating step 2");
     let step3_at = seating.find("3. `ollama create`").expect("seating step 3");
+    let merged_export = seating
+        .find("--weights .cell/enrich/<pack-id>/llamafactory-qlora/export\n")
+        .expect("merged export local-seat example");
+    let after_merged = &seating[merged_export..];
+    let gguf_write = after_merged
+        .find("Write that file from the printed contents")
+        .expect("GGUF print-only sentence stays after the merged example");
+    let between = after_merged[..gguf_write].replace('`', "");
+    assert!(
+        between.contains("report uses the on-disk Modelfile when FROM already names the artifact"),
+        "{between}"
+    );
+    assert!(
+        between.contains("Do not write $PREPARED/Modelfile again"),
+        "{between}"
+    );
+    assert!(
+        !between.contains("Write that file from the printed contents"),
+        "the merged export example must not carry the print-only write line"
+    );
     let step2 = &seating[step2_at..step3_at];
     let refuse_at = step2
         .find("`gguf-convert` returns `refuse:tokenizer`")
@@ -1581,6 +1676,27 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
     let next_heading = section_8[prove_at..]
         .find("### 4.")
         .expect("section 8 step 4");
+    let section_7 = journeys
+        .split("## 7. Seat the merged export")
+        .nth(1)
+        .expect("section 7")
+        .split("## 8.")
+        .next()
+        .unwrap()
+        .replace('`', "");
+    assert!(section_7.contains(
+        "On that GGUF print-only path, local-seat is print-only. It prints the Modelfile and does not write $PREPARED/Modelfile. Write that file from the printed contents before ollama create."
+    ));
+    assert!(section_7.contains(
+        "report uses the on-disk Modelfile when FROM already names the artifact. Do not write $PREPARED/Modelfile again."
+    ));
+    let section_8_flat = section_8.replace('`', "");
+    let merged_clause = section_8_flat
+        .find("To seat the merged directory itself")
+        .expect("section 8 merged clause");
+    assert!(section_8_flat[merged_clause..].contains(
+        "report uses the on-disk Modelfile when FROM already names the artifact. Do not write $PREPARED/Modelfile again."
+    ));
     let prove = &section_8[prove_at..prove_at + next_heading];
     let prove_refuse = prove
         .find("`gguf-convert` returns `refuse:tokenizer`")
@@ -1626,7 +1742,42 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only local-seat Modelfile");
+    assert_eq!(head, " on-disk Modelfile is not a rewrite");
+    let on_disk_slice = changelog
+        .split("## This slice — on-disk Modelfile is not a rewrite")
+        .nth(1)
+        .expect("CHANGELOG missing the on-disk slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "local-seat is print-only",
+        "$PREPARED/Modelfile",
+        "from the printed contents before",
+        "on-disk Modelfile when FROM already names the artifact",
+        "Do not write `$PREPARED/Modelfile` again",
+        "modelfile_on_disk=true",
+        "through PR #143",
+        "examples/estate.yaml",
+        "make seat-journey",
+        "READY_FOR_LIVE_TEST",
+    ] {
+        assert!(
+            on_disk_slice.contains(needle),
+            "CHANGELOG on-disk slice missing {needle}"
+        );
+    }
+    assert!(
+        on_disk_slice.contains("READY_FOR_LIVE_TEST`: no")
+            || on_disk_slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{on_disk_slice}"
+    );
+    assert!(
+        !on_disk_slice.contains("READY_FOR_LIVE_TEST: yes")
+            && !on_disk_slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{on_disk_slice}"
+    );
+    assert!(!on_disk_slice.to_ascii_lowercase().contains("kimi"), "{on_disk_slice}");
     let slice = changelog
         .split("## This slice — print-only local-seat Modelfile")
         .nth(1)

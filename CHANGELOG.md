@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — on-disk Modelfile is not a rewrite
+
+- `estate help enrich`, `docs/local-seat.md`, `docs/TRAIN-ENRICH.md`, and `docs/operator-enrich-journeys.md` keep the GGUF print-only sentence: local-seat is print-only. It prints the Modelfile and does not write `$PREPARED/Modelfile`. Write that file from the printed contents before `ollama create`. When `modelfile_on_disk=true`, the report uses the on-disk Modelfile when FROM already names the artifact. Do not write `$PREPARED/Modelfile` again. That covers a merged `--weights` export whose LLaMA-Factory Modelfile is already on disk, and a GGUF whose FROM already names that file. The command does not write the file, does not shell out to ollama, and does not promote. `make seat-journey` stays off `make smoke`, `make gate-90`, and GitHub Actions. GATE-90 and Cell One tip stay through PR #143. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — print-only local-seat Modelfile
 
 - `estate enrich local-seat` on a GGUF says local-seat is print-only. It prints the Modelfile and does not write `$PREPARED/Modelfile`. Write that file from the printed contents before `ollama create`. The same line is on `estate help enrich`, `NEXT.md`, `make seat-journey`, `docs/local-seat.md`, `docs/TRAIN-ENRICH.md`, and `docs/operator-enrich-journeys.md`. The command does not write the file, does not shell out to ollama, and does not promote. Two seating passages (`docs/TRAIN-ENRICH.md` step 2 and `docs/operator-enrich-journeys.md` section 8) name `refuse:tokenizer` before the re-run. `make seat-journey` stays off `make smoke`, `make gate-90`, and GitHub Actions. GATE-90 and Cell One tip stay through PR #143. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.
