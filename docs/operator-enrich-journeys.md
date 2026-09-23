@@ -226,7 +226,13 @@ estate enrich import-trained \
   --estate <your-estate.yaml> \
   --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
   --tag cell-enrich-<pack-id> \
-  --adapter <adapter-dir-or-gguf>
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
+
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --tag cell-enrich-<pack-id> \
+  --adapter .cell/enrich/<pack-id>/llamafactory-lora/outputs
 
 estate enrich apply-proposal \
   --estate <your-estate.yaml> \
@@ -238,7 +244,7 @@ estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
 estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
 ```
 
-A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate.
+`NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` prints the same import for `outputs/` (adapter `adapter_config.json`), `export/` (`config.json` plus a `.safetensors` file whose name does not start with `adapter_model`, optional `Modelfile`), and one `.gguf` file or a directory with exactly one top-level `.gguf`. A directory with more than one is `refuse:adapter`. `prepare.json` records `trained_shape` and `trained_paths` on the same write as the proposal. A path that matches none of those shapes, or more than one, or a symlinked marker, is `refuse:adapter` before a new proposal exists. A sacred token or a hardware SKU still refuses. `apply --require-plan` is the only step that writes the source estate.
 
 When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` or `axolotl-qlora` the same way, including `--from-feed` when the sources are already on disk. Each card writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `axolotl-lora` is bf16 LoRA matching Axolotl `examples/llama-3/lora-1b.yml` (`adapter: lora`, `load_in_4bit: false`, `sequence_len` 2048, `micro_batch_size` 2, `gradient_accumulation_steps` 2, `lora_r` 16). `axolotl-qlora` is 4-bit QLoRA matching `examples/llama-3/qlora.yml` (`adapter: qlora`, `load_in_4bit: true`, `sequence_len` 4096, `micro_batch_size` 2, `gradient_accumulation_steps` 4, `lora_r` 32). `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`), and it stores the same `dataset_mode` fields. `PREPARE.md` and `NEXT.md` use the same dataset paragraph as the LLaMA-Factory cards. A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. A missing feed file with `--from-feed` is `refuse:dataset` and writes nothing. `--all-drivers --job train` writes the train base into both Axolotl yamls and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. A short gauge run passes `--max-steps`. `import-trained` takes either directory. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
 

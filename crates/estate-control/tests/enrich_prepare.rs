@@ -1710,10 +1710,17 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         imported_text.contains("driver=llamafactory-qlora"),
         "{imported_text}"
     );
+    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
     assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
     );
+    let trained: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(trained["trained_shape"], "adapter");
+    assert_eq!(trained["promoted"], false);
+    assert_eq!(trained["auto_apply"], false);
+    assert_eq!(trained["estate_rewritten"], false);
     assert_eq!(estate_bytes(), before);
 }
 
@@ -1967,9 +1974,61 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         imported_text.contains("driver=llamafactory-lora"),
         "{imported_text}"
     );
+    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
     assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
     );
+    assert!(
+        next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("outputs").display()
+        )),
+        "{next}"
+    );
+    assert!(
+        next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("export").display()
+        )),
+        "{next}"
+    );
+    let trained: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(trained["trained_shape"], "adapter");
+    assert_eq!(trained["promoted"], false);
+    assert_eq!(estate_bytes(), before);
+
+    let garbage = root.join("garbage.txt");
+    std::fs::write(&garbage, "not weights\n").unwrap();
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated.display().to_string(),
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &garbage.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:adapter"), "{refused_text}");
+    assert!(
+        refused_text.contains("is a file and is not a GGUF"),
+        "{refused_text}"
+    );
+    let still: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(still["trained_shape"], "adapter");
     assert_eq!(estate_bytes(), before);
 }

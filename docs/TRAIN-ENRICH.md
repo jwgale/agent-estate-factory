@@ -20,7 +20,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `estate enrich prepare --all-drivers` | One call. Each card the job allows writes a sibling directory. A refuse writes none of them. The enrich default skips `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, and `axolotl-qlora`. `--job train` includes them. |
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
-| `estate enrich import-trained` | Same proposal, for a `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` prepare whose job is `train`. `--adapter` is an adapter directory or a merged GGUF / safetensors file. Does not apply. |
+| `estate enrich import-trained` | Same proposal, for a `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` prepare whose job is `train`. `--adapter` is an adapter `output_dir` (`adapter_config.json`), a merged `export_dir` (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`, optional `Modelfile`), or one `.gguf` file or a directory with exactly one top-level `.gguf`. Records `trained_shape` and `trained_paths` on the same write as the proposal. Does not apply. |
 | `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card the job allows. The default job is enrich, so the train cards wait for `--job train`. Does not apply. |
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
@@ -188,9 +188,27 @@ When the adapter directory or a GGUF exists, record the join. The prepared direc
 ```bash
 estate enrich import-trained \
   --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-lora \
+  --tag cell-enrich-<pack-id> \
+  --adapter .cell/enrich/<pack-id>/llamafactory-lora/outputs
+
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
   --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
   --tag cell-enrich-<pack-id> \
-  --adapter <adapter-dir-or-gguf>
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
+
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --tag cell-enrich-<pack-id> \
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/export
+
+estate enrich import-trained \
+  --estate <your-estate.yaml> \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --tag cell-enrich-<pack-id> \
+  --adapter <gguf>
 
 estate enrich apply-proposal \
   --estate <your-estate.yaml> \
@@ -202,7 +220,7 @@ estate plan --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell
 estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --require-plan
 ```
 
-`import-trained` writes the same `binding-proposal.json` as `import-prepared`. A prepare that is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora`, a job that is not `train`, or an adapter path with no `adapter_config.json`, adapter weights, or GGUF is a refuse before that proposal exists. `apply-proposal` does not apply. The source estate is written only when `estate apply --require-plan` succeeds. Point `--estate` at a lab copy. `examples/estate.yaml` on `main` stays hash-locked. There is no second apply path and no auto-promote.
+`import-trained` writes the same `binding-proposal.json` as `import-prepared`, plus `trained_shape` and `trained_paths` on that proposal and on `prepare.json`, in one success path. The three shapes are an adapter directory with `adapter_config.json`, a merged directory with `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model` (a `Modelfile` there is recorded), and one `.gguf` file or a directory with exactly one top-level `.gguf`. A directory with more than one is `refuse:adapter`. `adapter_model.safetensors` is not merged evidence. Marker files are regular files inside that directory; a symlinked marker is `refuse:adapter`. The open uses `O_NOFOLLOW` and the scan reads that handle. `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` prints those three commands with the prepared directory filled in. A prepare that is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora`, a job that is not `train`, or a path that matches none of the shapes or more than one is a refuse before a new proposal exists. A publish that fails removes the partial proposal and restores the previous prepare and proposal bytes. `apply-proposal` does not apply. The source estate is written only when `estate apply --require-plan` succeeds. Point `--estate` at a lab copy. `examples/estate.yaml` on `main` stays hash-locked. There is no second apply path and no auto-promote.
 
 ```bash
 make train-prepare
@@ -316,7 +334,7 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with `--job enrich` | `refuse:job` |
 | A train source path is empty, `--from-feed` has nothing to read, a source line is not an instruct row, a source resolves outside the cell directory, or the sources together exceed the byte cap | `refuse:dataset` |
 | `import-trained` on a prepare that is not a train recipe with job `train` | `refuse:driver` or `refuse:job` |
-| Adapter path is missing, or has no adapter config, weights, or GGUF | `refuse:adapter` |
+| `import-trained` path is missing, is not one of adapter `output_dir` / merged `export_dir` / GGUF, matches more than one of those shapes, uses `adapter_model*.safetensors` as the only weight next to `config.json`, is a symlinked marker, or is a directory with more than one top-level `.gguf` | `refuse:adapter` |
 | `{state_dir}/enrich` is missing on list | `refuse:enrich-index` |
 | `prepare.json` missing, unreadable, or flagged promoted | `refuse:missing-prepare`, `refuse:prepare-unreadable`, `refuse:prepared` |
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |

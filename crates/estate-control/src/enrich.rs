@@ -207,16 +207,25 @@ pub(crate) fn cmd_enrich_import_trained(
     let json_path = prepared_dir.join("binding-proposal.json");
     let md_path = prepared_dir.join("binding-proposal.md");
     println!(
-        "enrich import-trained: pack={} binding={} tag={} seated_driver={} driver={}",
+        "enrich import-trained: pack={} binding={} tag={} seated_driver={} driver={} shape={}",
         proposal.pack_id,
         proposal.binding_id,
         proposal.local_tag,
         proposal.seated_driver,
-        proposal.driver
+        proposal.driver,
+        proposal.trained_shape.as_deref().unwrap_or("")
     );
     println!("  prepared: {}", prepared_dir.display());
     println!("  adapter: {}", adapter.display());
     println!("  weights: {}", proposal.local_path);
+    println!(
+        "  paths: {}",
+        proposal
+            .trained_paths
+            .as_ref()
+            .map(|paths| paths.join(","))
+            .unwrap_or_default()
+    );
     println!("  json: {}", json_path.display());
     println!("  md: {}", md_path.display());
     println!(

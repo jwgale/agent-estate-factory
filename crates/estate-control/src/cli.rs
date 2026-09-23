@@ -550,7 +550,7 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value = "jason")]
         curator: String,
     },
-    /// Record a LLaMA-Factory or Axolotl adapter or merged GGUF on the local_slm proposal. Does not apply.
+    /// Record a trained adapter dir, merged export dir, or GGUF on the local_slm proposal. Does not apply.
     ImportTrained {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -560,7 +560,7 @@ pub(crate) enum EnrichCommand {
         /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.
         #[arg(long)]
         tag: String,
-        /// Adapter directory (adapter_config.json inside) or a merged GGUF / safetensors file.
+        /// Adapter output_dir (adapter_config.json), merged export_dir (config.json and a non-adapter .safetensors file, optional Modelfile), or one .gguf file (a directory must hold exactly one).
         #[arg(long)]
         adapter: PathBuf,
         /// Import gate. Must match locked curator `jason`.
