@@ -67,8 +67,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("TrainEnrichDriver"), "{body}");
         assert!(body.contains("ollama-modelfile"), "{body}");
         assert!(body.contains("external-manifest"), "{body}");
+        assert!(body.contains("llamafactory-lora"), "{body}");
         assert!(body.contains("llamafactory-qlora"), "{body}");
         assert!(body.contains("axolotl-lora"), "{body}");
+        assert!(body.contains("does not require bitsandbytes"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
@@ -98,6 +100,7 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(listed.contains("ollama-modelfile"), "{listed}");
     assert!(listed.contains("external-manifest"), "{listed}");
     assert!(listed.contains("llamafactory-qlora"), "{listed}");
+    assert!(listed.contains("llamafactory-lora"), "{listed}");
     assert!(!listed.contains("unsloth-qlora"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
@@ -416,6 +419,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("external-manifest"));
     assert!(!dispatch.contains("axolotl-lora"));
     assert!(!dispatch.contains("llamafactory-qlora"));
+    assert!(!dispatch.contains("llamafactory-lora"));
     assert!(!dispatch.contains("unsloth-qlora"));
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
     assert!(
@@ -426,6 +430,12 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
     assert!(
         train_script.contains("llamafactory-qlora"),
+        "{train_script}"
+    );
+    assert!(train_script.contains("llamafactory-lora"), "{train_script}");
+    assert!(train_script.contains("qwen3_nothink"), "{train_script}");
+    assert!(
+        train_script.contains("does not require bitsandbytes"),
         "{train_script}"
     );
     assert!(
@@ -1354,8 +1364,9 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=4"), "{all_text}");
+    assert!(all_text.contains("prepared=5"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
+    assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
@@ -1377,6 +1388,26 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         std::fs::read_to_string(state.join("enrich/overnight-traces/ollama-modelfile/Modelfile"))
             .unwrap();
     assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
+    let all_lora = std::fs::read_to_string(
+        state.join("enrich/overnight-traces/llamafactory-lora/recipe.yaml"),
+    )
+    .unwrap();
+    assert!(
+        all_lora.lines().any(|line| line.trim() == "lora_rank: 8"),
+        "{all_lora}"
+    );
+    assert!(
+        !all_lora.contains("quantization_bit") && !all_lora.contains("quantization_method"),
+        "{all_lora}"
+    );
+    let all_qlora = std::fs::read_to_string(
+        state.join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml"),
+    )
+    .unwrap();
+    assert!(
+        all_qlora.contains("quantization_method: bnb"),
+        "{all_qlora}"
+    );
 
     let adapter = root.join("adapter");
     std::fs::create_dir_all(&adapter).unwrap();
@@ -1753,6 +1784,154 @@ fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
     assert!(
         hub_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{hub_recipe}"
+    );
+    assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn llamafactory_lora_prepare_omits_quantization_and_imports() {
+    let root = tmp("llamafactory-lora-cli");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+    let seated_only = write_seated_estate(&root, "llama3");
+    let blocked = root.join("seat-only");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_only.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+    assert!(!blocked.exists());
+
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen3-4B-Instruct-2507"));
+    let out = root.join("recipe");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("driver=llamafactory-lora"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("job=train"), "{prepared_text}");
+    assert!(
+        prepared_text.contains("does not require bitsandbytes"),
+        "{prepared_text}"
+    );
+    assert!(
+        !prepared_text.contains("bitsandbytes>=0.49"),
+        "{prepared_text}"
+    );
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
+    assert!(
+        recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
+        "{recipe}"
+    );
+    assert!(
+        recipe.lines().any(|line| line.trim() == "packing: false"),
+        "{recipe}"
+    );
+    assert!(
+        recipe
+            .lines()
+            .any(|line| line.trim() == "template: qwen3_nothink"),
+        "{recipe}"
+    );
+    assert!(
+        !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
+        "{recipe}"
+    );
+    assert!(
+        recipe.contains("model_name_or_path: \"Qwen/Qwen3-4B-Instruct-2507\""),
+        "{recipe}"
+    );
+    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+    assert!(!export.contains("quantization_bit"), "{export}");
+    assert!(
+        export
+            .lines()
+            .any(|line| line.trim() == "template: qwen3_nothink"),
+        "{export}"
+    );
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(next.contains("does not require bitsandbytes"), "{next}");
+    assert!(!next.contains("bitsandbytes>=0.49"), "{next}");
+    assert!(next.contains("pip install llamafactory"), "{next}");
+    assert!(
+        next.contains(&format!(
+            "llamafactory-cli train {}",
+            out.join("recipe.yaml").display()
+        )),
+        "{next}"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(doc["driver"], "llamafactory-lora");
+    assert_eq!(doc["base_model"], "llama3");
+    assert_eq!(doc["seat_tag"], "llama3");
+    assert_eq!(doc["train_base_model"], "Qwen/Qwen3-4B-Instruct-2507");
+
+    let adapter = root.join("adapter");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    let imported = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated.display().to_string(),
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &adapter.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let imported_text = text(&imported);
+    assert!(imported.status.success(), "{imported_text}");
+    assert!(
+        imported_text.contains("driver=llamafactory-lora"),
+        "{imported_text}"
+    );
+    assert!(
+        imported_text.contains("import-trained did not apply"),
+        "{imported_text}"
     );
     assert_eq!(estate_bytes(), before);
 }

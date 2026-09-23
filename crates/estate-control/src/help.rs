@@ -291,7 +291,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. llamafactory-qlora writes a LLaMA-Factory QLoRA recipe. axolotl-lora writes the YAML recipe. This page does not run a trainer.
+- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the YAML recipe. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -315,13 +315,16 @@ const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
 estate help train prints this page. Job field is train or enrich.
-Default job is enrich. llamafactory-qlora and axolotl-lora default to train.
+Default job is enrich. llamafactory-lora, llamafactory-qlora, and axolotl-lora default to train.
 --all-drivers defaults to enrich and includes a card only when that job
 is allowed. Prepare writes artifacts. It does not train.
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\
     --pack <accepted-pack-id> --state-dir .cell
+  estate enrich prepare --estate <your-estate.yaml> \\
+    --pack examples/fixtures/specialist-overnight.pack.json \\
+    --driver llamafactory-lora --job train --state-dir .cell
   estate enrich prepare --estate <your-estate.yaml> \\
     --pack examples/fixtures/specialist-overnight.pack.json \\
     --driver llamafactory-qlora --job train --state-dir .cell
@@ -347,10 +350,12 @@ is allowed. Prepare writes artifacts. It does not train.
 TrainEnrichDriver lives in the data plane (model-estate).
 Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM),
 external-manifest (portable JSON/YAML, no vendor lock),
-llamafactory-qlora (LLaMA-Factory recipe.yaml + instruct chat dataset.jsonl;
-default job train), and axolotl-lora (Axolotl axolotl.yml + dataset.jsonl;
+llamafactory-lora (LLaMA-Factory LoRA recipe.yaml, no quantization, rank 8;
+default job train; does not require bitsandbytes),
+llamafactory-qlora (LLaMA-Factory QLoRA recipe.yaml + instruct chat dataset.jsonl;
+default job train; requires bitsandbytes), and axolotl-lora (Axolotl axolotl.yml + dataset.jsonl;
 default job train). Unsloth QLoRA is a NEXT.md pointer on the LLaMA-Factory
-card, not a registered driver.
+cards, not a registered driver.
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card the job
 allows, into sibling directories. Omit --driver on prepare for the
@@ -363,27 +368,37 @@ local binding, or a pack model_hint that is already a model tag
 A missing seated name is refuse:base-model and writes nothing.
 examples/estate.yaml leaves params.model unset. A lab copy sets it.
 
-llamafactory-qlora model_name_or_path is the train base. Set pack
-field train_base_model, or params.train_base_model on the local
-binding, to a Hugging Face repo id (namespace/name) or a local
-directory of HF weights. A relative directory is written as an
+llamafactory-lora and llamafactory-qlora write model_name_or_path from the
+train base. Set pack field train_base_model, or params.train_base_model
+on the local binding, to a Hugging Face repo id (namespace/name) or a
+local directory of HF weights. A relative directory is written as an
 absolute path. A directory name that is an Ollama seat tag
 (./llama3) is refuse:train-base and writes nothing. template is
-inferred from that train base.
+inferred by scanning path segments of that train base, starting at
+the last segment. A leaf such as weights or an HF snapshot hash uses
+the nearest ancestor that names a family. A Qwen3 name containing
+instruct and not thinking, or containing nothink, uses qwen3_nothink.
+Other Qwen3 names use qwen3.
+Select LoRA with --driver llamafactory-lora (16-bit base, no
+quantization_bit, lora_rank 8, packing false). Select QLoRA with
+--driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
+lora_rank 16).
 A bare Ollama seat tag is refuse:train-base and writes nothing.
 This factory does not map the seat tag onto a Hub repo.
 axolotl-lora writes that same train base to base_model in axolotl.yml.
 prepare.json base_model and seat_tag stay the Ollama id for Modelfile FROM
 and for the adapter join.
-QLoRA also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
+The LoRA card does not require bitsandbytes. QLoRA still needs
+bitsandbytes: pip install 'bitsandbytes>=0.49'.
 A short gauge run passes --max-steps 10. The default recipe leaves
 max_steps unset.
 
 dataset.jsonl defaults to a scaffold (or a three-row stub when the
 pack source_paths list is empty). prepare.json records dataset_mode,
 dataset_rows, dataset_from_feed, dataset_skipped, and
-dataset_read_paths. PREPARE.md and NEXT.md on both train cards say
-those rows are not training data. Pass --from-feed to copy instruct
+dataset_read_paths. PREPARE.md and NEXT.md on llamafactory-lora,
+llamafactory-qlora, and axolotl-lora say those rows are not training
+data. Pass --from-feed to copy instruct
 rows that are already under --state-dir (for example
 .cell/feed/events.jsonl). A missing file is refuse:dataset and writes
 nothing. This factory does not download pack sources. ShareGPT
@@ -407,8 +422,8 @@ path you created outside the factory. It writes binding-proposal.json
 and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
-estate enrich import-trained is that same proposal for a llamafactory-qlora
-or axolotl-lora prepare whose job is train. --adapter is an adapter
+estate enrich import-trained is that same proposal for a llamafactory-lora,
+llamafactory-qlora, or axolotl-lora prepare whose job is train. --adapter is an adapter
 directory or a merged GGUF. It does not apply. apply-proposal, plan,
 and apply --require-plan stay the join. Ollama stays the local-run seat.
 
