@@ -7,7 +7,7 @@ use model_estate::{
     default_enrich_out, default_train_enrich_driver_id, driver_default_job, import_prepared,
     import_trained, list_prepared, load_enrich_pack, prepare_enrich_set, render_prepared_index,
     render_train_enrich_catalog, train_enrich_drivers_for_job, ImportPreparedRequest,
-    ImportTrainedRequest, PrepareEnrichRequest,
+    ImportTrainedRequest, PrepareEnrichRequest, TrainGauge,
 };
 use std::path::{Path, PathBuf};
 
@@ -26,7 +26,7 @@ pub(crate) fn cmd_enrich_prepare(
     state_dir: &Path,
     job: Option<&str>,
     curator: &str,
-    max_steps: Option<u32>,
+    gauge: TrainGauge,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -47,7 +47,7 @@ pub(crate) fn cmd_enrich_prepare(
             driver_id,
             job: job.as_str(),
             out_dir,
-            max_steps,
+            gauge,
         })
         .collect();
     let docs = prepare_enrich_set(&reqs)?;
@@ -55,6 +55,9 @@ pub(crate) fn cmd_enrich_prepare(
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
     if before != after {
         bail!("enrich prepare must not rewrite the estate file");
+    }
+    if !gauge.is_empty() {
+        println!("gauge: {}", gauge.summary());
     }
     for (doc, (_, out_dir)) in docs.iter().zip(targets.iter()) {
         let train_base = match doc.train_base_model.as_deref() {
@@ -90,7 +93,7 @@ pub(crate) fn cmd_enrich_from_pack(
     state_dir: &Path,
     job: Option<&str>,
     curator: &str,
-    max_steps: Option<u32>,
+    gauge: TrainGauge,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -110,7 +113,7 @@ pub(crate) fn cmd_enrich_from_pack(
         state_dir,
         job,
         curator,
-        max_steps,
+        gauge,
     )
 }
 

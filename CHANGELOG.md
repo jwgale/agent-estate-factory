@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — gauge knobs and LLaMA-Factory LoRA merge card
+
+- `llamafactory-lora` is a train card beside `llamafactory-qlora`. It writes the same files with `finetuning_type: lora` and no quantization keys. `llamafactory-qlora` still writes `quantization_bit: 4` and `quantization_method: bnb`.
+- `--max-steps`, `--cutoff-len`, `--lora-rank`, `--save-steps`, and `--gradient-accumulation-steps` write into `recipe.yaml` for both LLaMA-Factory cards, and into `axolotl.yml` when set. Omit a knob to keep the card default. `0` refuses (`refuse:max-steps`, `refuse:cutoff-len`, `refuse:lora-rank`, `refuse:save-steps`, `refuse:grad-accum`) and writes nothing. A gauge on a driver that does not write a train recipe refuses the same way.
+- `export.yaml` is the merge card. `adapter_name_or_path` is the train `output_dir`. `NEXT.md` points at `llamafactory-cli export`. Prepare does not merge and does not claim the merge finished. The file stays unquantized.
+- Seat tag, `refuse:train-base`, and the two-driver LoRA/QLoRA split stay as they are. `import-trained` accepts `llamafactory-lora`. `make train-prepare` still prints `SKIP live train`.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Axolotl train base matches the seat split
 
 - `axolotl-lora` writes `base_model` in `axolotl.yml` from the train base (pack `train_base_model`, or `params.train_base_model` on the local binding; the pack wins). That value is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. A relative directory is stored as an absolute path.

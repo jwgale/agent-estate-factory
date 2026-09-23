@@ -347,10 +347,11 @@ is allowed. Prepare writes artifacts. It does not train.
 TrainEnrichDriver lives in the data plane (model-estate).
 Cards today: ollama-modelfile (Ollama create / Modelfile FROM+SYSTEM),
 external-manifest (portable JSON/YAML, no vendor lock),
-llamafactory-qlora (LLaMA-Factory recipe.yaml + instruct chat dataset.jsonl;
+llamafactory-qlora (LLaMA-Factory QLoRA recipe.yaml + instruct chat dataset.jsonl;
+default job train), llamafactory-lora (the same card with no quantization;
 default job train), and axolotl-lora (Axolotl axolotl.yml + dataset.jsonl;
 default job train). Unsloth QLoRA is a NEXT.md pointer on the LLaMA-Factory
-card, not a registered driver.
+cards, not a registered driver.
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card the job
 allows, into sibling directories. Omit --driver on prepare for the
@@ -363,8 +364,8 @@ local binding, or a pack model_hint that is already a model tag
 A missing seated name is refuse:base-model and writes nothing.
 examples/estate.yaml leaves params.model unset. A lab copy sets it.
 
-llamafactory-qlora model_name_or_path is the train base. Set pack
-field train_base_model, or params.train_base_model on the local
+llamafactory-qlora and llamafactory-lora model_name_or_path is the train base.
+Set pack field train_base_model, or params.train_base_model on the local
 binding, to a Hugging Face repo id (namespace/name) or a local
 directory of HF weights. A relative directory is written as an
 absolute path. A directory name that is an Ollama seat tag
@@ -375,9 +376,16 @@ This factory does not map the seat tag onto a Hub repo.
 axolotl-lora writes that same train base to base_model in axolotl.yml.
 prepare.json base_model and seat_tag stay the Ollama id for Modelfile FROM
 and for the adapter join.
-QLoRA also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
-A short gauge run passes --max-steps 10. The default recipe leaves
-max_steps unset.
+llamafactory-qlora also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
+llamafactory-lora does not quantize the base and does not install that library.
+export.yaml is the merge card for both LLaMA-Factory drivers. Prepare writes
+it and points NEXT.md at llamafactory-cli export. Prepare does not merge.
+A short gauge run passes --max-steps 10. Related knobs are --cutoff-len,
+--lora-rank, --save-steps, and --gradient-accumulation-steps. Omit a knob
+to keep the card default. The default LLaMA-Factory recipe leaves max_steps
+unset. 0 is refuse:max-steps, refuse:cutoff-len, refuse:lora-rank,
+refuse:save-steps, or refuse:grad-accum. A gauge on a driver that does not
+write a train recipe is the same refuse.
 
 Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
 NEXT.md has the handoff command, artifact paths, and fail-closed
@@ -391,10 +399,10 @@ path you created outside the factory. It writes binding-proposal.json
 and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
-estate enrich import-trained is that same proposal for a llamafactory-qlora
-or axolotl-lora prepare whose job is train. --adapter is an adapter
-directory or a merged GGUF. It does not apply. apply-proposal, plan,
-and apply --require-plan stay the join. Ollama stays the local-run seat.
+estate enrich import-trained is that same proposal for a llamafactory-qlora,
+llamafactory-lora, or axolotl-lora prepare whose job is train. --adapter
+is an adapter directory or a merged GGUF. It does not apply. apply-proposal,
+plan, and apply --require-plan stay the join. Ollama stays the local-run seat.
 
 estate enrich apply-proposal reads that proposal, checks it against
 prepare.json, and writes {state}/enrich-stage/staged-estate.yaml.

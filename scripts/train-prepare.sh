@@ -240,6 +240,85 @@ grep -q '^num_train_epochs: 1.0$' "$WORKDIR/smoke/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/smoke/recipe.yaml"
 grep -q "template: qwen" "$WORKDIR/smoke/recipe.yaml"
 
+echo "-- llamafactory-lora writes no quantization; gauge knobs land in the recipe --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/lora"
+test -f "$WORKDIR/lora/recipe.yaml"
+test -f "$WORKDIR/lora/export.yaml"
+grep -q "finetuning_type: lora" "$WORKDIR/lora/recipe.yaml"
+grep -q '^save_steps: 50$' "$WORKDIR/lora/recipe.yaml"
+if grep -Eq '^max_steps:' "$WORKDIR/lora/recipe.yaml"; then
+  echo "FAIL  default LoRA recipe must leave max_steps unset"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/lora/recipe.yaml"; then
+  echo "FAIL  llamafactory-lora recipe must not set quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/lora/recipe.yaml"; then
+  echo "FAIL  llamafactory-lora recipe must not set quantization_method"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/lora/export.yaml"; then
+  echo "FAIL  LoRA export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "merge_status: not_run" "$WORKDIR/lora/export.yaml"
+grep -q "finetuning_type: lora" "$WORKDIR/lora/export.yaml"
+grep -q "llamafactory-cli export $WORKDIR/lora/export.yaml" "$WORKDIR/lora/NEXT.md"
+grep -q "did not merge" "$WORKDIR/lora/NEXT.md"
+grep -q "did not merge" "$WORKDIR/lora/PREPARE.md"
+if grep -q "bitsandbytes" "$WORKDIR/lora/recipe.yaml" "$WORKDIR/lora/NEXT.md" "$WORKDIR/lora/PREPARE.md"; then
+  echo "FAIL  llamafactory-lora must not require bitsandbytes"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --max-steps 10 \
+  --cutoff-len 256 \
+  --lora-rank 8 \
+  --out "$WORKDIR/lora-gauge"
+grep -q '^max_steps: 10$' "$WORKDIR/lora-gauge/recipe.yaml"
+grep -q '^save_steps: 10$' "$WORKDIR/lora-gauge/recipe.yaml"
+grep -q '^cutoff_len: 256$' "$WORKDIR/lora-gauge/recipe.yaml"
+grep -q '^lora_rank: 8$' "$WORKDIR/lora-gauge/recipe.yaml"
+grep -q '^lora_alpha: 16$' "$WORKDIR/lora-gauge/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/lora-gauge/recipe.yaml"; then
+  echo "FAIL  gauge LoRA recipe must not quantize"
+  exit 1
+fi
+grep -q "gauge run with max_steps 10" "$WORKDIR/lora-gauge/NEXT.md"
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --max-steps 0 \
+  --out "$WORKDIR/lora-zero" \
+  >/tmp/train-prepare-lora-zero.out 2>/tmp/train-prepare-lora-zero.err
+zero_rc=$?
+set -e
+if [[ "$zero_rc" -eq 0 ]]; then
+  echo "FAIL  --max-steps 0 must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:max-steps" /tmp/train-prepare-lora-zero.out /tmp/train-prepare-lora-zero.err; then
+  echo "FAIL  --max-steps 0 did not refuse:max-steps"
+  cat /tmp/train-prepare-lora-zero.out /tmp/train-prepare-lora-zero.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/lora-zero" ]]; then
+  echo "FAIL  --max-steps 0 wrote an output directory"
+  exit 1
+fi
+
 echo "-- axolotl-lora writes the train base, not the seat tag --"
 set +e
 estate enrich prepare \
@@ -297,6 +376,20 @@ if "Seat tag is llama3" not in next_md or "Train base is Qwen/Qwen2.5-0.5B-Instr
     raise SystemExit("FAIL  axolotl NEXT.md is missing the seat and train base split")
 PY
 grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
+if grep -Eq '^max_steps:' "$WORKDIR/axolotl/axolotl.yml"; then
+  echo "FAIL  default axolotl.yml must leave max_steps unset"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --max-steps 10 \
+  --out "$WORKDIR/axolotl-gauge"
+grep -q '^max_steps: 10$' "$WORKDIR/axolotl-gauge/axolotl.yml"
+grep -q '^save_steps: 10$' "$WORKDIR/axolotl-gauge/axolotl.yml"
+grep -q "gauge run with max_steps 10" "$WORKDIR/axolotl-gauge/NEXT.md"
 
 echo "-- all-drivers train writes the train base into axolotl.yml --"
 estate enrich prepare \
@@ -311,6 +404,13 @@ if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/
   exit 1
 fi
 grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
+grep -q "quantization_bit: 4" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-qlora/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"; then
+  echo "FAIL  all-drivers LoRA recipe quantized the base"
+  exit 1
+fi
+grep -q "did not merge" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-qlora/NEXT.md"
+grep -q "did not merge" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/NEXT.md"
 
 echo "-- import-trained records the LLaMA-Factory adapter on local_slm --"
 ADAPTER="$WORKDIR/adapter"
@@ -349,4 +449,4 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory recipe, Axolotl recipe, import-trained; SKIP live train)"
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA recipes, Axolotl recipe, import-trained; SKIP live train)"

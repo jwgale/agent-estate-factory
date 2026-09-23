@@ -485,15 +485,27 @@ pub(crate) enum EnrichCommand {
         out: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-qlora and axolotl-lora, `enrich` otherwise). `--all-drivers` defaults to enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-qlora, llamafactory-lora, and axolotl-lora, `enrich` otherwise). `--all-drivers` defaults to enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
-        /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
+        /// Short gauge run. Writes `max_steps` into the train recipe. Omit for one epoch.
         #[arg(long)]
         max_steps: Option<u32>,
+        /// LLaMA-Factory `cutoff_len`, or Axolotl `sequence_len` when set. Omit for the card default.
+        #[arg(long)]
+        cutoff_len: Option<u32>,
+        /// LoRA rank. `lora_alpha` is rank times 2. Omit for rank 16.
+        #[arg(long)]
+        lora_rank: Option<u32>,
+        /// Checkpoint interval. Omit to keep 50, or the same count as `max_steps` when that count is under 50.
+        #[arg(long)]
+        save_steps: Option<u32>,
+        /// `gradient_accumulation_steps`. Omit for 4.
+        #[arg(long)]
+        gradient_accumulation_steps: Option<u32>,
     },
     /// Prepare an accepted pack into `{state_dir}/enrich`. Same refuses as prepare. Does not apply.
     FromPack {
@@ -512,15 +524,27 @@ pub(crate) enum EnrichCommand {
         all_drivers: bool,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-qlora and axolotl-lora, `enrich` otherwise). With no `--driver`, the default job is enrich.
+        /// `enrich` or `train`. Omit for the driver default (`train` on llamafactory-qlora, llamafactory-lora, and axolotl-lora, `enrich` otherwise). With no `--driver`, the default job is enrich.
         #[arg(long)]
         job: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
-        /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
+        /// Short gauge run. Writes `max_steps` into the train recipe. Omit for one epoch.
         #[arg(long)]
         max_steps: Option<u32>,
+        /// LLaMA-Factory `cutoff_len`, or Axolotl `sequence_len` when set. Omit for the card default.
+        #[arg(long)]
+        cutoff_len: Option<u32>,
+        /// LoRA rank. `lora_alpha` is rank times 2. Omit for rank 16.
+        #[arg(long)]
+        lora_rank: Option<u32>,
+        /// Checkpoint interval. Omit to keep 50, or the same count as `max_steps` when that count is under 50.
+        #[arg(long)]
+        save_steps: Option<u32>,
+        /// `gradient_accumulation_steps`. Omit for 4.
+        #[arg(long)]
+        gradient_accumulation_steps: Option<u32>,
     },
     /// List prepared packs under `{state_dir}/enrich`. Does not create the directory.
     List {

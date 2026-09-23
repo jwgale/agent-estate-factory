@@ -68,7 +68,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("ollama-modelfile"), "{body}");
         assert!(body.contains("external-manifest"), "{body}");
         assert!(body.contains("llamafactory-qlora"), "{body}");
+        assert!(body.contains("llamafactory-lora"), "{body}");
         assert!(body.contains("axolotl-lora"), "{body}");
+        assert!(body.contains("--lora-rank"), "{body}");
+        assert!(body.contains("--cutoff-len"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
@@ -98,6 +101,7 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(listed.contains("ollama-modelfile"), "{listed}");
     assert!(listed.contains("external-manifest"), "{listed}");
     assert!(listed.contains("llamafactory-qlora"), "{listed}");
+    assert!(listed.contains("llamafactory-lora"), "{listed}");
     assert!(!listed.contains("unsloth-qlora"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("live=false"), "{listed}");
@@ -416,6 +420,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("external-manifest"));
     assert!(!dispatch.contains("axolotl-lora"));
     assert!(!dispatch.contains("llamafactory-qlora"));
+    assert!(!dispatch.contains("llamafactory-lora"));
     assert!(!dispatch.contains("unsloth-qlora"));
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
     assert!(
@@ -1354,8 +1359,9 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=4"), "{all_text}");
+    assert!(all_text.contains("prepared=5"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
+    assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
@@ -1754,5 +1760,115 @@ fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
         hub_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{hub_recipe}"
     );
+    assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn llamafactory_lora_cli_emits_max_steps_and_no_quant() {
+    let root = tmp("llamafactory-lora-cli");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let seated_path = seated.display().to_string();
+    let out = root.join("lora");
+
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--max-steps",
+            "10",
+            "--cutoff-len",
+            "256",
+            "--lora-rank",
+            "8",
+            "--save-steps",
+            "5",
+            "--gradient-accumulation-steps",
+            "1",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("driver=llamafactory-lora"),
+        "{prepared_text}"
+    );
+    assert!(
+        prepared_text.contains("gauge: max_steps=10"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("did not merge"), "{prepared_text}");
+    assert!(!prepared_text.contains("bitsandbytes"), "{prepared_text}");
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    for line in [
+        "max_steps: 10",
+        "cutoff_len: 256",
+        "lora_rank: 8",
+        "lora_alpha: 16",
+        "save_steps: 5",
+        "gradient_accumulation_steps: 1",
+    ] {
+        assert!(
+            recipe.lines().any(|row| row.trim() == line),
+            "{line} missing from {recipe}"
+        );
+    }
+    assert!(!recipe.contains("quantization_bit"), "{recipe}");
+    assert!(!recipe.contains("quantization_method"), "{recipe}");
+    assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
+    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+    assert!(!export.contains("quantization_bit"), "{export}");
+    assert!(export.contains("# merge_status: not_run"), "{export}");
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(
+        next.contains(&format!(
+            "llamafactory-cli export {}",
+            out.join("export.yaml").display()
+        )),
+        "{next}"
+    );
+    assert!(next.contains("This prepare did not merge"), "{next}");
+    assert!(!next.contains("bitsandbytes"), "{next}");
+    let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+    assert!(prepare_md.contains("did not merge"), "{prepare_md}");
+    assert!(!prepare_md.contains("bitsandbytes"), "{prepare_md}");
+
+    let zero = root.join("zero");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--max-steps",
+            "0",
+            "--out",
+            &zero.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:max-steps"), "{refused_text}");
+    assert!(!zero.exists());
     assert_eq!(estate_bytes(), before);
 }
