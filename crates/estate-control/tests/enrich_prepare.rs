@@ -86,6 +86,11 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("make qlora-journey"), "{body}");
         assert!(body.contains("Target C"), "{body}");
         assert!(body.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{body}");
+        assert!(
+            body.contains("examples/fixtures/qwen3-instruct.pack.json"),
+            "{body}"
+        );
+        assert!(body.contains("Qwen/Qwen3-4B-Instruct-2507"), "{body}");
         assert!(body.contains("llamafactory-cli train"), "{body}");
         assert!(body.contains("llamafactory-cli export"), "{body}");
         assert!(body.contains("docs/operator-enrich-journeys.md"), "{body}");
@@ -490,6 +495,24 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(
         train_script.contains("^template: mistral$"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/qwen3-instruct.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("Qwen/Qwen3-4B-Instruct-2507"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: qwen3_nothink$"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
+        ),
         "{train_script}"
     );
     assert!(

@@ -130,6 +130,10 @@ grep -q "lora_rank: 16" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "cutoff_len: 512" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "packing: true" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "template: qwen" "$WORKDIR/llamafactory/recipe.yaml"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/llamafactory/NEXT.md" "$WORKDIR/llamafactory/PREPARE.md"; then
+  echo "FAIL  qwen2.5 prepare took the qwen3 instruct reproduce note"
+  exit 1
+fi
 grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/llamafactory/recipe.yaml"
 if grep -q "quantization_method: bitsandbytes" "$WORKDIR/llamafactory/recipe.yaml"; then
@@ -362,6 +366,10 @@ if grep -q "quantization_bit" "$WORKDIR/llamafactory-lora-qwen3/recipe.yaml"; th
   echo "FAIL  qwen3 LoRA recipe must omit quantization_bit"
   exit 1
 fi
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/llamafactory-lora-qwen3/NEXT.md" "$WORKDIR/llamafactory-lora-qwen3/PREPARE.md"; then
+  echo "FAIL  qwen3 LoRA prepare must not write the QLoRA reproduce note"
+  exit 1
+fi
 estate enrich prepare \
   --estate "$QWEN3" \
   --pack "$PACK" \
@@ -371,6 +379,12 @@ grep -q "^template: qwen3_nothink$" "$WORKDIR/llamafactory-qlora-qwen3/recipe.ya
 grep -q "quantization_bit: 4" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
 grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-qlora-qwen3/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/llamafactory-qlora-qwen3/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/llamafactory-qlora-qwen3/PREPARE.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/llamafactory-qlora-qwen3/NEXT.md" "$WORKDIR/llamafactory-qlora-qwen3/PREPARE.md"; then
+  echo "FAIL  qwen3 qlora prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
 
 PHI_PACK="$ROOT/examples/fixtures/phi3-instruct.pack.json"
 echo "-- phi3 instruct qlora reproduce target --"
@@ -534,6 +548,51 @@ if prepare.get("train_base_model") != "mistralai/Mistral-7B-Instruct-v0.3":
     raise SystemExit(f"FAIL  mistral train_base_model={prepare.get('train_base_model')}")
 if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
     raise SystemExit("FAIL  mistral prepare must stay unpromoted")
+PY
+
+QWEN3_PACK="$ROOT/examples/fixtures/qwen3-instruct.pack.json"
+echo "-- qwen3 instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$QWEN3_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/qwen3-qlora"
+grep -q "^template: qwen3_nothink$" "$WORKDIR/qwen3-qlora/recipe.yaml"
+grep -q "^template: qwen3_nothink$" "$WORKDIR/qwen3-qlora/export.yaml"
+if grep -q "^template: qwen3$" "$WORKDIR/qwen3-qlora/recipe.yaml"; then
+  echo "FAIL  qwen3 instruct recipe used the thinking template"
+  exit 1
+fi
+if grep -q "^template: qwen$" "$WORKDIR/qwen3-qlora/recipe.yaml"; then
+  echo "FAIL  qwen3 instruct recipe used the qwen2 template"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/qwen3-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/qwen3-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "Qwen/Qwen3-4B-Instruct-2507"' "$WORKDIR/qwen3-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/qwen3-qlora/recipe.yaml"; then
+  echo "FAIL  qwen3 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/qwen3-qlora/export.yaml"; then
+  echo "FAIL  qwen3 export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/qwen3-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA." "$WORKDIR/qwen3-qlora/PREPARE.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/qwen3-qlora/NEXT.md" "$WORKDIR/qwen3-qlora/PREPARE.md"; then
+  echo "FAIL  qwen3 prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/qwen3-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  qwen3 seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "Qwen/Qwen3-4B-Instruct-2507":
+    raise SystemExit(f"FAIL  qwen3 train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  qwen3 prepare must stay unpromoted")
 PY
 
 echo "-- axolotl cards refuse a seat tag with no train base --"
