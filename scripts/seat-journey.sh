@@ -89,8 +89,13 @@ echo "   Before the good stub, a 5090-shaped export is refuse:tokenizer."
 echo "   config.json names Qwen. extra_special_tokens is a JSON list."
 echo "   vocab.json and merges.txt are missing. The convert line does not print."
 echo "   That refuse names restoring tokenizer files from the HF cache snapshot"
-echo "   for the train base, or the equivalent base checkout, into the export directory,"
-echo "   then re-running estate enrich gguf-convert. This script does not copy them."
+echo "   for the train base, or the equivalent base checkout, into the export directory."
+echo "   HF hub snapshots are often symlinks into the HF cache."
+echo "   Copy with dereference (cp -aL or cp --dereference, or the equivalent)"
+echo "   so the files in the export directory are real files, not symlinks."
+echo "   A plain cp -a leaves tokenizer_config.json as a symlink."
+echo "   enrich does not follow a symlinked tokenizer_config.json."
+echo "   Then re-run estate enrich gguf-convert. This script does not copy them."
 echo "   The good merged stub is config.json ({}) plus model.safetensors."
 echo "   That stub has no Qwen marker and no tokenizer_config.json."
 echo "   Prints python3 convert_hf_to_gguf.py ... --outfile <prepared>/export.gguf --outtype auto"
@@ -363,6 +368,12 @@ for needle in \
   "HF cache snapshot" \
   "equivalent base checkout" \
   "into the export directory" \
+  "HF hub snapshots are often symlinks" \
+  "cp -aL" \
+  "cp --dereference" \
+  "real files, not symlinks" \
+  "plain cp -a" \
+  "does not follow a symlinked tokenizer_config.json" \
   "re-run estate enrich gguf-convert" \
   "${TRAIN_BASE}"
 do

@@ -27,6 +27,18 @@ fn text(out: &std::process::Output) -> String {
     )
 }
 
+fn assert_names_dereference_copy(body: &str) {
+    assert!(body.contains("HF hub snapshots are often symlinks"), "{body}");
+    assert!(body.contains("cp -aL"), "{body}");
+    assert!(body.contains("cp --dereference"), "{body}");
+    assert!(body.contains("real files, not symlinks"), "{body}");
+    assert!(body.contains("plain cp -a"), "{body}");
+    assert!(
+        body.contains("does not follow a symlinked tokenizer_config.json"),
+        "{body}"
+    );
+}
+
 fn write_prepare(dir: &std::path::Path) {
     let body = r#"{
   "schema": "cell-one.enrich-prepare.v0",
@@ -126,6 +138,7 @@ fn help_names_the_convert_line() {
     assert!(body.contains("equivalent base checkout"), "{body}");
     assert!(body.contains("into the export directory"), "{body}");
     assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
+    assert_names_dereference_copy(&body);
     assert!(body.contains("axolotl-lora"), "{body}");
     assert!(body.contains("axolotl-qlora"), "{body}");
     assert!(body.contains("outputs/merged"), "{body}");
@@ -496,6 +509,7 @@ fn refuses_list_extra_special_tokens_without_spawning_or_copying() {
     assert!(body.contains("equivalent base checkout"), "{body}");
     assert!(body.contains("into the export directory"), "{body}");
     assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
+    assert_names_dereference_copy(&body);
     assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
     assert!(!body.contains("--outtype"), "{body}");
     assert!(!root.join("export.gguf").exists());
@@ -541,6 +555,7 @@ fn refuses_null_extra_special_tokens_without_spawning_or_copying() {
     assert!(body.contains("equivalent base checkout"), "{body}");
     assert!(body.contains("into the export directory"), "{body}");
     assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
+    assert_names_dereference_copy(&body);
     assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
     assert!(!body.contains("--outtype"), "{body}");
     assert!(!root.join("export.gguf").exists());

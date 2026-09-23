@@ -8633,6 +8633,15 @@ mod tests {
         assert!(next.contains("HF cache snapshot"), "{next}");
         assert!(next.contains("equivalent base checkout"), "{next}");
         assert!(next.contains("into the export directory"), "{next}");
+        assert!(next.contains("HF hub snapshots are often symlinks"), "{next}");
+        assert!(next.contains("cp -aL"), "{next}");
+        assert!(next.contains("cp --dereference"), "{next}");
+        assert!(next.contains("real files, not symlinks"), "{next}");
+        assert!(next.contains("plain cp -a"), "{next}");
+        assert!(
+            next.contains("does not follow a symlinked tokenizer_config.json"),
+            "{next}"
+        );
         assert!(next.contains("re-run estate enrich gguf-convert"), "{next}");
         assert!(next.contains("does not download weights"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
@@ -8671,6 +8680,9 @@ mod tests {
         assert!(prepare_md.contains("extra_special_tokens"), "{prepare_md}");
         assert!(prepare_md.contains("tokenizer_config.json.bak"), "{prepare_md}");
         assert!(prepare_md.contains("HF cache snapshot"), "{prepare_md}");
+        assert!(prepare_md.contains("cp -aL"), "{prepare_md}");
+        assert!(prepare_md.contains("cp --dereference"), "{prepare_md}");
+        assert!(prepare_md.contains("real files, not symlinks"), "{prepare_md}");
         assert!(prepare_md.contains("re-run estate enrich gguf-convert"), "{prepare_md}");
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
@@ -17873,6 +17885,15 @@ mod tests {
         assert!(next.contains("HF cache snapshot"), "{next}");
         assert!(next.contains("equivalent base checkout"), "{next}");
         assert!(next.contains("into the export directory"), "{next}");
+        assert!(next.contains("HF hub snapshots are often symlinks"), "{next}");
+        assert!(next.contains("cp -aL"), "{next}");
+        assert!(next.contains("cp --dereference"), "{next}");
+        assert!(next.contains("real files, not symlinks"), "{next}");
+        assert!(next.contains("plain cp -a"), "{next}");
+        assert!(
+            next.contains("does not follow a symlinked tokenizer_config.json"),
+            "{next}"
+        );
         assert!(next.contains("re-run estate enrich gguf-convert"), "{next}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(

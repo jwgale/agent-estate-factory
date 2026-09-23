@@ -1248,6 +1248,160 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
 }
 
 #[test]
+fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
+    let root = repo_root();
+    let needles = [
+        "HF hub snapshots are often symlinks",
+        "cp -aL",
+        "cp --dereference",
+        "real files, not symlinks",
+        "does not follow a symlinked",
+    ];
+    let pages = [
+        "docs/TRAIN-ENRICH.md",
+        "docs/local-seat.md",
+        "docs/operator-enrich-journeys.md",
+        "docs/CELL-ONE-STATUS.md",
+        "crates/estate-control/src/help.rs",
+        "crates/model-estate/src/gguf_convert.rs",
+        "scripts/seat-journey.sh",
+    ];
+    for rel in pages {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap();
+        for needle in needles {
+            assert!(text.contains(needle), "{rel} missing {needle}");
+        }
+        assert!(
+            text.contains("plain cp -a") || text.contains("plain `cp -a`"),
+            "{rel} must name a plain cp -a"
+        );
+    }
+    for rel in [
+        "docs/TRAIN-ENRICH.md",
+        "docs/local-seat.md",
+        "docs/operator-enrich-journeys.md",
+        "docs/CELL-ONE-STATUS.md",
+        "crates/estate-control/src/help.rs",
+        "scripts/seat-journey.sh",
+    ] {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !text.contains("READY_FOR_LIVE_TEST: yes")
+                && !text.contains("READY_FOR_LIVE_TEST`: yes"),
+            "{rel} must keep READY_FOR_LIVE_TEST no"
+        );
+    }
+
+    let source =
+        std::fs::read_to_string(root.join("crates/model-estate/src/gguf_convert.rs")).unwrap();
+    assert!(
+        source.contains("is a symlink. enrich does not follow a symlinked tokenizer_config.json."),
+        "symlink refuse must stay fail-closed"
+    );
+    assert!(
+        source.contains("meta.file_type().is_symlink()"),
+        "gguf-convert must still detect a symlinked tokenizer_config.json"
+    );
+    assert!(
+        !source.contains("std::fs::copy"),
+        "gguf-convert must not copy tokenizer files"
+    );
+    assert!(source.contains("does not copy those files"), "{source}");
+    assert!(source.contains("does not download weights"), "{source}");
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #143"),
+        "GATE-90 header must keep tip through PR #143: {gate_head}"
+    );
+    assert!(
+        gate_head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "GATE-90 header must keep the PR #143 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+    assert!(
+        !gate.contains("cp -aL"),
+        "this pack must not churn the GATE-90 tip page"
+    );
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #143"),
+        "status header must keep tip through PR #143"
+    );
+    assert!(
+        status_head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "status header must keep the PR #143 tip SHA"
+    );
+    assert!(
+        !status_head.contains("cp -aL"),
+        "tip SHA framing stays through PR #143"
+    );
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " name dereference when restoring tokenizer files");
+    let slice = changelog
+        .split("## This slice — name dereference when restoring tokenizer files")
+        .nth(1)
+        .expect("CHANGELOG missing the dereference slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in needles {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(slice.contains("plain `cp -a`"), "{slice}");
+    assert!(slice.contains("refuse:tokenizer"), "{slice}");
+    assert!(slice.contains("through PR #143"), "{slice}");
+    assert!(slice.contains("examples/estate.yaml"), "{slice}");
+    assert!(slice.contains("make seat-journey"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
+    assert!(
+        cksum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {cksum_text}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("seat-journey"),
+            "{rel} must not run seat-journey"
+        );
+        assert!(!body.contains("cp -aL"), "{rel} must not grow a copy step");
+    }
+}
+
+#[test]
 fn glossary_keeps_purpose_built_slm_in_suite() {
     let root = repo_root();
     let glossary = std::fs::read_to_string(root.join("docs/UBIQUITOUS_LANGUAGE.md")).unwrap();

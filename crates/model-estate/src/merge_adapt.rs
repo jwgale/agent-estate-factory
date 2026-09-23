@@ -1816,6 +1816,24 @@ mod tests {
         );
         assert!(plan.report.contains("HF cache snapshot"), "{}", plan.report);
         assert!(
+            plan.report.contains("HF hub snapshots are often symlinks"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("cp -aL"), "{}", plan.report);
+        assert!(plan.report.contains("cp --dereference"), "{}", plan.report);
+        assert!(
+            plan.report.contains("real files, not symlinks"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("plain cp -a"), "{}", plan.report);
+        assert!(
+            plan.report.contains("does not follow a symlinked tokenizer_config.json"),
+            "{}",
+            plan.report
+        );
+        assert!(
             plan.report.contains("equivalent base checkout"),
             "{}",
             plan.report

@@ -1513,6 +1513,12 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         "HF cache snapshot",
         "equivalent base checkout",
         "into the export directory",
+        "HF hub snapshots are often symlinks",
+        "cp -aL",
+        "cp --dereference",
+        "real files, not symlinks",
+        "plain cp -a",
+        "does not follow a symlinked tokenizer_config.json",
         "re-run estate enrich gguf-convert",
         "missing vocab.json",
         "missing merges.txt",
@@ -1602,8 +1608,14 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         section_10.contains("HF cache snapshot")
             && section_10.contains("equivalent base checkout")
             && section_10.contains("into the export directory")
+            && section_10.contains("HF hub snapshots are often symlinks")
+            && section_10.contains("cp -aL")
+            && section_10.contains("cp --dereference")
+            && section_10.contains("real files, not symlinks")
+            && section_10.contains("plain `cp -a`")
+            && section_10.contains("does not follow a symlinked")
             && section_10.contains("re-running `estate enrich gguf-convert`"),
-        "section 10 must name the HF cache restore and the gguf-convert re-run"
+        "section 10 must name the HF cache restore, the dereference copy, and the gguf-convert re-run"
     );
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("## Target C seat ladder — fixture print path"));

@@ -31,8 +31,13 @@
 //! That refuse names the operator restore: copy tokenizer files from the
 //! HF cache snapshot already on disk, or the equivalent base checkout, into
 //! the export directory, then re-run `estate enrich gguf-convert`.
-//! This module does not download tokenizer files, does not copy them, does
-//! not write `tokenizer_config.json.bak`, and does not run the script.
+//! HF hub snapshots are often symlinks into the HF cache. The sentence tells
+//! the operator to copy with dereference (`cp -aL` or `cp --dereference`)
+//! so the export directory holds real files. A symlinked
+//! `tokenizer_config.json` stays `refuse:tokenizer`.
+//! This module does not follow that symlink, does not download tokenizer
+//! files, does not copy them, does not write `tokenizer_config.json.bak`,
+//! and does not run the script.
 
 use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
@@ -105,15 +110,17 @@ pub(crate) fn local_seat_cli(prepared: &Path, weights: &Path) -> String {
 }
 
 /// Operator restore after `refuse:tokenizer`. Names `train_base` when the
-/// prepare recorded one. Does not build a cache path, does not fetch, and
-/// does not copy files.
+/// prepare recorded one. HF hub snapshots are often symlinks. The sentence
+/// tells the operator to copy with dereference so the export directory holds
+/// real files. Does not build a cache path, does not fetch, does not copy
+/// files, and does not follow a symlinked `tokenizer_config.json`.
 pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
     let named = match train_base.trim() {
         "" => "the train base on this prepare".to_string(),
         base => format!("train base {base}"),
     };
     format!(
-        "Copy the tokenizer files from {named} already on disk into the export directory. The source is the HF cache snapshot for that repo, or the equivalent base checkout (a local HF weights directory). Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. Then re-run estate enrich gguf-convert on that export directory. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
+        "Copy the tokenizer files from {named} already on disk into the export directory. The source is the HF cache snapshot for that repo, or the equivalent base checkout (a local HF weights directory). HF hub snapshots are often symlinks into the HF cache. Copy with dereference (cp -aL or cp --dereference, or the equivalent) so the files in the export directory are real files, not symlinks. A plain cp -a leaves tokenizer_config.json as a symlink. enrich does not follow a symlinked tokenizer_config.json. Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. Then re-run estate enrich gguf-convert on that export directory. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
     )
 }
 
@@ -1335,6 +1342,15 @@ mod tests {
         assert!(text.contains("HF cache snapshot"), "{text}");
         assert!(text.contains("equivalent base checkout"), "{text}");
         assert!(text.contains("into the export directory"), "{text}");
+        assert!(text.contains("HF hub snapshots are often symlinks"), "{text}");
+        assert!(text.contains("cp -aL"), "{text}");
+        assert!(text.contains("cp --dereference"), "{text}");
+        assert!(text.contains("real files, not symlinks"), "{text}");
+        assert!(text.contains("plain cp -a"), "{text}");
+        assert!(
+            text.contains("does not follow a symlinked tokenizer_config.json"),
+            "{text}"
+        );
         assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
         assert!(text.contains("tokenizer_config.json.bak"), "{text}");
         assert!(text.contains("does not download weights"), "{text}");
@@ -1608,9 +1624,12 @@ mod tests {
         let err = plan_gguf_convert(&root, &export).unwrap_err();
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
-        assert!(text.contains("symlink"), "{text}");
-        assert!(text.contains("HF cache snapshot"), "{text}");
-        assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(
+            text.contains("does not follow a symlinked tokenizer_config.json"),
+            "{text}"
+        );
+        assert_names_hf_cache_restore(&text);
         assert!(!text.contains("JSON list"), "{text}");
         assert!(!text.contains("python3"), "{text}");
         assert!(!root.join("export.gguf").exists());
