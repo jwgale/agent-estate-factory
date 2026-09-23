@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Print-only Target C uniqueness chain.
 # Runs make qlora-journey, then make seat-journey (the Makefile targets).
+# Does not run make train-next. That target is the opt-in train-recipe print.
 # Does not train, merge, convert, seat, or promote.
 # Does not run lf-beachhead-prepare. Does not flip READY_FOR_LIVE_TEST.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
@@ -16,6 +17,7 @@ echo "Print-only. READY_FOR_LIVE_TEST: no"
 echo "Does not train, merge, convert, seat, or promote."
 echo "Does not run lf-beachhead-prepare. Does not run a live train."
 echo "Chain: make qlora-journey, then make seat-journey."
+echo "The train step is a separate opt-in: make train-next. This chain does not run it."
 echo
 
 echo "-- make qlora-journey --"
