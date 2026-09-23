@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Day-90 gate tip honesty through PR #142
+
+- `docs/GATE-90.md` points the live tip story at [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md) through PR #142 (`d2dcdb97c2c960e8b93715391d77075055a8b0ce`, the print-only LLaMA-Factory beachhead prepare walk). `make gate-90` stays local `cargo test`. Hosted CI stays compile-only. The Remaining table names `make lf-beachhead-prepare`: an opt-in print-only prepare walk of the 16 beachhead matrix fixtures. It checks prepare artifacts. It does not train. It is not in smoke or Actions. It is not a live train. `make qlora-journey`, `make lora-journey`, and `make seat-journey` stay on that table. `READY_FOR_LIVE_TEST`: no.
+- This slice does not add a train family, a fixture pack, a driver, or a journey. It does not add Kimi. `lf-beachhead-prepare` stays off `make smoke`, `make gate-90`, and GitHub Actions. `examples/estate.yaml` stays hash-locked.
+
 ## This slice — LLaMA-Factory beachhead prepare walk
 
 - `make lf-beachhead-prepare` (`scripts/lf-beachhead-prepare.sh`) reads [`docs/lf-beachhead-matrix.md`](docs/lf-beachhead-matrix.md) and prepares each smoke fixture with `estate enrich prepare` on a throwaway copy of `examples/estate.yaml`. The driver is the row card (`llamafactory-qlora` or `llamafactory-lora`). The pack is the row fixture. `prepare.json` keeps `train_base_model` from that fixture and `seat_tag` from the fixture `model_hint` (`llama3` on every current row). `recipe.yaml` matches the row template and knobs. QLoRA rows keep `lora_rank` 16, `packing` true, `quantization_method` `bnb`, and `quantization_bit` 4. LoRA rows keep `lora_rank` 8, `packing` false, and omit quantization keys. `export.yaml` stays unquantized on both cards. The script prints `SKIP live train`. It does not train, merge, convert, seat, or promote.
