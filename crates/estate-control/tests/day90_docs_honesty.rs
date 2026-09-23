@@ -40,7 +40,7 @@ fn gate_and_parking_lot_do_not_call_stubs_ready() {
 }
 
 #[test]
-fn gate_90_tip_names_cell_one_through_pr_155() {
+fn gate_90_tip_names_cell_one_through_pr_157() {
     let root = repo_root();
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     assert!(
@@ -53,8 +53,12 @@ fn gate_90_tip_names_cell_one_through_pr_155() {
         "GATE-90 header must point at the live tip snapshot: {head}"
     );
     assert!(
-        head.contains("through PR #155"),
-        "GATE-90 header must name tip through PR #155: {head}"
+        head.contains("through PR #157"),
+        "GATE-90 header must name tip through PR #157: {head}"
+    );
+    assert!(
+        !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {head}"
     );
     assert!(
         !head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -66,6 +70,10 @@ fn gate_90_tip_names_cell_one_through_pr_155() {
     );
     assert!(
         !head.contains("through PR #156"),
+        "GATE-90 header must not claim tip through the #156 honesty slice: {head}"
+    );
+    assert!(
+        !head.contains("through PR #158"),
         "GATE-90 header must not claim a tip that has not merged: {head}"
     );
     assert!(
@@ -81,8 +89,24 @@ fn gate_90_tip_names_cell_one_through_pr_155() {
         "GATE-90 header must not freeze tip at the prepare walk: {head}"
     );
     assert!(
+        head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must name the PR #157 tip SHA: {head}"
+    );
+    assert!(
         head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must name the PR #155 tip SHA: {head}"
+        "GATE-90 header must keep the PR #155 checklist SHA: {head}"
+    );
+    assert!(
+        head.contains("tip honesty through PR #155")
+            && head.contains("PR #156")
+            && head.contains("87072dbf79b302dc2dce42e49937abbbdd6ac689"),
+        "GATE-90 header must name PR #156 tip honesty through PR #155: {head}"
+    );
+    assert!(
+        head.contains("Standing next (estate)")
+            && head.contains("make uniqueness-prove-checklist")
+            && head.contains("PR #157"),
+        "GATE-90 header must name the Standing next coda: {head}"
     );
     assert!(
         head.contains("tip honesty through PR #153")
@@ -332,6 +356,73 @@ fn gate_90_tip_names_cell_one_through_pr_155() {
     assert!(
         !tip155.contains("through PR #156"),
         "tip slice must not claim a tip that has not merged: {tip155}"
+    );
+
+    let tip157 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #157")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #157 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip157.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "{tip157}"
+    );
+    assert!(
+        tip157.contains("87072dbf79b302dc2dce42e49937abbbdd6ac689"),
+        "{tip157}"
+    );
+    assert!(
+        tip157.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
+        "{tip157}"
+    );
+    assert!(
+        tip157.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "{tip157}"
+    );
+    assert!(tip157.contains("PR #140"), "{tip157}");
+    assert!(tip157.contains("PR #142"), "{tip157}");
+    assert!(tip157.contains("PR #145"), "{tip157}");
+    assert!(tip157.contains("PR #146"), "{tip157}");
+    assert!(tip157.contains("PR #147"), "{tip157}");
+    assert!(tip157.contains("PR #155"), "{tip157}");
+    assert!(tip157.contains("PR #156"), "{tip157}");
+    assert!(tip157.contains("PR #157"), "{tip157}");
+    assert!(tip157.contains("tip honesty through PR #155"), "{tip157}");
+    assert!(tip157.contains("Standing next (estate)"), "{tip157}");
+    assert!(
+        tip157.contains("make uniqueness-prove-checklist"),
+        "{tip157}"
+    );
+    assert!(tip157.contains("LIVE-PROBES.md"), "{tip157}");
+    assert!(
+        tip157.contains("does not invent a new live PASS"),
+        "{tip157}"
+    );
+    assert!(
+        tip157.contains("does not train, convert, shell out to ollama, or promote"),
+        "{tip157}"
+    );
+    assert!(tip157.contains("GGUF print-only seats"), "{tip157}");
+    assert!(tip157.contains("make lf-beachhead-prepare"), "{tip157}");
+    assert!(
+        tip157.contains("READY_FOR_LIVE_TEST`: no") || tip157.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip157}"
+    );
+    assert!(
+        !tip157.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip157.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip157}"
+    );
+    assert!(!tip157.to_ascii_lowercase().contains("kimi/"), "{tip157}");
+    assert!(
+        !tip157.contains("through PR #158"),
+        "tip slice must not claim a tip that has not merged: {tip157}"
+    );
+    assert!(
+        !tip157.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "tip slice must not freeze at the PR #155 tip SHA: {tip157}"
     );
 }
 
@@ -634,12 +725,20 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
     );
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #155"),
-        "GATE-90 header must keep tip through PR #155: {head}"
+        head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {head}"
     );
     assert!(
-        head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {head}"
+        head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {head}"
+    );
+    assert!(
+        !head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {head}"
     );
     assert!(
         !head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -671,14 +770,26 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
     assert!(uniq_row.contains("Does not run train-next"), "{uniq_row}");
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -943,12 +1054,20 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     );
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #155"),
-        "GATE-90 header must keep tip through PR #155: {head}"
+        head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {head}"
     );
     assert!(
-        head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {head}"
+        head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {head}"
+    );
+    assert!(
+        !head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {head}"
     );
     assert!(
         !head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -990,14 +1109,26 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -1589,12 +1720,20 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #155"),
-        "GATE-90 header must keep tip through PR #155: {gate_head}"
+        gate_head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {gate_head}"
     );
     assert!(
-        gate_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {gate_head}"
+        gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {gate_head}"
     );
     assert!(
         !gate_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -1610,14 +1749,26 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -1625,7 +1776,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     );
     assert!(
         !status_head.contains("cp -aL"),
-        "tip SHA framing stays through PR #155"
+        "tip SHA framing stays through PR #157"
     );
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
@@ -1636,7 +1787,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " Standing next (estate) after import-trained");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1937,26 +2088,46 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #155"),
-        "GATE-90 header must keep tip through PR #155: {gate_head}"
+        gate_head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {gate_head}"
     );
     assert!(
-        gate_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {gate_head}"
+        gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {gate_head}"
     );
     assert!(
         !gate_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
         "GATE-90 header must not freeze tip at PR #153: {gate_head}"
     );
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -1971,7 +2142,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " Standing next (estate) after import-trained");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -2119,10 +2290,14 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         "PR #149",
         "PR #150",
         "PR #151",
-        "Tip framing\nthrough PR #155",
-        "cbecb0b554a655a5276e0c75b8fdc59d55c77f76",
+        "Tip framing\nthrough PR #157",
+        "6a43ff12a91295739c5a9c8a8f1dc9cc9c084466",
+        "Tip honesty through PR #155 is PR #156",
+        "87072dbf79b302dc2dce42e49937abbbdd6ac689",
         "Tip honesty through PR #153 is PR #154",
         "4f0a2096dcf768ce988f320706ad7319aa7d489e",
+        "Standing next (estate)",
+        "does not\ninvent a new live PASS",
         "names this\nrecorded PASS",
     ] {
         assert!(
@@ -2135,8 +2310,16 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         "the uniqueness section must not freeze tip framing at PR #151"
     );
     assert!(
+        !section.contains("Tip framing\nthrough PR #155"),
+        "the uniqueness section must not freeze tip framing at PR #155"
+    );
+    assert!(
         !section.contains("Tip framing\nthrough PR #153"),
         "the uniqueness section must not freeze tip framing at PR #153"
+    );
+    assert!(
+        !section.contains("through PR #158"),
+        "the uniqueness section must not claim tip through PR #158"
     );
     assert!(
         !section.contains("\"completion\""),
@@ -2159,14 +2342,26 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -2216,12 +2411,20 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #155"),
-        "GATE-90 header must stay through PR #155: {gate_head}"
+        gate_head.contains("through PR #157"),
+        "GATE-90 header must stay through PR #157: {gate_head}"
     );
     assert!(
-        gate_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {gate_head}"
+        gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {gate_head}"
     );
     assert!(
         !gate_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -2244,7 +2447,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " Standing next (estate) after import-trained");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
     let slice = changelog
         .split("## This slice — Target C live uniqueness prove on a 5090-class host")
         .nth(1)
@@ -2464,12 +2667,20 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #155"),
-        "GATE-90 header must keep tip through PR #155: {gate_head}"
+        gate_head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {gate_head}"
     );
     assert!(
-        gate_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "GATE-90 header must keep the PR #155 tip SHA: {gate_head}"
+        gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #158"),
+        "GATE-90 header must not claim tip through PR #158: {gate_head}"
     );
     assert!(
         !gate_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -2508,14 +2719,26 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     assert!(row.contains("reconcile"), "{row}");
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #155"),
-        "status header must keep tip through PR #155"
+        status_head.contains("through PR #157"),
+        "status header must keep tip through PR #157"
     );
     assert!(
-        status_head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 tip SHA"
+        status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "status header must keep the PR #157 tip SHA"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #155"),
+        "status header must not freeze the snapshot at PR #155"
+    );
+    assert!(
+        !status_head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "status header must not freeze tip at PR #155 with the old tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #158"),
+        "status header must not claim tip through PR #158"
     );
     assert!(
         !status_head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
@@ -2593,7 +2816,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " Standing next (estate) after import-trained");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
     let standing = changelog
         .split("## This slice — Standing next (estate) after import-trained")
         .nth(1)
