@@ -834,7 +834,10 @@ tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
 That prints ollama create for cell-enrich-<pack-id>. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
 file. --runtime llama.cpp selects those lines. It does not create the
-model and does not run llama.cpp.
+model and does not run llama.cpp. After that print, run the printed
+ollama create line yourself. The same step stands when you already
+ran ollama create outside this factory. This factory did not run
+ollama create. The standing next step records that GGUF.
 
   estate enrich import-trained --estate <your-estate.yaml> \\
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
@@ -842,8 +845,9 @@ model and does not run llama.cpp.
     --adapter .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 
 import-trained records trained_shape and trained_paths. The GGUF
-shape is gguf. outputs/ records adapter. export/ records merged.
-It does not apply and does not promote. Opt-in ladder check:
+shape is gguf. The proposal stays auto_apply=false. outputs/ records
+adapter. export/ records merged. import-trained does not apply the
+estate and does not promote. Opt-in ladder check:
 make qlora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer
 and does not convert. Not in make smoke, make gate-90, or Actions.
@@ -899,7 +903,10 @@ tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
 That prints ollama create for cell-enrich-<pack-id>. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
 file. --runtime llama.cpp selects those lines. It does not create the
-model and does not run llama.cpp.
+model and does not run llama.cpp. After that print, run the printed
+ollama create line yourself. The same step stands when you already
+ran ollama create outside this factory. This factory did not run
+ollama create. The standing next step records that GGUF.
 
   estate enrich import-trained --estate <your-estate.yaml> \\
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
@@ -907,8 +914,9 @@ model and does not run llama.cpp.
     --adapter .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
 
 import-trained records trained_shape and trained_paths. The GGUF
-shape is gguf. outputs/ records adapter. export/ records merged.
-It does not apply and does not promote. Opt-in ladder check:
+shape is gguf. The proposal stays auto_apply=false. outputs/ records
+adapter. export/ records merged. import-trained does not apply the
+estate and does not promote. Opt-in ladder check:
 make lora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer,
 does not merge, and does not convert. Not in make smoke, make gate-90,
@@ -952,12 +960,17 @@ It does not convert.
 
 That prints ollama create for cell-enrich-<pack-id>, plus
 llama-cli -m and llama-server -m. It does not create the model.
+After that print, run the printed ollama create line yourself.
+The same step stands when you already ran ollama create outside
+this factory. This factory did not run ollama create. The standing
+next step records that GGUF.
 
   estate enrich import-trained --estate <your-estate.yaml> \\
     --prepared <prepared> --tag cell-enrich-<pack-id> \\
     --adapter <prepared>/export.gguf
 
-import-trained records trained_shape gguf. It does not apply.
+import-trained records trained_shape gguf. The proposal stays
+auto_apply=false. import-trained does not apply the estate.
 The script prints SKIP live train, SKIP live convert, and
 SKIP live seat. CELL_SEAT_LIVE=1 does not run those programs.
 Not in make smoke, make gate-90, or Actions.

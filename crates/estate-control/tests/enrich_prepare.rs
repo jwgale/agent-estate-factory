@@ -86,6 +86,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("make qlora-journey"), "{body}");
         assert!(body.contains("make lora-journey"), "{body}");
         assert!(body.contains("make seat-journey"), "{body}");
+        assert!(body.contains("standing next step"), "{body}");
+        assert!(body.contains("auto_apply=false"), "{body}");
+        assert!(body.contains("did not run ollama create"), "{body}");
+        assert!(body.contains("does not apply the estate"), "{body}");
         assert!(
             body.contains("section 10, Target C seat ladder"),
             "{body}"
@@ -836,6 +840,10 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         "gguf-convert",
         "local-seat",
         "import-trained",
+        "standing next step",
+        "auto_apply=false",
+        "did not run ollama create",
+        "does not apply the estate",
         "python3 convert_hf_to_gguf.py",
         "--outtype auto",
         "ollama create",
