@@ -286,7 +286,7 @@ fn load_tokenizer_config(
             path.display()
         ))),
         Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
-            "refuse:tokenizer: {} is a symlink. enrich does not follow a symlinked tokenizer_config.json. {}",
+            "refuse:tokenizer: {} is a symlink. {}",
             path.display(),
             tokenizer_restore_sentence(train_base.unwrap_or(""))
         ))),
@@ -1625,8 +1625,10 @@ mod tests {
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
         assert!(text.contains("is a symlink"), "{text}");
-        assert!(
-            text.contains("does not follow a symlinked tokenizer_config.json"),
+        assert_eq!(
+            text.matches("does not follow a symlinked tokenizer_config.json")
+                .count(),
+            1,
             "{text}"
         );
         assert_names_hf_cache_restore(&text);

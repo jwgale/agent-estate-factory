@@ -1614,7 +1614,8 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
             && section_10.contains("real files, not symlinks")
             && section_10.contains("plain `cp -a`")
             && section_10.contains("does not follow a symlinked")
-            && section_10.contains("re-running `estate enrich gguf-convert`"),
+            && section_10.contains("Then re-run `estate enrich gguf-convert`.")
+            && section_10.contains("The refuse does not print `python3 convert_hf_to_gguf.py`."),
         "section 10 must name the HF cache restore, the dereference copy, and the gguf-convert re-run"
     );
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();

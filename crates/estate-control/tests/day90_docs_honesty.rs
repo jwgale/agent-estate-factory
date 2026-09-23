@@ -1295,8 +1295,43 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     let source =
         std::fs::read_to_string(root.join("crates/model-estate/src/gguf_convert.rs")).unwrap();
     assert!(
-        source.contains("is a symlink. enrich does not follow a symlinked tokenizer_config.json."),
+        source.contains("refuse:tokenizer: {} is a symlink. {}"),
         "symlink refuse must stay fail-closed"
+    );
+    assert!(
+        !source.contains("is a symlink. enrich does not follow a symlinked tokenizer_config.json."),
+        "symlink refuse must not repeat the restore sentence"
+    );
+    assert!(
+        source.contains("enrich does not follow a symlinked tokenizer_config.json"),
+        "the restore sentence must keep the fail-closed follow clause"
+    );
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(
+        train.contains("names that tokenizer restore when `extra_special_tokens` is a JSON list"),
+        "the merge-adapt when-clause must scope the restore"
+    );
+    assert!(
+        !train.contains("re-run `estate enrich gguf-convert` when `extra_special_tokens`"),
+        "the re-run must not be scoped to the bad tokenizer shape"
+    );
+    let journeys =
+        std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section_10 = journeys
+        .split("## 10. Target C seat ladder")
+        .nth(1)
+        .expect("section 10");
+    assert!(
+        section_10.contains("Then re-run `estate enrich gguf-convert`."),
+        "{section_10}"
+    );
+    assert!(
+        section_10.contains("The refuse does not print `python3 convert_hf_to_gguf.py`."),
+        "{section_10}"
+    );
+    assert!(
+        !section_10.contains("Then re-running"),
+        "section 10 must use an imperative re-run"
     );
     assert!(
         source.contains("meta.file_type().is_symlink()"),
