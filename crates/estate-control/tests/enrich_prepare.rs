@@ -121,6 +121,10 @@ fn help_enrich_and_train_name_the_seam() {
             body.contains("examples/fixtures/glm4-chat.pack.json"),
             "{body}"
         );
+        assert!(
+            body.contains("examples/fixtures/glm4-chat-lora.pack.json"),
+            "{body}"
+        );
         assert!(body.contains("zai-org/glm-4-9b-chat"), "{body}");
         assert!(
             body.contains("examples/fixtures/deepseek-r1-distill.pack.json"),
@@ -629,6 +633,28 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(
         train_script.contains("glm4 prepare took the DeepSeek-R1-Distill QLoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/glm4-chat-lora.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the GLM-4 Chat QLoRA prepare."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("glm4 QLoRA prepare took the GLM-4 Chat LoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("glm4 LoRA fixture prepare wrote the QLoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("glm4 LoRA fixture on the QLoRA card wrote the LoRA reproduce note"),
         "{train_script}"
     );
     assert!(

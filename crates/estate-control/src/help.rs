@@ -556,12 +556,16 @@ that pack is a reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral,
 Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat and still
 writes quantization_method bnb and quantization_bit 4. That reproduce
 line is on llamafactory-qlora and only for those GLM-4 Chat ids.
-llamafactory-lora on the same ids writes template glm4, lora_rank 8,
-packing false, and no quantization_bit or quantization_method. It does
-not get that QLoRA line. This card does not add the LoRA twin.
-The smoke seat tag is llama3. An Ollama tag such as glm4, glm4:9b, or
-glm-4:9b is a seat tag for this checkpoint. It is not the Hugging Face
-train base.
+examples/fixtures/glm4-chat-lora.pack.json is the GLM-4 Chat LoRA smoke
+pack. --driver llamafactory-lora on that pack is the non-quant twin of
+that QLoRA prepare. It writes template glm4, lora_rank 8, packing false,
+and no quantization_bit or quantization_method. examples/train_lora does
+not ship a GLM-4 yaml. That reproduce line is LoRA-only and only for
+those GLM-4 Chat ids. The QLoRA note stays on llamafactory-qlora. A
+GLM-4 base, GLM-Z1, GLM-4.1V, and GLM-4.5 do not get that LoRA line.
+DeepSeek-R1-Distill chat does not get that LoRA line. The smoke seat
+tag is llama3. An Ollama tag such as glm4, glm4:9b, or glm-4:9b is a
+seat tag for this checkpoint. It is not the Hugging Face train base.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
