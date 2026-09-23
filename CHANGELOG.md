@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — dataset scaffold is honest, and `--from-feed` copies rows already on disk
+
+- Default `llamafactory-qlora` and `axolotl-lora` prepare still writes a scaffold `dataset.jsonl` (or a three-row stub when `source_paths` is empty). `prepare.json` records `dataset_mode`, `dataset_rows`, `dataset_from_feed` false, `dataset_skipped`, and `dataset_read_paths`. `PREPARE.md` and `NEXT.md` on both cards say those rows are not training data and name `refuse:dataset`.
+- `--from-feed` reads pack `source_paths` under `--state-dir` and copies instruct rows. ShareGPT `messages`, Alpaca `instruction` / `output`, and a scrubbed feed event with a `note` are the shapes it accepts. Events with no note are skipped. A missing file, a path outside the cell directory, or a line that is not an instruct row is `refuse:dataset` and writes nothing. Sacred, SKU, raw secret, and frontier-without-a-binding still refuse. This factory does not download pack sources and does not train.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Axolotl train base matches the seat split
 
 - `axolotl-lora` writes `base_model` in `axolotl.yml` from the train base (pack `train_base_model`, or `params.train_base_model` on the local binding; the pack wins). That value is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. A relative directory is stored as an absolute path.

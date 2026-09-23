@@ -12,8 +12,8 @@
 use crate::error::ModelError;
 use estate_schema::{contains_sku, is_sacred_name, Estate};
 use feed_collector::{
-    refuse_curator, refuse_frontier_source_on_estate, refuse_pack, refuse_raw_secrets, FeedError,
-    PackManifest,
+    classify_path, refuse_curator, refuse_frontier_source_on_estate, refuse_pack,
+    refuse_raw_secrets, FeedError, PackManifest, ScrubbedEvent,
 };
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -97,6 +97,8 @@ pub struct EnrichJob {
     pub out_dir: PathBuf,
     /// Explicit gauge cap for the LLaMA-Factory recipe. `None` leaves `max_steps` unset.
     pub max_steps: Option<u32>,
+    /// Train recipe cards set this. Other cards leave it unset.
+    pub dataset: Option<DatasetMaterial>,
 }
 
 pub struct DriverPrepare {
@@ -311,12 +313,13 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
         }
         let train_owned = require_train_base(job)?;
         let train_base = train_owned.as_str();
-        let (dataset, stub) = chat_dataset_jsonl(job)?;
-        let recipe = llamafactory_recipe_yaml(job, stub, train_base);
+        let data = require_dataset(job)?;
+        let dataset = data.chat_jsonl.clone();
+        let recipe = llamafactory_recipe_yaml(job, &data.mode, train_base);
         let export = llamafactory_export_yaml(job, train_base);
         let info = llamafactory_dataset_info();
         let host = llamafactory_host_note(&job.host_class_affinity);
-        let data_note = llamafactory_dataset_note(stub, &job.source_paths);
+        let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
         let template = llamafactory_template(train_base);
         let gauge = llamafactory_gauge_note(job.max_steps);
         let steps = format!(
@@ -385,10 +388,11 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
         }
         let train_owned = require_train_base(job)?;
         let train_base = train_owned.as_str();
-        let (dataset, stub) = axolotl_dataset_jsonl(job)?;
-        let yaml = axolotl_recipe_yaml(job, stub, train_base);
+        let data = require_dataset(job)?;
+        let dataset = data.alpaca_jsonl.clone();
+        let yaml = axolotl_recipe_yaml(job, &data.mode, train_base);
         let host = axolotl_host_note(&job.host_class_affinity);
-        let data_note = axolotl_dataset_note(stub, &job.source_paths);
+        let data_note = dataset_card_note(ALPACA_DATASET_SHAPE, data);
         let steps = format!(
             "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, did not download weights, and did not rewrite the estate.\n\
              \n\
@@ -462,7 +466,42 @@ pub struct EnrichPrepareDoc {
     pub auto_apply: bool,
     pub estate_rewritten: bool,
     pub note: String,
+    /// `stub`, `scaffold`, or `feed`. Present on the train recipe cards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset_mode: Option<String>,
+    /// Rows written to `dataset.jsonl`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset_rows: Option<usize>,
+    /// True when `--from-feed` copied those rows from disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset_from_feed: Option<bool>,
+    /// Scrubbed feed events left out because they had no note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset_skipped: Option<usize>,
+    /// Pack source paths actually read. Empty when the file is still a scaffold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset_read_paths: Option<Vec<String>>,
 }
+
+/// How `dataset.jsonl` was built for a train recipe card.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatasetMaterial {
+    pub mode: String,
+    pub rows: usize,
+    pub skipped: usize,
+    pub read_paths: Vec<String>,
+    pub chat_jsonl: String,
+    pub alpaca_jsonl: String,
+    /// Shared honesty paragraph for PREPARE.md and NEXT.md.
+    pub note: String,
+}
+
+const DATASET_STUB: &str = "stub";
+const DATASET_SCAFFOLD: &str = "scaffold";
+const DATASET_FEED: &str = "feed";
+/// Local read cap. Prepare does not stream a trainer and does not download.
+const DATASET_MAX_BYTES: u64 = 8 * 1024 * 1024;
+const DATASET_MAX_ROWS: usize = 4096;
 
 pub struct PrepareEnrichRequest<'a> {
     pub estate: &'a Estate,
@@ -473,6 +512,10 @@ pub struct PrepareEnrichRequest<'a> {
     pub out_dir: &'a Path,
     /// LLaMA-Factory gauge cap. `None` leaves `max_steps` off the recipe.
     pub max_steps: Option<u32>,
+    /// Copy instruct rows from pack `source_paths` under `state_dir`.
+    pub from_feed: bool,
+    /// Cell state directory. Pack source paths are relative to this directory.
+    pub state_dir: &'a Path,
 }
 
 pub fn train_enrich_catalog() -> Vec<TrainEnrichCard> {
@@ -626,6 +669,15 @@ pub fn prepare_enrich_set(
             "refuse:driver: no train/enrich drivers to prepare".into(),
         ));
     }
+    if reqs.iter().any(|req| req.from_feed)
+        && !reqs
+            .iter()
+            .any(|req| is_train_recipe_driver(req.driver_id))
+    {
+        return Err(ModelError::Other(
+            "refuse:dataset: --from-feed applies to llamafactory-qlora and axolotl-lora. This prepare has no train recipe card. Omit --from-feed to keep the other cards.".into(),
+        ));
+    }
     let mut drivers = BTreeSet::new();
     let mut outs = BTreeSet::new();
     for req in reqs {
@@ -671,6 +723,9 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     let mut job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
     refuse_job_text(&job)?;
     canonicalize_recipe_train_base(req.driver_id, &mut job)?;
+    if is_train_recipe_driver(req.driver_id) {
+        job.dataset = Some(materialize_dataset(req, &job)?);
+    }
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
     let prepared = driver.prepare(&job)?;
@@ -700,6 +755,11 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         auto_apply: false,
         estate_rewritten: false,
         note: PREPARE_NOTE.into(),
+        dataset_mode: job.dataset.as_ref().map(|data| data.mode.clone()),
+        dataset_rows: job.dataset.as_ref().map(|data| data.rows),
+        dataset_from_feed: job.dataset.as_ref().map(|data| data.mode == DATASET_FEED),
+        dataset_skipped: job.dataset.as_ref().map(|data| data.skipped),
+        dataset_read_paths: job.dataset.as_ref().map(|data| data.read_paths.clone()),
     };
     let prepare_json = to_pretty(&doc)?;
     files.push(("prepare.json".into(), prepare_json));
@@ -890,6 +950,7 @@ fn enrich_job(
         source_drivers: pack.source_drivers.clone(),
         out_dir: absolute_path(out_dir),
         max_steps,
+        dataset: None,
     };
     Ok(job)
 }
@@ -1066,6 +1127,16 @@ fn prepare_markdown(driver_id: &str, job: &EnrichJob, steps: &str) -> String {
         Some(train) => format!("Seat tag: {}\nTrain base: {train}\n", job.base_model),
         None => String::new(),
     };
+    let dataset_lines = match job.dataset.as_ref() {
+        Some(data) => format!(
+            "Dataset mode: {}\nDataset rows: {}\nDataset from feed: {}\nDataset skipped: {}\n",
+            data.mode,
+            data.rows,
+            data.mode == DATASET_FEED,
+            data.skipped,
+        ),
+        None => String::new(),
+    };
     format!(
         "# Enrich prepare ({driver_id})\n\n\
          Pack: {pack}\n\
@@ -1073,6 +1144,7 @@ fn prepare_markdown(driver_id: &str, job: &EnrichJob, steps: &str) -> String {
          Driver: {driver_id}\n\
          Base ref: {base}\n\
          {train_lines}\
+         {dataset_lines}\
          Host class affinity: {host}\n\
          Source drivers: {drivers}\n\
          Promoted: false\n\
@@ -1194,7 +1266,7 @@ fn next_markdown(
                  \n\
                  axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
                 host = llamafactory_host_note(&job.host_class_affinity),
-                dataset = llamafactory_dataset_note(job.source_paths.is_empty(), &job.source_paths),
+                dataset = train_dataset_blurb(job, CHAT_DATASET_SHAPE),
                 seat = job.base_model,
                 train = train_base,
                 template = template,
@@ -1232,7 +1304,7 @@ fn next_markdown(
                  llamafactory-qlora is the durable LLaMA-Factory recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
-                dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
+                dataset = train_dataset_blurb(job, ALPACA_DATASET_SHAPE),
                 seat = job.base_model,
                 train = train_base,
             ),
@@ -1334,25 +1406,67 @@ fn llamafactory_host_note(affinity: &str) -> String {
     cuda_train_host_note(LLAMAFACTORY_QLORA_ID, affinity, "llamafactory-cli train")
 }
 
-fn axolotl_dataset_note(stub: bool, paths: &[String]) -> String {
-    if stub {
-        "dataset.jsonl is a stub of example rows because the pack source_paths list is empty. Replace those rows before axolotl train. This factory did not download a dataset.".into()
-    } else {
-        format!(
-            "dataset.jsonl is a scaffold. Each row names a pack source path ({}). Copy real completions into those rows. This factory did not read or download those files.",
-            paths.join(", ")
-        )
+const CHAT_DATASET_SHAPE: &str =
+    "dataset.jsonl is instruct chat JSONL (messages of role and content).";
+const ALPACA_DATASET_SHAPE: &str =
+    "dataset.jsonl is Alpaca JSONL (instruction, input, output).";
+
+fn require_dataset(job: &EnrichJob) -> Result<&DatasetMaterial, ModelError> {
+    job.dataset.as_ref().ok_or_else(|| {
+        ModelError::Other("refuse:dataset: train recipe has no dataset plan".into())
+    })
+}
+
+fn dataset_card_note(shape: &str, data: &DatasetMaterial) -> String {
+    format!("{shape}\n\n{}", data.note)
+}
+
+fn train_dataset_blurb(job: &EnrichJob, shape: &str) -> String {
+    match job.dataset.as_ref() {
+        Some(data) => dataset_card_note(shape, data),
+        None => "dataset_mode: missing. refuse:dataset: train recipe has no dataset plan.".into(),
     }
 }
 
-fn llamafactory_dataset_note(stub: bool, paths: &[String]) -> String {
-    if stub {
-        "dataset.jsonl is a stub of example instruct chats because the pack source_paths list is empty. Replace those rows before llamafactory-cli train. This factory did not download a dataset.".into()
+fn dataset_honesty_note(
+    mode: &str,
+    paths: &[String],
+    rows: usize,
+    skipped: usize,
+    state_dir: &Path,
+) -> String {
+    let listed = if paths.is_empty() {
+        "(none)".to_string()
     } else {
-        format!(
-            "dataset.jsonl is an instruct chat scaffold. Each row names a pack source path ({}). Copy real assistant replies into those rows. This factory did not read or download those files.",
-            paths.join(", ")
-        )
+        paths.join(", ")
+    };
+    let example = paths
+        .first()
+        .map(|path| state_dir.join(path))
+        .unwrap_or_else(|| state_dir.join("feed/events.jsonl"));
+    match mode {
+        DATASET_STUB => "dataset_mode: stub. dataset.jsonl is a stub of example rows because the pack source_paths list is empty. These rows are not training data. Replace them before train. This factory did not download a dataset. Add source_paths that already exist under the cell state directory and prepare again with --from-feed. A missing file with --from-feed is refuse:dataset. Omit --from-feed to keep this stub.".into(),
+        DATASET_SCAFFOLD => format!(
+            "dataset_mode: scaffold. dataset.jsonl names pack source paths ({listed}) and does not contain their rows. These rows are not training data. This factory did not read those files and did not download them. Replace the rows before train, or prepare again with --from-feed when each path is already a file under the cell state directory (for example {}). A missing file with --from-feed is refuse:dataset. Omit --from-feed to keep this scaffold.",
+            example.display()
+        ),
+        DATASET_FEED => {
+            let row_word = if rows == 1 {
+                "instruct row"
+            } else {
+                "instruct rows"
+            };
+            let skipped_sentence = if skipped == 1 {
+                "1 scrubbed feed event had no note and was left out".to_string()
+            } else {
+                format!("{skipped} scrubbed feed events had no note and were left out")
+            };
+            format!(
+                "dataset_mode: feed. dataset.jsonl has {rows} {row_word} copied from {listed} under {}. {skipped_sentence}. This factory did not download a dataset and did not invent a completion. ShareGPT messages and Alpaca instruction/output lines are copied. A scrubbed feed event becomes a row only when its note is present. A file that is missing, unreadable, or outside the cell state directory is refuse:dataset.",
+                state_dir.display()
+            )
+        }
+        other => format!("dataset_mode: {other}. refuse:dataset: unknown dataset mode."),
     }
 }
 
@@ -1520,6 +1634,466 @@ fn chat_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
         body.push('\n');
     }
     Ok((body, stub))
+}
+
+#[derive(Serialize)]
+struct AlpacaOwned {
+    instruction: String,
+    input: String,
+    output: String,
+}
+
+struct HydratedRow {
+    chat: ChatRow,
+    alpaca: AlpacaOwned,
+}
+
+enum InstructLine {
+    Row(HydratedRow),
+    Skip,
+}
+
+fn jsonl_row_count(body: &str) -> usize {
+    body.lines().filter(|line| !line.trim().is_empty()).count()
+}
+
+fn append_jsonl(body: &mut String, row: &impl Serialize) -> Result<(), ModelError> {
+    let line = serde_json::to_string(row)
+        .map_err(|err| ModelError::Other(format!("refuse:dataset: serialize row: {err}")))?;
+    body.push_str(&line);
+    body.push('\n');
+    Ok(())
+}
+
+/// Default prepare keeps the scaffold. `--from-feed` copies rows already on disk.
+fn materialize_dataset(
+    req: &PrepareEnrichRequest<'_>,
+    job: &EnrichJob,
+) -> Result<DatasetMaterial, ModelError> {
+    refuse_blank_source_paths(&job.source_paths)?;
+    if req.from_feed {
+        return hydrate_dataset(req, job);
+    }
+    let stub = job.source_paths.is_empty();
+    let (chat_jsonl, _) = chat_dataset_jsonl(job)?;
+    let (alpaca_jsonl, _) = axolotl_dataset_jsonl(job)?;
+    let mode = if stub { DATASET_STUB } else { DATASET_SCAFFOLD };
+    let rows = jsonl_row_count(&chat_jsonl);
+    Ok(DatasetMaterial {
+        mode: mode.to_string(),
+        rows,
+        skipped: 0,
+        read_paths: Vec::new(),
+        chat_jsonl,
+        alpaca_jsonl,
+        note: dataset_honesty_note(mode, &job.source_paths, rows, 0, req.state_dir),
+    })
+}
+
+fn hydrate_dataset(
+    req: &PrepareEnrichRequest<'_>,
+    job: &EnrichJob,
+) -> Result<DatasetMaterial, ModelError> {
+    if job.source_paths.is_empty() {
+        return Err(ModelError::Other(
+            "refuse:dataset: --from-feed needs pack source_paths. The list is empty. This factory does not download a dataset. Omit --from-feed to keep the stub.".into(),
+        ));
+    }
+    let mut rows = Vec::new();
+    let mut skipped = 0usize;
+    for relative in &job.source_paths {
+        let file = feed_source_file(req.state_dir, relative)?;
+        let text = std::fs::read_to_string(&file).map_err(|err| {
+            ModelError::Other(format!(
+                "refuse:dataset: cannot read {}: {err}",
+                file.display()
+            ))
+        })?;
+        let (found, skip) = parse_instruct_file(req.estate, relative, &text)?;
+        skipped += skip;
+        rows.extend(found);
+        if rows.len() > DATASET_MAX_ROWS {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: {relative} exceeds {DATASET_MAX_ROWS} instruct rows. Prepare does not stream a trainer and does not download a dataset."
+            )));
+        }
+    }
+    if rows.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {} has no instruct rows ({skipped} scrubbed feed events had no note). A line is an instruct row when it is ShareGPT messages, Alpaca instruction and output, or a scrubbed feed event with a note. This factory does not invent a completion and does not download a dataset.",
+            job.source_paths.join(", ")
+        )));
+    }
+    let mut chat_jsonl = String::new();
+    let mut alpaca_jsonl = String::new();
+    for row in &rows {
+        append_jsonl(&mut chat_jsonl, &row.chat)?;
+        append_jsonl(&mut alpaca_jsonl, &row.alpaca)?;
+    }
+    let count = rows.len();
+    Ok(DatasetMaterial {
+        mode: DATASET_FEED.to_string(),
+        rows: count,
+        skipped,
+        read_paths: job.source_paths.clone(),
+        chat_jsonl,
+        alpaca_jsonl,
+        note: dataset_honesty_note(
+            DATASET_FEED,
+            &job.source_paths,
+            count,
+            skipped,
+            req.state_dir,
+        ),
+    })
+}
+
+fn feed_source_file(state_dir: &Path, relative: &str) -> Result<PathBuf, ModelError> {
+    let relative = relative.trim();
+    if relative.is_empty() {
+        return Err(ModelError::Other(
+            "refuse:dataset: source path is empty".into(),
+        ));
+    }
+    if Path::new(relative).is_absolute() || relative.contains("..") || relative.contains('\\') {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: source path '{relative}' is not a relative path under the cell state directory. This factory does not download pack sources."
+        )));
+    }
+    let root = absolute_path(state_dir);
+    let candidate = root.join(relative);
+    if !candidate.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} is not a file at {}. Place that pack source under the cell state directory, or omit --from-feed to keep the scaffold. This factory does not download pack sources.",
+            candidate.display()
+        )));
+    }
+    let root_canon = std::fs::canonicalize(&root).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:dataset: cannot resolve cell state directory {}: {err}",
+            root.display()
+        ))
+    })?;
+    let file_canon = std::fs::canonicalize(&candidate).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:dataset: cannot resolve {relative} at {}: {err}",
+            candidate.display()
+        ))
+    })?;
+    if !file_canon.starts_with(&root_canon) {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} resolves outside the cell state directory {}. This factory does not read pack sources outside that directory and does not download them.",
+            root_canon.display()
+        )));
+    }
+    let bytes = std::fs::metadata(&file_canon)
+        .map_err(|err| {
+            ModelError::Other(format!(
+                "refuse:dataset: cannot stat {}: {err}",
+                file_canon.display()
+            ))
+        })?
+        .len();
+    if bytes > DATASET_MAX_BYTES {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} is {bytes} bytes. Prepare reads at most {DATASET_MAX_BYTES} bytes per source and does not download a dataset."
+        )));
+    }
+    Ok(file_canon)
+}
+
+fn parse_instruct_file(
+    estate: &Estate,
+    relative: &str,
+    text: &str,
+) -> Result<(Vec<HydratedRow>, usize), ModelError> {
+    let mut rows = Vec::new();
+    let mut skipped = 0usize;
+    for (idx, line) in text.lines().enumerate() {
+        let line_no = idx + 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(trimmed).map_err(|err| {
+            ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} is not JSON: {err}"
+            ))
+        })?;
+        if !value.is_object() {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} is not a JSON object. Accepted lines are ShareGPT messages, Alpaca instruction and output, or a scrubbed feed event."
+            )));
+        }
+        match classify_instruct_line(estate, relative, line_no, &value)? {
+            InstructLine::Row(row) => {
+                refuse_hydrated_text(relative, line_no, &row)?;
+                rows.push(row);
+            }
+            InstructLine::Skip => skipped += 1,
+        }
+    }
+    Ok((rows, skipped))
+}
+
+fn classify_instruct_line(
+    estate: &Estate,
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<InstructLine, ModelError> {
+    if value.get("messages").is_some() {
+        return Ok(InstructLine::Row(chat_source_row(relative, line_no, value)?));
+    }
+    if value.get("instruction").is_some() {
+        return Ok(InstructLine::Row(alpaca_source_row(
+            relative, line_no, value,
+        )?));
+    }
+    if value.get("kind").is_some() {
+        return event_source_line(estate, relative, line_no, value);
+    }
+    Err(ModelError::Other(format!(
+        "refuse:dataset: {relative} line {line_no} is not an instruct row. Accepted lines are ShareGPT messages, Alpaca instruction and output, or a scrubbed feed event with a note."
+    )))
+}
+
+fn chat_source_row(
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<HydratedRow, ModelError> {
+    let messages = value.get("messages").and_then(|item| item.as_array()).ok_or_else(|| {
+        ModelError::Other(format!(
+            "refuse:dataset: {relative} line {line_no} messages is not an array"
+        ))
+    })?;
+    if messages.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} line {line_no} messages is empty"
+        )));
+    }
+    let mut turns = Vec::new();
+    let mut users = 0usize;
+    let mut assistants = 0usize;
+    for item in messages {
+        let role = item.get("role").and_then(|value| value.as_str()).unwrap_or("").trim();
+        let content = item
+            .get("content")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim();
+        let role = match role {
+            "system" => "system",
+            "user" => "user",
+            "assistant" => "assistant",
+            other => {
+                return Err(ModelError::Other(format!(
+                    "refuse:dataset: {relative} line {line_no} has role '{other}'. Roles are system, user, and assistant."
+                )));
+            }
+        };
+        if content.is_empty() {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} has an empty {role} message"
+            )));
+        }
+        if role == "user" {
+            users += 1;
+        }
+        if role == "assistant" {
+            assistants += 1;
+        }
+        turns.push(ChatTurn {
+            role,
+            content: content.to_string(),
+        });
+    }
+    if users == 0 || assistants == 0 {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} line {line_no} needs a user message and an assistant message"
+        )));
+    }
+    let alpaca = alpaca_from_turns(&turns);
+    Ok(HydratedRow {
+        chat: ChatRow { messages: turns },
+        alpaca,
+    })
+}
+
+fn alpaca_source_row(
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<HydratedRow, ModelError> {
+    let instruction = value
+        .get("instruction")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .trim();
+    let output = value
+        .get("output")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .trim();
+    let input = value
+        .get("input")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .trim();
+    if instruction.is_empty() || output.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} line {line_no} needs a non-empty instruction and output"
+        )));
+    }
+    let user = if input.is_empty() {
+        instruction.to_string()
+    } else {
+        format!("{instruction}\n\n{input}")
+    };
+    Ok(HydratedRow {
+        chat: chat_row(user, output.to_string()),
+        alpaca: AlpacaOwned {
+            instruction: instruction.to_string(),
+            input: input.to_string(),
+            output: output.to_string(),
+        },
+    })
+}
+
+fn event_source_line(
+    estate: &Estate,
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<InstructLine, ModelError> {
+    let kind = match value.get("kind") {
+        Some(serde_json::Value::String(kind)) if !kind.trim().is_empty() => kind.trim().to_string(),
+        Some(serde_json::Value::String(_)) => {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} kind is empty"
+            )));
+        }
+        _ => {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: {relative} line {line_no} kind is not a string"
+            )));
+        }
+    };
+    let event = ScrubbedEvent {
+        kind,
+        agent_id: optional_text(value, "agent_id", relative, line_no)?,
+        decision: optional_text(value, "decision", relative, line_no)?,
+        object_class: optional_text(value, "object_class", relative, line_no)?,
+        note: optional_text(value, "note", relative, line_no)?,
+        ts: optional_text(value, "ts", relative, line_no)?.unwrap_or_default(),
+    };
+    if classify_path(&event) == "frontier" {
+        refuse_frontier_source_on_estate(&["frontier".to_string()], estate).map_err(map_feed)?;
+    }
+    let Some(note) = event.note.clone() else {
+        return Ok(InstructLine::Skip);
+    };
+    let instruction = event_instruction(&event);
+    Ok(InstructLine::Row(HydratedRow {
+        chat: chat_row(instruction.clone(), note.clone()),
+        alpaca: AlpacaOwned {
+            instruction,
+            input: String::new(),
+            output: note,
+        },
+    }))
+}
+
+fn optional_text(
+    value: &serde_json::Value,
+    key: &str,
+    relative: &str,
+    line_no: usize,
+) -> Result<Option<String>, ModelError> {
+    match value.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(text)) => {
+            let text = text.trim();
+            if text.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(text.to_string()))
+            }
+        }
+        Some(_) => Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} line {line_no} field {key} is not a string"
+        ))),
+    }
+}
+
+fn event_instruction(event: &ScrubbedEvent) -> String {
+    let mut parts = vec![format!("kind={}", event.kind.trim())];
+    if let Some(class) = event
+        .object_class
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("class={class}"));
+    }
+    if let Some(decision) = event
+        .decision
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("decision={decision}"));
+    }
+    if let Some(agent) = event
+        .agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("agent={agent}"));
+    }
+    parts.join(" ")
+}
+
+fn alpaca_from_turns(turns: &[ChatTurn]) -> AlpacaOwned {
+    let mut instruction = String::new();
+    let mut output = String::new();
+    for turn in turns {
+        let bucket = if turn.role == "assistant" {
+            &mut output
+        } else {
+            &mut instruction
+        };
+        if !bucket.is_empty() {
+            bucket.push_str("\n\n");
+        }
+        bucket.push_str(&turn.content);
+    }
+    AlpacaOwned {
+        instruction,
+        input: String::new(),
+        output,
+    }
+}
+
+fn refuse_hydrated_text(relative: &str, line_no: usize, row: &HydratedRow) -> Result<(), ModelError> {
+    let field = format!("{relative} line {line_no}");
+    refuse_sacred_and_sku(&field, &row.alpaca.instruction)?;
+    refuse_sacred_and_sku(&field, &row.alpaca.input)?;
+    refuse_sacred_and_sku(&field, &row.alpaca.output)?;
+    for turn in &row.chat.messages {
+        refuse_sacred_and_sku(&field, &turn.content)?;
+        refuse_raw_secrets(&turn.content).map_err(|err| {
+            let text = err.to_string();
+            if text.starts_with("refuse:") {
+                ModelError::Other(format!("{text} ({field})"))
+            } else {
+                ModelError::Other(format!("refuse:dataset: {field}: {text}"))
+            }
+        })?;
+    }
+    Ok(())
 }
 
 const LLAMAFACTORY_SAVE_STEPS: u32 = 50;
@@ -1848,10 +2422,9 @@ fn llamafactory_dataset_info() -> String {
     )
 }
 
-fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String {
+fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> String {
     let template = llamafactory_template(train_base);
     let outputs = job.out_dir.join("outputs");
-    let scaffold = if stub { "stub" } else { "pack-source-paths" };
     let host = yaml_comment_line(&llamafactory_host_note(&job.host_class_affinity));
     let save_steps = llamafactory_save_steps(job.max_steps);
     let gauge = match job.max_steps {
@@ -1877,7 +2450,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> St
          # template is inferred from the train base. Confirm it matches the model.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
-         # dataset_scaffold: {scaffold}\n\
+         # dataset_mode: {mode}\n\
          # {host}\n\
          # QLoRA is finetuning_type lora plus quantization_bit 4.\n\
          # quantization_method is bnb. That is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch.\n\
@@ -1932,7 +2505,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> St
         dataset_dir = yaml_quote(&job.out_dir.display().to_string()),
         outputs = yaml_quote(&outputs.display().to_string()),
         template = template,
-        scaffold = scaffold,
+        mode = mode,
         host = host,
         save_steps = save_steps,
         gauge = gauge,
@@ -1973,11 +2546,10 @@ fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str) -> String {
     )
 }
 
-fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String {
+fn axolotl_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> String {
     let dataset = job.out_dir.join("dataset.jsonl");
     let prepared = job.out_dir.join("dataset_prepared");
     let outputs = job.out_dir.join("outputs");
-    let scaffold = if stub { "stub" } else { "pack-source-paths" };
     let host = yaml_comment_line(&axolotl_host_note(&job.host_class_affinity));
     format!(
         "# schema: {schema}\n\
@@ -1990,7 +2562,7 @@ fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String 
          # seat_tag is the Ollama id for Modelfile FROM.\n\
          # base_model is the train base: a Hugging Face repo id or a local directory of HF weights.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
-         # dataset_scaffold: {scaffold}\n\
+         # dataset_mode: {mode}\n\
          # {host}\n\
          base_model: {base}\n\
          load_in_8bit: false\n\
@@ -2029,6 +2601,8 @@ fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String 
         dataset = yaml_quote(&dataset.display().to_string()),
         prepared = yaml_quote(&prepared.display().to_string()),
         outputs = yaml_quote(&outputs.display().to_string()),
+        mode = mode,
+        host = host,
     )
 }
 
@@ -3462,7 +4036,58 @@ mod tests {
             job,
             out_dir: out,
             max_steps,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
         })
+    }
+
+    fn run_feed(
+        driver: &str,
+        pack: &PackManifest,
+        estate: &Estate,
+        out: &Path,
+        state_dir: &Path,
+        from_feed: bool,
+    ) -> Result<EnrichPrepareDoc, ModelError> {
+        prepare_enrich(&PrepareEnrichRequest {
+            estate,
+            pack,
+            curator: "jason",
+            driver_id: driver,
+            job: "train",
+            out_dir: out,
+            max_steps: None,
+            from_feed,
+            state_dir,
+        })
+    }
+
+    fn write_fixture_feed(state_dir: &Path) {
+        let feed = state_dir.join("feed");
+        feed_collector::append_event(
+            &feed,
+            &feed_collector::ScrubbedEvent {
+                kind: "model.local.precheck".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: Some("job=policy-precheck".into()),
+                ts: "2026-09-21T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+        feed_collector::append_event(
+            &feed,
+            &feed_collector::ScrubbedEvent {
+                kind: "model.local.skip".into(),
+                agent_id: Some("research".into()),
+                decision: Some("allow".into()),
+                object_class: Some("local".into()),
+                note: None,
+                ts: "2026-09-21T00:00:01Z".into(),
+            },
+        )
+        .unwrap();
     }
 
     #[test]
@@ -3682,6 +4307,18 @@ mod tests {
             prepare_json.contains("\"base_model\": \"llama3\""),
             "{prepare_json}"
         );
+        assert_eq!(doc.dataset_mode.as_deref(), Some("scaffold"));
+        assert_eq!(doc.dataset_from_feed, Some(false));
+        assert_eq!(doc.dataset_rows, Some(1));
+        assert_eq!(doc.dataset_read_paths.as_deref(), Some(&[][..]));
+        assert!(next.contains("dataset_mode: scaffold"), "{next}");
+        assert!(next.contains("refuse:dataset"), "{next}");
+        assert!(next.contains("--from-feed"), "{next}");
+        assert!(next.contains("not training data"), "{next}");
+        assert!(next.contains("did not read"), "{next}");
+        assert!(prepare_md.contains("Dataset mode: scaffold"), "{prepare_md}");
+        assert!(prepare_md.contains("dataset_mode: scaffold"), "{prepare_md}");
+        assert!(recipe.contains("dataset_mode: scaffold"), "{recipe}");
 
         let enrich_out = root.join("enrich-job");
         let err = run(
@@ -3715,6 +4352,21 @@ mod tests {
             stub_next.contains("source_paths list is empty"),
             "{stub_next}"
         );
+        assert!(stub_next.contains("dataset_mode: stub"), "{stub_next}");
+        assert!(stub_next.contains("refuse:dataset"), "{stub_next}");
+        assert!(stub_next.contains("not training data"), "{stub_next}");
+        let stub_prepare = std::fs::read_to_string(stub_out.join("prepare.json")).unwrap();
+        assert!(
+            stub_prepare.contains("\"dataset_mode\": \"stub\""),
+            "{stub_prepare}"
+        );
+        assert!(
+            stub_prepare.contains("\"dataset_from_feed\": false"),
+            "{stub_prepare}"
+        );
+        let stub_md = std::fs::read_to_string(stub_out.join("PREPARE.md")).unwrap();
+        assert!(stub_md.contains("Dataset mode: stub"), "{stub_md}");
+        assert!(stub_md.contains("dataset_mode: stub"), "{stub_md}");
 
         let mut apple = pack.clone();
         apple.host_class_affinity = Some("apple-silicon".into());
@@ -4111,9 +4763,15 @@ mod tests {
         );
         let dataset_path = out.join("dataset.jsonl");
         assert!(yaml.contains(&dataset_path.display().to_string()), "{yaml}");
+        assert!(yaml.contains("dataset_mode: scaffold"), "{yaml}");
+        let ax_prepare = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(
-            yaml.contains("dataset_scaffold: pack-source-paths"),
-            "{yaml}"
+            ax_prepare.contains("\"dataset_mode\": \"scaffold\""),
+            "{ax_prepare}"
+        );
+        assert!(
+            ax_prepare.contains("\"dataset_from_feed\": false"),
+            "{ax_prepare}"
         );
         let jsonl = std::fs::read_to_string(&dataset_path).unwrap();
         assert!(jsonl.contains("feed/events.jsonl"), "{jsonl}");
@@ -4140,6 +4798,15 @@ mod tests {
         assert!(next.contains("unslothai/unsloth"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("consumer-nvidia"), "{next}");
+        assert!(next.contains("dataset_mode: scaffold"), "{next}");
+        assert!(next.contains("refuse:dataset"), "{next}");
+        assert!(next.contains("--from-feed"), "{next}");
+        assert!(next.contains("not training data"), "{next}");
+        let ax_prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        assert!(
+            ax_prepare_md.contains("dataset_mode: scaffold"),
+            "{ax_prepare_md}"
+        );
 
         let relative_raw = "./weights/Qwen2.5-0.5B-Instruct";
         let expected = canonical_train_base(relative_raw, "llama3").unwrap();
@@ -4205,6 +4872,8 @@ mod tests {
                 job: "train",
                 out_dir: dir,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
@@ -4240,6 +4909,8 @@ mod tests {
                 job: "train",
                 out_dir: dir,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             })
             .collect();
         let missing_set = prepare_enrich_set(&missing_reqs).unwrap_err();
@@ -4305,6 +4976,15 @@ mod tests {
         assert!(
             stub_next.contains("source_paths list is empty"),
             "{stub_next}"
+        );
+        assert!(stub_next.contains("dataset_mode: stub"), "{stub_next}");
+        assert!(stub_next.contains("refuse:dataset"), "{stub_next}");
+        let stub_prepare = std::fs::read_to_string(stub_out.join("PREPARE.md")).unwrap();
+        assert!(stub_prepare.contains("dataset_mode: stub"), "{stub_prepare}");
+        let stub_doc = std::fs::read_to_string(stub_out.join("prepare.json")).unwrap();
+        assert!(
+            stub_doc.contains("\"dataset_mode\": \"stub\""),
+            "{stub_doc}"
         );
 
         let mut apple = pack.clone();
@@ -4653,6 +5333,394 @@ mod tests {
     }
 
     #[test]
+    fn from_feed_hydrates_fixture_rows_and_names_refuses() {
+        let root = tmp("from-feed");
+        let pack = fixture_pack();
+        let estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        let state = root.join("cell");
+        write_fixture_feed(&state);
+
+        let quiet = root.join("quiet");
+        let quiet_doc = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &quiet,
+            &state,
+            false,
+        )
+        .unwrap();
+        assert_eq!(quiet_doc.dataset_mode.as_deref(), Some("scaffold"));
+        assert_eq!(quiet_doc.dataset_from_feed, Some(false));
+        let quiet_jsonl = std::fs::read_to_string(quiet.join("dataset.jsonl")).unwrap();
+        assert!(quiet_jsonl.contains("feed/events.jsonl"), "{quiet_jsonl}");
+        assert!(
+            !quiet_jsonl.contains("job=policy-precheck"),
+            "{quiet_jsonl}"
+        );
+        assert!(
+            quiet_jsonl.contains("Replace this scaffold"),
+            "{quiet_jsonl}"
+        );
+
+        let missing_state = root.join("empty-cell");
+        std::fs::create_dir_all(&missing_state).unwrap();
+        let missing_out = root.join("missing");
+        let missing = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &missing_out,
+            &missing_state,
+            true,
+        )
+        .unwrap_err();
+        let missing_text = missing.to_string();
+        assert!(missing_text.contains("refuse:dataset"), "{missing_text}");
+        assert!(missing_text.contains("feed/events.jsonl"), "{missing_text}");
+        assert!(
+            missing_text.contains("does not download"),
+            "{missing_text}"
+        );
+        assert!(!missing_out.exists(), "{}", missing_out.display());
+
+        let missing_ax = root.join("missing-ax");
+        let ax_err = run_feed(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &missing_ax,
+            &missing_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(ax_err.to_string().contains("refuse:dataset"), "{ax_err}");
+        assert!(ax_err.to_string().contains("feed/events.jsonl"), "{ax_err}");
+        assert!(!missing_ax.exists());
+
+        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let dirs: Vec<_> = drivers
+            .iter()
+            .map(|id| root.join(format!("set-{id}")))
+            .collect();
+        let reqs: Vec<_> = drivers
+            .iter()
+            .zip(dirs.iter())
+            .map(|(id, dir)| PrepareEnrichRequest {
+                estate: &estate,
+                pack: &pack,
+                curator: "jason",
+                driver_id: *id,
+                job: "train",
+                out_dir: dir,
+                max_steps: None,
+                from_feed: true,
+                state_dir: &missing_state,
+            })
+            .collect();
+        let set_err = prepare_enrich_set(&reqs).unwrap_err();
+        assert!(
+            set_err.to_string().contains("refuse:dataset"),
+            "{set_err}"
+        );
+        for dir in &dirs {
+            assert!(!dir.exists(), "{}", dir.display());
+        }
+
+        for driver in [LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID] {
+            let out = root.join(driver);
+            let doc = run_feed(driver, &pack, &estate, &out, &state, true).unwrap();
+            assert_eq!(doc.dataset_mode.as_deref(), Some("feed"));
+            assert_eq!(doc.dataset_from_feed, Some(true));
+            assert_eq!(doc.dataset_rows, Some(1));
+            assert_eq!(doc.dataset_skipped, Some(1));
+            assert_eq!(
+                doc.dataset_read_paths.as_deref(),
+                Some(&["feed/events.jsonl".to_string()][..])
+            );
+            let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
+            assert!(jsonl.contains("job=policy-precheck"), "{driver} {jsonl}");
+            assert!(
+                jsonl.contains("kind=model.local.precheck"),
+                "{driver} {jsonl}"
+            );
+            assert!(jsonl.contains("class=local"), "{driver} {jsonl}");
+            assert!(!jsonl.contains("model.local.skip"), "{driver} {jsonl}");
+            assert!(!jsonl.contains("Replace this scaffold"), "{driver} {jsonl}");
+            let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+            let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+            for card in [&next, &prepare_md] {
+                assert!(
+                    card.contains("dataset_mode: feed"),
+                    "{driver} {card}"
+                );
+                assert!(card.contains("refuse:dataset"), "{driver} {card}");
+                assert!(
+                    card.contains("did not invent a completion"),
+                    "{driver} {card}"
+                );
+                assert!(
+                    card.contains("1 scrubbed feed event had no note"),
+                    "{driver} {card}"
+                );
+            }
+            assert!(prepare_md.contains("Dataset mode: feed"), "{prepare_md}");
+            assert!(
+                prepare_md.contains("Dataset from feed: true"),
+                "{prepare_md}"
+            );
+            if driver == AXOLOTL_LORA_ID {
+                assert!(jsonl.contains("\"instruction\""), "{jsonl}");
+                assert!(jsonl.contains("\"output\":\"job=policy-precheck\""), "{jsonl}");
+                let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
+                assert!(yaml.contains("dataset_mode: feed"), "{yaml}");
+            } else {
+                assert!(jsonl.contains("\"role\":\"user\""), "{jsonl}");
+                assert!(jsonl.contains("\"role\":\"assistant\""), "{jsonl}");
+                let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+                assert!(recipe.contains("dataset_mode: feed"), "{recipe}");
+            }
+        }
+
+        let mut empty = pack.clone();
+        empty.source_paths.clear();
+        let stub_out = root.join("empty-stub");
+        let stub = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &empty,
+            &estate,
+            &stub_out,
+            &state,
+            false,
+        )
+        .unwrap();
+        assert_eq!(stub.dataset_mode.as_deref(), Some("stub"));
+        let refused = root.join("empty-feed");
+        let empty_err = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &empty,
+            &estate,
+            &refused,
+            &state,
+            true,
+        )
+        .unwrap_err();
+        let empty_text = empty_err.to_string();
+        assert!(empty_text.contains("refuse:dataset"), "{empty_text}");
+        assert!(empty_text.contains("source_paths"), "{empty_text}");
+        assert!(!refused.exists());
+
+        let bad_state = root.join("bad-cell");
+        std::fs::create_dir_all(bad_state.join("feed")).unwrap();
+        std::fs::write(bad_state.join("feed/events.jsonl"), "not-json\n").unwrap();
+        let bad_out = root.join("bad");
+        let bad = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &bad_out,
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(bad.to_string().contains("refuse:dataset"), "{bad}");
+        assert!(bad.to_string().contains("not JSON"), "{bad}");
+        assert!(!bad_out.exists());
+
+        std::fs::write(bad_state.join("feed/events.jsonl"), "{\"foo\":1}\n").unwrap();
+        let unknown = run_feed(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &root.join("unknown"),
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            unknown.to_string().contains("refuse:dataset"),
+            "{unknown}"
+        );
+        assert!(
+            unknown.to_string().contains("not an instruct row"),
+            "{unknown}"
+        );
+        assert!(!root.join("unknown").exists());
+
+        std::fs::write(
+            bad_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"mentions cyera\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let sacred = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &root.join("sacred"),
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!root.join("sacred").exists());
+
+        std::fs::write(
+            bad_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"api_key=abcd\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let secret = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &root.join("secret"),
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            secret.to_string().contains("refuse:raw-secret"),
+            "{secret}"
+        );
+        assert!(!root.join("secret").exists());
+
+        std::fs::write(
+            bad_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"host 5090\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let sku = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &root.join("sku"),
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!root.join("sku").exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        std::fs::write(
+            bad_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &root.join("frontier"),
+            &bad_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!root.join("frontier").exists());
+
+        let outside = root.join("outside.jsonl");
+        std::fs::write(
+            &outside,
+            "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"job=outside\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let link_state = root.join("link-cell");
+        std::fs::create_dir_all(link_state.join("feed")).unwrap();
+        std::os::unix::fs::symlink(&outside, link_state.join("feed/events.jsonl")).unwrap();
+        let escaped = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &root.join("escaped"),
+            &link_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            escaped.to_string().contains("refuse:dataset"),
+            "{escaped}"
+        );
+        assert!(
+            escaped.to_string().contains("outside"),
+            "{escaped}"
+        );
+        assert!(!root.join("escaped").exists());
+
+        let mut pairs = pack.clone();
+        pairs.source_paths = vec!["feed/pairs.jsonl".into()];
+        let pair_state = root.join("pairs-cell");
+        std::fs::create_dir_all(pair_state.join("feed")).unwrap();
+        std::fs::write(
+            pair_state.join("feed/pairs.jsonl"),
+            "{\"instruction\":\"Name the pack\",\"input\":\"overnight\",\"output\":\"overnight-traces\"}\n",
+        )
+        .unwrap();
+        let chat_out = root.join("pairs-chat");
+        run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pairs,
+            &estate,
+            &chat_out,
+            &pair_state,
+            true,
+        )
+        .unwrap();
+        let chat = std::fs::read_to_string(chat_out.join("dataset.jsonl")).unwrap();
+        assert!(chat.contains("Name the pack"), "{chat}");
+        assert!(chat.contains("overnight-traces"), "{chat}");
+        assert!(chat.contains("\"role\":\"assistant\""), "{chat}");
+        let alpaca_out = root.join("pairs-alpaca");
+        let alpaca_doc = run_feed(
+            AXOLOTL_LORA_ID,
+            &pairs,
+            &estate,
+            &alpaca_out,
+            &pair_state,
+            true,
+        )
+        .unwrap();
+        assert_eq!(alpaca_doc.dataset_rows, Some(1));
+        assert_eq!(alpaca_doc.dataset_skipped, Some(0));
+        let alpaca = std::fs::read_to_string(alpaca_out.join("dataset.jsonl")).unwrap();
+        assert!(alpaca.contains("\"instruction\":\"Name the pack\""), "{alpaca}");
+        assert!(alpaca.contains("\"input\":\"overnight\""), "{alpaca}");
+        assert!(
+            alpaca.contains("\"output\":\"overnight-traces\""),
+            "{alpaca}"
+        );
+
+        let ollama_out = root.join("ollama-only");
+        let ollama_err = prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: "ollama-modelfile",
+            job: "enrich",
+            out_dir: &ollama_out,
+            max_steps: None,
+            from_feed: true,
+            state_dir: &state,
+        })
+        .unwrap_err();
+        assert!(
+            ollama_err.to_string().contains("refuse:dataset"),
+            "{ollama_err}"
+        );
+        assert!(
+            ollama_err.to_string().contains("llamafactory-qlora"),
+            "{ollama_err}"
+        );
+        assert!(!ollama_out.exists());
+    }
+
+    #[test]
     fn schema_snapshot_stays_prepare_only() {
         let snap: EnrichPrepareDoc =
             serde_json::from_str(include_str!("../../../schema/train-enrich.v0.json")).unwrap();
@@ -4680,6 +5748,8 @@ mod tests {
                 job: "enrich",
                 out_dir: &manifest_out,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             },
             PrepareEnrichRequest {
                 estate: &estate,
@@ -4689,6 +5759,8 @@ mod tests {
                 job: "enrich",
                 out_dir: &ollama_out,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             },
         ])
         .unwrap();
@@ -4722,6 +5794,8 @@ mod tests {
                 job: "enrich",
                 out_dir: &blocked_m,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             },
             PrepareEnrichRequest {
                 estate: &estate,
@@ -4731,6 +5805,8 @@ mod tests {
                 job: "enrich",
                 out_dir: &blocked_o,
                 max_steps: None,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
             },
         ])
         .unwrap_err();

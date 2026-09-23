@@ -153,6 +153,11 @@ grep -q "\-\-max-steps 10" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "CUDA LLaMA-Factory" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "Faster single-GPU alternate" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "llamafactory-cli train recipe.yaml" "$WORKDIR/llamafactory/PREPARE.md"
+grep -q "dataset_mode: scaffold" "$WORKDIR/llamafactory/PREPARE.md"
+grep -q "dataset_mode: scaffold" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "refuse:dataset" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "not training data" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "Dataset mode: scaffold" "$WORKDIR/llamafactory/PREPARE.md"
 if grep -q "quantization_bit" "$WORKDIR/llamafactory/export.yaml"; then
   echo "FAIL  export.yaml must not set quantization_bit"
   exit 1
@@ -181,6 +186,14 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  prepare.json must stay unpromoted")
 if prepare.get("estate_rewritten") is not False:
     raise SystemExit("FAIL  prepare.json claims an estate rewrite")
+if prepare.get("dataset_mode") != "scaffold":
+    raise SystemExit(f"FAIL  dataset_mode={prepare.get('dataset_mode')}")
+if prepare.get("dataset_from_feed") is not False:
+    raise SystemExit("FAIL  default prepare must not read the feed")
+if prepare.get("dataset_rows") != 1:
+    raise SystemExit(f"FAIL  dataset_rows={prepare.get('dataset_rows')}")
+if prepare.get("dataset_read_paths") != []:
+    raise SystemExit(f"FAIL  dataset_read_paths={prepare.get('dataset_read_paths')}")
 artifacts = prepare.get("artifacts", [])
 for name in ("recipe.yaml", "export.yaml", "dataset_info.json", "dataset.jsonl", "NEXT.md", "PREPARE.md", "prepare.json"):
     if name not in artifacts:
@@ -292,11 +305,127 @@ if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
     raise SystemExit(f"FAIL  axolotl seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
 if prepare.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
     raise SystemExit(f"FAIL  axolotl train_base={prepare.get('train_base_model')}")
+if prepare.get("dataset_mode") != "scaffold" or prepare.get("dataset_from_feed") is not False:
+    raise SystemExit(f"FAIL  axolotl dataset_mode={prepare.get('dataset_mode')} from_feed={prepare.get('dataset_from_feed')}")
 next_md = open(sys.argv[3]).read()
 if "Seat tag is llama3" not in next_md or "Train base is Qwen/Qwen2.5-0.5B-Instruct" not in next_md:
     raise SystemExit("FAIL  axolotl NEXT.md is missing the seat and train base split")
+if "dataset_mode: scaffold" not in next_md or "refuse:dataset" not in next_md:
+    raise SystemExit("FAIL  axolotl NEXT.md is missing the scaffold honesty")
+if "not training data" not in next_md:
+    raise SystemExit("FAIL  axolotl NEXT.md does not say the scaffold is not training data")
 PY
+grep -q "dataset_mode: scaffold" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "dataset_mode: scaffold" "$WORKDIR/axolotl/PREPARE.md"
 grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
+
+echo "-- missing feed with --from-feed is refuse:dataset and writes nothing --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --from-feed \
+  --state-dir "$WORKDIR/no-feed" \
+  --out "$WORKDIR/no-feed-out" \
+  >/tmp/train-prepare-nofeed.out 2>/tmp/train-prepare-nofeed.err
+nofeed_rc=$?
+set -e
+if [[ "$nofeed_rc" -eq 0 ]]; then
+  echo "FAIL  --from-feed with a missing source must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:dataset" /tmp/train-prepare-nofeed.out /tmp/train-prepare-nofeed.err; then
+  echo "FAIL  missing feed did not refuse:dataset"
+  cat /tmp/train-prepare-nofeed.out /tmp/train-prepare-nofeed.err
+  exit 1
+fi
+if ! grep -q "feed/events.jsonl" /tmp/train-prepare-nofeed.out /tmp/train-prepare-nofeed.err; then
+  echo "FAIL  missing feed refuse did not name feed/events.jsonl"
+  cat /tmp/train-prepare-nofeed.out /tmp/train-prepare-nofeed.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/no-feed-out" ]]; then
+  echo "FAIL  missing feed prepare wrote an output directory"
+  exit 1
+fi
+
+echo "-- fixture feed rows hydrate; the same files without --from-feed stay a scaffold --"
+HYDRATE="$WORKDIR/hydrate-cell"
+mkdir -p "$HYDRATE/feed"
+python3 - "$HYDRATE/feed/events.jsonl" <<'PY'
+import json, sys
+rows = [
+    {
+        "kind": "model.local.precheck",
+        "agent_id": "research",
+        "decision": "allow",
+        "object_class": "local",
+        "note": "job=policy-precheck",
+        "ts": "2026-09-21T00:00:00Z",
+    },
+    {
+        "kind": "model.local.skip",
+        "agent_id": "research",
+        "decision": "allow",
+        "object_class": "local",
+        "note": None,
+        "ts": "2026-09-21T00:00:01Z",
+    },
+]
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    for row in rows:
+        handle.write(json.dumps(row) + "\n")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --state-dir "$HYDRATE" \
+  --out "$WORKDIR/scaffold-despite-feed"
+if grep -q "job=policy-precheck" "$WORKDIR/scaffold-despite-feed/dataset.jsonl"; then
+  echo "FAIL  default prepare copied a feed note"
+  exit 1
+fi
+grep -q "Replace this scaffold" "$WORKDIR/scaffold-despite-feed/dataset.jsonl"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --from-feed \
+  --state-dir "$HYDRATE" \
+  --out "$WORKDIR/hydrated-lf"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --from-feed \
+  --state-dir "$HYDRATE" \
+  --out "$WORKDIR/hydrated-ax"
+python3 - "$WORKDIR/hydrated-lf" "$WORKDIR/hydrated-ax" <<'PY'
+import json, sys
+from pathlib import Path
+for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "instruction")):
+    root = Path(directory)
+    prepare = json.loads((root / "prepare.json").read_text())
+    if prepare.get("dataset_mode") != "feed" or prepare.get("dataset_from_feed") is not True:
+        raise SystemExit(f"FAIL  {directory} mode={prepare.get('dataset_mode')}")
+    if prepare.get("dataset_rows") != 1 or prepare.get("dataset_skipped") != 1:
+        raise SystemExit(f"FAIL  {directory} rows={prepare.get('dataset_rows')} skipped={prepare.get('dataset_skipped')}")
+    if prepare.get("dataset_read_paths") != ["feed/events.jsonl"]:
+        raise SystemExit(f"FAIL  {directory} paths={prepare.get('dataset_read_paths')}")
+    jsonl = (root / "dataset.jsonl").read_text()
+    if "job=policy-precheck" not in jsonl or "model.local.skip" in jsonl:
+        raise SystemExit(f"FAIL  {directory} jsonl did not hydrate the noted event")
+    if "Replace this scaffold" in jsonl:
+        raise SystemExit(f"FAIL  {directory} jsonl is still a scaffold")
+    if shape not in jsonl:
+        raise SystemExit(f"FAIL  {directory} jsonl missing {shape}")
+    for name in ("PREPARE.md", "NEXT.md"):
+        text = (root / name).read_text()
+        if "dataset_mode: feed" not in text or "refuse:dataset" not in text:
+            raise SystemExit(f"FAIL  {directory} {name} missing feed honesty")
+PY
 
 echo "-- all-drivers train writes the train base into axolotl.yml --"
 estate enrich prepare \
@@ -349,4 +478,4 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory recipe, Axolotl recipe, import-trained; SKIP live train)"
+echo "PASS  train-prepare (LLaMA-Factory recipe, Axolotl recipe, feed hydrate, import-trained; SKIP live train)"

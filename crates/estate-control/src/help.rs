@@ -379,6 +379,17 @@ QLoRA also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
 A short gauge run passes --max-steps 10. The default recipe leaves
 max_steps unset.
 
+dataset.jsonl defaults to a scaffold (or a three-row stub when the
+pack source_paths list is empty). prepare.json records dataset_mode,
+dataset_rows, dataset_from_feed, dataset_skipped, and
+dataset_read_paths. PREPARE.md and NEXT.md on both train cards say
+those rows are not training data. Pass --from-feed to copy instruct
+rows that are already under --state-dir (for example
+.cell/feed/events.jsonl). A missing file is refuse:dataset and writes
+nothing. This factory does not download pack sources. ShareGPT
+messages, Alpaca instruction and output, and a scrubbed feed event
+with a note are the rows it copies. An event with no note is skipped.
+
 Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
 NEXT.md has the handoff command, artifact paths, and fail-closed
 reminders. The factory does not shell out to ollama create.
