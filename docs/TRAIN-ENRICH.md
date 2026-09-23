@@ -425,6 +425,16 @@ Point `--weights` at a `.gguf` file after the llama.cpp convert. The command pri
 
 `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` carry this chain. Page: [`local-seat.md`](local-seat.md). `READY_FOR_LIVE_TEST`: no.
 
+## Status and doctor
+
+`estate status` and `estate doctor` read `{state_dir}/enrich/{pack}/{driver}/prepare.json` when that directory exists. A missing directory is silence. They do not invent a prepare count. An empty directory says that no `prepare.json` is present.
+
+A present file prints one line: pack, driver, job (`enrich` or `train`), `seat_tag` and the train base when those fields are on the file, `trained_shape` when `import-trained` recorded it, and the out path. That line is the prepare record. It does not mean this factory trained, merged, converted, or seated the model.
+
+A file that does not parse, or that fails the prepare schema, refuses before the status page. Doctor FAILs that file before `factory ready`. A symlink in the tree is `refuse:enrich-index`. The open uses `O_NOFOLLOW` and the opened file must stay inside the cell state directory.
+
+Catalog lines on the same page name each in-tree card: `integration`, `portable`, or `optional`, with `live=false`. `mlx-lm-lora` is optional, beside `unsloth-qlora`. A prepare probe does not run. `READY_FOR_LIVE_TEST`: no.
+
 ## Opt-in walk
 
 ```bash

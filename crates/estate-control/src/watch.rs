@@ -304,6 +304,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     }
 
     print_doctor_enrich_join(state_dir, &mut fails);
+    print_doctor_train_prepare(state_dir, &mut fails);
 
     println!("\nFrontier model");
     println!("--------------");
@@ -341,6 +342,10 @@ pub(crate) fn cmd_status(
 ) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let enrich_facts = model_estate::enrich_join_facts(&state_dir.join("enrich"))
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let train_prepares = model_estate::train_prepare_facts(state_dir)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let train_catalog = model_estate::train_catalog_facts()
         .map_err(|err| anyhow::anyhow!("{err}"))?;
     let enrich_stage = model_estate::read_enrich_stage(state_dir)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
@@ -443,6 +448,8 @@ pub(crate) fn cmd_status(
         }
     );
     print_status_enrich_join(enrich_facts.as_deref(), enrich_stage.as_ref(), &estate);
+    print_status_train_prepare(train_prepares.as_deref());
+    print_status_train_catalog(&train_catalog);
     println!(
         "policy: {} ({})",
         if policy_present { "present" } else { "missing" },
@@ -656,6 +663,86 @@ fn print_status_enrich_join(
     }
 }
 
+const TRAIN_PREPARE_NOTE: &str =
+    "prepare.json record only; this factory did not train, merge, convert, or seat";
+
+fn print_status_train_prepare(facts: Option<&[model_estate::TrainPrepareFact]>) {
+    let Some(facts) = facts else {
+        return;
+    };
+    if facts.is_empty() {
+        println!("train_prepare: enrich directory has no prepare.json");
+        return;
+    }
+    for fact in facts {
+        println!("{}", format_train_prepare_line(fact));
+    }
+    println!("train_prepare_note: {TRAIN_PREPARE_NOTE}");
+}
+
+fn print_status_train_catalog(rows: &[model_estate::TrainCatalogFact]) {
+    for row in rows {
+        println!(
+            "train_catalog: {} status={} live=false",
+            row.driver_id, row.status
+        );
+    }
+}
+
+fn format_train_prepare_line(fact: &model_estate::TrainPrepareFact) -> String {
+    let mut parts = vec![
+        format!("pack={}", fact.pack_id),
+        format!("driver={}", fact.driver),
+        format!("job={}", fact.job),
+    ];
+    if let Some(seat) = fact.seat_tag.as_deref() {
+        parts.push(format!("seat_tag={seat}"));
+    }
+    if let Some(train) = fact.train_base.as_deref() {
+        parts.push(format!("train_base={train}"));
+    }
+    if let Some(shape) = fact.trained_shape.as_deref() {
+        parts.push(format!("trained_shape={shape}"));
+    }
+    parts.push(format!("out={}", fact.out_dir.display()));
+    format!("train_prepare: {}", parts.join(" "))
+}
+
+fn print_doctor_train_prepare(state_dir: &Path, fails: &mut Vec<String>) {
+    println!("\nTrain prepare");
+    println!("-------------");
+    match model_estate::train_catalog_facts() {
+        Ok(rows) => {
+            for row in &rows {
+                println!(
+                    "  ok    train_catalog {} status={} live=false",
+                    row.driver_id, row.status
+                );
+            }
+        }
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+        }
+    }
+    match model_estate::train_prepare_facts(state_dir) {
+        Ok(None) => {}
+        Ok(Some(rows)) if rows.is_empty() => {
+            println!("  note  enrich directory has no prepare.json");
+        }
+        Ok(Some(rows)) => {
+            for fact in &rows {
+                println!("  ok    {}", format_train_prepare_line(fact));
+            }
+            println!("  note  {TRAIN_PREPARE_NOTE}");
+        }
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
+        }
+    }
+}
+
 fn print_doctor_enrich_join(state_dir: &Path, fails: &mut Vec<String>) {
     let facts = match model_estate::enrich_join_facts(&state_dir.join("enrich")) {
         Ok(None) => return,
@@ -757,6 +844,8 @@ pub(crate) fn doctor_summary_line(root: &Path, state_dir: &Path) -> String {
         fails += 1;
     }
     if model_estate::enrich_join_facts(&state_dir.join("enrich")).is_err()
+        || model_estate::train_prepare_facts(state_dir).is_err()
+        || model_estate::train_catalog_facts().is_err()
         || model_estate::read_enrich_stage(state_dir).is_err()
     {
         fails += 1;
