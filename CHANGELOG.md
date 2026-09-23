@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — absolute local train base
+
+- A relative LLaMA-Factory train base (`./…` or `../…`) is stored as an absolute path in `recipe.yaml`, `export.yaml`, `prepare.json`, and `NEXT.md`. A Hugging Face repo id stays as typed. The weights directory does not need to exist at prepare time.
+- A local path whose directory name is an Ollama seat tag (`./llama3`, `../llama3`) is `refuse:train-base` and writes nothing.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — seat tag and LLaMA-Factory train base
 
 - `llamafactory-qlora` keeps the Ollama seat tag (`prepare.json` `base_model` / `seat_tag`, Modelfile `FROM`) separate from the train base (`model_name_or_path`). Set pack `train_base_model` or `params.train_base_model` on the local binding to a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. The pack field wins. `template` is inferred from the train base.

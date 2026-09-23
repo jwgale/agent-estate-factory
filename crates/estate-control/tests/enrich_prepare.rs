@@ -1565,3 +1565,112 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     );
     assert_eq!(estate_bytes(), before);
 }
+
+#[test]
+fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
+    let root = tmp("llamafactory-abs");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+
+    for bad in ["./llama3", "../llama3"] {
+        let seated = write_train_estate(&root, "llama3", Some(bad));
+        let out = root.join(bad.trim_start_matches('.').replace('/', "_"));
+        let refused = estate_bin()
+            .args([
+                "--sacred",
+                &sacred,
+                "enrich",
+                "prepare",
+                "--estate",
+                &seated.display().to_string(),
+                "--pack",
+                &pack,
+                "--driver",
+                "llamafactory-qlora",
+                "--out",
+                &out.display().to_string(),
+            ])
+            .output()
+            .unwrap();
+        let refused_text = text(&refused);
+        assert!(!refused.status.success(), "{bad}: {refused_text}");
+        assert!(
+            refused_text.contains("refuse:train-base"),
+            "{bad}: {refused_text}"
+        );
+        assert!(
+            refused_text.contains("Ollama seat tag"),
+            "{bad}: {refused_text}"
+        );
+        assert!(
+            !refused_text.contains("meta-llama"),
+            "{bad}: {refused_text}"
+        );
+        assert!(!out.exists(), "{bad}");
+    }
+
+    let seated = write_train_estate(&root, "llama3", Some("./weights/Qwen2.5-0.5B-Instruct"));
+    let out = root.join("relative");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    let train = doc["train_base_model"].as_str().unwrap();
+    assert!(std::path::Path::new(train).is_absolute(), "{train}");
+    assert!(train.ends_with("/weights/Qwen2.5-0.5B-Instruct"), "{train}");
+    assert!(!train.contains("/./") && !train.contains(".."), "{train}");
+    let quoted = format!("model_name_or_path: \"{train}\"");
+    assert!(recipe.contains(&quoted), "{recipe}");
+    assert!(export.contains(&quoted), "{export}");
+    assert!(recipe.contains("template: qwen"), "{recipe}");
+    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+    assert!(!recipe.contains("./weights"), "{recipe}");
+    assert_eq!(doc["base_model"], "llama3");
+    assert_eq!(doc["seat_tag"], "llama3");
+    let hub = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let hub_out = root.join("hub");
+    let hub_run = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &hub.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            &hub_out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(hub_run.status.success(), "{}", text(&hub_run));
+    let hub_recipe = std::fs::read_to_string(hub_out.join("recipe.yaml")).unwrap();
+    assert!(
+        hub_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{hub_recipe}"
+    );
+    assert_eq!(estate_bytes(), before);
+}

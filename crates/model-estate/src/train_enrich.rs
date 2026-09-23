@@ -303,7 +303,8 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
                 job.kind.as_str()
             )));
         }
-        let train_base = require_llamafactory_train_base(job)?;
+        let train_owned = require_llamafactory_train_base(job)?;
+        let train_base = train_owned.as_str();
         let (dataset, stub) = chat_dataset_jsonl(job)?;
         let recipe = llamafactory_recipe_yaml(job, stub, train_base);
         let export = llamafactory_export_yaml(job, train_base);
@@ -664,8 +665,17 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
             kind.as_str()
         )));
     }
-    let job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
+    let mut job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
     refuse_job_text(&job)?;
+    if req.driver_id == LLAMAFACTORY_QLORA_ID {
+        if let Some(raw) = job.train_base_model.clone() {
+            let canonical = canonical_train_base(&raw, &job.base_model)?;
+            job.train_base_model = Some(canonical);
+            if let Some(train_base) = job.train_base_model.as_deref() {
+                refuse_sacred_and_sku("train base", train_base)?;
+            }
+        }
+    }
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
     let prepared = driver.prepare(&job)?;
@@ -1557,25 +1567,75 @@ fn llamafactory_save_steps(max_steps: Option<u32>) -> u32 {
     }
 }
 
-fn require_llamafactory_train_base(job: &EnrichJob) -> Result<&str, ModelError> {
+fn require_llamafactory_train_base(job: &EnrichJob) -> Result<String, ModelError> {
     match job
         .train_base_model
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        Some(train_base) => {
-            accept_train_base(train_base, &job.base_model)?;
-            Ok(train_base)
-        }
+        Some(train_base) => canonical_train_base(train_base, &job.base_model),
         None => Err(train_base_error("", &job.base_model)),
     }
+}
+
+/// Hub ids stay as typed. A local directory is stored as an absolute path so
+/// LLaMA-Factory does not resolve `model_name_or_path` against process CWD.
+fn canonical_train_base(raw: &str, seat: &str) -> Result<String, ModelError> {
+    let value = raw.trim();
+    if is_hub_repo_id(value) {
+        return Ok(value.to_string());
+    }
+    if !is_local_hf_dir(value) {
+        return Err(train_base_error(value, seat));
+    }
+    if leaf_is_seat_tag(value, seat) {
+        return Err(seat_leaf_error(value, seat));
+    }
+    let absolute = lexical_absolute(&absolute_path(Path::new(value)));
+    if !absolute.starts_with('/') || !is_local_hf_dir(&absolute) {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: '{value}' could not be stored as an absolute directory of HF weights. Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights."
+        )));
+    }
+    if leaf_is_seat_tag(&absolute, seat) {
+        return Err(seat_leaf_error(value, seat));
+    }
+    Ok(absolute)
+}
+
+fn lexical_absolute(path: &Path) -> String {
+    let mut parts = Vec::new();
+    let mut rooted = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::RootDir => rooted = true,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                parts.pop();
+            }
+            std::path::Component::Normal(part) => parts.push(part.to_os_string()),
+            std::path::Component::Prefix(_) => {}
+        }
+    }
+    let mut out = if rooted {
+        PathBuf::from("/")
+    } else {
+        PathBuf::new()
+    };
+    for part in parts {
+        out.push(part);
+    }
+    out.display().to_string()
 }
 
 fn accept_train_base(raw: &str, seat: &str) -> Result<(), ModelError> {
     let value = raw.trim();
     if value.is_empty() || !is_train_base(value) {
         return Err(train_base_error(value, seat));
+    }
+    if is_local_hf_dir(value) && leaf_is_seat_tag(value, seat) {
+        return Err(seat_leaf_error(value, seat));
     }
     Ok(())
 }
@@ -1623,6 +1683,40 @@ fn is_local_hf_dir(value: &str) -> bool {
     }
     let body = value.trim_start_matches('.').trim_start_matches('/');
     !body.is_empty()
+}
+
+fn path_leaf(value: &str) -> &str {
+    value.rsplit('/').next().unwrap_or(value).trim()
+}
+
+/// Basename of a local weights path. Ollama seat tags are lowercase ids
+/// (`llama3`, `qwen2.5`) or the same id with a different case (`Llama3`).
+/// A mixed-case name that contains a hyphen is a Hugging Face snapshot
+/// directory (`Qwen2.5-0.5B-Instruct`), so it stays a local train base.
+fn leaf_is_seat_tag(path: &str, seat: &str) -> bool {
+    let leaf = path_leaf(path);
+    if leaf.is_empty() || leaf == "." || leaf == ".." {
+        return false;
+    }
+    let seat_name = seat.split(':').next().unwrap_or(seat);
+    if name_eq(leaf, seat) || (!seat_name.is_empty() && name_eq(leaf, seat_name)) {
+        return true;
+    }
+    let folded = leaf.to_ascii_lowercase();
+    if !looks_like_bare_seat_tag(&folded) {
+        return false;
+    }
+    if leaf.chars().any(|c| c.is_ascii_uppercase()) && leaf.contains('-') {
+        return false;
+    }
+    true
+}
+
+fn seat_leaf_error(raw: &str, seat: &str) -> ModelError {
+    let leaf = path_leaf(raw);
+    ModelError::Other(format!(
+        "refuse:train-base: '{raw}' ends in '{leaf}', which looks like an Ollama seat tag. Seat tag '{seat}' is the Ollama id for Modelfile FROM. Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights. This factory does not map the seat tag onto a Hub repo and does not download weights."
+    ))
 }
 
 fn looks_like_bare_seat_tag(value: &str) -> bool {
@@ -3773,7 +3867,10 @@ mod tests {
             "{supplied_recipe}"
         );
 
-        let local = with_train_base(seated, "/tmp/cell-one-hf-weights/Qwen2.5-0.5B-Instruct");
+        let local = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf-weights/Qwen2.5-0.5B-Instruct",
+        );
         let local_out = root.join("local-dir");
         run(
             LLAMAFACTORY_QLORA_ID,
@@ -3792,9 +3889,44 @@ mod tests {
         );
         assert!(local_recipe.contains("template: qwen"), "{local_recipe}");
 
-        let relative = with_train_base(local.clone(), "./weights/Qwen2.5-0.5B-Instruct");
+        for bad in ["./llama3", "../llama3", "./weights/llama3", "./Llama3"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let out = root.join(format!(
+                "leaf-{}",
+                bad.trim_start_matches('.').replace('/', "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &pack,
+                &bad_estate,
+                &out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!err.to_string().contains("meta-llama"), "{bad}: {err}");
+            assert!(!out.exists(), "{bad}");
+        }
+
+        let relative_raw = "./weights/Qwen2.5-0.5B-Instruct";
+        let expected = canonical_train_base(relative_raw, "qwen2.5:0.5b").unwrap();
+        assert!(expected.starts_with('/'), "{expected}");
+        assert!(
+            expected.ends_with("/weights/Qwen2.5-0.5B-Instruct"),
+            "{expected}"
+        );
+        assert!(
+            !expected.contains("/./") && !expected.contains(".."),
+            "{expected}"
+        );
+        let relative = with_train_base(local.clone(), relative_raw);
         let relative_out = root.join("relative");
-        run(
+        let relative_doc = run(
             LLAMAFACTORY_QLORA_ID,
             &pack,
             &relative,
@@ -3803,11 +3935,18 @@ mod tests {
             "jason",
         )
         .unwrap();
-        let relative_recipe = std::fs::read_to_string(relative_out.join("recipe.yaml")).unwrap();
-        assert!(
-            relative_recipe.contains("model_name_or_path: \"./weights/Qwen2.5-0.5B-Instruct\""),
-            "{relative_recipe}"
+        assert_eq!(
+            relative_doc.train_base_model.as_deref(),
+            Some(expected.as_str())
         );
+        let relative_recipe = std::fs::read_to_string(relative_out.join("recipe.yaml")).unwrap();
+        let quoted = format!("model_name_or_path: \"{expected}\"");
+        assert!(relative_recipe.contains(&quoted), "{relative_recipe}");
+        assert!(!relative_recipe.contains("./weights"), "{relative_recipe}");
+        let relative_export = std::fs::read_to_string(relative_out.join("export.yaml")).unwrap();
+        assert!(relative_export.contains(&quoted), "{relative_export}");
+        let relative_next = std::fs::read_to_string(relative_out.join("NEXT.md")).unwrap();
+        assert!(relative_next.contains(&expected), "{relative_next}");
 
         let gauge_out = root.join("gauge");
         run_max(
