@@ -8,7 +8,7 @@ Suite: a local-runtime seat (Ollama today, another process tomorrow) and facilit
 
 Day 0–90 is on `main` (A1–A4, A5–A9, A10–A12 beachhead) on the same Horizon / Research / Sanctum estate. Day 90+ is real-world proof on Jason's boxes, plus parked stubs. Pause-safe. Charter (locked defaults): [`charter.md`](charter.md).
 
-Opt-in, off the gate: `make real-world`, `estate help frontier`, `make day90-mixed`, `estate help enrich`, `make enrich-prepare`, and `make enrich-live-prove`. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked and does not set `params.model` on `local_slm`. Enrich prepare writes artifacts and does not train. The live prove runs `ollama create` only when you ask, then removes the tag. It is not a factory-wide live test.
+Opt-in, off the gate: `make real-world`, `estate help frontier`, `make day90-mixed`, `estate help enrich`, `make enrich-prepare`, `make qlora-journey`, and `make enrich-live-prove`. `make qlora-journey` prints the Qwen / LLaMA-Factory QLoRA ladder (Target C) and checks prepare artifacts. It does not train. The mixed fixture and `examples/hosts/frontier-http.yaml` name `model: grok-4.7` on the frontier `http-remote` binding. `examples/estate.yaml` stays hash-locked and does not set `params.model` on `local_slm`. Enrich prepare writes artifacts and does not train. The live prove runs `ollama create` only when you ask, then removes the tag. It is not a factory-wide live test.
 
 **Source of truth:** [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory) (private). Future Cursor cloud agents launch with `repo: https://github.com/jwgale/agent-estate-factory`.
 

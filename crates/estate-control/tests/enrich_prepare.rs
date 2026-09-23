@@ -83,6 +83,12 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("does not require bitsandbytes"), "{body}");
         assert!(body.contains("import-trained"), "{body}");
         assert!(body.contains("make train-prepare"), "{body}");
+        assert!(body.contains("make qlora-journey"), "{body}");
+        assert!(body.contains("Target C"), "{body}");
+        assert!(body.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{body}");
+        assert!(body.contains("llamafactory-cli train"), "{body}");
+        assert!(body.contains("llamafactory-cli export"), "{body}");
+        assert!(body.contains("docs/operator-enrich-journeys.md"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
         assert!(body.contains("make enrich-live-prove"), "{body}");
         assert!(body.contains("estate enrich from-pack"), "{body}");

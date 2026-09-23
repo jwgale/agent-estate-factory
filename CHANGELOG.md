@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Target C Qwen QLoRA operator journey
+
+- The popular path is one ladder of commands that already exist: `estate enrich prepare --driver llamafactory-qlora` (seat tag separate from the train base), the `NEXT.md` `llamafactory-cli train` and `llamafactory-cli export` lines, `estate enrich gguf-convert` (prints `python3 convert_hf_to_gguf.py` with `--outtype auto`), `estate enrich local-seat` (prints `ollama create`), and `estate enrich import-trained` (records `trained_shape` and `trained_paths`). A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct`. `template` is `qwen`. A missing train base is `refuse:train-base`.
+- The walk is section 8 of `docs/operator-enrich-journeys.md`. `docs/TRAIN-ENRICH.md` and `estate help enrich` / `estate help train` print the same ladder.
+- `make qlora-journey` prints that ladder and checks the prepare artifacts on a throwaway estate copy. A missing export is `refuse:seat` and writes no GGUF. The script does not run LLaMA-Factory, llama.cpp, or Ollama, and it does not promote. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — status and doctor report the enrich prepare tree
 
 - `estate status` and `estate doctor` read `{state_dir}/enrich` when that directory is present. Each `prepare.json` prints pack, driver, job, `seat_tag` and `train_base` when those fields are present, `trained_shape` when `import-trained` recorded it, and the out path. The line is the prepare record. The factory did not train, merge, convert, or seat that model.
