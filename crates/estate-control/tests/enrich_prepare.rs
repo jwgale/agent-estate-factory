@@ -481,6 +481,18 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         "{train_script}"
     );
     assert!(
+        train_script.contains("examples/fixtures/mistral-instruct.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("mistralai/Mistral-7B-Instruct-v0.3"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: mistral$"),
+        "{train_script}"
+    );
+    assert!(
         train_script.contains("^template: llama3$"),
         "{train_script}"
     );

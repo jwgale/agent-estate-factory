@@ -491,6 +491,51 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  gemma2 prepare must stay unpromoted")
 PY
 
+MISTRAL_PACK="$ROOT/examples/fixtures/mistral-instruct.pack.json"
+echo "-- mistral instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$MISTRAL_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/mistral-qlora"
+grep -q "^template: mistral$" "$WORKDIR/mistral-qlora/recipe.yaml"
+grep -q "^template: mistral$" "$WORKDIR/mistral-qlora/export.yaml"
+if grep -q "^template: mistral_" "$WORKDIR/mistral-qlora/recipe.yaml"; then
+  echo "FAIL  mistral instruct recipe used a mistral_ template name"
+  exit 1
+fi
+if grep -q "^template: ministral" "$WORKDIR/mistral-qlora/recipe.yaml"; then
+  echo "FAIL  mistral instruct recipe used the ministral template"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/mistral-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/mistral-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "mistralai/Mistral-7B-Instruct-v0.3"' "$WORKDIR/mistral-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/mistral-qlora/recipe.yaml"; then
+  echo "FAIL  mistral recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/mistral-qlora/export.yaml"; then
+  echo "FAIL  mistral export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA." "$WORKDIR/mistral-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA." "$WORKDIR/mistral-qlora/PREPARE.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/mistral-qlora/NEXT.md" "$WORKDIR/mistral-qlora/PREPARE.md"; then
+  echo "FAIL  mistral prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/mistral-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  mistral seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "mistralai/Mistral-7B-Instruct-v0.3":
+    raise SystemExit(f"FAIL  mistral train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  mistral prepare must stay unpromoted")
+PY
+
 echo "-- axolotl cards refuse a seat tag with no train base --"
 for driver in axolotl-lora axolotl-qlora; do
   set +e
