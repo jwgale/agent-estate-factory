@@ -104,6 +104,7 @@ Train:      make train-prepare
 QLoRA walk: make qlora-journey
 LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
+Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
 
@@ -346,6 +347,13 @@ is allowed. Prepare writes artifacts. It does not train.
 The table above is docs/lf-beachhead-matrix.md. estate help enrich
 and estate help train print that file. A bare Ollama seat tag on
 those train bases is refuse:train-base.
+Opt-in prepare walk: make lf-beachhead-prepare. It reads that table
+and prepares every smoke fixture on a throwaway copy of
+examples/estate.yaml. It checks prepare.json, recipe.yaml, the
+template, and the row knobs, then prints SKIP live train. Phi-3-small
+stays QLoRA-only and is not a row. It does not train, merge, convert,
+seat, or promote. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\
@@ -380,6 +388,7 @@ those train bases is refuse:train-base.
   make qlora-journey
   make lora-journey
   make seat-journey
+  make lf-beachhead-prepare
   make enrich-live-prove
 
 TrainEnrichDriver lives in the data plane (model-estate).

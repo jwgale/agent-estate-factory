@@ -4,7 +4,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 
 `estate enrich prepare` writes artifacts for a purpose-built SLM. It does not train. It does not POST. It does not rewrite `estate.yaml`. Promote stays off.
 
-The LLaMA-Factory LoRA and QLoRA reproduce targets are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` and `estate help train` print that file. Each row is a smoke prepare on the existing ladder (prepare, the `NEXT.md` train and export lines, `merge-adapt`, `gguf-convert`, `local-seat`, `import-trained`). The table does not add a train family. A bare Ollama seat tag on those train bases is `refuse:train-base`. `READY_FOR_LIVE_TEST`: no.
+The LLaMA-Factory LoRA and QLoRA reproduce targets are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` and `estate help train` print that file. Each row is a smoke prepare on the existing ladder (prepare, the `NEXT.md` train and export lines, `merge-adapt`, `gguf-convert`, `local-seat`, `import-trained`). The table does not add a train family. A bare Ollama seat tag on those train bases is `refuse:train-base`. Opt-in check: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the row knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row. `READY_FOR_LIVE_TEST`: no.
 
 ## Target C — Qwen QLoRA operator journey
 

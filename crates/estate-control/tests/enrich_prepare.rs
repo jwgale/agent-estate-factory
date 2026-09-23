@@ -365,20 +365,7 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
         ),
     ];
 
-    let mut parsed = Vec::new();
-    for line in matrix.lines() {
-        if !line.starts_with("| ") || line.contains("---") || line.contains("Family |") {
-            continue;
-        }
-        let cells: Vec<String> = line
-            .trim()
-            .trim_matches('|')
-            .split('|')
-            .map(|cell| cell.trim().trim_matches('`').to_string())
-            .collect();
-        assert_eq!(cells.len(), 6, "matrix row must keep six columns: {line}");
-        parsed.push(cells);
-    }
+    let parsed = beachhead_matrix_rows(&matrix);
     assert_eq!(
         parsed.len(),
         expected.len(),
@@ -416,6 +403,10 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
         assert!(
             body.contains("lf-beachhead-matrix.md"),
             "{rel} must point at the beachhead matrix"
+        );
+        assert!(
+            body.contains("make lf-beachhead-prepare"),
+            "{rel} must name the beachhead prepare walk"
         );
         assert!(
             !body.contains("READY_FOR_LIVE_TEST: yes"),
@@ -456,7 +447,165 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
             matrix_at < pointer_at,
             "help must print the matrix before the path pointer"
         );
+        assert!(
+            body.contains("make lf-beachhead-prepare"),
+            "{topic} help must name the beachhead prepare walk"
+        );
         assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    }
+}
+
+#[test]
+fn lf_beachhead_prepare_walks_the_matrix_inventory() {
+    let root = repo_root();
+    let matrix = std::fs::read_to_string(root.join("docs/lf-beachhead-matrix.md")).unwrap();
+    let parsed = beachhead_matrix_rows(&matrix);
+    assert!(
+        !parsed.is_empty(),
+        "matrix inventory is empty; the prepare walk would check nothing"
+    );
+
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.lines().any(|line| line.trim() == "lf-beachhead-prepare:"),
+        "Makefile missing lf-beachhead-prepare"
+    );
+    assert!(makefile.contains("scripts/lf-beachhead-prepare.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "lf-beachhead-prepare must stay off smoke, gate-90, and Actions"
+    );
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("lf-beachhead-prepare"),
+        "lf-beachhead-prepare must be a phony target"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/lf-beachhead-prepare.sh")).unwrap();
+    for needle in [
+        "docs/lf-beachhead-matrix.md",
+        "estate enrich prepare",
+        "SKIP live train",
+        "READY_FOR_LIVE_TEST: no",
+        "examples/estate.yaml",
+        "cksum",
+        "llamafactory-qlora",
+        "llamafactory-lora",
+        "phi_small",
+        "microsoft/Phi-3-small-8k-instruct",
+        "QLoRA-only",
+        "not a matrix row",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "--list",
+    ] {
+        assert!(script.contains(needle), "lf-beachhead-prepare missing {needle}");
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "lf-beachhead-prepare must keep READY_FOR_LIVE_TEST no"
+    );
+    let prepares = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        !trimmed.starts_with('#') && trimmed.contains("enrich") && trimmed.contains("prepare")
+    });
+    assert!(prepares, "walk must call estate enrich prepare");
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("echo")
+            || trimmed.starts_with("grep")
+            || trimmed.starts_with("if grep")
+            || trimmed.starts_with("if ! grep")
+            || trimmed.contains("[[ -e")
+        {
+            return false;
+        }
+        trimmed.contains("llamafactory-cli")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+            || trimmed.contains("merge-adapt")
+            || trimmed.contains("gguf-convert")
+            || trimmed.contains("local-seat")
+            || trimmed.contains("import-trained")
+    });
+    assert!(
+        !shells_out,
+        "lf-beachhead-prepare must not train, merge, convert, seat, or import"
+    );
+
+    let listed = Command::new("bash")
+        .arg(root.join("scripts/lf-beachhead-prepare.sh"))
+        .arg("--list")
+        .output()
+        .unwrap();
+    let listed_text = text(&listed);
+    assert!(listed.status.success(), "{listed_text}");
+    let walked: Vec<Vec<String>> = listed_text
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.split('\t').map(|cell| cell.to_string()).collect())
+        .collect();
+    assert_eq!(
+        walked, parsed,
+        "prepare walk must list the same rows as docs/lf-beachhead-matrix.md"
+    );
+    for row in &walked {
+        assert!(
+            !row[2].to_ascii_lowercase().contains("phi-3-small") && !row[5].contains("phi3-small"),
+            "Phi-3-small must stay off the matrix inventory: {row:?}"
+        );
+        assert!(root.join(&row[5]).is_file(), "missing {}", row[5]);
+    }
+
+    for rel in [
+        "docs/lf-beachhead-matrix.md",
+        "docs/TRAIN-ENRICH.md",
+        "docs/operator-enrich-journeys.md",
+        "docs/CELL-ONE-STATUS.md",
+        "crates/estate-control/src/help.rs",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            body.contains("make lf-beachhead-prepare"),
+            "{rel} must name the prepare walk"
+        );
+        assert!(
+            !body.contains("READY_FOR_LIVE_TEST: yes"),
+            "{rel} must keep READY_FOR_LIVE_TEST no"
+        );
+    }
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — LLaMA-Factory beachhead prepare walk")
+        .nth(1)
+        .expect("CHANGELOG missing the beachhead prepare walk slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("make lf-beachhead-prepare"), "{slice}");
+    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
+    assert!(slice.contains("SKIP live train"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+    assert!(slice.contains("Phi-3-small"), "{slice}");
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("lf-beachhead-prepare"),
+            "{rel} must not run lf-beachhead-prepare"
+        );
     }
 }
 
@@ -551,6 +700,24 @@ fn cell_one_status_tip_names_pr_140_beachhead() {
         "{slice}"
     );
     assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+}
+
+fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
+    let mut parsed = Vec::new();
+    for line in matrix.lines() {
+        if !line.starts_with("| ") || line.contains("---") || line.contains("Family |") {
+            continue;
+        }
+        let cells: Vec<String> = line
+            .trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+            .collect();
+        assert_eq!(cells.len(), 6, "matrix row must keep six columns: {line}");
+        parsed.push(cells);
+    }
+    parsed
 }
 
 fn fixture_paths_in(text: &str) -> Vec<String> {
