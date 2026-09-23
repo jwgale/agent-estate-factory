@@ -22,6 +22,14 @@ Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --
 - `--from-feed` applies to `axolotl-lora` and `axolotl-qlora` the same way it applies to `llamafactory-lora` and `llamafactory-qlora`. A prepare with no train recipe card refuses and names those four drivers.
 - `NEXT.md` names `axolotl train` and the Axolotl quickstart. The factory does not run Axolotl and does not install a GPU stack. `refuse:train-base`, sacred, SKU, and frontier are unchanged. `READY_FOR_LIVE_TEST`: no.
 
+## This slice — local seat after LLaMA-Factory export
+
+- `estate enrich local-seat` validates a merged export directory (`config.json` and at least one `.safetensors` file, optional `Modelfile`) or a `.gguf` file and prints the `ollama create` line for `cell-enrich-{pack}`. The seat tag is `prepare.json` `seat_tag`. A GGUF prints a Modelfile whose `FROM` is that file, copying TEMPLATE lines when a LLaMA-Factory Modelfile is in the same directory. The command does not write, does not shell out to ollama or llama.cpp, and does not promote.
+- `prepare.json` records `export_yaml` when prepare wrote `export.yaml`, and `modelfile` when prepare wrote `Modelfile`. `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` name the chain: export, optional llama.cpp `convert_hf_to_gguf.py`, then `ollama create` FROM the GGUF or FROM the merged directory when LLaMA-Factory wrote the Modelfile. `import-trained` records that same merged directory or GGUF and writes `trained_shape` and `trained_paths`. An adapter directory stays on `import-trained`.
+- A `.safetensors` name that starts with `adapter_model` is not merged evidence. `config.json` plus `adapter_model-00001-of-00002.safetensors` and no other merged weight is `refuse:seat` and does not print `ollama create`. A symlinked `--weights` path or a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`) is `refuse:seat`. Opens use `O_NOFOLLOW`.
+- Printed paths are single-quoted when they contain whitespace, a newline, a quote, or any of `;`, `|`, `&`, `<`, `>`, `(`, `)`, `!`, `*`, `?`. The command still does not run.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Phi-3 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `phi` for `microsoft/Phi-3-mini*`, `microsoft/Phi-3-medium*`, and Phi-3.5 (`microsoft/Phi-3.5-mini-instruct`, `microsoft/Phi-3.5-MoE-instruct`), including those ids as nested path segments and HF cache directories (`models--microsoft--Phi-3-mini-4k-instruct`). Phi-3-small infers `phi_small`. Phi-4 infers `phi4`. Phi-4-mini infers `phi4_mini`. The names follow LLaMA-Factory `register_model_group` in `constants.py`.

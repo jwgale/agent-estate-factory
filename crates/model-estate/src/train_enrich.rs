@@ -603,6 +603,13 @@ pub struct EnrichPrepareDoc {
     pub source_paths: Vec<String>,
     pub source_drivers: Vec<String>,
     pub artifacts: Vec<String>,
+    /// Path of `export.yaml` when this prepare wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_yaml: Option<String>,
+    /// Path of `Modelfile` when this prepare wrote it.
+    /// LLaMA-Factory writes its later Modelfile into `export_dir`, not here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modelfile: Option<String>,
     pub promoted: bool,
     pub auto_apply: bool,
     pub estate_rewritten: bool,
@@ -901,6 +908,8 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         source_paths: job.source_paths.clone(),
         source_drivers: job.source_drivers.clone(),
         artifacts: names.clone(),
+        export_yaml: recorded_artifact(&names, req.out_dir, "export.yaml"),
+        modelfile: recorded_artifact(&names, req.out_dir, "Modelfile"),
         promoted: false,
         auto_apply: false,
         estate_rewritten: false,
@@ -915,7 +924,18 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     };
     let prepare_json = to_pretty(&doc)?;
     files.push(("prepare.json".into(), prepare_json));
-    let next = next_markdown(driver.id(), &job, &job.out_dir, &names, &prepared.steps);
+    let mut next = next_markdown(driver.id(), &job, &job.out_dir, &names, &prepared.steps);
+    if is_llamafactory_driver(driver.id()) {
+        let note = crate::local_seat::llamafactory_local_seat_note(
+            &job.out_dir,
+            &job.base_model,
+            &job.pack_id,
+        );
+        next.push_str(&note);
+        if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
+            body.push_str(&note);
+        }
+    }
     files.push(("NEXT.md".into(), next));
     for (name, body) in &files {
         refuse_sacred_and_sku(name, body)?;
@@ -926,6 +946,13 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         files,
         doc,
     })
+}
+
+fn recorded_artifact(names: &[String], out_dir: &Path, file_name: &str) -> Option<String> {
+    names
+        .iter()
+        .any(|name| name == file_name)
+        .then(|| out_dir.join(file_name).display().to_string())
 }
 
 fn commit_staged(staged: &[StagedPrepare]) -> Result<Vec<EnrichPrepareDoc>, ModelError> {
@@ -1198,7 +1225,7 @@ fn refuse_job_text(job: &EnrichJob) -> Result<(), ModelError> {
     Ok(())
 }
 
-fn refuse_sacred_and_sku(field: &str, text: &str) -> Result<(), ModelError> {
+pub(crate) fn refuse_sacred_and_sku(field: &str, text: &str) -> Result<(), ModelError> {
     if text.is_empty() {
         return Ok(());
     }
@@ -4446,7 +4473,7 @@ fn trained_records_agree(
     ))
 }
 
-fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
+pub(crate) fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
     if !path.is_file() {
         return Err(ModelError::Other(format!(
             "refuse:missing-prepare: {}",
@@ -5671,6 +5698,10 @@ mod tests {
             doc.train_base_model.as_deref(),
             Some("Qwen/Qwen2.5-0.5B-Instruct")
         );
+        assert!(doc.export_yaml.as_deref().unwrap().ends_with("export.yaml"));
+        assert!(doc.modelfile.is_none());
+        assert!(doc.trained_shape.is_none());
+        assert!(doc.trained_paths.is_none());
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
         for name in [
             "recipe.yaml",
@@ -5772,6 +5803,14 @@ mod tests {
             out.join("export").display()
         )), "{next}");
         assert!(next.contains("--adapter <gguf>"), "{next}");
+        assert!(
+            next.contains("records trained_shape and trained_paths"),
+            "{next}"
+        );
+        assert!(next.contains("## Local seat after export"), "{next}");
+        assert!(next.contains("does not shell out to ollama"), "{next}");
+        assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+        assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
         assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("same chat template"), "{next}");

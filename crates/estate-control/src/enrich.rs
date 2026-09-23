@@ -5,11 +5,20 @@ use anyhow::{bail, Context, Result};
 use estate_schema::load_estate_unvalidated;
 use model_estate::{
     default_enrich_out, default_train_enrich_driver_id, driver_default_job, import_prepared,
-    import_trained, list_prepared, load_enrich_pack, prepare_enrich_set, render_prepared_index,
-    render_train_enrich_catalog, train_enrich_drivers_for_job, ImportPreparedRequest,
-    ImportTrainedRequest, PrepareEnrichRequest,
+    import_trained, list_prepared, load_enrich_pack, plan_local_seat, prepare_enrich_set,
+    render_prepared_index, render_train_enrich_catalog, train_enrich_drivers_for_job,
+    ImportPreparedRequest, ImportTrainedRequest, PrepareEnrichRequest,
 };
 use std::path::{Path, PathBuf};
+
+pub(crate) fn cmd_enrich_local_seat(prepared_dir: &Path, weights: &Path) -> Result<()> {
+    let plan = plan_local_seat(prepared_dir, weights)?;
+    print!("{}", plan.report);
+    if !plan.report.ends_with('\n') {
+        println!();
+    }
+    Ok(())
+}
 
 pub(crate) fn cmd_enrich_drivers() -> Result<()> {
     println!("{}", render_train_enrich_catalog());

@@ -283,3 +283,17 @@ From [`../charter.md`](../charter.md):
 - Compile intentions from the estate. Policy does not learn in silence.
 - Keep `CELL_LOCAL_ENDPOINT` as config. The host is not compiled in.
 - Swap Ollama, llama.cpp, or a later entrant through catalog, route, and bind. Hardware stays `host_class`.
+
+## 7. Seat the merged export on Ollama
+
+After journey 4's `llamafactory-cli export`, the merged directory is `export_dir` from `export.yaml`. Current LLaMA-Factory writes `Modelfile` there (`FROM .`, plus the chat TEMPLATE). GGUF conversion stays `convert_hf_to_gguf.py` on a llama.cpp checkout. This factory does not run either tool.
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
+```
+
+The printed create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag`. When the export directory contains the LLaMA-Factory Modelfile, the command prints `ollama create cell-enrich-<pack-id> -f <export>/Modelfile`. When `--weights` is a `.gguf` file, it prints a Modelfile whose FROM is that file. It does not create the model.
+
+Then `import-trained --adapter` points at that same directory or GGUF. A merged export_dir is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`, with an optional Modelfile. `import-trained` records `trained_shape` and `trained_paths`. The seat tag on the proposal stays the prepare seat tag. `apply-proposal` and `estate apply --require-plan` stay the join. `READY_FOR_LIVE_TEST`: no. Page: [`local-seat.md`](local-seat.md).

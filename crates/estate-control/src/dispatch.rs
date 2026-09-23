@@ -271,6 +271,9 @@ pub(crate) fn run() -> Result<()> {
                 &curator,
                 verify_local_tag,
             ),
+            EnrichCommand::LocalSeat { prepared, weights } => {
+                crate::enrich::cmd_enrich_local_seat(&prepared, &weights)
+            }
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },
         Command::Packs { command } => match command {
