@@ -140,7 +140,20 @@ binding count. A model file that does not parse is FAIL before factory
 ready. A parsed file prints its binding count. Status refuses that
 same file (`refuse:model-actual`) before the status page. A missing
 file is not a failure there either, and status does not invent a
-binding count. Cloud-agent
+binding count. A missing `{state}/enrich` directory is not a failure,
+and status does not invent a prepare count. Doctor is silent on that
+missing directory too. An empty enrich directory notes that no
+prepare.json is present and does not invent zero packs. A present
+prepare.json prints pack, driver, job, seat_tag and train_base when
+those fields are present, trained_shape when import-trained recorded
+it, and the out path. That line is the prepare record. It does not
+mean the factory trained, merged, converted, or seated a model.
+A prepare.json that does not parse, or that fails its schema, is
+`refuse:prepare-unreadable` or `refuse:prepare` before the status page
+and FAIL before factory ready. A symlink in the enrich tree is
+`refuse:enrich-index` the same way. Train catalog lines print the
+in-tree card status (integration, optional, or portable) with
+live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
   estate status --estate examples/estate.yaml --state-dir .cell

@@ -4104,38 +4104,149 @@ pub struct PreparedEntry {
     pub out_dir: PathBuf,
 }
 
-/// Read `.cell/enrich`. Does not create the directory and does not write.
-pub fn list_prepared(enrich_root: &Path) -> Result<Vec<PreparedEntry>, ModelError> {
-    if !enrich_root.exists() {
-        return Err(ModelError::Other(format!(
-            "refuse:enrich-index: {} is missing",
-            enrich_root.display()
-        )));
-    }
-    if !enrich_root.is_dir() {
-        return Err(ModelError::Other(format!(
-            "refuse:enrich-index: {} is not a directory",
-            enrich_root.display()
-        )));
-    }
+/// One `prepare.json` under `{state_dir}/enrich/{pack}/{driver}`.
+///
+/// This is the file prepare wrote. It is not evidence that the factory
+/// trained, merged, converted, or seated a model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrainPrepareFact {
+    pub pack_id: String,
+    pub driver: String,
+    pub job: String,
+    /// `prepare.json` `seat_tag` when that field is present.
+    pub seat_tag: Option<String>,
+    /// `prepare.json` `train_base_model` when that field is present.
+    pub train_base: Option<String>,
+    /// `adapter`, `merged`, or `gguf` when `import-trained` recorded it.
+    pub trained_shape: Option<String>,
+    pub out_dir: PathBuf,
+}
+
+/// In-tree train/enrich card. Status and doctor print this catalog.
+/// A prepare probe is not a live run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrainCatalogFact {
+    pub driver_id: String,
+    pub status: String,
+}
+
+const TRAIN_CATALOG_STATUSES: &[&str] = &["integration", "optional", "portable"];
+
+/// Cards in `REGISTRY`. `live` is not a field here. Callers print `live=false`.
+pub fn train_catalog_facts() -> Result<Vec<TrainCatalogFact>, ModelError> {
     let mut rows = Vec::new();
-    for pack_dir in dir_children(enrich_root)? {
-        if !pack_dir.is_dir() {
+    for card in train_enrich_catalog() {
+        if !TRAIN_CATALOG_STATUSES.contains(&card.status) {
             return Err(ModelError::Other(format!(
-                "refuse:enrich-index: unexpected file {}",
-                pack_dir.display()
+                "refuse:train-catalog: {} status '{}' is not integration, optional, or portable",
+                card.driver_id, card.status
             )));
         }
+        let driver = resolve_train_enrich_driver(card.driver_id)?;
+        let probe = driver.probe();
+        if probe.live {
+            return Err(ModelError::Other(format!(
+                "refuse:train-catalog: {} prepare probe set live=true. A prepare probe does not run.",
+                card.driver_id
+            )));
+        }
+        if probe.status != card.status {
+            return Err(ModelError::Other(format!(
+                "refuse:train-catalog: {} probe status '{}' does not match the card status '{}'",
+                card.driver_id, probe.status, card.status
+            )));
+        }
+        rows.push(TrainCatalogFact {
+            driver_id: card.driver_id.to_string(),
+            status: card.status.to_string(),
+        });
+    }
+    Ok(rows)
+}
+
+/// Read-only prepare tree. `Ok(None)` when `{state_dir}/enrich` is missing.
+/// A missing directory does not invent a prepare count. A symlink, a
+/// `prepare.json` that does not parse, or a path that leaves `state_dir`
+/// refuses.
+pub fn train_prepare_facts(state_dir: &Path) -> Result<Option<Vec<TrainPrepareFact>>, ModelError> {
+    let enrich = state_dir.join("enrich");
+    match enrich_root_kind(&enrich)? {
+        EnrichRootKind::Missing => Ok(None),
+        EnrichRootKind::Directory => {
+            let containment = pin_enrich_dir(state_dir, "cell state directory")?;
+            Ok(Some(read_enrich_prepares(&enrich, &containment)?))
+        }
+    }
+}
+
+/// Read `.cell/enrich`. Does not create the directory and does not write.
+pub fn list_prepared(enrich_root: &Path) -> Result<Vec<PreparedEntry>, ModelError> {
+    let facts = require_enrich_prepares(enrich_root)?;
+    Ok(facts
+        .into_iter()
+        .map(|fact| PreparedEntry {
+            local_tag: local_enrich_tag(&fact.pack_id),
+            pack_id: fact.pack_id,
+            driver: fact.driver,
+            job: fact.job,
+            out_dir: fact.out_dir,
+        })
+        .collect())
+}
+
+enum EnrichRootKind {
+    Missing,
+    Directory,
+}
+
+fn enrich_root_kind(enrich_root: &Path) -> Result<EnrichRootKind, ModelError> {
+    match std::fs::symlink_metadata(enrich_root) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(EnrichRootKind::Missing),
+        Err(err) => Err(ModelError::Other(format!(
+            "refuse:enrich-index: {}: {err}",
+            enrich_root.display()
+        ))),
+        Ok(meta) if meta.file_type().is_symlink() => Err(symlink_enrich(enrich_root)),
+        Ok(meta) if meta.is_dir() => Ok(EnrichRootKind::Directory),
+        Ok(_) => Err(ModelError::Other(format!(
+            "refuse:enrich-index: {} is not a directory",
+            enrich_root.display()
+        ))),
+    }
+}
+
+fn require_enrich_prepares(enrich_root: &Path) -> Result<Vec<TrainPrepareFact>, ModelError> {
+    match enrich_root_kind(enrich_root)? {
+        EnrichRootKind::Missing => Err(ModelError::Other(format!(
+            "refuse:enrich-index: {} is missing",
+            enrich_root.display()
+        ))),
+        EnrichRootKind::Directory => {
+            let parent = enrich_root
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            let containment = pin_enrich_dir(parent, "cell state directory")?;
+            read_enrich_prepares(enrich_root, &containment)
+        }
+    }
+}
+
+fn read_enrich_prepares(
+    enrich_root: &Path,
+    state_canon: &Path,
+) -> Result<Vec<TrainPrepareFact>, ModelError> {
+    let enrich_canon = pin_enrich_dir(enrich_root, "enrich directory")?;
+    if !path_is_within(state_canon, &enrich_canon) {
+        return Err(escaped_enrich(enrich_root, &enrich_canon, state_canon));
+    }
+    let mut rows = Vec::new();
+    for pack_dir in enrich_child_dirs(enrich_root, state_canon)? {
         let pack_name = file_name(&pack_dir)?;
-        for driver_dir in dir_children(&pack_dir)? {
-            if !driver_dir.is_dir() {
-                return Err(ModelError::Other(format!(
-                    "refuse:enrich-index: unexpected file {}",
-                    driver_dir.display()
-                )));
-            }
+        for driver_dir in enrich_child_dirs(&pack_dir, state_canon)? {
             let driver_name = file_name(&driver_dir)?;
-            let doc = load_prepare_doc(&driver_dir.join("prepare.json"))?;
+            let prepare_path = driver_dir.join("prepare.json");
+            let doc = read_prepare_contained(&prepare_path, &driver_dir, state_canon)?;
             if doc.pack_id != pack_name {
                 return Err(ModelError::Other(format!(
                     "refuse:enrich-index: pack id '{}' does not match {}",
@@ -4150,17 +4261,174 @@ pub fn list_prepared(enrich_root: &Path) -> Result<Vec<PreparedEntry>, ModelErro
                     driver_dir.display()
                 )));
             }
-            rows.push(PreparedEntry {
-                local_tag: local_enrich_tag(&pack_name),
+            rows.push(TrainPrepareFact {
                 pack_id: doc.pack_id,
                 driver: doc.driver,
                 job: doc.job,
+                seat_tag: present_text(doc.seat_tag),
+                train_base: present_text(doc.train_base_model),
+                trained_shape: present_text(doc.trained_shape),
                 out_dir: driver_dir,
             });
         }
     }
     rows.sort_by(|a, b| (&a.pack_id, &a.driver).cmp(&(&b.pack_id, &b.driver)));
     Ok(rows)
+}
+
+fn present_text(value: Option<String>) -> Option<String> {
+    value.filter(|text| !text.trim().is_empty())
+}
+
+/// `Ok(true)` for a regular file. A symlink refuses. Missing is `Ok(false)`.
+fn enrich_regular_file(path: &Path) -> Result<bool, ModelError> {
+    match std::fs::symlink_metadata(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(ModelError::Other(format!(
+            "refuse:proposal: {}: {err}",
+            path.display()
+        ))),
+        Ok(meta) if meta.file_type().is_symlink() => Err(symlink_enrich(path)),
+        Ok(meta) if meta.is_file() => Ok(true),
+        Ok(_) => Err(ModelError::Other(format!(
+            "refuse:proposal: {} is not a regular file",
+            path.display()
+        ))),
+    }
+}
+
+fn pin_enrich_dir(path: &Path, kind: &str) -> Result<PathBuf, ModelError> {
+    std::fs::canonicalize(path).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:enrich-index: cannot pin {kind} {}: {err}",
+            path.display()
+        ))
+    })
+}
+
+fn symlink_enrich(path: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:enrich-index: {} is a symlink. The enrich tree does not follow symlinks and stays inside the cell state directory.",
+        path.display()
+    ))
+}
+
+fn escaped_enrich(path: &Path, pinned: &Path, containment: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:enrich-index: {} resolves to {} outside {}. The enrich tree stays inside the cell state directory.",
+        path.display(),
+        pinned.display(),
+        containment.display()
+    ))
+}
+
+fn enrich_child_dirs(dir: &Path, containment: &Path) -> Result<Vec<PathBuf>, ModelError> {
+    let mut paths = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|err| {
+        ModelError::Other(format!("refuse:enrich-index: {}: {err}", dir.display()))
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            ModelError::Other(format!("refuse:enrich-index: {}: {err}", dir.display()))
+        })?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|err| {
+            ModelError::Other(format!("refuse:enrich-index: {}: {err}", path.display()))
+        })?;
+        if kind.is_symlink() {
+            return Err(symlink_enrich(&path));
+        }
+        if !kind.is_dir() {
+            return Err(ModelError::Other(format!(
+                "refuse:enrich-index: unexpected file {}",
+                path.display()
+            )));
+        }
+        let canon = pin_enrich_dir(&path, "enrich directory")?;
+        if !path_is_within(containment, &canon) {
+            return Err(escaped_enrich(&path, &canon, containment));
+        }
+        paths.push(path);
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn read_prepare_contained(
+    path: &Path,
+    driver_dir: &Path,
+    state_canon: &Path,
+) -> Result<EnrichPrepareDoc, ModelError> {
+    match std::fs::symlink_metadata(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(format!(
+                "refuse:missing-prepare: {}",
+                path.display()
+            )));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:prepare-unreadable: {}: {err}",
+                path.display()
+            )));
+        }
+        Ok(meta) if meta.file_type().is_symlink() => return Err(symlink_enrich(path)),
+        Ok(meta) if !meta.is_file() => {
+            return Err(ModelError::Other(format!(
+                "refuse:prepare-unreadable: {} is not a regular file",
+                path.display()
+            )));
+        }
+        Ok(_) => {}
+    }
+    let file = open_nofollow(path).map_err(|err| {
+        if matches!(err.raw_os_error(), Some(40 | 62)) {
+            symlink_enrich(path)
+        } else {
+            ModelError::Other(format!(
+                "refuse:prepare-unreadable: cannot open {}: {err}",
+                path.display()
+            ))
+        }
+    })?;
+    let opened = opened_file_path(&file).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:enrich-index: cannot pin {} ({err}). The enrich tree refuses when the opened prepare.json cannot be resolved.",
+            path.display()
+        ))
+    })?;
+    let pinned = std::fs::canonicalize(&opened).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:enrich-index: cannot pin {} ({err}). The enrich tree refuses when the opened prepare.json cannot be resolved.",
+            path.display()
+        ))
+    })?;
+    let driver_canon = pin_enrich_dir(driver_dir, "prepare directory")?;
+    if !pinned.is_absolute()
+        || !path_is_within(&driver_canon, &pinned)
+        || !path_is_within(state_canon, &pinned)
+    {
+        return Err(escaped_enrich(path, &pinned, state_canon));
+    }
+    let text = read_opened_utf8(file, path)?;
+    parse_prepare_doc(path, &text)
+}
+
+fn read_opened_utf8(mut file: std::fs::File, path: &Path) -> Result<String, ModelError> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:prepare-unreadable: {}: {err}",
+            path.display()
+        ))
+    })?;
+    String::from_utf8(buf).map_err(|_| {
+        ModelError::Other(format!(
+            "refuse:prepare-unreadable: {} is not UTF-8",
+            path.display()
+        ))
+    })
 }
 
 pub fn render_prepared_index(enrich_root: &Path, rows: &[PreparedEntry]) -> String {
@@ -5145,8 +5413,12 @@ pub(crate) fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelErr
             path.display()
         ))
     })?;
-    refuse_raw_secrets(&text).map_err(map_feed)?;
-    let doc: EnrichPrepareDoc = serde_json::from_str(&text).map_err(|err| {
+    parse_prepare_doc(path, &text)
+}
+
+fn parse_prepare_doc(path: &Path, text: &str) -> Result<EnrichPrepareDoc, ModelError> {
+    refuse_raw_secrets(text).map_err(map_feed)?;
+    let doc: EnrichPrepareDoc = serde_json::from_str(text).map_err(|err| {
         ModelError::Other(format!(
             "refuse:prepare-unreadable: {}: {err}",
             path.display()
@@ -5201,21 +5473,6 @@ pub(crate) fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelErr
         doc.trained_paths.as_deref(),
     )?;
     Ok(doc)
-}
-
-fn dir_children(dir: &Path) -> Result<Vec<PathBuf>, ModelError> {
-    let mut paths = Vec::new();
-    let entries = std::fs::read_dir(dir).map_err(|err| {
-        ModelError::Other(format!("refuse:enrich-index: {}: {err}", dir.display()))
-    })?;
-    for entry in entries {
-        let entry = entry.map_err(|err| {
-            ModelError::Other(format!("refuse:enrich-index: {}: {err}", dir.display()))
-        })?;
-        paths.push(entry.path());
-    }
-    paths.sort();
-    Ok(paths)
 }
 
 fn file_name(path: &Path) -> Result<String, ModelError> {
@@ -5484,15 +5741,17 @@ pub struct EnrichJoinFact {
 }
 
 /// Read-only. `Ok(None)` when `enrich/` is missing. A bad proposal or prepare refuses.
+/// A symlink at the enrich root refuses. Missing does not invent a count.
 pub fn enrich_join_facts(enrich_root: &Path) -> Result<Option<Vec<EnrichJoinFact>>, ModelError> {
-    if !enrich_root.exists() {
-        return Ok(None);
+    match enrich_root_kind(enrich_root)? {
+        EnrichRootKind::Missing => return Ok(None),
+        EnrichRootKind::Directory => {}
     }
     let rows = list_prepared(enrich_root)?;
     let mut facts = Vec::new();
     for row in rows {
         let proposal_path = row.out_dir.join(BINDING_PROPOSAL_JSON);
-        if proposal_path.is_file() {
+        if enrich_regular_file(&proposal_path)? {
             let proposal = parse_binding_proposal(&proposal_path)?;
             if proposal.pack_id != row.pack_id
                 || proposal.driver != row.driver
@@ -10966,6 +11225,97 @@ mod tests {
         std::fs::write(&prepare_path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
         let tamper = list_prepared(&enrich).unwrap_err();
         assert!(tamper.to_string().contains("refuse:prepared"), "{tamper}");
+    }
+
+    #[test]
+    fn train_prepare_facts_stay_quiet_when_missing_and_refuse_symlinks() {
+        let root = tmp("train-facts");
+        let missing = train_prepare_facts(&root).unwrap();
+        assert!(missing.is_none());
+        assert!(!root.join("enrich").exists());
+
+        let pack_id = "phi3-instruct";
+        let driver = "llamafactory-qlora";
+        let driver_dir = root.join("enrich").join(pack_id).join(driver);
+        std::fs::create_dir_all(&driver_dir).unwrap();
+        let prepare = driver_dir.join("prepare.json");
+        std::fs::write(&prepare, sample_train_prepare(pack_id, driver, None)).unwrap();
+        let facts = train_prepare_facts(&root).unwrap().unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].pack_id, pack_id);
+        assert_eq!(facts[0].driver, driver);
+        assert_eq!(facts[0].job, "train");
+        assert_eq!(facts[0].seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            facts[0].train_base.as_deref(),
+            Some("microsoft/Phi-3-mini-4k-instruct")
+        );
+        assert!(facts[0].trained_shape.is_none());
+        assert_eq!(facts[0].out_dir, driver_dir);
+
+        std::fs::write(
+            &prepare,
+            sample_train_prepare(pack_id, driver, Some("adapter")),
+        )
+        .unwrap();
+        let shaped = train_prepare_facts(&root).unwrap().unwrap();
+        assert_eq!(shaped[0].trained_shape.as_deref(), Some("adapter"));
+
+        std::fs::write(&prepare, "not-json\n").unwrap();
+        let bad = train_prepare_facts(&root).unwrap_err();
+        assert!(
+            bad.to_string().contains("refuse:prepare-unreadable"),
+            "{bad}"
+        );
+        assert_eq!(std::fs::read_to_string(&prepare).unwrap(), "not-json\n");
+
+        std::fs::write(&prepare, sample_train_prepare(pack_id, driver, None)).unwrap();
+        let outside = tmp("train-facts-outside");
+        let outside_prepare = outside.join("prepare.json");
+        std::fs::write(
+            &outside_prepare,
+            sample_train_prepare("escaped-pack", driver, None),
+        )
+        .unwrap();
+        std::fs::remove_file(&prepare).unwrap();
+        std::os::unix::fs::symlink(&outside_prepare, &prepare).unwrap();
+        let linked = train_prepare_facts(&root).unwrap_err();
+        assert!(
+            linked.to_string().contains("refuse:enrich-index"),
+            "{linked}"
+        );
+        assert!(linked.to_string().contains("symlink"), "{linked}");
+        assert!(!linked.to_string().contains("escaped-pack"), "{linked}");
+
+        std::fs::remove_file(&prepare).unwrap();
+        std::fs::remove_dir_all(root.join("enrich").join(pack_id)).unwrap();
+        let outside_pack = outside.join(pack_id);
+        std::fs::create_dir_all(outside_pack.join(driver)).unwrap();
+        std::fs::write(
+            outside_pack.join(driver).join("prepare.json"),
+            sample_train_prepare("escaped-pack", driver, None),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside_pack, root.join("enrich").join(pack_id)).unwrap();
+        let escaped = train_prepare_facts(&root).unwrap_err();
+        assert!(
+            escaped.to_string().contains("refuse:enrich-index"),
+            "{escaped}"
+        );
+        assert!(escaped.to_string().contains("symlink"), "{escaped}");
+        assert!(!escaped.to_string().contains("escaped-pack"), "{escaped}");
+    }
+
+    fn sample_train_prepare(pack_id: &str, driver: &str, shape: Option<&str>) -> String {
+        let trained = match shape {
+            Some(shape) => format!(
+                ",\n  \"trained_shape\": \"{shape}\",\n  \"trained_paths\": [\"/tmp/cell-one-adapter\"]"
+            ),
+            None => String::new(),
+        };
+        format!(
+            "{{\n  \"schema\": \"cell-one.enrich-prepare.v0\",\n  \"driver\": \"{driver}\",\n  \"job\": \"train\",\n  \"pack_id\": \"{pack_id}\",\n  \"base_model\": \"llama3\",\n  \"seat_tag\": \"llama3\",\n  \"train_base_model\": \"microsoft/Phi-3-mini-4k-instruct\",\n  \"purpose\": \"smoke\",\n  \"host_class_affinity\": \"any\",\n  \"source_paths\": [],\n  \"source_drivers\": [],\n  \"artifacts\": [\"prepare.json\"],\n  \"promoted\": false,\n  \"auto_apply\": false,\n  \"estate_rewritten\": false,\n  \"note\": \"Prepared artifacts only.\"{trained}\n}}\n"
+        )
     }
 
     #[test]

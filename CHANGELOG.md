@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — status and doctor report the enrich prepare tree
+
+- `estate status` and `estate doctor` read `{state_dir}/enrich` when that directory is present. Each `prepare.json` prints pack, driver, job, `seat_tag` and `train_base` when those fields are present, `trained_shape` when `import-trained` recorded it, and the out path. The line is the prepare record. The factory did not train, merge, convert, or seat that model.
+- A missing enrich directory stays silent. Status and doctor do not invent a prepare count or claim zero packs. An empty directory notes that no `prepare.json` is present.
+- A `prepare.json` that does not parse, or whose schema or required fields fail, refuses before the status page and FAILs doctor before `factory ready`. A symlink in the enrich tree is `refuse:enrich-index`. The walk opens `prepare.json` with `O_NOFOLLOW` and keeps the opened file inside the cell state directory.
+- Train catalog lines print the in-tree card status (`integration`, `optional`, or `portable`) with `live=false`. `mlx-lm-lora` is optional, the same way `unsloth-qlora` is. A prepare probe is not live. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — optional mlx-lm LoRA handoff
 
 - `mlx-lm-lora` is an optional `TrainEnrichDriver` card (`status=optional`). `estate enrich prepare --driver mlx-lm-lora` writes `MLX.md`, `PREPARE.md`, `NEXT.md`, and `prepare.json` when `host_class_affinity` is `apple-silicon`. `MLX.md` is an operator-owned handoff. It records the Ollama seat tag, the train base, and `host_class_affinity: apple-silicon`. It is not an mlx-lm config and not a training script.
