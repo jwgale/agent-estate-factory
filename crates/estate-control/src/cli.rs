@@ -600,19 +600,20 @@ pub(crate) enum EnrichCommand {
     /// Print the external adapter merge into a Hugging Face directory.
     /// Axolotl prints `axolotl merge-lora`. A LLaMA-Factory adapter when
     /// export.yaml was not the merge prints the PEFT `merge_and_unload` snippet.
+    /// unsloth-qlora prints `save_pretrained_merged` with `save_method` `merged_16bit`.
     /// Does not merge, does not shell out, and does not promote.
     MergeAdapt {
-        /// Directory that holds an axolotl-lora, axolotl-qlora, llamafactory-lora, or llamafactory-qlora prepare.json.
+        /// Directory that holds an axolotl-lora, axolotl-qlora, llamafactory-lora, llamafactory-qlora, unsloth-qlora, or mlx-lm-lora prepare.json.
         #[arg(long)]
         prepared: PathBuf,
-        /// Adapter output_dir (`adapter_config.json`). A merged Hugging Face directory or a GGUF is refuse:adapter.
+        /// Adapter output_dir (`adapter_config.json`). A merged Hugging Face directory or a GGUF is refuse:adapter. unsloth-qlora also needs adapter_model.safetensors or adapter_model.bin.
         #[arg(long)]
         adapter: PathBuf,
     },
     /// Print the llama.cpp convert_hf_to_gguf.py line for a merged export.
     /// Does not convert, does not shell out, and does not promote.
     GgufConvert {
-        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare.json.
+        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare.json.
         #[arg(long)]
         prepared: PathBuf,
         /// Merged export directory (config.json and a .safetensors file whose name does not start with adapter_model).
@@ -623,7 +624,7 @@ pub(crate) enum EnrichCommand {
     /// Ollama is the default print. A GGUF also prints llama-cli and llama-server.
     /// Does not create, does not shell out, and does not promote.
     LocalSeat {
-        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare.json.
+        /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, or mlx-lm-lora prepare.json.
         #[arg(long)]
         prepared: PathBuf,
         /// Merged export directory (config.json and .safetensors, optional Modelfile) or a .gguf file.
@@ -632,7 +633,7 @@ pub(crate) enum EnrichCommand {
         weights: Option<PathBuf>,
         /// Adapter output_dir (adapter_config.json, the same marker import-trained accepts).
         /// Prints a Modelfile whose FROM is prepare.json seat_tag and whose ADAPTER is this directory.
-        /// A merged export or a GGUF is refuse:adapter. Not with --weights.
+        /// A merged export or a GGUF is refuse:adapter. unsloth-qlora and mlx-lm-lora are refuse:adapter. Not with --weights.
         #[arg(long, conflicts_with = "weights", required_unless_present = "weights")]
         adapter: Option<PathBuf>,
         /// Printed local-run software. ollama (default) keeps ollama create and, for a GGUF, also prints llama-cli and llama-server. llama.cpp selects those GGUF lines. A merged directory still points at gguf-convert first. --adapter with llama.cpp is refuse:runtime.

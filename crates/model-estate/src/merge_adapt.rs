@@ -20,6 +20,15 @@
 //! The fused directory is MLX weights. This card does not print
 //! `convert_hf_to_gguf.py` for it. `local-seat` is named for that GGUF file.
 //!
+//! `unsloth-qlora` prints Unsloth's documented save lines. The vLLM guide
+//! saves a LoRA with `model.save_pretrained` or `save_pretrained_merged`
+//! (`save_method` `lora`), which writes `adapter_config.json` and
+//! `adapter_model.safetensors`. The same guide and the GGUF page save a
+//! merged 16-bit directory with `save_method` `merged_16bit`. The GGUF page
+//! then names `python llama.cpp/convert_hf_to_gguf.py`. This card points
+//! `gguf-convert` and `local-seat` at that Hugging Face directory. It does
+//! not print an Ollama `ADAPTER` line for the PEFT directory.
+//!
 //! This module prints those lines. It does not merge, fuse, spawn, download,
 //! or write a directory.
 
@@ -30,6 +39,7 @@ use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
     refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
     EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, MLX_LM_LORA_ID, MLX_LORA_DOC,
+    UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC, UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::io::Read;
@@ -43,6 +53,15 @@ pub(crate) const MLX_FUSED_DIR_NAME: &str = "fused_model";
 pub(crate) const MLX_GGUF_FILE_NAME: &str = "ggml-model-f16.gguf";
 /// Final adapter weights `mlx_lm.lora` writes and `load_adapters` reads.
 pub(crate) const MLX_ADAPTER_WEIGHTS: &str = "adapters.safetensors";
+
+/// Directory name beside the prepare. Unsloth's pages pass a directory string
+/// (`merged_model` on the GGUF page, `finetuned_model` on the vLLM guide).
+/// This print uses one path so `gguf-convert` names the same directory.
+pub(crate) const UNSLOTH_MERGED_DIR_NAME: &str = "merged";
+/// Default safetensors name in Unsloth's `save_method` `lora` docstring and the PEFT save.
+pub(crate) const UNSLOTH_ADAPTER_WEIGHTS: &str = "adapter_model.safetensors";
+/// Pickle name Unsloth writes when `safe_serialization` is False.
+pub(crate) const UNSLOTH_ADAPTER_BIN: &str = "adapter_model.bin";
 
 /// Printed plan. `merged_dir` is the directory the external merge or fuse
 /// writes. For LLaMA-Factory and Axolotl that is a Hugging Face directory.
@@ -64,6 +83,7 @@ pub struct MergeAdaptPlan {
     pub convert_command: String,
     /// `estate enrich gguf-convert` for a merged Hugging Face directory.
     /// Empty on `mlx-lm-lora`: that command does not convert MLX weights.
+    /// Set on `unsloth-qlora`: the merged directory is a Hugging Face directory.
     pub gguf_convert_command: String,
     pub local_seat_command: String,
     pub report: String,
@@ -99,6 +119,7 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
     refuse_sacred_and_sku("adapter", &adapter.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
+    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("merge-adapt", &doc.driver));
     }
@@ -119,6 +140,8 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
     let local_tag = local_enrich_tag(&doc.pack_id);
     let plan = if mlx {
         plan_mlx(prepared_dir, &doc, &seat_tag, &local_tag, adapter)?
+    } else if unsloth {
+        plan_unsloth(prepared_dir, &doc, &seat_tag, &local_tag, adapter)?
     } else {
         let shape = classify_adapter(adapter)?;
         if is_axolotl_driver(&doc.driver) {
@@ -347,6 +370,156 @@ fn plan_mlx(
     })
 }
 
+fn plan_unsloth(
+    prepared_dir: &Path,
+    doc: &EnrichPrepareDoc,
+    seat_tag: &str,
+    local_tag: &str,
+    adapter: &Path,
+) -> Result<MergeAdaptPlan, ModelError> {
+    refuse_recipe_train_record(doc, prepared_dir)?;
+    let shape = classify_unsloth_adapter(adapter)?;
+    let merged = unsloth_merged_dir(prepared_dir);
+    refuse_sacred_and_sku("merged", &merged.display().to_string())?;
+    single_line(
+        "refuse:merge",
+        "merged directory",
+        &merged.display().to_string(),
+    )?;
+    single_line(
+        "refuse:merge",
+        "adapter directory",
+        &shape.dir.display().to_string(),
+    )?;
+    let merged_line = printed_unsloth_merged_16bit(&merged);
+    let lora_lines = printed_unsloth_lora_save(&shape.dir);
+    let reload = printed_unsloth_reload(&shape.dir);
+    let convert = printed_convert_line(&merged);
+    let gguf = gguf_convert_cli(prepared_dir, &merged);
+    let seat = local_seat_cli(prepared_dir, &merged);
+    let manual = printed_unsloth_manual_block(&merged);
+    let direct = printed_unsloth_gguf_examples();
+    let weights = shape.weights.join(", ");
+    let report = format!(
+        "{header}\
+         \n\
+         Unsloth documents the LoRA save on {vllm}. The page shows `model.save_pretrained(\"finetuned_lora\")` and `tokenizer.save_pretrained(\"finetuned_lora\")`, and `model.save_pretrained_merged(\"finetuned_model\", tokenizer, save_method = \"lora\")`. That save writes adapter_config.json and adapter_model.safetensors. adapter_model.bin is the file when safe_serialization is False. This adapter directory is {adapter}. It holds adapter_config.json and {weights}. This factory does not choose a rank and does not write a training script.\n\
+         \n\
+         {lora_lines}\n\
+         \n\
+         The same page saves a merged 16-bit directory with `model.save_pretrained_merged(\"finetuned_model\", tokenizer, save_method = \"merged_16bit\")`. The GGUF page uses the directory string merged_model for that same call ({gguf_doc}). The call is on the trained model object in that session. It does not take an adapter-directory flag. This print passes {merged} as that directory string so the later seat line names one path. The directory name merged sits beside this prepare. This factory does not create {merged} and does not write a Python file.\n\
+         \n\
+         {merged_line}\n\
+         \n\
+         When the trained model is no longer in memory, the inference page reloads a saved LoRA directory ({inference_doc}). The page sets model_name to \"lora_model\" and leaves max_seq_length, dtype, and load_in_4bit as the names from that training session. This print sets model_name to this adapter directory and does not fill those three names. It does not join the reload and the save into a script.\n\
+         \n\
+         {reload}\n\
+         \n\
+         Then call the merged_16bit line above on that model. This card does not print PeftModel.merge_and_unload. Unsloth's published 16-bit merge for this QLoRA card is save_method merged_16bit. The vLLM guide also lists save_method merged_4bit and says not to use it unless you know what the 4-bit merge is for. This print does not add merged_4bit. The GGUF page documents maximum_memory_usage on save_pretrained as a crash workaround. This print does not add that argument.\n\
+         \n\
+         The GGUF page's manual tab then runs llama.cpp convert_hf_to_gguf.py. The published lines are --outtype f16, bf16, and q8_0, each with --split-max-size 50G. The page's outfile names are model-F16.gguf, model-BF16.gguf, and model-Q8_0.gguf. This print uses {merged} where the page writes merged_model. It does not print the page's apt-get or cmake build. This factory does not clone llama.cpp and does not run these lines. Unsloth's page does not publish --outtype auto. The python3 line in the next card is the llama.cpp script default.\n\
+         \n\
+         {manual}\n\
+         \n\
+         The same page also publishes model.save_pretrained_gguf with quantization_method q4_k_m, q8_0, and f16. The directory argument on the page is the string directory. This print keeps that string. It does not choose one method and does not guess the .gguf file name that call writes. After the file exists, pass that file to local-seat --weights.\n\
+         \n\
+         {direct}\n\
+         \n\
+         The Ollama page ({ollama_doc}) exports to GGUF and says Unsloth writes a Modelfile. It does not publish an Ollama ADAPTER line for the PEFT directory. local-seat --adapter on this prepare is refuse:adapter.\n\
+         \n\
+         {next}\
+         merge-adapt did not merge and did not write {merged}.\n\
+         READY_FOR_LIVE_TEST: no.\n",
+        header = header(doc, seat_tag, local_tag, &shape.dir, &merged),
+        vllm = UNSLOTH_VLLM_DOC,
+        gguf_doc = UNSLOTH_GGUF_DOC,
+        inference_doc = UNSLOTH_INFERENCE_DOC,
+        ollama_doc = UNSLOTH_OLLAMA_DOC,
+        adapter = shape.dir.display(),
+        weights = weights,
+        merged = merged.display(),
+        next = next_lines(&convert, &gguf, &seat),
+    );
+    Ok(MergeAdaptPlan {
+        seat_tag: seat_tag.to_string(),
+        local_tag: local_tag.to_string(),
+        pack_id: doc.pack_id.clone(),
+        driver: doc.driver.clone(),
+        merge_commands: vec![merged_line],
+        merged_dir: merged,
+        convert_command: convert,
+        gguf_convert_command: gguf,
+        local_seat_command: seat,
+        report,
+    })
+}
+
+/// `save_pretrained_merged(..., save_method = "merged_16bit")` from the vLLM guide and the GGUF page.
+pub(crate) fn printed_unsloth_merged_16bit(out: &Path) -> String {
+    let out = json_quote(&out.display().to_string());
+    format!("model.save_pretrained_merged({out}, tokenizer, save_method = \"merged_16bit\")")
+}
+
+/// LoRA save lines from the vLLM guide. The directory argument is this adapter.
+pub(crate) fn printed_unsloth_lora_save(adapter: &Path) -> String {
+    let adapter = json_quote(&adapter.display().to_string());
+    format!(
+        "model.save_pretrained({adapter})\n\
+         tokenizer.save_pretrained({adapter})\n\
+         model.save_pretrained_merged({adapter}, tokenizer, save_method = \"lora\")"
+    )
+}
+
+/// Inference-page reload. Only `model_name` is this adapter directory.
+pub(crate) fn printed_unsloth_reload(adapter: &Path) -> String {
+    let adapter = json_quote(&adapter.display().to_string());
+    format!(
+        "from unsloth import FastLanguageModel\n\
+         model, tokenizer = FastLanguageModel.from_pretrained(\n\
+         model_name = {adapter},\n\
+         max_seq_length = max_seq_length,\n\
+         dtype = dtype,\n\
+         load_in_4bit = load_in_4bit,\n\
+         )"
+    )
+}
+
+/// The three `save_pretrained_gguf` examples on the GGUF page. The directory string stays `directory`.
+pub(crate) fn printed_unsloth_gguf_examples() -> String {
+    "model.save_pretrained_gguf(\"directory\", tokenizer, quantization_method = \"q4_k_m\")\n\
+     model.save_pretrained_gguf(\"directory\", tokenizer, quantization_method = \"q8_0\")\n\
+     model.save_pretrained_gguf(\"directory\", tokenizer, quantization_method = \"f16\")"
+        .to_string()
+}
+
+pub(crate) fn printed_unsloth_manual_convert(merged: &Path, outfile: &str, outtype: &str) -> String {
+    format!(
+        "python llama.cpp/convert_hf_to_gguf.py {} --outfile {} --outtype {} --split-max-size 50G",
+        shell_quote(&merged.display().to_string()),
+        shell_quote(outfile),
+        outtype
+    )
+}
+
+pub(crate) fn printed_unsloth_manual_block(merged: &Path) -> String {
+    format!(
+        "{f16}\n\
+         {bf16}\n\
+         {q8}",
+        f16 = printed_unsloth_manual_convert(merged, "model-F16.gguf", "f16"),
+        bf16 = printed_unsloth_manual_convert(merged, "model-BF16.gguf", "bf16"),
+        q8 = printed_unsloth_manual_convert(merged, "model-Q8_0.gguf", "q8_0"),
+    )
+}
+
+pub(crate) fn unsloth_merged_dir(prepared: &Path) -> PathBuf {
+    prepared.join(UNSLOTH_MERGED_DIR_NAME)
+}
+
+fn json_quote(text: &str) -> String {
+    serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string())
+}
+
 /// Documented `mlx_lm.fuse` line. `--export-gguf` is the LORA.md GGUF flag.
 pub(crate) fn printed_mlx_fuse_line(
     train_base: &str,
@@ -441,6 +614,94 @@ pub(crate) fn mlx_post_train_ladder(
     )
 }
 
+/// Operator card appended to `unsloth-qlora` `PREPARE.md` and `NEXT.md`.
+///
+/// The adapter directory is chosen when the operator saves the LoRA.
+/// This card names `merge-adapt` with `<adapter-dir>`. The save print fills
+/// that path. The merged directory sits beside this prepare.
+pub(crate) fn unsloth_post_train_ladder(out_dir: &Path, seat_tag: &str, pack_id: &str) -> String {
+    let tag = local_enrich_tag(pack_id);
+    let merged = unsloth_merged_dir(out_dir);
+    let adapter = Path::new("<adapter-dir>");
+    let merge_cli = printed_merge_adapt_cli(out_dir, adapter);
+    let merged_line = printed_unsloth_merged_16bit(&merged);
+    let lora_lines = printed_unsloth_lora_save(adapter);
+    let convert = printed_convert_line(&merged);
+    let gguf_cli = gguf_convert_cli(out_dir, &merged);
+    let seat_cli = local_seat_cli(out_dir, &merged);
+    let outfile = crate::gguf_convert::sibling_gguf_outfile(&merged);
+    let manual = printed_unsloth_manual_block(&merged);
+    let direct = printed_unsloth_gguf_examples();
+    let prepared = shell_quote(&out_dir.display().to_string());
+    let merged_q = shell_quote(&merged.display().to_string());
+    let outfile_q = shell_quote(&outfile.display().to_string());
+    let tag_q = shell_quote(&tag);
+    format!(
+        "\n\
+         ## After the Unsloth train\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id this cell already runs. The create name is {tag}.\n\
+         \n\
+         Chain, outside this factory. This factory does not merge, does not shell out, does not write weights, and does not promote.\n\
+         \n\
+         1. Save the LoRA. The vLLM guide ({vllm}) publishes `model.save_pretrained(\"finetuned_lora\")` and `tokenizer.save_pretrained(\"finetuned_lora\")`, and `model.save_pretrained_merged(..., save_method = \"lora\")`. That directory holds adapter_config.json and adapter_model.safetensors. adapter_model.bin is the file when safe_serialization is False. This factory does not choose the path and does not choose a rank.\n\
+         \n\
+         {lora_lines}\n\
+         \n\
+         2. Print the 16-bit merge. `merge-adapt` checks that directory and prints `model.save_pretrained_merged(..., save_method = \"merged_16bit\")`. The vLLM guide uses the directory string finetuned_model. The GGUF page ({gguf_doc}) uses merged_model. The call is on the trained model object. It does not take an adapter-directory flag. This print passes {merged}, beside this prepare. This factory does not create that directory and does not write a Python file. It does not print PeftModel.merge_and_unload. It does not print save_method merged_4bit.\n\
+         \n\
+         {merge_cli}\n\
+         \n\
+         That prints:\n\
+         \n\
+         {merged_line}\n\
+         \n\
+         The inference page ({inference}) reloads a saved LoRA with FastLanguageModel.from_pretrained. model_name on that page is \"lora_model\". max_seq_length, dtype, and load_in_4bit stay the names from the training session. This factory does not fill those three names and does not join the reload and the save into a script.\n\
+         3. Print the convert for that merged Hugging Face directory. The GGUF page's manual tab publishes `python llama.cpp/convert_hf_to_gguf.py` with --outtype f16, bf16, and q8_0, and --split-max-size 50G. This factory does not run those lines and does not print the page's apt-get or cmake build.\n\
+         \n\
+         {manual}\n\
+         \n\
+         `gguf-convert` is the same card llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora use. It prints `python3 convert_hf_to_gguf.py` with --outtype auto, the llama.cpp script default. Unsloth's page does not publish --outtype auto. The outfile is {outfile}, a sibling of the merged directory.\n\
+         \n\
+         {gguf_cli}\n\
+         \n\
+         That prints:\n\
+         \n\
+         {convert}\n\
+         \n\
+         The GGUF page also publishes model.save_pretrained_gguf. The directory argument on the page is the string directory. This print keeps that string and does not guess the .gguf file name.\n\
+         \n\
+         {direct}\n\
+         \n\
+         4. Seat the merged directory, or the GGUF file. `local-seat --weights` prints the ollama create line. A merged directory still points at gguf-convert first. A GGUF file also prints llama-cli -m and llama-server -m. The Ollama page ({ollama}) exports to GGUF and says Unsloth writes a Modelfile. It does not publish an Ollama ADAPTER line for the PEFT directory. `local-seat --adapter` on this prepare is refuse:adapter.\n\
+         \n\
+         {seat_cli}\n\
+         \n\
+         After save_pretrained_gguf writes one .gguf file, point --weights at that file.\n\
+         5. Record the artifact. import-trained accepts the adapter directory, the merged directory, or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter '<adapter-dir>'\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {merged_q}\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outfile_q}\n\
+         \n\
+         READY_FOR_LIVE_TEST: no.\n",
+        seat = seat_tag,
+        tag = tag,
+        vllm = UNSLOTH_VLLM_DOC,
+        gguf_doc = UNSLOTH_GGUF_DOC,
+        inference = UNSLOTH_INFERENCE_DOC,
+        ollama = UNSLOTH_OLLAMA_DOC,
+        merged = merged.display(),
+        outfile = outfile.display(),
+        prepared = prepared,
+        tag_q = tag_q,
+        merged_q = merged_q,
+        outfile_q = outfile_q,
+    )
+}
+
 /// `mlx_lm.fuse` refuses a directory that is not the adapter it writes.
 fn classify_mlx_adapter(adapter: &Path) -> Result<crate::local_seat::AdapterDir, ModelError> {
     let shape = classify_adapter(adapter)?;
@@ -516,6 +777,33 @@ pub(crate) fn refuse_mlx_adapter_seat() -> ModelError {
     ModelError::Other(format!(
         "refuse:adapter: mlx-lm-lora adapters are not an Ollama ADAPTER directory. mlx_lm.lora writes adapter_config.json and {MLX_ADAPTER_WEIGHTS}. Fuse with mlx_lm.fuse. estate enrich merge-adapt prints that line. Then pass {MLX_GGUF_FILE_NAME} to local-seat --weights. This factory does not print an ADAPTER Modelfile for this driver."
     ))
+}
+
+/// Unsloth's lora save writes `adapter_model.safetensors` (or `.bin`) beside `adapter_config.json`.
+fn classify_unsloth_adapter(adapter: &Path) -> Result<crate::local_seat::AdapterDir, ModelError> {
+    let shape = classify_adapter(adapter)?;
+    if shape.weights.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has adapter_config.json and no {UNSLOTH_ADAPTER_WEIGHTS}. Unsloth's lora save writes adapter_config.json and {UNSLOTH_ADAPTER_WEIGHTS}. {UNSLOTH_ADAPTER_BIN} is that file when safe_serialization is False. This factory does not invent the weight file.",
+            shape.dir.display()
+        )));
+    }
+    Ok(shape)
+}
+
+/// `--weights` on the PEFT directory is not the Unsloth Ollama seat.
+pub(crate) fn refuse_unsloth_adapter_weights(dir: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:seat: {} is an adapter directory. On unsloth-qlora, --weights is the merged 16-bit directory (config.json and a .safetensors file whose name does not start with adapter_model) or a GGUF file. --adapter does not print an Ollama adapter Modelfile for this PEFT directory (adapter_config.json and {UNSLOTH_ADAPTER_WEIGHTS}). Unsloth documents Ollama through a GGUF. estate enrich merge-adapt prints save_pretrained_merged with save_method merged_16bit. This factory does not merge.",
+        dir.display()
+    ))
+}
+
+/// Ollama `ADAPTER` is not the path Unsloth publishes for this PEFT directory.
+pub(crate) fn refuse_unsloth_adapter_seat() -> ModelError {
+    ModelError::Other(
+        "refuse:adapter: unsloth-qlora adapters are not an Ollama adapter directory. Unsloth's vLLM guide saves the LoRA as adapter_config.json and adapter_model.safetensors (model.save_pretrained, or save_pretrained_merged with save_method \"lora\"). The saving-to-gguf page and the saving-to-ollama page seat a GGUF: model.save_pretrained_gguf, or save_pretrained_merged with save_method \"merged_16bit\" then llama.cpp convert_hf_to_gguf.py. This factory does not print an Ollama adapter Modelfile for the PEFT directory. Seat the merged directory or the GGUF with local-seat --weights. estate enrich merge-adapt prints the merged_16bit line.".into(),
+    )
 }
 
 /// A fused directory that also holds the exported GGUF matches two shapes.
@@ -1245,9 +1533,21 @@ mod tests {
         write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), None, false);
         let adapter = adapter_dir(&root.join("adapter"));
         let err = plan_merge_adapt(&root, &adapter).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
-        assert!(err.to_string().contains("unsloth-qlora"), "{err}");
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
         assert!(!err.to_string().contains("axolotl merge-lora"), "{err}");
+
+        write_prepare(
+            &root,
+            "external-manifest",
+            "enrich",
+            Some("llama3"),
+            None,
+            false,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("external-manifest"), "{err}");
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), None, false);
         let err = plan_merge_adapt(&root, &adapter).unwrap_err();
@@ -1368,6 +1668,224 @@ mod tests {
         let err = plan_merge_adapt(&root, &adapter).unwrap_err();
         assert!(err.to_string().contains("refuse:train-base"), "{err}");
         assert!(!err.to_string().contains("merge_and_unload"), "{err}");
+    }
+
+    const UNSLOTH_TRAIN: &str = "Qwen/Qwen2.5-0.5B-Instruct";
+
+    fn write_unsloth_md(dir: &Path, train: &str, seat: &str) {
+        std::fs::write(
+            dir.join("UNSLOTH.md"),
+            format!("train_base_model: \"{train}\"\nseat_tag: \"{seat}\"\n"),
+        )
+        .unwrap();
+    }
+
+    fn unsloth_weights(dir: &Path, weight_name: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(dir.join(weight_name), b"w").unwrap();
+        dir.to_path_buf()
+    }
+
+    #[test]
+    fn unsloth_adapter_prints_merged_16bit_and_writes_nothing() {
+        let root = tmp("unsloth-print");
+        write_prepare(
+            &root,
+            UNSLOTH_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(UNSLOTH_TRAIN),
+            false,
+        );
+        write_unsloth_md(&root, UNSLOTH_TRAIN, "llama3");
+        let adapter = unsloth_weights(&root.join("lora"), "adapter_model.safetensors");
+        let before = names(&root);
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+        let merged = root.join("merged");
+        assert_eq!(plan.merged_dir, merged);
+        assert_eq!(plan.driver, UNSLOTH_QLORA_ID);
+        assert_eq!(plan.merge_commands.len(), 1);
+        assert_eq!(
+            plan.merge_commands[0],
+            printed_unsloth_merged_16bit(&merged)
+        );
+        assert!(
+            plan.merge_commands[0].contains("save_method = \"merged_16bit\""),
+            "{}",
+            plan.merge_commands[0]
+        );
+        assert!(
+            !plan.merge_commands[0].contains("merge_and_unload"),
+            "{}",
+            plan.merge_commands[0]
+        );
+        assert!(
+            !plan.merge_commands[0].contains("merged_4bit"),
+            "{}",
+            plan.merge_commands[0]
+        );
+        assert_eq!(plan.convert_command, printed_convert_line(&merged));
+        assert!(plan.convert_command.contains("--outtype auto"), "{}", plan.convert_command);
+        assert_eq!(plan.gguf_convert_command, gguf_convert_cli(&root, &merged));
+        assert_eq!(plan.local_seat_command, local_seat_cli(&root, &merged));
+        assert!(plan.report.contains("save_pretrained_merged"), "{}", plan.report);
+        assert!(plan.report.contains("--outtype f16"), "{}", plan.report);
+        assert!(plan.report.contains("--outtype bf16"), "{}", plan.report);
+        assert!(plan.report.contains("--outtype q8_0"), "{}", plan.report);
+        assert!(plan.report.contains("model-F16.gguf"), "{}", plan.report);
+        assert!(plan.report.contains("model-BF16.gguf"), "{}", plan.report);
+        assert!(plan.report.contains("model-Q8_0.gguf"), "{}", plan.report);
+        assert!(plan.report.contains("--split-max-size 50G"), "{}", plan.report);
+        assert!(
+            plan.report.contains("does not publish --outtype auto")
+                || plan.report.contains("Unsloth's page does not publish --outtype auto"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("save_pretrained_gguf"), "{}", plan.report);
+        assert!(plan.report.contains("quantization_method = \"q4_k_m\""), "{}", plan.report);
+        assert!(plan.report.contains("quantization_method = \"q8_0\""), "{}", plan.report);
+        assert!(plan.report.contains("quantization_method = \"f16\""), "{}", plan.report);
+        assert!(plan.report.contains("\"directory\""), "{}", plan.report);
+        assert!(plan.report.contains("refuse:adapter"), "{}", plan.report);
+        assert!(plan.report.contains("READY_FOR_LIVE_TEST: no"), "{}", plan.report);
+        assert!(!plan.report.contains("READY_FOR_LIVE_TEST: yes"), "{}", plan.report);
+        assert!(!plan.report.contains("merge_and_unload()"), "{}", plan.report);
+        assert!(plan.report.contains("merge-adapt did not merge"), "{}", plan.report);
+        assert!(!merged.exists());
+        assert_eq!(names(&root), before);
+        assert_eq!(std::fs::read(root.join("prepare.json")).unwrap(), prepare_before);
+
+        let bin_adapter = unsloth_weights(&root.join("bin-lora"), "adapter_model.bin");
+        let bin_plan = plan_merge_adapt(&root, &bin_adapter).unwrap();
+        assert!(
+            bin_plan.report.contains("adapter_model.bin"),
+            "{}",
+            bin_plan.report
+        );
+        assert!(!root.join("merged").exists());
+    }
+
+    #[test]
+    fn unsloth_merge_refuses_closed() {
+        let root = tmp("unsloth-refuse");
+        write_prepare(
+            &root,
+            UNSLOTH_QLORA_ID,
+            "enrich",
+            Some("llama3"),
+            Some(UNSLOTH_TRAIN),
+            false,
+        );
+        write_unsloth_md(&root, UNSLOTH_TRAIN, "llama3");
+        let adapter = unsloth_weights(&root.join("lora"), "adapter_model.safetensors");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        write_prepare(
+            &root,
+            UNSLOTH_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(UNSLOTH_TRAIN),
+            false,
+        );
+        std::fs::remove_file(root.join("UNSLOTH.md")).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("UNSLOTH.md is missing"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        let real = root.join("real-unsloth.md");
+        std::fs::write(
+            &real,
+            format!("train_base_model: \"{UNSLOTH_TRAIN}\"\nseat_tag: \"llama3\"\n"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&real, root.join("UNSLOTH.md")).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        std::fs::remove_file(root.join("UNSLOTH.md")).unwrap();
+        write_unsloth_md(&root, "other/repo", "llama3");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        write_unsloth_md(&root, UNSLOTH_TRAIN, "other");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("seat_tag"), "{err}");
+
+        write_unsloth_md(&root, UNSLOTH_TRAIN, "llama3");
+        let bare = adapter_dir(&root.join("bare"));
+        let err = plan_merge_adapt(&root, &bare).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("adapter_model.safetensors"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        let mlx_weights = unsloth_weights(&root.join("mlxish"), "adapters.safetensors");
+        let err = plan_merge_adapt(&root, &mlx_weights).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(!err.to_string().contains("save_pretrained_merged"), "{err}");
+
+        let merged = root.join("merged-weights");
+        std::fs::create_dir_all(&merged).unwrap();
+        std::fs::write(merged.join("config.json"), "{}\n").unwrap();
+        std::fs::write(merged.join("model.safetensors"), b"not-a-real-tensor").unwrap();
+        let err = plan_merge_adapt(&root, &merged).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(!root.join("merged").exists() || merged.exists());
+
+        let gguf = root.join("weights.gguf");
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend_from_slice(&[0u8; 12]);
+        std::fs::write(&gguf, bytes).unwrap();
+        let err = plan_merge_adapt(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("GGUF"), "{err}");
+
+        let linked = root.join("linked-lora");
+        std::os::unix::fs::symlink(&adapter, &linked).unwrap();
+        let err = plan_merge_adapt(&root, &linked).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+
+        let marked = root.join("marked-lora");
+        std::fs::create_dir_all(&marked).unwrap();
+        let outside = root.join("outside-config.json");
+        std::fs::write(&outside, "{}\n").unwrap();
+        std::os::unix::fs::symlink(&outside, marked.join("adapter_config.json")).unwrap();
+        let err = plan_merge_adapt(&root, &marked).unwrap_err();
+        assert!(err.to_string().contains("refuse:adapter"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+
+        let sacred = root.join("cyera-adapter");
+        unsloth_weights(&sacred, "adapter_model.safetensors");
+        let err = plan_merge_adapt(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        let sku = root.join("model-5090");
+        unsloth_weights(&sku, "adapter_model.safetensors");
+        let err = plan_merge_adapt(&root, &sku).unwrap_err();
+        assert!(err.to_string().contains("refuse:sku-banned"), "{err}");
+
+        write_prepare(
+            &root,
+            UNSLOTH_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(UNSLOTH_TRAIN),
+            true,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+        assert!(!root.join("merged").exists());
     }
 
     #[test]

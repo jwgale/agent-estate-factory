@@ -99,6 +99,7 @@ fn install_traps(root: &std::path::Path) -> PathBuf {
         "llama-server",
         "mlx_lm.fuse",
         "mlx_lm.lora",
+        "unsloth",
     ] {
         let path = bin.join(name);
         std::fs::write(&path, &script).unwrap();
@@ -496,9 +497,88 @@ fn mlx_on_the_wrong_host_and_unsloth_still_refuse() {
     let out = run_merge(&root, &root, &adapters);
     let body = text(&out);
     assert!(!out.status.success(), "{body}");
-    assert!(body.contains("refuse:driver"), "{body}");
-    assert!(body.contains("unsloth-qlora"), "{body}");
+    assert!(body.contains("refuse:train-base"), "{body}");
+    assert!(body.contains("UNSLOTH.md is missing"), "{body}");
     assert!(!body.contains("mlx_lm.fuse"), "{body}");
     assert!(!body.contains("merge_and_unload"), "{body}");
+    assert!(!body.contains("save_pretrained_merged"), "{body}");
     assert!(!root.join("spawned").exists());
+    assert!(!root.join("fused_model").exists());
+    assert!(!root.join("merged").exists());
+
+    std::fs::write(
+        root.join("UNSLOTH.md"),
+        "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+    )
+    .unwrap();
+    let out = run_merge(&root, &root, &adapters);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:adapter"), "{body}");
+    assert!(body.contains("adapter_model.safetensors"), "{body}");
+    assert!(!body.contains("save_pretrained_merged"), "{body}");
+    assert!(!root.join("spawned").exists());
+    assert!(!root.join("merged").exists());
+}
+
+#[test]
+fn prepared_unsloth_prints_the_save_and_spawns_nothing() {
+    let root = tmp("unsloth-prepare");
+    let estate = write_train_estate(&root, "llama3", "Qwen/Qwen2.5-0.5B-Instruct");
+    let pack = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+    let out_dir = root.join("unsloth-qlora");
+    let prepared = estate_bin()
+        .args([
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            pack.to_str().unwrap(),
+            "--driver",
+            "unsloth-qlora",
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    for name in ["UNSLOTH.md", "NEXT.md", "PREPARE.md"] {
+        let page = std::fs::read_to_string(out_dir.join(name)).unwrap();
+        assert!(page.contains("save_pretrained_merged"), "{name}: {page}");
+        assert!(page.contains("merged_16bit"), "{name}: {page}");
+        assert!(page.contains("estate enrich merge-adapt"), "{name}: {page}");
+        assert!(page.contains("READY_FOR_LIVE_TEST: no"), "{name}: {page}");
+        assert!(!page.contains("READY_FOR_LIVE_TEST: yes"), "{name}: {page}");
+        assert!(!page.contains("```"), "{name}");
+    }
+    assert!(!out_dir.join("merged").exists());
+    assert!(!out_dir.join("train_unsloth.py").exists());
+
+    let lora = out_dir.join("lora");
+    adapter_dir(&lora);
+    std::fs::write(lora.join("adapter_model.safetensors"), b"w").unwrap();
+    let prepare_before = std::fs::read(out_dir.join("prepare.json")).unwrap();
+    let out = run_merge(&root, &out_dir, &lora);
+    let body = text(&out);
+    assert!(out.status.success(), "{body}");
+    let merged = out_dir.join("merged");
+    assert!(body.contains("save_method = \"merged_16bit\""), "{body}");
+    assert!(body.contains(&merged.display().to_string()), "{body}");
+    assert!(body.contains("--outtype f16"), "{body}");
+    assert!(body.contains("--outtype bf16"), "{body}");
+    assert!(body.contains("--outtype q8_0"), "{body}");
+    assert!(body.contains("python3 convert_hf_to_gguf.py"), "{body}");
+    assert!(body.contains("--outtype auto"), "{body}");
+    assert!(body.contains("estate enrich gguf-convert"), "{body}");
+    assert!(body.contains("estate enrich local-seat"), "{body}");
+    assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{body}");
+    assert!(!body.contains("merge_and_unload()"), "{body}");
+    assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    assert!(!merged.exists());
+    assert!(!root.join("spawned").exists(), "unsloth tooling was spawned");
+    assert_eq!(
+        std::fs::read(out_dir.join("prepare.json")).unwrap(),
+        prepare_before
+    );
 }

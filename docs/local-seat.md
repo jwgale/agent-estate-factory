@@ -30,7 +30,7 @@ estate enrich gguf-convert \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
 ```
 
-`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with job `train`. `--weights` is the merged export directory. An adapter directory, a directory that only holds `export.yaml`, a symlink, or a path that is already a GGUF is `refuse:seat`. The command writes nothing.
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, or `unsloth-qlora` with job `train`. `--weights` is the merged export directory. An adapter directory, a directory that only holds `export.yaml`, a symlink, or a path that is already a GGUF is `refuse:seat`. On `unsloth-qlora` the report also prints the three manual convert lines from Unsloth's saving-to-gguf page (`--outtype f16`, `bf16`, and `q8_0`). The factory card line stays `--outtype auto`. Unsloth's page does not publish `--outtype auto`. The command writes nothing.
 
 ## Command
 
@@ -40,7 +40,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
 ```
 
-`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with job `train`. `--weights` is the merged export directory or a `.gguf` file.
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, `unsloth-qlora`, or `mlx-lm-lora` with job `train`. `--weights` is the merged export directory or a `.gguf` file. `unsloth-qlora` seats the merged 16-bit directory or one `.gguf` file. `mlx-lm-lora` seats one `.gguf` file. A fused MLX directory is `refuse:seat`.
 
 The report names:
 
@@ -132,7 +132,11 @@ ADAPTER <adapter-directory>
 | `--runtime` other than `ollama` or `llama.cpp` (`llama-cpp` and `llamacpp` are the `llama.cpp` aliases) | `refuse:runtime` (after the shape checks) |
 | `--runtime llama.cpp` with `--adapter` | `refuse:runtime` (llama.cpp does not load an adapter directory in one line) |
 | Modelfile with no `FROM` line, empty, or not utf-8 | `refuse:modelfile` |
-| Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, or `mlx-lm-lora` | `refuse:driver` |
+| Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, `unsloth-qlora`, or `mlx-lm-lora` | `refuse:driver` |
+| `unsloth-qlora` `--weights` is the merged 16-bit directory or one `.gguf` file | prints `ollama create`; a GGUF also prints `llama-cli -m` |
+| `unsloth-qlora` `--adapter` | `refuse:adapter` (Unsloth seats a GGUF, not an Ollama adapter line) |
+| `unsloth-qlora` `--weights` is the PEFT directory | `refuse:seat` (does not point at `--adapter`) |
+| `unsloth-qlora` missing `UNSLOTH.md` or train base, or a symlinked `UNSLOTH.md` | `refuse:train-base` |
 | `mlx-lm-lora` `--weights` is one `.gguf` file | prints `ollama create` and the llama.cpp lines for that file |
 | `mlx-lm-lora` `--weights` is a fused directory (`config.json` and `model.safetensors`) | `refuse:seat` (MLX weights; seat `ggml-model-f16.gguf`) |
 | `mlx-lm-lora` `--adapter` | `refuse:adapter` (not an Ollama `ADAPTER` directory) |

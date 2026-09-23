@@ -930,3 +930,130 @@ fn dir_names(dir: &std::path::Path) -> Vec<String> {
     names.sort();
     names
 }
+
+#[test]
+fn unsloth_seats_merged_and_gguf_and_refuses_the_adapter() {
+    let root = tmp("unsloth-seat");
+    let body = r#"{
+  "schema": "cell-one.enrich-prepare.v0",
+  "driver": "unsloth-qlora",
+  "job": "train",
+  "pack_id": "overnight-traces",
+  "base_model": "llama3",
+  "seat_tag": "llama3",
+  "train_base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "purpose": "fixture",
+  "host_class_affinity": "any",
+  "source_paths": [],
+  "source_drivers": [],
+  "artifacts": [],
+  "promoted": false,
+  "auto_apply": false,
+  "estate_rewritten": false,
+  "note": "test"
+}
+"#;
+    std::fs::write(root.join("prepare.json"), body).unwrap();
+    std::fs::write(
+        root.join("UNSLOTH.md"),
+        "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+    )
+    .unwrap();
+    let merged = root.join("merged");
+    std::fs::create_dir_all(&merged).unwrap();
+    std::fs::write(merged.join("config.json"), "{}\n").unwrap();
+    std::fs::write(merged.join("model.safetensors"), b"w").unwrap();
+    let gguf = root.join("model.gguf");
+    let mut bytes = b"GGUF".to_vec();
+    bytes.extend_from_slice(&[0u8; 12]);
+    std::fs::write(&gguf, bytes).unwrap();
+    let adapter = root.join("lora");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    std::fs::write(adapter.join("adapter_model.safetensors"), b"w").unwrap();
+
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let marker = root.join("spawned");
+    let script = format!("#!/bin/sh\ntouch {}\n", marker.display());
+    for name in [
+        "python",
+        "python3",
+        "ollama",
+        "unsloth",
+        "llama-cli",
+        "llama-server",
+        "convert_hf_to_gguf.py",
+    ] {
+        let path = bin.join(name);
+        std::fs::write(&path, &script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    let seat = |args: &[&str]| {
+        estate_bin()
+            .env("PATH", format!("{}:{path}", bin.display()))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let merged_out = seat(&[
+        "enrich",
+        "local-seat",
+        "--prepared",
+        root.to_str().unwrap(),
+        "--weights",
+        merged.to_str().unwrap(),
+    ]);
+    let merged_text = text(&merged_out);
+    assert!(merged_out.status.success(), "{merged_text}");
+    assert!(merged_text.contains("ollama create"), "{merged_text}");
+    assert!(!merged_text.contains("llama-cli -m"), "{merged_text}");
+    assert!(merged_text.contains("READY_FOR_LIVE_TEST: no"), "{merged_text}");
+    assert!(!merged.join("Modelfile").exists());
+    assert!(!marker.exists());
+
+    let gguf_out = seat(&[
+        "enrich",
+        "local-seat",
+        "--prepared",
+        root.to_str().unwrap(),
+        "--weights",
+        gguf.to_str().unwrap(),
+    ]);
+    let gguf_text = text(&gguf_out);
+    assert!(gguf_out.status.success(), "{gguf_text}");
+    assert!(gguf_text.contains("ollama create"), "{gguf_text}");
+    assert!(gguf_text.contains("llama-cli -m"), "{gguf_text}");
+    assert!(!marker.exists());
+
+    let adapter_out = seat(&[
+        "enrich",
+        "local-seat",
+        "--prepared",
+        root.to_str().unwrap(),
+        "--adapter",
+        adapter.to_str().unwrap(),
+    ]);
+    let adapter_text = text(&adapter_out);
+    assert!(!adapter_out.status.success(), "{adapter_text}");
+    assert!(adapter_text.contains("refuse:adapter"), "{adapter_text}");
+    assert!(!adapter_text.contains("ADAPTER "), "{adapter_text}");
+    assert!(!adapter_text.contains("ollama create"), "{adapter_text}");
+
+    let weights_out = seat(&[
+        "enrich",
+        "local-seat",
+        "--prepared",
+        root.to_str().unwrap(),
+        "--weights",
+        adapter.to_str().unwrap(),
+    ]);
+    let weights_text = text(&weights_out);
+    assert!(!weights_out.status.success(), "{weights_text}");
+    assert!(weights_text.contains("refuse:seat"), "{weights_text}");
+    assert!(!weights_text.contains("Pass --adapter"), "{weights_text}");
+    assert!(!weights_text.contains("ADAPTER "), "{weights_text}");
+    assert!(!marker.exists());
+}

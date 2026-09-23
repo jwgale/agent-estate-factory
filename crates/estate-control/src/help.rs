@@ -305,7 +305,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. unsloth-qlora is an optional Nvidia-only NEXT handoff and does not write a script. mlx-lm-lora is an optional Apple Silicon NEXT handoff (MLX.md) and does not write a script. This page does not run a trainer.
+- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. unsloth-qlora is an optional Nvidia-only NEXT handoff and does not write a script. After the operator-owned train, merge-adapt prints Unsloth's documented merged_16bit save. mlx-lm-lora is an optional Apple Silicon NEXT handoff (MLX.md) and does not write a script. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -378,7 +378,9 @@ default job train), axolotl-qlora (4-bit Axolotl axolotl.yml, load_in_4bit true,
 sequence_len 4096, micro_batch_size 2, gradient_accumulation_steps 4, lora_r 32;
 default job train), unsloth-qlora (optional NEXT card, status optional,
 Nvidia-only QLoRA handoff; writes UNSLOTH.md; does not write a script,
-a recipe, or dataset.jsonl; does not call Unsloth; default job train),
+a recipe, or dataset.jsonl; does not call Unsloth; after that train,
+merge-adapt prints save_pretrained_merged with save_method merged_16bit;
+default job train),
 and mlx-lm-lora (optional NEXT card, status optional, Apple Silicon
 LoRA handoff; writes MLX.md only when host_class_affinity is
 apple-silicon; another affinity is refuse:host and writes nothing;
@@ -476,8 +478,15 @@ lines write output_dir/merged. This factory does not run the merge.
 Axolotl does not write GGUF. Then gguf-convert prints
 python3 convert_hf_to_gguf.py with --outtype auto, local-seat prints
 ollama create, and import-trained records the adapter directory, that
-merged directory, or a .gguf file. unsloth-qlora stays off this
-print ladder (refuse:driver). mlx-lm-lora prints its own fuse line.
+merged directory, or a .gguf file. unsloth-qlora prints its own
+save ladder after the operator-owned train. merge-adapt prints
+model.save_pretrained_merged with save_method merged_16bit when the
+adapter directory holds adapter_config.json and adapter_model.safetensors
+(adapter_model.bin when safe_serialization is False). The merged
+directory is merged beside the prepare. This factory does not create
+that directory and does not print PeftModel.merge_and_unload for this
+card. gguf-convert and local-seat then print the convert and the seat.
+local-seat --adapter on this prepare is refuse:adapter. mlx-lm-lora prints its own fuse line.
 merge-adapt on that prepare prints mlx_lm.fuse. The adapter directory
 holds adapter_config.json and adapters.safetensors. --save-path is
 fused_model beside the prepare. --export-gguf writes
@@ -605,10 +614,12 @@ cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
 estate enrich merge-adapt prints the external adapter merge for an
 axolotl-lora, axolotl-qlora, llamafactory-lora, or llamafactory-qlora
-train prepare, and the mlx_lm.fuse line for an mlx-lm-lora train
-prepare on apple-silicon. --adapter is an adapter directory
+train prepare, the mlx_lm.fuse line for an mlx-lm-lora train
+prepare on apple-silicon, and Unsloth's save_pretrained_merged
+merged_16bit line for an unsloth-qlora train prepare. --adapter is an adapter directory
 (adapter_config.json). On mlx-lm-lora that directory also holds
-adapters.safetensors. A PEFT adapter_model file, a missing weight
+adapters.safetensors. On unsloth-qlora it also holds
+adapter_model.safetensors (or adapter_model.bin). A PEFT adapter_model file on mlx-lm-lora, a missing weight
 file, another host, a symlink, and a wrong job still refuse.
 A merged Hugging Face directory or a GGUF is refuse:adapter. For
 Axolotl the printed line is axolotl merge-lora with --lora-model-dir.
@@ -627,8 +638,12 @@ It then prints gguf-convert and local-seat for that merged directory.
 estate enrich gguf-convert prints the llama.cpp convert line for a
 merged Hugging Face directory (config.json and at least one
 .safetensors file whose name does not start with adapter_model) from
-a llamafactory-lora, llamafactory-qlora, axolotl-lora, or
-axolotl-qlora train prepare. mlx-lm-lora does not use this script.
+a llamafactory-lora, llamafactory-qlora, axolotl-lora,
+axolotl-qlora, or unsloth-qlora train prepare. For unsloth-qlora the
+report also prints the three manual lines on Unsloth's saving-to-gguf
+page (--outtype f16, bf16, and q8_0, each with --split-max-size 50G).
+Unsloth's page does not publish --outtype auto. The factory card line
+stays the llama.cpp default. mlx-lm-lora does not use this script.
 gguf-convert on that prepare is refuse:seat. The documented GGUF path
 is mlx_lm.fuse --export-gguf, which writes ggml-model-f16.gguf. This
 factory does not invent a convert script. An adapter directory, a
@@ -649,7 +664,7 @@ not write a GGUF, and does not choose a quantization type.
 
 estate enrich local-seat validates that same merged directory
 (optional Modelfile) or a .gguf file for a llamafactory-lora,
-llamafactory-qlora, axolotl-lora, or axolotl-qlora train prepare.
+llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora train prepare.
 adapter_model*.safetensors is not merged evidence. A symlinked weights
 path or a symlinked marker is refuse:seat. It prints the ollama create
 line. For a GGUF it also prints the Modelfile whose FROM is that file,
@@ -662,6 +677,10 @@ mlx-lm-lora on apple-silicon seats one .gguf file, the file
 mlx_lm.fuse --export-gguf writes (default name ggml-model-f16.gguf).
 A fused MLX directory is refuse:seat. --adapter on that prepare is
 refuse:adapter. Another host is refuse:host.
+unsloth-qlora seats the merged 16-bit directory or a GGUF file.
+--adapter on that prepare is refuse:adapter. Unsloth documents Ollama
+through a GGUF, not an Ollama adapter line for the PEFT directory.
+A missing UNSLOTH.md or train base is refuse:train-base.
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained
@@ -678,7 +697,8 @@ marker import-trained accepts, plus the adapter weights when the train
 wrote them). The printed Modelfile uses FROM the prepare.json seat_tag
 and ADAPTER that directory. --weights still refuses an adapter
 directory (refuse:seat). A merged export or a GGUF passed to --adapter
-is refuse:adapter. A symlinked adapter path or a symlinked marker is
+is refuse:adapter. unsloth-qlora and mlx-lm-lora --adapter are
+refuse:adapter even when the directory is a real adapter. A symlinked adapter path or a symlinked marker is
 refused the same way. The command prints the ollama create line and
 does not run it. llama.cpp does not load that adapter directory in one
 line. --runtime llama.cpp with --adapter is refuse:runtime. Another

@@ -76,6 +76,7 @@ fn install_traps(root: &std::path::Path) -> (PathBuf, PathBuf) {
         "convert_hf_to_gguf.py",
         "mlx_lm.fuse",
         "mlx_lm.lora",
+        "unsloth",
     ] {
         let path = bin.join(name);
         std::fs::write(&path, &script).unwrap();
@@ -396,4 +397,63 @@ fn mlx_convert_refuses_and_does_not_spawn() {
     assert!(host_text.contains("refuse:host"), "{host_text}");
     assert!(!host_text.contains("mlx_lm.fuse"), "{host_text}");
     assert!(!root.join("spawned").exists());
+}
+
+#[test]
+fn unsloth_convert_prints_the_lines_and_does_not_spawn() {
+    let root = tmp("unsloth");
+    let body = r#"{
+  "schema": "cell-one.enrich-prepare.v0",
+  "driver": "unsloth-qlora",
+  "job": "train",
+  "pack_id": "overnight-traces",
+  "base_model": "llama3",
+  "seat_tag": "llama3",
+  "train_base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "purpose": "fixture",
+  "host_class_affinity": "any",
+  "source_paths": [],
+  "source_drivers": [],
+  "artifacts": [],
+  "promoted": false,
+  "auto_apply": false,
+  "estate_rewritten": false,
+  "note": "test"
+}
+"#;
+    std::fs::write(root.join("prepare.json"), body).unwrap();
+    let export = root.join("merged");
+    merged(&export);
+    let missing = run_convert(&root, &export);
+    let missing_text = text(&missing);
+    assert!(!missing.status.success(), "{missing_text}");
+    assert!(missing_text.contains("UNSLOTH.md is missing"), "{missing_text}");
+    assert!(!missing_text.contains("--outtype"), "{missing_text}");
+    assert!(!root.join("spawned").exists());
+    assert!(!root.join("merged.gguf").exists());
+
+    std::fs::write(
+        root.join("UNSLOTH.md"),
+        "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+    )
+    .unwrap();
+    let out = run_convert(&root, &export);
+    let body = text(&out);
+    assert!(out.status.success(), "{body}");
+    let outfile = root.join("merged.gguf");
+    assert!(
+        body.contains(&format!(
+            "python3 convert_hf_to_gguf.py {} --outfile {} --outtype auto",
+            export.display(),
+            outfile.display()
+        )),
+        "{body}"
+    );
+    assert!(body.contains("--outtype f16"), "{body}");
+    assert!(body.contains("--outtype bf16"), "{body}");
+    assert!(body.contains("--outtype q8_0"), "{body}");
+    assert!(body.contains("does not publish --outtype auto"), "{body}");
+    assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{body}");
+    assert!(!outfile.exists());
+    assert!(!root.join("spawned").exists(), "convert tooling was spawned");
 }
