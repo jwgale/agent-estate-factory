@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Llama-3.2 Instruct LoRA reproduce target
+
+- `llamafactory-lora` infers LLaMA-Factory template `llama3` for `meta-llama/Llama-3.2-1B-Instruct` and `meta-llama/Llama-3.2-3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--meta-llama--Llama-3.2-3B-Instruct`). That is the same text group as the Llama-3.2 Instruct QLoRA prepare. There is no `llama3_2` template. Llama-3.2 vision uses `mllama`. `llama3-llava-next` uses `llava_next_llama3`. `llama-30b` stays `default`. A Llama-3.2 base, Llama-3.1 Instruct, and Llama-3.3 Instruct stay `llama3` and are not this reproduce target.
+- The LoRA card still omits `quantization_bit` and `quantization_method`. `lora_rank` stays 8. `packing` stays false. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Llama repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as the non-quant twin of the Llama-3.2 Instruct QLoRA prepare only when the winning segment is that Instruct shape, and only on `llamafactory-lora`. The QLoRA note stays on `llamafactory-qlora`. A Llama-3.2 vision id, a Llama-3.2 base, and a Llama-3.1 Instruct id do not get the LoRA line. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/llama32-instruct-lora.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `meta-llama/Llama-3.2-3B-Instruct`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — refuse fused MLX on import-trained
 
 - `estate enrich import-trained` on an `mlx-lm-lora` train prepare refuses a fused MLX directory (`refuse:adapter`). That directory is `config.json` and a `.safetensors` file whose name does not start with `adapter_model`. `mlx_lm.fuse` writes `model.safetensors` and `config.json`. A directory that also holds `ggml-model-f16.gguf` is the same refuse. The command does not record `trained_shape` `merged` and does not write a proposal.

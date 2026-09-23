@@ -419,9 +419,17 @@ Qwen LoRA/QLoRA and still writes quantization_method bnb and quantization_bit 4.
 Llama-3.2-1B-Instruct and Llama-3.2-3B-Instruct use template llama3.
 Llama-3.2 vision (11B and 90B) uses mllama. A short llama-3 stem does not
 label those names llama3. llama-30b stays default.
-examples/fixtures/llama32-instruct.pack.json is the Llama-3.2 Instruct smoke pack.
+examples/fixtures/llama32-instruct.pack.json is the Llama-3.2 Instruct QLoRA smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Phi-3 and Qwen LoRA/QLoRA and still writes quantization_method bnb and quantization_bit 4.
+That reproduce line is QLoRA-only and only for Llama-3.2-1B-Instruct and
+Llama-3.2-3B-Instruct.
+examples/fixtures/llama32-instruct-lora.pack.json is the Llama-3.2 Instruct LoRA
+smoke pack. --driver llamafactory-lora on that pack is the non-quant twin
+of that QLoRA prepare. It uses template llama3, lora_rank 8, packing false,
+and no quantization_bit or quantization_method. That reproduce line is
+LoRA-only and only for Llama-3.2-1B-Instruct and Llama-3.2-3B-Instruct.
+Llama-3.2 vision, a Llama-3.2 base, and Llama-3.1 Instruct do not get that line.
 Gemma-2-2b-it, Gemma-2-9b-it, and Gemma-2-27b-it use template gemma2.
 A short gemma stem does not label those names gemma. gemma-2b and gemma-7b
 stay gemma. Gemma-3 stays off gemma2.
