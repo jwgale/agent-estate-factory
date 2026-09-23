@@ -420,6 +420,14 @@ label those names llama3. llama-30b stays default.
 examples/fixtures/llama32-instruct.pack.json is the Llama-3.2 Instruct smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Phi-3 and Qwen LoRA/QLoRA and still writes quantization_method bnb and quantization_bit 4.
+Gemma-2-2b-it, Gemma-2-9b-it, and Gemma-2-27b-it use template gemma2.
+A short gemma stem does not label those names gemma. gemma-2b and gemma-7b
+stay gemma. Gemma-3 stays off gemma2.
+examples/fixtures/gemma2-instruct.pack.json is the Gemma-2 Instruct smoke pack.
+--driver llamafactory-qlora on that pack is a reproduce target beside
+Phi-3, Llama-3.2, and Qwen LoRA/QLoRA and still writes quantization_method bnb
+and quantization_bit 4. That reproduce line is QLoRA-only and only for a
+Gemma-2 Instruct id.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,

@@ -3593,8 +3593,8 @@ fn template_for_segment(segment: &str) -> Option<&'static str> {
         Some(template)
     } else if name.contains("mistral") {
         Some("mistral")
-    } else if name.contains("gemma") {
-        Some("gemma")
+    } else if let Some(template) = gemma_template_for_segment(&name) {
+        Some(template)
     } else {
         phi_template_for_segment(&name)
     }
@@ -3656,6 +3656,30 @@ fn llama_template_for_segment(name: &str) -> Option<&'static str> {
     None
 }
 
+/// LLaMA-Factory `register_model_group` templates for Gemma.
+/// Longer stems win. `gemma` is a prefix of `gemma-2`, and `-` is not an
+/// alphanumeric boundary, so `contains("gemma")` labels `google/gemma-2-2b-it`
+/// as `gemma`. That group is `template="gemma2"` in `constants.py`.
+/// `template.py` registers `gemma2`. There is no `gemma_2` name.
+/// `gemma-2` is also a prefix of `gemma-2b` (original Gemma 2B, template `gemma`).
+/// The next byte is alphanumeric, so `stem_at_boundary` leaves `gemma-2b` and
+/// `gemma-7b` on `gemma`. The same boundary leaves Gemma-3 (`gemma-3-4b-it`)
+/// off `gemma2`. Current `constants.py` also puts Gemma-3 270M and 1B text in
+/// the `gemma2` group. This scan does not claim those ids.
+/// HF cache directories keep the repo id in one segment
+/// (`models--google--gemma-2-2b-it`).
+fn gemma_template_for_segment(name: &str) -> Option<&'static str> {
+    const GEMMA2_STEMS: &[&str] = &["gemma-2", "gemma2"];
+    if GEMMA2_STEMS.iter().any(|stem| stem_at_boundary(name, stem)) {
+        return Some("gemma2");
+    }
+    if name.contains("gemma") {
+        Some("gemma")
+    } else {
+        None
+    }
+}
+
 fn stem_at_boundary(haystack: &str, stem: &str) -> bool {
     if stem.is_empty() {
         return false;
@@ -3710,9 +3734,28 @@ fn llama32_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) ->
     }
 }
 
+/// QLoRA handoff when the train base is Gemma-2 Instruct (`-it`).
+/// Empty for a Gemma-2 base, for original Gemma, for Gemma-3, and for the LoRA card.
+const GEMMA2_QLORA_REPRODUCE_NOTE: &str = "Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA. Gemma-2 Instruct (google/gemma-2-2b-it, google/gemma-2-9b-it, and google/gemma-2-27b-it) uses LLaMA-Factory template gemma2. A Gemma-2 base checkpoint uses that same template and is not this reproduce target. Original Gemma (gemma-2b and gemma-7b) stays template gemma. The Phi-3 reproduce target stays template phi or phi_small. The Llama-3.2 Instruct reproduce target stays template llama3. The Qwen LoRA/QLoRA reproduce target stays template qwen, qwen3, or qwen3_nothink. This QLoRA recipe keeps quantization_method bnb and quantization_bit 4. The seat tag and the train base stay separate. This factory does not download weights.";
+
+fn gemma2_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
+    if method != LlamaFactoryMethod::Qlora {
+        return String::new();
+    }
+    let Some(segment) = llamafactory_template_segment(train_base) else {
+        return String::new();
+    };
+    if segment_is_gemma2_instruct(segment) {
+        format!("{GEMMA2_QLORA_REPRODUCE_NOTE}\n\n")
+    } else {
+        String::new()
+    }
+}
+
 fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String {
     let mut note = phi_qlora_reproduce_note(method, train_base);
     note.push_str(&llama32_qlora_reproduce_note(method, train_base));
+    note.push_str(&gemma2_qlora_reproduce_note(method, train_base));
     note
 }
 
@@ -3732,6 +3775,16 @@ fn segment_is_llama32_text_instruct(segment: &str) -> bool {
     }
     let is_32 = stem_at_boundary(&name, "llama-3.2") || stem_at_boundary(&name, "llama3.2");
     is_32 && name.contains("instruct")
+}
+
+/// Hub ids end in `-it` (`google/gemma-2-2b-it`). A local directory may use the
+/// LLaMA-Factory display name `Gemma-2-2B-Instruct`.
+fn segment_is_gemma2_instruct(segment: &str) -> bool {
+    let name = segment.to_ascii_lowercase();
+    if gemma_template_for_segment(&name) != Some("gemma2") {
+        return false;
+    }
+    stem_at_boundary(&name, "it") || stem_at_boundary(&name, "instruct")
 }
 
 /// Chat template hint from the train base path. Confirm it before train. Seat the same chat format.
@@ -3855,6 +3908,9 @@ fn llamafactory_recipe_yaml(
          # Llama-3, Llama-3.1, Llama-3.2 Instruct, and Llama-3.3 use llama3.\n\
          # Llama-3.2 vision uses mllama. llama3-llava-next uses llava_next_llama3.\n\
          # A short llama-3 stem does not label those names llama3. llama-30b stays default.\n\
+         # Gemma-2 (gemma-2-2b, gemma-2-9b, gemma-2-27b, and the -it instruct ids) uses gemma2.\n\
+         # A short gemma stem does not label those names gemma. gemma-2b and gemma-7b stay gemma.\n\
+         # Gemma-3 is a different group. This scan does not label it gemma2.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
@@ -7974,7 +8030,7 @@ mod tests {
             ("./weights/Qwen2.5-0.5B-Instruct", "qwen"),
             ("meta-llama/Meta-Llama-3-8B-Instruct", "llama3"),
             ("mistralai/Mistral-7B-Instruct-v0.3", "mistral"),
-            ("google/gemma-2-2b-it", "gemma"),
+            ("google/gemma-2-2b-it", "gemma2"),
             ("microsoft/phi-3-mini-4k-instruct", "phi"),
             ("org/some-model", "default"),
         ];
@@ -8110,6 +8166,97 @@ mod tests {
         assert_eq!(
             llamafactory_template("meta-llama/Llama-2-7b-chat-hf"),
             "default"
+        );
+    }
+
+    #[test]
+    fn llamafactory_template_maps_gemma2_instruct_including_nested_paths() {
+        let instruct = [
+            "google/gemma-2-2b-it",
+            "google/gemma-2-9b-it",
+            "google/gemma-2-27b-it",
+            "GOOGLE/GEMMA-2-2B-IT",
+            "unsloth/gemma-2-9b-it",
+            "gemma-2-2b-it",
+            "gemma2-2b-it",
+            "Gemma-2-2B-Instruct",
+            "/opt/hf/google/gemma-2-2b-it",
+            "./weights/gemma-2-9b-it",
+            "/opt/hf/google/gemma-2-2b-it/weights",
+            "/opt/hf/google/gemma-2-9b-it/snapshots/deadbeef",
+            "/home/user/.cache/huggingface/hub/models--google--gemma-2-2b-it/snapshots/abc123",
+            "/home/user/.cache/huggingface/hub/models--google--gemma-2-9b-it/snapshots/def456",
+            "/home/user/.cache/huggingface/hub/models--google--gemma-2-27b-it/snapshots/ghi789",
+            "/tmp/phi-4/gemma-2-2b-it",
+            "/tmp/qwen3-parent/gemma-2-9b-it",
+            "/tmp/gemma-7b/gemma-2-2b-it",
+            "/tmp/gemma-2b-it/gemma-2-9b-it",
+            "/tmp/gemma-3-4b-it/gemma-2-2b-it",
+            "/tmp/Llama-3.2-3B-Instruct/gemma-2-2b-it",
+        ];
+        for train in instruct {
+            assert_eq!(llamafactory_template(train), "gemma2", "{train}");
+            assert_ne!(llamafactory_template(train), "gemma", "{train}");
+            assert_ne!(llamafactory_template(train), "gemma_2", "{train}");
+        }
+        let base = [
+            "google/gemma-2-2b",
+            "google/gemma-2-9b",
+            "google/gemma-2-27b",
+            "/opt/hf/google/gemma-2-2b",
+            "/home/user/.cache/huggingface/hub/models--google--gemma-2-2b/snapshots/abc",
+        ];
+        for train in base {
+            assert_eq!(llamafactory_template(train), "gemma2", "{train}");
+        }
+        let original = [
+            "google/gemma-2b",
+            "google/gemma-2b-it",
+            "google/gemma-7b",
+            "google/gemma-7b-it",
+            "google/gemma-1.1-2b-it",
+            "google/gemma-1.1-7b-it",
+            "google/codegemma-7b-it",
+            "google/codegemma-1.1-7b-it",
+            "/opt/hf/google/gemma-2b-it",
+            "/tmp/gemma-2-2b-it/gemma-7b",
+            "/tmp/gemma-2-2b-it/gemma-2b-it",
+        ];
+        for train in original {
+            assert_eq!(llamafactory_template(train), "gemma", "{train}");
+        }
+        let other = [
+            "google/gemma-3-270m",
+            "google/gemma-3-270m-it",
+            "google/gemma-3-1b-it",
+            "google/gemma-3-1b-pt",
+            "google/gemma-3-4b-it",
+            "google/gemma-3-4b-pt",
+            "google/gemma-3-12b-it",
+            "google/gemma-3-27b-it",
+            "google/gemma-3n-E2B-it",
+            "google/gemma-4-31B-it",
+            "google/paligemma2-3b-pt-224",
+            "google/paligemma-3b-mix-224",
+            "google/medgemma-4b-it",
+            "/opt/hf/google/gemma-3-4b-it",
+            "/home/user/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/abc",
+            "/tmp/gemma-2-2b-it/gemma-3-4b-it",
+        ];
+        for train in other {
+            assert_ne!(llamafactory_template(train), "gemma2", "{train}");
+        }
+        assert_eq!(
+            llamafactory_template("/tmp/gemma-2-2b-it/Phi-3-mini-4k-instruct"),
+            "phi"
+        );
+        assert_eq!(
+            llamafactory_template("/tmp/gemma-2-2b-it/Qwen2.5-0.5B-Instruct"),
+            "qwen"
+        );
+        assert_eq!(
+            llamafactory_template("/tmp/gemma-7b/Llama-3.2-3B-Instruct"),
+            "llama3"
         );
     }
 
@@ -8692,6 +8839,384 @@ mod tests {
             seated.clone(),
             "/tmp/cell-one-hf/5090/Llama-3.2-3B-Instruct",
         );
+        let sku_out = root.join("sku-base");
+        let sku = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sku_base,
+            &sku_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!sku_out.exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let frontier_state = root.join("frontier-cell");
+        std::fs::create_dir_all(frontier_state.join("feed")).unwrap();
+        std::fs::write(
+            frontier_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier_out = root.join("frontier");
+        let frontier = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &frontier_out,
+            &frontier_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!frontier_out.exists());
+    }
+
+    #[test]
+    fn gemma2_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
+        const GEMMA_NOTE: &str = "Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA.";
+        let root = tmp("gemma2-qlora");
+        let pack_path = repo_root().join("examples/fixtures/gemma2-instruct.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("google/gemma-2-2b-it")
+        );
+        assert_eq!(pack.model_hint.as_deref(), Some("llama3"));
+        let estate = fixture_estate();
+        let out = root.join("qlora");
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("google/gemma-2-2b-it")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(
+            recipe.lines().any(|line| line.trim() == "template: gemma2"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| line.trim() == "template: gemma"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe
+                .lines()
+                .any(|line| line.trim().starts_with("template: gemma_")),
+            "{recipe}"
+        );
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(
+            recipe.contains("Gemma-3 is a different group. This scan does not label it gemma2."),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("model_name_or_path: \"google/gemma-2-2b-it\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("\"llama3\"")
+            }),
+            "{recipe}"
+        );
+        assert!(recipe.contains("does not download weights"), "{recipe}");
+        assert!(recipe.contains("does not run llamafactory-cli"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(
+            export.lines().any(|line| line.trim() == "template: gemma2"),
+            "{export}"
+        );
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"google/gemma-2-2b-it\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(text.contains(GEMMA_NOTE), "{text}");
+            assert!(
+                !text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(text.contains("template gemma2"), "{text}");
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("google/gemma-2-2b-it"), "{text}");
+            assert!(text.contains("quantization_method bnb"), "{text}");
+            assert!(text.contains("quantization_bit 4"), "{text}");
+            assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+        }
+        assert!(!out.join("train.py").exists());
+
+        let lora_out = root.join("lora");
+        let lora = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(lora.base_model, "llama3");
+        assert_eq!(
+            lora.train_base_model.as_deref(),
+            Some("google/gemma-2-2b-it")
+        );
+        let lora_recipe = std::fs::read_to_string(lora_out.join("recipe.yaml")).unwrap();
+        assert!(
+            lora_recipe
+                .lines()
+                .any(|line| line.trim() == "template: gemma2"),
+            "{lora_recipe}"
+        );
+        assert!(
+            !lora_recipe.contains("quantization_bit")
+                && !lora_recipe.contains("quantization_method"),
+            "{lora_recipe}"
+        );
+        let lora_next = std::fs::read_to_string(lora_out.join("NEXT.md")).unwrap();
+        let lora_prepare = std::fs::read_to_string(lora_out.join("PREPARE.md")).unwrap();
+        assert!(!lora_next.contains(GEMMA_NOTE), "{lora_next}");
+        assert!(!lora_prepare.contains(GEMMA_NOTE), "{lora_prepare}");
+
+        let bare = fixture_pack();
+        let seated = seated_estate("llama3");
+        for bad in ["llama3", "llama3:latest", "./llama3", "../llama3"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!(
+                "seat-{}",
+                bad.trim_start_matches('.').replace('/', "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!err.to_string().contains("google/gemma"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+        for bad in ["./gemma-2-2b-it", "/opt/hf/gemma-2-2b-it"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!("leaf-{}", bad.replace('/', "_")));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let nested_estate =
+            with_train_base(seated.clone(), "./weights/google/gemma-2-9b-it/weights");
+        let nested_out = root.join("nested-9b");
+        let nested = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/google/gemma-2-9b-it/weights"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: gemma2"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_method: bnb"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_bit: 4"),
+            "{nested_recipe}"
+        );
+        assert!(nested_recipe.contains(nested_train), "{nested_recipe}");
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        let nested_prepare = std::fs::read_to_string(nested_out.join("PREPARE.md")).unwrap();
+        assert!(nested_next.contains(GEMMA_NOTE), "{nested_next}");
+        assert!(nested_prepare.contains(GEMMA_NOTE), "{nested_prepare}");
+
+        let cases = [
+            ("google/gemma-2-27b-it", "gemma2", true),
+            ("google/gemma-2-2b", "gemma2", false),
+            ("google/gemma-2-9b", "gemma2", false),
+            ("unsloth/gemma2-2b-it", "gemma2", true),
+            ("/opt/hf/Gemma-2-2B-Instruct", "gemma2", true),
+            (
+                "/home/user/.cache/huggingface/hub/models--google--gemma-2-9b-it/snapshots/abc123def456",
+                "gemma2",
+                true,
+            ),
+            ("/tmp/gemma-7b/Gemma-2-2B-it", "gemma2", true),
+            ("/tmp/Gemma-2-2B-it/Gemma-7B", "gemma", false),
+            ("/tmp/Gemma-2-2B-it/Gemma-2B-it", "gemma", false),
+            ("google/gemma-2b", "gemma", false),
+            ("google/gemma-2b-it", "gemma", false),
+            ("google/gemma-7b", "gemma", false),
+            ("google/gemma-7b-it", "gemma", false),
+            ("google/gemma-1.1-7b-it", "gemma", false),
+            ("google/codegemma-7b-it", "gemma", false),
+            ("google/gemma-3-4b-it", "gemma", false),
+            ("google/gemma-3-270m-it", "gemma", false),
+            ("google/gemma-3-1b-it", "gemma", false),
+            ("google/paligemma2-3b-pt-224", "gemma", false),
+            ("Qwen/Qwen2.5-0.5B-Instruct", "qwen", false),
+            ("microsoft/Phi-3-mini-4k-instruct", "phi", false),
+            ("meta-llama/Llama-3.2-3B-Instruct", "llama3", false),
+        ];
+        for (idx, (train, template, note)) in cases.iter().enumerate() {
+            let case_estate = with_train_base(seated.clone(), train);
+            let case_out = root.join(format!("case-{idx}"));
+            let case_doc = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &case_estate,
+                &case_out,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            assert_eq!(case_doc.base_model, "llama3", "{train}");
+            assert_eq!(case_doc.seat_tag.as_deref(), Some("llama3"), "{train}");
+            assert_eq!(
+                case_doc.train_base_model.as_deref(),
+                Some(*train),
+                "{train}"
+            );
+            assert!(!case_doc.promoted && !case_doc.auto_apply && !case_doc.estate_rewritten);
+            let case_recipe = std::fs::read_to_string(case_out.join("recipe.yaml")).unwrap();
+            let template_line = format!("template: {template}");
+            assert!(
+                case_recipe.lines().any(|line| line.trim() == template_line),
+                "{train}\n{case_recipe}"
+            );
+            assert!(case_recipe.contains("quantization_method: bnb"), "{train}");
+            assert!(case_recipe.contains("quantization_bit: 4"), "{train}");
+            if *template != "gemma2" {
+                assert!(
+                    !case_recipe
+                        .lines()
+                        .any(|line| line.trim() == "template: gemma2"),
+                    "{train}\n{case_recipe}"
+                );
+            }
+            let case_next = std::fs::read_to_string(case_out.join("NEXT.md")).unwrap();
+            let case_prepare = std::fs::read_to_string(case_out.join("PREPARE.md")).unwrap();
+            assert_eq!(
+                case_next.contains(GEMMA_NOTE),
+                *note,
+                "{train}\n{case_next}"
+            );
+            assert_eq!(
+                case_prepare.contains(GEMMA_NOTE),
+                *note,
+                "{train}\n{case_prepare}"
+            );
+            let lora_case = root.join(format!("lora-case-{idx}"));
+            run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &case_estate,
+                &lora_case,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            let lora_case_next = std::fs::read_to_string(lora_case.join("NEXT.md")).unwrap();
+            assert!(
+                !lora_case_next.contains(GEMMA_NOTE),
+                "{train}\n{lora_case_next}"
+            );
+        }
+
+        let mut sacred_pack = pack.clone();
+        sacred_pack.id = "cyera".into();
+        let sacred_out = root.join("sacred-id");
+        let sacred = run(
+            LLAMAFACTORY_QLORA_ID,
+            &sacred_pack,
+            &estate,
+            &sacred_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!sacred_out.exists());
+
+        let sacred_base = with_train_base(seated.clone(), "cyera/gemma-2-2b-it");
+        let sacred_base_out = root.join("sacred-base");
+        let sacred_train = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sacred_base,
+            &sacred_base_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            sacred_train.to_string().contains("refuse:sacred"),
+            "{sacred_train}"
+        );
+        assert!(!sacred_base_out.exists());
+
+        let sku_base = with_train_base(seated.clone(), "/tmp/cell-one-hf/5090/gemma-2-2b-it");
         let sku_out = root.join("sku-base");
         let sku = run(
             LLAMAFACTORY_QLORA_ID,

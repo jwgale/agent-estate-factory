@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Gemma-2 Instruct QLoRA reproduce target
+
+- `llamafactory-qlora` infers LLaMA-Factory template `gemma2` for `google/gemma-2-2b-it`, `google/gemma-2-9b-it`, and `google/gemma-2-27b-it`, including those ids as nested path segments and HF cache directories (`models--google--gemma-2-2b-it`). A Gemma-2 base uses that same template. Original Gemma (`gemma-2b`, `gemma-7b`) stays `gemma`. Gemma-3 stays off `gemma2`. A short `gemma` stem does not take the Gemma-2 names. The name follows LLaMA-Factory `register_model_group` in `constants.py` and `gemma2` in `template.py`. There is no `gemma_2` template.
+- The QLoRA card still writes `quantization_method: bnb` and `quantization_bit: 4`. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Gemma repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as a reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA only when the winning segment is Gemma-2 Instruct. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/gemma2-instruct.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `google/gemma-2-2b-it`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Llama-3.2 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `llama3` for `meta-llama/Llama-3.2-1B-Instruct` and `meta-llama/Llama-3.2-3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--meta-llama--Llama-3.2-3B-Instruct`). Llama-3.2 vision infers `mllama`. `llama3-llava-next` infers `llava_next_llama3`. `llama-30b` stays `default`. A short `llama-3` stem does not take those names. The names follow LLaMA-Factory `register_model_group` in `constants.py`. There is no `llama3_2` template.
