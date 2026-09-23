@@ -118,6 +118,14 @@ fn help_enrich_and_train_name_the_seam() {
             "{body}"
         );
         assert!(
+            body.contains("examples/fixtures/deepseek-r1-distill.pack.json"),
+            "{body}"
+        );
+        assert!(
+            body.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+            "{body}"
+        );
+        assert!(
             body.contains("examples/fixtures/qwen3-instruct-lora.pack.json"),
             "{body}"
         );
@@ -586,6 +594,28 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(
         train_script.contains("examples/fixtures/qwen25-instruct.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/deepseek-r1-distill.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: deepseekr1$"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("deepseek fixture on the LoRA card wrote the QLoRA reproduce note"),
         "{train_script}"
     );
     assert!(

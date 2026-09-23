@@ -515,6 +515,26 @@ false, and no quantization_bit or quantization_method. That reproduce line
 is LoRA-only and only for that Qwen2.5 Instruct shape. A Qwen2.5 base, a
 name containing thinking, Qwen2, Qwen2.5-Coder, Qwen2.5-Math, and Qwen2.5-VL
 do not get that line. A Qwen3 Instruct id does not get that line.
+DeepSeek-R1-Distill chat ids use template deepseekr1. That group in
+constants.py is DeepSeek-R1-Distill-Qwen-1.5B, DeepSeek-R1-Distill-Qwen-7B,
+DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-Distill-Qwen-14B,
+DeepSeek-R1-Distill-Qwen-32B, and DeepSeek-R1-Distill-Llama-70B.
+template.py registers deepseekr1 as a ReasoningTemplate. There is no
+deepseek_r1 template. A Qwen or Llama substring in those ids stays
+deepseekr1. The Qwen and Llama student checkpoints stay qwen or llama3.
+DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 stay deepseekr1 and
+do not get this line. Qwen2.5 Instruct stays qwen. Qwen3 Instruct stays
+qwen3_nothink.
+examples/fixtures/deepseek-r1-distill.pack.json is the DeepSeek-R1-Distill
+chat QLoRA smoke pack. Its train base is
+deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B. --driver llamafactory-qlora on that pack is a
+reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5
+Instruct, and Qwen3 Instruct and still writes quantization_method bnb
+and quantization_bit 4. That reproduce line is on llamafactory-qlora
+and only for those six distill chat ids. llamafactory-lora writes the
+same template and does not get that line. The smoke seat tag is llama3.
+An Ollama tag such as deepseek-r1 or deepseek-r1:1.5b is a seat tag for
+this checkpoint. It is not the Hugging Face train base.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
