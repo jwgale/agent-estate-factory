@@ -14,6 +14,8 @@ Unquantized path (Target A): Qwen through LLaMA-Factory LoRA, then a printed mer
 
 Print path once a merged export and a GGUF exist (Target C seat ladder): the same Qwen QLoRA prepare, then a 5090-shaped export that is `refuse:tokenizer`, then fixture stubs, then the printed `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` lines. Section 10. Opt-in check: `make seat-journey`. It prints those lines. It does not train, does not convert, does not create a model, and does not promote.
 
+The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions.
+
 ## What stays fixed
 
 | Piece | Stays |
@@ -161,6 +163,8 @@ The trainer trains on their own hardware. Weights come back to the operator. Jou
 No trainer crate ships with this page. Prepare does not download a dataset. `--from-feed` copies rows that are already under the cell state directory. It checks `kind` and `object_class` before it copies a ShareGPT or Alpaca line, reads the opened file, and refuses when the sources together exceed 8 MiB.
 
 ## 4. Train LoRA or QLoRA with LLaMA-Factory, then seat it
+
+The beachhead matrix for the current LoRA and QLoRA smoke pairs is [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help train` prints that file.
 
 On a consumer or rented Nvidia box, LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`. The popular Qwen QLoRA order, including the printed convert and the printed seat, is section 8. The Qwen LoRA order, including the printed merge, the printed convert, and the printed seat, is section 9.
 
