@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Gemma-2 Instruct LoRA reproduce target
+
+- `llamafactory-lora` infers LLaMA-Factory template `gemma2` for `google/gemma-2-2b-it`, `google/gemma-2-9b-it`, and `google/gemma-2-27b-it`, including those ids as nested path segments and HF cache directories (`models--google--gemma-2-2b-it`). That is the same text group as the Gemma-2 Instruct QLoRA prepare. `constants.py` registers that group with `template="gemma2"`. `template.py` registers `gemma2`. There is no `gemma_2` template. `examples/train_lora` does not ship a Gemma-2 yaml. A Gemma-2 base uses `gemma2` and is not this reproduce target. Original Gemma (`gemma-2b`, `gemma-7b`) stays `gemma`. Gemma-3 stays off `gemma2`.
+- The LoRA card still omits `quantization_bit` and `quantization_method` and keeps `lora_rank` 8. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Gemma repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as the non-quant twin of the Gemma-2 Instruct QLoRA prepare only when the winning segment is that Instruct shape, and only on `llamafactory-lora`. The QLoRA note stays on `llamafactory-qlora`. A Gemma-2 base, original Gemma, and Gemma-3 do not get the LoRA line. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/gemma2-instruct-lora.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `google/gemma-2-2b-it`). That 2B Instruct id is the smallest checkpoint in the Gemma-2 Instruct group. Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Llama-3.2 Instruct LoRA reproduce target
 
 - `llamafactory-lora` infers LLaMA-Factory template `llama3` for `meta-llama/Llama-3.2-1B-Instruct` and `meta-llama/Llama-3.2-3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--meta-llama--Llama-3.2-3B-Instruct`). That is the same text group as the Llama-3.2 Instruct QLoRA prepare. There is no `llama3_2` template. Llama-3.2 vision uses `mllama`. `llama3-llava-next` uses `llava_next_llama3`. `llama-30b` stays `default`. A Llama-3.2 base, Llama-3.1 Instruct, and Llama-3.3 Instruct stay `llama3` and are not this reproduce target.
