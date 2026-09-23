@@ -358,6 +358,35 @@ grep -q "quantization_bit: 4" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
 grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-qlora-qwen3/NEXT.md"
 
+PHI_PACK="$ROOT/examples/fixtures/phi3-instruct.pack.json"
+echo "-- phi3 instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PHI_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/phi3-qlora"
+grep -q "^template: phi$" "$WORKDIR/phi3-qlora/recipe.yaml"
+grep -q "^template: phi$" "$WORKDIR/phi3-qlora/export.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/phi3-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/phi3-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "microsoft/Phi-3-mini-4k-instruct"' "$WORKDIR/phi3-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/phi3-qlora/recipe.yaml"; then
+  echo "FAIL  phi3 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+grep -q "Reproduce target beside Qwen LoRA/QLoRA." "$WORKDIR/phi3-qlora/NEXT.md"
+grep -q "Reproduce target beside Qwen LoRA/QLoRA." "$WORKDIR/phi3-qlora/PREPARE.md"
+python3 - "$WORKDIR/phi3-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  phi seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "microsoft/Phi-3-mini-4k-instruct":
+    raise SystemExit(f"FAIL  phi train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False:
+    raise SystemExit("FAIL  phi prepare must stay unpromoted")
+PY
+
 echo "-- axolotl-lora writes the train base, not the seat tag --"
 set +e
 estate enrich prepare \
