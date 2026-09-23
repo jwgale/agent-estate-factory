@@ -40,7 +40,7 @@ fn gate_and_parking_lot_do_not_call_stubs_ready() {
 }
 
 #[test]
-fn gate_90_tip_names_prepare_walk_through_pr_142() {
+fn gate_90_tip_names_cell_one_through_pr_143() {
     let root = repo_root();
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     assert!(
@@ -53,12 +53,28 @@ fn gate_90_tip_names_prepare_walk_through_pr_142() {
         "GATE-90 header must point at the live tip snapshot: {head}"
     );
     assert!(
-        head.contains("through PR #142"),
-        "GATE-90 header must name tip through PR #142: {head}"
+        head.contains("through PR #143"),
+        "GATE-90 header must name tip through PR #143: {head}"
     );
     assert!(
-        head.contains("d2dcdb97c2c960e8b93715391d77075055a8b0ce"),
-        "GATE-90 header must name the PR #142 tip SHA: {head}"
+        !head.contains("through PR #142"),
+        "GATE-90 header must not freeze tip at the prepare walk: {head}"
+    );
+    assert!(
+        head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "GATE-90 header must name the PR #143 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("PR #140"),
+        "GATE-90 header must keep the beachhead matrix at PR #140: {head}"
+    );
+    assert!(
+        head.contains("prepare walk (PR #142)"),
+        "GATE-90 header must keep the prepare walk at PR #142: {head}"
+    );
+    assert!(
+        head.contains("make lf-beachhead-prepare"),
+        "GATE-90 header must name the prepare walk: {head}"
     );
     assert!(
         head.contains("READY_FOR_LIVE_TEST`: no") || head.contains("READY_FOR_LIVE_TEST: no"),

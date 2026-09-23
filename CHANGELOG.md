@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Cell One status tip honesty through PR #143
+
+- `docs/CELL-ONE-STATUS.md` names tip through PR #143 (`3acdec3983ea581976649ba4b7cc41a4cd22d31d`). The LLaMA-Factory beachhead matrix stays PR #140. The print-only prepare walk stays PR #142. [`docs/GATE-90.md`](docs/GATE-90.md) Remaining names `make lf-beachhead-prepare`. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Day-90 gate tip honesty through PR #142
 
 - `docs/GATE-90.md` points the live tip story at [`docs/CELL-ONE-STATUS.md`](docs/CELL-ONE-STATUS.md) through PR #142 (`d2dcdb97c2c960e8b93715391d77075055a8b0ce`, the print-only LLaMA-Factory beachhead prepare walk). `make gate-90` stays local `cargo test`. Hosted CI stays compile-only. The Remaining table names `make lf-beachhead-prepare`: an opt-in print-only prepare walk of the 16 beachhead matrix fixtures. It checks prepare artifacts. It does not train. It is not in smoke or Actions. It is not a live train. `make qlora-journey`, `make lora-journey`, and `make seat-journey` stay on that table. `READY_FOR_LIVE_TEST`: no.
