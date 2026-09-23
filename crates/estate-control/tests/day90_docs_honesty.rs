@@ -191,11 +191,20 @@ fn gate_90_tip_names_cell_one_through_pr_153() {
     assert!(tip.contains("PR #140"), "{tip}");
     assert!(tip.contains("PR #142"), "{tip}");
     assert!(tip.contains("PR #148"), "{tip}");
-    assert!(tip.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"), "{tip}");
+    assert!(
+        tip.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"),
+        "{tip}"
+    );
     assert!(tip.contains("PR #149"), "{tip}");
-    assert!(tip.contains("a272d39b731996524883e1124478dddc3f76935c"), "{tip}");
+    assert!(
+        tip.contains("a272d39b731996524883e1124478dddc3f76935c"),
+        "{tip}"
+    );
     assert!(tip.contains("PR #150"), "{tip}");
-    assert!(tip.contains("663c806ae72826cff664ea32e8a370e059ba83d4"), "{tip}");
+    assert!(
+        tip.contains("663c806ae72826cff664ea32e8a370e059ba83d4"),
+        "{tip}"
+    );
     assert!(tip.contains("GGUF print-only seats"), "{tip}");
     assert!(tip.contains("make lf-beachhead-prepare"), "{tip}");
     assert!(
@@ -1519,10 +1528,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(
-        head,
-        " GATE-90 and Cell One tip honesty through PR #153"
-    );
+    assert_eq!(head, " print-only Target C uniqueness prove checklist");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1849,10 +1855,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(
-        head,
-        " GATE-90 and Cell One tip honesty through PR #153"
-    );
+    assert_eq!(head, " print-only Target C uniqueness prove checklist");
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -1887,7 +1890,10 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
             && !on_disk_slice.contains("READY_FOR_LIVE_TEST`: yes"),
         "{on_disk_slice}"
     );
-    assert!(!on_disk_slice.to_ascii_lowercase().contains("kimi"), "{on_disk_slice}");
+    assert!(
+        !on_disk_slice.to_ascii_lowercase().contains("kimi"),
+        "{on_disk_slice}"
+    );
     let slice = changelog
         .split("## This slice — print-only local-seat Modelfile")
         .nth(1)
@@ -2104,10 +2110,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(
-        head,
-        " GATE-90 and Cell One tip honesty through PR #153"
-    );
+    assert_eq!(head, " print-only Target C uniqueness prove checklist");
     let slice = changelog
         .split("## This slice — Target C live uniqueness prove on a 5090-class host")
         .nth(1)
@@ -2164,11 +2167,425 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     ] {
         let body = std::fs::read_to_string(root.join(rel)).unwrap();
         assert!(
-            !body.contains("cell-one-target-c-live")
-                && !body.contains("cell-target-c-qlora-prove"),
+            !body.contains("cell-one-target-c-live") && !body.contains("cell-target-c-qlora-prove"),
             "{rel} must not run the recorded uniqueness prove"
         );
     }
+}
+
+#[test]
+fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile
+            .lines()
+            .any(|line| line.trim() == "uniqueness-prove-checklist:"),
+        "Makefile missing uniqueness-prove-checklist"
+    );
+    assert!(makefile.contains("scripts/uniqueness-prove-checklist.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "uniqueness-prove-checklist must stay off smoke, gate-90, and Actions"
+    );
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("uniqueness-prove-checklist"),
+        "uniqueness-prove-checklist must be a phony target"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("uniqueness-prove-checklist"),
+        "gate-90 must not run uniqueness-prove-checklist: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("uniqueness-prove-checklist"),
+        "smoke must not run uniqueness-prove-checklist: {smoke}"
+    );
+    assert!(
+        !makefile.contains("cell-one-target-c-live")
+            && !makefile.contains("cell-target-c-qlora-prove"),
+        "Makefile must not grow a live uniqueness target"
+    );
+
+    let script_path = root.join("scripts/uniqueness-prove-checklist.sh");
+    assert!(
+        script_path.is_file(),
+        "scripts/uniqueness-prove-checklist.sh missing"
+    );
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    let qlora = std::fs::read_to_string(root.join("scripts/qlora-journey.sh")).unwrap();
+    assert_eq!(
+        extract_shell_fn(&script, "resolve_estate"),
+        extract_shell_fn(&qlora, "resolve_estate"),
+        "checklist estate resolver must match the print-journey fallback"
+    );
+    assert!(
+        !script
+            .lines()
+            .any(|line| line.trim_start().starts_with("estate()")),
+        "checklist must not shell out through an estate() wrapper"
+    );
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "The factory does not train, convert, shell out to ollama, or promote.",
+        "CELL_TRAIN_LIVE=1 stays print-only.",
+        "CELL_SEAT_LIVE=1 stays print-only.",
+        "CELL_TRAIN_LIVE=1 is set. This journey stays print-only.",
+        "CELL_SEAT_LIVE=1 is set. This journey stays print-only.",
+        "Not native MLX.",
+        "SKIP live train",
+        "llamafactory-qlora",
+        "Seat tag llama3",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "Print the NEXT.md recipe.",
+        "refuse:tokenizer",
+        "cp -aL",
+        "cp --dereference",
+        "does not write \\$PREPARED/Modelfile",
+        "from the printed contents",
+        "trained_shape gguf",
+        "auto_apply=false",
+        "ollama rm",
+        "43770130 3391",
+        "does not invent a new live PASS",
+        "This print is not a live PASS.",
+        "Target C live uniqueness (5090-class)",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "docs/LIVE-PROBES.md",
+    ] {
+        assert!(
+            script.contains(needle),
+            "uniqueness-prove-checklist missing {needle}"
+        );
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "uniqueness-prove-checklist must keep READY_FOR_LIVE_TEST no"
+    );
+    let executed: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#')
+                || trimmed.starts_with("echo")
+                || trimmed.starts_with("require_phrase ")
+                || trimmed.starts_with("ESTATE_CMD=(")
+                || trimmed.starts_with("prefix=")
+            {
+                return false;
+            }
+            trimmed.contains("ollama ")
+                || trimmed.contains("llamafactory-cli")
+                || trimmed.contains("convert_hf_to_gguf.py")
+                || trimmed.contains("${ESTATE_CMD[@]}\"")
+                || trimmed.starts_with("make ")
+                || trimmed.contains(" estate enrich ")
+        })
+        .collect();
+    assert!(
+        executed.is_empty(),
+        "uniqueness-prove-checklist must not train, convert, seat, or shell out: {executed:?}"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #153"),
+        "GATE-90 header must keep tip through PR #153: {gate_head}"
+    );
+    assert!(
+        gate_head.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "GATE-90 header must keep the PR #153 tip SHA: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #154"),
+        "this slice must not rewrite tip through PR #154: {gate_head}"
+    );
+    assert!(
+        !gate.contains("cp -aL"),
+        "GATE-90 must not grow the copy command"
+    );
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+    let remaining = gate
+        .split("## Remaining Day-90+ (honest)")
+        .nth(1)
+        .expect("remaining section");
+    let row = remaining
+        .lines()
+        .find(|line| line.contains("| `make uniqueness-prove-checklist` |"))
+        .expect("remaining row for uniqueness-prove-checklist");
+    assert!(row.contains("Does not train"), "{row}");
+    assert!(row.contains("Not in smoke or Actions"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+    assert!(row.contains("Does not invent a live PASS"), "{row}");
+    assert!(row.contains("Not native MLX"), "{row}");
+    assert!(row.contains("LIVE-PROBES.md"), "{row}");
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #153"),
+        "status header must keep tip through PR #153"
+    );
+    assert!(
+        status_head.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
+        "status header must keep the PR #153 tip SHA"
+    );
+    assert!(
+        !status_head.contains("through PR #154"),
+        "this slice must not rewrite the status tip through PR #154"
+    );
+    let uniq = status
+        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
+        .nth(1)
+        .expect("uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(uniq.contains("make uniqueness-prove-checklist"), "{uniq}");
+    assert!(uniq.contains("does not invent a new live PASS"), "{uniq}");
+    assert!(
+        uniq.contains("CELL_TRAIN_LIVE=1") && uniq.contains("CELL_SEAT_LIVE=1"),
+        "{uniq}"
+    );
+    assert!(
+        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
+        "uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("make uniqueness-prove-checklist"));
+    assert!(journey.contains("does not invent a new live PASS"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("`make uniqueness-prove-checklist`"));
+    assert!(train.contains("does not invent a new live PASS"));
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    let section = probes
+        .split("## Target C live uniqueness (5090-class)")
+        .nth(1)
+        .expect("LIVE-PROBES section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(section.contains("`make uniqueness-prove-checklist`"));
+    assert!(section.contains("does not invent a new live PASS"));
+    let seat = std::fs::read_to_string(root.join("docs/local-seat.md")).unwrap();
+    assert!(seat.contains("make uniqueness-prove-checklist"));
+    assert!(
+        !journey.contains("READY_FOR_LIVE_TEST: yes")
+            && !train.contains("READY_FOR_LIVE_TEST: yes")
+            && !seat.contains("READY_FOR_LIVE_TEST: yes"),
+        "operator pages must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains("make uniqueness-prove-checklist"));
+    assert!(help.contains("does not invent a live PASS"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " print-only Target C uniqueness prove checklist");
+    let slice = changelog
+        .split("## This slice — print-only Target C uniqueness prove checklist")
+        .nth(1)
+        .expect("CHANGELOG missing the prove checklist slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make uniqueness-prove-checklist",
+        "scripts/uniqueness-prove-checklist.sh",
+        "docs/LIVE-PROBES.md",
+        "llamafactory-qlora",
+        "llama3",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "SKIP live train",
+        "cp -aL",
+        "cp --dereference",
+        "$PREPARED/Modelfile",
+        "trained_shape` `gguf`",
+        "auto_apply=false",
+        "ollama rm",
+        "The factory does not train, convert, shell out to ollama, or promote.",
+        "CELL_TRAIN_LIVE=1",
+        "CELL_SEAT_LIVE=1",
+        "does not invent a new live PASS",
+        "Not native MLX",
+        "through PR #153",
+        "16cea97d56079a60c033c7a10468ddd7092a2ef1",
+        "43770130 3391",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi"), "{slice}");
+    assert!(
+        !slice.contains("through PR #154"),
+        "checklist changelog must leave tip framing through PR #153: {slice}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("uniqueness-prove-checklist"),
+            "{rel} must not run uniqueness-prove-checklist"
+        );
+    }
+
+    let before = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    let syntax = std::process::Command::new("bash")
+        .arg("-n")
+        .arg(&script_path)
+        .output()
+        .unwrap();
+    assert!(
+        syntax.status.success(),
+        "bash -n failed: {}",
+        String::from_utf8_lossy(&syntax.stderr)
+    );
+
+    let run = |train: bool, seat: bool| {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&script_path)
+            .current_dir(&root)
+            .env_remove("ESTATE_BIN")
+            .env_remove("XAI_API_KEY");
+        if train {
+            cmd.env("CELL_TRAIN_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_TRAIN_LIVE");
+        }
+        if seat {
+            cmd.env("CELL_SEAT_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_SEAT_LIVE");
+        }
+        cmd.output().unwrap()
+    };
+
+    for (train, seat) in [(false, false), (true, true)] {
+        let output = run(train, seat);
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        assert!(
+            output.status.success(),
+            "checklist failed train={train} seat={seat}\n{stdout}\n{stderr}"
+        );
+        assert!(stderr.is_empty(), "checklist stderr: {stderr}");
+        for needle in [
+            "Print-only. READY_FOR_LIVE_TEST: no",
+            "The factory does not train, convert, shell out to ollama, or promote.",
+            "CELL_TRAIN_LIVE=1 stays print-only.",
+            "CELL_SEAT_LIVE=1 stays print-only.",
+            "Not native MLX.",
+            "This checklist does not invent a new live PASS.",
+            "Recorded order (not a new live PASS): Prepare →",
+            "1. Prepare the LLaMA-Factory QLoRA card (llamafactory-qlora). Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.",
+            "2. Train and export outside the factory. Print the NEXT.md recipe. SKIP live train.",
+            "3. After refuse:tokenizer, restore tokenizer files with dereference (cp -aL or cp --dereference).",
+            "enrich gguf-convert",
+            "enrich local-seat",
+            "does not write $PREPARED/Modelfile.",
+            "6. The operator writes the Modelfile from the printed contents.",
+            "7. ollama create outside the factory.",
+            "enrich import-trained",
+            "trained_shape gguf. auto_apply=false.",
+            "9. Cleanup with ollama rm. examples/estate.yaml unchanged.",
+            "cksum: 43770130 3391 ",
+            "This print is not a live PASS.",
+        ] {
+            assert!(
+                stdout.contains(needle),
+                "output missing {needle} train={train} seat={seat}\n{stdout}"
+            );
+        }
+        let marks = [
+            "1. Prepare the LLaMA-Factory QLoRA card",
+            "2. Train and export outside the factory",
+            "3. After refuse:tokenizer",
+            "4. ",
+            "5. ",
+            "6. The operator writes the Modelfile",
+            "7. ollama create outside the factory",
+            "8. ",
+            "9. Cleanup with ollama rm",
+        ];
+        let mut prev = 0usize;
+        for mark in marks {
+            let at = stdout
+                .find(mark)
+                .unwrap_or_else(|| panic!("missing step {mark}"));
+            assert!(at >= prev, "step order drifted at {mark}");
+            prev = at;
+        }
+        assert!(
+            !stdout
+                .lines()
+                .any(|line| line.trim_start().starts_with("PASS")),
+            "checklist must not invent a PASS line:\n{stdout}"
+        );
+        if train {
+            assert!(stdout.contains("CELL_TRAIN_LIVE=1 is set. This journey stays print-only."));
+        } else {
+            assert!(!stdout.contains("CELL_TRAIN_LIVE=1 is set."));
+        }
+        if seat {
+            assert!(stdout.contains("CELL_SEAT_LIVE=1 is set. This journey stays print-only."));
+        } else {
+            assert!(!stdout.contains("CELL_SEAT_LIVE=1 is set."));
+        }
+    }
+
+    let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    assert_eq!(
+        before, after,
+        "checklist must not write examples/estate.yaml"
+    );
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
+    assert!(
+        cksum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {cksum_text}"
+    );
 }
 
 #[test]
