@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Mistral Instruct QLoRA reproduce target
+
+- `llamafactory-qlora` infers LLaMA-Factory template `mistral` for `mistralai/Mistral-7B-Instruct-v0.1`, `mistralai/Mistral-7B-Instruct-v0.2`, and `mistralai/Mistral-7B-Instruct-v0.3`, including those ids as nested path segments and HF cache directories (`models--mistralai--Mistral-7B-Instruct-v0.3`). A Mistral-7B base uses that same template. Mistral-Small uses `mistral_small`. Mistral-Nemo uses `ministral`. Mixtral uses `mistral` and is not this reproduce target. LLaVA-NeXT-Mistral uses `llava_next_mistral`. Ministral, Ministral-3, Codestral, Devstral, and Pixtral stay off `mistral`. A short `mistral` stem does not take those other names. The names follow LLaMA-Factory `register_model_group` in `constants.py` and `mistral` in `template.py`. There is no `mistral_7` template.
+- The QLoRA card still writes `quantization_method: bnb` and `quantization_bit: 4`. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Mistral repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as a reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA only when the winning segment is Mistral-7B Instruct. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/mistral-instruct.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `mistralai/Mistral-7B-Instruct-v0.3`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — print the adapter merge into a Hugging Face directory
 
 - `estate enrich merge-adapt --prepared <dir> --adapter <adapter-dir>` prints the documented external merge for an `axolotl-lora`, `axolotl-qlora`, `llamafactory-lora`, or `llamafactory-qlora` train prepare. `--adapter` is a directory with `adapter_config.json`.
