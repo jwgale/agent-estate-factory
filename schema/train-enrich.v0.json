@@ -4,6 +4,7 @@
   "job": "enrich",
   "pack_id": "overnight-traces",
   "base_model": "llama3",
+  "seat_tag": "llama3",
   "purpose": "Specialist fixture. Import is explicit apply. Feed never auto-promotes. No raw secrets.",
   "host_class_affinity": "any",
   "source_paths": ["feed/events.jsonl"],

@@ -32,15 +32,21 @@ fi
 BEFORE="$(cksum "$ESTATE")"
 rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR"
+SEATED_ONLY="$WORKDIR/estate-seat-only.yaml"
 SEATED="$WORKDIR/estate.yaml"
-python3 - "$ESTATE" "$SEATED" <<'PY'
+python3 - "$ESTATE" "$SEATED_ONLY" "$SEATED" <<'PY'
 import sys
-src, dest = sys.argv[1:]
+src, seat_only, seated = sys.argv[1:]
 text = open(src).read()
 needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n"
 if needle not in text:
     raise SystemExit("FAIL  local_slm params block missing")
-open(dest, "w").write(text.replace(needle, needle + '      model: "llama3"\n', 1))
+open(seat_only, "w").write(text.replace(needle, needle + '      model: "llama3"\n', 1))
+open(seated, "w").write(text.replace(
+    needle,
+    needle + '      model: "llama3"\n      train_base_model: "Qwen/Qwen2.5-0.5B-Instruct"\n',
+    1,
+))
 PY
 
 echo "== train-prepare (LLaMA-Factory recipe and Axolotl recipe; not a live train) =="
@@ -72,6 +78,34 @@ if [[ -e "$WORKDIR/stock" ]]; then
   exit 1
 fi
 
+echo "-- seated tag without a train base refuses --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED_ONLY" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/seat-only" \
+  >/tmp/train-prepare-seat-only.out 2>/tmp/train-prepare-seat-only.err
+seat_rc=$?
+set -e
+if [[ "$seat_rc" -eq 0 ]]; then
+  echo "FAIL  seat tag without a train base must refuse:train-base"
+  exit 1
+fi
+if ! grep -q "refuse:train-base" /tmp/train-prepare-seat-only.out /tmp/train-prepare-seat-only.err; then
+  echo "FAIL  seat tag without a train base did not refuse:train-base"
+  cat /tmp/train-prepare-seat-only.out /tmp/train-prepare-seat-only.err
+  exit 1
+fi
+if grep -q "meta-llama" /tmp/train-prepare-seat-only.out /tmp/train-prepare-seat-only.err; then
+  echo "FAIL  refuse must not invent a Llama-3 Hub repo"
+  exit 1
+fi
+if [[ -e "$WORKDIR/seat-only" ]]; then
+  echo "FAIL  seat-only prepare wrote an output directory"
+  exit 1
+fi
+
 echo "-- llamafactory-qlora default job is train --"
 estate enrich prepare \
   --estate "$SEATED" \
@@ -95,12 +129,27 @@ grep -q "quantization_bit: 4" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "lora_rank: 16" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "cutoff_len: 512" "$WORKDIR/llamafactory/recipe.yaml"
 grep -q "packing: true" "$WORKDIR/llamafactory/recipe.yaml"
-grep -q "template: llama3" "$WORKDIR/llamafactory/recipe.yaml"
-grep -q 'model_name_or_path: "llama3"' "$WORKDIR/llamafactory/recipe.yaml"
+grep -q "template: qwen" "$WORKDIR/llamafactory/recipe.yaml"
+grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/llamafactory/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/llamafactory/recipe.yaml"
+if grep -q "quantization_method: bitsandbytes" "$WORKDIR/llamafactory/recipe.yaml"; then
+  echo "FAIL  recipe.yaml must keep quantization_method bnb"
+  exit 1
+fi
+if grep -Eq '^max_steps:' "$WORKDIR/llamafactory/recipe.yaml"; then
+  echo "FAIL  default recipe must leave max_steps unset"
+  exit 1
+fi
+grep -q '^save_steps: 50$' "$WORKDIR/llamafactory/recipe.yaml"
+grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/llamafactory/export.yaml"
+grep -q "template: qwen" "$WORKDIR/llamafactory/export.yaml"
 grep -q "feed/events.jsonl" "$WORKDIR/llamafactory/dataset.jsonl"
 grep -q "llamafactory-cli train $WORKDIR/llamafactory/recipe.yaml" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "llamafactory-cli export $WORKDIR/llamafactory/export.yaml" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "pip install llamafactory" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "2.11.0+cu128" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "\-\-max-steps 10" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "CUDA LLaMA-Factory" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "Faster single-GPU alternate" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "llamafactory-cli train recipe.yaml" "$WORKDIR/llamafactory/PREPARE.md"
@@ -124,6 +173,10 @@ if prepare.get("job") != "train":
     raise SystemExit(f"FAIL  job={prepare.get('job')}")
 if prepare.get("base_model") != "llama3":
     raise SystemExit(f"FAIL  base_model={prepare.get('base_model')}")
+if prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  seat_tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  train_base_model={prepare.get('train_base_model')}")
 if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False:
     raise SystemExit("FAIL  prepare.json must stay unpromoted")
 if prepare.get("estate_rewritten") is not False:
@@ -173,6 +226,19 @@ if [[ -e "$WORKDIR/enrich-job" ]]; then
   echo "FAIL  --job enrich wrote an output directory"
   exit 1
 fi
+
+echo "-- gauge run writes max_steps without changing the default recipe --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --max-steps 10 \
+  --out "$WORKDIR/smoke"
+grep -q '^max_steps: 10$' "$WORKDIR/smoke/recipe.yaml"
+grep -q '^save_steps: 10$' "$WORKDIR/smoke/recipe.yaml"
+grep -q '^num_train_epochs: 1.0$' "$WORKDIR/smoke/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/smoke/recipe.yaml"
+grep -q "template: qwen" "$WORKDIR/smoke/recipe.yaml"
 
 echo "-- axolotl-lora still writes a YAML recipe --"
 estate enrich prepare \

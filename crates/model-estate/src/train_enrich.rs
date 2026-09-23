@@ -81,7 +81,11 @@ impl EnrichJobKind {
 pub struct EnrichJob {
     pub kind: EnrichJobKind,
     pub pack_id: String,
+    /// Ollama seat tag. Modelfile `FROM` uses this. It is not a Hugging Face id.
     pub base_model: String,
+    /// Hugging Face repo id or a local HF weights directory. `llamafactory-qlora`
+    /// writes this to `model_name_or_path`. Absent until the pack or the binding sets it.
+    pub train_base_model: Option<String>,
     pub purpose: String,
     pub system_text: String,
     pub host_class_affinity: String,
@@ -89,6 +93,8 @@ pub struct EnrichJob {
     pub source_drivers: Vec<String>,
     /// Directory the artifacts will occupy. Path-bearing recipes use it for absolute paths.
     pub out_dir: PathBuf,
+    /// Explicit gauge cap for the LLaMA-Factory recipe. `None` leaves `max_steps` unset.
+    pub max_steps: Option<u32>,
 }
 
 pub struct DriverPrepare {
@@ -146,7 +152,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: LLAMAFACTORY_QLORA_ID,
             status: "integration",
             integrates: "llamafactory-cli train QLoRA recipe",
-            notes: "Primary train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA), dataset_info.json, and instruct chat dataset.jsonl. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            notes: "Primary train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -297,15 +303,18 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
                 job.kind.as_str()
             )));
         }
+        let train_owned = require_llamafactory_train_base(job)?;
+        let train_base = train_owned.as_str();
         let (dataset, stub) = chat_dataset_jsonl(job)?;
-        let recipe = llamafactory_recipe_yaml(job, stub);
-        let export = llamafactory_export_yaml(job);
+        let recipe = llamafactory_recipe_yaml(job, stub, train_base);
+        let export = llamafactory_export_yaml(job, train_base);
         let info = llamafactory_dataset_info();
         let host = llamafactory_host_note(&job.host_class_affinity);
         let data_note = llamafactory_dataset_note(stub, &job.source_paths);
-        let template = llamafactory_template(&job.base_model);
+        let template = llamafactory_template(train_base);
+        let gauge = llamafactory_gauge_note(job.max_steps);
         let steps = format!(
-            "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`). It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
+            "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`). It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
              \n\
              {host}\n\
              \n\
@@ -313,23 +322,32 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
              \n\
              {data_note}\n\
              \n\
-             model_name_or_path is {base}. That is the seated model tag, the same resolution as Modelfile FROM. LLaMA-Factory expects a Hugging Face repo id or a local weights directory. If {base} is only an Ollama tag, set model_name_or_path in recipe.yaml and export.yaml before you train. This factory did not download weights.\n\
+             Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
              \n\
-             template is {template}. That hint comes from the seated tag. Confirm it matches the model. Use that same chat template when you seat the model.\n\
+             Train base is {train}. recipe.yaml and export.yaml set model_name_or_path to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+             \n\
+             template is {template}. That hint comes from the train base name. Confirm it matches the model. Use that same chat template when you seat the model.\n\
+             \n\
+             {bits}\n\
+             \n\
+             {gauge}\n\
              \n\
              A later preference stage is a recipe flag (`stage: dpo` or `stage: orpo`, with `ranking: true` in dataset_info.json). This card does not build that dataset.\n\
              \n\
              From this directory, after LLaMA-Factory is installed on a CUDA host:\n\
              \n\
-             pip install llamafactory\n\
+             {install}\n\
              llamafactory-cli train recipe.yaml\n\
              llamafactory-cli export export.yaml\n\
              \n\
              The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
             rank = LLAMAFACTORY_LORA_RANK,
             cutoff = LLAMAFACTORY_CUTOFF_LEN,
-            base = job.base_model,
+            seat = job.base_model,
+            train = train_base,
             template = template,
+            bits = llamafactory_bitsandbytes_note(),
+            install = llamafactory_install_lines(),
         );
         Ok(DriverPrepare {
             files: vec![
@@ -363,6 +381,13 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
         let yaml = axolotl_recipe_yaml(job, stub);
         let host = axolotl_host_note(&job.host_class_affinity);
         let data_note = axolotl_dataset_note(stub, &job.source_paths);
+        let train_note = match job.train_base_model.as_deref() {
+            Some(train) => format!(
+                "\nPack or binding train_base_model is {train}. llamafactory-qlora writes that value to model_name_or_path. This card still writes base_model as the seat tag {base}. Edit axolotl.yml before you train when that seat tag is an Ollama id.\n",
+                base = job.base_model,
+            ),
+            None => String::new(),
+        };
         let steps = format!(
             "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, and did not rewrite the estate.\n\
              \n\
@@ -371,6 +396,7 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
              {data_note}\n\
              \n\
              base_model is {base}. That is the seated model tag, the same resolution as Modelfile FROM. Axolotl expects a Hugging Face repo id or a local weights directory. If {base} is only an Ollama tag, set base_model in axolotl.yml to that repo or directory before you train. This factory did not download weights.\n\
+             {train_note}\
              \n\
              To train full LoRA on that host, set `load_in_8bit: true`, `load_in_4bit: false`, and `adapter: lora` in axolotl.yml before you run it.\n\
              \n\
@@ -416,7 +442,14 @@ pub struct EnrichPrepareDoc {
     pub driver: String,
     pub job: String,
     pub pack_id: String,
+    /// Ollama seat tag. Same value Modelfile `FROM` uses.
     pub base_model: String,
+    /// Same string as `base_model`. Present so a reader can see the seat without guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat_tag: Option<String>,
+    /// Hugging Face repo id or local HF weights directory for `llamafactory-qlora`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub train_base_model: Option<String>,
     pub purpose: String,
     pub host_class_affinity: String,
     pub source_paths: Vec<String>,
@@ -435,6 +468,8 @@ pub struct PrepareEnrichRequest<'a> {
     pub driver_id: &'a str,
     pub job: &'a str,
     pub out_dir: &'a Path,
+    /// LLaMA-Factory gauge cap. `None` leaves `max_steps` off the recipe.
+    pub max_steps: Option<u32>,
 }
 
 pub fn train_enrich_catalog() -> Vec<TrainEnrichCard> {
@@ -630,8 +665,17 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
             kind.as_str()
         )));
     }
-    let job = enrich_job(req.pack, req.estate, kind, req.out_dir)?;
+    let mut job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
     refuse_job_text(&job)?;
+    if req.driver_id == LLAMAFACTORY_QLORA_ID {
+        if let Some(raw) = job.train_base_model.clone() {
+            let canonical = canonical_train_base(&raw, &job.base_model)?;
+            job.train_base_model = Some(canonical);
+            if let Some(train_base) = job.train_base_model.as_deref() {
+                refuse_sacred_and_sku("train base", train_base)?;
+            }
+        }
+    }
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
     let prepared = driver.prepare(&job)?;
@@ -650,6 +694,8 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         job: job.kind.as_str().to_string(),
         pack_id: job.pack_id.clone(),
         base_model: job.base_model.clone(),
+        seat_tag: Some(job.base_model.clone()),
+        train_base_model: job.train_base_model.clone(),
         purpose: job.purpose.clone(),
         host_class_affinity: job.host_class_affinity.clone(),
         source_paths: job.source_paths.clone(),
@@ -818,6 +864,7 @@ fn enrich_job(
     estate: &Estate,
     kind: EnrichJobKind,
     out_dir: &Path,
+    max_steps: Option<u32>,
 ) -> Result<EnrichJob, ModelError> {
     let purpose = {
         let note = pack.note.trim();
@@ -833,19 +880,56 @@ fn enrich_job(
         kind.as_str()
     );
     let base_model = resolve_seated_base_model(estate, pack)?;
+    let train_base_model = resolve_train_base_model(estate, pack)?;
     let host_class_affinity = resolve_host_class_affinity(estate, pack);
+    let max_steps = normalize_max_steps(max_steps)?;
     let job = EnrichJob {
         kind,
         pack_id: pack.id.clone(),
         base_model,
+        train_base_model,
         purpose,
         system_text,
         host_class_affinity,
         source_paths: pack.source_paths.clone(),
         source_drivers: pack.source_drivers.clone(),
         out_dir: absolute_path(out_dir),
+        max_steps,
     };
     Ok(job)
+}
+
+/// Pack `train_base_model`, then `params.train_base_model` on the seated local binding.
+/// Missing is `Ok(None)`. A bare Ollama tag stored here is refused later by `llamafactory-qlora`.
+fn resolve_train_base_model(
+    estate: &Estate,
+    pack: &PackManifest,
+) -> Result<Option<String>, ModelError> {
+    if let Some(from_pack) = nonempty(pack.train_base_model.as_deref()) {
+        return Ok(Some(from_pack.to_string()));
+    }
+    let hint = nonempty(pack.model_hint.as_deref());
+    let binding = select_local_binding(estate, hint)?;
+    Ok(binding
+        .params
+        .get("train_base_model")
+        .and_then(|value| value.as_str())
+        .and_then(|value| nonempty(Some(value)))
+        .map(str::to_string))
+}
+
+fn nonempty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn normalize_max_steps(max_steps: Option<u32>) -> Result<Option<u32>, ModelError> {
+    match max_steps {
+        None => Ok(None),
+        Some(0) => Err(ModelError::Other(
+            "refuse:max-steps: max_steps must be at least 1. Omit it for the one-epoch LLaMA-Factory recipe.".into(),
+        )),
+        Some(steps) => Ok(Some(steps)),
+    }
 }
 
 /// Pack affinity, then the seated binding's `params.host_class`, then the pack host class.
@@ -890,6 +974,9 @@ fn absolute_path(path: &Path) -> PathBuf {
 fn refuse_job_text(job: &EnrichJob) -> Result<(), ModelError> {
     refuse_sacred_and_sku("pack id", &job.pack_id)?;
     refuse_sacred_and_sku("base model", &job.base_model)?;
+    if let Some(train_base) = job.train_base_model.as_deref() {
+        refuse_sacred_and_sku("train base", train_base)?;
+    }
     refuse_sacred_and_sku("purpose", &job.purpose)?;
     refuse_sacred_and_sku("system", &job.system_text)?;
     refuse_sacred_and_sku("host_class_affinity", &job.host_class_affinity)?;
@@ -980,12 +1067,17 @@ fn prepare_markdown(driver_id: &str, job: &EnrichJob, steps: &str) -> String {
     } else {
         job.source_drivers.join(",")
     };
+    let train_lines = match job.train_base_model.as_deref() {
+        Some(train) => format!("Seat tag: {}\nTrain base: {train}\n", job.base_model),
+        None => String::new(),
+    };
     format!(
         "# Enrich prepare ({driver_id})\n\n\
          Pack: {pack}\n\
          Job: {kind}\n\
          Driver: {driver_id}\n\
          Base ref: {base}\n\
+         {train_lines}\
          Host class affinity: {host}\n\
          Source drivers: {drivers}\n\
          Promoted: false\n\
@@ -1062,16 +1154,19 @@ fn next_markdown(
         let export = out_dir.join("export.yaml");
         let train_command = llamafactory_train_command(&recipe);
         let export_command = llamafactory_export_command(&export);
-        let template = llamafactory_template(&job.base_model);
+        let train_base = job.train_base_model.as_deref().unwrap_or("");
+        let template = llamafactory_template(train_base);
         (
             format!(
                 "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
                  \n\
-                 pip install llamafactory\n\
+                 {install}\n\
                  {train_command}\n\
                  {export_command}\n\
                  \n\
-                 If that pip line does not match the CUDA install on the box, use the official install: https://github.com/hiyouga/LLaMA-Factory#installation\n\
+                 {bits}\n\
+                 \n\
+                 If the torch wheel still does not match the CUDA install on the box, use the official install: https://github.com/hiyouga/LLaMA-Factory#installation\n\
                  SFT: https://llamafactory.readthedocs.io/en/latest/getting_started/sft.html\n\
                  Merge: https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html\n\
                  \n\
@@ -1081,11 +1176,15 @@ fn next_markdown(
                  \n\
                  {dataset}\n\
                  \n\
-                 model_name_or_path in recipe.yaml is {base}. LLaMA-Factory expects a Hugging Face repo id or a local weights directory. This factory did not download weights.\n\
+                 Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
                  \n\
-                 template in recipe.yaml and export.yaml is {template}. Confirm it matches the model. Train and seat share the same chat template. When you seat on Ollama, the Modelfile TEMPLATE (or the GGUF chat template) must be that same chat format. This factory does not write a second template.\n\
+                 Train base is {train}. recipe.yaml and export.yaml set model_name_or_path to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
                  \n\
-                 Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF, or FROM {base} plus ADAPTER for the adapter directory. This factory does not run ollama create.\n\
+                 template in recipe.yaml and export.yaml is {template}. That hint comes from the train base name. Confirm it matches the model. Train and seat share the same chat template. When you seat on Ollama, the Modelfile TEMPLATE (or the GGUF chat template) must be that same chat format. This factory does not write a second template.\n\
+                 \n\
+                 {gauge}\n\
+                 \n\
+                 Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, FROM must be an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
                  After that tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.\n\
                  \n\
@@ -1101,10 +1200,14 @@ fn next_markdown(
                  axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
                 host = llamafactory_host_note(&job.host_class_affinity),
                 dataset = llamafactory_dataset_note(job.source_paths.is_empty(), &job.source_paths),
-                base = job.base_model,
+                seat = job.base_model,
+                train = train_base,
                 template = template,
                 train_command = train_command,
                 export_command = export_command,
+                install = llamafactory_install_lines(),
+                bits = llamafactory_bitsandbytes_note(),
+                gauge = llamafactory_gauge_note(job.max_steps),
             ),
             format!(
                 "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
@@ -1114,6 +1217,23 @@ fn next_markdown(
         )
     } else if driver_id == AXOLOTL_LORA_ID {
         let command = axolotl_train_command(&config);
+        let train_note = match job.train_base_model.as_deref() {
+            Some(train) => format!(
+                "\nPack or binding train_base_model is {train}. llamafactory-qlora writes that value to model_name_or_path. This card still writes base_model as the seat tag {base}. Edit axolotl.yml before you train when that seat tag is an Ollama id.\n",
+                base = job.base_model,
+            ),
+            None => String::new(),
+        };
+        let seat_paragraph = match job.train_base_model.as_deref() {
+            Some(train) => format!(
+                "Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of train base {train} plus ADAPTER for the adapter directory. The seat tag {} is the id this cell already runs. This factory does not run ollama create.",
+                job.base_model
+            ),
+            None => format!(
+                "Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.",
+                job.base_model
+            ),
+        };
         (
             format!(
                 "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it.\n\
@@ -1125,14 +1245,16 @@ fn next_markdown(
                  {dataset}\n\
                  \n\
                  base_model in axolotl.yml is {base}. Axolotl expects a Hugging Face repo id or a local weights directory. This factory did not download weights.\n\
+                 {train_note}\
                  \n\
-                 Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {base} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.\n\
+                 {seat_paragraph}\n\
                  \n\
                  llamafactory-qlora is the durable LLaMA-Factory recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
                 dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
                 base = job.base_model,
+                seat_paragraph = seat_paragraph,
             ),
             format!(
                 "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
@@ -1420,9 +1542,286 @@ fn chat_dataset_jsonl(job: &EnrichJob) -> Result<(String, bool), ModelError> {
     Ok((body, stub))
 }
 
-/// Small hint from the seated tag. Confirm it before train. Seat the same chat format.
-fn llamafactory_template(base_model: &str) -> &'static str {
-    let name = base_model.to_ascii_lowercase();
+const LLAMAFACTORY_SAVE_STEPS: u32 = 50;
+
+fn llamafactory_install_lines() -> &'static str {
+    "pip install llamafactory\npip install 'bitsandbytes>=0.49'"
+}
+
+fn llamafactory_bitsandbytes_note() -> &'static str {
+    "QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. Install bitsandbytes in that same environment (`pip install 'bitsandbytes>=0.49'`). On a consumer RTX host, keep the torch CUDA wheel you already installed. A consumer RTX smoke on CUDA 12.8 used torch 2.11.0+cu128 and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. This factory does not install either package."
+}
+
+fn llamafactory_gauge_note(max_steps: Option<u32>) -> String {
+    let base = "A short gauge run does not need a full epoch. Re-prepare with `--max-steps 10`. LLaMA-Factory overrides `num_train_epochs` when `max_steps` is set. When that count is under 50, this prepare sets `save_steps` to the same count so a checkpoint is written during the short run. The default recipe keeps `num_train_epochs: 1.0` and `save_steps: 50`, and leaves `max_steps` unset.";
+    match max_steps {
+        Some(steps) => format!("{base}\n\nThis recipe is a gauge run with max_steps {steps}."),
+        None => base.to_string(),
+    }
+}
+
+fn llamafactory_save_steps(max_steps: Option<u32>) -> u32 {
+    match max_steps {
+        Some(steps) if steps < LLAMAFACTORY_SAVE_STEPS => steps,
+        _ => LLAMAFACTORY_SAVE_STEPS,
+    }
+}
+
+fn require_llamafactory_train_base(job: &EnrichJob) -> Result<String, ModelError> {
+    match job
+        .train_base_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(train_base) => canonical_train_base(train_base, &job.base_model),
+        None => Err(train_base_error("", &job.base_model)),
+    }
+}
+
+/// Hub ids stay as typed. A local directory is stored as an absolute path so
+/// LLaMA-Factory does not resolve `model_name_or_path` against process CWD.
+fn canonical_train_base(raw: &str, seat: &str) -> Result<String, ModelError> {
+    let value = raw.trim();
+    if is_hub_repo_id(value) {
+        return Ok(value.to_string());
+    }
+    if !is_local_hf_dir(value) {
+        return Err(train_base_error(value, seat));
+    }
+    if leaf_is_seat_tag(value, seat) {
+        return Err(seat_leaf_error(value, seat));
+    }
+    let absolute = lexical_absolute(&absolute_path(Path::new(value)));
+    if !absolute.starts_with('/') || !is_local_hf_dir(&absolute) {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: '{value}' could not be stored as an absolute directory of HF weights. Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights."
+        )));
+    }
+    if leaf_is_seat_tag(&absolute, seat) {
+        return Err(seat_leaf_error(value, seat));
+    }
+    Ok(absolute)
+}
+
+fn lexical_absolute(path: &Path) -> String {
+    let mut parts = Vec::new();
+    let mut rooted = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::RootDir => rooted = true,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                parts.pop();
+            }
+            std::path::Component::Normal(part) => parts.push(part.to_os_string()),
+            std::path::Component::Prefix(_) => {}
+        }
+    }
+    let mut out = if rooted {
+        PathBuf::from("/")
+    } else {
+        PathBuf::new()
+    };
+    for part in parts {
+        out.push(part);
+    }
+    out.display().to_string()
+}
+
+fn accept_train_base(raw: &str, seat: &str) -> Result<(), ModelError> {
+    let value = raw.trim();
+    if value.is_empty() || !is_train_base(value) {
+        return Err(train_base_error(value, seat));
+    }
+    if is_local_hf_dir(value) && leaf_is_seat_tag(value, seat) {
+        return Err(seat_leaf_error(value, seat));
+    }
+    Ok(())
+}
+
+fn is_train_base(value: &str) -> bool {
+    is_hub_repo_id(value) || is_local_hf_dir(value)
+}
+
+fn is_hub_repo_id(value: &str) -> bool {
+    if value.len() > 192 || value.matches('/').count() != 1 {
+        return false;
+    }
+    let Some((namespace, name)) = value.split_once('/') else {
+        return false;
+    };
+    is_hub_segment(namespace) && is_hub_segment(name)
+}
+
+fn is_hub_segment(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphanumeric() => {}
+        _ => return false,
+    }
+    if value.len() > 96 {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+fn is_local_hf_dir(value: &str) -> bool {
+    if value.len() < 2 || value.len() > 512 || value.ends_with('/') {
+        return false;
+    }
+    if value
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, ':' | '"' | '\'' | '#' | '\\'))
+    {
+        return false;
+    }
+    let relative = value.starts_with("./") || value.starts_with("../");
+    let absolute = value.starts_with('/');
+    if !relative && !absolute {
+        return false;
+    }
+    let body = value.trim_start_matches('.').trim_start_matches('/');
+    !body.is_empty()
+}
+
+fn path_leaf(value: &str) -> &str {
+    value.rsplit('/').next().unwrap_or(value).trim()
+}
+
+/// Basename of a local weights path. Ollama seat tags are lowercase ids
+/// (`llama3`, `qwen2.5`) or the same id with a different case (`Llama3`).
+/// A mixed-case name that contains a hyphen is a Hugging Face snapshot
+/// directory (`Qwen2.5-0.5B-Instruct`), so it stays a local train base.
+fn leaf_is_seat_tag(path: &str, seat: &str) -> bool {
+    let leaf = path_leaf(path);
+    if leaf.is_empty() || leaf == "." || leaf == ".." {
+        return false;
+    }
+    let seat_name = seat.split(':').next().unwrap_or(seat);
+    if name_eq(leaf, seat) || (!seat_name.is_empty() && name_eq(leaf, seat_name)) {
+        return true;
+    }
+    let folded = leaf.to_ascii_lowercase();
+    if !looks_like_bare_seat_tag(&folded) {
+        return false;
+    }
+    if leaf.chars().any(|c| c.is_ascii_uppercase()) && leaf.contains('-') {
+        return false;
+    }
+    true
+}
+
+fn seat_leaf_error(raw: &str, seat: &str) -> ModelError {
+    let leaf = path_leaf(raw);
+    ModelError::Other(format!(
+        "refuse:train-base: '{raw}' ends in '{leaf}', which looks like an Ollama seat tag. Seat tag '{seat}' is the Ollama id for Modelfile FROM. Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights. This factory does not map the seat tag onto a Hub repo and does not download weights."
+    ))
+}
+
+fn looks_like_bare_seat_tag(value: &str) -> bool {
+    if value.contains('/') || value.is_empty() {
+        return false;
+    }
+    let (name, tag) = match value.split_once(':') {
+        Some((name, tag)) => (name, Some(tag)),
+        None => (value, None),
+    };
+    if value.matches(':').count() > 1 {
+        return false;
+    }
+    is_ollama_name_part(name) && tag.map(is_ollama_name_part).unwrap_or(true)
+}
+
+fn is_ollama_name_part(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+fn train_base_error(raw: &str, seat: &str) -> ModelError {
+    let why = if raw.is_empty() {
+        format!("no train base is set. Seat tag '{seat}' is the Ollama id for Modelfile FROM.")
+    } else if looks_like_bare_seat_tag(raw) {
+        format!(
+            "'{raw}' looks like an Ollama seat tag. Seat tag '{seat}' is the Ollama id for Modelfile FROM."
+        )
+    } else {
+        format!("'{raw}' is not a Hugging Face repo id (namespace/name) or a local directory of HF weights.")
+    };
+    ModelError::Other(format!(
+        "refuse:train-base: {why} Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights (an absolute path, or a path that starts with ./). This factory does not map the seat tag onto a Hub repo and does not download weights."
+    ))
+}
+
+fn yaml_field(text: &str, key: &str) -> Option<String> {
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix(key) else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(rest) = rest.strip_prefix(':') else {
+            continue;
+        };
+        let rest = rest.trim();
+        if rest.is_empty() {
+            return None;
+        }
+        if let Some(inner) = rest.strip_prefix('"') {
+            let inner = inner.strip_suffix('"').unwrap_or(inner);
+            return Some(inner.replace("\\\"", "\"").replace("\\\\", "\\"));
+        }
+        return Some(rest.to_string());
+    }
+    None
+}
+
+fn refuse_llamafactory_train_record(
+    doc: &EnrichPrepareDoc,
+    prepared_dir: &Path,
+) -> Result<(), ModelError> {
+    if doc.driver != LLAMAFACTORY_QLORA_ID {
+        return Ok(());
+    }
+    let train = match doc
+        .train_base_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(train) => {
+            accept_train_base(train, &doc.base_model)?;
+            train.to_string()
+        }
+        None => return Err(train_base_error("", &doc.base_model)),
+    };
+    for name in ["recipe.yaml", "export.yaml"] {
+        let path = prepared_dir.join(name);
+        let text = std::fs::read_to_string(&path).map_err(|_| {
+            ModelError::Other(format!(
+                "refuse:train-base: {name} is missing, so the train base cannot be checked"
+            ))
+        })?;
+        let found = yaml_field(&text, "model_name_or_path").unwrap_or_default();
+        if found != train {
+            return Err(ModelError::Other(format!(
+                "refuse:train-base: {name} model_name_or_path is '{found}'. prepare.json train_base_model is '{train}'. Seat tag '{}' is the Ollama id for Modelfile FROM. These files must name the train base.",
+                doc.base_model
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Chat template hint from the train base name. Confirm it before train. Seat the same chat format.
+fn llamafactory_template(train_base: &str) -> &'static str {
+    let name = train_base.to_ascii_lowercase();
     if name.contains("qwen3") {
         "qwen3"
     } else if name.contains("qwen") {
@@ -1447,27 +1846,41 @@ fn llamafactory_dataset_info() -> String {
     )
 }
 
-fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
-    let template = llamafactory_template(&job.base_model);
+fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String {
+    let template = llamafactory_template(train_base);
     let outputs = job.out_dir.join("outputs");
     let scaffold = if stub { "stub" } else { "pack-source-paths" };
     let host = yaml_comment_line(&llamafactory_host_note(&job.host_class_affinity));
+    let save_steps = llamafactory_save_steps(job.max_steps);
+    let gauge = match job.max_steps {
+        Some(steps) => format!(
+            "# Gauge run. max_steps {steps} overrides num_train_epochs.\n\
+             max_steps: {steps}\n"
+        ),
+        None => {
+            "# One epoch. A short gauge run passes --max-steps. This file leaves max_steps unset.\n"
+                .to_string()
+        }
+    };
     format!(
         "# schema: {schema}\n\
          # driver: {driver}\n\
          # job: train\n\
          # pack: {pack}\n\
+         # seat_tag: {seat}\n\
+         # train_base: {train_comment}\n\
          # Recipe only. Cell One does not run llamafactory-cli, does not download weights, and does not call CUDA.\n\
-         # model_name_or_path is the seated model tag (same resolution as Modelfile FROM).\n\
-         # LLaMA-Factory expects a Hugging Face repo id or a local weights directory.\n\
-         # template is a hint from that tag. Confirm it matches the model.\n\
+         # seat_tag is the Ollama id for Modelfile FROM.\n\
+         # model_name_or_path is the train base: a Hugging Face repo id or a local directory of HF weights.\n\
+         # template is inferred from the train base. Confirm it matches the model.\n\
          # Use this same chat template when you seat the model.\n\
+         # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_scaffold: {scaffold}\n\
          # {host}\n\
          # QLoRA is finetuning_type lora plus quantization_bit 4.\n\
          # quantization_method is bnb. That is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch.\n\
          # Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n\
-         model_name_or_path: {base}\n\
+         model_name_or_path: {train}\n\
          trust_remote_code: true\n\
          stage: sft\n\
          # Later preference stage is a recipe flag. Not built here.\n\
@@ -1490,7 +1903,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
          dataloader_num_workers: 1\n\
          output_dir: {outputs}\n\
          logging_steps: 1\n\
-         save_steps: 50\n\
+         save_steps: {save_steps}\n\
          overwrite_output_dir: true\n\
          save_only_model: false\n\
          report_to: none\n\
@@ -1498,6 +1911,7 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
          gradient_accumulation_steps: 4\n\
          learning_rate: 1.0e-4\n\
          num_train_epochs: 1.0\n\
+         {gauge}\
          lr_scheduler_type: cosine\n\
          warmup_ratio: 0.03\n\
          bf16: true\n\
@@ -1505,30 +1919,40 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
         schema = PREPARE_SCHEMA,
         driver = LLAMAFACTORY_QLORA_ID,
         pack = job.pack_id,
+        seat = job.base_model,
+        train_comment = train_base,
         cutoff = LLAMAFACTORY_CUTOFF_LEN,
         rank = LLAMAFACTORY_LORA_RANK,
         alpha = LLAMAFACTORY_LORA_ALPHA,
         seed = LLAMAFACTORY_SEED,
-        base = yaml_quote(&job.base_model),
+        train = yaml_quote(train_base),
         dataset_name = LLAMAFACTORY_DATASET_NAME,
         dataset_dir = yaml_quote(&job.out_dir.display().to_string()),
         outputs = yaml_quote(&outputs.display().to_string()),
+        template = template,
+        scaffold = scaffold,
+        host = host,
+        save_steps = save_steps,
+        gauge = gauge,
     )
 }
 
-fn llamafactory_export_yaml(job: &EnrichJob) -> String {
-    let template = llamafactory_template(&job.base_model);
+fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str) -> String {
+    let template = llamafactory_template(train_base);
     let adapter = job.out_dir.join("outputs");
     let export_dir = job.out_dir.join("export");
     format!(
         "# schema: {schema}\n\
          # driver: {driver}\n\
+         # seat_tag: {seat}\n\
+         # train_base: {train_comment}\n\
          # Merge only. Leave this file unquantized. Do not merge a quantized base.\n\
-         # Point model_name_or_path at the unquantized Hugging Face repo or local weights you trained from.\n\
+         # model_name_or_path is the train base: the unquantized Hugging Face repo or local HF weights you trained from.\n\
+         # The seat tag is the Ollama id for Modelfile FROM. It is a different field.\n\
          # adapter_name_or_path is the train output_dir.\n\
          # LLaMA-Factory does not export GGUF. Convert the merge with llama.cpp if you want an Ollama GGUF.\n\
-         # template must match recipe.yaml. Train and seat share one chat template.\n\
-         model_name_or_path: {base}\n\
+         # template is inferred from the train base and must match recipe.yaml. Train and seat share one chat template.\n\
+         model_name_or_path: {train}\n\
          adapter_name_or_path: {adapter}\n\
          template: {template}\n\
          trust_remote_code: true\n\
@@ -1539,7 +1963,9 @@ fn llamafactory_export_yaml(job: &EnrichJob) -> String {
          export_legacy_format: false\n",
         schema = PREPARE_SCHEMA,
         driver = LLAMAFACTORY_QLORA_ID,
-        base = yaml_quote(&job.base_model),
+        seat = job.base_model,
+        train_comment = train_base,
+        train = yaml_quote(train_base),
         adapter = yaml_quote(&adapter.display().to_string()),
         export_dir = yaml_quote(&export_dir.display().to_string()),
     )
@@ -1755,6 +2181,7 @@ pub fn import_prepared(
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
+    refuse_llamafactory_train_record(&doc, req.prepared_dir)?;
     refuse_frontier_source_on_estate(&doc.source_drivers, req.estate).map_err(map_feed)?;
     let expected = local_enrich_tag(&doc.pack_id);
     refuse_sacred_and_sku("tag", req.tag)?;
@@ -2032,6 +2459,18 @@ fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
     refuse_sacred_and_sku("pack id", &doc.pack_id)?;
     refuse_sacred_and_sku("driver", &doc.driver)?;
     refuse_sacred_and_sku("base model", &doc.base_model)?;
+    if let Some(seat) = doc.seat_tag.as_deref() {
+        refuse_sacred_and_sku("seat tag", seat)?;
+        if seat != doc.base_model {
+            return Err(ModelError::Other(format!(
+                "refuse:prepare: seat_tag '{seat}' does not match base_model '{}'",
+                doc.base_model
+            )));
+        }
+    }
+    if let Some(train_base) = doc.train_base_model.as_deref() {
+        refuse_sacred_and_sku("train base", train_base)?;
+    }
     refuse_sacred_and_sku("purpose", &doc.purpose)?;
     refuse_sacred_and_sku("host_class_affinity", &doc.host_class_affinity)?;
     for source in &doc.source_paths {
@@ -2419,6 +2858,7 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
     let proposal_path = req.prepared_dir.join(BINDING_PROPOSAL_JSON);
     let proposal = parse_binding_proposal(&proposal_path)?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
+    refuse_llamafactory_train_record(&doc, req.prepared_dir)?;
     if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job {
         return Err(ModelError::Other(
             "refuse:prepare: prepare.json does not match the binding proposal".into(),
@@ -2974,6 +3414,19 @@ mod tests {
         estate
     }
 
+    fn with_train_base(mut estate: Estate, train_base: &str) -> Estate {
+        let binding = estate
+            .model_bindings
+            .iter_mut()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap();
+        binding.params.as_object_mut().unwrap().insert(
+            "train_base_model".into(),
+            serde_json::Value::String(train_base.into()),
+        );
+        estate
+    }
+
     fn run(
         driver: &str,
         pack: &PackManifest,
@@ -2982,6 +3435,18 @@ mod tests {
         job: &str,
         curator: &str,
     ) -> Result<EnrichPrepareDoc, ModelError> {
+        run_max(driver, pack, estate, out, job, curator, None)
+    }
+
+    fn run_max(
+        driver: &str,
+        pack: &PackManifest,
+        estate: &Estate,
+        out: &Path,
+        job: &str,
+        curator: &str,
+        max_steps: Option<u32>,
+    ) -> Result<EnrichPrepareDoc, ModelError> {
         prepare_enrich(&PrepareEnrichRequest {
             estate,
             pack,
@@ -2989,6 +3454,7 @@ mod tests {
             driver_id: driver,
             job,
             out_dir: out,
+            max_steps,
         })
     }
 
@@ -3043,7 +3509,23 @@ mod tests {
     fn llamafactory_qlora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("llamafactory");
         let pack = fixture_pack();
-        let estate = seated_estate("llama3");
+        let seated = seated_estate("llama3");
+        let blocked = root.join("seat-only");
+        let err = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &seated,
+            &blocked,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("llama3"), "{err}");
+        assert!(!err.to_string().contains("meta-llama"), "{err}");
+        assert!(!blocked.exists());
+
+        let estate = with_train_base(seated, "Qwen/Qwen2.5-0.5B-Instruct");
         let out = root.join("recipe");
         let doc = run(
             LLAMAFACTORY_QLORA_ID,
@@ -3057,6 +3539,11 @@ mod tests {
         assert_eq!(doc.job, "train");
         assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
         assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
         for name in [
             "recipe.yaml",
@@ -3073,7 +3560,22 @@ mod tests {
         assert!(!out.join("train_unsloth.py").exists());
         let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
         assert!(
-            recipe.contains("model_name_or_path: \"llama3\""),
+            recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.contains("model_name_or_path: \"llama3\""),
+            "{recipe}"
+        );
+        assert!(!recipe.contains("meta-llama"), "{recipe}");
+        assert!(
+            !recipe
+                .lines()
+                .any(|line| line.trim_start().starts_with("max_steps:")),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "save_steps: 50"),
             "{recipe}"
         );
         assert!(recipe.contains("stage: sft"), "{recipe}");
@@ -3087,14 +3589,20 @@ mod tests {
         assert!(recipe.contains("lora_rank: 16"), "{recipe}");
         assert!(recipe.contains("packing: true"), "{recipe}");
         assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
-        assert!(recipe.contains("template: llama3"), "{recipe}");
+        assert!(recipe.contains("template: qwen"), "{recipe}");
+        assert!(!recipe.contains("template: llama3"), "{recipe}");
         assert!(recipe.contains("dataset: cell_enrich"), "{recipe}");
         assert!(recipe.contains("seed: 42"), "{recipe}");
         assert!(recipe.contains("# stage: dpo"), "{recipe}");
         assert!(recipe.contains("# or stage: orpo"), "{recipe}");
         let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
         assert!(!export.contains("quantization_bit"), "{export}");
-        assert!(export.contains("template: llama3"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{export}"
+        );
+        assert!(export.contains("template: qwen"), "{export}");
+        assert!(!export.contains("template: llama3"), "{export}");
         assert!(export.contains("finetuning_type: lora"), "{export}");
         let info = std::fs::read_to_string(out.join("dataset_info.json")).unwrap();
         assert!(info.contains("\"formatting\": \"sharegpt\""), "{info}");
@@ -3119,6 +3627,12 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("pip install llamafactory"), "{next}");
+        assert!(next.contains("bitsandbytes>=0.49"), "{next}");
+        assert!(next.contains("2.11.0+cu128"), "{next}");
+        assert!(next.contains("Seat tag is llama3"), "{next}");
+        assert!(next.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{next}");
+        assert!(next.contains("--max-steps 10"), "{next}");
+        assert!(next.contains("does not map the seat tag"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
         assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
@@ -3137,10 +3651,28 @@ mod tests {
             prepare_md.contains("did not run llamafactory-cli"),
             "{prepare_md}"
         );
+        assert!(prepare_md.contains("bitsandbytes>=0.49"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("Train base: Qwen/Qwen2.5-0.5B-Instruct"),
+            "{prepare_md}"
+        );
+        assert!(prepare_md.contains("Seat tag: llama3"), "{prepare_md}");
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
         assert!(
             prepare_json.contains("\"job\": \"train\""),
+            "{prepare_json}"
+        );
+        assert!(
+            prepare_json.contains("\"seat_tag\": \"llama3\""),
+            "{prepare_json}"
+        );
+        assert!(
+            prepare_json.contains("\"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{prepare_json}"
+        );
+        assert!(
+            prepare_json.contains("\"base_model\": \"llama3\""),
             "{prepare_json}"
         );
 
@@ -3212,6 +3744,287 @@ mod tests {
         assert_eq!(proposal.binding_id, "local_slm");
         assert!(proposal.local_path.ends_with("adapter_config.json"));
         assert!(!proposal.auto_apply && !proposal.estate_rewritten);
+
+        let recipe_path = out.join("recipe.yaml");
+        let original = std::fs::read_to_string(&recipe_path).unwrap();
+        std::fs::write(
+            &recipe_path,
+            original.replace(
+                "model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\"",
+                "model_name_or_path: \"llama3\"",
+            ),
+        )
+        .unwrap();
+        let tampered = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            tampered.to_string().contains("refuse:train-base"),
+            "{tampered}"
+        );
+        std::fs::write(&recipe_path, original).unwrap();
+    }
+
+    #[test]
+    fn llamafactory_train_base_follows_the_weights_and_refuses_a_seat_tag() {
+        let root = tmp("train-base");
+        let pack = fixture_pack();
+        let seated = seated_estate("qwen2.5:0.5b");
+
+        for bad in [
+            "llama3",
+            "llama3:latest",
+            "qwen2.5:0.5b",
+            "hf.co/Qwen/Qwen2.5-0.5B-Instruct",
+        ] {
+            let mut bad_pack = pack.clone();
+            bad_pack.train_base_model = Some(bad.into());
+            let out = root.join(bad.replace(':', "_").replace('/', "_").replace('.', "_"));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bad_pack,
+                &seated,
+                &out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!out.exists(), "{bad}");
+        }
+
+        let mut pack_wins = pack.clone();
+        pack_wins.train_base_model = Some("Qwen/Qwen2.5-0.5B-Instruct".into());
+        let binding_other = with_train_base(seated.clone(), "mistralai/Mistral-7B-Instruct-v0.3");
+        let win_out = root.join("pack-wins");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack_wins,
+            &binding_other,
+            &win_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let win_recipe = std::fs::read_to_string(win_out.join("recipe.yaml")).unwrap();
+        assert!(
+            win_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{win_recipe}"
+        );
+        assert!(win_recipe.contains("template: qwen"), "{win_recipe}");
+        assert!(!win_recipe.contains("template: mistral"), "{win_recipe}");
+
+        let mut bad_pack = pack.clone();
+        bad_pack.train_base_model = Some("llama3".into());
+        let fallthrough = root.join("no-fallthrough");
+        let err = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bad_pack,
+            &binding_other,
+            &fallthrough,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!fallthrough.exists());
+
+        let supplied = with_train_base(seated.clone(), "meta-llama/Meta-Llama-3-8B-Instruct");
+        let supplied_out = root.join("supplied-llama");
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &supplied,
+            &supplied_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.base_model, "qwen2.5:0.5b");
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("meta-llama/Meta-Llama-3-8B-Instruct")
+        );
+        let supplied_recipe = std::fs::read_to_string(supplied_out.join("recipe.yaml")).unwrap();
+        assert!(
+            supplied_recipe.contains("template: llama3"),
+            "{supplied_recipe}"
+        );
+        assert!(
+            !supplied_recipe.contains("template: qwen"),
+            "{supplied_recipe}"
+        );
+        assert!(
+            supplied_recipe.contains("model_name_or_path: \"meta-llama/Meta-Llama-3-8B-Instruct\""),
+            "{supplied_recipe}"
+        );
+
+        let local = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf-weights/Qwen2.5-0.5B-Instruct",
+        );
+        let local_out = root.join("local-dir");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local,
+            &local_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let local_recipe = std::fs::read_to_string(local_out.join("recipe.yaml")).unwrap();
+        assert!(
+            local_recipe
+                .contains("model_name_or_path: \"/tmp/cell-one-hf-weights/Qwen2.5-0.5B-Instruct\""),
+            "{local_recipe}"
+        );
+        assert!(local_recipe.contains("template: qwen"), "{local_recipe}");
+
+        for bad in ["./llama3", "../llama3", "./weights/llama3", "./Llama3"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let out = root.join(format!(
+                "leaf-{}",
+                bad.trim_start_matches('.').replace('/', "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &pack,
+                &bad_estate,
+                &out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!err.to_string().contains("meta-llama"), "{bad}: {err}");
+            assert!(!out.exists(), "{bad}");
+        }
+
+        let relative_raw = "./weights/Qwen2.5-0.5B-Instruct";
+        let expected = canonical_train_base(relative_raw, "qwen2.5:0.5b").unwrap();
+        assert!(expected.starts_with('/'), "{expected}");
+        assert!(
+            expected.ends_with("/weights/Qwen2.5-0.5B-Instruct"),
+            "{expected}"
+        );
+        assert!(
+            !expected.contains("/./") && !expected.contains(".."),
+            "{expected}"
+        );
+        let relative = with_train_base(local.clone(), relative_raw);
+        let relative_out = root.join("relative");
+        let relative_doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &relative,
+            &relative_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(
+            relative_doc.train_base_model.as_deref(),
+            Some(expected.as_str())
+        );
+        let relative_recipe = std::fs::read_to_string(relative_out.join("recipe.yaml")).unwrap();
+        let quoted = format!("model_name_or_path: \"{expected}\"");
+        assert!(relative_recipe.contains(&quoted), "{relative_recipe}");
+        assert!(!relative_recipe.contains("./weights"), "{relative_recipe}");
+        let relative_export = std::fs::read_to_string(relative_out.join("export.yaml")).unwrap();
+        assert!(relative_export.contains(&quoted), "{relative_export}");
+        let relative_next = std::fs::read_to_string(relative_out.join("NEXT.md")).unwrap();
+        assert!(relative_next.contains(&expected), "{relative_next}");
+
+        let gauge_out = root.join("gauge");
+        run_max(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local,
+            &gauge_out,
+            "train",
+            "jason",
+            Some(10),
+        )
+        .unwrap();
+        let gauge = std::fs::read_to_string(gauge_out.join("recipe.yaml")).unwrap();
+        assert!(
+            gauge.lines().any(|line| line.trim() == "max_steps: 10"),
+            "{gauge}"
+        );
+        assert!(
+            gauge.lines().any(|line| line.trim() == "save_steps: 10"),
+            "{gauge}"
+        );
+        assert!(gauge.contains("num_train_epochs: 1.0"), "{gauge}");
+        assert!(gauge.contains("quantization_method: bnb"), "{gauge}");
+        let gauge_next = std::fs::read_to_string(gauge_out.join("NEXT.md")).unwrap();
+        assert!(
+            gauge_next.contains("gauge run with max_steps 10"),
+            "{gauge_next}"
+        );
+
+        let zero = root.join("zero-steps");
+        let err = run_max(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local,
+            &zero,
+            "train",
+            "jason",
+            Some(0),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:max-steps"), "{err}");
+        assert!(!zero.exists());
+
+        let mut legacy: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(local_out.join("prepare.json")).unwrap())
+                .unwrap();
+        legacy.as_object_mut().unwrap().remove("train_base_model");
+        let legacy_dir = root.join("legacy");
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        for name in [
+            "recipe.yaml",
+            "export.yaml",
+            "dataset.jsonl",
+            "PREPARE.md",
+            "NEXT.md",
+        ] {
+            std::fs::copy(local_out.join(name), legacy_dir.join(name)).unwrap();
+        }
+        std::fs::write(
+            legacy_dir.join("prepare.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let legacy_import = import_trained(&ImportTrainedRequest {
+            estate: &local,
+            prepared_dir: &legacy_dir,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            legacy_import.to_string().contains("refuse:train-base"),
+            "{legacy_import}"
+        );
     }
 
     #[test]
@@ -3263,6 +4076,35 @@ mod tests {
         assert!(next.contains("unslothai/unsloth"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("consumer-nvidia"), "{next}");
+        assert!(next.contains("FROM llama3 plus ADAPTER"), "{next}");
+
+        let trained = with_train_base(estate.clone(), "Qwen/Qwen2.5-0.5B-Instruct");
+        let trained_out = root.join("with-train-base");
+        run(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &trained,
+            &trained_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let trained_yaml = std::fs::read_to_string(trained_out.join("axolotl.yml")).unwrap();
+        assert!(
+            trained_yaml.contains("base_model: \"llama3\""),
+            "{trained_yaml}"
+        );
+        let trained_next = std::fs::read_to_string(trained_out.join("NEXT.md")).unwrap();
+        assert!(
+            trained_next.contains(
+                "FROM an Ollama model of train base Qwen/Qwen2.5-0.5B-Instruct plus ADAPTER"
+            ),
+            "{trained_next}"
+        );
+        assert!(
+            !trained_next.contains("FROM llama3 plus ADAPTER"),
+            "{trained_next}"
+        );
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             prepare_md.contains("axolotl train axolotl.yml"),
@@ -3639,6 +4481,7 @@ mod tests {
                 driver_id: "external-manifest",
                 job: "enrich",
                 out_dir: &manifest_out,
+                max_steps: None,
             },
             PrepareEnrichRequest {
                 estate: &estate,
@@ -3647,6 +4490,7 @@ mod tests {
                 driver_id: "ollama-modelfile",
                 job: "enrich",
                 out_dir: &ollama_out,
+                max_steps: None,
             },
         ])
         .unwrap();
@@ -3679,6 +4523,7 @@ mod tests {
                 driver_id: "external-manifest",
                 job: "enrich",
                 out_dir: &blocked_m,
+                max_steps: None,
             },
             PrepareEnrichRequest {
                 estate: &estate,
@@ -3687,6 +4532,7 @@ mod tests {
                 driver_id: "ollama-modelfile",
                 job: "enrich",
                 out_dir: &blocked_o,
+                max_steps: None,
             },
         ])
         .unwrap_err();

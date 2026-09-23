@@ -198,6 +198,7 @@ pub fn pack_from_events(id: &str, events: &[ScrubbedEvent]) -> PackManifest {
         path_counts,
         source_paths: vec!["feed/events.jsonl".into()],
         model_hint: None,
+        train_base_model: None,
         source_drivers: source_drivers_from_events(events),
         host_class_affinity: Some(default_host_class()),
         created_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),

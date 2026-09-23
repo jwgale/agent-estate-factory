@@ -26,6 +26,7 @@ pub(crate) fn cmd_enrich_prepare(
     state_dir: &Path,
     job: Option<&str>,
     curator: &str,
+    max_steps: Option<u32>,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -46,6 +47,7 @@ pub(crate) fn cmd_enrich_prepare(
             driver_id,
             job: job.as_str(),
             out_dir,
+            max_steps,
         })
         .collect();
     let docs = prepare_enrich_set(&reqs)?;
@@ -55,8 +57,12 @@ pub(crate) fn cmd_enrich_prepare(
         bail!("enrich prepare must not rewrite the estate file");
     }
     for (doc, (_, out_dir)) in docs.iter().zip(targets.iter()) {
+        let train_base = match doc.train_base_model.as_deref() {
+            Some(train) => format!(" train_base={train}"),
+            None => String::new(),
+        };
         println!(
-            "enrich prepare: driver={} job={} pack={} base={}",
+            "enrich prepare: driver={} job={} pack={} base={}{train_base}",
             doc.driver, doc.job, doc.pack_id, doc.base_model
         );
         println!("  out: {}", out_dir.display());
@@ -84,6 +90,7 @@ pub(crate) fn cmd_enrich_from_pack(
     state_dir: &Path,
     job: Option<&str>,
     curator: &str,
+    max_steps: Option<u32>,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -103,6 +110,7 @@ pub(crate) fn cmd_enrich_from_pack(
         state_dir,
         job,
         curator,
+        max_steps,
     )
 }
 

@@ -2,6 +2,20 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — absolute local train base
+
+- A relative LLaMA-Factory train base (`./…` or `../…`) is stored as an absolute path in `recipe.yaml`, `export.yaml`, `prepare.json`, and `NEXT.md`. A Hugging Face repo id stays as typed. The weights directory does not need to exist at prepare time.
+- A local path whose directory name is an Ollama seat tag (`./llama3`, `../llama3`) is `refuse:train-base` and writes nothing.
+- `READY_FOR_LIVE_TEST`: no.
+
+## This slice — seat tag and LLaMA-Factory train base
+
+- `llamafactory-qlora` keeps the Ollama seat tag (`prepare.json` `base_model` / `seat_tag`, Modelfile `FROM`) separate from the train base (`model_name_or_path`). Set pack `train_base_model` or `params.train_base_model` on the local binding to a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. The pack field wins. `template` is inferred from the train base.
+- A missing train base, or a bare Ollama tag such as `llama3`, is `refuse:train-base` and writes nothing. `import-trained` refuses the same gap, and refuses when `recipe.yaml` or `export.yaml` `model_name_or_path` does not match `prepare.json`. This factory does not map a seat tag onto a Hub repo.
+- QLoRA install notes name `pip install 'bitsandbytes>=0.49'` because `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not pull it. A 5090 smoke used torch `2.11.0+cu128` and bitsandbytes 0.50.2. That install did not replace torch.
+- `--max-steps N` writes a gauge recipe. The default recipe stays `num_train_epochs: 1.0`, `save_steps: 50`, and leaves `max_steps` unset. `quantization_method` stays `bnb`.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — LLaMA-Factory QLoRA method token
 
 - `llamafactory-qlora` writes `quantization_method: bnb`. LLaMA-Factory 0.9 selects the 4-bit bitsandbytes branch only for that token.

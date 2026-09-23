@@ -13,6 +13,7 @@
   },
   "source_paths": ["feed/events.jsonl"],
   "model_hint": null,
+  "train_base_model": null,
   "source_drivers": [],
   "host_class_affinity": "any",
   "note": "Candidate only. Import is explicit apply. Feed never auto-promotes. source_drivers is additive: frontier and/or local, matching path_counts, default []. Specialist fields optional; cell-one.specialist-pack.v0 is also valid."

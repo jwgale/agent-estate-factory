@@ -363,6 +363,19 @@ local binding, or a pack model_hint that is already a model tag
 A missing seated name is refuse:base-model and writes nothing.
 examples/estate.yaml leaves params.model unset. A lab copy sets it.
 
+llamafactory-qlora model_name_or_path is the train base. Set pack
+field train_base_model, or params.train_base_model on the local
+binding, to a Hugging Face repo id (namespace/name) or a local
+directory of HF weights. A relative directory is written as an
+absolute path. A directory name that is an Ollama seat tag
+(./llama3) is refuse:train-base and writes nothing. template is
+inferred from that train base.
+A bare Ollama seat tag is refuse:train-base and writes nothing.
+This factory does not map the seat tag onto a Hub repo.
+QLoRA also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
+A short gauge run passes --max-steps 10. The default recipe leaves
+max_steps unset.
+
 Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
 NEXT.md has the handoff command, artifact paths, and fail-closed
 reminders. The factory does not shell out to ollama create.

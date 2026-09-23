@@ -41,10 +41,18 @@ fn estate_bytes() -> String {
 }
 
 fn write_seated_estate(dir: &std::path::Path, model: &str) -> PathBuf {
+    write_train_estate(dir, model, None)
+}
+
+fn write_train_estate(dir: &std::path::Path, model: &str, train_base: Option<&str>) -> PathBuf {
     let needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n";
     let src = estate_bytes();
     assert!(src.contains(needle), "local_slm params block moved");
-    let seated = src.replacen(needle, &format!("{needle}      model: \"{model}\"\n"), 1);
+    let mut insert = format!("{needle}      model: \"{model}\"\n");
+    if let Some(train_base) = train_base {
+        insert.push_str(&format!("      train_base_model: \"{train_base}\"\n"));
+    }
+    let seated = src.replacen(needle, &insert, 1);
     let path = dir.join("seated-estate.yaml");
     std::fs::write(&path, seated).unwrap();
     path
@@ -67,6 +75,9 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("make enrich-live-prove"), "{body}");
         assert!(body.contains("estate enrich from-pack"), "{body}");
         assert!(body.contains("refuse:base-model"), "{body}");
+        assert!(body.contains("refuse:train-base"), "{body}");
+        assert!(body.contains("train_base_model"), "{body}");
+        assert!(body.contains("--max-steps"), "{body}");
         assert!(body.contains("params.model"), "{body}");
         assert!(body.contains("docs/TRAIN-ENRICH.md"), "{body}");
         assert!(body.contains("docs/LIVE-PROBES.md"), "{body}");
@@ -1172,7 +1183,7 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
 #[test]
 fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     let root = tmp("axolotl-cli");
-    let seated = write_seated_estate(&root, "llama3");
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
     let seated_path = seated.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
@@ -1347,11 +1358,38 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
 #[test]
 fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     let root = tmp("llamafactory-cli");
-    let seated = write_seated_estate(&root, "llama3");
-    let seated_path = seated.display().to_string();
+    let seated_only = write_seated_estate(&root, "llama3");
+    let seated_only_path = seated_only.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let before = estate_bytes();
+    let blocked = root.join("seat-only");
+
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_only_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+    assert!(!blocked.exists());
+
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let seated_path = seated.display().to_string();
     let out = root.join("recipe");
 
     let prepared = estate_bin()
@@ -1373,6 +1411,11 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let prepared_text = text(&prepared);
     assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("train_base=Qwen/Qwen2.5-0.5B-Instruct"),
+        "{prepared_text}"
+    );
+    assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
     assert!(prepared_text.contains("job=train"), "{prepared_text}");
     assert!(
         prepared_text.contains("driver=llamafactory-qlora"),
@@ -1386,6 +1429,10 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         prepared_text.contains("pip install llamafactory"),
         "{prepared_text}"
     );
+    assert!(
+        prepared_text.contains("bitsandbytes>=0.49"),
+        "{prepared_text}"
+    );
     let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
     assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
     assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
@@ -1395,6 +1442,17 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     );
     assert!(recipe.contains("lora_rank: 16"), "{recipe}");
     assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
+    assert!(recipe.contains("template: qwen"), "{recipe}");
+    assert!(
+        recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{recipe}"
+    );
+    assert!(
+        !recipe
+            .lines()
+            .any(|line| line.trim_start().starts_with("max_steps:")),
+        "{recipe}"
+    );
     let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
     assert!(jsonl.contains("\"messages\""), "{jsonl}");
     let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
@@ -1407,7 +1465,49 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     );
     assert!(next.contains("llamafactory-cli export "), "{next}");
     assert!(next.contains("Faster single-GPU alternate"), "{next}");
+    assert!(next.contains("bitsandbytes>=0.49"), "{next}");
+    assert!(next.contains("--max-steps 10"), "{next}");
     assert_eq!(estate_bytes(), before);
+
+    let gauge = root.join("gauge");
+    let gauged = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated_path,
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--max-steps",
+            "10",
+            "--out",
+            &gauge.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let gauge_text = text(&gauged);
+    assert!(gauged.status.success(), "{gauge_text}");
+    let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
+    assert!(
+        gauge_recipe
+            .lines()
+            .any(|line| line.trim() == "max_steps: 10"),
+        "{gauge_recipe}"
+    );
+    assert!(
+        gauge_recipe
+            .lines()
+            .any(|line| line.trim() == "save_steps: 10"),
+        "{gauge_recipe}"
+    );
+    assert!(
+        gauge_recipe.contains("quantization_method: bnb"),
+        "{gauge_recipe}"
+    );
 
     let enrich_job = estate_bin()
         .args([
@@ -1462,6 +1562,115 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
     assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
+    );
+    assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
+    let root = tmp("llamafactory-abs");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+
+    for bad in ["./llama3", "../llama3"] {
+        let seated = write_train_estate(&root, "llama3", Some(bad));
+        let out = root.join(bad.trim_start_matches('.').replace('/', "_"));
+        let refused = estate_bin()
+            .args([
+                "--sacred",
+                &sacred,
+                "enrich",
+                "prepare",
+                "--estate",
+                &seated.display().to_string(),
+                "--pack",
+                &pack,
+                "--driver",
+                "llamafactory-qlora",
+                "--out",
+                &out.display().to_string(),
+            ])
+            .output()
+            .unwrap();
+        let refused_text = text(&refused);
+        assert!(!refused.status.success(), "{bad}: {refused_text}");
+        assert!(
+            refused_text.contains("refuse:train-base"),
+            "{bad}: {refused_text}"
+        );
+        assert!(
+            refused_text.contains("Ollama seat tag"),
+            "{bad}: {refused_text}"
+        );
+        assert!(
+            !refused_text.contains("meta-llama"),
+            "{bad}: {refused_text}"
+        );
+        assert!(!out.exists(), "{bad}");
+    }
+
+    let seated = write_train_estate(&root, "llama3", Some("./weights/Qwen2.5-0.5B-Instruct"));
+    let out = root.join("relative");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
+    let train = doc["train_base_model"].as_str().unwrap();
+    assert!(std::path::Path::new(train).is_absolute(), "{train}");
+    assert!(train.ends_with("/weights/Qwen2.5-0.5B-Instruct"), "{train}");
+    assert!(!train.contains("/./") && !train.contains(".."), "{train}");
+    let quoted = format!("model_name_or_path: \"{train}\"");
+    assert!(recipe.contains(&quoted), "{recipe}");
+    assert!(export.contains(&quoted), "{export}");
+    assert!(recipe.contains("template: qwen"), "{recipe}");
+    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+    assert!(!recipe.contains("./weights"), "{recipe}");
+    assert_eq!(doc["base_model"], "llama3");
+    assert_eq!(doc["seat_tag"], "llama3");
+    let hub = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let hub_out = root.join("hub");
+    let hub_run = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &hub.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            &hub_out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(hub_run.status.success(), "{}", text(&hub_run));
+    let hub_recipe = std::fs::read_to_string(hub_out.join("recipe.yaml")).unwrap();
+    assert!(
+        hub_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{hub_recipe}"
     );
     assert_eq!(estate_bytes(), before);
 }
