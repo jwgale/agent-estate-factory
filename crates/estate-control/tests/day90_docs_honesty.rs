@@ -40,6 +40,89 @@ fn gate_and_parking_lot_do_not_call_stubs_ready() {
 }
 
 #[test]
+fn gate_90_tip_names_prepare_walk_through_pr_142() {
+    let root = repo_root();
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    assert!(
+        !gate.contains("PR #1–#54 plus this slice"),
+        "GATE-90 must not freeze the tip story at PR #54"
+    );
+    let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("CELL-ONE-STATUS.md"),
+        "GATE-90 header must point at the live tip snapshot: {head}"
+    );
+    assert!(
+        head.contains("through PR #142"),
+        "GATE-90 header must name tip through PR #142: {head}"
+    );
+    assert!(
+        head.contains("d2dcdb97c2c960e8b93715391d77075055a8b0ce"),
+        "GATE-90 header must name the PR #142 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("READY_FOR_LIVE_TEST`: no") || head.contains("READY_FOR_LIVE_TEST: no"),
+        "GATE-90 header must keep READY_FOR_LIVE_TEST no: {head}"
+    );
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+
+    let remaining = gate
+        .split("## Remaining Day-90+ (honest)")
+        .nth(1)
+        .expect("remaining section");
+    for target in [
+        "make qlora-journey",
+        "make lora-journey",
+        "make seat-journey",
+        "make lf-beachhead-prepare",
+    ] {
+        assert!(
+            remaining.contains(target),
+            "remaining table missing {target}"
+        );
+    }
+    let row = remaining
+        .lines()
+        .find(|line| line.contains("lf-beachhead-prepare"))
+        .expect("remaining row for lf-beachhead-prepare");
+    assert!(
+        row.contains("16 LLaMA-Factory beachhead matrix fixtures"),
+        "{row}"
+    );
+    assert!(row.contains("Checks prepare artifacts"), "{row}");
+    assert!(row.contains("Does not train"), "{row}");
+    assert!(row.contains("Not in smoke or Actions"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — Day-90 gate tip honesty through PR #142")
+        .nth(1)
+        .expect("CHANGELOG missing the Day-90 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        slice.contains("d2dcdb97c2c960e8b93715391d77075055a8b0ce"),
+        "{slice}"
+    );
+    assert!(slice.contains("CELL-ONE-STATUS.md"), "{slice}");
+    assert!(slice.contains("make lf-beachhead-prepare"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+}
+
+#[test]
 fn glossary_keeps_purpose_built_slm_in_suite() {
     let root = repo_root();
     let glossary = std::fs::read_to_string(root.join("docs/UBIQUITOUS_LANGUAGE.md")).unwrap();
