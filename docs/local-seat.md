@@ -44,7 +44,7 @@ When `--weights` is a `.gguf` file, the report prints a Modelfile whose FROM is 
 
 A GGUF directory that holds one `.gguf` file is the same shape. Point `--weights` at the file when the directory also holds other shapes.
 
-The report also prints the `import-trained` line for the same path. A merged export_dir is `config.json` and at least one `.safetensors` file. A Modelfile in that directory is part of that shape. A GGUF is a `.gguf` file. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
+The report also prints the `import-trained` line for the same path. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`. `adapter_model-00001-of-00002.safetensors` is an adapter shard, not merged evidence. A Modelfile in that directory is part of that shape. A GGUF is a `.gguf` file. The seat tag on the proposal stays the prepare seat tag. `import-trained` records `trained_shape` and `trained_paths`. `import-trained` does not apply and does not promote. A symlinked `--weights` path, and a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`), is `refuse:seat`.
 
 ## Refuses
 
@@ -52,9 +52,11 @@ The report also prints the `import-trained` line for the same path. A merged exp
 | --- | --- |
 | Missing path | `refuse:seat` |
 | Empty directory | `refuse:seat` |
-| `config.json` without `.safetensors` | `refuse:seat` |
+| `config.json` without a `.safetensors` file whose name does not start with `adapter_model` | `refuse:seat` |
+| `config.json` plus only `adapter_model*.safetensors` | `refuse:seat` (not a merged export) |
 | `.safetensors` without `config.json` | `refuse:seat` |
 | Adapter directory (`adapter_config.json`) | `refuse:seat` (record it with `import-trained`) |
+| Symlinked `--weights`, or a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`) | `refuse:seat` |
 | More than one of adapter, merged, and GGUF | `refuse:seat` |
 | More than one `.gguf` file in a directory | `refuse:seat` |
 | File that is not `.gguf`, or a `.gguf` that does not start with GGUF magic | `refuse:seat` |

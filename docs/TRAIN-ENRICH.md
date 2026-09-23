@@ -374,7 +374,7 @@ estate enrich local-seat \
 
 Point `--weights` at a `.gguf` file after the llama.cpp convert. The command prints a Modelfile whose FROM is that file. When a LLaMA-Factory Modelfile sits in the same directory, TEMPLATE and PARAMETER lines are copied into the printed text. The bytes on disk stay as they were.
 
-`import-trained` records the same path on the `local_slm` proposal. A merged export_dir is `config.json` and at least one `.safetensors` file, and a Modelfile there is part of that shape. A GGUF is a `.gguf` file. An adapter `output_dir` (`adapter_config.json`) stays on `import-trained`. `local-seat` refuses that directory. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
+`import-trained` records the same path on the `local_slm` proposal and writes `trained_shape` and `trained_paths`. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`, and a Modelfile there is part of that shape. A GGUF is a `.gguf` file. An adapter `output_dir` (`adapter_config.json`) stays on `import-trained`. `local-seat` refuses that directory, and it refuses `config.json` plus only `adapter_model*.safetensors`. A symlinked weights path or a symlinked marker is `refuse:seat`. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
 
 `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` carry this chain. Page: [`local-seat.md`](local-seat.md). `READY_FOR_LIVE_TEST`: no.
 

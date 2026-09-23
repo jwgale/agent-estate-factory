@@ -68,7 +68,7 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          When you pass a .gguf file, it prints a Modelfile whose FROM is that file and the same `ollama create` line. It does not create the model.\n\
          \n\
-         Then record the same path. `import-trained` accepts a merged export_dir (config.json and at least one .safetensors file, optional Modelfile) or a .gguf file. The seat tag on the proposal stays {seat}. import-trained does not apply and does not promote.\n\
+         Then record the same path. `import-trained` accepts a merged export_dir (config.json and at least one .safetensors file whose name does not start with adapter_model, optional Modelfile) or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {export_dir}\n\
          \n\
@@ -132,16 +132,17 @@ enum WeightsShape {
 }
 
 struct DirMarkers {
-    adapter: bool,
+    adapter_config: bool,
     config: bool,
     merged_safetensors: bool,
+    adapter_weights: Vec<String>,
     ggufs: Vec<PathBuf>,
     modelfile: Option<PathBuf>,
     files: usize,
 }
 
 fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
-    let meta = match std::fs::metadata(weights) {
+    let meta = match std::fs::symlink_metadata(weights) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Err(ModelError::Other(format!(
@@ -156,9 +157,16 @@ fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
             )));
         }
     };
+    if meta.file_type().is_symlink() {
+        return Err(ModelError::Other(format!(
+            "refuse:seat: {} is a symlink. local-seat does not follow a symlinked weights path. Pass the real directory or the real .gguf file.",
+            weights.display()
+        )));
+    }
     if meta.is_file() {
-        return classify_gguf_file(weights).map(|file| WeightsShape::Gguf {
-            modelfile: sibling_modelfile(file.parent()),
+        let file = classify_gguf_file(weights)?;
+        return Ok(WeightsShape::Gguf {
+            modelfile: sibling_modelfile(file.parent())?,
             file,
         });
     }
@@ -180,8 +188,7 @@ fn classify_gguf_file(path: &Path) -> Result<PathBuf, ModelError> {
         )));
     }
     let mut header = [0u8; 4];
-    let mut file = File::open(path)
-        .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", path.display())))?;
+    let mut file = open_nofollow(path).map_err(|err| seat_open_error(path, err))?;
     let n = file
         .read(&mut header)
         .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", path.display())))?;
@@ -205,7 +212,7 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
     let merged = markers.config && markers.merged_safetensors;
     let gguf_count = markers.ggufs.len();
     let mut shapes = Vec::new();
-    if markers.adapter {
+    if markers.adapter_config {
         shapes.push("adapter");
     }
     if merged {
@@ -221,7 +228,7 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
             shapes.join(", ")
         )));
     }
-    if markers.adapter {
+    if markers.adapter_config {
         return Err(ModelError::Other(format!(
             "refuse:seat: {} is an adapter directory. local-seat is the post-merge path. import-trained records the adapter. Seating an adapter uses a Modelfile FROM an Ollama model of the train base, plus ADAPTER.",
             dir.display()
@@ -258,15 +265,29 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
             modelfile: markers.modelfile,
         });
     }
+    if markers.config && !markers.adapter_weights.is_empty() && !markers.merged_safetensors {
+        let names = markers.adapter_weights.join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:seat: {} has config.json and adapter weights ({names}) and no merged weight. adapter_model.safetensors is not a merged export. A merged export_dir needs config.json and a .safetensors file whose name does not start with adapter_model. An adapter output_dir needs adapter_config.json. local-seat does not create a model.",
+            dir.display()
+        )));
+    }
     if markers.config && !markers.merged_safetensors {
         return Err(ModelError::Other(format!(
-            "refuse:seat: {} has config.json and no .safetensors file. A merged export_dir has both.",
+            "refuse:seat: {} has config.json and no .safetensors file whose name does not start with adapter_model. A merged export_dir has both.",
             dir.display()
         )));
     }
     if markers.merged_safetensors && !markers.config {
         return Err(ModelError::Other(format!(
             "refuse:seat: {} has .safetensors and no config.json. A merged export_dir has both.",
+            dir.display()
+        )));
+    }
+    if !markers.adapter_weights.is_empty() {
+        let names = markers.adapter_weights.join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:seat: {} has adapter weights ({names}) and no adapter_config.json. An adapter output_dir needs adapter_config.json. adapter_model.safetensors is not a merged export.",
             dir.display()
         )));
     }
@@ -284,9 +305,10 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
 
 fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
     let mut markers = DirMarkers {
-        adapter: false,
+        adapter_config: false,
         config: false,
         merged_safetensors: false,
+        adapter_weights: Vec::new(),
         ggufs: Vec::new(),
         modelfile: None,
         files: 0,
@@ -296,26 +318,45 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
     for entry in entries {
         let entry = entry
             .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
-        let path = entry.path();
-        if !path.is_file() {
+        let kind = entry.file_type().map_err(|err| {
+            ModelError::Other(format!("refuse:seat: {}: {err}", dir.display()))
+        })?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return Err(ModelError::Other(format!(
+                "refuse:seat: {} has no utf-8 name",
+                entry.path().display()
+            )));
+        };
+        if kind.is_symlink() {
+            if is_seat_marker_name(name) {
+                return Err(ModelError::Other(format!(
+                    "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks. The marker must be a regular file inside {}.",
+                    entry.path().display(),
+                    dir.display()
+                )));
+            }
+            continue;
+        }
+        if !kind.is_file() {
             continue;
         }
         markers.files += 1;
-        let name = file_name(&path)?;
         let lower = name.to_ascii_lowercase();
-        if name == "adapter_config.json"
-            || name == "adapter_model.bin"
-            || lower == "adapter_model.safetensors"
-        {
-            markers.adapter = true;
+        if lower == "adapter_config.json" {
+            markers.adapter_config = true;
             continue;
         }
-        if name == "config.json" {
+        if lower == "adapter_model.bin" || is_adapter_safetensors(&lower) {
+            markers.adapter_weights.push(name.to_string());
+            continue;
+        }
+        if lower == "config.json" {
             markers.config = true;
             continue;
         }
         if name == MODELFILE_NAME {
-            markers.modelfile = Some(path);
+            markers.modelfile = Some(entry.path());
             continue;
         }
         if lower.ends_with(".safetensors") {
@@ -323,17 +364,85 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
             continue;
         }
         if lower.ends_with(".gguf") {
-            markers.ggufs.push(path);
+            markers.ggufs.push(entry.path());
         }
     }
+    markers.adapter_weights.sort();
     markers.ggufs.sort();
     Ok(markers)
 }
 
-fn sibling_modelfile(parent: Option<&Path>) -> Option<PathBuf> {
-    let parent = parent?;
+fn is_adapter_safetensors(lower_name: &str) -> bool {
+    lower_name.ends_with(".safetensors") && lower_name.starts_with("adapter_model")
+}
+
+fn is_seat_marker_name(name: &str) -> bool {
+    if name == MODELFILE_NAME {
+        return true;
+    }
+    let lower = name.to_ascii_lowercase();
+    lower == "adapter_config.json"
+        || lower == "config.json"
+        || lower == "adapter_model.bin"
+        || lower.ends_with(".safetensors")
+        || lower.ends_with(".gguf")
+}
+
+fn sibling_modelfile(parent: Option<&Path>) -> Result<Option<PathBuf>, ModelError> {
+    let Some(parent) = parent else {
+        return Ok(None);
+    };
     let path = parent.join(MODELFILE_NAME);
-    path.is_file().then_some(path)
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
+            "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks. The marker must be a regular file inside {}.",
+            path.display(),
+            parent.display()
+        ))),
+        Ok(meta) if meta.is_file() => Ok(Some(path)),
+        Ok(_) => Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(ModelError::Other(format!(
+            "refuse:seat: {}: {err}",
+            path.display()
+        ))),
+    }
+}
+
+/// Open `path` without following a final symlink. Linux `O_NOFOLLOW` is
+/// `0x20000`. macOS `O_NOFOLLOW` is `0x100`.
+fn open_nofollow(path: &Path) -> std::io::Result<File> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        #[cfg(target_os = "linux")]
+        const O_NOFOLLOW: i32 = 0x20000;
+        #[cfg(target_os = "macos")]
+        const O_NOFOLLOW: i32 = 0x100;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NOFOLLOW)
+            .open(path)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = path;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "O_NOFOLLOW is unavailable",
+        ))
+    }
+}
+
+fn seat_open_error(path: &Path, err: std::io::Error) -> ModelError {
+    if matches!(err.raw_os_error(), Some(40 | 62)) {
+        ModelError::Other(format!(
+            "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks.",
+            path.display()
+        ))
+    } else {
+        ModelError::Other(format!("refuse:seat: {}: {err}", path.display()))
+    }
 }
 
 fn render_plan(
@@ -417,7 +526,7 @@ fn render_merged(
          \n\
          Then run local-seat again with --weights pointing at that .gguf file.\n\
          \n\
-         import-trained records this merged directory on the local_slm proposal. A merged export_dir is config.json and at least one .safetensors file. A Modelfile in that directory is part of that shape. The seat tag stays {seat_tag}. import-trained does not apply and does not promote.\n\
+         import-trained records this merged directory on the local_slm proposal. A merged export_dir is config.json and at least one .safetensors file whose name does not start with adapter_model. A Modelfile in that directory is part of that shape. The seat tag stays {seat_tag}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          {import}\n\
          \n\
@@ -553,7 +662,18 @@ fn rewrite_first_from(text: &str, from_token: &str) -> Result<String, ModelError
 }
 
 fn read_modelfile(path: &Path) -> Result<String, ModelError> {
-    let meta = std::fs::metadata(path)
+    let file = open_nofollow(path).map_err(|err| {
+        if matches!(err.raw_os_error(), Some(40 | 62)) {
+            ModelError::Other(format!(
+                "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks.",
+                path.display()
+            ))
+        } else {
+            ModelError::Other(format!("refuse:modelfile: {}: {err}", path.display()))
+        }
+    })?;
+    let meta = file
+        .metadata()
         .map_err(|err| ModelError::Other(format!("refuse:modelfile: {}: {err}", path.display())))?;
     if !meta.is_file() {
         return Err(ModelError::Other(format!(
@@ -573,7 +693,9 @@ fn read_modelfile(path: &Path) -> Result<String, ModelError> {
             path.display()
         )));
     }
-    let bytes = std::fs::read(path)
+    let mut bytes = Vec::new();
+    let mut file = file;
+    file.read_to_end(&mut bytes)
         .map_err(|err| ModelError::Other(format!("refuse:modelfile: {}: {err}", path.display())))?;
     let text = std::str::from_utf8(&bytes).map_err(|_| {
         ModelError::Other(format!("refuse:modelfile: {} is not utf-8", path.display()))
@@ -810,9 +932,12 @@ mod tests {
         );
         assert!(note.contains("import-trained"), "{note}");
         assert!(
-            note.contains("config.json and at least one .safetensors"),
+            note.contains(
+                "config.json and at least one .safetensors file whose name does not start with adapter_model"
+            ),
             "{note}"
         );
+        assert!(note.contains("trained_shape"), "{note}");
         assert!(note.contains("READY_FOR_LIVE_TEST: no"), "{note}");
         assert!(!note.contains("READY_FOR_LIVE_TEST: yes"), "{note}");
         assert!(!estate_schema::contains_sku(&note), "{note}");
@@ -1049,6 +1174,119 @@ mod tests {
         std::fs::write(root.join("mf").join(MODELFILE_NAME), "FROM .\n").unwrap();
         let err = plan_local_seat(&root, &root.join("mf")).unwrap_err();
         assert!(err.to_string().contains("no merged weights"), "{err}");
+    }
+
+    #[test]
+    fn sharded_adapter_weights_are_not_a_merged_export() {
+        let root = tmp("adapter-shard");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let shard = root.join("shard");
+        std::fs::create_dir_all(&shard).unwrap();
+        std::fs::write(shard.join("config.json"), "{}\n").unwrap();
+        std::fs::write(
+            shard.join("adapter_model-00001-of-00002.safetensors"),
+            b"w",
+        )
+        .unwrap();
+        let err = plan_local_seat(&root, &shard).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(
+            text.contains("adapter_model.safetensors is not a merged export"),
+            "{text}"
+        );
+        assert!(
+            text.contains("does not start with adapter_model"),
+            "{text}"
+        );
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let folded = root.join("folded");
+        std::fs::create_dir_all(&folded).unwrap();
+        std::fs::write(folded.join("config.json"), "{}\n").unwrap();
+        std::fs::write(
+            folded.join("Adapter_Model-00001-of-00002.safetensors"),
+            b"w",
+        )
+        .unwrap();
+        let err = plan_local_seat(&root, &folded).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("adapter_model.safetensors is not a merged export"),
+            "{text}"
+        );
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let alongside = root.join("alongside");
+        std::fs::create_dir_all(&alongside).unwrap();
+        merged(&alongside, Some("FROM .\n"));
+        std::fs::write(
+            alongside.join("adapter_model-00001-of-00002.safetensors"),
+            b"w",
+        )
+        .unwrap();
+        let plan = plan_local_seat(&root, &alongside).unwrap();
+        assert_eq!(plan.shape, "merged");
+        assert!(plan.report.contains("ollama create"), "{}", plan.report);
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+    }
+
+    #[test]
+    fn refuses_symlinked_weights_and_markers() {
+        let root = tmp("symlinks");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let real = root.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        merged(&real, Some("FROM .\n"));
+        let linked_dir = root.join("linked-dir");
+        std::os::unix::fs::symlink(&real, &linked_dir).unwrap();
+        let err = plan_local_seat(&root, &linked_dir).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let linked_gguf = root.join("linked.gguf");
+        std::os::unix::fs::symlink(&gguf, &linked_gguf).unwrap();
+        let err = plan_local_seat(&root, &linked_gguf).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let marked = root.join("marked");
+        std::fs::create_dir_all(&marked).unwrap();
+        std::fs::write(marked.join("config.json"), "{}\n").unwrap();
+        let outside = root.join("outside.safetensors");
+        std::fs::write(&outside, b"escaped").unwrap();
+        std::os::unix::fs::symlink(&outside, marked.join("model.safetensors")).unwrap();
+        let err = plan_local_seat(&root, &marked).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(text.contains("marker"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let modelfile_link = root.join("modelfile-link");
+        std::fs::create_dir_all(&modelfile_link).unwrap();
+        merged(&modelfile_link, None);
+        let outside_mf = root.join("outside-Modelfile");
+        std::fs::write(&outside_mf, "FROM .\n").unwrap();
+        std::os::unix::fs::symlink(&outside_mf, modelfile_link.join(MODELFILE_NAME)).unwrap();
+        let err = plan_local_seat(&root, &modelfile_link).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let gguf_dir = root.join("gguf-link-dir");
+        std::fs::create_dir_all(&gguf_dir).unwrap();
+        std::os::unix::fs::symlink(&gguf, gguf_dir.join("model.gguf")).unwrap();
+        let err = plan_local_seat(&root, &gguf_dir).unwrap_err();
+        assert!(err.to_string().contains("is a symlink"), "{err}");
     }
 
     #[test]

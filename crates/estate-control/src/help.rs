@@ -491,11 +491,13 @@ make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create 
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
 estate enrich local-seat validates a merged LLaMA-Factory export
-directory (config.json and at least one .safetensors file, optional
-Modelfile) or a .gguf file. It prints the ollama create line. For a
-GGUF it also prints the Modelfile whose FROM is that file. The create
-name is cell-enrich-{pack}. The seat tag is prepare.json seat_tag.
-The command does not run ollama or llama.cpp. GGUF conversion stays
+directory (config.json and at least one .safetensors file whose name
+does not start with adapter_model, optional Modelfile) or a .gguf file.
+adapter_model*.safetensors is not merged evidence. A symlinked weights
+path or a symlinked marker is refuse:seat. It prints the ollama create
+line. For a GGUF it also prints the Modelfile whose FROM is that file.
+The create name is cell-enrich-{pack}. The seat tag is prepare.json
+seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained
 records that same merged directory or GGUF on the local_slm proposal.
 local-seat does not promote.

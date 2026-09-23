@@ -5698,6 +5698,10 @@ mod tests {
             doc.train_base_model.as_deref(),
             Some("Qwen/Qwen2.5-0.5B-Instruct")
         );
+        assert!(doc.export_yaml.as_deref().unwrap().ends_with("export.yaml"));
+        assert!(doc.modelfile.is_none());
+        assert!(doc.trained_shape.is_none());
+        assert!(doc.trained_paths.is_none());
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
         for name in [
             "recipe.yaml",
@@ -5799,6 +5803,14 @@ mod tests {
             out.join("export").display()
         )), "{next}");
         assert!(next.contains("--adapter <gguf>"), "{next}");
+        assert!(
+            next.contains("records trained_shape and trained_paths"),
+            "{next}"
+        );
+        assert!(next.contains("## Local seat after export"), "{next}");
+        assert!(next.contains("does not shell out to ollama"), "{next}");
+        assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+        assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
         assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("same chat template"), "{next}");
