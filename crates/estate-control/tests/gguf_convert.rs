@@ -115,6 +115,9 @@ fn help_names_the_convert_line() {
         "{body}"
     );
     assert!(body.contains("does not run llama.cpp"), "{body}");
+    assert!(body.contains("axolotl-lora"), "{body}");
+    assert!(body.contains("axolotl-qlora"), "{body}");
+    assert!(body.contains("<merged-hf-dir>"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
 }
@@ -223,4 +226,104 @@ fn refuses_adapter_symlink_and_gguf_without_spawning() {
     );
     assert!(!root.join("spawned").exists());
     assert!(!root.join("export.gguf").exists());
+}
+
+fn write_driver_prepare(dir: &std::path::Path, driver: &str) {
+    let body = format!(
+        r#"{{
+  "schema": "cell-one.enrich-prepare.v0",
+  "driver": "{driver}",
+  "job": "train",
+  "pack_id": "overnight-traces",
+  "base_model": "llama3",
+  "seat_tag": "llama3",
+  "purpose": "fixture",
+  "host_class_affinity": "any",
+  "source_paths": [],
+  "source_drivers": [],
+  "artifacts": ["axolotl.yml"],
+  "promoted": false,
+  "auto_apply": false,
+  "estate_rewritten": false,
+  "note": "test"
+}}
+"#
+    );
+    std::fs::write(dir.join("prepare.json"), body).unwrap();
+}
+
+#[test]
+fn axolotl_prepare_prints_the_convert_line_and_refuses_the_adapter() {
+    for driver in ["axolotl-lora", "axolotl-qlora"] {
+        let root = tmp(&format!("ax-{driver}"));
+        write_driver_prepare(&root, driver);
+        let merged_dir = root.join("merged");
+        merged(&merged_dir);
+        let out = run_convert(&root, &merged_dir);
+        let body = text(&out);
+        assert!(out.status.success(), "{driver}: {body}");
+        let outfile = root.join("merged.gguf");
+        let convert = format!(
+            "python3 convert_hf_to_gguf.py {} --outfile {} --outtype auto",
+            merged_dir.display(),
+            outfile.display()
+        );
+        assert!(body.contains(&convert), "{driver}: {body}");
+        assert!(
+            body.contains("Axolotl does not write GGUF"),
+            "{driver}: {body}"
+        );
+        assert!(
+            body.contains("gguf-convert did not convert"),
+            "{driver}: {body}"
+        );
+        assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{driver}: {body}");
+        assert!(
+            !body.contains("READY_FOR_LIVE_TEST: yes"),
+            "{driver}: {body}"
+        );
+        assert!(!body.contains("Axolotl wrote"), "{driver}: {body}");
+        assert!(!outfile.exists(), "{driver}");
+        assert!(!root.join("spawned").exists(), "{driver}");
+
+        let adapter = root.join("outputs");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let refused = run_convert(&root, &adapter);
+        let refused_text = text(&refused);
+        assert!(!refused.status.success(), "{driver}: {refused_text}");
+        assert!(
+            refused_text.contains("refuse:seat"),
+            "{driver}: {refused_text}"
+        );
+        assert!(
+            refused_text.contains("adapter directory"),
+            "{driver}: {refused_text}"
+        );
+        assert!(
+            !refused_text.contains("python3 convert_hf_to_gguf.py"),
+            "{driver}: {refused_text}"
+        );
+
+        let card = root.join("export-card");
+        std::fs::create_dir_all(&card).unwrap();
+        std::fs::write(card.join("export.yaml"), "adapter_name_or_path: outputs\n").unwrap();
+        let card_out = run_convert(&root, &card);
+        let card_text = text(&card_out);
+        assert!(!card_out.status.success(), "{driver}: {card_text}");
+        assert!(card_text.contains("refuse:seat"), "{driver}: {card_text}");
+        assert!(
+            !card_text.contains("--outtype auto"),
+            "{driver}: {card_text}"
+        );
+
+        let linked = root.join("linked-merged");
+        std::os::unix::fs::symlink(&merged_dir, &linked).unwrap();
+        let link_out = run_convert(&root, &linked);
+        let link_text = text(&link_out);
+        assert!(!link_out.status.success(), "{driver}: {link_text}");
+        assert!(link_text.contains("refuse:seat"), "{driver}: {link_text}");
+        assert!(link_text.contains("symlink"), "{driver}: {link_text}");
+        assert!(!root.join("spawned").exists(), "{driver}");
+    }
 }

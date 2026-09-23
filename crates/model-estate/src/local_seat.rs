@@ -1,15 +1,18 @@
-//! Post-merge local seat. Validates a LLaMA-Factory merged export directory
-//! or a GGUF file and prints the Ollama `create` next step.
+//! Post-merge local seat. Validates a merged Hugging Face directory or a
+//! GGUF file and prints the Ollama `create` next step.
 //!
-//! LLaMA-Factory `export_model` writes the merged directory and a `Modelfile`
-//! whose `FROM` is `.` (`template.get_ollama_modelfile`). llama.cpp
+//! The prepare is `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`,
+//! or `axolotl-qlora`. LLaMA-Factory `export_model` writes the merged
+//! directory and a `Modelfile` whose `FROM` is `.`
+//! (`template.get_ollama_modelfile`). Axolotl does not write that Modelfile
+//! and does not write GGUF. The operator owns the Axolotl merge. llama.cpp
 //! `convert_hf_to_gguf.py` is the external GGUF step. This module does not
-//! shell out to either tool and does not create a model.
+//! shell out and does not create a model.
 
 use crate::error::ModelError;
 use crate::train_enrich::{
-    load_prepare_doc, local_enrich_tag, refuse_sacred_and_sku, EnrichJobKind, LLAMAFACTORY_LORA_ID,
-    LLAMAFACTORY_QLORA_ID,
+    is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
+    refuse_post_merge_driver, refuse_sacred_and_sku, EnrichJobKind,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::fs::File;
@@ -95,17 +98,64 @@ pub(crate) fn llamafactory_local_seat_note(
     )
 }
 
+/// Operator card appended to Axolotl `PREPARE.md` and `NEXT.md`.
+///
+/// The merge into a Hugging Face directory is operator-owned. This card
+/// does not name a merge command. In-tree Axolotl docs name `axolotl train`
+/// and the quickstart, and they do not name a merge stack.
+pub(crate) fn axolotl_post_train_ladder(out_dir: &Path, seat_tag: &str, pack_id: &str) -> String {
+    let tag = local_enrich_tag(pack_id);
+    let outputs = out_dir.join("outputs");
+    let prepared = shell_quote(&out_dir.display().to_string());
+    let outputs_q = shell_quote(&outputs.display().to_string());
+    let tag_q = shell_quote(&tag);
+    format!(
+        "\n\
+         ## After train\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id this cell already runs. The create name is {tag}.\n\
+         \n\
+         Chain, outside this factory. This factory does not merge, does not shell out to axolotl, ollama, or llama.cpp, does not convert weights, and does not promote.\n\
+         \n\
+         1. `axolotl train` writes the adapter under output_dir (`{outputs}`). `adapter_config.json` in that directory is the adapter shape. import-trained records that directory as trained_shape adapter.\n\
+         2. The operator merges that adapter into a Hugging Face directory. The merged directory has `config.json` and a `.safetensors` file whose name does not start with `adapter_model`. This prepare did not merge. This factory does not name a merge command. Axolotl does not write GGUF.\n\
+         3. Print the llama.cpp convert line for that merged directory. `gguf-convert` checks the directory and prints the command. It does not run it and does not write a GGUF.\n\
+         \n\
+         estate enrich gguf-convert --prepared {prepared} --weights <merged-hf-dir>\n\
+         \n\
+         That prints `python3 convert_hf_to_gguf.py <merged-hf-dir> --outfile <sibling>.gguf --outtype auto`. `--outtype auto` is the script default (highest-fidelity 16-bit float, f16 or bf16). The outfile is a sibling of the merged directory. Run the python3 line from a llama.cpp checkout. `convert_hf_to_gguf.py` is that checkout's script. This factory does not choose a quantization type and does not print q8_0, tq1_0, or tq2_0.\n\
+         4. Seat with Ollama. `local-seat` prints the `ollama create` line for the merged directory or for the sibling `.gguf`. It does not create the model.\n\
+         \n\
+         estate enrich local-seat --prepared {prepared} --weights <merged-hf-dir>\n\
+         \n\
+         When the merged directory has a Modelfile, that command prints `ollama create {tag} -f <merged-hf-dir>/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, it prints a Modelfile whose FROM is that file and the same `ollama create` line.\n\
+         5. Record the same path. import-trained accepts the adapter directory, the merged directory, or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outputs_q}\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter <merged-hf-dir>\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter <gguf>\n\
+         \n\
+         To load the adapter without a merge, FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs.\n\
+         READY_FOR_LIVE_TEST: no.\n",
+        seat = seat_tag,
+        tag = tag,
+        outputs = outputs.display(),
+        prepared = prepared,
+        outputs_q = outputs_q,
+        tag_q = tag_q,
+    )
+}
+
 /// Read `prepare.json`, validate `weights`, and build the seat report.
 /// Does not write and does not spawn a process.
 pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatPlan, ModelError> {
     refuse_sacred_and_sku("prepared", &prepared_dir.display().to_string())?;
     refuse_sacred_and_sku("weights", &weights.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
-    if doc.driver != LLAMAFACTORY_LORA_ID && doc.driver != LLAMAFACTORY_QLORA_ID {
-        return Err(ModelError::Other(format!(
-            "refuse:driver: local-seat reads a llamafactory-lora or llamafactory-qlora prepare, found '{}'",
-            doc.driver
-        )));
+    if !is_post_merge_print_driver(&doc.driver) {
+        return Err(refuse_post_merge_driver("local-seat", &doc.driver));
     }
     if doc.job != EnrichJobKind::Train.as_str() {
         return Err(ModelError::Other(format!(
@@ -330,9 +380,9 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
     for entry in entries {
         let entry = entry
             .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
-        let kind = entry.file_type().map_err(|err| {
-            ModelError::Other(format!("refuse:seat: {}: {err}", dir.display()))
-        })?;
+        let kind = entry
+            .file_type()
+            .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             return Err(ModelError::Other(format!(
@@ -487,6 +537,45 @@ fn render_plan(
     }
 }
 
+fn merged_from_note(
+    driver: &str,
+    on_disk: bool,
+    modelfile_path: &Path,
+) -> Result<String, ModelError> {
+    if !on_disk {
+        return Ok(if is_axolotl_driver(driver) {
+            "This merged directory has no Modelfile yet. Axolotl does not write a Modelfile. Axolotl does not write GGUF. The operator owns the merge into this Hugging Face directory. Do not run ollama create until a Modelfile exists, or seat the sibling GGUF after the convert line.".to_string()
+        } else {
+            format!(
+                "This merged directory has no Modelfile yet. Current LLaMA-Factory export_model writes {MODELFILE_NAME} here. Do not run ollama create until that file exists."
+            )
+        });
+    }
+    let text = read_modelfile(modelfile_path)?;
+    let from = first_from(&text).ok_or_else(|| {
+        ModelError::Other(format!(
+            "refuse:modelfile: {} has no FROM line",
+            modelfile_path.display()
+        ))
+    })?;
+    if from_arg_is_here(&from) {
+        Ok(if is_axolotl_driver(driver) {
+            "This Modelfile FROM is . That names this merged directory. Axolotl did not write this Modelfile and did not write GGUF.".to_string()
+        } else {
+            "LLaMA-Factory wrote this Modelfile with FROM . That names this merged directory."
+                .to_string()
+        })
+    } else if is_axolotl_driver(driver) {
+        Ok(format!(
+            "This Modelfile FROM is {from}. The create line uses the file as written. Axolotl did not write this Modelfile and did not write GGUF."
+        ))
+    } else {
+        Ok(format!(
+            "This Modelfile FROM is {from}. The create line uses the file as written."
+        ))
+    }
+}
+
 fn render_merged(
     prepared_dir: &Path,
     driver: &str,
@@ -503,25 +592,7 @@ fn render_merged(
     let convert = convert_line(dir);
     let outfile = crate::gguf_convert::sibling_gguf_outfile(dir);
     let gguf_convert = crate::gguf_convert::gguf_convert_cli(prepared_dir, dir);
-    let from_note = if on_disk {
-        let text = read_modelfile(&modelfile_path)?;
-        let from = first_from(&text).ok_or_else(|| {
-            ModelError::Other(format!(
-                "refuse:modelfile: {} has no FROM line",
-                modelfile_path.display()
-            ))
-        })?;
-        if from_arg_is_here(&from) {
-            "LLaMA-Factory wrote this Modelfile with FROM . That names this merged directory."
-                .to_string()
-        } else {
-            format!("This Modelfile FROM is {from}. The create line uses the file as written.")
-        }
-    } else {
-        format!(
-            "This merged directory has no Modelfile yet. Current LLaMA-Factory export_model writes {MODELFILE_NAME} here. Do not run ollama create until that file exists."
-        )
-    };
+    let from_note = merged_from_note(driver, on_disk, &modelfile_path)?;
     let report = format!(
         "local-seat: shape=merged seat_tag={seat_tag} local_tag={local_tag} modelfile_on_disk={on_disk}\n\
          pack={pack_id}\n\
@@ -602,7 +673,13 @@ fn render_gguf(
     let create = ollama_create(local_tag, &modelfile_path);
     let import = import_trained_line(prepared_dir, local_tag, file);
     let write_note = if on_disk {
-        "The Modelfile FROM already names this GGUF. The create line uses that file."
+        if is_axolotl_driver(driver) {
+            "The Modelfile FROM already names this GGUF. The create line uses that file. Axolotl did not write this GGUF."
+        } else {
+            "The Modelfile FROM already names this GGUF. The create line uses that file."
+        }
+    } else if is_axolotl_driver(driver) {
+        "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a Modelfile is in the same directory. Axolotl did not write this GGUF. This factory does not write the file and does not invent a chat template."
     } else {
         "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a LLaMA-Factory Modelfile is in the same directory. This factory does not write the file and does not invent a chat template."
     };
@@ -885,7 +962,10 @@ fn map_feed(err: FeedError) -> ModelError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::train_enrich::PREPARE_SCHEMA;
+    use crate::train_enrich::{
+        AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, LLAMAFACTORY_LORA_ID, LLAMAFACTORY_QLORA_ID,
+        PREPARE_SCHEMA,
+    };
 
     fn tmp(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -1004,6 +1084,12 @@ mod tests {
         assert!(plan.report.contains(&create), "{}", plan.report);
         assert!(plan.report.contains("seat_tag=llama3"), "{}", plan.report);
         assert!(plan.report.contains("FROM ."), "{}", plan.report);
+        assert!(
+            plan.report
+                .contains("LLaMA-Factory wrote this Modelfile with FROM ."),
+            "{}",
+            plan.report
+        );
         assert!(
             plan.report.contains("python3 convert_hf_to_gguf.py"),
             "{}",
@@ -1251,7 +1337,11 @@ mod tests {
             plan.create_command,
             format!("ollama create cell-enrich-overnight-traces -f {quoted}")
         );
-        assert!(plan.report.contains(&plan.create_command), "{}", plan.report);
+        assert!(
+            plan.report.contains(&plan.create_command),
+            "{}",
+            plan.report
+        );
         assert!(
             plan.report.contains("READY_FOR_LIVE_TEST: no"),
             "{}",
@@ -1271,11 +1361,7 @@ mod tests {
         let shard = root.join("shard");
         std::fs::create_dir_all(&shard).unwrap();
         std::fs::write(shard.join("config.json"), "{}\n").unwrap();
-        std::fs::write(
-            shard.join("adapter_model-00001-of-00002.safetensors"),
-            b"w",
-        )
-        .unwrap();
+        std::fs::write(shard.join("adapter_model-00001-of-00002.safetensors"), b"w").unwrap();
         let err = plan_local_seat(&root, &shard).unwrap_err();
         let text = err.to_string();
         assert!(text.contains("refuse:seat"), "{text}");
@@ -1283,10 +1369,7 @@ mod tests {
             text.contains("adapter_model.safetensors is not a merged export"),
             "{text}"
         );
-        assert!(
-            text.contains("does not start with adapter_model"),
-            "{text}"
-        );
+        assert!(text.contains("does not start with adapter_model"), "{text}");
         assert!(!text.contains("ollama create"), "{text}");
 
         let folded = root.join("folded");
@@ -1389,9 +1472,17 @@ mod tests {
         assert!(err.to_string().contains("no FROM"), "{err}");
 
         merged(&export, Some("FROM .\n"));
-        write_prepare(&root, "axolotl-lora", "train", Some("llama3"), false);
+        write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
         assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("unsloth-qlora"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), false);
+        let err = plan_local_seat(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("mlx-lm-lora"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
 
         write_prepare(&root, "ollama-modelfile", "enrich", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
@@ -1435,5 +1526,236 @@ mod tests {
         merged(&export, Some("FROM .\ntoken=sk-abcdefghijklmnopqrstuv\n"));
         let err = plan_local_seat(&root, &export).unwrap_err();
         assert!(err.to_string().contains("refuse:raw-secret"), "{err}");
+    }
+
+    #[test]
+    fn axolotl_ladder_names_the_print_path_and_no_merge_stack() {
+        let note = axolotl_post_train_ladder(
+            Path::new("/tmp/cell one/axolotl-qlora"),
+            "llama3",
+            "overnight-traces",
+        );
+        assert!(note.contains("Seat tag is llama3"), "{note}");
+        assert!(note.contains("cell-enrich-overnight-traces"), "{note}");
+        assert!(
+            note.contains(
+                "estate enrich gguf-convert --prepared '/tmp/cell one/axolotl-qlora' --weights <merged-hf-dir>"
+            ),
+            "{note}"
+        );
+        assert!(
+            note.contains(
+                "python3 convert_hf_to_gguf.py <merged-hf-dir> --outfile <sibling>.gguf --outtype auto"
+            ),
+            "{note}"
+        );
+        assert!(
+            note.contains(
+                "estate enrich local-seat --prepared '/tmp/cell one/axolotl-qlora' --weights <merged-hf-dir>"
+            ),
+            "{note}"
+        );
+        assert!(
+            note.contains("ollama create cell-enrich-overnight-traces"),
+            "{note}"
+        );
+        assert!(note.contains("import-trained"), "{note}");
+        assert!(note.contains("Axolotl does not write GGUF"), "{note}");
+        assert!(note.contains("does not name a merge command"), "{note}");
+        assert!(note.contains("READY_FOR_LIVE_TEST: no"), "{note}");
+        assert!(!note.contains("READY_FOR_LIVE_TEST: yes"), "{note}");
+        assert!(!note.contains("merge-lora"), "{note}");
+        assert!(!note.contains("axolotl merge"), "{note}");
+        assert!(!note.contains("llamafactory-cli"), "{note}");
+        assert!(!estate_schema::contains_sku(&note), "{note}");
+    }
+
+    #[test]
+    fn axolotl_merged_and_gguf_print_the_create_line() {
+        for driver in [AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID] {
+            let root = tmp(&format!("ax-seat-{driver}"));
+            write_prepare(&root, driver, "train", Some("llama3"), false);
+            assert!(!root.join("export.yaml").exists());
+            let merged_dir = root.join("merged");
+            std::fs::create_dir_all(&merged_dir).unwrap();
+            merged(&merged_dir, None);
+            let plan = plan_local_seat(&root, &merged_dir).unwrap();
+            assert_eq!(plan.shape, "merged");
+            assert_eq!(plan.driver, driver);
+            assert!(!plan.modelfile_on_disk);
+            let create = format!(
+                "ollama create cell-enrich-overnight-traces -f {}",
+                merged_dir.join(MODELFILE_NAME).display()
+            );
+            assert_eq!(plan.create_command, create);
+            assert!(plan.report.contains(&create), "{}", plan.report);
+            assert!(
+                plan.report.contains("Axolotl does not write a Modelfile"),
+                "{}",
+                plan.report
+            );
+            assert!(
+                plan.report.contains("Axolotl does not write GGUF"),
+                "{}",
+                plan.report
+            );
+            assert!(
+                !plan.report.contains("LLaMA-Factory export_model"),
+                "{}",
+                plan.report
+            );
+            assert!(
+                !plan.report.contains("LLaMA-Factory wrote"),
+                "{}",
+                plan.report
+            );
+            assert!(
+                plan.report.contains("python3 convert_hf_to_gguf.py"),
+                "{}",
+                plan.report
+            );
+            assert!(plan.report.contains("--outtype auto"), "{}", plan.report);
+            assert!(
+                plan.report.contains("local-seat did not create a model."),
+                "{}",
+                plan.report
+            );
+            assert!(
+                plan.report.contains("READY_FOR_LIVE_TEST: no"),
+                "{}",
+                plan.report
+            );
+            assert!(!merged_dir.join(MODELFILE_NAME).exists());
+            assert!(!root.join("merged.gguf").exists());
+
+            std::fs::write(merged_dir.join(MODELFILE_NAME), "FROM .\n").unwrap();
+            let with_file = plan_local_seat(&root, &merged_dir).unwrap();
+            assert!(with_file.modelfile_on_disk, "{}", with_file.report);
+            assert!(
+                with_file
+                    .report
+                    .contains("Axolotl did not write this Modelfile"),
+                "{}",
+                with_file.report
+            );
+            assert!(
+                !with_file.report.contains("LLaMA-Factory wrote"),
+                "{}",
+                with_file.report
+            );
+            assert_eq!(
+                std::fs::read_to_string(merged_dir.join(MODELFILE_NAME)).unwrap(),
+                "FROM .\n"
+            );
+
+            let gguf = root.join("sibling.gguf");
+            std::fs::write(&gguf, gguf_bytes()).unwrap();
+            let seated = plan_local_seat(&root, &gguf).unwrap();
+            assert_eq!(seated.shape, "gguf");
+            assert!(
+                seated.report.contains("Axolotl did not write this GGUF"),
+                "{}",
+                seated.report
+            );
+            assert!(
+                seated.report.contains(&seated.create_command),
+                "{}",
+                seated.report
+            );
+            assert!(
+                seated.create_command.contains("ollama create"),
+                "{}",
+                seated.create_command
+            );
+            assert!(
+                !seated.report.contains("Axolotl wrote"),
+                "{}",
+                seated.report
+            );
+            assert!(!root.join(MODELFILE_NAME).exists());
+        }
+    }
+
+    #[test]
+    fn axolotl_refuses_adapter_lf_card_and_symlink() {
+        let root = tmp("ax-seat-refuse");
+        write_prepare(&root, AXOLOTL_LORA_ID, "train", Some("llama3"), false);
+
+        let adapter = root.join("outputs");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapter_model.safetensors"), b"w").unwrap();
+        let err = plan_local_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("adapter directory"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let shards = root.join("shards");
+        std::fs::create_dir_all(&shards).unwrap();
+        std::fs::write(shards.join("config.json"), "{}\n").unwrap();
+        std::fs::write(shards.join("adapter_model.safetensors"), b"a").unwrap();
+        let err = plan_local_seat(&root, &shards).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(
+            text.contains("adapter_model.safetensors is not a merged export"),
+            "{text}"
+        );
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let card = root.join("export-card");
+        std::fs::create_dir_all(&card).unwrap();
+        std::fs::write(card.join("export.yaml"), "adapter_name_or_path: outputs\n").unwrap();
+        let err = plan_local_seat(&root, &card).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("not a merged export directory"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let real = root.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        merged(&real, Some("FROM .\n"));
+        let linked = root.join("linked");
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+        let err = plan_local_seat(&root, &linked).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let marked = root.join("marked");
+        std::fs::create_dir_all(&marked).unwrap();
+        std::fs::write(marked.join("config.json"), "{}\n").unwrap();
+        let outside = root.join("outside.safetensors");
+        std::fs::write(&outside, b"escaped").unwrap();
+        std::os::unix::fs::symlink(&outside, marked.join("model.safetensors")).unwrap();
+        let err = plan_local_seat(&root, &marked).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("is a symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let linked_gguf = root.join("linked.gguf");
+        std::os::unix::fs::symlink(&gguf, &linked_gguf).unwrap();
+        let err = plan_local_seat(&root, &linked_gguf).unwrap_err();
+        assert!(err.to_string().contains("is a symlink"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        write_prepare(&root, AXOLOTL_QLORA_ID, "enrich", Some("llama3"), false);
+        let err = plan_local_seat(&root, &real).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+
+        write_prepare(&root, AXOLOTL_QLORA_ID, "train", Some("llama3"), true);
+        let err = plan_local_seat(&root, &real).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+
+        write_prepare(&root, AXOLOTL_QLORA_ID, "train", Some("llama3"), false);
+        let sacred = root.join("cyera-seat");
+        std::fs::create_dir_all(&sacred).unwrap();
+        merged(&sacred, None);
+        let err = plan_local_seat(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
     }
 }

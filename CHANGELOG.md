@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Axolotl convert and seat print path
+
+- `estate enrich gguf-convert` and `estate enrich local-seat` accept an `axolotl-lora` or `axolotl-qlora` train prepare plus a merged Hugging Face directory (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`). `gguf-convert` prints `python3 convert_hf_to_gguf.py <dir> --outfile <sibling>.gguf --outtype auto`. `local-seat` prints the same `ollama create` line it prints for a LLaMA-Factory export, including a sibling `.gguf`. Neither command shells out, writes a GGUF, or promotes.
+- The operator owns the merge into that directory. In-tree Axolotl docs name `axolotl train` and do not name a merge command, so `PREPARE.md` and `NEXT.md` do not invent one. Axolotl does not write GGUF. The ladder is train, operator merge, `gguf-convert`, `local-seat`, `import-trained`.
+- An adapter directory, `config.json` plus only `adapter_model*.safetensors`, a directory that only holds `export.yaml`, and a symlink stay `refuse:seat`. `unsloth-qlora` and `mlx-lm-lora` stay `refuse:driver`. Sacred, SKU, job, and promoted refuses are unchanged.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Target C Qwen QLoRA operator journey
 
 - The popular path is one ladder of commands that already exist: `estate enrich prepare --driver llamafactory-qlora` (seat tag separate from the train base), the `NEXT.md` `llamafactory-cli train` and `llamafactory-cli export` lines, `estate enrich gguf-convert` (prints `python3 convert_hf_to_gguf.py` with `--outtype auto`), `estate enrich local-seat` (prints `ollama create`), and `estate enrich import-trained` (records `trained_shape` and `trained_paths`). A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct`. `template` is `qwen`. A missing train base is `refuse:train-base`.

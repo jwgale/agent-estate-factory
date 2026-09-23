@@ -427,6 +427,22 @@ load_in_4bit true), matching examples/llama-3/qlora.yml. sequence_len,
 micro_batch_size, gradient_accumulation_steps, and lora_r are the values
 in those files. prepare.json base_model and seat_tag stay the Ollama id
 for Modelfile FROM and for the adapter join. NEXT.md names axolotl train.
+After axolotl train, the operator merges the adapter into a Hugging
+Face directory (config.json and a .safetensors file whose name does
+not start with adapter_model). This factory does not name a merge
+command. Axolotl does not write GGUF. Then gguf-convert prints
+python3 convert_hf_to_gguf.py with --outtype auto, local-seat prints
+ollama create, and import-trained records the adapter directory, that
+merged directory, or a .gguf file. unsloth-qlora and mlx-lm-lora stay
+off this print ladder (refuse:driver).
+
+  estate enrich gguf-convert \\
+    --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
+    --weights <merged-hf-dir>
+  estate enrich local-seat \\
+    --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
+    --weights <merged-hf-dir>
+
 The LoRA card does not require bitsandbytes. QLoRA still needs
 bitsandbytes: pip install 'bitsandbytes>=0.49'.
 A short gauge run passes --max-steps 10. Axolotl writes max_steps and
@@ -535,9 +551,11 @@ make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create 
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
 estate enrich gguf-convert prints the llama.cpp convert line for a
-merged LLaMA-Factory export directory (config.json and at least one
-.safetensors file whose name does not start with adapter_model).
-An adapter directory, a symlinked weights path, a symlinked marker,
+merged Hugging Face directory (config.json and at least one
+.safetensors file whose name does not start with adapter_model) from
+a llamafactory-lora, llamafactory-qlora, axolotl-lora, or
+axolotl-qlora train prepare. An adapter directory, a directory that
+only holds export.yaml, a symlinked weights path, a symlinked marker,
 and a path that is already a GGUF are refuse:seat. The printed line is:
 
   python3 convert_hf_to_gguf.py <merged-dir> --outfile <sibling>.gguf --outtype auto
@@ -551,12 +569,13 @@ not write a GGUF, and does not choose a quantization type.
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
     --weights .cell/enrich/overnight-traces/llamafactory-qlora/export
 
-estate enrich local-seat validates a merged LLaMA-Factory export
-directory (config.json and at least one .safetensors file whose name
-does not start with adapter_model, optional Modelfile) or a .gguf file.
+estate enrich local-seat validates that same merged directory
+(optional Modelfile) or a .gguf file for a llamafactory-lora,
+llamafactory-qlora, axolotl-lora, or axolotl-qlora train prepare.
 adapter_model*.safetensors is not merged evidence. A symlinked weights
 path or a symlinked marker is refuse:seat. It prints the ollama create
 line. For a GGUF it also prints the Modelfile whose FROM is that file.
+Axolotl does not write that GGUF.
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained
