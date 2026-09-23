@@ -1730,6 +1730,24 @@ mod tests {
         .unwrap();
     }
 
+    fn assert_guidance_refuse_before_rerun(text: &str) {
+        let claim = "returns refuse:tokenizer for that export before the restore";
+        let claim_at = text
+            .find(claim)
+            .unwrap_or_else(|| panic!("missing refuse-before-restore claim in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            claim_at < rerun_at,
+            "the refuse claim must precede the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
     fn assert_lf_export(plan: &MergeAdaptPlan, root: &Path, export_dir: &Path, driver: &str) {
         let export_yaml = root.join("export.yaml");
         let line = printed_llamafactory_export_line(&export_yaml);
@@ -1802,6 +1820,7 @@ mod tests {
             plan.report
         );
         assert!(plan.report.contains("refuse:tokenizer"), "{}", plan.report);
+        assert_guidance_refuse_before_rerun(&plan.report);
         assert!(
             plan.report.contains("extra_special_tokens"),
             "{}",

@@ -128,7 +128,7 @@ pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
 /// The export directory may not exist yet. This text does not scan it.
 pub(crate) fn export_tokenizer_guidance(train_base: &str) -> String {
     format!(
-        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. JSON null under extra_special_tokens is the same refuse:tokenizer case: transformers calls .keys() on that non-object value. The same export can omit vocab.json and merges.txt. {restore} estate enrich gguf-convert returns refuse:tokenizer for that list, for JSON null, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line.",
+        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. JSON null under extra_special_tokens is the same refuse:tokenizer case: transformers calls .keys() on that non-object value. The same export can omit vocab.json and merges.txt. estate enrich gguf-convert returns refuse:tokenizer for that export before the restore, for that list, for JSON null, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line. {restore}",
         restore = tokenizer_restore_sentence(train_base)
     )
 }
@@ -1358,10 +1358,46 @@ mod tests {
         assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
     }
 
+    fn assert_refuse_named_before_rerun(text: &str) {
+        let refuse_at = text
+            .find("refuse:tokenizer")
+            .unwrap_or_else(|| panic!("missing refuse:tokenizer in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            refuse_at < rerun_at,
+            "refuse must be named before the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
+    fn assert_guidance_refuse_before_rerun(text: &str) {
+        let claim = "returns refuse:tokenizer for that export before the restore";
+        let claim_at = text
+            .find(claim)
+            .unwrap_or_else(|| panic!("missing refuse-before-restore claim in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            claim_at < rerun_at,
+            "the refuse claim must precede the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
     fn assert_refuses_tokenizer(err: &impl std::fmt::Display) {
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
         assert_names_hf_cache_restore(&text);
+        assert_refuse_named_before_rerun(&text);
         assert!(!text.contains("--outtype"), "{text}");
     }
 
@@ -1380,6 +1416,7 @@ mod tests {
         assert!(guidance.contains("refuse:tokenizer"), "{guidance}");
         assert!(guidance.contains("JSON null"), "{guidance}");
         assert_names_hf_cache_restore(&guidance);
+        assert_guidance_refuse_before_rerun(&guidance);
     }
 
     #[test]
@@ -1527,6 +1564,7 @@ mod tests {
             "{}",
             plan.report
         );
+        assert_refuse_named_before_rerun(&plan.report);
         assert!(
             plan.report.contains("Qwen/Qwen2.5-0.5B-Instruct"),
             "{}",
@@ -1632,6 +1670,7 @@ mod tests {
             "{text}"
         );
         assert_names_hf_cache_restore(&text);
+        assert_refuse_named_before_rerun(&text);
         assert!(!text.contains("JSON list"), "{text}");
         assert!(!text.contains("python3"), "{text}");
         assert!(!root.join("export.gguf").exists());

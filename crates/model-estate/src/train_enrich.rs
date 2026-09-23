@@ -8457,6 +8457,24 @@ mod tests {
     }
 
     #[test]
+    fn assert_guidance_refuse_before_rerun(text: &str) {
+        let claim = "returns refuse:tokenizer for that export before the restore";
+        let claim_at = text
+            .find(claim)
+            .unwrap_or_else(|| panic!("missing refuse-before-restore claim in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            claim_at < rerun_at,
+            "the refuse claim must precede the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
     fn llamafactory_qlora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("llamafactory");
         let pack = fixture_pack();
@@ -8643,6 +8661,7 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("re-run estate enrich gguf-convert"), "{next}");
+        assert_guidance_refuse_before_rerun(&next);
         assert!(next.contains("does not download weights"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
@@ -8684,6 +8703,7 @@ mod tests {
         assert!(prepare_md.contains("cp --dereference"), "{prepare_md}");
         assert!(prepare_md.contains("real files, not symlinks"), "{prepare_md}");
         assert!(prepare_md.contains("re-run estate enrich gguf-convert"), "{prepare_md}");
+        assert_guidance_refuse_before_rerun(&prepare_md);
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
         assert!(

@@ -1306,6 +1306,16 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         source.contains("enrich does not follow a symlinked tokenizer_config.json"),
         "the restore sentence must keep the fail-closed follow clause"
     );
+    assert!(
+        source.contains(
+            "returns refuse:tokenizer for that export before the restore, for that list"
+        ),
+        "guidance must name the refuse before the restore"
+    );
+    assert!(
+        !source.contains("{restore} estate enrich gguf-convert returns refuse:tokenizer"),
+        "guidance must not append the refuse after the restore sentence"
+    );
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(
         train.contains("names that tokenizer restore when `extra_special_tokens` is a JSON list"),
