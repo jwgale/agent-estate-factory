@@ -4,13 +4,13 @@
 //! ([getting started](https://docs.axolotl.ai/docs/getting-started.html)
 //! section 4.4, and the [CLI page](https://docs.axolotl.ai/docs/cli.html)).
 //! That command writes `{output_dir}/merged`. It does not take `--out`.
-//! LLaMA-Factory's merge card is `llamafactory-cli export` when `export.yaml`
-//! is the card you run. When that card was not used, PEFT
-//! `merge_and_unload` plus `save_pretrained` is the documented adapter merge
-//! (https://huggingface.co/docs/peft/main/en/developer_guides/checkpoint).
-//! The directory for that save sits beside `outputs/` in the prepared tree.
-//! Those cards then print `gguf-convert` and `local-seat` for that Hugging
-//! Face directory.
+//! LLaMA-Factory's merge is `llamafactory-cli export` on the prepare's
+//! `export.yaml`. The documented shape is
+//! `examples/merge_lora/qwen3_lora_sft.yaml`
+//! ([merge page](https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html),
+//! [examples README](https://github.com/hiyouga/LlamaFactory/blob/main/examples/README.md)).
+//! That command writes `export_dir`. This card then prints `gguf-convert`
+//! and `local-seat` for that Hugging Face directory.
 //!
 //! `mlx-lm-lora` prints mlx-lm's documented fuse. `mlx_lm.lora` writes
 //! `adapter_config.json` and `adapters.safetensors`. `mlx_lm.fuse` writes
@@ -36,10 +36,11 @@ use crate::error::ModelError;
 use crate::gguf_convert::{gguf_convert_cli, local_seat_cli, printed_convert_line};
 use crate::local_seat::{classify_adapter, shell_quote};
 use crate::train_enrich::{
-    is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
-    EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, MLX_LM_LORA_ID, MLX_LORA_DOC,
-    UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC, UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
+    is_axolotl_driver, is_llamafactory_driver, is_post_merge_print_driver, load_prepare_doc,
+    local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku,
+    EnrichJobKind, EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, LLAMAFACTORY_QLORA_ID,
+    MLX_LM_LORA_ID, MLX_LORA_DOC, UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC,
+    UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::io::Read;
@@ -63,6 +64,15 @@ pub(crate) const UNSLOTH_ADAPTER_WEIGHTS: &str = "adapter_model.safetensors";
 /// Pickle name Unsloth writes when `safe_serialization` is False.
 pub(crate) const UNSLOTH_ADAPTER_BIN: &str = "adapter_model.bin";
 
+/// Documented LoRA merge example. The README runs `llamafactory-cli export` on this file.
+pub(crate) const LLAMAFACTORY_MERGE_EXAMPLE: &str = "examples/merge_lora/qwen3_lora_sft.yaml";
+/// Merge page that shows that example and the unquantized-merge note.
+pub(crate) const LLAMAFACTORY_MERGE_DOC: &str =
+    "https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html";
+/// Examples index. The merge section runs the same export command.
+pub(crate) const LLAMAFACTORY_MERGE_README: &str =
+    "https://github.com/hiyouga/LlamaFactory/blob/main/examples/README.md";
+
 /// Printed plan. `merged_dir` is the directory the external merge or fuse
 /// writes. For LLaMA-Factory and Axolotl that is a Hugging Face directory.
 /// For `mlx-lm-lora` it is the `mlx_lm.fuse` `--save-path` (`fused_model`).
@@ -74,7 +84,7 @@ pub struct MergeAdaptPlan {
     pub pack_id: String,
     pub driver: String,
     /// External merge lines. Axolotl: `axolotl merge-lora`, plus `--dequant`
-    /// on the qlora card. LLaMA-Factory adapter path: the PEFT snippet.
+    /// on the qlora card. LLaMA-Factory: `llamafactory-cli export`.
     pub merge_commands: Vec<String>,
     pub merged_dir: PathBuf,
     /// Documented convert line. LLaMA-Factory and Axolotl print
@@ -146,8 +156,10 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
         let shape = classify_adapter(adapter)?;
         if is_axolotl_driver(&doc.driver) {
             plan_axolotl(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+        } else if is_llamafactory_driver(&doc.driver) {
+            plan_llamafactory(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
         } else {
-            plan_peft(prepared_dir, &doc, &seat_tag, &local_tag, &shape.dir)?
+            return Err(refuse_post_merge_driver("merge-adapt", &doc.driver));
         }
     };
     refuse_sacred_and_sku("merge-adapt report", &plan.report)?;
@@ -243,7 +255,42 @@ fn plan_axolotl(
     })
 }
 
-fn plan_peft(
+/// Keys `examples/merge_lora/qwen3_lora_sft.yaml` sets, in that file's order.
+const LLAMAFACTORY_EXPORT_KEYS: &[&str] = &[
+    "model_name_or_path",
+    "adapter_name_or_path",
+    "template",
+    "trust_remote_code",
+    "export_dir",
+    "export_size",
+    "export_device",
+    "export_legacy_format",
+];
+
+/// Real keys that turn the merge card into a quantized export.
+/// Comment lines that name these words are not keys.
+const LLAMAFACTORY_QUANT_KEYS: &[&str] = &[
+    "quantization_bit",
+    "quantization_method",
+    "export_quantization_bit",
+    "export_quantization_dataset",
+];
+
+struct LlamaFactoryExportCard {
+    model: String,
+    adapter_raw: String,
+    template: String,
+    trust_remote_code: String,
+    export_raw: String,
+    export_dir: PathBuf,
+    export_size: String,
+    export_device: String,
+    export_legacy_format: String,
+    finetuning_type: Option<String>,
+    hub_model_id: Option<String>,
+}
+
+fn plan_llamafactory(
     prepared_dir: &Path,
     doc: &EnrichPrepareDoc,
     seat_tag: &str,
@@ -252,35 +299,94 @@ fn plan_peft(
 ) -> Result<MergeAdaptPlan, ModelError> {
     let train = doc.train_base_model.clone().ok_or_else(|| {
         ModelError::Other(
-            "refuse:train-base: prepare.json has no train_base_model. The PEFT merge loads that base with AutoModelForCausalLM.from_pretrained. This factory does not invent a Hub repo and does not download weights.".into(),
+            "refuse:train-base: prepare.json has no train_base_model. export.yaml model_name_or_path is that train base. This factory does not invent a Hub repo and does not download weights.".into(),
         )
     })?;
     refuse_sacred_and_sku("train base", &train)?;
-    let merged = prepared_dir.join("merged");
-    refuse_sacred_and_sku("merged", &merged.display().to_string())?;
+    let export_yaml = prepared_dir.join("export.yaml");
+    let text = read_export_yaml(&export_yaml)?;
+    refuse_sacred_and_sku("export.yaml", &text)?;
+    refuse_raw_secrets(&text).map_err(map_feed)?;
+    refuse_llamafactory_quant_keys(&text)?;
+    let card = parse_llamafactory_export(prepared_dir, &text, adapter_dir)?;
+    if card.model != train {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: export.yaml model_name_or_path is '{}'. prepare.json train_base_model is '{train}'. The merge reads model_name_or_path. These must name the same train base.",
+            card.model
+        )));
+    }
+    require_recipe_agrees(prepared_dir, &train, &card.template)?;
+    let merged = card.export_dir.clone();
+    refuse_sacred_and_sku("export_dir", &merged.display().to_string())?;
     single_line(
         "refuse:merge",
-        "merged directory",
+        "export directory",
         &merged.display().to_string(),
     )?;
-    let export_note = export_card_note(prepared_dir)?;
-    let snippet = printed_peft_merge(&train, adapter_dir, &merged);
+    if pin_dir(&merged) == adapter_dir {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export_dir {} is the adapter directory. {} writes a separate export_dir. This factory does not merge into the adapter directory.",
+            merged.display(),
+            LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let export_line = printed_llamafactory_export_line(&export_yaml);
+    let shape = printed_llamafactory_export_shape(&card);
     let convert = printed_convert_line(&merged);
     let gguf = gguf_convert_cli(prepared_dir, &merged);
     let seat = local_seat_cli(prepared_dir, &merged);
+    let quant_note = if doc.driver == LLAMAFACTORY_QLORA_ID {
+        "This card is llamafactory-qlora. The train recipe sets quantization_bit and quantization_method. The merge example says not to use a quantized model or quantization_bit when merging LoRA adapters. export.yaml omits those keys. This print does not add quantization_bit, quantization_method, export_quantization_bit, or export_quantization_dataset.\n\n"
+    } else {
+        "This card is llamafactory-lora. The train recipe omits quantization. The merge card stays unquantized. This print does not add quantization_bit, quantization_method, export_quantization_bit, or export_quantization_dataset.\n\n"
+    };
+    let finetune_note = match card.finetuning_type.as_deref() {
+        Some(value) => format!(
+            "This export.yaml also sets finetuning_type: {value}. {example} leaves that key unset. The command reads this file, including that key.\n\n",
+            example = LLAMAFACTORY_MERGE_EXAMPLE,
+        ),
+        None => format!(
+            "This export.yaml leaves finetuning_type unset, matching {example}.\n\n",
+            example = LLAMAFACTORY_MERGE_EXAMPLE,
+        ),
+    };
+    let hub_note = match card.hub_model_id.as_deref() {
+        Some(id) => format!(
+            "This export.yaml also sets export_hub_model_id: {id}. {example} does not. This factory does not push to a hub.\n\n",
+            example = LLAMAFACTORY_MERGE_EXAMPLE,
+        ),
+        None => String::new(),
+    };
     let report = format!(
         "{header}\
          \n\
-         {export_note}\
-         When export.yaml was not the merge you ran, the adapter directory uses the PEFT calls on https://huggingface.co/docs/peft/main/en/developer_guides/checkpoint and the LoRA guide's `merge_and_unload` example. `merge_and_unload` is not in place, so the result is assigned. `save_pretrained` writes the merged Hugging Face directory. That path is the `--out` for this handoff: {merged}, beside `outputs/` in this prepared tree. Load the train base with no quantization flags. The LLaMA-Factory export card says not to merge a quantized base. `AutoTokenizer.save_pretrained` writes the tokenizer files into that same directory. Axolotl's merge writes the tokenizer; this PEFT path uses the transformers save for those files. This factory does not write a Python file, does not run it, and does not download the train base.\n\
+         LLaMA-Factory documents this merge on {doc_url} and {readme}. The command is `llamafactory-cli export`. The README runs `{example_cmd}`. The docs page uses `llamafactory-cli export merge_config.yaml`. This prepare's card is {export_yaml}. The example says model_name_or_path must exist and match template, and adapter_name_or_path must match the adapter output path from training. This factory does not run the command, does not rewrite export.yaml, and does not download the train base.\n\
          \n\
-         {snippet}\n\
+         {export_line}\n\
+         \n\
+         {quant_note}\
+         {finetune_note}\
+         {hub_note}\
+         The example keys are {keys}. The values this export.yaml sets:\n\
+         \n\
+         {shape}\n\
+         \n\
+         `llamafactory-cli export` writes export_dir. The file sets export_dir to {export_raw}. Resolved beside this prepare, that directory is {merged}. Current LLaMA-Factory export_model also writes Modelfile in that directory (FROM ., plus TEMPLATE from the train chat template). This factory does not write that Modelfile and does not invent a second template. LLaMA-Factory does not write GGUF. export_device choices in the example are cpu and auto. This file sets {device}. export_size is the shard size in gigabytes. This file sets {size}. export_legacy_format is {legacy}.\n\
          \n\
          {next}\
          merge-adapt did not merge and did not write {merged}.\n\
          READY_FOR_LIVE_TEST: no.\n",
         header = header(doc, seat_tag, local_tag, adapter_dir, &merged),
+        doc_url = LLAMAFACTORY_MERGE_DOC,
+        readme = LLAMAFACTORY_MERGE_README,
+        example_cmd = documented_llamafactory_export_example(),
+        export_yaml = export_yaml.display(),
+        export_raw = card.export_raw,
         merged = merged.display(),
+        device = card.export_device,
+        size = card.export_size,
+        legacy = card.export_legacy_format,
+        keys = LLAMAFACTORY_EXPORT_KEYS.join(", "),
         next = next_lines(&convert, &gguf, &seat),
     );
     Ok(MergeAdaptPlan {
@@ -288,13 +394,234 @@ fn plan_peft(
         local_tag: local_tag.to_string(),
         pack_id: doc.pack_id.clone(),
         driver: doc.driver.clone(),
-        merge_commands: vec![snippet],
+        merge_commands: vec![export_line],
         merged_dir: merged,
         convert_command: convert,
         gguf_convert_command: gguf,
         local_seat_command: seat,
         report,
     })
+}
+
+/// `llamafactory-cli export <export.yaml>`. The README runs this on the merge example.
+pub(crate) fn printed_llamafactory_export_line(export_yaml: &Path) -> String {
+    format!(
+        "llamafactory-cli export {}",
+        shell_quote(&export_yaml.display().to_string())
+    )
+}
+
+/// The README's published command. This prepare runs the same command on its own export.yaml.
+pub(crate) fn documented_llamafactory_export_example() -> &'static str {
+    "llamafactory-cli export examples/merge_lora/qwen3_lora_sft.yaml"
+}
+
+fn printed_llamafactory_export_shape(card: &LlamaFactoryExportCard) -> String {
+    format!(
+        "### model\n\
+         model_name_or_path: {model}\n\
+         adapter_name_or_path: {adapter}\n\
+         template: {template}\n\
+         trust_remote_code: {trust}\n\
+         \n\
+         ### export\n\
+         export_dir: {export_dir}\n\
+         export_size: {export_size}\n\
+         export_device: {export_device}\n\
+         export_legacy_format: {legacy}",
+        model = card.model,
+        adapter = card.adapter_raw,
+        template = card.template,
+        trust = card.trust_remote_code,
+        export_dir = card.export_raw,
+        export_size = card.export_size,
+        export_device = card.export_device,
+        legacy = card.export_legacy_format,
+    )
+}
+
+fn parse_llamafactory_export(
+    prepared_dir: &Path,
+    text: &str,
+    adapter_dir: &Path,
+) -> Result<LlamaFactoryExportCard, ModelError> {
+    let model = require_export_key(text, "model_name_or_path")?;
+    refuse_sacred_and_sku("model_name_or_path", &model)?;
+    let adapter_raw = require_export_key(text, "adapter_name_or_path")?;
+    let adapter_resolved = resolve_beside_prepare(prepared_dir, &adapter_raw, "adapter_name_or_path")?;
+    let adapter_pinned = match std::fs::canonicalize(&adapter_resolved) {
+        Ok(path) => path,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(format!(
+                "refuse:merge: export.yaml adapter_name_or_path is '{adapter_raw}' and {} is missing. {} says that path must be the adapter output directory. Pass that directory as --adapter. This factory does not invent the directory.",
+                adapter_resolved.display(),
+                LLAMAFACTORY_MERGE_EXAMPLE
+            )));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:merge: cannot read adapter_name_or_path {}: {err}",
+                adapter_resolved.display()
+            )));
+        }
+    };
+    if adapter_pinned != adapter_dir {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export.yaml adapter_name_or_path is '{adapter_raw}' ({}). --adapter is {}. {} says adapter_name_or_path must match the adapter output path. An early stop may leave the adapter under checkpoint-<step>. Point adapter_name_or_path at that directory and pass that directory as --adapter. This factory does not rewrite export.yaml.",
+            adapter_pinned.display(),
+            adapter_dir.display(),
+            LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let template = require_export_key(text, "template")?;
+    refuse_sacred_and_sku("template", &template)?;
+    let trust = require_export_key(text, "trust_remote_code")?;
+    if trust != "true" && trust != "false" {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: trust_remote_code is '{trust}'. {example} sets true. This factory accepts true or false.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let export_raw = require_export_key(text, "export_dir")?;
+    let export_dir = resolve_beside_prepare(prepared_dir, &export_raw, "export_dir")?;
+    let export_size = require_export_key(text, "export_size")?;
+    if !is_plain_positive_int(&export_size) {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export_size is '{export_size}'. {example} sets a shard size in gigabytes (5). This factory does not invent a size.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let export_device = require_export_key(text, "export_device")?;
+    if export_device != "cpu" && export_device != "auto" {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export_device is '{export_device}'. {example} sets cpu and names choices cpu and auto. This factory does not invent another device.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let legacy = require_export_key(text, "export_legacy_format")?;
+    if legacy != "true" && legacy != "false" {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export_legacy_format is '{legacy}'. {example} sets false. This factory accepts true or false.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    let finetuning_type = match yaml_top_scalar(text, "finetuning_type")? {
+        Some(value) if value == "lora" => Some(value),
+        Some(value) => {
+            return Err(ModelError::Other(format!(
+                "refuse:merge: export.yaml finetuning_type is '{value}'. The LoRA merge example leaves that key unset. This prepare's cards set lora. This factory does not print a full-parameter export."
+            )));
+        }
+        None => None,
+    };
+    let hub_model_id = yaml_top_scalar(text, "export_hub_model_id")?;
+    if let Some(id) = hub_model_id.as_deref() {
+        refuse_sacred_and_sku("export_hub_model_id", id)?;
+    }
+    Ok(LlamaFactoryExportCard {
+        model,
+        adapter_raw,
+        template,
+        trust_remote_code: trust,
+        export_raw,
+        export_dir,
+        export_size,
+        export_device,
+        export_legacy_format: legacy,
+        finetuning_type,
+        hub_model_id,
+    })
+}
+
+fn require_export_key(text: &str, key: &str) -> Result<String, ModelError> {
+    match yaml_top_scalar(text, key)? {
+        Some(value) => Ok(value),
+        None => Err(ModelError::Other(format!(
+            "refuse:merge: export.yaml has no {key}. {example} sets {key}. This factory does not invent that value.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        ))),
+    }
+}
+
+fn refuse_llamafactory_quant_keys(text: &str) -> Result<(), ModelError> {
+    for key in LLAMAFACTORY_QUANT_KEYS {
+        if yaml_top_scalar(text, key)?.is_some() {
+            return Err(ModelError::Other(format!(
+                "refuse:export: export.yaml sets {key}. {example} says not to use a quantized model or quantization_bit when merging LoRA adapters. adapter_name_or_path and export_quantization_bit cannot both be set. Leave the merge card unquantized. This factory does not run the export.",
+                example = LLAMAFACTORY_MERGE_EXAMPLE
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_recipe_agrees(prepared: &Path, train: &str, template: &str) -> Result<(), ModelError> {
+    let path = prepared.join("recipe.yaml");
+    let text = match read_card(&path, "refuse:train-base") {
+        Err(err) if err.to_string().contains("is missing") => {
+            return Err(ModelError::Other(format!(
+                "refuse:train-base: {} is missing, so the train base cannot be checked",
+                path.display()
+            )));
+        }
+        other => other?,
+    };
+    refuse_sacred_and_sku("recipe.yaml", &text)?;
+    refuse_raw_secrets(&text).map_err(map_feed)?;
+    let found = yaml_top_scalar(&text, "model_name_or_path")?.unwrap_or_default();
+    if found != train {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: recipe.yaml model_name_or_path is '{found}'. prepare.json train_base_model is '{train}'. The merge reads the train base from export.yaml. These files must name the same train base."
+        )));
+    }
+    let recipe_template = yaml_top_scalar(&text, "template")?.ok_or_else(|| {
+        ModelError::Other(format!(
+            "refuse:merge: {} has no template. export.yaml template is '{template}'. Train and export share one template. This factory does not pick a template.",
+            path.display()
+        ))
+    })?;
+    if recipe_template != template {
+        return Err(ModelError::Other(format!(
+            "refuse:merge: export.yaml template is '{template}'. recipe.yaml template is '{recipe_template}'. {example} says model_name_or_path must match template. Train and export share one template. This factory does not pick a template.",
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        )));
+    }
+    Ok(())
+}
+
+fn is_plain_positive_int(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_digit() && first != '0' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_digit())
+}
+
+/// Resolve a directory that may not exist yet. An existing directory is canonical.
+fn pin_dir(path: &Path) -> PathBuf {
+    if let Ok(canon) = std::fs::canonicalize(path) {
+        return canon;
+    }
+    if let Some(parent) = path.parent() {
+        if let Ok(parent) = std::fs::canonicalize(parent) {
+            if let Some(name) = path.file_name() {
+                return parent.join(name);
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
+fn read_export_yaml(path: &Path) -> Result<String, ModelError> {
+    match read_card(path, "refuse:merge") {
+        Err(err) if err.to_string().contains("is missing") => Err(ModelError::Other(format!(
+            "refuse:merge: {} is missing. The LLaMA-Factory merge card is export.yaml. {example} is the documented shape. This factory does not invent that file.",
+            path.display(),
+            example = LLAMAFACTORY_MERGE_EXAMPLE
+        ))),
+        other => other,
+    }
 }
 
 fn plan_mlx(
@@ -850,74 +1177,6 @@ fn next_lines(convert: &str, gguf: &str, seat: &str) -> String {
     )
 }
 
-fn export_card_note(prepared_dir: &Path) -> Result<String, ModelError> {
-    let path = prepared_dir.join("export.yaml");
-    let meta = match std::fs::symlink_metadata(&path) {
-        Ok(meta) => meta,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(
-                "This prepare has no export.yaml beside the train directory. `llamafactory-cli export` is the LLaMA-Factory merge when that file is the card (https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html).\n\n"
-                    .to_string(),
-            );
-        }
-        Err(err) => {
-            return Err(ModelError::Other(format!(
-                "refuse:merge: {}: {err}",
-                path.display()
-            )));
-        }
-    };
-    if meta.file_type().is_symlink() {
-        return Err(ModelError::Other(format!(
-            "refuse:merge: {} is a symlink. enrich does not follow a symlinked export.yaml.",
-            path.display()
-        )));
-    }
-    if !meta.is_file() {
-        return Err(ModelError::Other(format!(
-            "refuse:merge: {} is not a regular file",
-            path.display()
-        )));
-    }
-    let text = read_card(&path, "refuse:merge")?;
-    refuse_sacred_and_sku("export.yaml", &text)?;
-    refuse_raw_secrets(&text).map_err(map_feed)?;
-    let export_dir = match yaml_top_scalar(&text, "export_dir")? {
-        Some(raw) => resolve_beside_prepare(prepared_dir, &raw, "export_dir")?,
-        None => prepared_dir.join("export"),
-    };
-    let export_line = format!(
-        "llamafactory-cli export {}",
-        shell_quote(&path.display().to_string())
-    );
-    Ok(format!(
-        "LLaMA-Factory's merge card is `llamafactory-cli export` when you run export.yaml (https://llamafactory.readthedocs.io/en/latest/getting_started/merge_lora.html). This prepare has {path}. That command writes export_dir {export_dir}. This factory does not run it.\n\
-         \n\
-         {export_line}\n\
-         \n",
-        path = path.display(),
-        export_dir = export_dir.display(),
-    ))
-}
-
-fn printed_peft_merge(train_base: &str, adapter: &Path, out: &Path) -> String {
-    let train = serde_json::to_string(train_base).unwrap_or_else(|_| "\"\"".to_string());
-    let adapter = serde_json::to_string(&adapter.display().to_string())
-        .unwrap_or_else(|_| "\"\"".to_string());
-    let out =
-        serde_json::to_string(&out.display().to_string()).unwrap_or_else(|_| "\"\"".to_string());
-    format!(
-        "from transformers import AutoModelForCausalLM, AutoTokenizer\n\
-         from peft import PeftModel\n\
-         base_model = AutoModelForCausalLM.from_pretrained({train})\n\
-         model = PeftModel.from_pretrained(base_model, {adapter})\n\
-         merged_model = model.merge_and_unload()\n\
-         merged_model.save_pretrained({out})\n\
-         tokenizer = AutoTokenizer.from_pretrained({train})\n\
-         tokenizer.save_pretrained({out})"
-    )
-}
-
 fn refuse_card_mismatch(driver: &str, text: &str) -> Result<(), ModelError> {
     let load4 = yaml_top_scalar(text, "load_in_4bit")?;
     let adapter = yaml_top_scalar(text, "adapter")?;
@@ -1420,87 +1679,89 @@ mod tests {
         );
     }
 
-    #[test]
-    fn llamafactory_adapter_prints_peft_when_export_yaml_is_absent() {
-        let root = tmp("lf-no-export");
-        write_prepare(
-            &root,
-            LLAMAFACTORY_QLORA_ID,
-            "train",
-            Some("llama3"),
-            Some("Qwen/Qwen2.5-0.5B-Instruct"),
-            false,
-        );
-        let adapter = adapter_dir(&root.join("outputs"));
-        let plan = plan_merge_adapt(&root, &adapter).unwrap();
-        let merged = root.join("merged");
-        assert_eq!(plan.merged_dir, merged);
-        assert!(
-            plan.merge_commands[0].contains("merge_and_unload()"),
-            "{}",
-            plan.merge_commands[0]
-        );
-        assert!(
-            plan.merge_commands[0].contains("save_pretrained("),
-            "{}",
-            plan.merge_commands[0]
-        );
-        assert!(
-            plan.merge_commands[0].contains("PeftModel.from_pretrained"),
-            "{}",
-            plan.merge_commands[0]
-        );
-        assert!(
-            plan.merge_commands[0].contains(&merged.display().to_string()),
-            "{}",
-            plan.merge_commands[0]
-        );
-        assert!(
-            plan.merge_commands[0].contains("Qwen/Qwen2.5-0.5B-Instruct"),
-            "{}",
-            plan.merge_commands[0]
-        );
-        assert!(
-            !plan.report.contains("axolotl merge-lora"),
-            "{}",
-            plan.report
-        );
-        assert!(!plan.report.contains("mlx_lm.fuse"), "{}", plan.report);
-        assert!(plan.report.contains("no export.yaml"), "{}", plan.report);
-        assert_eq!(plan.gguf_convert_command, gguf_convert_cli(&root, &merged));
-        assert_eq!(plan.local_seat_command, local_seat_cli(&root, &merged));
-        assert!(
-            plan.report.contains("merge-adapt did not merge"),
-            "{}",
-            plan.report
-        );
-        assert!(!merged.exists());
+    const LF_TRAIN: &str = "Qwen/Qwen2.5-0.5B-Instruct";
+
+    fn write_lf_cards(dir: &Path, adapter: &Path, export_dir: &Path, extra: &str) {
+        write_lf_cards_with(dir, LF_TRAIN, "qwen", adapter, export_dir, extra, true);
     }
 
-    #[test]
-    fn llamafactory_names_export_yaml_and_still_prints_peft() {
-        let root = tmp("lf-export");
-        write_prepare(
-            &root,
-            LLAMAFACTORY_LORA_ID,
-            "train",
-            Some("llama3"),
-            Some("Qwen/Qwen2.5-0.5B-Instruct"),
-            false,
+    fn write_lf_cards_with(
+        dir: &Path,
+        model: &str,
+        template: &str,
+        adapter: &Path,
+        export_dir: &Path,
+        extra: &str,
+        finetuning_type: bool,
+    ) {
+        let finetune = if finetuning_type {
+            "finetuning_type: lora\n"
+        } else {
+            ""
+        };
+        let export = format!(
+            "# quantization_bit stays off this merge card\n\
+             # DO NOT use quantized model or quantization_bit when merging lora adapters\n\
+             model_name_or_path: \"{model}\"\n\
+             adapter_name_or_path: \"{adapter}\"\n\
+             template: {template}\n\
+             trust_remote_code: true\n\
+             {finetune}\
+             export_dir: \"{export_dir}\"\n\
+             export_size: 5\n\
+             export_device: cpu\n\
+             export_legacy_format: false\n\
+             {extra}",
+            adapter = adapter.display(),
+            export_dir = export_dir.display(),
         );
-        let export_dir = root.join("export");
+        std::fs::write(dir.join("export.yaml"), export).unwrap();
         std::fs::write(
-            root.join("export.yaml"),
-            format!("export_dir: \"{}\"\n", export_dir.display()),
+            dir.join("recipe.yaml"),
+            format!(
+                "model_name_or_path: \"{model}\"\ntemplate: {template}\noutput_dir: outputs\n"
+            ),
         )
         .unwrap();
-        let adapter = adapter_dir(&root.join("outputs"));
-        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+    }
+
+    fn assert_lf_export(plan: &MergeAdaptPlan, root: &Path, export_dir: &Path, driver: &str) {
+        let export_yaml = root.join("export.yaml");
+        let line = printed_llamafactory_export_line(&export_yaml);
+        assert_eq!(plan.driver, driver);
+        assert_eq!(plan.merged_dir, export_dir);
+        assert_eq!(plan.merge_commands, vec![line.clone()]);
+        assert!(plan.merge_commands[0].starts_with("llamafactory-cli export "));
+        assert!(!plan.merge_commands[0].contains("quantization"));
+        assert!(!plan.merge_commands[0].contains("merge_and_unload"));
+        assert!(plan.report.contains(&line), "{}", plan.report);
         assert!(
-            plan.report.contains(&format!(
-                "llamafactory-cli export {}",
-                root.join("export.yaml").display()
-            )),
+            plan.report.contains(documented_llamafactory_export_example()),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains(LLAMAFACTORY_MERGE_EXAMPLE),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("### model"), "{}", plan.report);
+        assert!(plan.report.contains("### export"), "{}", plan.report);
+        assert!(
+            plan.report.contains("model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("template: qwen"), "{}", plan.report);
+        assert!(
+            plan.report.contains("trust_remote_code: true"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("export_size: 5"), "{}", plan.report);
+        assert!(plan.report.contains("export_device: cpu"), "{}", plan.report);
+        assert!(
+            plan.report.contains("export_legacy_format: false"),
             "{}",
             plan.report
         );
@@ -1509,18 +1770,232 @@ mod tests {
             "{}",
             plan.report
         );
-        assert_eq!(plan.merged_dir, root.join("merged"));
+        assert!(!plan.report.contains("axolotl merge-lora"), "{}", plan.report);
+        assert!(!plan.report.contains("mlx_lm.fuse"), "{}", plan.report);
         assert!(
-            plan.merge_commands[0].contains("merge_and_unload()"),
+            !plan.report.contains("save_pretrained_merged"),
             "{}",
-            plan.merge_commands[0]
+            plan.report
+        );
+        assert!(!plan.report.contains("merge_and_unload"), "{}", plan.report);
+        assert!(
+            !plan.report.contains("\nquantization_bit:"),
+            "{}",
+            plan.report
         );
         assert!(
-            !plan.merge_commands[0].contains("llamafactory-cli"),
+            !plan.report.contains("\nexport_quantization_bit:"),
             "{}",
-            plan.merge_commands[0]
+            plan.report
         );
+        assert_eq!(plan.gguf_convert_command, gguf_convert_cli(root, export_dir));
+        assert_eq!(plan.local_seat_command, local_seat_cli(root, export_dir));
+        assert_eq!(plan.convert_command, printed_convert_line(export_dir));
+        assert!(
+            plan.report.contains(&plan.gguf_convert_command),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains(&plan.local_seat_command),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("python3 convert_hf_to_gguf.py"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("--outtype auto"), "{}", plan.report);
+        assert!(
+            plan.report.contains("merge-adapt did not merge"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("promoted=false"), "{}", plan.report);
+        assert!(!export_dir.exists());
         assert!(!root.join("merged").exists());
+    }
+
+    #[test]
+    fn llamafactory_qlora_prints_export_and_writes_nothing() {
+        let root = tmp("lf-qlora");
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let adapter = adapter_dir(&root.join("outputs"));
+        let export_dir = root.join("export");
+        write_lf_cards(
+            &root,
+            &adapter,
+            &export_dir,
+            "# quantization_bit: 4\n# quantization_method: bnb\n# export_quantization_bit: 4\n",
+        );
+        let before = names(&root);
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let export_before = std::fs::read(root.join("export.yaml")).unwrap();
+        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+        assert_lf_export(&plan, &root, &export_dir, LLAMAFACTORY_QLORA_ID);
+        assert!(plan.report.contains("llamafactory-qlora"), "{}", plan.report);
+        assert!(
+            plan.report.contains("finetuning_type: lora"),
+            "{}",
+            plan.report
+        );
+        assert_eq!(names(&root), before);
+        assert_eq!(
+            std::fs::read(root.join("prepare.json")).unwrap(),
+            prepare_before
+        );
+        assert_eq!(
+            std::fs::read(root.join("export.yaml")).unwrap(),
+            export_before
+        );
+    }
+
+    #[test]
+    fn llamafactory_lora_prints_the_same_export_shape() {
+        let root = tmp("lf-lora");
+        write_prepare(
+            &root,
+            LLAMAFACTORY_LORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let adapter = adapter_dir(&root.join("outputs"));
+        let export_dir = root.join("export");
+        write_lf_cards_with(&root, LF_TRAIN, "qwen", &adapter, &export_dir, "", false);
+        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+        assert_lf_export(&plan, &root, &export_dir, LLAMAFACTORY_LORA_ID);
+        assert!(plan.report.contains("llamafactory-lora"), "{}", plan.report);
+        assert!(
+            plan.report.contains("leaves finetuning_type unset"),
+            "{}",
+            plan.report
+        );
+        assert!(!plan.report.contains("llamafactory-qlora"), "{}", plan.report);
+        assert!(!export_dir.exists());
+    }
+
+    #[test]
+    fn llamafactory_checkpoint_adapter_matches_export_yaml() {
+        let root = tmp("lf-checkpoint");
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let checkpoint = adapter_dir(&root.join("outputs").join("checkpoint-10"));
+        let export_dir = root.join("export");
+        write_lf_cards(&root, &checkpoint, &export_dir, "");
+        let plan = plan_merge_adapt(&root, &checkpoint).unwrap();
+        assert_eq!(plan.merged_dir, export_dir);
+        assert!(
+            plan.merge_commands[0].contains("llamafactory-cli export "),
+            "{}",
+            plan.merge_commands[0]
+        );
+        assert!(
+            plan.report.contains("checkpoint-10"),
+            "{}",
+            plan.report
+        );
+        assert!(!export_dir.exists());
+
+        let outputs = adapter_dir(&root.join("outputs"));
+        let err = plan_merge_adapt(&root, &outputs).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("adapter_name_or_path"), "{err}");
+        assert!(err.to_string().contains("checkpoint"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+        assert!(!export_dir.exists());
+    }
+
+    #[test]
+    fn llamafactory_relative_export_dir_resolves_beside_the_prepare() {
+        let root = tmp("lf-relative");
+        write_prepare(
+            &root,
+            LLAMAFACTORY_LORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let adapter = adapter_dir(&root.join("outputs"));
+        std::fs::write(
+            root.join("export.yaml"),
+            format!(
+                "model_name_or_path: \"{LF_TRAIN}\"\n\
+                 adapter_name_or_path: outputs\n\
+                 template: qwen\n\
+                 trust_remote_code: true\n\
+                 export_dir: export\n\
+                 export_size: 5\n\
+                 export_device: cpu\n\
+                 export_legacy_format: false\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("recipe.yaml"),
+            format!("model_name_or_path: \"{LF_TRAIN}\"\ntemplate: qwen\n"),
+        )
+        .unwrap();
+        let plan = plan_merge_adapt(&root, &adapter).unwrap();
+        assert_eq!(plan.merged_dir, root.join("export"));
+        assert!(plan.report.contains("export_dir: export"), "{}", plan.report);
+        assert!(!root.join("export").exists());
+    }
+
+    #[test]
+    fn llamafactory_shell_quote_wraps_the_export_line() {
+        let root = tmp("lf-quote");
+        let spaced = root.join("my prepare");
+        std::fs::create_dir_all(&spaced).unwrap();
+        write_prepare(
+            &spaced,
+            LLAMAFACTORY_LORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let adapter = adapter_dir(&spaced.join("out dir"));
+        let export_dir = spaced.join("export dir");
+        write_lf_cards(&spaced, &adapter, &export_dir, "");
+        let plan = plan_merge_adapt(&spaced, &adapter).unwrap();
+        assert!(
+            plan.merge_commands[0].contains(&format!("'{}'", spaced.join("export.yaml").display())),
+            "{}",
+            plan.merge_commands[0]
+        );
+        assert!(
+            plan.gguf_convert_command
+                .contains(&format!("'{}'", plan.merged_dir.display())),
+            "{}",
+            plan.gguf_convert_command
+        );
         assert!(!export_dir.exists());
     }
 
@@ -1668,6 +2143,192 @@ mod tests {
         let err = plan_merge_adapt(&root, &adapter).unwrap_err();
         assert!(err.to_string().contains("refuse:train-base"), "{err}");
         assert!(!err.to_string().contains("merge_and_unload"), "{err}");
+        assert!(
+            !err.to_string().contains("llamafactory-cli export "),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn llamafactory_merge_refuses_closed() {
+        let root = tmp("lf-refuse");
+        let adapter = adapter_dir(&root.join("outputs"));
+        let export_dir = root.join("export");
+
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("export.yaml"), "{err}");
+        assert!(err.to_string().contains("is missing"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+        assert!(!err.to_string().contains("merge_and_unload"), "{err}");
+        assert!(!export_dir.exists());
+        assert!(!root.join("merged").exists());
+
+        write_lf_cards(&root, &adapter, &export_dir, "");
+        std::fs::remove_file(root.join("recipe.yaml")).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("recipe.yaml"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &export_dir, "quantization_bit: 4\n");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:export"), "{err}");
+        assert!(err.to_string().contains("quantization_bit"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+        assert!(root.join("export.yaml").is_file());
+
+        write_lf_cards(
+            &root,
+            &adapter,
+            &export_dir,
+            "export_quantization_bit: 4\nexport_quantization_dataset: data/c4_demo.json\n",
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:export"), "{err}");
+        assert!(err.to_string().contains("export_quantization_bit"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &export_dir, "quantization_method: bnb\n");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:export"), "{err}");
+        assert!(err.to_string().contains("quantization_method"), "{err}");
+
+        write_lf_cards_with(
+            &root,
+            "other/repo",
+            "qwen",
+            &adapter,
+            &export_dir,
+            "",
+            true,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("other/repo"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &export_dir, "");
+        std::fs::write(
+            root.join("recipe.yaml"),
+            format!("model_name_or_path: \"other/repo\"\ntemplate: qwen\n"),
+        )
+        .unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("recipe.yaml"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &export_dir, "");
+        std::fs::write(
+            root.join("recipe.yaml"),
+            format!("model_name_or_path: \"{LF_TRAIN}\"\ntemplate: llama3\n"),
+        )
+        .unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("template"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &adapter, "");
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("adapter directory"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_lf_cards(&root, &adapter, &export_dir, "");
+        let kept = std::fs::read_to_string(root.join("export.yaml"))
+            .unwrap()
+            .replace("export_device: cpu", "export_device: cuda");
+        std::fs::write(root.join("export.yaml"), &kept).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("export_device"), "{err}");
+        assert!(err.to_string().contains("cpu"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+        assert_eq!(std::fs::read_to_string(root.join("export.yaml")).unwrap(), kept);
+
+        let full = kept
+            .replace("export_device: cuda", "export_device: cpu")
+            .replace("finetuning_type: lora", "finetuning_type: full");
+        assert_ne!(full, kept);
+        std::fs::write(root.join("export.yaml"), full).unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("finetuning_type"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        std::fs::write(root.join("export.yaml"), "export_dir: export\n").unwrap();
+        write_prepare(
+            &root,
+            LLAMAFACTORY_LORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        std::fs::write(
+            root.join("recipe.yaml"),
+            format!("model_name_or_path: \"{LF_TRAIN}\"\ntemplate: qwen\n"),
+        )
+        .unwrap();
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:merge"), "{err}");
+        assert!(err.to_string().contains("model_name_or_path"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "enrich",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            true,
+        );
+        let err = plan_merge_adapt(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+        assert!(!err.to_string().contains("llamafactory-cli export "), "{err}");
+
+        write_prepare(
+            &root,
+            LLAMAFACTORY_LORA_ID,
+            "train",
+            Some("llama3"),
+            Some(LF_TRAIN),
+            false,
+        );
+        let sacred = root.join("cyera-adapter");
+        adapter_dir(&sacred);
+        write_lf_cards(&root, &sacred, &export_dir, "");
+        let err = plan_merge_adapt(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        let sku = root.join("model-5090");
+        adapter_dir(&sku);
+        let err = plan_merge_adapt(&root, &sku).unwrap_err();
+        assert!(err.to_string().contains("refuse:sku-banned"), "{err}");
+        assert!(!export_dir.exists());
+        assert!(!root.join("merged").exists());
     }
 
     const UNSLOTH_TRAIN: &str = "Qwen/Qwen2.5-0.5B-Instruct";
