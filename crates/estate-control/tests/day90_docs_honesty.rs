@@ -1315,6 +1315,18 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         !train.contains("re-run `estate enrich gguf-convert` when `extra_special_tokens`"),
         "the re-run must not be scoped to the bad tokenizer shape"
     );
+    assert!(
+        train.contains(
+            "`gguf-convert` returns `refuse:tokenizer` for that export before the restore."
+        ),
+        "the refuse must name the bad export before the restore guidance"
+    );
+    assert!(
+        !train.contains(
+            "Then re-run `estate enrich gguf-convert`. `gguf-convert` returns `refuse:tokenizer`"
+        ),
+        "the re-run must not be followed by the refuse claim"
+    );
     let journeys =
         std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     let section_10 = journeys
