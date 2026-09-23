@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Phi-3 Instruct QLoRA reproduce target
+
+- `llamafactory-qlora` infers LLaMA-Factory template `phi` for `microsoft/Phi-3-mini*`, `microsoft/Phi-3-medium*`, and Phi-3.5 (`microsoft/Phi-3.5-mini-instruct`, `microsoft/Phi-3.5-MoE-instruct`), including those ids as nested path segments and HF cache directories (`models--microsoft--Phi-3-mini-4k-instruct`). Phi-3-small infers `phi_small`. Phi-4 infers `phi4`. Phi-4-mini infers `phi4_mini`. The names follow LLaMA-Factory `register_model_group` in `constants.py`.
+- The QLoRA card still writes `quantization_method: bnb` and `quantization_bit: 4`. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Phi repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as a reproduce target beside Qwen LoRA/QLoRA.
+- `examples/fixtures/phi3-instruct.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `microsoft/Phi-3-mini-4k-instruct`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — LLaMA-Factory LoRA without quantization
 
 - `llamafactory-lora` is a `TrainEnrichDriver` card beside `llamafactory-qlora`. `estate enrich prepare --driver llamafactory-lora` writes the same files (`recipe.yaml`, `export.yaml`, `dataset_info.json`, instruct chat `dataset.jsonl`). The recipe is SFT LoRA: `finetuning_type: lora`, no `quantization_bit`, no `quantization_method`, `lora_rank: 8`, `lora_alpha: 16`, `packing: false`. Rank 8 matches LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. `cutoff_len` stays 512. `NEXT.md` names the official longer values (`cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, `warmup_ratio` 0.1).

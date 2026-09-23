@@ -1257,6 +1257,7 @@ fn next_markdown(
         let export_command = llamafactory_export_command(&export);
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         let template = llamafactory_template(train_base);
+        let reproduce = phi_qlora_reproduce_note(method, train_base);
         (
             format!(
                 "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
@@ -1283,6 +1284,7 @@ fn next_markdown(
                  \n\
                  template in recipe.yaml and export.yaml is {template}. That hint comes from the train base name. Confirm it matches the model. Train and seat share the same chat template. When you seat on Ollama, the Modelfile TEMPLATE (or the GGUF chat template) must be that same chat format. This factory does not write a second template.\n\
                  \n\
+                 {reproduce}\
                  {shape}\n\
                  \n\
                  {gauge}\n\
@@ -1306,6 +1308,7 @@ fn next_markdown(
                 seat = job.base_model,
                 train = train_base,
                 template = template,
+                reproduce = reproduce,
                 train_command = train_command,
                 export_command = export_command,
                 install = llamafactory_install_lines(method),
@@ -2370,6 +2373,7 @@ fn llamafactory_prepare_steps(
     let host = llamafactory_host_note(driver_id, &job.host_class_affinity);
     let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
     let template = llamafactory_template(train_base);
+    let reproduce = phi_qlora_reproduce_note(method, train_base);
     let recipe_line = match method {
         LlamaFactoryMethod::Qlora => format!(
             "The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`).",
@@ -2397,6 +2401,7 @@ fn llamafactory_prepare_steps(
          \n\
          template is {template}. That hint comes from the train base name. Confirm it matches the model. Use that same chat template when you seat the model.\n\
          \n\
+         {reproduce}\
          {bits}\n\
          \n\
          {shape}\n\
@@ -2415,6 +2420,7 @@ fn llamafactory_prepare_steps(
         seat = job.base_model,
         train = train_base,
         template = template,
+        reproduce = reproduce,
         bits = llamafactory_bitsandbytes_note(method),
         shape = llamafactory_shape_note(method),
         gauge = llamafactory_gauge_note(job.max_steps),
@@ -2763,10 +2769,64 @@ fn template_for_segment(segment: &str) -> Option<&'static str> {
         Some("mistral")
     } else if name.contains("gemma") {
         Some("gemma")
-    } else if name.contains("phi") {
-        Some("phi")
     } else {
-        None
+        phi_template_for_segment(&name)
+    }
+}
+
+/// LLaMA-Factory `register_model_group` templates for Phi.
+/// Longer stems win: `phi-3` is a prefix of `phi-3.5` and `phi-3-small`, and `.` is not
+/// an alphanumeric boundary, so the short stem would also match those names.
+/// HF cache directories keep the repo id in one segment (`models--microsoft--Phi-3-mini-4k-instruct`).
+fn phi_template_for_segment(name: &str) -> Option<&'static str> {
+    const GROUPS: &[(&[&str], &str)] = &[
+        (&["phi-4-mini", "phi4-mini"], "phi4_mini"),
+        (&["phi-4", "phi4"], "phi4"),
+        (&["phi-3-small", "phi3-small"], "phi_small"),
+        (&["phi-3.5", "phi3.5"], "phi"),
+        (&["phi-3", "phi3"], "phi"),
+    ];
+    for (stems, template) in GROUPS {
+        if stems.iter().any(|stem| stem_at_boundary(name, stem)) {
+            return Some(*template);
+        }
+    }
+    None
+}
+
+fn stem_at_boundary(haystack: &str, stem: &str) -> bool {
+    if stem.is_empty() {
+        return false;
+    }
+    let bytes = haystack.as_bytes();
+    let mut start = 0;
+    while start < haystack.len() {
+        let Some(rel) = haystack[start..].find(stem) else {
+            return false;
+        };
+        let idx = start + rel;
+        let end = idx + stem.len();
+        let before_ok = idx == 0 || !bytes[idx - 1].is_ascii_alphanumeric();
+        let after_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        start = idx + 1;
+    }
+    false
+}
+
+/// QLoRA handoff when the train base is Phi-3 or Phi-3.5 Instruct.
+/// Empty for other families and for the unquantized LoRA card.
+const PHI_QLORA_REPRODUCE_NOTE: &str = "Reproduce target beside Qwen LoRA/QLoRA. Phi-3 mini, Phi-3 medium, and Phi-3.5 Instruct use LLaMA-Factory template phi. Phi-3-small uses template phi_small. The Qwen LoRA/QLoRA reproduce target stays template qwen, qwen3, or qwen3_nothink. This QLoRA recipe keeps quantization_method bnb and quantization_bit 4. The seat tag and the train base stay separate. This factory does not download weights.";
+
+fn phi_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
+    if method != LlamaFactoryMethod::Qlora {
+        return String::new();
+    }
+    match llamafactory_template(train_base) {
+        "phi" | "phi_small" => format!("{PHI_QLORA_REPRODUCE_NOTE}\n\n"),
+        _ => String::new(),
     }
 }
 
@@ -2840,6 +2900,8 @@ fn llamafactory_recipe_yaml(
          # A leaf such as weights or an HF snapshot hash uses the nearest ancestor that names a family.\n\
          # A Qwen3 name containing instruct and not thinking, or containing nothink, uses qwen3_nothink.\n\
          # Other Qwen3 names use qwen3. Older Qwen names use qwen.\n\
+         # Phi-3 mini, Phi-3 medium, and Phi-3.5 use phi. Phi-3-small uses phi_small.\n\
+         # Phi-4 uses phi4. Phi-4-mini uses phi4_mini.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
@@ -5119,6 +5181,240 @@ mod tests {
         for (train, expect) in cases {
             assert_eq!(llamafactory_template(train), expect, "{train}");
         }
+    }
+
+    #[test]
+    fn llamafactory_template_maps_phi3_and_phi35_including_nested_paths() {
+        let phi = [
+            "microsoft/Phi-3-mini-4k-instruct",
+            "microsoft/Phi-3-mini-128k-instruct",
+            "microsoft/Phi-3-medium-4k-instruct",
+            "microsoft/Phi-3-medium-128k-instruct",
+            "Microsoft/PHI-3-MINI-4K-INSTRUCT",
+            "microsoft/Phi-3.5-mini-instruct",
+            "microsoft/Phi-3.5-MoE-instruct",
+            "Phi-3.5-mini-instruct",
+            "/opt/hf/microsoft/Phi-3-mini-4k-instruct",
+            "./weights/Phi-3.5-mini-instruct",
+            "/opt/hf/microsoft/Phi-3-mini-4k-instruct/snapshots/deadbeef",
+            "/home/user/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/abc123",
+            "/home/user/.cache/huggingface/hub/models--microsoft--Phi-3.5-mini-instruct/snapshots/def456",
+            "/tmp/phi-4/Phi-3-mini-4k-instruct",
+            "/tmp/qwen3-parent/Phi-3.5-mini-instruct",
+        ];
+        for train in phi {
+            assert_eq!(llamafactory_template(train), "phi", "{train}");
+        }
+        let small = [
+            "microsoft/Phi-3-small-8k-instruct",
+            "microsoft/Phi-3-small-128k-instruct",
+            "/opt/hf/microsoft/Phi-3-small-8k-instruct",
+            "/home/user/.cache/huggingface/hub/models--microsoft--Phi-3-small-8k-instruct/snapshots/abc",
+        ];
+        for train in small {
+            assert_eq!(llamafactory_template(train), "phi_small", "{train}");
+        }
+        assert_eq!(llamafactory_template("microsoft/phi-4"), "phi4");
+        assert_eq!(
+            llamafactory_template("microsoft/Phi-4-mini-instruct"),
+            "phi4_mini"
+        );
+        assert_eq!(
+            llamafactory_template("/opt/hf/Phi-4-mini-instruct"),
+            "phi4_mini"
+        );
+        assert_eq!(llamafactory_template("microsoft/phi-2"), "default");
+        assert_eq!(llamafactory_template("org/phi"), "default");
+        assert_eq!(
+            llamafactory_template("Qwen/Qwen2.5-0.5B-Instruct"),
+            "qwen"
+        );
+    }
+
+    #[test]
+    fn phi3_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
+        let root = tmp("phi3-qlora");
+        let pack_path = repo_root().join("examples/fixtures/phi3-instruct.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("microsoft/Phi-3-mini-4k-instruct")
+        );
+        let estate = fixture_estate();
+        let out = root.join("qlora");
+        let doc = run(LLAMAFACTORY_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("microsoft/Phi-3-mini-4k-instruct")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(
+            recipe.lines().any(|line| line.trim() == "template: phi"),
+            "{recipe}"
+        );
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(
+            recipe.contains("model_name_or_path: \"microsoft/Phi-3-mini-4k-instruct\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("llama3")
+            }),
+            "{recipe}"
+        );
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(
+            export.lines().any(|line| line.trim() == "template: phi"),
+            "{export}"
+        );
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"microsoft/Phi-3-mini-4k-instruct\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(
+                text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(text.contains("template phi"), "{text}");
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("microsoft/Phi-3-mini-4k-instruct"), "{text}");
+            assert!(text.contains("quantization_method bnb"), "{text}");
+            assert!(text.contains("quantization_bit 4"), "{text}");
+        }
+        let lora_out = root.join("lora");
+        let lora = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(lora.base_model, "llama3");
+        assert_eq!(
+            lora.train_base_model.as_deref(),
+            Some("microsoft/Phi-3-mini-4k-instruct")
+        );
+        let lora_recipe = std::fs::read_to_string(lora_out.join("recipe.yaml")).unwrap();
+        assert!(
+            lora_recipe
+                .lines()
+                .any(|line| line.trim() == "template: phi"),
+            "{lora_recipe}"
+        );
+        assert!(
+            !lora_recipe.contains("quantization_bit")
+                && !lora_recipe.contains("quantization_method"),
+            "{lora_recipe}"
+        );
+        let lora_next = std::fs::read_to_string(lora_out.join("NEXT.md")).unwrap();
+        assert!(
+            !lora_next.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+            "{lora_next}"
+        );
+
+        let nested_pack = fixture_pack();
+        let nested_estate = with_train_base(
+            seated_estate("llama3"),
+            "./weights/microsoft/Phi-3.5-mini-instruct",
+        );
+        let nested_out = root.join("nested");
+        let nested = run(
+            LLAMAFACTORY_QLORA_ID,
+            &nested_pack,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/microsoft/Phi-3.5-mini-instruct"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: phi"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_method: bnb"),
+            "{nested_recipe}"
+        );
+        assert!(nested_recipe.contains("quantization_bit: 4"), "{nested_recipe}");
+        assert!(nested_recipe.contains(nested_train), "{nested_recipe}");
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        let nested_prepare = std::fs::read_to_string(nested_out.join("PREPARE.md")).unwrap();
+        assert!(nested_next.contains("Reproduce target beside Qwen LoRA/QLoRA."));
+        assert!(nested_prepare.contains("Reproduce target beside Qwen LoRA/QLoRA."));
+        assert!(nested_next.contains(nested_train), "{nested_next}");
+
+        let small_estate = with_train_base(
+            seated_estate("llama3"),
+            "/tmp/cell-one-hf/microsoft/Phi-3-small-8k-instruct",
+        );
+        let small_out = root.join("small");
+        let small = run(
+            LLAMAFACTORY_QLORA_ID,
+            &nested_pack,
+            &small_estate,
+            &small_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(small.base_model, "llama3");
+        assert_eq!(
+            small.train_base_model.as_deref(),
+            Some("/tmp/cell-one-hf/microsoft/Phi-3-small-8k-instruct")
+        );
+        let small_recipe = std::fs::read_to_string(small_out.join("recipe.yaml")).unwrap();
+        assert!(
+            small_recipe
+                .lines()
+                .any(|line| line.trim() == "template: phi_small"),
+            "{small_recipe}"
+        );
+        assert!(
+            small_recipe.contains("quantization_method: bnb"),
+            "{small_recipe}"
+        );
+        let small_next = std::fs::read_to_string(small_out.join("NEXT.md")).unwrap();
+        assert!(small_next.contains("Reproduce target beside Qwen LoRA/QLoRA."));
+        assert!(small_next.contains("phi_small"), "{small_next}");
+
+        let qwen_estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        let qwen_out = root.join("qwen");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &nested_pack,
+            &qwen_estate,
+            &qwen_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let qwen_next = std::fs::read_to_string(qwen_out.join("NEXT.md")).unwrap();
+        let qwen_prepare = std::fs::read_to_string(qwen_out.join("PREPARE.md")).unwrap();
+        assert!(!qwen_next.contains("Reproduce target beside Qwen LoRA/QLoRA."));
+        assert!(!qwen_prepare.contains("Reproduce target beside Qwen LoRA/QLoRA."));
     }
 
     #[test]

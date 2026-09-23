@@ -379,6 +379,11 @@ the last segment. A leaf such as weights or an HF snapshot hash uses
 the nearest ancestor that names a family. A Qwen3 name containing
 instruct and not thinking, or containing nothink, uses qwen3_nothink.
 Other Qwen3 names use qwen3.
+Phi-3 mini, Phi-3 medium, and Phi-3.5 Instruct use template phi.
+Phi-3-small uses phi_small. A nested local path segment matches the same way.
+examples/fixtures/phi3-instruct.pack.json is the Phi-3 smoke pack.
+--driver llamafactory-qlora on that pack is a reproduce target beside
+Qwen LoRA/QLoRA and still writes quantization_method bnb and quantization_bit 4.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
