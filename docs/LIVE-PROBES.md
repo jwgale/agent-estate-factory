@@ -72,8 +72,8 @@ The factory did not train, convert, shell out to ollama, or promote.
 `READY_FOR_LIVE_TEST`: **no**. This prove is not in `make smoke`,
 `make gate-90`, or GitHub Actions.
 
-After create, the seated model answered a short specialist/pong-style
-check. That check is not the recorded `estate probes --live` row and not
+After create, the seated model answered a short specialist/pong-style check.
+That check is not the recorded `estate probes --live` row and not
 the Mac `Pong` row. This page does not record a completion JSON blob for
 it.
 
