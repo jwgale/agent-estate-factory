@@ -48,6 +48,14 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 ```
 
+To seat the adapter in `outputs/` without a merge, pass `--adapter` instead of `--weights`. The command prints a Modelfile whose `FROM` is `prepare.json` `seat_tag` and whose `ADAPTER` is that directory, then the `ollama create` line. It does not run the line. `--weights` still refuses that adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
+```
+
 5. Record the artifact shape. `import-trained` writes `trained_shape` and `trained_paths`. It does not apply and does not promote. After the GGUF exists, `trained_shape` is `gguf`. `outputs/` records `adapter`. `export/` records `merged`.
 
 ```bash
@@ -193,7 +201,7 @@ QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,met
 
 A short gauge run adds `--max-steps 10` to the prepare command. The default recipe stays one epoch.
 
-The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Prepare does not merge. `export.yaml` is the merge card. `adapter_name_or_path` is the same path as recipe `output_dir`. `NEXT.md` says the merge has not happened, and `export/` has no merged weights until `llamafactory-cli export` exits 0. An early stop may leave the adapter only under `checkpoint-<step>` inside that output directory. Point `adapter_name_or_path` at that checkpoint directory. Prepare does not rewrite `export.yaml` after train. A Modelfile that `llamafactory-cli export` writes into the export directory belongs to that tool. Do not set `quantization_bit` on that merge, and do not merge a quantized base. `import-trained` refuses `export.yaml` when a real key `quantization_bit` or `quantization_method` is set (`refuse:export`). A comment line does not trip that refuse. LLaMA-Factory does not write GGUF. After the merge, `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line (`--outtype auto`, outfile beside the export directory). Then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER` for the adapter directory. The seat tag is the id the cell already runs. Use the chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create`, does not run `convert_hf_to_gguf.py`, and does not run that smoke eval.
+The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Prepare does not merge. `export.yaml` is the merge card. `adapter_name_or_path` is the same path as recipe `output_dir`. `NEXT.md` says the merge has not happened, and `export/` has no merged weights until `llamafactory-cli export` exits 0. An early stop may leave the adapter only under `checkpoint-<step>` inside that output directory. Point `adapter_name_or_path` at that checkpoint directory. Prepare does not rewrite `export.yaml` after train. A Modelfile that `llamafactory-cli export` writes into the export directory belongs to that tool. Do not set `quantization_bit` on that merge, and do not merge a quantized base. `import-trained` refuses `export.yaml` when a real key `quantization_bit` or `quantization_method` is set (`refuse:export`). A comment line does not trip that refuse. LLaMA-Factory does not write GGUF. After the merge, `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line (`--outtype auto`, outfile beside the export directory). Then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF. To load the adapter without a merge, `estate enrich local-seat --adapter` prints a Modelfile. `FROM` is the seat tag (an Ollama model of the same train base). `ADAPTER` is the adapter directory. The command does not run `ollama create`. `--weights` on that command stays the merged or GGUF path. Use the chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create`, does not run `convert_hf_to_gguf.py`, and does not run that smoke eval.
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This card does not call Unsloth and does not write a script.
 
@@ -497,7 +505,7 @@ estate enrich local-seat \
 
 Point `--weights` at a `.gguf` file after the llama.cpp convert. The command prints a Modelfile whose FROM is that file. When a LLaMA-Factory Modelfile sits in the same directory, TEMPLATE and PARAMETER lines are copied into the printed text. The bytes on disk stay as they were.
 
-`import-trained` records the same path on the `local_slm` proposal and writes `trained_shape` and `trained_paths`. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`, and a Modelfile there is part of that shape. A GGUF is a `.gguf` file. An adapter `output_dir` (`adapter_config.json`) stays on `import-trained`. `local-seat` refuses that directory, and it refuses `config.json` plus only `adapter_model*.safetensors`. A symlinked weights path or a symlinked marker is `refuse:seat`. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
+`import-trained` records the same path on the `local_slm` proposal and writes `trained_shape` and `trained_paths`. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`, and a Modelfile there is part of that shape. A GGUF is a `.gguf` file. An adapter `output_dir` (`adapter_config.json`) is the `--adapter` print on `local-seat` (`FROM` the seat tag, `ADAPTER` that directory). `--weights` still refuses that directory, and it refuses `config.json` plus only `adapter_model*.safetensors`. A merged export or a GGUF passed to `--adapter` is `refuse:adapter`. A symlinked weights path, a symlinked adapter path, or a symlinked marker is `refuse:seat` or `refuse:adapter`. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
 
 `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` carry this chain.
 

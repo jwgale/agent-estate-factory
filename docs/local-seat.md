@@ -76,6 +76,27 @@ estate enrich local-seat \
   --weights <merged-hf-dir>
 ```
 
+## Adapter seat without a merge
+
+`--adapter` prints the no-merge seat for an adapter `output_dir`. That directory holds `adapter_config.json` (the same marker `import-trained` accepts for `trained_shape=adapter`) and the adapter weights when the train wrote them (`adapter_model.safetensors`, `adapter_model.bin`, or `adapter_model*.safetensors`).
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
+```
+
+The report shape is `adapter`. It prints a Modelfile:
+
+```
+FROM <seat_tag>
+ADAPTER <adapter-directory>
+```
+
+`FROM` is `prepare.json` `seat_tag` (the same string as `base_model`). That Ollama model must already be the train base. `ADAPTER` is the adapter directory. The report then prints `ollama create cell-enrich-<pack-id> -f <directory>/Modelfile`. The command does not write that file, does not run the line, does not merge, and does not promote.
+
+`--weights` still refuses this directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`. A symlinked `--adapter` path, or a symlinked marker (`adapter_config.json`, `adapter_model*.safetensors`, `Modelfile`), is `refuse:adapter`. The open uses `O_NOFOLLOW`.
+
 ## Refuses
 
 | Weights | Stop |
@@ -85,7 +106,10 @@ estate enrich local-seat \
 | `config.json` without a `.safetensors` file whose name does not start with `adapter_model` | `refuse:seat` |
 | `config.json` plus only `adapter_model*.safetensors` | `refuse:seat` (not a merged export) |
 | `.safetensors` without `config.json` | `refuse:seat` |
-| Adapter directory (`adapter_config.json`) | `refuse:seat` (record it with `import-trained`) |
+| Adapter directory on `--weights` (`adapter_config.json`) | `refuse:seat` (pass `--adapter` to print the no-merge seat) |
+| `--adapter` path missing `adapter_config.json` | `refuse:adapter` |
+| `--adapter` path is a merged export or a GGUF | `refuse:adapter` (pass `--weights`) |
+| Symlinked `--adapter`, or a symlinked adapter marker | `refuse:adapter` |
 | Symlinked `--weights`, or a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`) | `refuse:seat` |
 | More than one of adapter, merged, and GGUF | `refuse:seat` |
 | More than one `.gguf` file in a directory | `refuse:seat` |

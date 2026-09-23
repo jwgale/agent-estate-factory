@@ -607,15 +607,21 @@ pub(crate) enum EnrichCommand {
         #[arg(long)]
         weights: PathBuf,
     },
-    /// Validate a merged export directory or a GGUF and print the ollama create line.
+    /// Print the ollama create line for a merged export, a GGUF, or an adapter directory.
     /// Does not create, does not shell out, and does not promote.
     LocalSeat {
         /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare.json.
         #[arg(long)]
         prepared: PathBuf,
         /// Merged export directory (config.json and .safetensors, optional Modelfile) or a .gguf file.
-        #[arg(long)]
-        weights: PathBuf,
+        /// An adapter directory is refuse:seat. Not with --adapter.
+        #[arg(long, conflicts_with = "adapter", required_unless_present = "adapter")]
+        weights: Option<PathBuf>,
+        /// Adapter output_dir (adapter_config.json, the same marker import-trained accepts).
+        /// Prints a Modelfile whose FROM is prepare.json seat_tag and whose ADAPTER is this directory.
+        /// A merged export or a GGUF is refuse:adapter. Not with --weights.
+        #[arg(long, conflicts_with = "weights", required_unless_present = "weights")]
+        adapter: Option<PathBuf>,
     },
     /// List registered TrainEnrichDriver cards. Does not prepare.
     Drivers,
