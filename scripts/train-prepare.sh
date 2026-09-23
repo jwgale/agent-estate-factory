@@ -401,6 +401,51 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  phi prepare must stay unpromoted")
 PY
 
+LLAMA32_PACK="$ROOT/examples/fixtures/llama32-instruct.pack.json"
+echo "-- llama 3.2 instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$LLAMA32_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/llama32-qlora"
+grep -q "^template: llama3$" "$WORKDIR/llama32-qlora/recipe.yaml"
+grep -q "^template: llama3$" "$WORKDIR/llama32-qlora/export.yaml"
+if grep -q "^template: llama3_" "$WORKDIR/llama32-qlora/recipe.yaml"; then
+  echo "FAIL  llama32 recipe used a llama3_ template name"
+  exit 1
+fi
+if grep -q "^template: mllama$" "$WORKDIR/llama32-qlora/recipe.yaml"; then
+  echo "FAIL  llama32 instruct recipe used the vision template"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/llama32-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/llama32-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "meta-llama/Llama-3.2-3B-Instruct"' "$WORKDIR/llama32-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/llama32-qlora/recipe.yaml"; then
+  echo "FAIL  llama32 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/llama32-qlora/export.yaml"; then
+  echo "FAIL  llama32 export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-qlora/PREPARE.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/llama32-qlora/NEXT.md" "$WORKDIR/llama32-qlora/PREPARE.md"; then
+  echo "FAIL  llama32 prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/llama32-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  llama32 seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "meta-llama/Llama-3.2-3B-Instruct":
+    raise SystemExit(f"FAIL  llama32 train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  llama32 prepare must stay unpromoted")
+PY
+
 echo "-- axolotl cards refuse a seat tag with no train base --"
 for driver in axolotl-lora axolotl-qlora; do
   set +e
