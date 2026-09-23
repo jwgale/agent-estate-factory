@@ -69,6 +69,35 @@ fn help_names_local_seat() {
     assert!(body.contains("refuse:runtime"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    assert!(
+        body.contains("On that GGUF print-only path"),
+        "{body}"
+    );
+    assert!(
+        body.contains(
+            "the report uses the on-disk Modelfile when FROM already names the artifact"
+        ),
+        "{body}"
+    );
+    assert!(body.contains("Do not write $PREPARED/Modelfile again"), "{body}");
+    let merged_example = "estate enrich local-seat \\\n    --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\\n    --weights .cell/enrich/overnight-traces/llamafactory-qlora/export\n";
+    let merged_at = body
+        .find(merged_example)
+        .expect("merged export local-seat example in help");
+    let after_merged = &body[merged_at + merged_example.len()..];
+    let adapter_at = after_merged
+        .find("Pass --adapter")
+        .expect("adapter section follows the merged example");
+    assert!(
+        !after_merged[..adapter_at].contains("Write that file from the printed contents"),
+        "help must not tell the merged export seat to write the Modelfile"
+    );
+    assert!(
+        after_merged[..adapter_at].contains(
+            "the report uses the on-disk Modelfile when FROM already names the artifact"
+        ),
+        "the merged example must say the report uses the on-disk Modelfile"
+    );
 }
 
 #[test]

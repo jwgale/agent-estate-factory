@@ -832,11 +832,13 @@ estate enrich local-seat validates that same merged directory
 llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora train prepare.
 adapter_model*.safetensors is not merged evidence. A symlinked weights
 path or a symlinked marker is refuse:seat. It prints the ollama create
-line. For a GGUF it also prints the Modelfile whose FROM is that file,
-plus llama-cli -m and llama-server -m --port 8080 for that file.
+line. For a GGUF whose Modelfile is not already on disk, it also prints
+the Modelfile whose FROM is that file, plus llama-cli -m and
+llama-server -m --port 8080 for that file. On that GGUF print-only path,
 local-seat is print-only. It prints the Modelfile and does not write
 $PREPARED/Modelfile. Write that file from the printed contents before
 ollama create.
+When modelfile_on_disk=true, the report uses the on-disk Modelfile when FROM already names the artifact. Do not write $PREPARED/Modelfile again.
 Ollama stays the default print. --runtime llama.cpp selects those
 llama.cpp lines and still prints the Ollama line. A merged directory
 is not a llama.cpp seat: the report points at gguf-convert first and
@@ -862,6 +864,10 @@ local_slm proposal. local-seat does not promote.
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
     --weights .cell/enrich/overnight-traces/llamafactory-qlora/export
 
+That --weights path is the merged export directory. When its Modelfile
+is already on disk, the report uses the on-disk Modelfile when FROM already names the artifact.
+Do not write $PREPARED/Modelfile again.
+
 Pass --adapter instead of --weights to print the no-merge seat.
 --adapter is an adapter output_dir (adapter_config.json, the same
 marker import-trained accepts, plus the adapter weights when the train
@@ -871,9 +877,12 @@ directory (refuse:seat). A merged export or a GGUF passed to --adapter
 is refuse:adapter. unsloth-qlora and mlx-lm-lora --adapter are
 refuse:adapter even when the directory is a real adapter. A symlinked adapter path or a symlinked marker is
 refused the same way. The command prints the ollama create line and
-does not run it. local-seat is print-only. It prints the Modelfile
+does not run it. When the adapter Modelfile is not already on disk,
+local-seat is print-only. It prints the Modelfile
 and does not write that file. Write that file from the printed
-contents before ollama create. llama.cpp does not load that adapter directory in one
+contents before ollama create. When FROM is the seat tag and ADAPTER
+already names that directory, the report uses that on-disk Modelfile.
+llama.cpp does not load that adapter directory in one
 line. --runtime llama.cpp with --adapter is refuse:runtime. Another
 runtime name is refuse:runtime after the shape checks.
 
@@ -925,8 +934,8 @@ estate enrich gguf-convert.
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
     --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 
-That prints ollama create for cell-enrich-<pack-id>. local-seat is
-print-only. It prints the Modelfile and does not write
+That prints ollama create for cell-enrich-<pack-id>. On that GGUF
+path, local-seat is print-only. It prints the Modelfile and does not write
 $PREPARED/Modelfile. Write that file from the printed contents before
 ollama create. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
@@ -1010,8 +1019,8 @@ estate enrich gguf-convert.
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
     --weights .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
 
-That prints ollama create for cell-enrich-<pack-id>. local-seat is
-print-only. It prints the Modelfile and does not write
+That prints ollama create for cell-enrich-<pack-id>. On that GGUF
+path, local-seat is print-only. It prints the Modelfile and does not write
 $PREPARED/Modelfile. Write that file from the printed contents before
 ollama create. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
@@ -1078,9 +1087,10 @@ It does not convert.
     --prepared <prepared> --weights <prepared>/export.gguf
 
 That prints ollama create for cell-enrich-<pack-id>, plus
-llama-cli -m and llama-server -m. local-seat is print-only. It prints
-the Modelfile and does not write $PREPARED/Modelfile. Write that file
-from the printed contents before ollama create. It does not create the
+llama-cli -m and llama-server -m. On that GGUF path, local-seat is
+print-only. It prints the Modelfile and does not write
+$PREPARED/Modelfile. Write that file from the printed contents before
+ollama create. It does not create the
 model. After you write that file, run the printed ollama create line
 yourself. The same step stands when you already ran ollama create outside
 this factory. This factory did not run ollama create. The standing
