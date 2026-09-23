@@ -104,6 +104,8 @@ Train:      make train-prepare
 QLoRA walk: make qlora-journey
 LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
+Axolotl:    make axolotl-qlora-journey
+Ax chain:   make uniqueness-axolotl
 Train next: make train-next
 Full print: make uniqueness-full
 LoRA train: make train-next-lora
@@ -395,6 +397,8 @@ READY_FOR_LIVE_TEST stays no.
   make train-next
   make lora-journey
   make seat-journey
+  make axolotl-qlora-journey
+  make uniqueness-axolotl
   make uniqueness-ladder
   make uniqueness-full
   make train-next-lora
@@ -1137,6 +1141,27 @@ SKIP live seat. CELL_SEAT_LIVE=1 does not run those programs.
 Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 10, Target C seat ladder).
+
+Axolotl QLoRA journey
+---------------------
+Print-only popular-config parity for axolotl-qlora.
+make axolotl-qlora-journey prepares that card on a throwaway copy of
+examples/estate.yaml. Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.
+axolotl.yml matches examples/llama-3/qlora.yml: adapter qlora, load_in_4bit
+true, sequence_len 4096, lora_r 32. base_model is that train base.
+A seat tag with no train base is refuse:train-base. A missing adapter is
+refuse:adapter. A missing merged directory or GGUF is refuse:seat.
+Before the good merged stub, a Qwen-shaped outputs/merged is refuse:tokenizer.
+The good stub is config.json {} plus model.safetensors (not adapter_model).
+The GGUF stub starts with GGUF magic. The script prints axolotl merge-lora,
+including --dequant, then gguf-convert, local-seat, and import-trained.
+It prints SKIP live train, SKIP live convert, and SKIP live seat.
+It does not run axolotl, does not convert, does not run ollama, and does
+not promote. make uniqueness-axolotl runs the prepare-assert phase, then
+the seat-print phase. Both stay print-only. Not in make smoke, make gate-90,
+or Actions. READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 11).
+
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
 Journeys: docs/operator-enrich-journeys.md.
