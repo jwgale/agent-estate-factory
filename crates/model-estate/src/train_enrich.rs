@@ -388,10 +388,10 @@ const TRAIN_RECIPE_DRIVERS: &[&str] = &[
 const TRAINED_SHAPE_ADAPTER: &str = "adapter";
 /// `import-trained` shape: merged `export_dir` with `config.json` and a non-adapter safetensors file.
 const TRAINED_SHAPE_MERGED: &str = "merged";
-/// `import-trained` shape: a `.gguf` file, or a directory that holds one.
+/// `import-trained` shape: one `.gguf` file, or a directory with exactly one.
 const TRAINED_SHAPE_GGUF: &str = "gguf";
 
-const TRAINED_SHAPE_HINT: &str = "import-trained accepts an adapter output_dir (a directory with adapter_config.json), a merged export_dir (a directory with config.json and at least one .safetensors file whose name does not start with adapter_model, plus an optional Modelfile), or a GGUF file (.gguf). Marker symlinks are refused";
+const TRAINED_SHAPE_HINT: &str = "import-trained accepts an adapter output_dir (a directory with adapter_config.json), a merged export_dir (a directory with config.json and at least one .safetensors file whose name does not start with adapter_model, plus an optional Modelfile), or a GGUF path (one .gguf file, or a directory with exactly one top-level .gguf). Marker symlinks are refused";
 
 fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
@@ -1446,7 +1446,7 @@ fn next_markdown(
                  \n\
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {export}\n\
                  \n\
-                 GGUF path (a .gguf file converted after the merge; LLaMA-Factory does not write GGUF):\n\
+                 GGUF path (one .gguf file, or a directory with exactly one top-level .gguf; LLaMA-Factory does not write GGUF):\n\
                  \n\
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
@@ -1496,7 +1496,7 @@ fn next_markdown(
                  \n\
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {outputs}\n\
                  \n\
-                 GGUF path (a .gguf file):\n\
+                 GGUF path (one .gguf file, or a directory with exactly one top-level .gguf):\n\
                  \n\
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
@@ -3822,6 +3822,17 @@ fn classify_trained_artifact(path: &Path) -> Result<TrainedArtifact, ModelError>
         if name == "adapter_model.bin" {
             adapter_weights.push(file.clone());
         }
+    }
+    if ggufs.len() > 1 {
+        let names = ggufs
+            .iter()
+            .map(|file| file_name_lower(file))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has more than one top-level .gguf file ({names}). Point --adapter at one .gguf file, or at a directory that holds exactly one. {TRAINED_SHAPE_HINT}",
+            path.display()
+        )));
     }
     let adapter_hit = adapter_config.is_some();
     let merged_hit = model_config.is_some() && !merged_weights.is_empty();
@@ -7626,6 +7637,54 @@ mod tests {
             gguf_prepare.trained_paths.as_ref(),
             gguf_proposal.trained_paths.as_ref()
         );
+        let gguf_record = std::fs::read(out.join("prepare.json")).unwrap();
+        let gguf_proposal_bytes = std::fs::read(out.join("binding-proposal.json")).unwrap();
+
+        let many = root.join("many-gguf");
+        std::fs::create_dir_all(&many).unwrap();
+        std::fs::write(many.join("b.gguf"), "b").unwrap();
+        std::fs::write(many.join("a.gguf"), "a").unwrap();
+        let many_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &many,
+            curator: "jason",
+        })
+        .unwrap_err();
+        let many_text = many_err.to_string();
+        assert!(many_text.contains("refuse:adapter"), "{many_text}");
+        assert!(
+            many_text.contains("more than one top-level .gguf"),
+            "{many_text}"
+        );
+        assert!(many_text.contains("a.gguf"), "{many_text}");
+        assert!(many_text.contains("b.gguf"), "{many_text}");
+        assert_eq!(std::fs::read(out.join("prepare.json")).unwrap(), gguf_record);
+        assert_eq!(
+            std::fs::read(out.join("binding-proposal.json")).unwrap(),
+            gguf_proposal_bytes
+        );
+
+        let one = root.join("one-gguf");
+        std::fs::create_dir_all(one.join("extra")).unwrap();
+        std::fs::write(one.join("extra").join("other.gguf"), "nested").unwrap();
+        std::fs::write(one.join("only.gguf"), "gguf-fixture").unwrap();
+        let one_proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &lora_out,
+            tag,
+            adapter: &one,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(one_proposal.trained_shape.as_deref(), Some("gguf"));
+        assert!(one_proposal.local_path.ends_with("only.gguf"));
+        let one_paths = one_proposal.trained_paths.unwrap();
+        assert_eq!(one_paths[0], one.display().to_string());
+        assert_eq!(one_paths.len(), 2);
+        assert!(one_paths.iter().any(|path| path.ends_with("only.gguf")));
+        assert!(one_paths.iter().all(|path| !path.contains("other.gguf")));
 
         let mixed = root.join("mixed");
         std::fs::create_dir_all(&mixed).unwrap();

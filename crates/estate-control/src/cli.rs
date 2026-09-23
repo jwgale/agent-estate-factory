@@ -560,7 +560,7 @@ pub(crate) enum EnrichCommand {
         /// Local tag created outside the factory. Must be `cell-enrich-{pack_id}`.
         #[arg(long)]
         tag: String,
-        /// Adapter output_dir (adapter_config.json), merged export_dir (config.json and a non-adapter .safetensors file, optional Modelfile), or a .gguf file.
+        /// Adapter output_dir (adapter_config.json), merged export_dir (config.json and a non-adapter .safetensors file, optional Modelfile), or one .gguf file (a directory must hold exactly one).
         #[arg(long)]
         adapter: PathBuf,
         /// Import gate. Must match locked curator `jason`.

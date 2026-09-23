@@ -447,7 +447,8 @@ and at least one .safetensors file whose name does not start with
 adapter_model. adapter_model.safetensors is an adapter weight, not a merged
 export. A Modelfile in that directory is
 recorded when present (the export.yaml export_dir, export/). A GGUF path
-is a .gguf file. Marker files must be regular files in that directory.
+is one .gguf file, or a directory with exactly one top-level .gguf file.
+A directory with more than one is refuse:adapter. Marker files must be regular files in that directory.
 A symlinked marker, or a symlinked --adapter path, is refuse:adapter.
 NEXT.md on llamafactory-lora and llamafactory-qlora prints
 the exact import-trained command for each shape, with the prepared

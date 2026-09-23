@@ -10,6 +10,7 @@ Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --
 - A merged export counts `.safetensors` files whose names do not start with `adapter_model`. `config.json` plus `adapter_model.safetensors` and no `adapter_config.json` is `refuse:adapter`.
 - Marker files are regular files. `import-trained` opens each one with `O_NOFOLLOW` and pins that handle inside the artifact directory, the same spirit as `--from-feed`. A symlinked marker or a symlinked `--adapter` path is `refuse:adapter`. The Modelfile and the primary file are read from those handles. The suite does not reproduce a concurrent swap; a path that becomes a symlink before the open fails closed.
 - Classify and scan finish before any write. The proposal and the `prepare.json` trained fields publish together. A failed publish restores the previous prepare and proposal bytes and removes a partial proposal, so apply cannot accept an import that omitted `trained_shape` and `trained_paths`.
+- A GGUF directory with more than one top-level `.gguf` is `refuse:adapter`. Point `--adapter` at one `.gguf` file, or at a directory that holds exactly one. A `.gguf` in a subdirectory does not count.
 - `READY_FOR_LIVE_TEST`: no.
 
 ## This slice — Axolotl LoRA and QLoRA prepare
