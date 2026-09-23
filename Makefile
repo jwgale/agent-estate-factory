@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder train-next
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full train-next
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -214,6 +214,14 @@ lf-beachhead-prepare:
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 uniqueness-ladder:
 	bash scripts/uniqueness-ladder.sh
+
+# Opt-in print-only Target C full uniqueness print chain:
+# qlora-journey, then train-next, then seat-journey.
+# Does not train, merge, convert, seat, or promote.
+# Does not change uniqueness-ladder (that chain does not run train-next).
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-full:
+	bash scripts/uniqueness-full.sh
 
 # Opt-in print-only Target C train step: after llamafactory-qlora prepare,
 # print the NEXT.md train recipe. Does not train, merge, convert, seat, or promote.

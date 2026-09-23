@@ -121,6 +121,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | `make seat-journey` | Opt-in Qwen QLoRA seat ladder. Prints merge, convert, seat, and import against fixture stubs. Does not train. Not in smoke or Actions. Not a live train. |
 | `make train-next` | Opt-in print-only Target C train step. Prints the NEXT.md llamafactory-cli train recipe after prepare. Does not train. Not in smoke or Actions. Not a live train. |
 | `make uniqueness-ladder` | Opt-in print-only Target C uniqueness chain: qlora-journey then seat-journey. Does not run train-next. Does not train. Not in smoke or Actions. Not a live train. |
+| `make uniqueness-full` | Opt-in print-only Target C full uniqueness print chain: qlora-journey, then train-next, then seat-journey. Does not train. Not in smoke or Actions. Not a live train. |
 | `make lf-beachhead-prepare` | Opt-in print-only prepare walk of the 16 LLaMA-Factory beachhead matrix fixtures. Checks prepare artifacts. Does not train. Not in smoke or Actions. Not a live train. |
 
 Fail closed: sacred exclusions, SKU in ids (including probe ids), unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote, Sanctum-as-Cyera bleed, omit-locked sacred file.
