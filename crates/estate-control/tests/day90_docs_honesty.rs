@@ -1250,6 +1250,323 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     }
 }
 
+#[test]
+fn uniqueness_full_lora_chains_prepare_train_seat_and_leaves_qlora_chain() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in ["uniqueness-full-lora:", "train-next-lora:", "seat-journey-lora:"] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/uniqueness-full-lora.sh"));
+    assert!(makefile.contains(
+        "TRAIN_CARD=llamafactory-qlora bash scripts/train-next.sh"
+    ));
+    assert!(makefile.contains(
+        "TRAIN_CARD=llamafactory-lora bash scripts/train-next.sh"
+    ));
+    assert!(makefile.contains(
+        "SEAT_CARD=llamafactory-qlora bash scripts/seat-journey.sh"
+    ));
+    assert!(makefile.contains(
+        "SEAT_CARD=llamafactory-lora bash scripts/seat-journey.sh"
+    ));
+    let phony = makefile.lines().next().unwrap_or("");
+    for name in ["uniqueness-full-lora", "train-next-lora", "seat-journey-lora"] {
+        assert!(phony.contains(name), "{name} must be a phony target");
+    }
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    for name in ["uniqueness-full-lora", "train-next-lora", "seat-journey-lora"] {
+        assert!(!gate90.contains(name), "gate-90 must not run {name}: {gate90}");
+        assert!(!smoke.contains(name), "smoke must not run {name}: {smoke}");
+    }
+    assert_eq!(
+        makefile
+            .split("\nuniqueness-full:\n")
+            .nth(1)
+            .expect("uniqueness-full recipe")
+            .lines()
+            .next()
+            .unwrap()
+            .trim(),
+        "bash scripts/uniqueness-full.sh",
+        "uniqueness-full recipe must stay the QLoRA chain"
+    );
+
+    let script_path = root.join("scripts/uniqueness-full-lora.sh");
+    assert!(script_path.is_file(), "scripts/uniqueness-full-lora.sh missing");
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "Does not train, merge, convert, seat, or promote.",
+        "make lora-journey",
+        "make train-next-lora",
+        "make seat-journey-lora",
+        "make uniqueness-full stays qlora-journey, then train-next, then seat-journey.",
+        "make uniqueness-ladder stays qlora-journey then seat-journey and does not run train-next.",
+        "Live train, live convert, and live seat still need a human GPU host and stay skipped.",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "PASS  uniqueness-full-lora",
+    ] {
+        assert!(script.contains(needle), "uniqueness-full-lora missing {needle}");
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "uniqueness-full-lora must keep READY_FOR_LIVE_TEST no"
+    );
+    let invokes: Vec<&str> = script
+        .lines()
+        .filter(|line| line.contains("make -C"))
+        .collect();
+    assert_eq!(
+        invokes,
+        vec![
+            "if ! make -C \"$ROOT\" lora-journey; then",
+            "if ! make -C \"$ROOT\" train-next-lora; then",
+            "if ! make -C \"$ROOT\" seat-journey-lora; then",
+        ],
+        "chain must be lora-journey, then train-next-lora, then seat-journey-lora"
+    );
+    let lora_invoke = script
+        .find("make -C \"$ROOT\" lora-journey")
+        .expect("chain must invoke lora-journey");
+    let train_invoke = script
+        .find("make -C \"$ROOT\" train-next-lora")
+        .expect("chain must invoke train-next-lora");
+    let seat_invoke = script
+        .find("make -C \"$ROOT\" seat-journey-lora")
+        .expect("chain must invoke seat-journey-lora");
+    assert!(lora_invoke < train_invoke && train_invoke < seat_invoke);
+    assert!(script[lora_invoke..train_invoke].contains("exit 1"));
+    assert!(script[train_invoke..seat_invoke].contains("exit 1"));
+    assert!(script[seat_invoke..].contains("exit 1"));
+    assert!(
+        !script.contains("make -C \"$ROOT\" qlora-journey")
+            && !script.contains("make -C \"$ROOT\" train-next;")
+            && !script.contains("make -C \"$ROOT\" seat-journey;"),
+        "uniqueness-full-lora must not run the QLoRA chain"
+    );
+    let commands: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#') && !trimmed.starts_with("echo")
+        })
+        .collect();
+    assert!(
+        !commands.join("\n").contains("lf-beachhead-prepare"),
+        "uniqueness-full-lora must not run lf-beachhead-prepare"
+    );
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') || trimmed.starts_with("echo") {
+            return false;
+        }
+        trimmed.contains("llamafactory-cli")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+            || trimmed.contains("import-trained")
+            || trimmed.contains("gguf-convert")
+            || trimmed.contains("local-seat")
+            || trimmed.contains("merge-adapt")
+    });
+    assert!(
+        !shells_out,
+        "uniqueness-full-lora must not train, merge, convert, seat, or import"
+    );
+
+    let train = std::fs::read_to_string(root.join("scripts/train-next.sh")).unwrap();
+    for needle in [
+        "TRAIN_CARD",
+        "llamafactory-lora",
+        "llamafactory-qlora",
+        "^lora_rank: 8$",
+        "^packing: false$",
+        "does not require bitsandbytes",
+        "must not install bitsandbytes",
+        "quantization_bit: 4",
+        "pip install 'bitsandbytes>=0.49'",
+        "make uniqueness-ladder stays qlora-journey then seat-journey.",
+        "CELL_TRAIN_LIVE=1 is set. This journey stays print-only.",
+        "SKIP  bitsandbytes (not importable; informational)",
+        "PASS  train-next-lora",
+    ] {
+        assert!(train.contains(needle), "train-next missing LoRA twin needle {needle}");
+    }
+    assert!(train.contains("case \"$TRAIN_CARD\" in"));
+    assert!(train.contains("llamafactory-qlora|llamafactory-lora)"));
+
+    let seat = std::fs::read_to_string(root.join("scripts/seat-journey.sh")).unwrap();
+    for needle in [
+        "SEAT_CARD",
+        "llamafactory-lora",
+        "llamafactory-qlora",
+        "^lora_rank: 8$",
+        "quantization_bit: 4",
+        "refuse:adapter",
+        "refuse:tokenizer",
+        "refuse:seat",
+        "5090-shaped",
+        "PASS  seat-journey (Target A LoRA seat ladder printed;",
+        "PASS  seat-journey (Target C seat ladder printed;",
+    ] {
+        assert!(seat.contains(needle), "seat-journey missing LoRA twin needle {needle}");
+    }
+    let bad = seat
+        .find("-- 5090-shaped export tokenizer is refuse:tokenizer --")
+        .expect("refuse:tokenizer step");
+    let replace = seat
+        .find("-- replace the broken tokenizer with the good merged stub --")
+        .expect("good stub replace");
+    assert!(bad < replace, "refuse:tokenizer must stay before the good stub");
+
+    let qlora_chain = std::fs::read_to_string(root.join("scripts/uniqueness-full.sh")).unwrap();
+    assert!(
+        !qlora_chain.contains("uniqueness-full-lora")
+            && !qlora_chain.contains("train-next-lora")
+            && !qlora_chain.contains("seat-journey-lora"),
+        "uniqueness-full must stay the QLoRA chain"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("through PR #157"),
+        "GATE-90 header must keep tip through PR #157: {head}"
+    );
+    assert!(
+        head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "GATE-90 header must keep the PR #157 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
+        "GATE-90 header must not freeze tip at PR #155: {head}"
+    );
+    assert!(
+        !head.contains("through PR #158") && !head.contains("through PR #159"),
+        "GATE-90 header must not claim tip through PR #158 or PR #159: {head}"
+    );
+    let remaining = gate
+        .split("## Remaining Day-90+ (honest)")
+        .nth(1)
+        .expect("remaining section");
+    let row = remaining
+        .lines()
+        .find(|line| line.contains("| `make uniqueness-full-lora` |"))
+        .expect("remaining row for uniqueness-full-lora");
+    let row_lora = row.find("lora-journey").expect("row names lora-journey");
+    let row_train = row.find("train-next-lora").expect("row names train-next-lora");
+    let row_seat = row.find("seat-journey-lora").expect("row names seat-journey-lora");
+    assert!(row_lora < row_train && row_train < row_seat, "{row}");
+    assert!(row.contains("Does not train"), "{row}");
+    assert!(row.contains("Not in smoke or Actions"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+    let qlora_row = remaining
+        .lines()
+        .find(|line| line.contains("| `make uniqueness-full` |"))
+        .expect("remaining row for uniqueness-full");
+    assert!(
+        qlora_row.contains("qlora-journey, then train-next, then seat-journey"),
+        "{qlora_row}"
+    );
+    assert!(
+        !qlora_row.contains("uniqueness-full-lora"),
+        "QLoRA remaining row must stay the QLoRA chain: {qlora_row}"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains(
+        "`make uniqueness-full-lora` runs the Target A print chain in that same order on the unquantized card: `make lora-journey`, then `make train-next-lora`, then `make seat-journey-lora`."
+    ));
+    assert!(journey.contains("`make uniqueness-full` runs the same prints with the train recipe in the middle: `make qlora-journey`, then `make train-next`, then `make seat-journey`."));
+    let train_doc = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train_doc.contains(
+        "`make uniqueness-full-lora` runs `make lora-journey`, then `make train-next-lora`, then `make seat-journey-lora`."
+    ));
+    assert!(train_doc.contains(
+        "`make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`."
+    ));
+    assert!(
+        !journey.contains("READY_FOR_LIVE_TEST: yes")
+            && !train_doc.contains("READY_FOR_LIVE_TEST: yes")
+    );
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make uniqueness-full-lora runs make lora-journey, then make\ntrain-next-lora, then make seat-journey-lora."
+    ));
+    assert!(help.contains(
+        "make uniqueness-full runs make qlora-journey, then make train-next,\nthen make seat-journey."
+    ));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — print-only Target A uniqueness-full-lora")
+        .nth(1)
+        .expect("CHANGELOG missing the Target A uniqueness-full-lora slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("make uniqueness-full-lora"), "{slice}");
+    assert!(slice.contains("scripts/uniqueness-full-lora.sh"), "{slice}");
+    assert!(slice.contains("make train-next-lora"), "{slice}");
+    assert!(slice.contains("make seat-journey-lora"), "{slice}");
+    assert!(slice.contains("refuse:adapter"), "{slice}");
+    assert!(slice.contains("refuse:tokenizer"), "{slice}");
+    assert!(slice.contains("refuse:seat"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+    let slice_lora = slice.find("make lora-journey").expect("changelog names lora-journey");
+    let slice_train = slice
+        .find("make train-next-lora")
+        .expect("changelog names train-next-lora");
+    let slice_seat = slice
+        .find("make seat-journey-lora")
+        .expect("changelog names seat-journey-lora");
+    assert!(
+        slice_lora < slice_train && slice_train < slice_seat,
+        "changelog order must be lora-journey, then train-next-lora, then seat-journey-lora"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("uniqueness-full-lora")
+                && !body.contains("train-next-lora")
+                && !body.contains("seat-journey-lora"),
+            "{rel} must not run the LoRA uniqueness chain"
+        );
+    }
+}
+
 fn extract_shell_fn(script: &str, name: &str) -> String {
     let marker = format!("{name}() {{");
     let start = script
@@ -1449,7 +1766,11 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "lf-beachhead-prepare must not require cargo build before a local estate binary"
     );
 
-    for rel in ["scripts/uniqueness-full.sh", "scripts/uniqueness-ladder.sh"] {
+    for rel in [
+        "scripts/uniqueness-full.sh",
+        "scripts/uniqueness-ladder.sh",
+        "scripts/uniqueness-full-lora.sh",
+    ] {
         let script = std::fs::read_to_string(root.join(rel)).unwrap();
         assert!(
             !script.contains("resolve_estate") && !script.contains("target/release/estate"),
@@ -1787,7 +2108,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
+    assert_eq!(head, " print-only Target A uniqueness-full-lora");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -2142,7 +2463,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
+    assert_eq!(head, " print-only Target A uniqueness-full-lora");
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -2447,7 +2768,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
+    assert_eq!(head, " print-only Target A uniqueness-full-lora");
     let slice = changelog
         .split("## This slice — Target C live uniqueness prove on a 5090-class host")
         .nth(1)
@@ -2816,7 +3137,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #157");
+    assert_eq!(head, " print-only Target A uniqueness-full-lora");
     let standing = changelog
         .split("## This slice — Standing next (estate) after import-trained")
         .nth(1)

@@ -106,6 +106,9 @@ LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
 Train next: make train-next
 Full print: make uniqueness-full
+LoRA train: make train-next-lora
+LoRA seat:  make seat-journey-lora
+LoRA full:  make uniqueness-full-lora
 Prove list: make uniqueness-prove-checklist
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
@@ -394,6 +397,9 @@ READY_FOR_LIVE_TEST stays no.
   make seat-journey
   make uniqueness-ladder
   make uniqueness-full
+  make train-next-lora
+  make seat-journey-lora
+  make uniqueness-full-lora
   make uniqueness-prove-checklist
   make lf-beachhead-prepare
   make enrich-live-prove
@@ -1056,6 +1062,17 @@ make lora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer,
 does not merge, and does not convert. Not in make smoke, make gate-90,
 or Actions. READY_FOR_LIVE_TEST stays no.
+The train step is make train-next-lora. It prepares the same
+llamafactory-lora card and prints the NEXT.md train and export lines.
+It does not print a bitsandbytes install. It prints SKIP live train.
+CELL_TRAIN_LIVE=1 stays print-only. It does not run a trainer.
+make seat-journey-lora is that seat print on the LoRA card. It keeps
+refuse:adapter, refuse:tokenizer, and refuse:seat, then prints merge,
+convert, seat, and import against the same fixture stubs.
+make uniqueness-full-lora runs make lora-journey, then make
+train-next-lora, then make seat-journey-lora. It does not train.
+make uniqueness-full stays the QLoRA chain. Not in make smoke,
+make gate-90, or Actions.
 Walk: docs/operator-enrich-journeys.md (section 9, Target A).
 
 Target C seat ladder

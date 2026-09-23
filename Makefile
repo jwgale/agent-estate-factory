@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-prove-checklist train-next
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -199,9 +199,17 @@ lora-journey:
 
 # Opt-in Target C seat ladder: refuse:tokenizer, then fixture stubs for merge, convert, seat, and import.
 # Prints the lines. Does not train, merge, convert, seat, or promote.
+# Pins SEAT_CARD to llamafactory-qlora so an ambient card cannot retarget it.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 seat-journey:
-	bash scripts/seat-journey.sh
+	SEAT_CARD=llamafactory-qlora bash scripts/seat-journey.sh
+
+# Opt-in Target A seat ladder: the same script as seat-journey on llamafactory-lora.
+# Same fixture stubs. Same refuse:adapter, refuse:tokenizer, and refuse:seat.
+# Does not train, merge, convert, seat, or promote.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+seat-journey-lora:
+	SEAT_CARD=llamafactory-lora bash scripts/seat-journey.sh
 
 # Opt-in print-only prepare of every LLaMA-Factory beachhead matrix row.
 # Reads docs/lf-beachhead-matrix.md. Does not train, merge, convert, seat, or promote.
@@ -223,6 +231,14 @@ uniqueness-ladder:
 uniqueness-full:
 	bash scripts/uniqueness-full.sh
 
+# Opt-in print-only Target A full uniqueness print chain:
+# lora-journey, then train-next-lora, then seat-journey-lora.
+# Does not train, merge, convert, seat, or promote.
+# Does not change uniqueness-full or uniqueness-ladder.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-full-lora:
+	bash scripts/uniqueness-full-lora.sh
+
 # Opt-in print-only operator checklist for the recorded Target C live uniqueness ladder.
 # Prints ordered steps from docs/LIVE-PROBES.md. After step 8 (import-trained) it prints
 # Standing next (estate): auto_apply=false, no promote, and the existing plan / apply /
@@ -236,10 +252,19 @@ uniqueness-prove-checklist:
 
 # Opt-in print-only Target C train step: after llamafactory-qlora prepare,
 # print the NEXT.md train recipe. Does not train, merge, convert, seat, or promote.
+# Pins TRAIN_CARD to llamafactory-qlora so an ambient card cannot retarget it.
 # CELL_TRAIN_LIVE=1 stays print-only.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 train-next:
-	bash scripts/train-next.sh
+	TRAIN_CARD=llamafactory-qlora bash scripts/train-next.sh
+
+# Opt-in print-only Target A train step: after llamafactory-lora prepare,
+# print the NEXT.md train and export lines. No bitsandbytes install line.
+# Does not train, merge, convert, seat, or promote.
+# CELL_TRAIN_LIVE=1 stays print-only.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+train-next-lora:
+	TRAIN_CARD=llamafactory-lora bash scripts/train-next.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
