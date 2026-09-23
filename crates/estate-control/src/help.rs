@@ -581,7 +581,11 @@ A symlinked marker, or a symlinked --adapter path, is refuse:adapter.
 NEXT.md on llamafactory-lora and llamafactory-qlora prints
 the exact import-trained command for each shape, with the prepared
 directory filled in. A path that matches none of those shapes, or more
-than one, is refuse:adapter and writes no proposal. prepare.json and
+than one, is refuse:adapter and writes no proposal. On mlx-lm-lora a
+directory with config.json and a .safetensors file whose name does not
+start with adapter_model is a fused MLX directory. import-trained
+refuses it (refuse:adapter) and does not record trained_shape merged.
+That card records the adapter directory or a GGUF file. prepare.json and
 binding-proposal.json record trained_shape and trained_paths on one
 success path. A failed write removes a partial proposal. It does
 not apply, does not promote, and does not rewrite the estate.
@@ -685,7 +689,9 @@ is not a llama.cpp seat: the report points at gguf-convert first and
 does not print llama-cli for the directory. Axolotl does not write that GGUF.
 mlx-lm-lora on apple-silicon seats one .gguf file, the file
 mlx_lm.fuse --export-gguf writes (default name ggml-model-f16.gguf).
-A fused MLX directory is refuse:seat. --adapter on that prepare is
+A fused MLX directory is refuse:seat. import-trained on that card
+records the adapter directory or the GGUF file. The fused directory
+is refuse:adapter there too. --adapter on that prepare is
 refuse:adapter. Another host is refuse:host.
 unsloth-qlora seats the merged 16-bit directory or a GGUF file.
 --adapter on that prepare is refuse:adapter. Unsloth documents Ollama
@@ -693,9 +699,10 @@ through a GGUF, not an Ollama adapter line for the PEFT directory.
 A missing UNSLOTH.md or train base is refuse:train-base.
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
-llama.cpp convert_hf_to_gguf.py, outside this factory. import-trained
-records that same merged directory or GGUF on the local_slm proposal.
-local-seat does not promote.
+llama.cpp convert_hf_to_gguf.py, outside this factory. On llamafactory-lora,
+llamafactory-qlora, axolotl-lora, axolotl-qlora, and unsloth-qlora,
+import-trained records that same merged directory or GGUF on the
+local_slm proposal. local-seat does not promote.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\

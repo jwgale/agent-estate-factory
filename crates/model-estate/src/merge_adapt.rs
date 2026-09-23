@@ -669,7 +669,7 @@ fn plan_mlx(
          \n\
          {export}\n\
          \n\
-         After that file exists, local-seat prints the Ollama create line for the .gguf file, plus llama-cli -m and llama-server -m. Pass the file. A directory that also holds the fused weights matches more than one shape. --adapter does not print an Ollama ADAPTER Modelfile for an mlx adapter. import-trained records the adapter directory or that GGUF file. It does not promote.\n\
+         After that file exists, local-seat prints the Ollama create line for the .gguf file, plus llama-cli -m and llama-server -m. Pass the file. A directory that also holds the fused weights matches more than one shape. --adapter does not print an Ollama ADAPTER Modelfile for an mlx adapter. import-trained records the adapter directory or that GGUF file. A fused MLX directory is refuse:adapter. It does not promote.\n\
          \n\
          {seat}\n\
          \n\
@@ -922,7 +922,7 @@ pub(crate) fn mlx_post_train_ladder(
          \n\
          {seat_cli}\n\
          \n\
-         5. Record the artifact. import-trained accepts the adapter directory or that GGUF file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
+         5. Record the artifact. import-trained accepts the adapter directory or that GGUF file. A fused MLX directory is refuse:adapter. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter '<adapter-dir>'\n\
          \n\
