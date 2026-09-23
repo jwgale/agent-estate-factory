@@ -157,6 +157,8 @@ grep -q "dataset_mode: scaffold" "$WORKDIR/llamafactory/PREPARE.md"
 grep -q "dataset_mode: scaffold" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "refuse:dataset" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "not training data" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "estate enrich gguf-convert --prepared $WORKDIR/llamafactory --weights $WORKDIR/llamafactory/export" "$WORKDIR/llamafactory/NEXT.md"
+grep -q "python3 convert_hf_to_gguf.py $WORKDIR/llamafactory/export --outfile $WORKDIR/llamafactory/export.gguf --outtype auto" "$WORKDIR/llamafactory/NEXT.md"
 grep -q "Dataset mode: scaffold" "$WORKDIR/llamafactory/PREPARE.md"
 if grep -q "quantization_bit" "$WORKDIR/llamafactory/export.yaml"; then
   echo "FAIL  export.yaml must not set quantization_bit"
@@ -320,6 +322,8 @@ grep -q "Do not set quantization_bit on export.yaml" "$WORKDIR/llamafactory-lora
 grep -q "llamafactory-cli export has not run" "$WORKDIR/llamafactory-lora/PREPARE.md"
 grep -q "llamafactory-cli train $WORKDIR/llamafactory-lora/recipe.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
 grep -q "llamafactory-cli export $WORKDIR/llamafactory-lora/export.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "estate enrich gguf-convert --prepared $WORKDIR/llamafactory-lora --weights $WORKDIR/llamafactory-lora/export" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "python3 convert_hf_to_gguf.py $WORKDIR/llamafactory-lora/export --outfile $WORKDIR/llamafactory-lora/export.gguf --outtype auto" "$WORKDIR/llamafactory-lora/NEXT.md"
 python3 - "$WORKDIR/llamafactory-lora/prepare.json" <<'PY'
 import json, sys
 prepare = json.load(open(sys.argv[1]))

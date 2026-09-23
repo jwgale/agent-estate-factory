@@ -46,6 +46,9 @@ pub(crate) fn llamafactory_local_seat_note(
     let export_yaml = out_dir.join("export.yaml");
     let export_dir = out_dir.join("export");
     let modelfile = export_dir.join(MODELFILE_NAME);
+    let convert = crate::gguf_convert::printed_convert_line(&export_dir);
+    let outfile = crate::gguf_convert::sibling_gguf_outfile(&export_dir);
+    let gguf_convert = crate::gguf_convert::gguf_convert_cli(out_dir, &export_dir);
     format!(
         "\n\
          ## Local seat after export\n\
@@ -55,7 +58,15 @@ pub(crate) fn llamafactory_local_seat_note(
          Chain, outside this factory. This factory does not shell out to ollama or llama.cpp, does not convert weights, and does not promote.\n\
          \n\
          1. `llamafactory-cli export` writes the merged directory named in export.yaml (`export_dir`). Current LLaMA-Factory `export_model` also writes `Modelfile` in that directory (`FROM .`, plus TEMPLATE from the train chat template). This factory does not write that Modelfile and does not invent a second template.\n\
-         2. GGUF conversion stays on a llama.cpp checkout: `convert_hf_to_gguf.py` on that merged directory. This factory does not run that script and does not choose a quantization type.\n\
+         2. Print the llama.cpp convert line for that merged directory. `gguf-convert` checks the directory and prints the command. It does not run it and does not write a GGUF.\n\
+         \n\
+         {gguf_convert}\n\
+         \n\
+         That prints:\n\
+         \n\
+         {convert}\n\
+         \n\
+         Run the python3 line from a llama.cpp checkout. `convert_hf_to_gguf.py` is that checkout's script. `--outtype auto` is the script default (highest-fidelity 16-bit float, f16 or bf16). This factory does not choose a quantization type and does not print q8_0, tq1_0, or tq2_0. The outfile is {outfile}, a sibling of the merged directory, so the directory stays one shape.\n\
          3. Seat with Ollama. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.\n\
          \n\
          Validate the directory or the GGUF and print the exact command:\n\
@@ -66,7 +77,7 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          ollama create {tag} -f {modelfile}\n\
          \n\
-         When you pass a .gguf file, it prints a Modelfile whose FROM is that file and the same `ollama create` line. It does not create the model.\n\
+         When you pass a .gguf file, it prints a Modelfile whose FROM is that file and the same `ollama create` line. It does not create the model. After the convert, point `--weights` at {outfile}.\n\
          \n\
          Then record the same path. `import-trained` accepts a merged export_dir (config.json and at least one .safetensors file whose name does not start with adapter_model, optional Modelfile) or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
@@ -80,6 +91,7 @@ pub(crate) fn llamafactory_local_seat_note(
         export_dir = export_dir.display(),
         modelfile = modelfile.display(),
         export_yaml = export_yaml.display(),
+        outfile = outfile.display(),
     )
 }
 
@@ -120,7 +132,7 @@ pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatP
     Ok(plan)
 }
 
-enum WeightsShape {
+pub(crate) enum WeightsShape {
     Merged {
         dir: PathBuf,
         modelfile: Option<PathBuf>,
@@ -141,7 +153,7 @@ struct DirMarkers {
     files: usize,
 }
 
-fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
+pub(crate) fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
     let meta = match std::fs::symlink_metadata(weights) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -159,7 +171,7 @@ fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
     };
     if meta.file_type().is_symlink() {
         return Err(ModelError::Other(format!(
-            "refuse:seat: {} is a symlink. local-seat does not follow a symlinked weights path. Pass the real directory or the real .gguf file.",
+            "refuse:seat: {} is a symlink. enrich does not follow a symlinked weights path. Pass the real directory or the real .gguf file.",
             weights.display()
         )));
     }
@@ -331,7 +343,7 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
         if kind.is_symlink() {
             if is_seat_marker_name(name) {
                 return Err(ModelError::Other(format!(
-                    "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks. The marker must be a regular file inside {}.",
+                    "refuse:seat: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside {}.",
                     entry.path().display(),
                     dir.display()
                 )));
@@ -395,7 +407,7 @@ fn sibling_modelfile(parent: Option<&Path>) -> Result<Option<PathBuf>, ModelErro
     let path = parent.join(MODELFILE_NAME);
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
-            "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks. The marker must be a regular file inside {}.",
+            "refuse:seat: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside {}.",
             path.display(),
             parent.display()
         ))),
@@ -437,7 +449,7 @@ fn open_nofollow(path: &Path) -> std::io::Result<File> {
 fn seat_open_error(path: &Path, err: std::io::Error) -> ModelError {
     if matches!(err.raw_os_error(), Some(40 | 62)) {
         ModelError::Other(format!(
-            "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks.",
+            "refuse:seat: {} is a symlink. enrich does not follow marker symlinks.",
             path.display()
         ))
     } else {
@@ -489,6 +501,8 @@ fn render_merged(
     let create = ollama_create(local_tag, &modelfile_path);
     let import = import_trained_line(prepared_dir, local_tag, dir);
     let convert = convert_line(dir);
+    let outfile = crate::gguf_convert::sibling_gguf_outfile(dir);
+    let gguf_convert = crate::gguf_convert::gguf_convert_cli(prepared_dir, dir);
     let from_note = if on_disk {
         let text = read_modelfile(&modelfile_path)?;
         let from = first_from(&text).ok_or_else(|| {
@@ -520,7 +534,9 @@ fn render_merged(
          \n\
          {create}\n\
          \n\
-         GGUF conversion stays outside this factory, on a llama.cpp checkout. This factory does not choose a quantization type.\n\
+         GGUF conversion stays outside this factory, on a llama.cpp checkout. This factory does not choose a quantization type. gguf-convert prints the same line. --outtype auto is convert_hf_to_gguf.py's default. The outfile is a sibling of this directory: {outfile}\n\
+         \n\
+         {gguf_convert}\n\
          \n\
          {convert}\n\
          \n\
@@ -534,6 +550,7 @@ fn render_merged(
          READY_FOR_LIVE_TEST: no.\n",
         weights = dir.display(),
         modelfile = modelfile_path.display(),
+        outfile = outfile.display(),
     );
     Ok(LocalSeatPlan {
         shape: "merged".into(),
@@ -665,7 +682,7 @@ fn read_modelfile(path: &Path) -> Result<String, ModelError> {
     let file = open_nofollow(path).map_err(|err| {
         if matches!(err.raw_os_error(), Some(40 | 62)) {
             ModelError::Other(format!(
-                "refuse:seat: {} is a symlink. local-seat does not follow marker symlinks.",
+                "refuse:seat: {} is a symlink. enrich does not follow marker symlinks.",
                 path.display()
             ))
         } else {
@@ -806,12 +823,7 @@ fn import_trained_line(prepared_dir: &Path, local_tag: &str, weights: &Path) -> 
 }
 
 fn convert_line(export_dir: &Path) -> String {
-    let outfile = export_dir.join("model.gguf");
-    format!(
-        "python convert_hf_to_gguf.py {} --outfile {}",
-        shell_quote(&export_dir.display().to_string()),
-        shell_quote(&outfile.display().to_string())
-    )
+    crate::gguf_convert::printed_convert_line(export_dir)
 }
 
 fn modelfile_from_token(path: &Path) -> String {
@@ -823,7 +835,7 @@ fn modelfile_from_token(path: &Path) -> String {
     }
 }
 
-fn shell_quote(text: &str) -> String {
+pub(crate) fn shell_quote(text: &str) -> String {
     if text.chars().any(shell_quote_char) {
         format!("'{}'", text.replace('\'', "'\\''"))
     } else {
@@ -941,6 +953,13 @@ mod tests {
         assert!(note.contains("Seat tag is llama3"), "{note}");
         assert!(note.contains("cell-enrich-overnight-traces"), "{note}");
         assert!(note.contains("estate enrich local-seat --prepared /tmp/cell-one-pack --weights /tmp/cell-one-pack/export"), "{note}");
+        assert!(note.contains("estate enrich gguf-convert --prepared /tmp/cell-one-pack --weights /tmp/cell-one-pack/export"), "{note}");
+        assert!(
+            note.contains(
+                "python3 convert_hf_to_gguf.py /tmp/cell-one-pack/export --outfile /tmp/cell-one-pack/export.gguf --outtype auto"
+            ),
+            "{note}"
+        );
         assert!(note.contains("convert_hf_to_gguf.py"), "{note}");
         assert!(
             note.contains(
@@ -986,10 +1005,17 @@ mod tests {
         assert!(plan.report.contains("seat_tag=llama3"), "{}", plan.report);
         assert!(plan.report.contains("FROM ."), "{}", plan.report);
         assert!(
-            plan.report.contains("convert_hf_to_gguf.py"),
+            plan.report.contains("python3 convert_hf_to_gguf.py"),
             "{}",
             plan.report
         );
+        assert!(plan.report.contains("--outtype auto"), "{}", plan.report);
+        assert!(
+            plan.report.contains("estate enrich gguf-convert"),
+            "{}",
+            plan.report
+        );
+        assert!(!root.join("export.gguf").exists());
         assert!(plan.report.contains("import-trained"), "{}", plan.report);
         assert!(plan.report.contains("--adapter"), "{}", plan.report);
         assert!(

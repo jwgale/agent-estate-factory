@@ -275,6 +275,9 @@ pub(crate) fn run() -> Result<()> {
                 &curator,
                 verify_local_tag,
             ),
+            EnrichCommand::GgufConvert { prepared, weights } => {
+                crate::enrich::cmd_enrich_gguf_convert(&prepared, &weights)
+            }
             EnrichCommand::LocalSeat { prepared, weights } => {
                 crate::enrich::cmd_enrich_local_seat(&prepared, &weights)
             }

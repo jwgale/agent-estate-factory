@@ -53,6 +53,8 @@ fn help_names_local_seat() {
     let body = text(&out);
     assert!(out.status.success(), "{body}");
     assert!(body.contains("estate enrich local-seat"), "{body}");
+    assert!(body.contains("estate enrich gguf-convert"), "{body}");
+    assert!(body.contains("--outtype auto"), "{body}");
     assert!(body.contains("convert_hf_to_gguf.py"), "{body}");
     assert!(body.contains("does not run ollama or llama.cpp"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
@@ -108,6 +110,15 @@ fn prepare_records_paths_and_local_seat_prints_the_create_line() {
             "{name}: {page}"
         );
         assert!(page.contains("estate enrich local-seat"), "{name}");
+        assert!(page.contains("estate enrich gguf-convert"), "{name}");
+        assert!(
+            page.contains(&format!(
+                "python3 convert_hf_to_gguf.py {} --outfile {} --outtype auto",
+                out_dir.join("export").display(),
+                out_dir.join("export.gguf").display()
+            )),
+            "{name}: {page}"
+        );
         assert!(page.contains("convert_hf_to_gguf.py"), "{name}");
         assert!(page.contains("Seat tag is llama3"), "{name}");
         assert!(page.contains("import-trained"), "{name}");

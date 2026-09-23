@@ -7,6 +7,7 @@ mod catalog;
 mod error;
 mod frontier;
 mod local;
+mod gguf_convert;
 mod local_seat;
 mod mock;
 mod path;
@@ -32,6 +33,7 @@ pub use local::{
     HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
     SpecialistResult, UnwiredLocal,
 };
+pub use gguf_convert::{plan_gguf_convert, GgufConvertPlan};
 pub use local_seat::{plan_local_seat, LocalSeatPlan};
 pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,

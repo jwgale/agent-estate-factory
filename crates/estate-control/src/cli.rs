@@ -597,6 +597,16 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value_t = false)]
         verify_local_tag: bool,
     },
+    /// Print the llama.cpp convert_hf_to_gguf.py line for a merged export.
+    /// Does not convert, does not shell out, and does not promote.
+    GgufConvert {
+        /// Directory that holds a llamafactory-lora or llamafactory-qlora prepare.json.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Merged export directory (config.json and a .safetensors file whose name does not start with adapter_model).
+        #[arg(long)]
+        weights: PathBuf,
+    },
     /// Validate a merged export directory or a GGUF and print the ollama create line.
     /// Does not create, does not shell out, and does not promote.
     LocalSeat {
