@@ -372,6 +372,9 @@ absolute path. A directory name that is an Ollama seat tag
 inferred from that train base.
 A bare Ollama seat tag is refuse:train-base and writes nothing.
 This factory does not map the seat tag onto a Hub repo.
+axolotl-lora writes that same train base to base_model in axolotl.yml.
+prepare.json base_model and seat_tag stay the Ollama id for Modelfile FROM
+and for the adapter join.
 QLoRA also needs bitsandbytes: pip install 'bitsandbytes>=0.49'.
 A short gauge run passes --max-steps 10. The default recipe leaves
 max_steps unset.

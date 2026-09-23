@@ -1183,11 +1183,63 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
 #[test]
 fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     let root = tmp("axolotl-cli");
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let seated_path = seated.display().to_string();
     let sacred = fixture("policy/sacred.yaml");
     let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
     let before = estate_bytes();
+    let seat_only = write_seated_estate(&root, "llama3");
+    let blocked = root.join("seat-only");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seat_only.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "axolotl-lora",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+    assert!(!blocked.exists());
+
+    let blocked_state = root.join("blocked-state");
+    let blocked_all = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seat_only.display().to_string(),
+            "--pack",
+            &pack,
+            "--all-drivers",
+            "--job",
+            "train",
+            "--state-dir",
+            &blocked_state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let blocked_all_text = text(&blocked_all);
+    assert!(!blocked_all.status.success(), "{blocked_all_text}");
+    assert!(
+        blocked_all_text.contains("refuse:train-base"),
+        "{blocked_all_text}"
+    );
+    assert!(!blocked_state.join("enrich").exists());
+
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let seated_path = seated.display().to_string();
     let out = root.join("recipe");
 
     let prepared = estate_bin()
@@ -1228,7 +1280,26 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     assert_eq!(doc["estate_rewritten"], false);
     assert!(out.join("axolotl.yml").is_file());
     assert!(out.join("dataset.jsonl").is_file());
+    assert_eq!(doc["base_model"], "llama3");
+    assert_eq!(doc["seat_tag"], "llama3");
+    assert_eq!(doc["train_base_model"], "Qwen/Qwen2.5-0.5B-Instruct");
+    let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
+    assert!(
+        yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{yaml}"
+    );
+    assert!(
+        !yaml
+            .lines()
+            .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
+        "{yaml}"
+    );
     let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(next.contains("Seat tag is llama3"), "{next}");
+    assert!(
+        next.contains("Train base is Qwen/Qwen2.5-0.5B-Instruct"),
+        "{next}"
+    );
     assert!(
         next.contains(&format!(
             "axolotl train {}",
@@ -1289,12 +1360,23 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
-    assert!(state
-        .join("enrich/overnight-traces/axolotl-lora/axolotl.yml")
-        .is_file());
-    assert!(state
-        .join("enrich/overnight-traces/ollama-modelfile/Modelfile")
-        .is_file());
+    let all_yaml =
+        std::fs::read_to_string(state.join("enrich/overnight-traces/axolotl-lora/axolotl.yml"))
+            .unwrap();
+    assert!(
+        all_yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{all_yaml}"
+    );
+    assert!(
+        !all_yaml
+            .lines()
+            .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
+        "{all_yaml}"
+    );
+    let all_modelfile =
+        std::fs::read_to_string(state.join("enrich/overnight-traces/ollama-modelfile/Modelfile"))
+            .unwrap();
+    assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
 
     let adapter = root.join("adapter");
     std::fs::create_dir_all(&adapter).unwrap();

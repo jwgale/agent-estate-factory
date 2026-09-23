@@ -240,7 +240,34 @@ grep -q '^num_train_epochs: 1.0$' "$WORKDIR/smoke/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/smoke/recipe.yaml"
 grep -q "template: qwen" "$WORKDIR/smoke/recipe.yaml"
 
-echo "-- axolotl-lora still writes a YAML recipe --"
+echo "-- axolotl-lora writes the train base, not the seat tag --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED_ONLY" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --out "$WORKDIR/axolotl-seat-only" \
+  >/tmp/train-prepare-axolotl-seat.out 2>/tmp/train-prepare-axolotl-seat.err
+ax_seat_rc=$?
+set -e
+if [[ "$ax_seat_rc" -eq 0 ]]; then
+  echo "FAIL  axolotl-lora without a train base must refuse:train-base"
+  exit 1
+fi
+if ! grep -q "refuse:train-base" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
+  echo "FAIL  axolotl-lora seat tag did not refuse:train-base"
+  cat /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err
+  exit 1
+fi
+if grep -q "meta-llama" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
+  echo "FAIL  axolotl refuse must not invent a Llama-3 Hub repo"
+  exit 1
+fi
+if [[ -e "$WORKDIR/axolotl-seat-only" ]]; then
+  echo "FAIL  axolotl seat-only prepare wrote an output directory"
+  exit 1
+fi
+
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
@@ -250,13 +277,40 @@ estate enrich prepare \
 test -f "$WORKDIR/axolotl/axolotl.yml"
 grep -q "adapter: qlora" "$WORKDIR/axolotl/axolotl.yml"
 grep -q "load_in_4bit: true" "$WORKDIR/axolotl/axolotl.yml"
-python3 - "$WORKDIR/axolotl/axolotl.yml" <<'PY'
-import sys
+grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/axolotl/axolotl.yml"
+if grep -Eq '^base_model: "llama3"' "$WORKDIR/axolotl/axolotl.yml"; then
+  echo "FAIL  axolotl.yml base_model must be the train base, not the seat tag"
+  exit 1
+fi
+python3 - "$WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/prepare.json" "$WORKDIR/axolotl/NEXT.md" <<'PY'
+import json, sys
 text = open(sys.argv[1]).read()
 if "\n  - path: " not in text or "\n    ds_type: json\n    type: alpaca\n" not in text:
     raise SystemExit("FAIL  axolotl.yml datasets list is not indented")
+prepare = json.load(open(sys.argv[2]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  axolotl seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  axolotl train_base={prepare.get('train_base_model')}")
+next_md = open(sys.argv[3]).read()
+if "Seat tag is llama3" not in next_md or "Train base is Qwen/Qwen2.5-0.5B-Instruct" not in next_md:
+    raise SystemExit("FAIL  axolotl NEXT.md is missing the seat and train base split")
 PY
 grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
+
+echo "-- all-drivers train writes the train base into axolotl.yml --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --all-drivers \
+  --job train \
+  --state-dir "$WORKDIR/all-state"
+grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
+if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"; then
+  echo "FAIL  all-drivers axolotl.yml still points base_model at the seat tag"
+  exit 1
+fi
+grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
 
 echo "-- import-trained records the LLaMA-Factory adapter on local_slm --"
 ADAPTER="$WORKDIR/adapter"
