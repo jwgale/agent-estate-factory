@@ -508,6 +508,13 @@ target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct
 and still writes quantization_method bnb and quantization_bit 4.
 That reproduce line is on llamafactory-qlora and only for that
 Qwen2.5 Instruct shape.
+examples/fixtures/qwen25-instruct-lora.pack.json is the Qwen2.5 Instruct
+LoRA smoke pack. --driver llamafactory-lora on that pack is the non-quant
+twin of that QLoRA prepare. It writes template qwen, lora_rank 8, packing
+false, and no quantization_bit or quantization_method. That reproduce line
+is LoRA-only and only for that Qwen2.5 Instruct shape. A Qwen2.5 base, a
+name containing thinking, Qwen2, Qwen2.5-Coder, Qwen2.5-Math, and Qwen2.5-VL
+do not get that line. A Qwen3 Instruct id does not get that line.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,

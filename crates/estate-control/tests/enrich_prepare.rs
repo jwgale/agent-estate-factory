@@ -110,6 +110,10 @@ fn help_enrich_and_train_name_the_seam() {
             "{body}"
         );
         assert!(
+            body.contains("examples/fixtures/qwen25-instruct-lora.pack.json"),
+            "{body}"
+        );
+        assert!(
             body.contains("examples/fixtures/qwen3-instruct-lora.pack.json"),
             "{body}"
         );
@@ -588,6 +592,20 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(
         train_script.contains("qwen2.5 LoRA prepare took the Qwen2.5 Instruct QLoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/qwen25-instruct-lora.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen2.5 Instruct QLoRA prepare."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("qwen2.5 QLoRA prepare took the Qwen2.5 Instruct LoRA reproduce note"),
         "{train_script}"
     );
     assert!(
