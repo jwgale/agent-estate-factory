@@ -3175,7 +3175,7 @@ fn axolotl_shape_note(method: AxolotlMethod) -> String {
             example = example,
         ),
         AxolotlMethod::Qlora => format!(
-            "This card is 4-bit QLoRA (`load_in_8bit: false`, `load_in_4bit: true`, `adapter: qlora`). It matches Axolotl `{example}`. `sequence_len` is {}, `micro_batch_size` is {}, `gradient_accumulation_steps` is {}, and `lora_r` is {}, matching that file. `lora_alpha` is {} and `lora_dropout` is 0.05, matching that file. `lora_target_linear` is true, matching that file. `num_epochs` is {}, `optimizer` is {}, `learning_rate` is 0.0002, and `warmup_ratio` is 0.1, matching that file. `sample_packing` is true, matching that file. `val_set_size` is 0.0, matching that file's 0. `evals_per_epoch` is 0. That file sets 4, which asks for eval on an empty split, and Axolotl refuses eval settings when `val_set_size` is 0. That file sets `flash_attention: true` and a Llama pad token. This card leaves both unset. The train base is not pinned to Llama-3, and this factory does not install flash attention. bf16 LoRA is `--driver axolotl-lora`.",
+            "This card is 4-bit QLoRA (`load_in_8bit: false`, `load_in_4bit: true`, `adapter: qlora`). It matches Axolotl `{example}`. `sequence_len` is {}, `micro_batch_size` is {}, `gradient_accumulation_steps` is {}, and `lora_r` is {}, matching that file. `lora_alpha` is {} and `lora_dropout` is 0.05, matching that file. `lora_target_linear` is true, matching that file. `num_epochs` is {}, `optimizer` is {}, `learning_rate` is 0.0002, and `warmup_ratio` is 0.1, matching that file. `sample_packing` is true, matching that file. `val_set_size` is 0.0, matching that file's 0. `evals_per_epoch` is 0. That file sets 4, which asks for eval on an empty split, and Axolotl refuses eval settings when `val_set_size` is 0. That file sets `attn_implementation: flash_attention_2` and a Llama pad token. This card leaves both unset. The train base is not pinned to Llama-3, and this factory does not install flash attention. bf16 LoRA is `--driver axolotl-lora`.",
             method.sequence_len(),
             method.micro_batch_size(),
             method.gradient_accumulation_steps(),
@@ -6825,6 +6825,18 @@ mod tests {
         assert!(next.contains("sequence_len"), "{next}");
         assert!(next.contains("--max-steps 10"), "{next}");
         assert!(next.contains("does not install flash attention"), "{next}");
+        assert!(
+            next.contains("attn_implementation: flash_attention_2"),
+            "{next}"
+        );
+        assert!(!next.contains("flash_attention: true"), "{next}");
+        assert!(
+            !yaml.lines().any(|line| {
+                let field = line.trim_start();
+                field.starts_with("attn_implementation:") || field.starts_with("flash_attention:")
+            }),
+            "{yaml}"
+        );
         assert!(!next.contains("Edit axolotl.yml"), "{next}");
 
         let gauge_out = root.join("gauge");
