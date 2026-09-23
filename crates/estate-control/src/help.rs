@@ -531,8 +531,15 @@ deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B. --driver llamafactory-qlora on that p
 reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5
 Instruct, and Qwen3 Instruct and still writes quantization_method bnb
 and quantization_bit 4. That reproduce line is on llamafactory-qlora
-and only for those six distill chat ids. llamafactory-lora writes the
-same template and does not get that line. The smoke seat tag is llama3.
+and only for those six distill chat ids.
+examples/fixtures/deepseek-r1-distill-lora.pack.json is the DeepSeek-R1-Distill
+chat LoRA smoke pack. --driver llamafactory-lora on that pack is the non-quant
+twin of that QLoRA prepare. It writes template deepseekr1, lora_rank 8,
+packing false, and no quantization_bit or quantization_method.
+examples/train_lora does not ship a DeepSeek yaml. That reproduce line is
+LoRA-only and only for those six distill chat ids. The QLoRA note stays on
+llamafactory-qlora. DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 do
+not get that LoRA line. The smoke seat tag is llama3.
 An Ollama tag such as deepseek-r1 or deepseek-r1:1.5b is a seat tag for
 this checkpoint. It is not the Hugging Face train base.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
