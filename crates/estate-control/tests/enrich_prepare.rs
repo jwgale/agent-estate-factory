@@ -469,6 +469,18 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         "{train_script}"
     );
     assert!(
+        train_script.contains("examples/fixtures/gemma2-instruct.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("google/gemma-2-2b-it"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: gemma2$"),
+        "{train_script}"
+    );
+    assert!(
         train_script.contains("^template: llama3$"),
         "{train_script}"
     );

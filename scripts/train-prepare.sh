@@ -446,6 +446,51 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  llama32 prepare must stay unpromoted")
 PY
 
+GEMMA2_PACK="$ROOT/examples/fixtures/gemma2-instruct.pack.json"
+echo "-- gemma 2 instruct qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$GEMMA2_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/gemma2-qlora"
+grep -q "^template: gemma2$" "$WORKDIR/gemma2-qlora/recipe.yaml"
+grep -q "^template: gemma2$" "$WORKDIR/gemma2-qlora/export.yaml"
+if grep -q "^template: gemma$" "$WORKDIR/gemma2-qlora/recipe.yaml"; then
+  echo "FAIL  gemma2 instruct recipe used the original gemma template"
+  exit 1
+fi
+if grep -q "^template: gemma_" "$WORKDIR/gemma2-qlora/recipe.yaml"; then
+  echo "FAIL  gemma2 recipe used a gemma_ template name"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/gemma2-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/gemma2-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "google/gemma-2-2b-it"' "$WORKDIR/gemma2-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/gemma2-qlora/recipe.yaml"; then
+  echo "FAIL  gemma2 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/gemma2-qlora/export.yaml"; then
+  echo "FAIL  gemma2 export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA." "$WORKDIR/gemma2-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA." "$WORKDIR/gemma2-qlora/PREPARE.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/gemma2-qlora/NEXT.md" "$WORKDIR/gemma2-qlora/PREPARE.md"; then
+  echo "FAIL  gemma2 prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/gemma2-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  gemma2 seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "google/gemma-2-2b-it":
+    raise SystemExit(f"FAIL  gemma2 train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  gemma2 prepare must stay unpromoted")
+PY
+
 echo "-- axolotl cards refuse a seat tag with no train base --"
 for driver in axolotl-lora axolotl-qlora; do
   set +e
