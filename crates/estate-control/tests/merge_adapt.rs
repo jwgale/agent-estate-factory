@@ -97,6 +97,8 @@ fn install_traps(root: &std::path::Path) -> PathBuf {
         "convert_hf_to_gguf.py",
         "llama-cli",
         "llama-server",
+        "mlx_lm.fuse",
+        "mlx_lm.lora",
     ] {
         let path = bin.join(name);
         std::fs::write(&path, &script).unwrap();
@@ -378,4 +380,125 @@ fn refuses_merged_gguf_and_symlink_without_spawning() {
     assert!(!root.join("spawned").exists());
     assert!(!root.join("outputs").join("merged").exists());
     assert!(!root.join("merged").exists());
+}
+
+#[test]
+fn prepared_mlx_prints_fuse_and_spawns_nothing() {
+    let root = tmp("mlx-prepare");
+    let estate = write_train_estate(&root, "llama3", "Qwen/Qwen2.5-0.5B-Instruct");
+    let src = std::fs::read_to_string(
+        repo_root().join("examples/fixtures/specialist-overnight.pack.json"),
+    )
+    .unwrap();
+    let body = src.replace(
+        "\"host_class_affinity\": \"any\"",
+        "\"host_class_affinity\": \"apple-silicon\"",
+    );
+    assert_ne!(body, src);
+    let pack = root.join("apple.pack.json");
+    std::fs::write(&pack, body).unwrap();
+    let out_dir = root.join("mlx-lm-lora");
+    let prepared = estate_bin()
+        .args([
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            pack.to_str().unwrap(),
+            "--driver",
+            "mlx-lm-lora",
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    for name in ["MLX.md", "NEXT.md", "PREPARE.md"] {
+        let page = std::fs::read_to_string(out_dir.join(name)).unwrap();
+        assert!(page.contains("mlx_lm.fuse --export-gguf"), "{name}: {page}");
+        assert!(page.contains("adapters.safetensors"), "{name}: {page}");
+        assert!(page.contains("ggml-model-f16.gguf"), "{name}: {page}");
+        assert!(page.contains("estate enrich merge-adapt"), "{name}: {page}");
+        assert!(page.contains("## After the mlx-lm train"), "{name}: {page}");
+        assert!(
+            !page.contains("python3 convert_hf_to_gguf.py"),
+            "{name}: {page}"
+        );
+        assert!(
+            !page.contains("estate enrich gguf-convert"),
+            "{name}: {page}"
+        );
+        assert!(page.contains("READY_FOR_LIVE_TEST: no"), "{name}: {page}");
+        assert!(!page.contains("READY_FOR_LIVE_TEST: yes"), "{name}: {page}");
+    }
+    let adapters = out_dir.join("adapters");
+    adapter_dir(&adapters);
+    std::fs::write(adapters.join("adapters.safetensors"), b"w").unwrap();
+    let prepare_before = std::fs::read(out_dir.join("prepare.json")).unwrap();
+    let out = run_merge(&root, &out_dir, &adapters);
+    let body = text(&out);
+    assert!(out.status.success(), "{body}");
+    let fused = out_dir.join("fused_model");
+    let gguf = fused.join("ggml-model-f16.gguf");
+    assert!(
+        body.contains("mlx_lm.fuse --model Qwen/Qwen2.5-0.5B-Instruct"),
+        "{body}"
+    );
+    assert!(body.contains("--adapter-path"), "{body}");
+    assert!(body.contains("--save-path"), "{body}");
+    assert!(body.contains(&fused.display().to_string()), "{body}");
+    assert!(body.contains("--export-gguf"), "{body}");
+    assert!(body.contains(&gguf.display().to_string()), "{body}");
+    assert!(body.contains("shape=mlx-adapter"), "{body}");
+    assert!(body.contains("estate enrich local-seat"), "{body}");
+    assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
+    assert!(!body.contains("estate enrich gguf-convert"), "{body}");
+    assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{body}");
+    assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    assert!(!fused.exists());
+    assert!(!gguf.exists());
+    assert!(!root.join("spawned").exists(), "fuse tooling was spawned");
+    assert_eq!(
+        std::fs::read(out_dir.join("prepare.json")).unwrap(),
+        prepare_before
+    );
+
+    let peft = out_dir.join("peft");
+    adapter_dir(&peft);
+    std::fs::write(peft.join("adapter_model.safetensors"), b"p").unwrap();
+    let refused = run_merge(&root, &out_dir, &peft);
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:adapter"), "{refused_text}");
+    assert!(!refused_text.contains("--save-path"), "{refused_text}");
+    assert!(!root.join("spawned").exists());
+    assert!(!fused.exists());
+}
+
+#[test]
+fn mlx_on_the_wrong_host_and_unsloth_still_refuse() {
+    let root = tmp("mlx-host-cli");
+    write_prepare(&root, "mlx-lm-lora", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let adapters = root.join("adapters");
+    adapter_dir(&adapters);
+    std::fs::write(adapters.join("adapters.safetensors"), b"w").unwrap();
+    let out = run_merge(&root, &root, &adapters);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:host"), "{body}");
+    assert!(body.contains("apple-silicon"), "{body}");
+    assert!(!body.contains("mlx_lm.fuse --model"), "{body}");
+    assert!(!root.join("fused_model").exists());
+    assert!(!root.join("spawned").exists());
+
+    write_prepare(&root, "unsloth-qlora", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let out = run_merge(&root, &root, &adapters);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:driver"), "{body}");
+    assert!(body.contains("unsloth-qlora"), "{body}");
+    assert!(!body.contains("mlx_lm.fuse"), "{body}");
+    assert!(!body.contains("merge_and_unload"), "{body}");
+    assert!(!root.join("spawned").exists());
 }

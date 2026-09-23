@@ -223,7 +223,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: MLX_LM_LORA_ID,
             status: "optional",
             integrates: "mlx-lm LoRA docs (apple-silicon NEXT handoff)",
-            notes: "Optional NEXT card. Apple Silicon LoRA handoff. Writes MLX.md, an operator-owned handoff, only when host_class_affinity is apple-silicon. Another affinity is refuse:host and writes nothing. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call mlx-lm. Not the product. LLaMA-Factory LoRA is llamafactory-lora. Axolotl LoRA is axolotl-lora.",
+            notes: "Optional NEXT card. Apple Silicon LoRA handoff. Writes MLX.md, an operator-owned handoff, only when host_class_affinity is apple-silicon. Another affinity is refuse:host and writes nothing. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call mlx-lm. After train, merge-adapt prints mlx_lm.fuse and local-seat prints the GGUF file from mlx_lm.fuse --export-gguf. Not the product. LLaMA-Factory LoRA is llamafactory-lora. Axolotl LoRA is axolotl-lora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -280,14 +280,15 @@ const MLX_HANDOFF: &str = "MLX.md";
 const APPLE_SILICON_HOST: &str = "apple-silicon";
 
 /// Public LoRA page. This factory does not fetch it.
-const MLX_LORA_DOC: &str = "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md";
+pub(crate) const MLX_LORA_DOC: &str =
+    "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md";
 const MLX_REPO: &str = "https://github.com/ml-explore/mlx-lm";
 /// Training extra published in mlx-lm `mlx_lm/LORA.md`. This factory does not run it.
 const MLX_TRAIN_INSTALL: &str = "pip install \"mlx-lm[train]\"";
 /// Train command name published on that page. This factory does not choose its flags.
 const MLX_LORA_COMMAND: &str = "mlx_lm.lora";
 /// Fuse command published on that page. The placeholder stays a placeholder.
-const MLX_FUSE_COMMAND: &str = "mlx_lm.fuse --model <path_to_model>";
+pub(crate) const MLX_FUSE_COMMAND: &str = "mlx_lm.fuse --model <path_to_model>";
 
 /// Which LLaMA-Factory PEFT recipe a card writes. Selection is the driver id.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -441,10 +442,11 @@ pub(crate) fn is_axolotl_driver(id: &str) -> bool {
     axolotl_method(id).is_some()
 }
 
-/// Print-only `merge-adapt`, `gguf-convert`, and `local-seat`.
-/// LLaMA-Factory merges with `llamafactory-cli export`.
+/// Print-only Hugging Face merge ladder for `merge-adapt`, `gguf-convert`,
+/// and `local-seat`. LLaMA-Factory merges with `llamafactory-cli export`.
 /// Axolotl merges with `axolotl merge-lora` into `output_dir/merged`.
-/// `unsloth-qlora` and `mlx-lm-lora` stay off this ladder.
+/// `unsloth-qlora` stays off this ladder. `mlx-lm-lora` prints `mlx_lm.fuse`
+/// on its own path and does not use `convert_hf_to_gguf.py`.
 pub(crate) fn is_post_merge_print_driver(id: &str) -> bool {
     is_llamafactory_driver(id) || is_axolotl_driver(id)
 }
@@ -1150,6 +1152,18 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
             body.push_str(&note);
         }
+    } else if driver.id() == MLX_LM_LORA_ID {
+        let train_base = job.train_base_model.as_deref().unwrap_or("");
+        let note = crate::merge_adapt::mlx_post_train_ladder(
+            &job.out_dir,
+            &job.base_model,
+            &job.pack_id,
+            train_base,
+        );
+        next.push_str(&note);
+        if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
+            body.push_str(&note);
+        }
     }
     files.push(("NEXT.md".into(), next));
     for (name, body) in &files {
@@ -1839,8 +1853,8 @@ fn next_markdown(
                  The page names `{lora_command}` for LoRA. A quantized model on that page is QLoRA. This factory does not choose iters, rank, layers, or a data directory, and it does not write a YAML config.\n\
                  \n\
                  Fuse, from that same page: `{fuse}`.\n\
-                 mlx-lm loads adapters from adapters/ and writes the fused model under fused_model/ unless you pass other flags. `mlx_lm.fuse --help` lists them. This factory does not run fuse, does not fill in the model path, and does not export GGUF.\n\
-                 GGUF export on that page is an mlx_lm.fuse flag. estate enrich gguf-convert reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare. This card does not.\n\
+                 mlx-lm loads adapters from adapters/ and writes the fused model under fused_model/ unless you pass other flags. `mlx_lm.fuse --help` lists them. This factory does not run fuse.\n\
+                 After that train, the section below names merge-adapt, the fuse line with --adapter-path and --save-path, `mlx_lm.fuse --export-gguf`, and local-seat for ggml-model-f16.gguf. The fused directory is MLX weights. The Hugging Face convert card stays on the LLaMA-Factory and Axolotl prepares.\n\
                  \n\
                  {host}\n\
                  \n\
@@ -1852,7 +1866,7 @@ fn next_markdown(
                  \n\
                  llamafactory-lora writes the LLaMA-Factory LoRA recipe. axolotl-lora writes the Axolotl bf16 YAML. unsloth-qlora is the Nvidia-only QLoRA handoff. This card does not call those trainers.\n\
                  \n\
-                 After you train with mlx-lm outside this factory, hand the artifact you saved to import-trained. The LoRA page saves the adapter under adapters/ unless you pass --adapter-path. This factory does not choose that path. estate enrich local-seat reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare. This card does not.\n\
+                 After you train with mlx-lm outside this factory, point merge-adapt at the adapter directory (adapter_config.json and adapters.safetensors). The LoRA page saves that directory under adapters/ unless you pass --adapter-path. This factory does not choose that path. local-seat on this card reads the GGUF file fuse --export-gguf writes. It does not read the fused MLX directory as a Hugging Face export.\n\
                  \n\
                  READY_FOR_LIVE_TEST: no\n",
                 handoff = handoff.display(),
@@ -2108,7 +2122,7 @@ fn mlx_flag_note(job: &EnrichJob) -> String {
 }
 
 fn mlx_handoff_md(job: &EnrichJob, train_base: &str) -> String {
-    format!(
+    let mut body = format!(
         "# mlx-lm LoRA handoff (operator-owned)\n\
          \n\
          This file is not an mlx-lm config, not a YAML recipe, and not a training script.\n\
@@ -2136,9 +2150,11 @@ fn mlx_handoff_md(job: &EnrichJob, train_base: &str) -> String {
          Train command on that page: `{lora_command}`\n\
          Fuse command on that page: `{fuse}`\n\
          \n\
-         Fuse loads adapters from adapters/ and writes fused_model/ unless you pass other flags. mlx_lm.fuse --help lists them. A quantized --model on that page is QLoRA. This factory does not run fuse and does not export GGUF.\n\
+         Fuse loads adapters from adapters/ and writes fused_model/ unless you pass other flags. mlx_lm.fuse --help lists them. A quantized --model on that page is QLoRA. This factory does not run fuse.\n\
          \n\
-         After that train finishes outside this factory, hand one artifact to estate enrich import-trained:\n\
+         After mlx_lm.lora, the adapter directory holds adapter_config.json and adapters.safetensors. estate enrich merge-adapt prints mlx_lm.fuse with --model set to the train base, --adapter-path set to that directory, and --save-path set to fused_model beside this prepare. The same print adds --export-gguf. That flag writes ggml-model-f16.gguf inside the save path. LORA.md limits that GGUF export to Mistral, Mixtral, and Llama style models in fp16 precision. Then estate enrich local-seat --weights points at that GGUF file. The Hugging Face convert card stays on the LLaMA-Factory and Axolotl prepares. This card does not point it at the fused MLX weights. This factory does not write those weights.\n\
+         \n\
+         The filled commands are in NEXT.md and PREPARE.md. import-trained still accepts one artifact:\n\
          - an adapter directory that contains adapter_config.json\n\
          - a merged directory that contains config.json and at least one .safetensors file whose name does not start with adapter_model\n\
          - one .gguf file, or a directory with exactly one top-level .gguf\n\
@@ -2158,7 +2174,14 @@ fn mlx_handoff_md(job: &EnrichJob, train_base: &str) -> String {
         lora_command = MLX_LORA_COMMAND,
         fuse = MLX_FUSE_COMMAND,
         flags = mlx_flag_note(job),
-    )
+    );
+    body.push_str(&crate::merge_adapt::mlx_post_train_ladder(
+        &job.out_dir,
+        &job.base_model,
+        &job.pack_id,
+        train_base,
+    ));
+    body
 }
 
 fn mlx_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
@@ -2175,7 +2198,7 @@ fn mlx_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
          \n\
          The LoRA page and the fuse command are linked from NEXT.md. That page publishes `{install_line}` and `{fuse}`. This factory does not run that install and does not run fuse.\n\
          \n\
-         After you train outside this factory, hand the saved artifact to estate enrich import-trained. This factory does not choose the save format.\n\
+         After you train outside this factory, the section below names merge-adapt, the documented fuse line, `mlx_lm.fuse --export-gguf`, and local-seat for the GGUF file. This factory does not choose the adapter path. mlx_lm.lora writes it.\n\
          \n\
          READY_FOR_LIVE_TEST: no\n",
         handoff = MLX_HANDOFF,
@@ -3465,7 +3488,58 @@ fn canonicalize_recipe_train_base(driver_id: &str, job: &mut EnrichJob) -> Resul
     Ok(())
 }
 
-fn refuse_recipe_train_record(
+fn read_mlx_handoff(path: &Path) -> Result<String, ModelError> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(
+                "refuse:train-base: MLX.md is missing, so the train base cannot be checked".into(),
+            ));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:host: {}: {err}",
+                path.display()
+            )));
+        }
+    };
+    if meta.file_type().is_symlink() {
+        return Err(ModelError::Other(format!(
+            "refuse:host: {} is a symlink. enrich does not follow a symlinked MLX.md.",
+            path.display()
+        )));
+    }
+    if !meta.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:host: {} is not a regular file",
+            path.display()
+        )));
+    }
+    const MAX: u64 = 1024 * 1024;
+    if meta.len() > MAX {
+        return Err(ModelError::Other(format!(
+            "refuse:host: {} is larger than {MAX} bytes",
+            path.display()
+        )));
+    }
+    let mut file = open_nofollow(path).map_err(|err| {
+        if matches!(err.raw_os_error(), Some(40 | 62)) {
+            ModelError::Other(format!(
+                "refuse:host: {} is a symlink. enrich does not follow a symlinked MLX.md.",
+                path.display()
+            ))
+        } else {
+            ModelError::Other(format!("refuse:host: {}: {err}", path.display()))
+        }
+    })?;
+    let mut buf = String::new();
+    use std::io::Read;
+    file.read_to_string(&mut buf)
+        .map_err(|err| ModelError::Other(format!("refuse:host: {}: {err}", path.display())))?;
+    Ok(buf)
+}
+
+pub(crate) fn refuse_recipe_train_record(
     doc: &EnrichPrepareDoc,
     prepared_dir: &Path,
 ) -> Result<(), ModelError> {
@@ -3509,11 +3583,15 @@ fn refuse_recipe_train_record(
     };
     for (name, key) in checks {
         let path = prepared_dir.join(name);
-        let text = std::fs::read_to_string(&path).map_err(|_| {
-            ModelError::Other(format!(
-                "refuse:train-base: {name} is missing, so the train base cannot be checked"
-            ))
-        })?;
+        let text = if *name == MLX_HANDOFF {
+            read_mlx_handoff(&path)?
+        } else {
+            std::fs::read_to_string(&path).map_err(|_| {
+                ModelError::Other(format!(
+                    "refuse:train-base: {name} is missing, so the train base cannot be checked"
+                ))
+            })?
+        };
         let found = yaml_field(&text, key).unwrap_or_default();
         if found != train {
             return Err(ModelError::Other(format!(
@@ -7316,6 +7394,26 @@ mod tests {
         );
         assert!(prepare_md.contains("did not call mlx-lm"), "{prepare_md}");
         assert!(!prepare_md.contains("Dataset mode:"), "{prepare_md}");
+        for name in ["MLX.md", "NEXT.md", "PREPARE.md"] {
+            let body = std::fs::read_to_string(out.join(name)).unwrap();
+            assert!(body.contains("estate enrich merge-adapt"), "{name}: {body}");
+            assert!(body.contains("mlx_lm.fuse --export-gguf"), "{name}: {body}");
+            assert!(body.contains("adapters.safetensors"), "{name}: {body}");
+            assert!(body.contains("ggml-model-f16.gguf"), "{name}: {body}");
+            assert!(body.contains("estate enrich local-seat"), "{name}: {body}");
+            assert!(body.contains("## After the mlx-lm train"), "{name}: {body}");
+            assert!(
+                !body.contains("python3 convert_hf_to_gguf.py"),
+                "{name}: {body}"
+            );
+            assert!(
+                !body.contains("estate enrich gguf-convert"),
+                "{name}: {body}"
+            );
+            assert!(!body.contains("--dequantize"), "{name}: {body}");
+            assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{name}: {body}");
+            assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{name}: {body}");
+        }
 
         let gauge = root.join("gauge");
         run_max(

@@ -132,7 +132,11 @@ ADAPTER <adapter-directory>
 | `--runtime` other than `ollama` or `llama.cpp` (`llama-cpp` and `llamacpp` are the `llama.cpp` aliases) | `refuse:runtime` (after the shape checks) |
 | `--runtime llama.cpp` with `--adapter` | `refuse:runtime` (llama.cpp does not load an adapter directory in one line) |
 | Modelfile with no `FROM` line, empty, or not utf-8 | `refuse:modelfile` |
-| Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` | `refuse:driver` |
+| Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, or `mlx-lm-lora` | `refuse:driver` |
+| `mlx-lm-lora` `--weights` is one `.gguf` file | prints `ollama create` and the llama.cpp lines for that file |
+| `mlx-lm-lora` `--weights` is a fused directory (`config.json` and `model.safetensors`) | `refuse:seat` (MLX weights; seat `ggml-model-f16.gguf`) |
+| `mlx-lm-lora` `--adapter` | `refuse:adapter` (not an Ollama `ADAPTER` directory) |
+| `mlx-lm-lora` `host_class_affinity` is not `apple-silicon` | `refuse:host` |
 | Job is not `train` | `refuse:job` |
 | `seat_tag` missing, or different from `base_model` | `refuse:seat` or `refuse:prepare` |
 | `promoted`, `auto_apply`, or `estate_rewritten` is true | `refuse:prepared` |

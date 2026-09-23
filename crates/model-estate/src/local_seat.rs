@@ -13,6 +13,9 @@
 //! or `axolotl-qlora`. `--weights` is the post-merge path (merged export or
 //! GGUF). `--adapter` is the no-merge path: a Modelfile whose `FROM` is
 //! `prepare.json` `seat_tag` and whose `ADAPTER` is the adapter directory.
+//! `mlx-lm-lora` seats the GGUF file `mlx_lm.fuse --export-gguf` writes.
+//! A fused MLX directory is not that file. An mlx adapter is not an Ollama
+//! `ADAPTER` directory.
 //! LLaMA-Factory `export_model` writes the merged directory and a `Modelfile`
 //! whose `FROM` is `.` (`template.get_ollama_modelfile`). Axolotl does not
 //! write that Modelfile and does not write GGUF. The operator owns the
@@ -23,7 +26,8 @@
 use crate::error::ModelError;
 use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_sacred_and_sku, EnrichJobKind,
+    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
+    MLX_LM_LORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::fs::File;
@@ -276,7 +280,25 @@ pub fn plan_local_seat_for(
     runtime: &str,
 ) -> Result<LocalSeatPlan, ModelError> {
     let prep = load_seat_prepare(prepared_dir, "weights", weights)?;
-    let shape = classify_weights(weights)?;
+    let shape = match classify_weights(weights) {
+        Ok(shape) => shape,
+        Err(err) if prep.driver == MLX_LM_LORA_ID => {
+            let text = err.to_string();
+            if text.contains("is an adapter directory") {
+                return Err(crate::merge_adapt::refuse_mlx_adapter_weights(weights));
+            }
+            if text.contains("more than one shape") {
+                return Err(crate::merge_adapt::refuse_mlx_mixed_weights(weights));
+            }
+            return Err(err);
+        }
+        Err(err) => return Err(err),
+    };
+    if prep.driver == MLX_LM_LORA_ID {
+        if let WeightsShape::Merged { dir, .. } = &shape {
+            return Err(crate::merge_adapt::refuse_mlx_hf_weights("local-seat", dir));
+        }
+    }
     let runtime = LocalSeatRuntime::parse(runtime)?;
     let plan = render_plan(
         prepared_dir,
@@ -309,6 +331,9 @@ pub fn plan_adapter_seat_for(
 ) -> Result<LocalSeatPlan, ModelError> {
     let prep = load_seat_prepare(prepared_dir, "adapter", adapter)?;
     let shape = classify_adapter(adapter)?;
+    if prep.driver == MLX_LM_LORA_ID {
+        return Err(crate::merge_adapt::refuse_mlx_adapter_seat());
+    }
     let runtime = LocalSeatRuntime::parse(runtime)?;
     if runtime == LocalSeatRuntime::LlamaCpp {
         return Err(refuse_adapter_llama_cpp());
@@ -340,7 +365,8 @@ fn load_seat_prepare(
     refuse_sacred_and_sku("prepared", &prepared_dir.display().to_string())?;
     refuse_sacred_and_sku(artifact_label, &artifact.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
-    if !is_post_merge_print_driver(&doc.driver) {
+    let mlx = doc.driver == MLX_LM_LORA_ID;
+    if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("local-seat", &doc.driver));
     }
     if doc.job != EnrichJobKind::Train.as_str() {
@@ -356,6 +382,9 @@ fn load_seat_prepare(
     single_line("seat_tag", &seat_tag)?;
     if let Some(train) = doc.train_base_model.as_deref() {
         single_line("train_base_model", train)?;
+    }
+    if mlx {
+        refuse_recipe_train_record(&doc, prepared_dir)?;
     }
     Ok(SeatPrepare {
         driver: doc.driver,
@@ -407,7 +436,7 @@ pub(crate) struct AdapterDir {
     /// Canonical adapter directory. Printed as Modelfile `ADAPTER`.
     pub(crate) dir: PathBuf,
     config: PathBuf,
-    weights: Vec<String>,
+    pub(crate) weights: Vec<String>,
     modelfile: Option<PathBuf>,
 }
 
@@ -1155,6 +1184,8 @@ fn render_gguf(
         }
     } else if is_axolotl_driver(driver) {
         "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a Modelfile is in the same directory. Axolotl did not write this GGUF. This factory does not write the file and does not invent a chat template."
+    } else if driver == MLX_LM_LORA_ID {
+        "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. mlx_lm.fuse --export-gguf writes this file. The default name is ggml-model-f16.gguf inside the fuse save path. This factory does not write the file and does not invent a chat template."
     } else {
         "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a LLaMA-Factory Modelfile is in the same directory. This factory does not write the file and does not invent a chat template."
     };
@@ -2139,9 +2170,11 @@ mod tests {
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
+        assert!(err.to_string().contains("refuse:host"), "{err}");
         assert!(err.to_string().contains("mlx-lm-lora"), "{err}");
+        assert!(err.to_string().contains("apple-silicon"), "{err}");
         assert!(!err.to_string().contains("ollama create"), "{err}");
+        assert!(!err.to_string().contains("mlx_lm.fuse"), "{err}");
 
         write_prepare(&root, "ollama-modelfile", "enrich", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
@@ -2964,5 +2997,178 @@ mod tests {
         let err = plan_local_seat_for(&root, &export, "not-a-runtime").unwrap_err();
         assert!(err.to_string().contains("refuse:job"), "{err}");
         assert!(!err.to_string().contains("refuse:runtime"), "{err}");
+    }
+
+    fn write_mlx(dir: &Path, job: &str, host: &str, promoted: bool) {
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"mlx-lm-lora\",\n\
+               \"job\": \"{job}\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"{host}\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [],\n\
+               \"promoted\": {promoted},\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+    }
+
+    fn write_mlx_md(dir: &Path) {
+        std::fs::write(
+            dir.join("MLX.md"),
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\nhost_class_affinity: apple-silicon\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn mlx_seats_the_export_gguf_file_and_refuses_the_fused_directory() {
+        let root = tmp("mlx-seat");
+        write_mlx(&root, "train", "apple-silicon", false);
+        write_mlx_md(&root);
+        let gguf = root.join("ggml-model-f16.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let plan = plan_local_seat(&root, &gguf).unwrap();
+        assert_eq!(plan.shape, "gguf");
+        assert_eq!(plan.driver, "mlx-lm-lora");
+        assert!(plan.report.contains("ollama create"), "{}", plan.report);
+        assert!(plan.report.contains("llama-cli -m"), "{}", plan.report);
+        assert!(plan.report.contains("llama-server -m"), "{}", plan.report);
+        assert!(
+            plan.report.contains("mlx_lm.fuse --export-gguf"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("ggml-model-f16.gguf"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("python3 convert_hf_to_gguf.py"),
+            "{}",
+            plan.report
+        );
+        assert!(!plan.report.contains("ADAPTER"), "{}", plan.report);
+        assert!(!root.join(MODELFILE_NAME).exists());
+        assert_eq!(
+            std::fs::read(root.join("prepare.json")).unwrap(),
+            prepare_before
+        );
+
+        let cpp = plan_local_seat_for(&root, &gguf, "llama.cpp").unwrap();
+        assert!(cpp.report.contains("llama-cli -m"), "{}", cpp.report);
+        assert!(cpp.report.contains("ollama create"), "{}", cpp.report);
+        assert!(!root.join(MODELFILE_NAME).exists());
+
+        let only = root.join("only-gguf");
+        std::fs::create_dir_all(&only).unwrap();
+        std::fs::write(only.join("model.gguf"), gguf_bytes()).unwrap();
+        let seated = plan_local_seat(&root, &only).unwrap();
+        assert_eq!(seated.shape, "gguf");
+        assert!(seated.report.contains("ollama create"), "{}", seated.report);
+
+        let fused = root.join("fused_model");
+        std::fs::create_dir_all(&fused).unwrap();
+        merged(&fused, None);
+        let err = plan_local_seat(&root, &fused).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("MLX weights"), "{text}");
+        assert!(text.contains("ggml-model-f16.gguf"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+
+        std::fs::write(fused.join("ggml-model-f16.gguf"), gguf_bytes()).unwrap();
+        let err = plan_local_seat(&root, &fused).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("more than one shape"), "{text}");
+        assert!(text.contains("ggml-model-f16.gguf"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let adapter = root.join("adapters");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapters.safetensors"), b"w").unwrap();
+        let err = plan_local_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("adapters.safetensors"), "{text}");
+        assert!(!text.contains("Pass --adapter to print"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let err = plan_adapter_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("mlx-lm-lora"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+        assert!(!text.contains("FROM llama3"), "{text}");
+        assert!(!adapter.join(MODELFILE_NAME).exists());
+
+        let err = plan_adapter_seat(&root, &gguf).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("is a GGUF"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let linked = root.join("linked.gguf");
+        std::os::unix::fs::symlink(&gguf, &linked).unwrap();
+        let err = plan_local_seat(&root, &linked).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        write_mlx(&root, "enrich", "apple-silicon", false);
+        let err = plan_local_seat(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        write_mlx(&root, "train", "apple-silicon", false);
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        let err = plan_local_seat(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        let real = root.join("real-mlx.md");
+        write_mlx_md(&root);
+        std::fs::rename(root.join("MLX.md"), &real).unwrap();
+        std::os::unix::fs::symlink(&real, root.join("MLX.md")).unwrap();
+        let err = plan_local_seat(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:host"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+
+        write_mlx(&root, "train", "apple-silicon", true);
+        std::fs::remove_file(root.join("MLX.md")).unwrap();
+        write_mlx_md(&root);
+        let err = plan_local_seat(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+
+        let sacred = root.join("cyera.gguf");
+        std::fs::write(&sacred, gguf_bytes()).unwrap();
+        write_mlx(&root, "train", "apple-silicon", false);
+        let err = plan_local_seat(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        assert!(!root.join(MODELFILE_NAME).exists());
     }
 }

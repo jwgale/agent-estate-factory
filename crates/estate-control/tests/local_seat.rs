@@ -696,7 +696,10 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
         .unwrap();
     let selected_text = text(&selected);
     assert!(selected.status.success(), "{selected_text}");
-    assert!(selected_text.contains("runtime=llama.cpp"), "{selected_text}");
+    assert!(
+        selected_text.contains("runtime=llama.cpp"),
+        "{selected_text}"
+    );
     assert!(selected_text.contains("llama-cli -m "), "{selected_text}");
     assert!(selected_text.contains("ollama create"), "{selected_text}");
     let cli_at = selected_text.find("llama-cli -m").unwrap();
@@ -726,7 +729,10 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
     let merged_text = text(&merged);
     assert!(merged.status.success(), "{merged_text}");
     assert!(merged_text.contains("shape=merged"), "{merged_text}");
-    assert!(merged_text.contains("convert_hf_to_gguf.py"), "{merged_text}");
+    assert!(
+        merged_text.contains("convert_hf_to_gguf.py"),
+        "{merged_text}"
+    );
     assert!(
         merged_text.contains("does not load this Hugging Face directory"),
         "{merged_text}"
@@ -786,6 +792,133 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
     assert!(other_text.contains("refuse:runtime"), "{other_text}");
     assert!(other_text.contains("mlx"), "{other_text}");
     assert!(!other_text.contains("llama-cli"), "{other_text}");
+    assert!(!marker.exists());
+}
+
+#[test]
+fn mlx_seats_a_gguf_file_and_refuses_the_fused_directory() {
+    let root = tmp("mlx-seat");
+    let body = r#"{
+  "schema": "cell-one.enrich-prepare.v0",
+  "driver": "mlx-lm-lora",
+  "job": "train",
+  "pack_id": "overnight-traces",
+  "base_model": "llama3",
+  "seat_tag": "llama3",
+  "train_base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "purpose": "fixture",
+  "host_class_affinity": "apple-silicon",
+  "source_paths": [],
+  "source_drivers": [],
+  "artifacts": [],
+  "promoted": false,
+  "auto_apply": false,
+  "estate_rewritten": false,
+  "note": "test"
+}
+"#;
+    std::fs::write(root.join("prepare.json"), body).unwrap();
+    std::fs::write(
+        root.join("MLX.md"),
+        "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\nhost_class_affinity: apple-silicon\n",
+    )
+    .unwrap();
+    let gguf = root.join("ggml-model-f16.gguf");
+    let mut bytes = b"GGUF".to_vec();
+    bytes.extend_from_slice(&[0u8; 12]);
+    std::fs::write(&gguf, bytes).unwrap();
+
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let marker = root.join("spawned");
+    let script = format!("#!/bin/sh\ntouch {}\n", marker.display());
+    for name in [
+        "ollama",
+        "llama-cli",
+        "llama-server",
+        "mlx_lm.fuse",
+        "mlx_lm.lora",
+    ] {
+        let path = bin.join(name);
+        std::fs::write(&path, &script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    let seat = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            root.to_str().unwrap(),
+            "--weights",
+            gguf.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let seat_text = text(&seat);
+    assert!(seat.status.success(), "{seat_text}");
+    assert!(seat_text.contains("shape=gguf"), "{seat_text}");
+    assert!(seat_text.contains("driver=mlx-lm-lora"), "{seat_text}");
+    assert!(seat_text.contains("ollama create"), "{seat_text}");
+    assert!(seat_text.contains("llama-cli -m"), "{seat_text}");
+    assert!(
+        seat_text.contains("mlx_lm.fuse --export-gguf"),
+        "{seat_text}"
+    );
+    assert!(seat_text.contains("READY_FOR_LIVE_TEST: no"), "{seat_text}");
+    assert!(
+        !seat_text.contains("python3 convert_hf_to_gguf.py"),
+        "{seat_text}"
+    );
+    assert!(!seat_text.contains("FROM llama3\nADAPTER"), "{seat_text}");
+    assert!(!root.join("Modelfile").exists());
+    assert!(!marker.exists());
+
+    let fused = root.join("fused_model");
+    std::fs::create_dir_all(&fused).unwrap();
+    std::fs::write(fused.join("config.json"), "{}\n").unwrap();
+    std::fs::write(fused.join("model.safetensors"), b"w").unwrap();
+    let refused = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            root.to_str().unwrap(),
+            "--weights",
+            fused.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:seat"), "{refused_text}");
+    assert!(refused_text.contains("MLX weights"), "{refused_text}");
+    assert!(!refused_text.contains("ollama create"), "{refused_text}");
+
+    let adapters = root.join("adapters");
+    std::fs::create_dir_all(&adapters).unwrap();
+    std::fs::write(adapters.join("adapter_config.json"), "{}\n").unwrap();
+    std::fs::write(adapters.join("adapters.safetensors"), b"w").unwrap();
+    let adapter_seat = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            root.to_str().unwrap(),
+            "--adapter",
+            adapters.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let adapter_text = text(&adapter_seat);
+    assert!(!adapter_seat.status.success(), "{adapter_text}");
+    assert!(adapter_text.contains("refuse:adapter"), "{adapter_text}");
+    assert!(!adapter_text.contains("ollama create"), "{adapter_text}");
+    assert!(!adapter_text.contains("FROM llama3"), "{adapter_text}");
+    assert!(!adapters.join("Modelfile").exists());
     assert!(!marker.exists());
 }
 
