@@ -99,6 +99,7 @@ From pack:  estate enrich from-pack
 Walk:       make enrich-prepare
 Train:      make train-prepare
 QLoRA walk: make qlora-journey
+LoRA walk:  make lora-journey
 Live prove: make enrich-live-prove
 ";
 
@@ -364,6 +365,7 @@ is allowed. Prepare writes artifacts. It does not train.
   make enrich-prepare
   make train-prepare
   make qlora-journey
+  make lora-journey
   make enrich-live-prove
 
 TrainEnrichDriver lives in the data plane (model-estate).
@@ -804,6 +806,66 @@ artifacts, and prints SKIP live train. It does not run a trainer
 and does not convert. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 8, Target C).
+
+Qwen LoRA journey (Target A)
+----------------------------
+Unquantized path. Prepare llamafactory-lora, run the NEXT.md train and
+export lines outside this factory, print the merge, print the GGUF
+convert, print the Ollama create, then record the artifact shape. The
+seat tag and the train base stay separate. A 5090 smoke seated llama3
+and trained Qwen/Qwen2.5-0.5B-Instruct on this card, then exported and
+seated that gauge from the files prepare wrote. template is qwen.
+model_name_or_path is that train base. finetuning_type is lora.
+lora_rank is 8. packing is false. quantization_bit and
+quantization_method stay off the recipe. This path does not require
+bitsandbytes. A missing train base or a bare seat tag is
+refuse:train-base and writes nothing. This factory does not map the
+seat tag onto a Hub repo and does not download weights.
+
+  estate enrich prepare --estate <your-estate.yaml> \\
+    --pack <pack-id> --driver llamafactory-lora --job train \\
+    --state-dir .cell
+
+Run llamafactory-cli train and llamafactory-cli export from NEXT.md
+on a CUDA host. This factory does not run them.
+
+  estate enrich merge-adapt \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
+    --adapter .cell/enrich/<pack-id>/llamafactory-lora/outputs
+
+That prints llamafactory-cli export for export.yaml and the keys from
+examples/merge_lora/qwen3_lora_sft.yaml. It does not merge.
+
+  estate enrich gguf-convert \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
+    --weights .cell/enrich/<pack-id>/llamafactory-lora/export
+
+That prints python3 convert_hf_to_gguf.py with --outtype auto and an
+outfile beside the export directory. It does not convert. A missing
+export directory is refuse:seat.
+
+  estate enrich local-seat \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
+    --weights .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
+
+That prints ollama create for cell-enrich-<pack-id>. When --weights
+is the GGUF it also prints llama-cli -m and llama-server -m for that
+file. --runtime llama.cpp selects those lines. It does not create the
+model and does not run llama.cpp.
+
+  estate enrich import-trained --estate <your-estate.yaml> \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
+    --tag cell-enrich-<pack-id> \\
+    --adapter .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
+
+import-trained records trained_shape and trained_paths. The GGUF
+shape is gguf. outputs/ records adapter. export/ records merged.
+It does not apply and does not promote. Opt-in ladder check:
+make lora-journey. It prints this ladder, checks the prepare
+artifacts, and prints SKIP live train. It does not run a trainer,
+does not merge, and does not convert. Not in make smoke, make gate-90,
+or Actions. READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 9, Target A).
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
 Journeys: docs/operator-enrich-journeys.md.
