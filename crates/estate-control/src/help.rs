@@ -907,7 +907,14 @@ llama3, train base Qwen/Qwen2.5-0.5B-Instruct) on a throwaway estate
 copy, writes fixture stubs, and prints the lines. The adapter stub
 is outputs/adapter_config.json. The merged stub is export/config.json
 plus export/model.safetensors. The GGUF stub starts with GGUF magic.
-An empty file is refuse:seat.
+An empty file is refuse:seat. Before the good merged stub, the script
+writes a 5090-shaped export. config.json sets model_type qwen2 and
+architectures Qwen2ForCausalLM. tokenizer_config.json sets
+extra_special_tokens to a JSON list. vocab.json and merges.txt are
+missing. gguf-convert on that directory is refuse:tokenizer and does
+not print the convert line. The script then replaces that fixture
+with config.json {} and model.safetensors. It does not copy tokenizer
+files and does not write tokenizer_config.json.bak.
 
   estate enrich merge-adapt \\
     --prepared <prepared> --adapter <prepared>/outputs

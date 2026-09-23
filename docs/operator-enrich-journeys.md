@@ -12,7 +12,7 @@ Popular path (Target C): Qwen through LLaMA-Factory QLoRA, then a printed GGUF c
 
 Unquantized path (Target A): Qwen through LLaMA-Factory LoRA, then a printed merge, a printed GGUF convert, a printed Ollama create, and `import-trained` to record the shape. Section 9. The seat tag and the train base stay separate. Opt-in check: `make lora-journey`. It prints that ladder and checks the prepare artifacts. It does not train, does not merge, does not convert, and does not promote.
 
-Print path once a merged export and a GGUF exist (Target C seat ladder): the same Qwen QLoRA prepare, then fixture stubs, then the printed `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` lines. Section 10. Opt-in check: `make seat-journey`. It prints those lines. It does not train, does not convert, does not create a model, and does not promote.
+Print path once a merged export and a GGUF exist (Target C seat ladder): the same Qwen QLoRA prepare, then a 5090-shaped export that is `refuse:tokenizer`, then fixture stubs, then the printed `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` lines. Section 10. Opt-in check: `make seat-journey`. It prints those lines. It does not train, does not convert, does not create a model, and does not promote.
 
 ## What stays fixed
 
@@ -437,7 +437,7 @@ The same command records the other two shapes when that is the artifact you have
 make qlora-journey
 ```
 
-That opt-in script prints this ladder, prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, the `NEXT.md` train and export lines, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `make seat-journey` (section 10) is the opt-in that prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` after fixture stubs stand in for the merged export and the GGUF.
+That opt-in script prints this ladder, prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, the `NEXT.md` train and export lines, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `make seat-journey` (section 10) is the opt-in that asserts `refuse:tokenizer` on a 5090-shaped export, then prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` after the good fixture stubs stand in for the merged export and the GGUF.
 
 ## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat
 
@@ -556,7 +556,11 @@ The prepare is the same Target C card as section 8: `llamafactory-qlora`, seat t
 
 A seat tag with no train base is `refuse:train-base` and writes nothing. Before the stubs exist, `merge-adapt` on a missing `outputs/` is `refuse:adapter`. `gguf-convert` on a missing `export/` is `refuse:seat`. `local-seat` on a missing `export.gguf` is `refuse:seat`. Those refuses write no export directory and no GGUF.
 
-The script then writes three fixture stubs under the prepared directory:
+After `merge-adapt` prints, the script writes a 5090-shaped export under `export/`. `config.json` sets `model_type` to `qwen2` and `architectures` to `Qwen2ForCausalLM`. `tokenizer_config.json` sets `extra_special_tokens` to a JSON list (`<|im_start|>` and `<|im_end|>`). `vocab.json` and `merges.txt` are absent. `model.safetensors` is the merged-weight marker, so the directory is a merged export. `gguf-convert` returns `refuse:tokenizer`, names the JSON list and both missing BPE files, names the copy from train base `Qwen/Qwen2.5-0.5B-Instruct` already on disk, and does not print `python3 convert_hf_to_gguf.py`. The script does not write `tokenizer_config.json.bak`, `vocab.json`, or `merges.txt`.
+
+The script then removes that fixture and writes the good stubs. The good `config.json` is `{}`. It has no Qwen marker and no `tokenizer_config.json`, so `gguf-convert` prints the convert line.
+
+The good stubs under the prepared directory are:
 
 | Stub | What the printer needs |
 | --- | --- |
@@ -583,4 +587,4 @@ The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. 
 make seat-journey
 ```
 
-That opt-in script prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, checks the Qwen QLoRA card (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, `quantization_bit: 4`, `quantization_method: bnb`), asserts the three refuses, writes the stubs, and checks the printed lines. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+That opt-in script prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, checks the Qwen QLoRA card (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, `quantization_bit: 4`, `quantization_method: bnb`), asserts `refuse:train-base`, `refuse:adapter`, `refuse:seat`, and `refuse:tokenizer`, replaces the 5090-shaped export with the good stubs, and checks the printed lines. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
