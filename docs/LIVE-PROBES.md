@@ -79,8 +79,9 @@ it.
 
 The tokenizer restore, the unwritten Modelfile, and the GGUF write line
 are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
-through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`) names this
-recorded PASS.
+through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`) names this
+recorded PASS. Tip honesty through PR #153 is PR #154
+(`4f0a2096dcf768ce988f320706ad7319aa7d489e`).
 
 Opt-in print of this ladder in operator order: `make uniqueness-prove-checklist`. That command does not train, convert, shell out to ollama, or promote. It does not invent a new live PASS. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
