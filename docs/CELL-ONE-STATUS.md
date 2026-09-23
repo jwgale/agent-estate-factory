@@ -1,7 +1,7 @@
 # Cell One status (for Jason)
 
-Snapshot of **what is on `main` through PR #151**
-(`ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67`).
+Snapshot of **what is on `main` through PR #153**
+(`16cea97d56079a60c033c7a10468ddd7092a2ef1`).
 The LLaMA-Factory LoRA and QLoRA beachhead matrix is PR #140
 (`35a88139dea58528e4bc5c7b31708b9716ce091b`).
 The print-only prepare walk of that matrix is PR #142
@@ -10,7 +10,9 @@ GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143.
 Journeys resolve `estate` with `ESTATE_BIN`, then `target/release/estate`, then `target/debug/estate` (PR #148, `ac8348a2d5cd0979ecf285c51153d12b3233442c`).
 After `refuse:tokenizer`, the restore names dereference (PR #149, `a272d39b731996524883e1124478dddc3f76935c`).
 `local-seat` on a GGUF is print-only and does not write `$PREPARED/Modelfile` (PR #150, `663c806ae72826cff664ea32e8a370e059ba83d4`).
-Help and docs scope that write line to GGUF print-only seats (PR #151).
+Help and docs scope that write line to GGUF print-only seats (PR #151, `ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67`).
+Docs and locks name that tip honesty (PR #152, `b4f9c321f2c21c4cac1eb24b8c5b002035318ce4`).
+The recorded 5090-class Target C live uniqueness PASS is [Target C live uniqueness (5090-class)](LIVE-PROBES.md) (PR #153).
 `READY_FOR_LIVE_TEST`: no. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
@@ -37,7 +39,7 @@ complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
 The uniqueness bet on tip is one printed ladder: `estate enrich prepare`, the `NEXT.md` train and export lines, `estate enrich merge-adapt`, `estate enrich gguf-convert`, `estate enrich local-seat`, then `estate enrich import-trained`. The factory writes the recipe and prints the next command. It does not train, merge, convert, create an Ollama model, or download weights. `READY_FOR_LIVE_TEST`: no.
 
-An operator ran that ladder outside the factory on a Linux 5090-class host on 2026-09-23. The recorded PASS is [Target C live uniqueness (5090-class)](LIVE-PROBES.md). The factory did not train, convert, shell out to ollama, or promote. That prove is not in `make smoke`, `make gate-90`, or GitHub Actions, and it is not native MLX. `examples/estate.yaml` stayed hash-locked. `READY_FOR_LIVE_TEST`: no.
+An operator ran that ladder outside the factory on a Linux 5090-class host on 2026-09-23. The recorded PASS is [Target C live uniqueness (5090-class)](LIVE-PROBES.md) (PR #153, `16cea97d56079a60c033c7a10468ddd7092a2ef1`). The factory did not train, convert, shell out to ollama, or promote. That prove is not in `make smoke`, `make gate-90`, or GitHub Actions, and it is not native MLX. `examples/estate.yaml` stayed hash-locked. `READY_FOR_LIVE_TEST`: no.
 
 The seat tag and the Hugging Face train base stay separate. The smoke seat tag is `llama3`. The train base is pack `train_base_model` or `params.train_base_model`. A bare Ollama tag (`llama3`, `llama3:latest`, `deepseek-r1`, `deepseek-r1:1.5b`, `glm4`, `glm4:9b`, `glm4:latest`, `glm-4:9b`) is `refuse:train-base` and writes nothing.
 
@@ -57,7 +59,7 @@ Prepare still writes files and does not apply the estate by itself. `--all-drive
 
 ## Day 0–90 factory (merged in PR #1–#82)
 
-Day 0-90 factory is merged. The beachhead matrix in the uniqueness section above is PR #140. The print-only prepare walk of that matrix is PR #142. GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143. Tip through PR #151 also names the `ESTATE_BIN` fallback (PR #148), the tokenizer restore dereference (PR #149), the print-only local-seat Modelfile (PR #150), and the GGUF write-Modelfile line. Horizon / Research / Sanctum on separate lanes.
+Day 0-90 factory is merged. The beachhead matrix in the uniqueness section above is PR #140. The print-only prepare walk of that matrix is PR #142. GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143. Tip through PR #153 also names the `ESTATE_BIN` fallback (PR #148), the tokenizer restore dereference (PR #149), the print-only local-seat Modelfile (PR #150), the GGUF write-Modelfile line (PR #151), docs-and-locks tip honesty for that line (PR #152, `b4f9c321f2c21c4cac1eb24b8c5b002035318ce4`), and the recorded 5090-class Target C live uniqueness PASS (PR #153, `16cea97d56079a60c033c7a10468ddd7092a2ef1`). Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
 Sanctum is first-class and is not Cyera.
 
@@ -454,6 +456,8 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | tokenizer dereference | After `refuse:tokenizer`, a plain `cp -a` from an HF hub snapshot left `tokenizer_config.json` as a symlink. | PR #149. The restore names dereference (`cp -aL` or `cp --dereference`, or the equivalent). `refuse:tokenizer` stays before that restore. Enrich does not follow the symlink and does not copy the files. READY no. |
 | print-only Modelfile | A GGUF `local-seat` could be read as writing `$PREPARED/Modelfile`. | PR #150. local-seat is print-only. It prints the Modelfile and does not write `$PREPARED/Modelfile`. Write that file from the printed contents before `ollama create`. The command does not shell out to ollama and does not promote. READY no. |
 | GGUF write line | That write sentence also sat on a merged seat that already had a Modelfile on disk. | PR #151. Help and the seat docs scope the write line to GGUF print-only seats. When `modelfile_on_disk=true`, the report uses the on-disk Modelfile when FROM already names the artifact. Do not write `$PREPARED/Modelfile` again. READY no. |
+| tip honesty through #151 | Tip framing stopped at PR #143 after #148–#151 had landed. | PR #152 (`b4f9c321f2c21c4cac1eb24b8c5b002035318ce4`). GATE-90 and Cell One name those slices. Docs and locks only. Beachhead matrix, prepare walk, and the uniqueness ladder stay. READY no. |
+| target c uniqueness prove | The outside-factory 5090-class Target C ladder had no recorded PASS on the live-probes page. | PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`). The recorded PASS is [Target C live uniqueness (5090-class)](LIVE-PROBES.md). The factory did not train, convert, shell out to ollama, or promote. READY no. |
 
 ## Known-good local commands
 
