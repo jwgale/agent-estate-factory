@@ -1201,7 +1201,15 @@ grep -q "https://unsloth.ai/docs/get-started/install" "$WORKDIR/unsloth/NEXT.md"
 grep -q "https://unsloth.ai/docs/get-started/fine-tuning-llms-guide" "$WORKDIR/unsloth/NEXT.md"
 grep -q "uv pip install unsloth --torch-backend=auto" "$WORKDIR/unsloth/NEXT.md"
 grep -q "import-trained" "$WORKDIR/unsloth/NEXT.md"
+grep -q "estate enrich merge-adapt" "$WORKDIR/unsloth/NEXT.md"
+grep -q "save_pretrained_merged" "$WORKDIR/unsloth/NEXT.md"
+grep -q "merged_16bit" "$WORKDIR/unsloth/PREPARE.md"
+grep -q "estate enrich gguf-convert" "$WORKDIR/unsloth/NEXT.md"
 grep -q "READY_FOR_LIVE_TEST: no" "$WORKDIR/unsloth/NEXT.md"
+if [[ -e "$WORKDIR/unsloth/merged" ]]; then
+  echo "FAIL  unsloth-qlora must not write a merged directory"
+  exit 1
+fi
 if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/unsloth/NEXT.md"; then
   echo "FAIL  unsloth-qlora must keep READY_FOR_LIVE_TEST no"
   exit 1

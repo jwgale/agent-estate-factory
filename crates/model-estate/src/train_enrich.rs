@@ -212,7 +212,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: UNSLOTH_QLORA_ID,
             status: "optional",
             integrates: "Unsloth QLoRA docs (Nvidia-only NEXT handoff)",
-            notes: "Optional NEXT card. Nvidia-only QLoRA alternate for a faster single-GPU run. Writes UNSLOTH.md, an operator-owned handoff. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call Unsloth. Not the product. LLaMA-Factory QLoRA is llamafactory-qlora. Axolotl QLoRA is axolotl-qlora.",
+            notes: "Optional NEXT card. Nvidia-only QLoRA alternate for a faster single-GPU run. Writes UNSLOTH.md, an operator-owned handoff. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call Unsloth. After the operator-owned train, merge-adapt prints Unsloth's save_pretrained_merged merged_16bit line for a PEFT adapter directory. gguf-convert and local-seat then print the Hugging Face convert and the Ollama seat. local-seat --adapter is refuse:adapter. Not the product. LLaMA-Factory QLoRA is llamafactory-qlora. Axolotl QLoRA is axolotl-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -265,9 +265,21 @@ pub const UNSLOTH_QLORA_ID: &str = "unsloth-qlora";
 /// Operator-owned pointer. Not an Unsloth config and not a training script.
 const UNSLOTH_HANDOFF: &str = "UNSLOTH.md";
 
-const UNSLOTH_INSTALL_DOC: &str = "https://unsloth.ai/docs/get-started/install";
-const UNSLOTH_GUIDE_DOC: &str = "https://unsloth.ai/docs/get-started/fine-tuning-llms-guide";
-const UNSLOTH_REPO: &str = "https://github.com/unslothai/unsloth";
+pub(crate) const UNSLOTH_INSTALL_DOC: &str = "https://unsloth.ai/docs/get-started/install";
+pub(crate) const UNSLOTH_GUIDE_DOC: &str = "https://unsloth.ai/docs/get-started/fine-tuning-llms-guide";
+pub(crate) const UNSLOTH_REPO: &str = "https://github.com/unslothai/unsloth";
+/// vLLM guide. Publishes the LoRA save and `save_pretrained_merged` with `merged_16bit`.
+pub(crate) const UNSLOTH_VLLM_DOC: &str =
+    "https://unsloth.ai/docs/basics/inference-and-deployment/vllm-guide";
+/// Saving to GGUF. Publishes `save_pretrained_gguf` and the manual `convert_hf_to_gguf.py` lines.
+pub(crate) const UNSLOTH_GGUF_DOC: &str =
+    "https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf";
+/// Saving to Ollama. The export path on that page is GGUF, then a Modelfile.
+pub(crate) const UNSLOTH_OLLAMA_DOC: &str =
+    "https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-ollama";
+/// Inference page. Reloads a saved LoRA directory with `FastLanguageModel.from_pretrained`.
+pub(crate) const UNSLOTH_INFERENCE_DOC: &str =
+    "https://unsloth.ai/docs/basics/inference-and-deployment/unsloth-inference";
 /// Linux install line published in the Unsloth README. This factory does not run it.
 const UNSLOTH_README_INSTALL: &str = "uv pip install unsloth --torch-backend=auto";
 
@@ -445,15 +457,17 @@ pub(crate) fn is_axolotl_driver(id: &str) -> bool {
 /// Print-only Hugging Face merge ladder for `merge-adapt`, `gguf-convert`,
 /// and `local-seat`. LLaMA-Factory merges with `llamafactory-cli export`.
 /// Axolotl merges with `axolotl merge-lora` into `output_dir/merged`.
-/// `unsloth-qlora` stays off this ladder. `mlx-lm-lora` prints `mlx_lm.fuse`
-/// on its own path and does not use `convert_hf_to_gguf.py`.
+/// `unsloth-qlora` prints Unsloth's `save_pretrained_merged` (`merged_16bit`)
+/// for a PEFT adapter directory, then the same convert and seat cards.
+/// `mlx-lm-lora` prints `mlx_lm.fuse` on its own path and does not use
+/// `convert_hf_to_gguf.py`.
 pub(crate) fn is_post_merge_print_driver(id: &str) -> bool {
-    is_llamafactory_driver(id) || is_axolotl_driver(id)
+    is_llamafactory_driver(id) || is_axolotl_driver(id) || id == UNSLOTH_QLORA_ID
 }
 
 pub(crate) fn refuse_post_merge_driver(command: &str, found: &str) -> ModelError {
     ModelError::Other(format!(
-        "refuse:driver: {command} reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare, found '{found}'"
+        "refuse:driver: {command} reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare, found '{found}'"
     ))
 }
 
@@ -1152,6 +1166,16 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
             body.push_str(&note);
         }
+    } else if driver.id() == UNSLOTH_QLORA_ID {
+        let note = crate::merge_adapt::unsloth_post_train_ladder(
+            &job.out_dir,
+            &job.base_model,
+            &job.pack_id,
+        );
+        next.push_str(&note);
+        if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
+            body.push_str(&note);
+        }
     } else if driver.id() == MLX_LM_LORA_ID {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         let note = crate::merge_adapt::mlx_post_train_ladder(
@@ -1805,7 +1829,7 @@ fn next_markdown(
                  \n\
                  llamafactory-qlora writes the LLaMA-Factory QLoRA recipe. axolotl-qlora writes the Axolotl 4-bit YAML. This card does not call either trainer.\n\
                  \n\
-                 After you train with Unsloth outside this factory, hand the artifact you saved to import-trained. This factory does not choose Unsloth save knobs and does not write GGUF. estate enrich local-seat reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare. This card does not.\n\
+                 After you train with Unsloth outside this factory, the section below names the print ladder. merge-adapt prints the documented save_pretrained_merged line (save_method merged_16bit) when the adapter directory holds adapter_config.json and adapter_model.safetensors. gguf-convert and local-seat then print the convert and the seat for that merged Hugging Face directory. A GGUF file seats with local-seat --weights. local-seat --adapter is refuse:adapter. This factory does not choose ranks, does not call Unsloth, and does not write GGUF.\n\
                  \n\
                  READY_FOR_LIVE_TEST: no\n",
                 handoff = handoff.display(),
@@ -1832,7 +1856,7 @@ fn next_markdown(
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
             ),
-            "Point --adapter at the artifact you saved from the Unsloth guide. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
+            "Point --adapter at the artifact you saved. import-trained records trained_shape and trained_paths. merge-adapt prints the merged_16bit line for the adapter directory. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line for that directory or for a GGUF file. local-seat --adapter is refuse:adapter. import-trained does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
         )
     } else if driver_id == MLX_LM_LORA_ID {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -2053,14 +2077,21 @@ fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
          \n\
          Install: {install_doc}\n\
          Fine-tuning guide: {guide}\n\
+         vLLM save: {vllm}\n\
+         GGUF save: {gguf}\n\
+         Ollama save: {ollama}\n\
          Repository: {repo}\n\
          \n\
-         After that train finishes outside this factory, hand one artifact to estate enrich import-trained:\n\
+         The vLLM guide saves a LoRA with model.save_pretrained, or with save_pretrained_merged and save_method lora. That directory holds adapter_config.json and adapter_model.safetensors (adapter_model.bin when safe_serialization is False). The same guide saves a merged 16-bit directory with save_pretrained_merged and save_method merged_16bit. The GGUF page also publishes model.save_pretrained_gguf, and a manual python llama.cpp/convert_hf_to_gguf.py line after that 16-bit save. The Ollama page exports to GGUF. It does not publish an Ollama ADAPTER line for the PEFT directory.\n\
+         \n\
+         After that train finishes outside this factory, estate enrich merge-adapt prints those save lines for the adapter directory. It does not run them. gguf-convert and local-seat then print the convert and the seat for the merged directory beside this prepare. A GGUF file seats with local-seat --weights. local-seat --adapter is refuse:adapter. The filled commands are in NEXT.md and PREPARE.md.\n\
+         \n\
+         import-trained still accepts one artifact:\n\
          - an adapter directory that contains adapter_config.json\n\
          - a merged directory that contains config.json and at least one .safetensors file whose name does not start with adapter_model\n\
          - one .gguf file, or a directory with exactly one top-level .gguf\n\
          \n\
-         The command is in NEXT.md. import-trained does not promote and does not rewrite estate.yaml.\n\
+         import-trained does not promote and does not rewrite estate.yaml.\n\
          \n\
          {flags}\n\
          \n\
@@ -2071,6 +2102,9 @@ fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
         install_line = UNSLOTH_README_INSTALL,
         install_doc = UNSLOTH_INSTALL_DOC,
         guide = UNSLOTH_GUIDE_DOC,
+        vllm = UNSLOTH_VLLM_DOC,
+        gguf = UNSLOTH_GGUF_DOC,
+        ollama = UNSLOTH_OLLAMA_DOC,
         repo = UNSLOTH_REPO,
         flags = unsloth_flag_note(job),
     )
@@ -2090,7 +2124,7 @@ fn unsloth_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
          \n\
          Install and the fine-tuning guide are linked from NEXT.md. The Unsloth README publishes `{install_line}`. This factory does not run that install.\n\
          \n\
-         After you train outside this factory, hand the saved artifact to estate enrich import-trained. This factory does not choose the save format.\n\
+         After you train outside this factory, merge-adapt prints Unsloth's documented merged_16bit save for the adapter directory. gguf-convert and local-seat print the next lines for that merged directory. This factory does not choose the save format and does not run those lines.\n\
          \n\
          READY_FOR_LIVE_TEST: no\n",
         handoff = UNSLOTH_HANDOFF,
@@ -3539,6 +3573,58 @@ fn read_mlx_handoff(path: &Path) -> Result<String, ModelError> {
     Ok(buf)
 }
 
+fn read_unsloth_handoff(path: &Path) -> Result<String, ModelError> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(
+                "refuse:train-base: UNSLOTH.md is missing, so the train base cannot be checked"
+                    .into(),
+            ));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:train-base: {}: {err}",
+                path.display()
+            )));
+        }
+    };
+    if meta.file_type().is_symlink() {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: {} is a symlink. enrich does not follow a symlinked UNSLOTH.md.",
+            path.display()
+        )));
+    }
+    if !meta.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: {} is not a regular file",
+            path.display()
+        )));
+    }
+    const MAX: u64 = 1024 * 1024;
+    if meta.len() > MAX {
+        return Err(ModelError::Other(format!(
+            "refuse:train-base: {} is larger than {MAX} bytes",
+            path.display()
+        )));
+    }
+    let mut file = open_nofollow(path).map_err(|err| {
+        if matches!(err.raw_os_error(), Some(40 | 62)) {
+            ModelError::Other(format!(
+                "refuse:train-base: {} is a symlink. enrich does not follow a symlinked UNSLOTH.md.",
+                path.display()
+            ))
+        } else {
+            ModelError::Other(format!("refuse:train-base: {}: {err}", path.display()))
+        }
+    })?;
+    let mut buf = String::new();
+    use std::io::Read;
+    file.read_to_string(&mut buf)
+        .map_err(|err| ModelError::Other(format!("refuse:train-base: {}: {err}", path.display())))?;
+    Ok(buf)
+}
+
 pub(crate) fn refuse_recipe_train_record(
     doc: &EnrichPrepareDoc,
     prepared_dir: &Path,
@@ -3585,6 +3671,8 @@ pub(crate) fn refuse_recipe_train_record(
         let path = prepared_dir.join(name);
         let text = if *name == MLX_HANDOFF {
             read_mlx_handoff(&path)?
+        } else if *name == UNSLOTH_HANDOFF {
+            read_unsloth_handoff(&path)?
         } else {
             std::fs::read_to_string(&path).map_err(|_| {
                 ModelError::Other(format!(
@@ -7132,6 +7220,14 @@ mod tests {
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(next.contains("estate enrich merge-adapt"), "{next}");
+        assert!(next.contains("save_pretrained_merged"), "{next}");
+        assert!(next.contains("merged_16bit"), "{next}");
+        assert!(next.contains("estate enrich gguf-convert"), "{next}");
+        assert!(next.contains("refuse:adapter"), "{next}");
+        assert!(!next.contains("merge_and_unload()"), "{next}");
+        assert!(handoff.contains(UNSLOTH_VLLM_DOC), "{handoff}");
+        assert!(handoff.contains(UNSLOTH_GGUF_DOC), "{handoff}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(prepare_md.contains("Seat tag: llama3"), "{prepare_md}");
         assert!(
@@ -7139,7 +7235,10 @@ mod tests {
             "{prepare_md}"
         );
         assert!(prepare_md.contains("did not call Unsloth"), "{prepare_md}");
+        assert!(prepare_md.contains("merged_16bit"), "{prepare_md}");
+        assert!(prepare_md.contains("estate enrich merge-adapt"), "{prepare_md}");
         assert!(!prepare_md.contains("Dataset mode:"), "{prepare_md}");
+        assert!(!out.join("merged").exists());
 
         let gauge = root.join("gauge");
         run_max(

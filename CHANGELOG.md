@@ -2,6 +2,15 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print the Unsloth save ladder
+
+- `estate enrich merge-adapt` on an `unsloth-qlora` train prepare prints Unsloth's documented `model.save_pretrained_merged(..., save_method = "merged_16bit")` when `--adapter` holds `adapter_config.json` and `adapter_model.safetensors` (or `adapter_model.bin`). The directory argument is `merged` beside the prepare. The vLLM guide and the saving-to-gguf page publish that call (https://unsloth.ai/docs/basics/inference-and-deployment/vllm-guide, https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf). The command does not merge, does not shell out, does not write a Python file, and does not promote.
+- The same report prints Unsloth's LoRA save lines, the inference-page reload with `model_name` set to the adapter directory, the three manual `python llama.cpp/convert_hf_to_gguf.py` lines (`f16`, `bf16`, `q8_0`, `--split-max-size 50G`), and the three `model.save_pretrained_gguf` examples (`q4_k_m`, `q8_0`, `f16`, directory string `directory`). It then names `gguf-convert` and `local-seat` for that merged directory. `gguf-convert` still prints `python3 convert_hf_to_gguf.py` with `--outtype auto`, the llama.cpp script default. Unsloth's page does not publish `--outtype auto`.
+- `local-seat --weights` accepts the merged Hugging Face directory or a GGUF file. `local-seat --adapter` is `refuse:adapter`. Unsloth's Ollama page seats a GGUF. It does not publish an Ollama adapter line for the PEFT directory. `--weights` on that adapter directory is `refuse:seat` and does not point the operator at `--adapter`.
+- A missing train base, a missing or mismatched `UNSLOTH.md`, a symlinked `UNSLOTH.md`, a missing weight file, `adapters.safetensors` alone, a symlink, a sacred token, a hardware SKU, the wrong job, and a promoted prepare still refuse. Status stays `optional`. The card does not write a recipe.
+- `PREPARE.md`, `NEXT.md`, and `UNSLOTH.md` name this print ladder after the operator-owned train step.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Qwen3 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `qwen3_nothink` for `Qwen/Qwen3-4B-Instruct-2507`, `Qwen/Qwen3-30B-A3B-Instruct-2507`, `Qwen/Qwen3-235B-A22B-Instruct-2507`, and `Qwen/Qwen3-Next-80B-A3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--Qwen--Qwen3-4B-Instruct-2507`). That is the `template="qwen3_nothink"` group in `constants.py`. `examples/train_lora/qwen3_lora_sft.yaml` and `examples/train_qlora/qwen3_lora_sft_otfq.yaml` use `Qwen/Qwen3-4B-Instruct-2507` and `template: qwen3_nothink`. `template.py` registers `qwen3_nothink`. A Qwen3 thinking or base checkpoint (`Qwen/Qwen3-4B`, `Qwen/Qwen3-4B-Thinking-2507`, `Qwen/Qwen3-4B-Base`, `Qwen/Qwen3-Next-80B-A3B-Thinking`) uses `qwen3`. Qwen2 and Qwen2.5, including `Qwen/Qwen2.5-0.5B-Instruct`, stay `qwen`.

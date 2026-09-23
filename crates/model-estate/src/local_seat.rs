@@ -10,12 +10,13 @@
 //! in one line, so `--runtime llama.cpp` on `--adapter` is `refuse:runtime`.
 //!
 //! The prepare is `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`,
-//! or `axolotl-qlora`. `--weights` is the post-merge path (merged export or
-//! GGUF). `--adapter` is the no-merge path: a Modelfile whose `FROM` is
-//! `prepare.json` `seat_tag` and whose `ADAPTER` is the adapter directory.
-//! `mlx-lm-lora` seats the GGUF file `mlx_lm.fuse --export-gguf` writes.
-//! A fused MLX directory is not that file. An mlx adapter is not an Ollama
-//! `ADAPTER` directory.
+//! `axolotl-qlora`, or `unsloth-qlora`. `--weights` is the post-merge path
+//! (merged export or GGUF). `--adapter` is the no-merge path: a Modelfile
+//! whose `FROM` is `prepare.json` `seat_tag` and whose `ADAPTER` is the
+//! adapter directory. `unsloth-qlora` does not use that ADAPTER print.
+//! Unsloth documents Ollama through a GGUF. `mlx-lm-lora` seats the GGUF
+//! file `mlx_lm.fuse --export-gguf` writes. A fused MLX directory is not
+//! that file. An mlx adapter is not an Ollama `ADAPTER` directory.
 //! LLaMA-Factory `export_model` writes the merged directory and a `Modelfile`
 //! whose `FROM` is `.` (`template.get_ollama_modelfile`). Axolotl does not
 //! write that Modelfile and does not write GGUF. The operator owns the
@@ -27,7 +28,7 @@ use crate::error::ModelError;
 use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
     refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
-    MLX_LM_LORA_ID,
+    MLX_LM_LORA_ID, UNSLOTH_QLORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::fs::File;
@@ -292,6 +293,13 @@ pub fn plan_local_seat_for(
             }
             return Err(err);
         }
+        Err(err) if prep.driver == UNSLOTH_QLORA_ID => {
+            let text = err.to_string();
+            if text.contains("is an adapter directory") {
+                return Err(crate::merge_adapt::refuse_unsloth_adapter_weights(weights));
+            }
+            return Err(err);
+        }
         Err(err) => return Err(err),
     };
     if prep.driver == MLX_LM_LORA_ID {
@@ -334,6 +342,9 @@ pub fn plan_adapter_seat_for(
     if prep.driver == MLX_LM_LORA_ID {
         return Err(crate::merge_adapt::refuse_mlx_adapter_seat());
     }
+    if prep.driver == UNSLOTH_QLORA_ID {
+        return Err(crate::merge_adapt::refuse_unsloth_adapter_seat());
+    }
     let runtime = LocalSeatRuntime::parse(runtime)?;
     if runtime == LocalSeatRuntime::LlamaCpp {
         return Err(refuse_adapter_llama_cpp());
@@ -366,6 +377,7 @@ fn load_seat_prepare(
     refuse_sacred_and_sku(artifact_label, &artifact.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
+    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("local-seat", &doc.driver));
     }
@@ -383,7 +395,7 @@ fn load_seat_prepare(
     if let Some(train) = doc.train_base_model.as_deref() {
         single_line("train_base_model", train)?;
     }
-    if mlx {
+    if mlx || unsloth {
         refuse_recipe_train_record(&doc, prepared_dir)?;
     }
     Ok(SeatPrepare {
@@ -1039,6 +1051,8 @@ fn merged_from_note(
     if !on_disk {
         return Ok(if is_axolotl_driver(driver) {
             "This merged directory has no Modelfile yet. Axolotl does not write a Modelfile. Axolotl does not write GGUF. The operator owns the merge into this Hugging Face directory. Do not run ollama create until a Modelfile exists, or seat the sibling GGUF after the convert line.".to_string()
+        } else if driver == UNSLOTH_QLORA_ID {
+            "This merged directory has no Modelfile yet. Unsloth's save_pretrained_merged with save_method merged_16bit writes the 16-bit Hugging Face directory. The Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory does not write that file and does not invent a chat template. Seat the sibling GGUF after the convert line.".to_string()
         } else {
             format!(
                 "This merged directory has no Modelfile yet. Current LLaMA-Factory export_model writes {MODELFILE_NAME} here. Do not run ollama create until that file exists."
@@ -1055,10 +1069,16 @@ fn merged_from_note(
     if from_arg_is_here(&from) {
         Ok(if is_axolotl_driver(driver) {
             "This Modelfile FROM is . That names this merged directory. Axolotl did not write this Modelfile and did not write GGUF.".to_string()
+        } else if driver == UNSLOTH_QLORA_ID {
+            "This Modelfile FROM is . That names this merged directory. Unsloth's merged_16bit save is the Hugging Face directory. The Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory did not write this file.".to_string()
         } else {
             "LLaMA-Factory wrote this Modelfile with FROM . That names this merged directory."
                 .to_string()
         })
+    } else if driver == UNSLOTH_QLORA_ID {
+        Ok(format!(
+            "This Modelfile FROM is {from}. The create line uses the file as written. Unsloth's Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory did not write this file."
+        ))
     } else if is_axolotl_driver(driver) {
         Ok(format!(
             "This Modelfile FROM is {from}. The create line uses the file as written. Axolotl did not write this Modelfile and did not write GGUF."
@@ -2164,9 +2184,9 @@ mod tests {
         merged(&export, Some("FROM .\n"));
         write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
-        assert!(err.to_string().contains("unsloth-qlora"), "{err}");
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
         assert!(!err.to_string().contains("ollama create"), "{err}");
+        assert!(!err.to_string().contains("llama-cli -m"), "{err}");
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), false);
         let err = plan_local_seat(&root, &export).unwrap_err();
@@ -2983,9 +3003,9 @@ mod tests {
         write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), false);
         let err = plan_local_seat_for(&root, &export, "llama.cpp").unwrap_err();
         let text = err.to_string();
-        assert!(text.contains("refuse:driver"), "{text}");
-        assert!(text.contains("unsloth-qlora"), "{text}");
+        assert!(text.contains("refuse:train-base"), "{text}");
         assert!(!text.contains("llama-cli"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
 
         write_prepare(
             &root,
@@ -3170,5 +3190,106 @@ mod tests {
         assert!(err.to_string().contains("refuse:sacred"), "{err}");
 
         assert!(!root.join(MODELFILE_NAME).exists());
+    }
+
+    fn write_unsloth_seat(dir: &Path) {
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"unsloth-qlora\",\n\
+               \"job\": \"train\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"any\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [],\n\
+               \"promoted\": false,\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+        std::fs::write(
+            dir.join("UNSLOTH.md"),
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn unsloth_seats_merged_and_gguf_and_refuses_the_peft_dir() {
+        let root = tmp("unsloth-seat");
+        write_unsloth_seat(&root);
+        let export = root.join("merged");
+        std::fs::create_dir_all(&export).unwrap();
+        merged(&export, None);
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let plan = plan_local_seat(&root, &export).unwrap();
+        assert_eq!(plan.shape, "merged");
+        assert!(plan.report.contains("ollama create"), "{}", plan.report);
+        assert!(plan.report.contains("gguf-convert"), "{}", plan.report);
+        assert!(plan.report.contains("Unsloth"), "{}", plan.report);
+        assert!(!plan.report.contains("llama-cli -m"), "{}", plan.report);
+        assert!(plan.report.contains("READY_FOR_LIVE_TEST: no"), "{}", plan.report);
+        assert!(!plan.report.contains("LLaMA-Factory wrote"), "{}", plan.report);
+        assert!(!export.join(MODELFILE_NAME).exists());
+
+        let cpp = plan_local_seat_for(&root, &export, "llama.cpp").unwrap();
+        assert!(!cpp.report.contains("llama-cli -m"), "{}", cpp.report);
+        assert!(cpp.report.contains("llama-cli"), "{}", cpp.report);
+        assert!(cpp.llama_cpp_commands.is_empty());
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let seated = plan_local_seat(&root, &gguf).unwrap();
+        assert_eq!(seated.shape, "gguf");
+        assert!(seated.report.contains("ollama create"), "{}", seated.report);
+        assert!(seated.report.contains("llama-cli -m"), "{}", seated.report);
+        assert!(seated.report.contains("llama-server -m"), "{}", seated.report);
+        assert!(!root.join(MODELFILE_NAME).exists());
+
+        let adapter = root.join("lora");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapter_model.safetensors"), b"w").unwrap();
+        let err = plan_adapter_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(!text.contains("ADAPTER "), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+        assert!(!text.contains("FROM llama3"), "{text}");
+
+        let err = plan_local_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(!text.contains("Pass --adapter"), "{text}");
+        assert!(!text.contains("ADAPTER "), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        std::fs::remove_file(root.join("UNSLOTH.md")).unwrap();
+        let err = plan_local_seat(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("UNSLOTH.md is missing"), "{err}");
+        assert!(!err.to_string().contains("ollama create"), "{err}");
+
+        let real = root.join("real-unsloth.md");
+        std::fs::write(
+            &real,
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&real, root.join("UNSLOTH.md")).unwrap();
+        let err = plan_local_seat(&root, &gguf).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("llama-cli -m"), "{err}");
+
+        assert_eq!(std::fs::read(root.join("prepare.json")).unwrap(), prepare_before);
+        assert!(!export.join(MODELFILE_NAME).exists());
     }
 }

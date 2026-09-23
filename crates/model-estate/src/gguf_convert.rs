@@ -10,6 +10,12 @@
 //! `mlx_lm.fuse --export-gguf`. This command refuses that prepare and names
 //! that flag. It does not invent a converter.
 //!
+//! `unsloth-qlora` uses this script for the merged 16-bit directory.
+//! The saving-to-gguf page also publishes three manual
+//! `python llama.cpp/convert_hf_to_gguf.py` lines (`f16`, `bf16`, `q8_0`).
+//! This command prints those lines and the factory card (`--outtype auto`).
+//! It does not run either form.
+//!
 //! `--outtype auto` is the script default in ggml-org/llama.cpp
 //! `convert_hf_to_gguf.py`: choices are f32, f16, bf16, q8_0, tq1_0, tq2_0,
 //! and auto, and the default is auto (the highest-fidelity 16-bit float
@@ -21,7 +27,7 @@ use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
 use crate::train_enrich::{
     is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
     refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
-    MLX_LM_LORA_ID,
+    MLX_LM_LORA_ID, UNSLOTH_GGUF_DOC, UNSLOTH_QLORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::path::{Path, PathBuf};
@@ -91,6 +97,7 @@ pub fn plan_gguf_convert(
     refuse_sacred_and_sku("weights", &weights.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
+    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("gguf-convert", &doc.driver));
     }
@@ -109,7 +116,16 @@ pub fn plan_gguf_convert(
         refuse_recipe_train_record(&doc, prepared_dir)?;
         return Err(refuse_mlx_gguf_convert(weights));
     }
-    let shape = classify_weights(weights)?;
+    if unsloth {
+        refuse_recipe_train_record(&doc, prepared_dir)?;
+    }
+    let shape = match classify_weights(weights) {
+        Ok(shape) => shape,
+        Err(err) if unsloth && err.to_string().contains("is an adapter directory") => {
+            return Err(crate::merge_adapt::refuse_unsloth_adapter_weights(weights));
+        }
+        Err(err) => return Err(err),
+    };
     let dir = match shape {
         WeightsShape::Merged { dir, .. } => dir,
         WeightsShape::Gguf { file, .. } => {
@@ -130,6 +146,23 @@ pub fn plan_gguf_convert(
     } else {
         ""
     };
+    let unsloth_note = if unsloth {
+        let manual = crate::merge_adapt::printed_unsloth_manual_block(&dir);
+        format!(
+            "Unsloth's saving-to-gguf page publishes three manual convert lines after save_pretrained_merged with save_method merged_16bit ({gguf_doc}). Those lines use python llama.cpp/convert_hf_to_gguf.py with --outtype f16, bf16, and q8_0, and --split-max-size 50G. The page's outfile names are model-F16.gguf, model-BF16.gguf, and model-Q8_0.gguf. This print uses this merged directory where the page writes merged_model. Unsloth's page does not publish --outtype auto. The python3 line below is the llama.cpp script default this factory already prints for llamafactory-lora, llamafactory-qlora, axolotl-lora, and axolotl-qlora. This factory does not run either form and does not print the page's apt-get or cmake build.\n\
+             \n\
+             {manual}\n\
+             \n",
+            gguf_doc = UNSLOTH_GGUF_DOC,
+        )
+    } else {
+        String::new()
+    };
+    let quant_sentence = if unsloth {
+        "The python3 line passes --outtype auto so the flag is not guessed. It does not choose a quantization type. Unsloth's page publishes q8_0 as one of the three manual lines above. This factory does not add tq1_0 or tq2_0 and does not print a llama-quantize command."
+    } else {
+        "q8_0, tq1_0, and tq2_0 are quantization-style types in that script. This factory does not print them. llama-quantize is the later llama.cpp tool. This factory does not choose a quantization type and does not print a quant command."
+    };
     let report = format!(
         "gguf-convert: shape=merged seat_tag={seat_tag} local_tag={local_tag}\n\
          pack={pack_id}\n\
@@ -139,7 +172,8 @@ pub fn plan_gguf_convert(
          promoted=false auto_apply=false estate_rewritten=false\n\
          \n\
          {axolotl_note}\
-         Run this from a llama.cpp checkout. convert_hf_to_gguf.py is that checkout's script. Its shebang is python3. --outtype auto is the script default: the highest-fidelity 16-bit float type (f16 or bf16) from the first loaded tensor. This line passes that default so the flag is not guessed. q8_0, tq1_0, and tq2_0 are quantization-style types in that script. This factory does not print them. llama-quantize is the later llama.cpp tool. This factory does not choose a quantization type and does not print a quant command. The outfile is a sibling of the merged directory. A .gguf file inside that directory makes the directory match two shapes, and local-seat and import-trained then refuse the directory.\n\
+         {unsloth_note}\
+         Run this from a llama.cpp checkout. convert_hf_to_gguf.py is that checkout's script. Its shebang is python3. --outtype auto is the script default: the highest-fidelity 16-bit float type (f16 or bf16) from the first loaded tensor. This line passes that default so the flag is not guessed. {quant_sentence} The outfile is a sibling of the merged directory. A .gguf file inside that directory makes the directory match two shapes, and local-seat and import-trained then refuse the directory.\n\
          \n\
          {convert}\n\
          \n\
@@ -154,6 +188,8 @@ pub fn plan_gguf_convert(
         weights = dir.display(),
         outfile = outfile.display(),
         axolotl_note = axolotl_note,
+        unsloth_note = unsloth_note,
+        quant_sentence = quant_sentence,
     );
     refuse_sacred_and_sku("gguf-convert report", &report)?;
     refuse_raw_secrets(&report).map_err(map_feed)?;
@@ -509,9 +545,9 @@ mod tests {
 
         write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), false);
         let err = plan_gguf_convert(&root, &export).unwrap_err();
-        assert!(err.to_string().contains("refuse:driver"), "{err}");
-        assert!(err.to_string().contains("unsloth-qlora"), "{err}");
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
         assert!(!err.to_string().contains("--outtype"), "{err}");
+        assert!(!err.to_string().contains("python3 convert_hf_to_gguf.py"), "{err}");
 
         write_prepare(&root, "mlx-lm-lora", "train", Some("llama3"), false);
         let err = plan_gguf_convert(&root, &export).unwrap_err();
@@ -868,5 +904,104 @@ mod tests {
 
         assert!(before.iter().all(|name| name != "export.gguf"));
         assert!(!root.join("fused_model.gguf").exists());
+    }
+
+    fn write_unsloth(dir: &Path, job: &str, promoted: bool) {
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"unsloth-qlora\",\n\
+               \"job\": \"{job}\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"any\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [],\n\
+               \"promoted\": {promoted},\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+        std::fs::write(
+            dir.join("UNSLOTH.md"),
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn unsloth_merged_dir_prints_both_convert_lines_and_writes_nothing() {
+        let root = tmp("unsloth-convert");
+        write_unsloth(&root, "train", false);
+        let export = root.join("merged");
+        merged(&export);
+        let prepare_before = std::fs::read(root.join("prepare.json")).unwrap();
+        let plan = plan_gguf_convert(&root, &export).unwrap();
+        let outfile = root.join("merged.gguf");
+        assert_eq!(plan.outfile, outfile);
+        assert_eq!(plan.convert_command, printed_convert_line(&export));
+        assert!(plan.convert_command.contains("--outtype auto"), "{}", plan.convert_command);
+        assert!(plan.report.contains("--outtype f16"), "{}", plan.report);
+        assert!(plan.report.contains("--outtype bf16"), "{}", plan.report);
+        assert!(plan.report.contains("--outtype q8_0"), "{}", plan.report);
+        assert!(plan.report.contains("model-F16.gguf"), "{}", plan.report);
+        assert!(plan.report.contains("--split-max-size 50G"), "{}", plan.report);
+        assert!(
+            plan.report.contains("does not publish --outtype auto"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("READY_FOR_LIVE_TEST: no"), "{}", plan.report);
+        assert!(!plan.report.contains("READY_FOR_LIVE_TEST: yes"), "{}", plan.report);
+        assert!(!outfile.exists());
+        assert_eq!(std::fs::read(root.join("prepare.json")).unwrap(), prepare_before);
+
+        std::fs::remove_file(root.join("UNSLOTH.md")).unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("UNSLOTH.md is missing"), "{err}");
+        assert!(!err.to_string().contains("--outtype"), "{err}");
+
+        let real = root.join("real-unsloth.md");
+        std::fs::write(
+            &real,
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&real, root.join("UNSLOTH.md")).unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(!err.to_string().contains("--outtype"), "{err}");
+
+        std::fs::remove_file(root.join("UNSLOTH.md")).unwrap();
+        std::fs::write(
+            root.join("UNSLOTH.md"),
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\nseat_tag: \"llama3\"\n",
+        )
+        .unwrap();
+        let adapter = root.join("lora");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(adapter.join("adapter_model.safetensors"), b"w").unwrap();
+        let err = plan_gguf_convert(&root, &adapter).unwrap_err();
+        assert!(err.to_string().contains("refuse:seat"), "{err}");
+        assert!(!err.to_string().contains("Pass --adapter"), "{err}");
+        assert!(!err.to_string().contains("--outtype"), "{err}");
+
+        write_unsloth(&root, "enrich", false);
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+
+        write_unsloth(&root, "train", true);
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("refuse:prepared"), "{err}");
+        assert!(!outfile.exists());
     }
 }
