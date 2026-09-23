@@ -122,6 +122,10 @@ fn help_enrich_and_train_name_the_seam() {
             "{body}"
         );
         assert!(
+            body.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"),
+            "{body}"
+        );
+        assert!(
             body.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
             "{body}"
         );
@@ -616,6 +620,24 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     );
     assert!(
         train_script.contains("deepseek fixture on the LoRA card wrote the QLoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the DeepSeek-R1-Distill chat QLoRA prepare."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("deepseek QLoRA prepare took the DeepSeek-R1-Distill LoRA reproduce note"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("deepseek LoRA fixture prepare wrote the QLoRA reproduce note"),
         "{train_script}"
     );
     assert!(
