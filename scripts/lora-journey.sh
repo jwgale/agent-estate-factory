@@ -163,6 +163,12 @@ if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of
   echo "FAIL  qwen2.5 LoRA prepare took the qwen3 instruct LoRA reproduce note"
   exit 1
 fi
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$PREPARED/NEXT.md" "$PREPARED/PREPARE.md"; then
+  echo "FAIL  qwen2.5 LoRA prepare took the Qwen2.5 Instruct QLoRA reproduce note"
+  exit 1
+fi
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen2.5 Instruct QLoRA prepare." "$PREPARED/NEXT.md"
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen2.5 Instruct QLoRA prepare." "$PREPARED/PREPARE.md"
 grep -q "pip install llamafactory" "$PREPARED/NEXT.md"
 grep -q "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"
 grep -q "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/NEXT.md"
