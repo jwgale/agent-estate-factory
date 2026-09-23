@@ -448,11 +448,18 @@ Qwen/Qwen3-4B-Instruct-2507 with that template. A Qwen3 thinking or base id,
 including Qwen/Qwen3-4B and Qwen/Qwen3-4B-Thinking-2507, uses qwen3 and is
 not this reproduce target. Qwen2 and Qwen2.5, including
 Qwen/Qwen2.5-0.5B-Instruct, stay template qwen.
-examples/fixtures/qwen3-instruct.pack.json is the Qwen3 Instruct smoke pack.
+examples/fixtures/qwen3-instruct.pack.json is the Qwen3 Instruct QLoRA smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA and still writes
 quantization_method bnb and quantization_bit 4. That reproduce line is
 QLoRA-only and only for that Qwen3 Instruct shape.
+examples/fixtures/qwen3-instruct-lora.pack.json is the Qwen3 Instruct LoRA
+smoke pack. --driver llamafactory-lora on that pack is the non-quant twin
+of that QLoRA prepare. It matches examples/train_lora/qwen3_lora_sft.yaml:
+template qwen3_nothink, lora_rank 8, and no quantization_bit or
+quantization_method. That reproduce line is LoRA-only and only for that
+Qwen3 Instruct shape. A Qwen3 thinking id and a Qwen2.5 Instruct id do not
+get that line.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
