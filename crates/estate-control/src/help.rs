@@ -98,6 +98,7 @@ Enrich:     estate enrich prepare
 From pack:  estate enrich from-pack
 Walk:       make enrich-prepare
 Train:      make train-prepare
+QLoRA walk: make qlora-journey
 Live prove: make enrich-live-prove
 ";
 
@@ -362,6 +363,7 @@ is allowed. Prepare writes artifacts. It does not train.
     --tag cell-enrich-overnight-traces --state-dir .cell
   make enrich-prepare
   make train-prepare
+  make qlora-journey
   make enrich-live-prove
 
 TrainEnrichDriver lives in the data plane (model-estate).
@@ -566,6 +568,54 @@ local-seat does not promote.
     --weights .cell/enrich/overnight-traces/llamafactory-qlora/export
 
 Page: docs/local-seat.md. READY_FOR_LIVE_TEST stays no.
+
+Qwen QLoRA journey (Target C)
+-----------------------------
+Popular path. Prepare llamafactory-qlora, run the NEXT.md train and
+export lines outside this factory, print the GGUF convert, print the
+Ollama create, then record the artifact shape. The seat tag and the
+train base stay separate. A 5090 smoke seated llama3 and trained
+Qwen/Qwen2.5-0.5B-Instruct. template is qwen. model_name_or_path is
+that train base. quantization_bit is 4 and quantization_method is bnb.
+A missing train base or a bare seat tag is refuse:train-base and
+writes nothing. This factory does not map the seat tag onto a Hub
+repo and does not download weights.
+
+  estate enrich prepare --estate <your-estate.yaml> \\
+    --pack <pack-id> --driver llamafactory-qlora --job train \\
+    --state-dir .cell
+
+Run llamafactory-cli train and llamafactory-cli export from NEXT.md
+on a CUDA host. This factory does not run them.
+
+  estate enrich gguf-convert \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
+    --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
+
+That prints python3 convert_hf_to_gguf.py with --outtype auto and an
+outfile beside the export directory. It does not convert. A missing
+export directory is refuse:seat.
+
+  estate enrich local-seat \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
+    --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
+
+That prints ollama create for cell-enrich-<pack-id>. It does not
+create the model.
+
+  estate enrich import-trained --estate <your-estate.yaml> \\
+    --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
+    --tag cell-enrich-<pack-id> \\
+    --adapter .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
+
+import-trained records trained_shape and trained_paths. The GGUF
+shape is gguf. outputs/ records adapter. export/ records merged.
+It does not apply and does not promote. Opt-in ladder check:
+make qlora-journey. It prints this ladder, checks the prepare
+artifacts, and prints SKIP live train. It does not run a trainer
+and does not convert. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 8, Target C).
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
 Journeys: docs/operator-enrich-journeys.md.

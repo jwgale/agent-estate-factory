@@ -2,7 +2,7 @@
 
 Operator page for seating a merged SLM on the local runtime. Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Prepare: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walk: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
-Ollama already creates a model from a Modelfile. llama.cpp already converts a Hugging Face directory to GGUF. LLaMA-Factory already writes the merged directory and a Modelfile. This factory prints the next command. It does not invent a converter and it does not shell out.
+Ollama already creates a model from a Modelfile. llama.cpp already converts a Hugging Face directory to GGUF. LLaMA-Factory already writes the merged directory and a Modelfile. This factory prints the next command. It does not invent a converter and it does not shell out. The Qwen QLoRA ladder that reaches this page is Target C in [`operator-enrich-journeys.md`](operator-enrich-journeys.md) (section 8): prepare, the `NEXT.md` train and export lines, `gguf-convert`, `local-seat`, then `import-trained`.
 
 `READY_FOR_LIVE_TEST`: no. The command does not promote.
 
