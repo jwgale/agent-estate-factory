@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Phi-3 Instruct LoRA reproduce target
+
+- `llamafactory-lora` infers LLaMA-Factory template `phi` for `microsoft/Phi-3-mini*`, `microsoft/Phi-3-medium*`, and Phi-3.5 (`microsoft/Phi-3.5-mini-instruct`, `microsoft/Phi-3.5-MoE-instruct`), including those ids as nested path segments and HF cache directories (`models--microsoft--Phi-3-mini-4k-instruct`). That is the same text group as the Phi-3 Instruct QLoRA prepare. Phi-3-small stays `phi_small`. Phi-4 stays `phi4`. Phi-4-mini stays `phi4_mini`. The names follow LLaMA-Factory `register_model_group` in `constants.py`.
+- The LoRA card still omits `quantization_bit` and `quantization_method`. `lora_rank` stays 8. `packing` stays false. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Phi repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as the non-quant twin of the Phi-3 Instruct QLoRA prepare only when the winning segment is that Instruct shape, and only on `llamafactory-lora`. The QLoRA note stays on `llamafactory-qlora`, including Phi-3-small. Phi-3-small, Phi-4, and Phi-4-mini do not get the LoRA line. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/phi3-instruct-lora.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `microsoft/Phi-3-mini-4k-instruct`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Mistral Instruct LoRA reproduce target
 
 - `llamafactory-lora` infers LLaMA-Factory template `mistral` for `mistralai/Mistral-7B-Instruct-v0.1`, `mistralai/Mistral-7B-Instruct-v0.2`, and `mistralai/Mistral-7B-Instruct-v0.3`, including those ids as nested path segments and HF cache directories (`models--mistralai--Mistral-7B-Instruct-v0.3`). That is the same text group as the Mistral Instruct QLoRA prepare. `constants.py` registers that Mistral-7B group with `template="mistral"`. `template.py` registers `mistral`. There is no `mistral_7` template. A Mistral-7B base uses `mistral` and is not this reproduce target. Mistral-Small uses `mistral_small`. Mistral-Nemo uses `ministral`. Mixtral uses `mistral` and is not this reproduce target. LLaVA-NeXT-Mistral uses `llava_next_mistral`. Ministral, Ministral-3, Codestral, Devstral, and Pixtral stay off `mistral`.

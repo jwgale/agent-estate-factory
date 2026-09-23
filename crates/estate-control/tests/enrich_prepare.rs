@@ -106,6 +106,10 @@ fn help_enrich_and_train_name_the_seam() {
             body.contains("examples/fixtures/mistral-instruct-lora.pack.json"),
             "{body}"
         );
+        assert!(
+            body.contains("examples/fixtures/phi3-instruct-lora.pack.json"),
+            "{body}"
+        );
         assert!(body.contains("Qwen/Qwen3-4B-Instruct-2507"), "{body}");
         assert!(body.contains("llamafactory-cli train"), "{body}");
         assert!(body.contains("llamafactory-cli export"), "{body}");
@@ -501,6 +505,20 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare."
         ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/phi3-instruct-lora.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: phi$"),
         "{train_script}"
     );
     assert!(
