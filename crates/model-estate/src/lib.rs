@@ -45,7 +45,7 @@ pub use train_enrich::{
     EnrichBindingProposal, EnrichBindingStage, EnrichJob, EnrichJobKind, EnrichJoinFact,
     EnrichPrepareDoc, EnrichStageCommit, ImportPreparedRequest, ImportTrainedRequest,
     PrepareEnrichRequest, PreparedEntry, TrainEnrichCard, TrainEnrichDriver, TrainEnrichProbe,
-    AXOLOTL_LORA_ID, BINDING_PROPOSAL_SCHEMA, BINDING_STAGE_SCHEMA, LLAMAFACTORY_LORA_ID,
+    AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, BINDING_PROPOSAL_SCHEMA, BINDING_STAGE_SCHEMA, LLAMAFACTORY_LORA_ID,
     LLAMAFACTORY_QLORA_ID, PREPARE_SCHEMA,
 };
 

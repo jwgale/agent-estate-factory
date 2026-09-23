@@ -2,6 +2,15 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Axolotl LoRA and QLoRA prepare
+
+- `axolotl-lora` writes bf16 LoRA. `axolotl.yml` sets `adapter: lora`, `load_in_8bit: false`, and `load_in_4bit: false`. `sequence_len` is 2048, `micro_batch_size` is 2, `gradient_accumulation_steps` is 2, and `lora_r` is 16, matching Axolotl `examples/llama-3/lora-1b.yml`. `lora_alpha` is 32, `num_epochs` is 1, and `optimizer` is `adamw_8bit`, matching that file.
+- `axolotl-qlora` is the 4-bit card. `axolotl.yml` sets `load_in_8bit: false`, `load_in_4bit: true`, and `adapter: qlora`. `sequence_len` is 4096, `micro_batch_size` is 2, `gradient_accumulation_steps` is 4, and `lora_r` is 32, matching Axolotl `examples/llama-3/qlora.yml`. `lora_alpha` is 16, `num_epochs` is 4, and `optimizer` is `paged_adamw_32bit`, matching that file.
+- Both cards write `base_model` from the train base. `lora_target_linear` is true. `sample_packing` is true. `val_set_size` is 0.0 and `evals_per_epoch` is 0 so a short scaffold does not ask Axolotl to eval an empty split. Flash attention and a Llama pad token stay unset. The default recipe leaves `max_steps` unset and writes `saves_per_epoch: 1`.
+- `--max-steps 10` writes `max_steps` and `save_steps` and omits `saves_per_epoch`. Axolotl refuses those two save fields together, and `max_steps` precedes `num_epochs`. `--max-steps 0` is `refuse:max-steps`.
+- `--from-feed` applies to `axolotl-lora` and `axolotl-qlora` the same way it applies to `llamafactory-lora` and `llamafactory-qlora`. A prepare with no train recipe card refuses and names those four drivers.
+- `NEXT.md` names `axolotl train` and the Axolotl quickstart. The factory does not run Axolotl and does not install a GPU stack. `refuse:train-base`, sacred, SKU, and frontier are unchanged. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Phi-3 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `phi` for `microsoft/Phi-3-mini*`, `microsoft/Phi-3-medium*`, and Phi-3.5 (`microsoft/Phi-3.5-mini-instruct`, `microsoft/Phi-3.5-MoE-instruct`), including those ids as nested path segments and HF cache directories (`models--microsoft--Phi-3-mini-4k-instruct`). Phi-3-small infers `phi_small`. Phi-4 infers `phi4`. Phi-4-mini infers `phi4_mini`. The names follow LLaMA-Factory `register_model_group` in `constants.py`.

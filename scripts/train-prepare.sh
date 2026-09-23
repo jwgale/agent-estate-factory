@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Train prepare fixture: example pack -> LLaMA-Factory recipe, plus an Axolotl recipe.
+# Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, plus Axolotl LoRA and QLoRA.
 # Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No GPU. No live train.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
@@ -387,33 +387,35 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  phi prepare must stay unpromoted")
 PY
 
-echo "-- axolotl-lora writes the train base, not the seat tag --"
-set +e
-estate enrich prepare \
-  --estate "$SEATED_ONLY" \
-  --pack "$PACK" \
-  --driver axolotl-lora \
-  --out "$WORKDIR/axolotl-seat-only" \
-  >/tmp/train-prepare-axolotl-seat.out 2>/tmp/train-prepare-axolotl-seat.err
-ax_seat_rc=$?
-set -e
-if [[ "$ax_seat_rc" -eq 0 ]]; then
-  echo "FAIL  axolotl-lora without a train base must refuse:train-base"
-  exit 1
-fi
-if ! grep -q "refuse:train-base" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
-  echo "FAIL  axolotl-lora seat tag did not refuse:train-base"
-  cat /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err
-  exit 1
-fi
-if grep -q "meta-llama" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
-  echo "FAIL  axolotl refuse must not invent a Llama-3 Hub repo"
-  exit 1
-fi
-if [[ -e "$WORKDIR/axolotl-seat-only" ]]; then
-  echo "FAIL  axolotl seat-only prepare wrote an output directory"
-  exit 1
-fi
+echo "-- axolotl cards refuse a seat tag with no train base --"
+for driver in axolotl-lora axolotl-qlora; do
+  set +e
+  estate enrich prepare \
+    --estate "$SEATED_ONLY" \
+    --pack "$PACK" \
+    --driver "$driver" \
+    --out "$WORKDIR/${driver}-seat-only" \
+    >/tmp/train-prepare-axolotl-seat.out 2>/tmp/train-prepare-axolotl-seat.err
+  ax_seat_rc=$?
+  set -e
+  if [[ "$ax_seat_rc" -eq 0 ]]; then
+    echo "FAIL  $driver without a train base must refuse:train-base"
+    exit 1
+  fi
+  if ! grep -q "refuse:train-base" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
+    echo "FAIL  $driver seat tag did not refuse:train-base"
+    cat /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err
+    exit 1
+  fi
+  if grep -q "meta-llama" /tmp/train-prepare-axolotl-seat.out /tmp/train-prepare-axolotl-seat.err; then
+    echo "FAIL  $driver refuse must not invent a Llama-3 Hub repo"
+    exit 1
+  fi
+  if [[ -e "$WORKDIR/${driver}-seat-only" ]]; then
+    echo "FAIL  $driver seat-only prepare wrote an output directory"
+    exit 1
+  fi
+done
 
 estate enrich prepare \
   --estate "$SEATED" \
@@ -422,8 +424,26 @@ estate enrich prepare \
   --job train \
   --out "$WORKDIR/axolotl"
 test -f "$WORKDIR/axolotl/axolotl.yml"
-grep -q "adapter: qlora" "$WORKDIR/axolotl/axolotl.yml"
-grep -q "load_in_4bit: true" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^adapter: lora$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^load_in_8bit: false$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^load_in_4bit: false$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^sequence_len: 2048$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^micro_batch_size: 2$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^gradient_accumulation_steps: 2$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^lora_r: 16$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^lora_alpha: 32$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^num_epochs: 1$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^optimizer: adamw_8bit$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "^saves_per_epoch: 1$" "$WORKDIR/axolotl/axolotl.yml"
+grep -q "examples/llama-3/lora-1b.yml" "$WORKDIR/axolotl/axolotl.yml"
+if grep -q "^max_steps:" "$WORKDIR/axolotl/axolotl.yml"; then
+  echo "FAIL  default axolotl-lora must leave max_steps unset"
+  exit 1
+fi
+if grep -q "^adapter: qlora$" "$WORKDIR/axolotl/axolotl.yml"; then
+  echo "FAIL  axolotl-lora must stay bf16 LoRA"
+  exit 1
+fi
 grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/axolotl/axolotl.yml"
 if grep -Eq '^base_model: "llama3"' "$WORKDIR/axolotl/axolotl.yml"; then
   echo "FAIL  axolotl.yml base_model must be the train base, not the seat tag"
@@ -452,6 +472,76 @@ PY
 grep -q "dataset_mode: scaffold" "$WORKDIR/axolotl/axolotl.yml"
 grep -q "dataset_mode: scaffold" "$WORKDIR/axolotl/PREPARE.md"
 grep -q "axolotl train $WORKDIR/axolotl/axolotl.yml" "$WORKDIR/axolotl/NEXT.md"
+grep -q "examples/llama-3/lora-1b.yml" "$WORKDIR/axolotl/NEXT.md"
+if grep -q "Edit axolotl.yml" "$WORKDIR/axolotl/NEXT.md"; then
+  echo "FAIL  axolotl-lora NEXT.md must not ask for a hand edit"
+  exit 1
+fi
+
+echo "-- axolotl-qlora matches examples/llama-3/qlora.yml --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-qlora \
+  --out "$WORKDIR/axolotl-qlora"
+grep -q "^adapter: qlora$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^load_in_8bit: false$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^load_in_4bit: true$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^sequence_len: 4096$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^micro_batch_size: 2$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^gradient_accumulation_steps: 4$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^lora_r: 32$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^lora_alpha: 16$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^num_epochs: 4$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "^optimizer: paged_adamw_32bit$" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q "examples/llama-3/qlora.yml" "$WORKDIR/axolotl-qlora/axolotl.yml"
+grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/axolotl-qlora/axolotl.yml"
+if grep -Eq '^base_model: "llama3"' "$WORKDIR/axolotl-qlora/axolotl.yml"; then
+  echo "FAIL  axolotl-qlora base_model must be the train base"
+  exit 1
+fi
+grep -q "axolotl train $WORKDIR/axolotl-qlora/axolotl.yml" "$WORKDIR/axolotl-qlora/NEXT.md"
+if grep -q "Edit axolotl.yml" "$WORKDIR/axolotl-qlora/NEXT.md"; then
+  echo "FAIL  axolotl-qlora NEXT.md must not ask for a hand edit"
+  exit 1
+fi
+
+echo "-- axolotl --max-steps writes max_steps and omits saves_per_epoch --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --max-steps 10 \
+  --out "$WORKDIR/axolotl-steps"
+grep -q "^max_steps: 10$" "$WORKDIR/axolotl-steps/axolotl.yml"
+grep -q "^save_steps: 10$" "$WORKDIR/axolotl-steps/axolotl.yml"
+if grep -q "^saves_per_epoch:" "$WORKDIR/axolotl-steps/axolotl.yml"; then
+  echo "FAIL  axolotl gauge must omit saves_per_epoch"
+  exit 1
+fi
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-qlora \
+  --max-steps 0 \
+  --out "$WORKDIR/axolotl-zero" \
+  >/tmp/train-prepare-axolotl-zero.out 2>/tmp/train-prepare-axolotl-zero.err
+ax_zero_rc=$?
+set -e
+if [[ "$ax_zero_rc" -eq 0 ]]; then
+  echo "FAIL  axolotl --max-steps 0 must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:max-steps" /tmp/train-prepare-axolotl-zero.out /tmp/train-prepare-axolotl-zero.err; then
+  echo "FAIL  axolotl --max-steps 0 did not refuse:max-steps"
+  cat /tmp/train-prepare-axolotl-zero.out /tmp/train-prepare-axolotl-zero.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/axolotl-zero" ]]; then
+  echo "FAIL  axolotl --max-steps 0 wrote an output directory"
+  exit 1
+fi
 
 echo "-- missing feed with --from-feed is refuse:dataset and writes nothing --"
 set +e
@@ -543,10 +633,17 @@ estate enrich prepare \
   --from-feed \
   --state-dir "$HYDRATE" \
   --out "$WORKDIR/hydrated-ax"
-python3 - "$WORKDIR/hydrated-lf" "$WORKDIR/hydrated-lora" "$WORKDIR/hydrated-ax" <<'PY'
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-qlora \
+  --from-feed \
+  --state-dir "$HYDRATE" \
+  --out "$WORKDIR/hydrated-axq"
+python3 - "$WORKDIR/hydrated-lf" "$WORKDIR/hydrated-lora" "$WORKDIR/hydrated-ax" "$WORKDIR/hydrated-axq" <<'PY'
 import json, sys
 from pathlib import Path
-for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "messages"), (sys.argv[3], "instruction")):
+for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "messages"), (sys.argv[3], "instruction"), (sys.argv[4], "instruction")):
     root = Path(directory)
     prepare = json.loads((root / "prepare.json").read_text())
     if prepare.get("dataset_mode") != "feed" or prepare.get("dataset_from_feed") is not True:
@@ -583,8 +680,18 @@ estate enrich prepare \
   --job train \
   --state-dir "$WORKDIR/all-state"
 grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
+grep -q "^adapter: lora$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
+grep -q "^load_in_4bit: false$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
 if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"; then
-  echo "FAIL  all-drivers axolotl.yml still points base_model at the seat tag"
+  echo "FAIL  all-drivers axolotl-lora still points base_model at the seat tag"
+  exit 1
+fi
+test -f "$WORKDIR/all-state/enrich/overnight-traces/axolotl-qlora/axolotl.yml"
+grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-qlora/axolotl.yml"
+grep -q "^adapter: qlora$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-qlora/axolotl.yml"
+grep -q "^load_in_4bit: true$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-qlora/axolotl.yml"
+if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-qlora/axolotl.yml"; then
+  echo "FAIL  all-drivers axolotl-qlora still points base_model at the seat tag"
   exit 1
 fi
 grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
