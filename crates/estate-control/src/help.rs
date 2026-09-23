@@ -443,13 +443,18 @@ estate enrich import-trained is that same proposal for a llamafactory-lora,
 llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare whose job is train. --adapter
 is one of three shapes. An adapter output_dir contains adapter_config.json
 (the recipe output_dir, outputs/). A merged export_dir contains config.json
-and at least one .safetensors file. A Modelfile in that directory is
+and at least one .safetensors file whose name does not start with
+adapter_model. adapter_model.safetensors is an adapter weight, not a merged
+export. A Modelfile in that directory is
 recorded when present (the export.yaml export_dir, export/). A GGUF path
-is a .gguf file. NEXT.md on llamafactory-lora and llamafactory-qlora prints
+is a .gguf file. Marker files must be regular files in that directory.
+A symlinked marker, or a symlinked --adapter path, is refuse:adapter.
+NEXT.md on llamafactory-lora and llamafactory-qlora prints
 the exact import-trained command for each shape, with the prepared
 directory filled in. A path that matches none of those shapes, or more
 than one, is refuse:adapter and writes no proposal. prepare.json and
-binding-proposal.json record trained_shape and trained_paths. It does
+binding-proposal.json record trained_shape and trained_paths on one
+success path. A failed write removes a partial proposal. It does
 not apply, does not promote, and does not rewrite the estate.
 apply-proposal, plan, and apply --require-plan stay the join. Ollama
 stays the local-run seat. Curator stays jason. Sacred, SKU, and a

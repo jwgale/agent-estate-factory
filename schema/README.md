@@ -17,7 +17,7 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 
 `dataset_mode`, `dataset_rows`, `dataset_from_feed`, `dataset_skipped`, and `dataset_read_paths` are additive optional fields on `cell-one.enrich-prepare.v0`. Train recipe cards write them. Other cards omit them, so older prepare files and the ollama example stay valid. `dataset_mode` is `stub`, `scaffold`, or `feed`. `feed` means `--from-feed` copied rows already under the cell state directory. A missing source with that flag is `refuse:dataset`.
 
-`trained_shape` and `trained_paths` are additive optional fields on `cell-one.enrich-prepare.v0` and `cell-one.enrich-binding-proposal.v0`. `import-trained` writes both after it accepts an artifact. `trained_shape` is `adapter`, `merged`, or `gguf`. `trained_paths` lists the operator path and the marker files. Prepare omits them until that import. Older files stay valid.
+`trained_shape` and `trained_paths` are additive optional fields on `cell-one.enrich-prepare.v0` and `cell-one.enrich-binding-proposal.v0`. `import-trained` writes both after it accepts an artifact, on the same success path as the binding proposal. `trained_shape` is `adapter`, `merged`, or `gguf`. `merged` needs `config.json` and a `.safetensors` file whose name does not start with `adapter_model`. `trained_paths` lists the operator path and the marker files. Marker symlinks are refused. Prepare omits the fields until that import. Older files stay valid.
 
 `enrich-binding-proposal.v0.json` is the `local_slm` join (`cell-one.enrich-binding-proposal.v0`). `estate enrich import-prepared` writes it next to `prepare.json`. `auto_apply`, `promoted`, and `estate_rewritten` stay false. The command does not apply.
 
