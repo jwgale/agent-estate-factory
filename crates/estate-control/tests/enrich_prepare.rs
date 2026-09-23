@@ -90,6 +90,10 @@ fn help_enrich_and_train_name_the_seam() {
             body.contains("section 10, Target C seat ladder"),
             "{body}"
         );
+        assert!(
+            body.contains("5090-shaped"),
+            "{body}"
+        );
         assert!(body.contains("Target C"), "{body}");
         assert!(body.contains("Target A"), "{body}");
         assert!(
@@ -790,6 +794,17 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         "refuse:train-base",
         "refuse:adapter",
         "refuse:seat",
+        "refuse:tokenizer",
+        "5090-shaped",
+        "extra_special_tokens",
+        "tokenizer_config.json",
+        "tokenizer_config.json.bak",
+        "missing vocab.json",
+        "missing merges.txt",
+        "model_type",
+        "Qwen2ForCausalLM",
+        "Tokenizer check passed",
+        "this directory has no tokenizer_config.json",
         "SKIP live train",
         "SKIP live convert",
         "SKIP live seat",
@@ -815,6 +830,19 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
     ] {
         assert!(script.contains(needle), "seat-journey missing {needle}");
     }
+    let bad = script
+        .find("-- 5090-shaped export tokenizer is refuse:tokenizer --")
+        .expect("seat-journey missing the refuse:tokenizer step");
+    let replace = script
+        .find("-- replace the broken tokenizer with the good merged stub --")
+        .expect("seat-journey missing the good-stub replace");
+    let happy = script
+        .find("-- gguf-convert prints convert_hf_to_gguf.py --")
+        .expect("seat-journey missing the happy-path convert");
+    assert!(
+        bad < replace && replace < happy,
+        "refuse:tokenizer must run before the good stubs and the convert print"
+    );
     assert!(
         !script.contains("READY_FOR_LIVE_TEST: yes"),
         "seat-journey must keep READY_FOR_LIVE_TEST no"
@@ -843,9 +871,21 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         "## 10. Target C seat ladder — fixture stubs print the merge, convert, seat, and import"
     ));
     assert!(journey.contains("make seat-journey"));
+    let section_10 = journey
+        .split("## 10. Target C seat ladder")
+        .nth(1)
+        .expect("section 10");
+    assert!(
+        section_10.contains("5090-shaped") && section_10.contains("refuse:tokenizer"),
+        "section 10 must name the refuse:tokenizer fixture"
+    );
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("## Target C seat ladder — fixture print path"));
     assert!(train.contains("make seat-journey"));
+    assert!(
+        train.contains("5090-shaped"),
+        "TRAIN-ENRICH must name the refuse:tokenizer fixture"
+    );
     for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",

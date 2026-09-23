@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — seat-journey exercises refuse:tokenizer
+
+- `make seat-journey` writes a 5090-shaped merged export before the good stubs. `config.json` sets `model_type` to `qwen2` and `architectures` to `Qwen2ForCausalLM`. `tokenizer_config.json` sets `extra_special_tokens` to a JSON list. `vocab.json` and `merges.txt` are absent. `model.safetensors` is the merged-weight marker. `estate enrich gguf-convert` on that directory returns `refuse:tokenizer`, names the list and both missing BPE files, and does not print `python3 convert_hf_to_gguf.py`. The script does not download weights, does not copy tokenizer files, and does not write `tokenizer_config.json.bak`.
+- The script then removes that fixture and writes the existing good stubs (`export/config.json` is `{}`, plus `export/model.safetensors`). `gguf-convert` prints the convert line. `local-seat` and `import-trained` continue as before. `CELL_SEAT_LIVE` stays print-only. Not in `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — refuse a broken LLaMA-Factory export tokenizer
 
 - A live 5090 Target C prove on 2026-09-23 ran `llamafactory-cli export` for `Qwen/Qwen2.5-0.5B-Instruct`, then `python3 convert_hf_to_gguf.py <prepared>/export --outfile <prepared>/export.gguf --outtype auto`. The convert failed. `tokenizer_config.json` had `extra_special_tokens` as a list, and transformers raised `AttributeError: 'list' object has no attribute 'keys'`. The export also omitted `vocab.json` and `merges.txt`, which that train-base tokenizer includes. Restoring the tokenizer files from the HF cache snapshot already on disk, and keeping the export `tokenizer_config.json` as `tokenizer_config.json.bak`, let the convert write a 949M BF16 GGUF. The same export shape is [LLaMA-Factory issue 10169](https://github.com/hiyouga/LlamaFactory/issues/10169). This factory still does not run convert, does not download weights, and does not copy those files.

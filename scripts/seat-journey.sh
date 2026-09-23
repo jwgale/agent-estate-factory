@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Target C seat ladder: Qwen / LLaMA-Factory QLoRA print path.
-# Prepares llamafactory-qlora, then prints merge-adapt, gguf-convert,
-# local-seat, and import-trained once fixture stubs stand in for the
-# merged export and the sibling GGUF.
+# Prepares llamafactory-qlora, asserts refuse:tokenizer on a 5090-shaped
+# export fixture, then prints merge-adapt, gguf-convert, local-seat, and
+# import-trained once the good fixture stubs stand in for the merged
+# export and the sibling GGUF.
 # Does not install LLaMA-Factory, does not train, does not merge, does not
 # run convert_hf_to_gguf.py, does not run ollama create, and does not promote.
 # CELL_SEAT_LIVE=1 does not start a live phase. Live convert and live seat
@@ -58,7 +59,11 @@ echo "   Prints llamafactory-cli export <prepared>/export.yaml."
 echo "   The yaml shape is examples/merge_lora/qwen3_lora_sft.yaml."
 echo "   The adapter stub is adapter_config.json. This factory does not merge."
 echo "3. estate enrich gguf-convert --prepared <prepared> --weights <prepared>/export"
-echo "   The merged stub is config.json plus model.safetensors."
+echo "   Before the good stub, a 5090-shaped export is refuse:tokenizer."
+echo "   config.json names Qwen. extra_special_tokens is a JSON list."
+echo "   vocab.json and merges.txt are missing. The convert line does not print."
+echo "   The good merged stub is config.json ({}) plus model.safetensors."
+echo "   That stub has no Qwen marker and no tokenizer_config.json."
 echo "   Prints python3 convert_hf_to_gguf.py ... --outfile <prepared>/export.gguf --outtype auto"
 echo "4. estate enrich local-seat --prepared <prepared> --weights <prepared>/export.gguf"
 echo "   The GGUF stub starts with GGUF magic. Prints ollama create."
@@ -256,7 +261,7 @@ if [[ -e "$PREPARED/export.gguf" ]]; then
   exit 1
 fi
 
-echo "-- fixture stubs: adapter dir, merged export, GGUF magic --"
+echo "-- fixture stub: adapter dir --"
 mkdir -p "$PREPARED/outputs"
 printf '%s\n' '{}' > "$PREPARED/outputs/adapter_config.json"
 if [[ -e "$PREPARED/outputs/adapter_model.safetensors" ]]; then
@@ -288,9 +293,68 @@ if [[ -e "$PREPARED/export" || -e "$PREPARED/export.gguf" ]]; then
   exit 1
 fi
 
+echo "-- 5090-shaped export tokenizer is refuse:tokenizer --"
+mkdir -p "$PREPARED/export"
+printf '%s\n' '{"model_type":"qwen2","architectures":["Qwen2ForCausalLM"]}' > "$PREPARED/export/config.json"
+printf '%s\n' 'not-a-real-tensor' > "$PREPARED/export/model.safetensors"
+printf '%s\n' '{"extra_special_tokens":["<|im_start|>","<|im_end|>"],"tokenizer_class":"Qwen2Tokenizer"}' > "$PREPARED/export/tokenizer_config.json"
+if [[ -e "$PREPARED/export/vocab.json" || -e "$PREPARED/export/merges.txt" || -e "$PREPARED/export.gguf" || -e "$PREPARED/export/tokenizer_config.json.bak" ]]; then
+  echo "FAIL  5090-shaped fixture must omit vocab.json, merges.txt, and a GGUF"
+  exit 1
+fi
+
+set +e
+estate enrich gguf-convert \
+  --prepared "$PREPARED" \
+  --weights "$PREPARED/export" \
+  >"$WORKDIR/logs/gguf-tokenizer.out" 2>"$WORKDIR/logs/gguf-tokenizer.err"
+tokenizer_rc=$?
+set -e
+if [[ "$tokenizer_rc" -eq 0 ]]; then
+  echo "FAIL  gguf-convert must refuse:tokenizer on the 5090-shaped export"
+  cat "$WORKDIR/logs/gguf-tokenizer.out" "$WORKDIR/logs/gguf-tokenizer.err"
+  exit 1
+fi
+for needle in \
+  "refuse:tokenizer" \
+  "JSON list" \
+  "missing vocab.json" \
+  "missing merges.txt" \
+  "tokenizer_config.json.bak" \
+  "${TRAIN_BASE}"
+do
+  if ! grep -q "$needle" "$WORKDIR/logs/gguf-tokenizer.out" "$WORKDIR/logs/gguf-tokenizer.err"; then
+    echo "FAIL  5090-shaped export did not report: $needle"
+    cat "$WORKDIR/logs/gguf-tokenizer.out" "$WORKDIR/logs/gguf-tokenizer.err"
+    exit 1
+  fi
+done
+if grep -q "python3 convert_hf_to_gguf.py" "$WORKDIR/logs/gguf-tokenizer.out" "$WORKDIR/logs/gguf-tokenizer.err"; then
+  echo "FAIL  refuse:tokenizer printed the convert line"
+  exit 1
+fi
+if [[ -e "$PREPARED/export.gguf" || -e "$PREPARED/export/model.gguf" || -e "$PREPARED/export/tokenizer_config.json.bak" || -e "$PREPARED/export/vocab.json" || -e "$PREPARED/export/merges.txt" ]]; then
+  echo "FAIL  refuse:tokenizer wrote a GGUF or copied tokenizer files"
+  exit 1
+fi
+if ! grep -q '"extra_special_tokens"' "$PREPARED/export/tokenizer_config.json"; then
+  echo "FAIL  refuse:tokenizer rewrote tokenizer_config.json"
+  exit 1
+fi
+
+echo "-- replace the broken tokenizer with the good merged stub --"
+rm -rf "$PREPARED/export"
 mkdir -p "$PREPARED/export"
 printf '%s\n' '{}' > "$PREPARED/export/config.json"
 printf '%s\n' 'not-a-real-tensor' > "$PREPARED/export/model.safetensors"
+if [[ -e "$PREPARED/export/tokenizer_config.json" || -e "$PREPARED/export/vocab.json" || -e "$PREPARED/export/merges.txt" ]]; then
+  echo "FAIL  good merged stub must not keep the broken tokenizer"
+  exit 1
+fi
+if ! grep -qx '{}' "$PREPARED/export/config.json"; then
+  echo "FAIL  good merged stub config.json must stay {}"
+  exit 1
+fi
 if [[ -e "$PREPARED/export/adapter_config.json" || -e "$PREPARED/export/adapter_model.safetensors" || -e "$PREPARED/export/model.gguf" ]]; then
   echo "FAIL  merged stub must be config.json plus model.safetensors"
   exit 1
@@ -310,6 +374,8 @@ if [[ "$gguf_rc" -ne 0 ]]; then
   exit 1
 fi
 grep -q "shape=merged" "$WORKDIR/logs/gguf-print.out"
+grep -q "Tokenizer check passed" "$WORKDIR/logs/gguf-print.out"
+grep -q "this directory has no tokenizer_config.json" "$WORKDIR/logs/gguf-print.out"
 grep -q "python3 convert_hf_to_gguf.py ${PREPARED}/export --outfile ${PREPARED}/export.gguf --outtype auto" "$WORKDIR/logs/gguf-print.out"
 grep -q "estate enrich local-seat --prepared ${PREPARED} --weights ${PREPARED}/export.gguf" "$WORKDIR/logs/gguf-print.out"
 grep -q "gguf-convert did not convert" "$WORKDIR/logs/gguf-print.out"
@@ -435,5 +501,5 @@ echo
 echo "Printed lines (not executed):"
 grep -h -E '^(llamafactory-cli export |python3 convert_hf_to_gguf.py |ollama create |llama-cli -m |llama-server -m |estate enrich import-trained )' "$WORKDIR/logs/merge.out" "$WORKDIR/logs/gguf-print.out" "$WORKDIR/logs/seat-gguf.out"
 echo
-echo "PASS  seat-journey (Target C seat ladder printed; fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
+echo "PASS  seat-journey (Target C seat ladder printed; refuse:tokenizer then fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
 echo "READY_FOR_LIVE_TEST: no"

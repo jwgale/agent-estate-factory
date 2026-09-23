@@ -197,7 +197,7 @@ qlora-journey:
 lora-journey:
 	bash scripts/lora-journey.sh
 
-# Opt-in Target C seat ladder: fixture stubs for merge, convert, seat, and import.
+# Opt-in Target C seat ladder: refuse:tokenizer, then fixture stubs for merge, convert, seat, and import.
 # Prints the lines. Does not train, merge, convert, seat, or promote.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 seat-journey:
