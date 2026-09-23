@@ -1470,7 +1470,10 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #151");
+    assert_eq!(
+        head,
+        " Target C live uniqueness prove on a 5090-class host"
+    );
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1797,7 +1800,10 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #151");
+    assert_eq!(
+        head,
+        " Target C live uniqueness prove on a 5090-class host"
+    );
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -1883,6 +1889,230 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         assert!(
             !body.contains("seat-journey"),
             "{rel} must not run seat-journey"
+        );
+    }
+}
+
+#[test]
+fn target_c_live_uniqueness_prove_stays_recorded() {
+    let root = repo_root();
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    let section = probes
+        .split("## Target C live uniqueness (5090-class)")
+        .nth(1)
+        .expect("LIVE-PROBES missing the Target C uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    for needle in [
+        "**PASS.**",
+        "consumer-nvidia",
+        "rented-nvidia",
+        "Do not put `5090` in a binding id",
+        "not `estate probes --live`",
+        "not the\nMac `Pong` row",
+        "not native MLX",
+        "/tmp/cell-one-target-c-live-20260923",
+        "did not use `examples/estate.yaml` as the",
+        "43770130 3391",
+        "llamafactory-qlora",
+        "Seat tag `llama3`",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "`max_steps` 10",
+        "exited 0",
+        "llamafactory-qlora` tree",
+        "`refuse:tokenizer`",
+        "`extra_special_tokens` was a list",
+        "missing `vocab.json` and `merges.txt`",
+        "`cp -aL`",
+        "`cp --dereference`",
+        "plain `cp -a` left symlinks",
+        "does not follow a symlinked `tokenizer_config.json`",
+        "BF16 GGUF (~949M)",
+        "ran outside the factory",
+        "did not write `$PREPARED/Modelfile`",
+        "from the printed contents",
+        "`cell-target-c-qlora-prove`",
+        "`trained_shape` `gguf`",
+        "`auto_apply=false`",
+        "`ollama rm`",
+        "The factory did not train, convert, shell out to ollama, or promote.",
+        "`READY_FOR_LIVE_TEST`: **no**",
+        "not in `make smoke`",
+        "`make gate-90`",
+        "GitHub Actions",
+        "specialist/pong-style check",
+        "not the recorded `estate probes --live` row",
+        "not\nthe Mac `Pong` row",
+        "does not record a completion JSON blob",
+        "PR #149",
+        "PR #150",
+        "PR #151",
+        "Tip framing\nstays through PR #151",
+        "does not move that SHA",
+    ] {
+        assert!(
+            section.contains(needle),
+            "Target C uniqueness section missing {needle}"
+        );
+    }
+    assert!(
+        !section.contains("\"completion\""),
+        "the uniqueness section must not invent a completion JSON blob"
+    );
+    assert!(
+        !section.contains("READY_FOR_LIVE_TEST: yes")
+            && !section.contains("READY_FOR_LIVE_TEST`: yes"),
+        "the uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+    assert!(
+        !section.to_ascii_lowercase().contains("kimi"),
+        "the uniqueness section must not add Kimi"
+    );
+    assert!(
+        probes.contains(
+            "| Target C live uniqueness **PASS** | The factory training, converting, shelling out to ollama, or promoting."
+        ),
+        "What green is not must keep the uniqueness PASS distinct from a factory run"
+    );
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #151"),
+        "status header must keep tip through PR #151"
+    );
+    assert!(
+        status_head.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
+        "status header must keep the PR #151 tip SHA"
+    );
+    assert!(
+        !status_head.contains("/tmp/cell-one-target-c-live-20260923"),
+        "the live workdir must not move the tip header"
+    );
+    let uniq = status
+        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
+        .nth(1)
+        .expect("uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(
+        uniq.contains("[Target C live uniqueness (5090-class)](LIVE-PROBES.md)"),
+        "uniqueness section must point at the recorded prove"
+    );
+    assert!(
+        uniq.contains("The factory did not train, convert, shell out to ollama, or promote."),
+        "{uniq}"
+    );
+    assert!(
+        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
+        "uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+
+    for rel in ["docs/TRAIN-ENRICH.md", "docs/local-seat.md"] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            body.contains("[Target C live uniqueness (5090-class)](LIVE-PROBES.md)"),
+            "{rel} must point at the recorded prove"
+        );
+        assert!(
+            body.contains("The factory did not train, convert, shell out to ollama, or promote."),
+            "{rel} must keep the factory-did-not-run sentence"
+        );
+        assert!(
+            !body.contains("READY_FOR_LIVE_TEST: yes")
+                && !body.contains("READY_FOR_LIVE_TEST`: yes"),
+            "{rel} must keep READY_FOR_LIVE_TEST no"
+        );
+    }
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #151"),
+        "GATE-90 header must stay through PR #151: {gate_head}"
+    );
+    assert!(
+        !gate.contains("/tmp/cell-one-target-c-live-20260923"),
+        "this recording must not rewrite GATE-90"
+    );
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(
+        head,
+        " Target C live uniqueness prove on a 5090-class host"
+    );
+    let slice = changelog
+        .split("## This slice — Target C live uniqueness prove on a 5090-class host")
+        .nth(1)
+        .expect("CHANGELOG missing the uniqueness prove slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "docs/LIVE-PROBES.md",
+        "cell-target-c-qlora-prove",
+        "/tmp/cell-one-target-c-live-20260923",
+        "The factory did not train, convert, shell out to ollama, or promote.",
+        "43770130 3391",
+        "trained_shape` `gguf`",
+        "auto_apply=false",
+        "ollama rm",
+        "Not native MLX",
+        "Not `estate probes --live`",
+        "through PR #151",
+        "does not add a train family",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi"), "{slice}");
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
+    assert!(
+        cksum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {cksum_text}"
+    );
+
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        !makefile.contains("cell-one-target-c-live")
+            && !makefile.contains("cell-target-c-qlora-prove"),
+        "Makefile must not grow a live uniqueness target"
+    );
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("cell-one-target-c-live")
+                && !body.contains("cell-target-c-qlora-prove"),
+            "{rel} must not run the recorded uniqueness prove"
         );
     }
 }

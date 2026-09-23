@@ -37,9 +37,51 @@ required for `make smoke` / hosted CI. Do not put `5090` in a binding id.
 
 Not recorded: native MLX. Frontier `grok-4.7` specialist and the Mac
 specialist complete are recorded above. The Mac `Pong` is that Mac run.
-It is not copied from the 5090 row.
+It is not copied from the 5090 row. Target C live uniqueness is a
+separate recorded PASS in the next section. It is not a row in the
+table above.
 
 `READY_FOR_LIVE_TEST` for the rows above: **no**. Those runs are recorded.
+
+## Target C live uniqueness (5090-class)
+
+Recorded on 2026-09-23 on a Linux 5090-class host (`consumer-nvidia` /
+`rented-nvidia`). Do not put `5090` in a binding id. This PASS is the
+outside-factory ladder. It is not `estate probes --live`. It is not the
+Mac `Pong` row. It is not native MLX.
+
+**PASS.** Prepare → train/export outside the factory → tokenizer restore
+with dereference → `gguf-convert` → `local-seat` print → write the
+Modelfile from the printed contents → `ollama create` outside the factory
+→ `import-trained` → cleanup.
+
+The workdir was the throwaway `/tmp/cell-one-target-c-live-20260923`.
+Prepare used that workdir. It did not use `examples/estate.yaml` as the
+prepare target. `examples/estate.yaml` stayed unchanged. Its cksum stayed
+`43770130 3391`.
+
+1. Prepare wrote the LLaMA-Factory QLoRA card (`llamafactory-qlora`). Seat tag `llama3`. Train base `Qwen/Qwen2.5-0.5B-Instruct`. The short train on that card was `max_steps` 10.
+2. LLaMA-Factory train and export ran outside the factory and exited 0. The merged Hugging Face export is under that workdir's `llamafactory-qlora` tree.
+3. `estate enrich gguf-convert` returned `refuse:tokenizer` first (`extra_special_tokens` was a list; the Qwen export was missing `vocab.json` and `merges.txt`). The operator restored tokenizer files from the HF cache snapshot for that train base into the export directory, with dereference (`cp -aL` or `cp --dereference`). A plain `cp -a` left symlinks. Enrich does not follow a symlinked `tokenizer_config.json`. The convert then wrote a BF16 GGUF (~949M). That convert ran outside the factory.
+4. `estate enrich local-seat` printed the Modelfile and did not write `$PREPARED/Modelfile`. The operator wrote that file from the printed contents.
+5. The operator ran `ollama create` outside the factory. The prove tag was `cell-target-c-qlora-prove`.
+6. `estate enrich import-trained` recorded `trained_shape` `gguf` with `auto_apply=false`.
+7. The operator cleaned up with `ollama rm` on that tag.
+
+The factory did not train, convert, shell out to ollama, or promote.
+`READY_FOR_LIVE_TEST`: **no**. This prove is not in `make smoke`,
+`make gate-90`, or GitHub Actions.
+
+After create, the seated model answered a short specialist/pong-style check.
+That check is not the recorded `estate probes --live` row and not
+the Mac `Pong` row. This page does not record a completion JSON blob for
+it.
+
+The tokenizer restore, the unwritten Modelfile, and the GGUF write line
+are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
+stays through PR #151. This row does not move that SHA.
+
+Walk: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Seat: [`local-seat.md`](local-seat.md).
 
 ## Mac specialist result (recorded)
 
@@ -532,3 +574,4 @@ Down local is `local:down` / `model.local.down`. No silent `grok-4.7` fallback.
 | `estate specialist` `completion` against Ollama | Native MLX |
 | 5090 `completion` `Pong` | Native MLX. The Mac `Pong` is a separate recorded row. |
 | Mac `completion` `Pong` | Native MLX |
+| Target C live uniqueness **PASS** | The factory training, converting, shelling out to ollama, or promoting. Not `estate probes --live`. Not the Mac `Pong` row. Not native MLX. Not `make smoke`, `make gate-90`, or Actions. |
