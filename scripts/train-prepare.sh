@@ -469,6 +469,10 @@ if grep -q "quantization_bit" "$WORKDIR/llama32-qlora/export.yaml"; then
 fi
 grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-qlora/NEXT.md"
 grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-qlora/PREPARE.md"
+if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare." "$WORKDIR/llama32-qlora/NEXT.md" "$WORKDIR/llama32-qlora/PREPARE.md"; then
+  echo "FAIL  llama32 QLoRA prepare must not write the LoRA reproduce note"
+  exit 1
+fi
 if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/llama32-qlora/NEXT.md" "$WORKDIR/llama32-qlora/PREPARE.md"; then
   echo "FAIL  llama32 prepare must keep READY_FOR_LIVE_TEST no"
   exit 1
@@ -688,6 +692,78 @@ if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of
 fi
 grep -q "quantization_method: bnb" "$WORKDIR/qwen3-lora-pack-qlora/recipe.yaml"
 grep -q "quantization_bit: 4" "$WORKDIR/qwen3-lora-pack-qlora/recipe.yaml"
+
+LLAMA32_LORA_PACK="$ROOT/examples/fixtures/llama32-instruct-lora.pack.json"
+echo "-- llama 3.2 instruct lora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$LLAMA32_LORA_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/llama32-lora"
+grep -q "^template: llama3$" "$WORKDIR/llama32-lora/recipe.yaml"
+grep -q "^template: llama3$" "$WORKDIR/llama32-lora/export.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/llama32-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/llama32-lora/recipe.yaml"
+if grep -q "^template: llama3_" "$WORKDIR/llama32-lora/recipe.yaml"; then
+  echo "FAIL  llama32 instruct LoRA recipe used a llama3_ template name"
+  exit 1
+fi
+if grep -q "^template: mllama$" "$WORKDIR/llama32-lora/recipe.yaml"; then
+  echo "FAIL  llama32 instruct LoRA recipe used the vision template"
+  exit 1
+fi
+grep -q 'model_name_or_path: "meta-llama/Llama-3.2-3B-Instruct"' "$WORKDIR/llama32-lora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/llama32-lora/recipe.yaml"; then
+  echo "FAIL  llama32 LoRA recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/llama32-lora/recipe.yaml" "$WORKDIR/llama32-lora/export.yaml"; then
+  echo "FAIL  llama32 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/llama32-lora/recipe.yaml" "$WORKDIR/llama32-lora/export.yaml"; then
+  echo "FAIL  llama32 LoRA recipe must omit quantization_method"
+  exit 1
+fi
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare." "$WORKDIR/llama32-lora/NEXT.md"
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare." "$WORKDIR/llama32-lora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-lora/NEXT.md" "$WORKDIR/llama32-lora/PREPARE.md"; then
+  echo "FAIL  llama32 LoRA fixture prepare wrote the QLoRA reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/llama32-lora/NEXT.md" "$WORKDIR/llama32-lora/PREPARE.md"; then
+  echo "FAIL  llama32 LoRA prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/llama32-lora/train.py" || -e "$WORKDIR/llama32-lora/train.sh" ]]; then
+  echo "FAIL  llama32 LoRA prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/llama32-lora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-lora":
+    raise SystemExit(f"FAIL  llama32 lora driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  llama32 lora seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "meta-llama/Llama-3.2-3B-Instruct":
+    raise SystemExit(f"FAIL  llama32 lora train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  llama32 lora prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$LLAMA32_LORA_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/llama32-lora-pack-qlora"
+if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare." "$WORKDIR/llama32-lora-pack-qlora/NEXT.md" "$WORKDIR/llama32-lora-pack-qlora/PREPARE.md"; then
+  echo "FAIL  llama32 LoRA fixture on the QLoRA card wrote the LoRA reproduce note"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA." "$WORKDIR/llama32-lora-pack-qlora/NEXT.md"
+grep -q "quantization_method: bnb" "$WORKDIR/llama32-lora-pack-qlora/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/llama32-lora-pack-qlora/recipe.yaml"
+grep -q "^template: llama3$" "$WORKDIR/llama32-lora-pack-qlora/recipe.yaml"
 
 echo "-- axolotl cards refuse a seat tag with no train base --"
 for driver in axolotl-lora axolotl-qlora; do
