@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — refuse a broken LLaMA-Factory export tokenizer
+
+- A live 5090 Target C prove on 2026-09-23 ran `llamafactory-cli export` for `Qwen/Qwen2.5-0.5B-Instruct`, then `python3 convert_hf_to_gguf.py <prepared>/export --outfile <prepared>/export.gguf --outtype auto`. The convert failed. `tokenizer_config.json` had `extra_special_tokens` as a list, and transformers raised `AttributeError: 'list' object has no attribute 'keys'`. The export also omitted `vocab.json` and `merges.txt`, which that train-base tokenizer includes. Restoring the tokenizer files from the HF cache snapshot already on disk, and keeping the export `tokenizer_config.json` as `tokenizer_config.json.bak`, let the convert write a 949M BF16 GGUF. The same export shape is [LLaMA-Factory issue 10169](https://github.com/hiyouga/LlamaFactory/issues/10169). This factory still does not run convert, does not download weights, and does not copy those files.
+- `estate enrich gguf-convert` returns `refuse:tokenizer` when `tokenizer_config.json` under `--weights` has list-shaped `extra_special_tokens` (or another non-object), or when that directory is a Qwen-family export and `vocab.json` or `merges.txt` is missing. Qwen-family is `config.json` `model_type` or `architectures`, or `tokenizer_class`, naming Qwen. A symlinked `tokenizer_config.json` is the same refuse. An object `extra_special_tokens` with those two files present still prints `python3 convert_hf_to_gguf.py` with `--outtype auto`. The check reads files already in the export directory.
+- `NEXT.md`, `PREPARE.md`, and the `merge-adapt` report on `llamafactory-lora` and `llamafactory-qlora` name that restore step. `docs/TRAIN-ENRICH.md`, `docs/local-seat.md`, and `docs/operator-enrich-journeys.md` name it too.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Target C seat ladder (print-only fixture stubs)
 
 - `make seat-journey` prepares `llamafactory-qlora` (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`) on a throwaway copy of `examples/estate.yaml`, then prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` once fixture stubs exist. The adapter stub is `outputs/adapter_config.json`. The merged stub is `export/config.json` plus `export/model.safetensors` (a name that does not start with `adapter_model`). The GGUF stub is `export.gguf` and starts with GGUF magic. `local-seat` prints `ollama create` plus `llama-cli -m` and `llama-server -m`. `import-trained` records `trained_shape` `gguf`. A missing adapter is `refuse:adapter`. A missing export or GGUF is `refuse:seat`.

@@ -118,6 +118,10 @@ fn help_names_the_convert_line() {
         "{body}"
     );
     assert!(body.contains("does not run llama.cpp"), "{body}");
+    assert!(body.contains("refuse:tokenizer"), "{body}");
+    assert!(body.contains("extra_special_tokens"), "{body}");
+    assert!(body.contains("vocab.json"), "{body}");
+    assert!(body.contains("merges.txt"), "{body}");
     assert!(body.contains("axolotl-lora"), "{body}");
     assert!(body.contains("axolotl-qlora"), "{body}");
     assert!(body.contains("outputs/merged"), "{body}");
@@ -456,4 +460,41 @@ fn unsloth_convert_prints_the_lines_and_does_not_spawn() {
     assert!(body.contains("READY_FOR_LIVE_TEST: no"), "{body}");
     assert!(!outfile.exists());
     assert!(!root.join("spawned").exists(), "convert tooling was spawned");
+}
+
+#[test]
+fn refuses_list_extra_special_tokens_without_spawning_or_copying() {
+    let root = tmp("bad-tokenizer");
+    write_prepare(&root);
+    let export = root.join("export");
+    merged(&export);
+    std::fs::write(
+        export.join("config.json"),
+        "{\"model_type\":\"qwen2\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        export.join("tokenizer_config.json"),
+        "{\"extra_special_tokens\":[\"<|im_start|>\",\"<|im_end|>\"],\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+    )
+    .unwrap();
+    let before = std::fs::read(export.join("tokenizer_config.json")).unwrap();
+    let out = run_convert(&root, &export);
+    let body = text(&out);
+    assert!(!out.status.success(), "{body}");
+    assert!(body.contains("refuse:tokenizer"), "{body}");
+    assert!(body.contains("JSON list"), "{body}");
+    assert!(body.contains("AttributeError"), "{body}");
+    assert!(body.contains("missing vocab.json"), "{body}");
+    assert!(body.contains("missing merges.txt"), "{body}");
+    assert!(body.contains("tokenizer_config.json.bak"), "{body}");
+    assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
+    assert!(!body.contains("--outtype"), "{body}");
+    assert!(!root.join("export.gguf").exists());
+    assert!(!export.join("tokenizer_config.json.bak").exists());
+    assert!(!root.join("spawned").exists(), "convert tooling was spawned");
+    assert_eq!(
+        std::fs::read(export.join("tokenizer_config.json")).unwrap(),
+        before
+    );
 }
