@@ -65,4 +65,4 @@ cargo run -p model-estate -- catalog
 
 Supported = Ollama (+ llama.cpp) green on the box. MLX is stubbed. vLLM / TRT stay experimental.
 
-After a LLaMA-Factory export, `estate enrich local-seat` prints the `ollama create` line for a merged directory or a GGUF. It does not run Ollama or llama.cpp. Page: [`local-seat.md`](local-seat.md).
+After a LLaMA-Factory export, `estate enrich gguf-convert` prints the llama.cpp convert line for the merged directory, and `estate enrich local-seat` prints the `ollama create` line for that directory or a GGUF. Neither command runs Ollama or llama.cpp. Page: [`local-seat.md`](local-seat.md).

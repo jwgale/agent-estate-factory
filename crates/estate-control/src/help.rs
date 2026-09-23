@@ -504,6 +504,23 @@ under /tmp and does not run either trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
+estate enrich gguf-convert prints the llama.cpp convert line for a
+merged LLaMA-Factory export directory (config.json and at least one
+.safetensors file whose name does not start with adapter_model).
+An adapter directory, a symlinked weights path, a symlinked marker,
+and a path that is already a GGUF are refuse:seat. The printed line is:
+
+  python3 convert_hf_to_gguf.py <merged-dir> --outfile <sibling>.gguf --outtype auto
+
+--outtype auto is that script's default (highest-fidelity 16-bit float).
+The outfile is a sibling of the merged directory. The command then
+points at local-seat for that file. It does not run llama.cpp, does
+not write a GGUF, and does not choose a quantization type.
+
+  estate enrich gguf-convert \\
+    --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
+    --weights .cell/enrich/overnight-traces/llamafactory-qlora/export
+
 estate enrich local-seat validates a merged LLaMA-Factory export
 directory (config.json and at least one .safetensors file whose name
 does not start with adapter_model, optional Modelfile) or a .gguf file.

@@ -10,11 +10,27 @@ Ollama already creates a model from a Modelfile. llama.cpp already converts a Hu
 
 1. `estate enrich prepare --driver llamafactory-lora` or `llamafactory-qlora` writes `export.yaml`. `prepare.json` records that path as `export_yaml`. The Ollama seat tag stays `base_model` and `seat_tag`. The train base stays `model_name_or_path`.
 2. On the CUDA host, run the `llamafactory-cli export` line from `NEXT.md`. `export_dir` in that file is the merged directory (`config.json` and at least one `.safetensors` file). Current LLaMA-Factory `export_model` writes `Modelfile` in that directory. The file starts with `FROM .` and carries TEMPLATE from the train chat template (`get_ollama_modelfile`). This factory does not write that Modelfile.
-3. When you want a GGUF, run llama.cpp `convert_hf_to_gguf.py` on that directory from a llama.cpp checkout. This factory does not run the script and does not choose a quantization type.
+3. When you want a GGUF, `estate enrich gguf-convert` prints the llama.cpp line for that directory. Run it from a llama.cpp checkout:
+
+```bash
+python3 convert_hf_to_gguf.py <merged-dir> --outfile <sibling>.gguf --outtype auto
+```
+
+`--outtype auto` is `convert_hf_to_gguf.py`'s default (highest-fidelity 16-bit float, f16 or bf16). The outfile is a sibling of the merged directory (`export.gguf` beside `export`). A `.gguf` inside the merged directory makes that directory match two shapes. This factory does not run the script and does not choose a quantization type. `q8_0`, `tq1_0`, and `tq2_0` stay off this card. `llama-quantize` is a later llama.cpp tool. This factory does not print a quant command.
 4. Seat with Ollama. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.
 5. `estate enrich import-trained` records that same path on the `local_slm` proposal. `estate enrich apply-proposal`, then `estate plan` and `estate apply --require-plan`, stay the join.
 
 `PREPARE.md` and `NEXT.md` on both LLaMA-Factory cards repeat this chain.
+
+## Convert
+
+```bash
+estate enrich gguf-convert \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
+```
+
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora` or `llamafactory-qlora` with job `train`. `--weights` is the merged export directory. An adapter directory, a symlink, or a path that is already a GGUF is `refuse:seat`. The command writes nothing.
 
 ## Command
 

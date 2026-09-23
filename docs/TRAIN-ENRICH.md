@@ -21,6 +21,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `estate enrich list` | Reads `{state_dir}/enrich/{pack}/{driver}/prepare.json`. Prints pack, driver, job, tag, and out path. Does not create the directory. |
 | `estate enrich import-prepared` | Checks `prepare.json` plus the tag and file you created outside the factory. Writes `binding-proposal.json` and `binding-proposal.md` for the existing `local_slm` seat. Does not apply. |
 | `estate enrich import-trained` | Same proposal, for a `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` prepare whose job is `train`. `--adapter` is an adapter `output_dir` (`adapter_config.json`), a merged `export_dir` (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`, optional `Modelfile`), or one `.gguf` file or a directory with exactly one top-level `.gguf`. Records `trained_shape` and `trained_paths` on the same write as the proposal. Does not apply. |
+| `estate enrich gguf-convert` | Print-only convert card for a `llamafactory-lora` or `llamafactory-qlora` train prepare. `--weights` must be a merged export directory. Prints `python3 convert_hf_to_gguf.py <dir> --outfile <sibling>.gguf --outtype auto`, then the `local-seat` line for that sibling file. `--outtype auto` is the llama.cpp script default (highest-fidelity 16-bit float). Does not convert, does not shell out, and does not promote. |
 | `estate enrich from-pack` | After an accepted pack. Same prepare, into `{state_dir}/enrich/{pack}/{driver}`. Omitting `--driver` prepares every card the job allows. The default job is enrich, so the train cards wait for `--job train`. Does not apply. |
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
@@ -36,7 +37,7 @@ Default output is `.cell/enrich/{pack_id}/{driver}/`. Pass `--out` to write some
 
 Ollama already creates a model from a Modelfile. This factory writes that file and the next command. It does not invent a local inference server.
 
-LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. `llamafactory-lora` writes the unquantized LoRA recipe (`examples/train_lora/qwen3_lora_sft.yaml` shape: `finetuning_type: lora`, no quantization). `llamafactory-qlora` writes the 4-bit bitsandbytes recipe. Axolotl already trains from a YAML recipe, including multi-GPU runs. `axolotl-lora` writes the bf16 LoRA YAML that matches `examples/llama-3/lora-1b.yml`. `axolotl-qlora` writes the 4-bit YAML that matches `examples/llama-3/qlora.yml`. `NEXT.md` names `axolotl train`. None of these cards shell out. Unsloth QLoRA stays a `NEXT.md` pointer for a faster single-GPU Nvidia run. `--from-feed` copies instruct rows that are already under the cell state directory. This factory does not invent an in-process trainer, a dataset downloader, a GGUF exporter, or a GPU scheduler.
+LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. `llamafactory-lora` writes the unquantized LoRA recipe (`examples/train_lora/qwen3_lora_sft.yaml` shape: `finetuning_type: lora`, no quantization). `llamafactory-qlora` writes the 4-bit bitsandbytes recipe. Axolotl already trains from a YAML recipe, including multi-GPU runs. `axolotl-lora` writes the bf16 LoRA YAML that matches `examples/llama-3/lora-1b.yml`. `axolotl-qlora` writes the 4-bit YAML that matches `examples/llama-3/qlora.yml`. `NEXT.md` names `axolotl train`. None of these cards shell out. Unsloth QLoRA stays a `NEXT.md` pointer for a faster single-GPU Nvidia run. `--from-feed` copies instruct rows that are already under the cell state directory. This factory does not invent an in-process trainer, a dataset downloader, a GGUF exporter, or a GPU scheduler. `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line for a merged export. It does not run that script.
 
 ## Train / fine-tune
 
@@ -133,7 +134,7 @@ QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,met
 
 A short gauge run adds `--max-steps 10` to the prepare command. The default recipe stays one epoch.
 
-The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Prepare does not merge. `export.yaml` is the merge card. `adapter_name_or_path` is the same path as recipe `output_dir`. `NEXT.md` says the merge has not happened, and `export/` has no merged weights until `llamafactory-cli export` exits 0. An early stop may leave the adapter only under `checkpoint-<step>` inside that output directory. Point `adapter_name_or_path` at that checkpoint directory. Prepare does not rewrite `export.yaml` after train. A Modelfile that `llamafactory-cli export` writes into the export directory belongs to that tool. Do not set `quantization_bit` on that merge, and do not merge a quantized base. `import-trained` refuses `export.yaml` when a real key `quantization_bit` or `quantization_method` is set (`refuse:export`). A comment line does not trip that refuse. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER` for the adapter directory. The seat tag is the id the cell already runs. Use the chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create` and does not run that smoke eval.
+The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and the adapter weights). Prepare does not merge. `export.yaml` is the merge card. `adapter_name_or_path` is the same path as recipe `output_dir`. `NEXT.md` says the merge has not happened, and `export/` has no merged weights until `llamafactory-cli export` exits 0. An early stop may leave the adapter only under `checkpoint-<step>` inside that output directory. Point `adapter_name_or_path` at that checkpoint directory. Prepare does not rewrite `export.yaml` after train. A Modelfile that `llamafactory-cli export` writes into the export directory belongs to that tool. Do not set `quantization_bit` on that merge, and do not merge a quantized base. `import-trained` refuses `export.yaml` when a real key `quantization_bit` or `quantization_method` is set (`refuse:export`). A comment line does not trip that refuse. LLaMA-Factory does not write GGUF. After the merge, `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line (`--outtype auto`, outfile beside the export directory). Then seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER` for the adapter directory. The seat tag is the id the cell already runs. Use the chat template the recipe named. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run `ollama create`, does not run `convert_hf_to_gguf.py`, and does not run that smoke eval.
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This card does not call Unsloth and does not write a script.
 
@@ -335,6 +336,7 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | A train source path is empty, `--from-feed` has nothing to read, a source line is not an instruct row, a source resolves outside the cell directory, or the sources together exceed the byte cap | `refuse:dataset` |
 | `import-trained` on a prepare that is not a train recipe with job `train` | `refuse:driver` or `refuse:job` |
 | `import-trained` path is missing, is not one of adapter `output_dir` / merged `export_dir` / GGUF, matches more than one of those shapes, uses `adapter_model*.safetensors` as the only weight next to `config.json`, is a symlinked marker, or is a directory with more than one top-level `.gguf` | `refuse:adapter` |
+| `gguf-convert` weights are missing, are not a merged export, are an adapter directory, are only `adapter_model*.safetensors`, are a symlink, are already a GGUF, or match more than one shape | `refuse:seat` |
 | `{state_dir}/enrich` is missing on list | `refuse:enrich-index` |
 | `prepare.json` missing, unreadable, or flagged promoted | `refuse:missing-prepare`, `refuse:prepare-unreadable`, `refuse:prepared` |
 | Tag is not `cell-enrich-{pack_id}` | `refuse:tag` |
@@ -361,10 +363,24 @@ Those prepare stops happen before the output directory is created. `--all-driver
 Seat the merged weights on the local runtime outside the factory:
 
 1. Export with the `llamafactory-cli export` line in `NEXT.md`.
-2. GGUF conversion stays on a llama.cpp checkout: `convert_hf_to_gguf.py` on the merged directory. This factory does not run that script and does not choose a quantization type.
+2. `estate enrich gguf-convert` checks that merged directory and prints the llama.cpp line. Run that line from a llama.cpp checkout. `--outtype auto` is `convert_hf_to_gguf.py`'s default (highest-fidelity 16-bit float, f16 or bf16). The outfile is a sibling of the export directory (`export.gguf` beside `export`). This factory does not run the script and does not choose a quantization type.
 3. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.
 
-`estate enrich local-seat` validates the directory or the GGUF and prints that create line. The create name is `cell-enrich-{pack_id}`. The seat tag is `prepare.json` `seat_tag` (the same string as `base_model`). The command does not create the model, does not shell out, and does not promote.
+```bash
+estate enrich gguf-convert \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
+```
+
+The report prints:
+
+```bash
+python3 convert_hf_to_gguf.py <export-dir> --outfile <export-dir-sibling>.gguf --outtype auto
+```
+
+Then it prints `estate enrich local-seat` with `--weights` pointing at that sibling file. The command does not write the GGUF.
+
+`estate enrich local-seat` validates the directory or the GGUF and prints the create line. The create name is `cell-enrich-{pack_id}`. The seat tag is `prepare.json` `seat_tag` (the same string as `base_model`). The command does not create the model, does not shell out, and does not promote.
 
 ```bash
 estate enrich local-seat \

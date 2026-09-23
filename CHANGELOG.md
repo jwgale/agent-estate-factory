@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print the llama.cpp GGUF convert line
+
+- `estate enrich gguf-convert --prepared <dir> --weights <merged-export-dir>` checks a `llamafactory-lora` or `llamafactory-qlora` train prepare and prints the llama.cpp line `python3 convert_hf_to_gguf.py <dir> --outfile <sibling>.gguf --outtype auto`. `--outtype auto` is that script's default (highest-fidelity 16-bit float). The outfile is a sibling of the merged directory. The report then prints `estate enrich local-seat` for that sibling file. The command does not convert, does not shell out, and does not write a GGUF.
+- An adapter directory, `config.json` plus only `adapter_model*.safetensors`, a symlinked `--weights` path, a symlinked marker, a path that is already a GGUF, and a directory that matches more than one shape are `refuse:seat`. The same classify path as `local-seat` decides those stops. A GGUF points at `local-seat`. `refuse:train-base`, `--from-feed`, and `import-trained` are unchanged.
+- `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` name `gguf-convert` and the same convert line. `local-seat` on a merged directory prints that line too. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — official SFT scale and an honest merge card
 
 - `--official-scale` on `estate enrich prepare` and `estate enrich from-pack` applies to LLaMA-Factory cards only. It writes the `examples/train_lora/qwen3_lora_sft.yaml` scale into `llamafactory-lora` and `llamafactory-qlora`: `cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, `warmup_ratio` 0.1. Rank, packing, and quantization stay on the selected card. `axolotl-lora` and `axolotl-qlora` stay on their example files (`examples/llama-3/lora-1b.yml` and `examples/llama-3/qlora.yml`). Omit the flag for the short LLaMA-Factory recipe (`cutoff_len` 512, one epoch, grad accum 4, warmup 0.03). `--max-steps` still overrides `num_train_epochs` and still lowers `save_steps` when the count is under 50.
