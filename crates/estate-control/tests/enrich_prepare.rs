@@ -610,7 +610,7 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
 }
 
 #[test]
-fn cell_one_status_tip_names_pr_143() {
+fn cell_one_status_tip_names_pr_151() {
     let root = repo_root();
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     assert!(
@@ -619,20 +619,54 @@ fn cell_one_status_tip_names_pr_143() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #143"
+        "status snapshot must name tip through PR #151"
+    );
+    assert!(
+        !status.contains("what is on `main` through PR #143"),
+        "status snapshot must not freeze at PR #143"
     );
     assert!(
         !status.contains("on tip through PR #142"),
-        "prepare walk stays PR #142; tip is PR #143"
+        "prepare walk stays PR #142; tip is PR #151"
     );
     let head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #143"),
-        "status header must name tip through PR #143: {head}"
+        head.contains("through PR #151"),
+        "status header must name tip through PR #151: {head}"
     );
     assert!(
-        head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
-        "status header must name the PR #143 tip SHA: {head}"
+        !head.contains("through PR #143"),
+        "status header must not freeze tip at PR #143: {head}"
+    );
+    assert!(
+        head.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
+        "status header must name the PR #151 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("ESTATE_BIN")
+            && head.contains("PR #148")
+            && head.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"),
+        "status header must name the estate PATH fallback: {head}"
+    );
+    assert!(
+        head.contains("restore names dereference")
+            && head.contains("PR #149")
+            && head.contains("a272d39b731996524883e1124478dddc3f76935c"),
+        "status header must name the tokenizer restore dereference: {head}"
+    );
+    assert!(
+        !head.contains("cp -aL"),
+        "status header names the dereference slice without the copy command: {head}"
+    );
+    assert!(
+        head.contains("does not write `$PREPARED/Modelfile`")
+            && head.contains("PR #150")
+            && head.contains("663c806ae72826cff664ea32e8a370e059ba83d4"),
+        "status header must name the print-only Modelfile: {head}"
+    );
+    assert!(
+        head.contains("GGUF print-only seats") && head.contains("PR #151"),
+        "status header must scope the write line to GGUF print-only seats: {head}"
     );
     assert!(
         head.contains("beachhead matrix is PR #140"),
@@ -692,6 +726,35 @@ fn cell_one_status_tip_names_pr_143() {
         uniq.contains("via PR #143"),
         "uniqueness section must name GATE-90 Remaining via PR #143"
     );
+    assert!(
+        uniq.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"),
+        "uniqueness section must name the PR #148 estate binary"
+    );
+    assert!(
+        uniq.contains("still only call `make`"),
+        "uniqueness-full and uniqueness-ladder still only call make"
+    );
+    assert!(
+        uniq.contains("a272d39b731996524883e1124478dddc3f76935c"),
+        "uniqueness section must name the PR #149 dereference"
+    );
+    assert!(
+        uniq.contains("does not write `$PREPARED/Modelfile`"),
+        "uniqueness section must keep local-seat print-only"
+    );
+    assert!(
+        uniq.contains("663c806ae72826cff664ea32e8a370e059ba83d4"),
+        "uniqueness section must name the PR #150 print-only Modelfile"
+    );
+    assert!(
+        uniq.contains("GGUF print-only seats"),
+        "uniqueness section must scope the write line to GGUF print-only seats"
+    );
+    assert!(
+        uniq.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
+        "uniqueness section must name the PR #151 tip SHA"
+    );
+    assert!(uniq.contains("modelfile_on_disk=true"), "{uniq}");
     assert!(uniq.contains("SKIP live train"), "{uniq}");
     assert!(uniq.contains("extra_special_tokens"), "{uniq}");
     assert!(
@@ -747,6 +810,35 @@ fn cell_one_status_tip_names_pr_143() {
         "{slice}"
     );
     assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+
+    let tip = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #151")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #151 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
+        "{tip}"
+    );
+    assert!(tip.contains("PR #140"), "{tip}");
+    assert!(tip.contains("PR #142"), "{tip}");
+    assert!(tip.contains("via PR #143"), "{tip}");
+    assert!(tip.contains("PR #148"), "{tip}");
+    assert!(tip.contains("PR #149"), "{tip}");
+    assert!(tip.contains("PR #150"), "{tip}");
+    assert!(tip.contains("GGUF print-only seats"), "{tip}");
+    assert!(tip.contains("make lf-beachhead-prepare"), "{tip}");
+    assert!(
+        tip.contains("READY_FOR_LIVE_TEST`: no") || tip.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip}"
+    );
+    assert!(
+        !tip.contains("READY_FOR_LIVE_TEST: yes") && !tip.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip}"
+    );
+    assert!(!tip.to_ascii_lowercase().contains("kimi/"), "{tip}");
 }
 
 fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
