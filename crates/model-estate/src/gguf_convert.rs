@@ -31,8 +31,13 @@
 //! That refuse names the operator restore: copy tokenizer files from the
 //! HF cache snapshot already on disk, or the equivalent base checkout, into
 //! the export directory, then re-run `estate enrich gguf-convert`.
-//! This module does not download tokenizer files, does not copy them, does
-//! not write `tokenizer_config.json.bak`, and does not run the script.
+//! HF hub snapshots are often symlinks into the HF cache. The sentence tells
+//! the operator to copy with dereference (`cp -aL` or `cp --dereference`)
+//! so the export directory holds real files. A symlinked
+//! `tokenizer_config.json` stays `refuse:tokenizer`.
+//! This module does not follow that symlink, does not download tokenizer
+//! files, does not copy them, does not write `tokenizer_config.json.bak`,
+//! and does not run the script.
 
 use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
@@ -105,15 +110,17 @@ pub(crate) fn local_seat_cli(prepared: &Path, weights: &Path) -> String {
 }
 
 /// Operator restore after `refuse:tokenizer`. Names `train_base` when the
-/// prepare recorded one. Does not build a cache path, does not fetch, and
-/// does not copy files.
+/// prepare recorded one. HF hub snapshots are often symlinks. The sentence
+/// tells the operator to copy with dereference so the export directory holds
+/// real files. Does not build a cache path, does not fetch, does not copy
+/// files, and does not follow a symlinked `tokenizer_config.json`.
 pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
     let named = match train_base.trim() {
         "" => "the train base on this prepare".to_string(),
         base => format!("train base {base}"),
     };
     format!(
-        "Copy the tokenizer files from {named} already on disk into the export directory. The source is the HF cache snapshot for that repo, or the equivalent base checkout (a local HF weights directory). Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. Then re-run estate enrich gguf-convert on that export directory. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
+        "Copy the tokenizer files from {named} already on disk into the export directory. The source is the HF cache snapshot for that repo, or the equivalent base checkout (a local HF weights directory). HF hub snapshots are often symlinks into the HF cache. Copy with dereference (cp -aL or cp --dereference, or the equivalent) so the files in the export directory are real files, not symlinks. A plain cp -a leaves tokenizer_config.json as a symlink. enrich does not follow a symlinked tokenizer_config.json. Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. Then re-run estate enrich gguf-convert on that export directory. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
     )
 }
 
@@ -121,7 +128,7 @@ pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
 /// The export directory may not exist yet. This text does not scan it.
 pub(crate) fn export_tokenizer_guidance(train_base: &str) -> String {
     format!(
-        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. JSON null under extra_special_tokens is the same refuse:tokenizer case: transformers calls .keys() on that non-object value. The same export can omit vocab.json and merges.txt. {restore} estate enrich gguf-convert returns refuse:tokenizer for that list, for JSON null, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line.",
+        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. JSON null under extra_special_tokens is the same refuse:tokenizer case: transformers calls .keys() on that non-object value. The same export can omit vocab.json and merges.txt. estate enrich gguf-convert returns refuse:tokenizer for that export before the restore, for that list, for JSON null, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line. {restore}",
         restore = tokenizer_restore_sentence(train_base)
     )
 }
@@ -279,7 +286,7 @@ fn load_tokenizer_config(
             path.display()
         ))),
         Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
-            "refuse:tokenizer: {} is a symlink. enrich does not follow a symlinked tokenizer_config.json. {}",
+            "refuse:tokenizer: {} is a symlink. {}",
             path.display(),
             tokenizer_restore_sentence(train_base.unwrap_or(""))
         ))),
@@ -1335,6 +1342,15 @@ mod tests {
         assert!(text.contains("HF cache snapshot"), "{text}");
         assert!(text.contains("equivalent base checkout"), "{text}");
         assert!(text.contains("into the export directory"), "{text}");
+        assert!(text.contains("HF hub snapshots are often symlinks"), "{text}");
+        assert!(text.contains("cp -aL"), "{text}");
+        assert!(text.contains("cp --dereference"), "{text}");
+        assert!(text.contains("real files, not symlinks"), "{text}");
+        assert!(text.contains("plain cp -a"), "{text}");
+        assert!(
+            text.contains("does not follow a symlinked tokenizer_config.json"),
+            "{text}"
+        );
         assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
         assert!(text.contains("tokenizer_config.json.bak"), "{text}");
         assert!(text.contains("does not download weights"), "{text}");
@@ -1342,10 +1358,46 @@ mod tests {
         assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
     }
 
+    fn assert_refuse_named_before_rerun(text: &str) {
+        let refuse_at = text
+            .find("refuse:tokenizer")
+            .unwrap_or_else(|| panic!("missing refuse:tokenizer in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            refuse_at < rerun_at,
+            "refuse must be named before the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
+    fn assert_guidance_refuse_before_rerun(text: &str) {
+        let claim = "returns refuse:tokenizer for that export before the restore";
+        let claim_at = text
+            .find(claim)
+            .unwrap_or_else(|| panic!("missing refuse-before-restore claim in {text}"));
+        let rerun_at = text
+            .find("Then re-run estate enrich gguf-convert")
+            .unwrap_or_else(|| panic!("missing re-run in {text}"));
+        assert!(
+            claim_at < rerun_at,
+            "the refuse claim must precede the re-run: {text}"
+        );
+        assert!(
+            !text[rerun_at..].contains("returns refuse:tokenizer"),
+            "the re-run must not be followed by the refuse claim: {text}"
+        );
+    }
+
     fn assert_refuses_tokenizer(err: &impl std::fmt::Display) {
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
         assert_names_hf_cache_restore(&text);
+        assert_refuse_named_before_rerun(&text);
         assert!(!text.contains("--outtype"), "{text}");
     }
 
@@ -1364,6 +1416,7 @@ mod tests {
         assert!(guidance.contains("refuse:tokenizer"), "{guidance}");
         assert!(guidance.contains("JSON null"), "{guidance}");
         assert_names_hf_cache_restore(&guidance);
+        assert_guidance_refuse_before_rerun(&guidance);
     }
 
     #[test]
@@ -1511,6 +1564,7 @@ mod tests {
             "{}",
             plan.report
         );
+        assert_refuse_named_before_rerun(&plan.report);
         assert!(
             plan.report.contains("Qwen/Qwen2.5-0.5B-Instruct"),
             "{}",
@@ -1608,9 +1662,15 @@ mod tests {
         let err = plan_gguf_convert(&root, &export).unwrap_err();
         let text = err.to_string();
         assert!(text.contains("refuse:tokenizer"), "{text}");
-        assert!(text.contains("symlink"), "{text}");
-        assert!(text.contains("HF cache snapshot"), "{text}");
-        assert!(text.contains("re-run estate enrich gguf-convert"), "{text}");
+        assert!(text.contains("is a symlink"), "{text}");
+        assert_eq!(
+            text.matches("does not follow a symlinked tokenizer_config.json")
+                .count(),
+            1,
+            "{text}"
+        );
+        assert_names_hf_cache_restore(&text);
+        assert_refuse_named_before_rerun(&text);
         assert!(!text.contains("JSON list"), "{text}");
         assert!(!text.contains("python3"), "{text}");
         assert!(!root.join("export.gguf").exists());

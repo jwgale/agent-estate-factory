@@ -812,10 +812,16 @@ value. A Qwen-family export missing vocab.json or merges.txt is the
 same refuse. Qwen-family is config.json model_type or architectures,
 or tokenizer_class, naming Qwen. Copy those tokenizer
 files from the HF cache snapshot for the train base already on disk,
-or the equivalent base checkout, into the export directory. Keep the
-export tokenizer_config.json as tokenizer_config.json.bak. Then re-run
-estate enrich gguf-convert on that export directory. This factory does
-not download weights and does not copy the files.
+or the equivalent base checkout, into the export directory.
+HF hub snapshots are often symlinks into the HF cache.
+Copy with dereference (cp -aL or cp --dereference, or the equivalent)
+so the files in the export directory are real files, not symlinks.
+A plain cp -a leaves tokenizer_config.json as a symlink.
+enrich does not follow a symlinked tokenizer_config.json.
+Keep the export tokenizer_config.json as
+tokenizer_config.json.bak. Then re-run estate enrich gguf-convert on
+that export directory. This factory does not download weights and does
+not copy the files.
 
   estate enrich gguf-convert \\
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
@@ -901,8 +907,14 @@ export directory is refuse:seat. A JSON list or JSON null
 extra_special_tokens, or a Qwen-family export missing vocab.json or
 merges.txt, is refuse:tokenizer. Copy the tokenizer files from the
 HF cache snapshot for the train base, or the equivalent base checkout,
-into the export directory. Keep the export tokenizer_config.json as
-tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
+into the export directory.
+HF hub snapshots are often symlinks into the HF cache.
+Copy with dereference (cp -aL or cp --dereference, or the equivalent)
+so the files in the export directory are real files, not symlinks.
+A plain cp -a leaves tokenizer_config.json as a symlink.
+enrich does not follow a symlinked tokenizer_config.json. Keep the
+export tokenizer_config.json as tokenizer_config.json.bak. Then re-run
+estate enrich gguf-convert.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
@@ -977,8 +989,14 @@ export directory is refuse:seat. A JSON list or JSON null
 extra_special_tokens, or a Qwen-family export missing vocab.json or
 merges.txt, is refuse:tokenizer. Copy the tokenizer files from the
 HF cache snapshot for the train base, or the equivalent base checkout,
-into the export directory. Keep the export tokenizer_config.json as
-tokenizer_config.json.bak. Then re-run estate enrich gguf-convert.
+into the export directory.
+HF hub snapshots are often symlinks into the HF cache.
+Copy with dereference (cp -aL or cp --dereference, or the equivalent)
+so the files in the export directory are real files, not symlinks.
+A plain cp -a leaves tokenizer_config.json as a symlink.
+enrich does not follow a symlinked tokenizer_config.json. Keep the
+export tokenizer_config.json as tokenizer_config.json.bak. Then re-run
+estate enrich gguf-convert.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
@@ -1023,9 +1041,15 @@ extra_special_tokens to a JSON list. vocab.json and merges.txt are
 missing. gguf-convert on that directory is refuse:tokenizer and does
 not print the convert line. The refuse names restoring tokenizer files
 from the HF cache snapshot for the train base, or the equivalent base
-checkout, into the export directory, then re-running estate enrich
-gguf-convert. The script then replaces that fixture with config.json {}
-and model.safetensors. It does not copy tokenizer files and does not
+checkout, into the export directory.
+HF hub snapshots are often symlinks into the HF cache.
+Copy with dereference (cp -aL or cp --dereference, or the equivalent)
+so the files in the export directory are real files, not symlinks.
+A plain cp -a leaves tokenizer_config.json as a symlink.
+enrich does not follow a symlinked tokenizer_config.json.
+Then re-run estate enrich gguf-convert. The
+script then replaces that fixture with config.json {} and
+model.safetensors. It does not copy tokenizer files and does not
 write tokenizer_config.json.bak.
 
   estate enrich merge-adapt \\
