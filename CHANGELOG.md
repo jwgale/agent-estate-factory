@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print-only Target C uniqueness ladder
+
+- `make uniqueness-ladder` (`scripts/uniqueness-ladder.sh`) runs the existing Target C print journeys in order: `make qlora-journey`, then `make seat-journey`. Print-only. It does not train, merge, convert, seat, or promote. It does not run `make lf-beachhead-prepare`. Live train, live convert, and live seat still need a human GPU host and stay skipped. Not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Cell One status tip honesty through PR #143
 
 - `docs/CELL-ONE-STATUS.md` names tip through PR #143 (`3acdec3983ea581976649ba4b7cc41a4cd22d31d`). The LLaMA-Factory beachhead matrix stays PR #140. The print-only prepare walk stays PR #142. [`docs/GATE-90.md`](docs/GATE-90.md) Remaining names `make lf-beachhead-prepare`. `READY_FOR_LIVE_TEST`: no.
