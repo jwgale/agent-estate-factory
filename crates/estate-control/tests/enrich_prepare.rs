@@ -85,6 +85,11 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("make train-prepare"), "{body}");
         assert!(body.contains("make qlora-journey"), "{body}");
         assert!(body.contains("make lora-journey"), "{body}");
+        assert!(body.contains("make seat-journey"), "{body}");
+        assert!(
+            body.contains("section 10, Target C seat ladder"),
+            "{body}"
+        );
         assert!(body.contains("Target C"), "{body}");
         assert!(body.contains("Target A"), "{body}");
         assert!(
@@ -148,6 +153,7 @@ fn help_enrich_and_train_name_the_seam() {
     let index_text = text(&index);
     assert!(index_text.contains("estate help enrich"), "{index_text}");
     assert!(index_text.contains("make lora-journey"), "{index_text}");
+    assert!(index_text.contains("make seat-journey"), "{index_text}");
 
     let drivers = estate_bin().args(["enrich", "drivers"]).output().unwrap();
     let listed = text(&drivers);
@@ -758,6 +764,97 @@ fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         assert!(
             !scrubbed.contains("lora-journey"),
             "{rel} must not run lora-journey"
+        );
+    }
+}
+
+#[test]
+fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.lines().any(|line| line.trim() == "seat-journey:"),
+        "Makefile missing seat-journey"
+    );
+    assert!(makefile.contains("scripts/seat-journey.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "seat-journey must stay off smoke, gate-90, and Actions"
+    );
+    let script = std::fs::read_to_string(root.join("scripts/seat-journey.sh")).unwrap();
+    for needle in [
+        "Target C",
+        "llamafactory-qlora",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "llama3",
+        "refuse:train-base",
+        "refuse:adapter",
+        "refuse:seat",
+        "SKIP live train",
+        "SKIP live convert",
+        "SKIP live seat",
+        "READY_FOR_LIVE_TEST: no",
+        "llamafactory-cli export",
+        "merge-adapt",
+        "gguf-convert",
+        "local-seat",
+        "import-trained",
+        "python3 convert_hf_to_gguf.py",
+        "--outtype auto",
+        "ollama create",
+        "trained_shape",
+        "adapter_config.json",
+        "config.json",
+        "model.safetensors",
+        "GGUF",
+        "CELL_SEAT_LIVE",
+        "quantization_bit: 4",
+        "quantization_method: bnb",
+        "examples/estate.yaml",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+    ] {
+        assert!(script.contains(needle), "seat-journey missing {needle}");
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "seat-journey must keep READY_FOR_LIVE_TEST no"
+    );
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("echo")
+            || trimmed.starts_with("grep")
+            || trimmed.starts_with("if grep")
+            || trimmed.starts_with("if ! grep")
+            || trimmed.contains("[[ -e")
+        {
+            return false;
+        }
+        trimmed.contains("llamafactory-cli")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+    });
+    assert!(
+        !shells_out,
+        "seat-journey must not shell out to llamafactory-cli, llama.cpp, or ollama"
+    );
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains(
+        "## 10. Target C seat ladder — fixture stubs print the merge, convert, seat, and import"
+    ));
+    assert!(journey.contains("make seat-journey"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("## Target C seat ladder — fixture print path"));
+    assert!(train.contains("make seat-journey"));
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("seat-journey"),
+            "{rel} must not run seat-journey"
         );
     }
 }
