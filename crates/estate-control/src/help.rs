@@ -413,9 +413,17 @@ instruct and not thinking, or containing nothink, uses qwen3_nothink.
 Other Qwen3 names use qwen3.
 Phi-3 mini, Phi-3 medium, and Phi-3.5 Instruct use template phi.
 Phi-3-small uses phi_small. A nested local path segment matches the same way.
-examples/fixtures/phi3-instruct.pack.json is the Phi-3 smoke pack.
+examples/fixtures/phi3-instruct.pack.json is the Phi-3 Instruct QLoRA smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Qwen LoRA/QLoRA and still writes quantization_method bnb and quantization_bit 4.
+That reproduce line is QLoRA-only. Phi-3-small uses phi_small and still gets
+that QLoRA line.
+examples/fixtures/phi3-instruct-lora.pack.json is the Phi-3 Instruct LoRA
+smoke pack. --driver llamafactory-lora on that pack is the non-quant twin
+of that QLoRA prepare. It writes template phi, lora_rank 8, packing false,
+and no quantization_bit or quantization_method. That reproduce line is
+LoRA-only and only for Phi-3 mini, Phi-3 medium, and Phi-3.5.
+Phi-3-small, Phi-4, and Phi-4-mini do not get that line.
 Llama-3.2-1B-Instruct and Llama-3.2-3B-Instruct use template llama3.
 Llama-3.2 vision (11B and 90B) uses mllama. A short llama-3 stem does not
 label those names llama3. llama-30b stays default.

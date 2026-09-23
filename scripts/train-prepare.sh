@@ -439,6 +439,78 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  phi prepare must stay unpromoted")
 PY
 
+PHI_LORA_PACK="$ROOT/examples/fixtures/phi3-instruct-lora.pack.json"
+echo "-- phi3 instruct lora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PHI_LORA_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/phi3-lora"
+grep -q "^template: phi$" "$WORKDIR/phi3-lora/recipe.yaml"
+grep -q "^template: phi$" "$WORKDIR/phi3-lora/export.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/phi3-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/phi3-lora/recipe.yaml"
+if grep -q "^template: phi_small$" "$WORKDIR/phi3-lora/recipe.yaml"; then
+  echo "FAIL  phi3 instruct LoRA recipe used phi_small"
+  exit 1
+fi
+if grep -q "^template: phi4" "$WORKDIR/phi3-lora/recipe.yaml"; then
+  echo "FAIL  phi3 instruct LoRA recipe used a phi4 template"
+  exit 1
+fi
+grep -q 'model_name_or_path: "microsoft/Phi-3-mini-4k-instruct"' "$WORKDIR/phi3-lora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/phi3-lora/recipe.yaml"; then
+  echo "FAIL  phi3 LoRA recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/phi3-lora/recipe.yaml" "$WORKDIR/phi3-lora/export.yaml"; then
+  echo "FAIL  phi3 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/phi3-lora/recipe.yaml" "$WORKDIR/phi3-lora/export.yaml"; then
+  echo "FAIL  phi3 LoRA recipe must omit quantization_method"
+  exit 1
+fi
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare." "$WORKDIR/phi3-lora/NEXT.md"
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare." "$WORKDIR/phi3-lora/PREPARE.md"
+if grep -q "Reproduce target beside Qwen LoRA/QLoRA." "$WORKDIR/phi3-lora/NEXT.md" "$WORKDIR/phi3-lora/PREPARE.md"; then
+  echo "FAIL  phi3 LoRA fixture prepare wrote the QLoRA reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/phi3-lora/NEXT.md" "$WORKDIR/phi3-lora/PREPARE.md"; then
+  echo "FAIL  phi3 LoRA prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/phi3-lora/train.py" || -e "$WORKDIR/phi3-lora/train.sh" ]]; then
+  echo "FAIL  phi3 LoRA prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/phi3-lora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-lora":
+    raise SystemExit(f"FAIL  phi3 lora driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  phi3 lora seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "microsoft/Phi-3-mini-4k-instruct":
+    raise SystemExit(f"FAIL  phi3 lora train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  phi3 lora prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PHI_LORA_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/phi3-lora-pack-qlora"
+if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare." "$WORKDIR/phi3-lora-pack-qlora/NEXT.md" "$WORKDIR/phi3-lora-pack-qlora/PREPARE.md"; then
+  echo "FAIL  phi3 LoRA fixture on the QLoRA card wrote the LoRA reproduce note"
+  exit 1
+fi
+grep -q "Reproduce target beside Qwen LoRA/QLoRA." "$WORKDIR/phi3-lora-pack-qlora/NEXT.md"
+grep -q "quantization_method: bnb" "$WORKDIR/phi3-lora-pack-qlora/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/phi3-lora-pack-qlora/recipe.yaml"
+grep -q "^template: phi$" "$WORKDIR/phi3-lora-pack-qlora/recipe.yaml"
+
 LLAMA32_PACK="$ROOT/examples/fixtures/llama32-instruct.pack.json"
 echo "-- llama 3.2 instruct qlora reproduce target --"
 estate enrich prepare \
