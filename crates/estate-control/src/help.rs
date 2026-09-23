@@ -106,6 +106,7 @@ LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
 Train next: make train-next
 Full print: make uniqueness-full
+Prove list: make uniqueness-prove-checklist
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -393,6 +394,7 @@ READY_FOR_LIVE_TEST stays no.
   make seat-journey
   make uniqueness-ladder
   make uniqueness-full
+  make uniqueness-prove-checklist
   make lf-beachhead-prepare
   make enrich-live-prove
 
@@ -964,6 +966,11 @@ run a trainer. make uniqueness-ladder does not run it.
 make uniqueness-full runs make qlora-journey, then make train-next,
 then make seat-journey. It does not train. make uniqueness-ladder
 stays qlora-journey then seat-journey.
+make uniqueness-prove-checklist prints the recorded Target C operator
+steps from docs/LIVE-PROBES.md. It does not train, convert, shell out
+to ollama, or promote. It does not invent a live PASS.
+CELL_TRAIN_LIVE=1 stays print-only. CELL_SEAT_LIVE=1 stays print-only.
+Not native MLX. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 8, Target C).
 

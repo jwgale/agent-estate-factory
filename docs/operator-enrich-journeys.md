@@ -18,6 +18,8 @@ Print path once a merged export and a GGUF exist (Target C seat ladder): the sam
 
 `make uniqueness-full` runs the same prints with the train recipe in the middle: `make qlora-journey`, then `make train-next`, then `make seat-journey`. If one step fails, it exits nonzero before the next step. Print-only. It does not train, merge, convert, seat, or promote, and it does not run `make lf-beachhead-prepare`. It does not change `make uniqueness-ladder`. Live train, live convert, and live seat still need a human GPU host and stay skipped. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
 
+`make uniqueness-prove-checklist` prints the ordered operator steps for the recorded PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) (Target C live uniqueness (5090-class)). Print-only. It does not train, convert, shell out to ollama, or promote, and it does not invent a new live PASS. `CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. It is not in `make smoke`, `make gate-90`, or GitHub Actions. It is not native MLX.
+
 The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions. Opt-in prepare walk: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the matrix knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row.
 
 ## What stays fixed

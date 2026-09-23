@@ -82,6 +82,8 @@ are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
 through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`) names this
 recorded PASS.
 
+Opt-in print of this ladder in operator order: `make uniqueness-prove-checklist`. That command does not train, convert, shell out to ollama, or promote. It does not invent a new live PASS. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 Walk: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Seat: [`local-seat.md`](local-seat.md).
 
 ## Mac specialist result (recorded)
