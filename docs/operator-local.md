@@ -5,7 +5,7 @@ Hardware is a **driver choice**. The same estate binding (`local_slm` / driver `
 | Host class | Typical box | Driver |
 | --- | --- | --- |
 | `consumer-nvidia` | RTX desktop / laptop | Ollama (Supported) or llama.cpp (swap-proof) |
-| `apple-silicon` | Mac laptop | Ollama-on-Mac (Supported) or MLX (Stub; live proof later) |
+| `apple-silicon` | Mac laptop | Ollama-on-Mac (Supported) or MLX (Stub; live proof later). `mlx-lm-lora` is an optional prepare handoff for that host. It does not make the `mlx` catalog card live. |
 | `rented-nvidia` | cloud / lab GPU, including a 5090 host | Ollama (Supported) or llama.cpp (swap-proof) |
 | `any` | unknown / mixed | `CELL_LOCAL_ENDPOINT` remote pattern |
 

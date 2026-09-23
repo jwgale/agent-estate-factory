@@ -9,6 +9,8 @@
 //! Every recipe card writes the train base, and keeps
 //! the Ollama seat tag for Modelfile `FROM`. `unsloth-qlora` is an optional
 //! NEXT card: an Nvidia-only QLoRA handoff. It does not write a script.
+//! `mlx-lm-lora` is an optional NEXT card: an Apple Silicon LoRA handoff.
+//! It writes docs only when `host_class_affinity` is `apple-silicon`.
 //! `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
@@ -90,7 +92,8 @@ pub struct EnrichJob {
     /// Hugging Face repo id or a local HF weights directory. `llamafactory-lora`
     /// and `llamafactory-qlora` write this to `model_name_or_path`.
     /// `axolotl-lora` and `axolotl-qlora` write it to `base_model`.
-    /// `unsloth-qlora` records it on the operator-owned handoff. That card does not write a recipe.
+    /// `unsloth-qlora` and `mlx-lm-lora` record it on the operator-owned handoff.
+    /// Those cards do not write a recipe.
     /// Absent until the pack or the binding sets it.
     pub train_base_model: Option<String>,
     pub purpose: String,
@@ -215,6 +218,17 @@ const REGISTRY: &[RegisteredDriver] = &[
         },
         build: || Box::new(UnslothQloraDriver),
     },
+    RegisteredDriver {
+        card: TrainEnrichCard {
+            driver_id: MLX_LM_LORA_ID,
+            status: "optional",
+            integrates: "mlx-lm LoRA docs (apple-silicon NEXT handoff)",
+            notes: "Optional NEXT card. Apple Silicon LoRA handoff. Writes MLX.md, an operator-owned handoff, only when host_class_affinity is apple-silicon. Another affinity is refuse:host and writes nothing. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call mlx-lm. Not the product. LLaMA-Factory LoRA is llamafactory-lora. Axolotl LoRA is axolotl-lora.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(MlxLmLoraDriver),
+    },
 ];
 
 struct OllamaModelfileDriver;
@@ -230,6 +244,8 @@ struct AxolotlDriver {
 }
 
 struct UnslothQloraDriver;
+
+struct MlxLmLoraDriver;
 
 /// QLoRA train card. LLaMA-Factory already trains 4-bit QLoRA from a YAML recipe. This id writes that recipe.
 pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
@@ -254,6 +270,24 @@ const UNSLOTH_GUIDE_DOC: &str = "https://unsloth.ai/docs/get-started/fine-tuning
 const UNSLOTH_REPO: &str = "https://github.com/unslothai/unsloth";
 /// Linux install line published in the Unsloth README. This factory does not run it.
 const UNSLOTH_README_INSTALL: &str = "uv pip install unsloth --torch-backend=auto";
+
+/// Optional NEXT card. mlx-lm already documents LoRA on Apple Silicon. This id writes a handoff, not a script.
+pub const MLX_LM_LORA_ID: &str = "mlx-lm-lora";
+
+/// Operator-owned pointer. Not an mlx-lm config and not a training script.
+const MLX_HANDOFF: &str = "MLX.md";
+
+const APPLE_SILICON_HOST: &str = "apple-silicon";
+
+/// Public LoRA page. This factory does not fetch it.
+const MLX_LORA_DOC: &str = "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md";
+const MLX_REPO: &str = "https://github.com/ml-explore/mlx-lm";
+/// Training extra published in mlx-lm `mlx_lm/LORA.md`. This factory does not run it.
+const MLX_TRAIN_INSTALL: &str = "pip install \"mlx-lm[train]\"";
+/// Train command name published on that page. This factory does not choose its flags.
+const MLX_LORA_COMMAND: &str = "mlx_lm.lora";
+/// Fuse command published on that page. The placeholder stays a placeholder.
+const MLX_FUSE_COMMAND: &str = "mlx_lm.fuse --model <path_to_model>";
 
 /// Which LLaMA-Factory PEFT recipe a card writes. Selection is the driver id.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -414,13 +448,14 @@ const TRAIN_RECIPE_DRIVERS: &[&str] = &[
     AXOLOTL_QLORA_ID,
 ];
 
-/// `import-trained` accepts a recipe card or the optional Unsloth handoff.
+/// `import-trained` accepts a recipe card or an optional handoff (`unsloth-qlora`, `mlx-lm-lora`).
 const IMPORT_TRAINED_DRIVERS: &[&str] = &[
     LLAMAFACTORY_QLORA_ID,
     LLAMAFACTORY_LORA_ID,
     AXOLOTL_LORA_ID,
     AXOLOTL_QLORA_ID,
     UNSLOTH_QLORA_ID,
+    MLX_LM_LORA_ID,
 ];
 
 /// `import-trained` shape: LLaMA-Factory or Axolotl `output_dir` with `adapter_config.json`.
@@ -436,9 +471,9 @@ fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
 }
 
-/// Recipe cards and the Unsloth handoff both record a train base beside the seat tag.
+/// Recipe cards and the optional handoffs record a train base beside the seat tag.
 fn records_train_base(id: &str) -> bool {
-    is_train_recipe_driver(id) || id == UNSLOTH_QLORA_ID
+    is_train_recipe_driver(id) || id == UNSLOTH_QLORA_ID || id == MLX_LM_LORA_ID
 }
 
 /// Smoke-scale cutoff. `--official-scale` writes 2048.
@@ -640,6 +675,34 @@ impl TrainEnrichDriver for UnslothQloraDriver {
     }
 }
 
+impl TrainEnrichDriver for MlxLmLoraDriver {
+    fn id(&self) -> &'static str {
+        MLX_LM_LORA_ID
+    }
+
+    fn status(&self) -> &'static str {
+        "optional"
+    }
+
+    fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        if job.kind != EnrichJobKind::Train {
+            return Err(ModelError::Other(format!(
+                "refuse:job: {MLX_LM_LORA_ID} prepares train; got {}",
+                job.kind.as_str()
+            )));
+        }
+        refuse_mlx_host(&job.host_class_affinity)?;
+        let train_owned = require_train_base(job)?;
+        let train_base = train_owned.as_str();
+        let handoff = mlx_handoff_md(job, train_base);
+        let steps = mlx_prepare_steps(job, train_base);
+        Ok(DriverPrepare {
+            files: vec![(MLX_HANDOFF.into(), handoff)],
+            steps,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct ExternalManifest {
     schema: String,
@@ -793,7 +856,8 @@ pub fn driver_default_job(id: &str) -> Result<&'static str, ModelError> {
     Ok(train_enrich_card(id)?.default_job.as_str())
 }
 
-/// Cards that prepare `job`. `--all-drivers` uses this list.
+/// Cards whose `jobs` list contains `job`. This is the allow-list.
+/// `--all-drivers` then applies `train_enrich_drivers_for_prepare`.
 pub fn train_enrich_drivers_for_job(job: &str) -> Result<Vec<&'static str>, ModelError> {
     let kind = parse_enrich_job(job)?;
     let ids: Vec<_> = REGISTRY
@@ -808,6 +872,36 @@ pub fn train_enrich_drivers_for_job(job: &str) -> Result<Vec<&'static str>, Mode
         )));
     }
     Ok(ids)
+}
+
+/// Host affinity recorded on a prepare job. Pack field, then `params.host_class`, then pack `host_class`.
+pub fn enrich_host_class_affinity(estate: &Estate, pack: &PackManifest) -> String {
+    resolve_host_class_affinity(estate, pack)
+}
+
+fn driver_included_for_host(driver_id: &str, host_class_affinity: &str) -> bool {
+    if driver_id == MLX_LM_LORA_ID {
+        host_class_affinity == APPLE_SILICON_HOST
+    } else {
+        true
+    }
+}
+
+/// Cards `--all-drivers` writes for `job` on this host affinity.
+///
+/// `mlx-lm-lora` is on the train allow-list and is included only when
+/// `host_class_affinity` is `apple-silicon`. Any other affinity omits that
+/// card so the rest of the set still prepares. Naming `--driver mlx-lm-lora`
+/// on another affinity is `refuse:host` and writes nothing.
+pub fn train_enrich_drivers_for_prepare(
+    job: &str,
+    host_class_affinity: &str,
+) -> Result<Vec<&'static str>, ModelError> {
+    let ids = train_enrich_drivers_for_job(job)?;
+    Ok(ids
+        .into_iter()
+        .filter(|id| driver_included_for_host(id, host_class_affinity))
+        .collect())
 }
 
 pub fn parse_enrich_job(raw: &str) -> Result<EnrichJobKind, ModelError> {
@@ -915,9 +1009,7 @@ pub fn prepare_enrich_set(
         )));
     }
     if reqs.iter().any(|req| req.official_scale)
-        && !reqs
-            .iter()
-            .any(|req| is_train_recipe_driver(req.driver_id))
+        && !reqs.iter().any(|req| is_train_recipe_driver(req.driver_id))
     {
         return Err(ModelError::Other(
             format!(
@@ -1551,6 +1643,11 @@ fn next_markdown(
                  https://unsloth.ai/docs/get-started/install\n\
                  https://github.com/unslothai/unsloth\n\
                  \n\
+                 ## Apple Silicon LoRA handoff\n\
+                 \n\
+                 On apple-silicon, mlx-lm already documents LoRA and fuse. The optional NEXT card is mlx-lm-lora (`estate enrich prepare --driver mlx-lm-lora`). That card writes MLX.md. It does not call mlx-lm and does not write a script. This card does not call mlx-lm and does not write an MLX trainer. Naming mlx-lm-lora on another host class is refuse:host.\n\
+                 https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md\n\
+                 \n\
                  axolotl-lora is the bf16 LoRA YAML. axolotl-qlora is the 4-bit YAML. This card does not call Axolotl.\n",
                 host = llamafactory_host_note(driver_id, &job.host_class_affinity),
                 dataset = train_dataset_blurb(job, CHAT_DATASET_SHAPE),
@@ -1613,7 +1710,8 @@ fn next_markdown(
                  Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
                  llamafactory-lora is the unquantized LLaMA-Factory LoRA recipe. llamafactory-qlora is the 4-bit QLoRA recipe. This card does not call LLaMA-Factory.\n\
-                 Unsloth QLoRA is a faster single-GPU alternate on Nvidia only. The optional NEXT card is unsloth-qlora (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
+                 Unsloth QLoRA is a faster single-GPU alternate on Nvidia only. The optional NEXT card is unsloth-qlora (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n\
+                 On apple-silicon, the optional NEXT card is mlx-lm-lora (https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md). That card writes MLX.md. This card does not call mlx-lm and does not write an MLX trainer. Naming mlx-lm-lora on another host class is refuse:host.\n",
                 host = axolotl_host_note(driver_id, &job.host_class_affinity),
                 dataset = train_dataset_blurb(job, ALPACA_DATASET_SHAPE),
                 seat = job.base_model,
@@ -1689,6 +1787,68 @@ fn next_markdown(
                 out = out_dir.display(),
             ),
             "Point --adapter at the artifact you saved from the Unsloth guide. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
+        )
+    } else if driver_id == MLX_LM_LORA_ID {
+        let train_base = job.train_base_model.as_deref().unwrap_or("");
+        let handoff = out_dir.join(MLX_HANDOFF);
+        (
+            format!(
+                "mlx-lm LoRA is an optional Apple Silicon handoff. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. Native MLX stays a stub on the local runtime catalog.\n\
+                 \n\
+                 This factory does not call mlx-lm, does not shell out, does not install mlx-lm, does not download weights, and does not write an executable MLX script.\n\
+                 \n\
+                 Operator-owned handoff: {handoff}\n\
+                 That file records the seat tag, the train base, and host_class_affinity apple-silicon. It is not a recipe and it is not a script.\n\
+                 \n\
+                 Install from the mlx-lm LoRA page. That page publishes `{install_line}`. This factory does not run that install.\n\
+                 {lora_doc}\n\
+                 {repo}\n\
+                 \n\
+                 The page names `{lora_command}` for LoRA. A quantized model on that page is QLoRA. This factory does not choose iters, rank, layers, or a data directory, and it does not write a YAML config.\n\
+                 \n\
+                 Fuse, from that same page: `{fuse}`.\n\
+                 mlx-lm loads adapters from adapters/ and writes the fused model under fused_model/ unless you pass other flags. `mlx_lm.fuse --help` lists them. This factory does not run fuse, does not fill in the model path, and does not export GGUF.\n\
+                 GGUF export on that page is an mlx_lm.fuse flag. estate enrich gguf-convert reads a llamafactory-lora or llamafactory-qlora prepare. This card does not.\n\
+                 \n\
+                 {host}\n\
+                 \n\
+                 Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
+                 \n\
+                 Train base is {train}. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. Pass that value as --model when you follow the LoRA page. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+                 \n\
+                 {flags}\n\
+                 \n\
+                 llamafactory-lora writes the LLaMA-Factory LoRA recipe. axolotl-lora writes the Axolotl bf16 YAML. unsloth-qlora is the Nvidia-only QLoRA handoff. This card does not call those trainers.\n\
+                 \n\
+                 After you train with mlx-lm outside this factory, hand the artifact you saved to import-trained. The LoRA page saves the adapter under adapters/ unless you pass --adapter-path. This factory does not choose that path. estate enrich local-seat reads a llamafactory-lora or llamafactory-qlora prepare. This card does not.\n\
+                 \n\
+                 READY_FOR_LIVE_TEST: no\n",
+                handoff = handoff.display(),
+                install_line = MLX_TRAIN_INSTALL,
+                lora_doc = MLX_LORA_DOC,
+                repo = MLX_REPO,
+                lora_command = MLX_LORA_COMMAND,
+                fuse = MLX_FUSE_COMMAND,
+                host = mlx_host_note(&job.host_class_affinity),
+                seat = job.base_model,
+                train = train_base,
+                flags = mlx_flag_note(job),
+            ),
+            format!(
+                "Adapter directory (contains adapter_config.json):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir>\n\
+                 \n\
+                 Merged directory (config.json and at least one .safetensors file whose name does not start with adapter_model; Modelfile is optional):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <merged-dir>\n\
+                 \n\
+                 GGUF path (one .gguf file, or a directory with exactly one top-level .gguf):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
+                out = out_dir.display(),
+            ),
+            "Point --adapter at the artifact you saved after following the mlx-lm LoRA page, including fuse when you fused. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
         )
     } else {
         (
@@ -1782,6 +1942,27 @@ fn unsloth_host_note(affinity: &str) -> String {
     cuda_train_host_note(UNSLOTH_QLORA_ID, affinity, "the Unsloth QLoRA guide")
 }
 
+fn refuse_mlx_host(affinity: &str) -> Result<(), ModelError> {
+    if affinity == APPLE_SILICON_HOST {
+        return Ok(());
+    }
+    Err(ModelError::Other(format!(
+        "refuse:host: {MLX_LM_LORA_ID} prepares on apple-silicon. host_class_affinity is '{affinity}'. This card does not write a handoff for that host. Set host_class_affinity to apple-silicon, or prepare llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora. This factory does not call mlx-lm."
+    )))
+}
+
+fn mlx_host_note(affinity: &str) -> String {
+    if affinity == APPLE_SILICON_HOST {
+        format!(
+            "host_class_affinity is apple-silicon. This card is the optional mlx-lm LoRA handoff for that host. consumer-nvidia, rented-nvidia, and any do not prepare this card. Naming {MLX_LM_LORA_ID} on another affinity is refuse:host and writes nothing. --all-drivers omits this card unless the affinity is apple-silicon, so the other train cards still prepare. This factory does not call mlx-lm."
+        )
+    } else {
+        format!(
+            "host_class_affinity is {affinity}. {MLX_LM_LORA_ID} prepares on apple-silicon. This file should not exist for this host."
+        )
+    }
+}
+
 fn unsloth_flag_note(job: &EnrichJob) -> String {
     let mut lines = vec![
         "This card does not write a recipe, so it does not write max_steps, a dataset, or an official-scale cutoff.".to_string(),
@@ -1872,6 +2053,106 @@ fn unsloth_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
         train = train_base,
         flags = unsloth_flag_note(job),
         install_line = UNSLOTH_README_INSTALL,
+    )
+}
+
+fn mlx_flag_note(job: &EnrichJob) -> String {
+    let mut lines = vec![
+        "This card does not write a recipe, so it does not write max_steps, a dataset, or an official-scale cutoff.".to_string(),
+        "--from-feed on this card alone is refuse:dataset. --official-scale on this card alone is refuse:official-scale. --max-steps 0 is refuse:max-steps.".to_string(),
+        "This factory does not download a dataset.".to_string(),
+    ];
+    if let Some(steps) = job.max_steps {
+        lines.push(format!(
+            "This prepare was given --max-steps {steps}. This card does not write that count and does not run a gauge."
+        ));
+    }
+    if job.official_scale {
+        lines.push(
+            "This prepare was given --official-scale. That flag writes the LLaMA-Factory SFT scale on llamafactory-lora and llamafactory-qlora. This card does not implement official scale and does not change any mlx-lm knob.".into(),
+        );
+    }
+    lines.join("\n\n")
+}
+
+fn mlx_handoff_md(job: &EnrichJob, train_base: &str) -> String {
+    format!(
+        "# mlx-lm LoRA handoff (operator-owned)\n\
+         \n\
+         This file is not an mlx-lm config, not a YAML recipe, and not a training script.\n\
+         Cell One does not call mlx-lm, does not shell out, does not install mlx-lm, and does not download weights or datasets.\n\
+         Do not execute this file.\n\
+         \n\
+         driver: {driver}\n\
+         status: optional\n\
+         apple_silicon_only: true\n\
+         host_class_affinity: {host}\n\
+         executable: false\n\
+         train_base_model: {train}\n\
+         seat_tag: {seat}\n\
+         \n\
+         Seat tag is the Ollama id for Modelfile FROM. Train base is the Hugging Face repo id or local directory of HF weights you pass to mlx_lm.lora as --model. This factory does not map the seat tag onto a Hub repo.\n\
+         \n\
+         This card is the optional Apple Silicon LoRA handoff. It prepares only when host_class_affinity is apple-silicon. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. Native MLX stays a stub on the local runtime catalog. This factory does not write an MLX trainer.\n\
+         \n\
+         Follow the public mlx-lm LoRA page. This factory does not choose ranks, iterations, layers, or save knobs.\n\
+         That page publishes this install line: `{install_line}`.\n\
+         This factory does not run that install.\n\
+         \n\
+         LoRA page: {lora_doc}\n\
+         Repository: {repo}\n\
+         Train command on that page: `{lora_command}`\n\
+         Fuse command on that page: `{fuse}`\n\
+         \n\
+         Fuse loads adapters from adapters/ and writes fused_model/ unless you pass other flags. mlx_lm.fuse --help lists them. A quantized --model on that page is QLoRA. This factory does not run fuse and does not export GGUF.\n\
+         \n\
+         After that train finishes outside this factory, hand one artifact to estate enrich import-trained:\n\
+         - an adapter directory that contains adapter_config.json\n\
+         - a merged directory that contains config.json and at least one .safetensors file whose name does not start with adapter_model\n\
+         - one .gguf file, or a directory with exactly one top-level .gguf\n\
+         \n\
+         The command is in NEXT.md. import-trained does not promote and does not rewrite estate.yaml.\n\
+         \n\
+         {flags}\n\
+         \n\
+         READY_FOR_LIVE_TEST: no\n",
+        driver = MLX_LM_LORA_ID,
+        host = APPLE_SILICON_HOST,
+        train = yaml_quote(train_base),
+        seat = yaml_quote(&job.base_model),
+        install_line = MLX_TRAIN_INSTALL,
+        lora_doc = MLX_LORA_DOC,
+        repo = MLX_REPO,
+        lora_command = MLX_LORA_COMMAND,
+        fuse = MLX_FUSE_COMMAND,
+        flags = mlx_flag_note(job),
+    )
+}
+
+fn mlx_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
+    format!(
+        "This step wrote {handoff}. That file is an operator-owned handoff. It is not an mlx-lm config and not a training script. This step did not call mlx-lm, did not shell out, did not train, did not download weights, and did not rewrite the estate.\n\
+         \n\
+         {host}\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id for Modelfile FROM.\n\
+         \n\
+         Train base is {train}. The handoff records that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+         \n\
+         {flags}\n\
+         \n\
+         The LoRA page and the fuse command are linked from NEXT.md. That page publishes `{install_line}` and `{fuse}`. This factory does not run that install and does not run fuse.\n\
+         \n\
+         After you train outside this factory, hand the saved artifact to estate enrich import-trained. This factory does not choose the save format.\n\
+         \n\
+         READY_FOR_LIVE_TEST: no\n",
+        handoff = MLX_HANDOFF,
+        host = mlx_host_note(&job.host_class_affinity),
+        seat = job.base_model,
+        train = train_base,
+        flags = mlx_flag_note(job),
+        install_line = MLX_TRAIN_INSTALL,
+        fuse = MLX_FUSE_COMMAND,
     )
 }
 
@@ -3159,6 +3440,12 @@ fn refuse_recipe_train_record(
     if !records_train_base(&doc.driver) {
         return Ok(());
     }
+    if doc.driver == MLX_LM_LORA_ID && doc.host_class_affinity != APPLE_SILICON_HOST {
+        return Err(ModelError::Other(format!(
+            "refuse:host: {MLX_LM_LORA_ID} records host_class_affinity apple-silicon. prepare.json host_class_affinity is '{}'. This card does not prepare on that host.",
+            doc.host_class_affinity
+        )));
+    }
     let train = match doc
         .train_base_model
         .as_deref()
@@ -3180,6 +3467,8 @@ fn refuse_recipe_train_record(
         &[("axolotl.yml", "base_model")]
     } else if doc.driver == UNSLOTH_QLORA_ID {
         &[(UNSLOTH_HANDOFF, "train_base_model")]
+    } else if doc.driver == MLX_LM_LORA_ID {
+        &[(MLX_HANDOFF, "train_base_model")]
     } else {
         return Err(ModelError::Other(format!(
             "refuse:train-base: {} has no train-base file to check",
@@ -3200,12 +3489,21 @@ fn refuse_recipe_train_record(
                 doc.base_model
             )));
         }
-        if *name == UNSLOTH_HANDOFF {
+        if *name == UNSLOTH_HANDOFF || *name == MLX_HANDOFF {
             let seat = yaml_field(&text, "seat_tag").unwrap_or_default();
             if seat != doc.base_model {
                 return Err(ModelError::Other(format!(
                     "refuse:train-base: {name} seat_tag is '{seat}'. prepare.json seat tag is '{}'. Seat tag is the Ollama id for Modelfile FROM. The handoff must name that seat tag and the train base.",
                     doc.base_model
+                )));
+            }
+        }
+        if *name == MLX_HANDOFF {
+            let host = yaml_field(&text, "host_class_affinity").unwrap_or_default();
+            if host != APPLE_SILICON_HOST || host != doc.host_class_affinity {
+                return Err(ModelError::Other(format!(
+                    "refuse:host: {name} host_class_affinity is '{host}'. prepare.json host_class_affinity is '{}'. {MLX_LM_LORA_ID} prepares on apple-silicon.",
+                    doc.host_class_affinity
                 )));
             }
         }
@@ -4270,13 +4568,7 @@ fn classify_trained_artifact(path: &Path) -> Result<TrainedArtifact, ModelError>
                 files.push(weight);
             }
         }
-        return finish_trained_artifact(
-            TRAINED_SHAPE_ADAPTER,
-            config,
-            paths,
-            files,
-            &containment,
-        );
+        return finish_trained_artifact(TRAINED_SHAPE_ADAPTER, config, paths, files, &containment);
     }
     if merged_hit {
         let config = match model_config {
@@ -4306,13 +4598,7 @@ fn classify_trained_artifact(path: &Path) -> Result<TrainedArtifact, ModelError>
         for file in &ggufs {
             paths.push(file.display().to_string());
         }
-        return finish_trained_artifact(
-            TRAINED_SHAPE_GGUF,
-            primary,
-            paths,
-            ggufs,
-            &containment,
-        );
+        return finish_trained_artifact(TRAINED_SHAPE_GGUF, primary, paths, ggufs, &containment);
     }
     if model_config.is_some() && !adapter_weights.is_empty() {
         let names = adapter_weights
@@ -4547,17 +4833,15 @@ fn scan_trained_sidecars(artifact: &TrainedArtifact) -> Result<bool, ModelError>
         .pinned
         .iter()
         .find(|marker| marker.path == artifact.primary)
-        .ok_or_else(|| {
-            ModelError::Other("refuse:adapter: primary marker was not opened".into())
-        })?;
+        .ok_or_else(|| ModelError::Other("refuse:adapter: primary marker was not opened".into()))?;
     scan_opened_file(&primary.file, &primary.path)
 }
 
 fn scan_opened_file(file: &std::fs::File, path: &Path) -> Result<bool, ModelError> {
     use std::io::{Read, Seek, SeekFrom};
-    let meta = file.metadata().map_err(|err| {
-        ModelError::Other(format!("refuse:path: {}: {err}", path.display()))
-    })?;
+    let meta = file
+        .metadata()
+        .map_err(|err| ModelError::Other(format!("refuse:path: {}: {err}", path.display())))?;
     if !meta.is_file() {
         return Err(ModelError::Other(format!(
             "refuse:path: {} is not a file",
@@ -4568,9 +4852,9 @@ fn scan_opened_file(file: &std::fs::File, path: &Path) -> Result<bool, ModelErro
     if meta.len() > CAP {
         return Ok(false);
     }
-    let mut file = file.try_clone().map_err(|err| {
-        ModelError::Other(format!("refuse:path: {}: {err}", path.display()))
-    })?;
+    let mut file = file
+        .try_clone()
+        .map_err(|err| ModelError::Other(format!("refuse:path: {}: {err}", path.display())))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|err| ModelError::Other(format!("refuse:path: {}: {err}", path.display())))?;
     let mut buf = Vec::new();
@@ -4654,14 +4938,12 @@ fn cleanup_import_temps(dir: &Path) {
 
 fn read_regular_file(path: &Path) -> Result<Option<Vec<u8>>, ModelError> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => std::fs::read(path)
-            .map(Some)
-            .map_err(|err| {
-                ModelError::Other(format!(
-                    "refuse:prepare-unreadable: {}: {err}",
-                    path.display()
-                ))
-            }),
+        Ok(meta) if meta.is_file() => std::fs::read(path).map(Some).map_err(|err| {
+            ModelError::Other(format!(
+                "refuse:prepare-unreadable: {}: {err}",
+                path.display()
+            ))
+        }),
         Ok(_) => Ok(None),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(ModelError::Other(format!(
@@ -5844,11 +6126,12 @@ mod tests {
     fn tmp(name: &str) -> PathBuf {
         // Keep the throwaway dir off the checkout. A GPU token in the
         // checkout path would trip refuse:sku-banned on the out directory.
-        let path = std::env::temp_dir().join(format!(
-            "cell-one-enrich-unit-{}-{}",
-            name,
-            std::process::id()
-        ));
+        // A pid that contains 5090, 4090, 4080, or 3090 is the same refuse.
+        let mut token = std::process::id().to_string();
+        for needle in ["5090", "4090", "4080", "3090"] {
+            token = token.replace(needle, "0000");
+        }
+        let path = std::env::temp_dir().join(format!("cell-one-enrich-unit-{name}-{token}"));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         path
@@ -5988,6 +6271,7 @@ mod tests {
         assert!(ids.contains(&AXOLOTL_LORA_ID));
         assert!(ids.contains(&AXOLOTL_QLORA_ID));
         assert!(ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(ids.contains(&MLX_LM_LORA_ID));
         let factory = train_enrich_card(LLAMAFACTORY_QLORA_ID).unwrap();
         assert_eq!(factory.default_job, EnrichJobKind::Train);
         assert!(factory.jobs.contains(&EnrichJobKind::Train));
@@ -6008,12 +6292,19 @@ mod tests {
         assert!(unsloth.jobs.contains(&EnrichJobKind::Train));
         assert!(!unsloth.jobs.contains(&EnrichJobKind::Enrich));
         assert!(!is_train_recipe_driver(UNSLOTH_QLORA_ID));
+        let mlx = train_enrich_card(MLX_LM_LORA_ID).unwrap();
+        assert_eq!(mlx.status, "optional");
+        assert_eq!(mlx.default_job, EnrichJobKind::Train);
+        assert!(mlx.jobs.contains(&EnrichJobKind::Train));
+        assert!(!mlx.jobs.contains(&EnrichJobKind::Enrich));
+        assert!(!is_train_recipe_driver(MLX_LM_LORA_ID));
         let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
         assert!(!enrich_ids.contains(&LLAMAFACTORY_QLORA_ID));
         assert!(!enrich_ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_QLORA_ID));
         assert!(!enrich_ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(!enrich_ids.contains(&MLX_LM_LORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
         assert!(train_ids.contains(&LLAMAFACTORY_QLORA_ID));
@@ -6021,7 +6312,16 @@ mod tests {
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
         assert!(train_ids.contains(&AXOLOTL_QLORA_ID));
         assert!(train_ids.contains(&UNSLOTH_QLORA_ID));
-        assert_eq!(train_ids.len(), 7);
+        assert!(train_ids.contains(&MLX_LM_LORA_ID));
+        assert_eq!(train_ids.len(), 8);
+        for host in ["any", "consumer-nvidia", "rented-nvidia"] {
+            let filtered = train_enrich_drivers_for_prepare("train", host).unwrap();
+            assert!(!filtered.contains(&MLX_LM_LORA_ID), "{host}");
+            assert_eq!(filtered.len(), 7, "{host}");
+        }
+        let apple_ids = train_enrich_drivers_for_prepare("train", "apple-silicon").unwrap();
+        assert!(apple_ids.contains(&MLX_LM_LORA_ID));
+        assert_eq!(apple_ids.len(), 8);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -6040,8 +6340,11 @@ mod tests {
         assert!(rendered.contains(LLAMAFACTORY_QLORA_ID), "{rendered}");
         assert!(rendered.contains(LLAMAFACTORY_LORA_ID), "{rendered}");
         assert!(rendered.contains(UNSLOTH_QLORA_ID), "{rendered}");
+        assert!(rendered.contains(MLX_LM_LORA_ID), "{rendered}");
         assert!(rendered.contains("status=optional"), "{rendered}");
         assert!(rendered.contains("Nvidia-only"), "{rendered}");
+        assert!(rendered.contains("apple-silicon"), "{rendered}");
+        assert!(rendered.contains("refuse:host"), "{rendered}");
         assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
         assert!(rendered.contains(AXOLOTL_QLORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
@@ -6305,6 +6608,386 @@ mod tests {
     }
 
     #[test]
+    fn mlx_lm_lora_writes_a_handoff_on_apple_silicon_and_refuses_other_hosts() {
+        let root = tmp("mlx");
+        let pack = fixture_pack();
+        let seated = seated_estate("llama3");
+        let estate = with_train_base(seated, "Qwen/Qwen2.5-0.5B-Instruct");
+        let mut apple = pack.clone();
+        apple.host_class_affinity = Some(APPLE_SILICON_HOST.into());
+
+        for host in ["any", "consumer-nvidia", "rented-nvidia", "apple_silicon"] {
+            let mut wrong = pack.clone();
+            wrong.host_class_affinity = Some(host.into());
+            let out = root.join(format!("host-{}", host.replace('/', "_")));
+            let err = run(MLX_LM_LORA_ID, &wrong, &estate, &out, "train", "jason").unwrap_err();
+            assert!(err.to_string().contains("refuse:host"), "{host}: {err}");
+            assert!(err.to_string().contains(host), "{host}: {err}");
+            assert!(err.to_string().contains("apple-silicon"), "{host}: {err}");
+            assert!(!out.exists(), "{host}");
+        }
+
+        let blocked = root.join("seat-only");
+        let err = run(
+            MLX_LM_LORA_ID,
+            &apple,
+            &seated_estate("llama3"),
+            &blocked,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("llama3"), "{err}");
+        assert!(!blocked.exists());
+
+        let seat_as_base = with_train_base(seated_estate("llama3"), "llama3");
+        let seat_out = root.join("seat-tag");
+        let err = run(
+            MLX_LM_LORA_ID,
+            &apple,
+            &seat_as_base,
+            &seat_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!seat_out.exists());
+
+        let enrich_out = root.join("enrich-job");
+        let err = run(
+            MLX_LM_LORA_ID,
+            &apple,
+            &estate,
+            &enrich_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!enrich_out.exists());
+
+        let official = root.join("official");
+        let err = prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &apple,
+            curator: "jason",
+            driver_id: MLX_LM_LORA_ID,
+            job: "train",
+            out_dir: &official,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:official-scale"), "{err}");
+        assert!(!err.to_string().contains(MLX_LM_LORA_ID), "{err}");
+        assert!(!official.exists());
+
+        let feed_out = root.join("feed");
+        let err = prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &apple,
+            curator: "jason",
+            driver_id: MLX_LM_LORA_ID,
+            job: "train",
+            out_dir: &feed_out,
+            max_steps: None,
+            official_scale: false,
+            from_feed: true,
+            state_dir: &root,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:dataset"), "{err}");
+        assert!(!err.to_string().contains(MLX_LM_LORA_ID), "{err}");
+        assert!(!feed_out.exists());
+
+        let zero = root.join("zero-steps");
+        let err = run_max(
+            MLX_LM_LORA_ID,
+            &apple,
+            &estate,
+            &zero,
+            "train",
+            "jason",
+            Some(0),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:max-steps"), "{err}");
+        assert!(!zero.exists());
+
+        let out = root.join("handoff");
+        let doc = run(MLX_LM_LORA_ID, &apple, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.driver, MLX_LM_LORA_ID);
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
+        assert_eq!(doc.host_class_affinity, APPLE_SILICON_HOST);
+        assert!(doc.dataset_mode.is_none());
+        assert!(doc.dataset_rows.is_none());
+        assert!(doc.export_yaml.is_none());
+        assert!(doc.modelfile.is_none());
+        assert!(doc.trained_shape.is_none());
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let mut names: Vec<_> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "MLX.md".to_string(),
+                "NEXT.md".to_string(),
+                "PREPARE.md".to_string(),
+                "prepare.json".to_string(),
+            ]
+        );
+        for name in &names {
+            let body = std::fs::read_to_string(out.join(name)).unwrap();
+            assert!(!body.starts_with("#!"), "{name}");
+            assert!(!body.contains("```"), "{name}");
+            assert!(!body.contains("train_mlx.py"), "{name}");
+            assert!(!body.contains("std::process"), "{name}");
+            assert!(!body.contains("mlx_lm.lora --config"), "{name}");
+        }
+        assert!(!out.join("dataset.jsonl").exists());
+        assert!(!out.join("recipe.yaml").exists());
+        assert!(!out.join("axolotl.yml").exists());
+        let handoff = std::fs::read_to_string(out.join("MLX.md")).unwrap();
+        assert!(handoff.contains("operator-owned"), "{handoff}");
+        assert!(handoff.contains("does not call mlx-lm"), "{handoff}");
+        assert!(handoff.contains("apple-silicon"), "{handoff}");
+        assert!(handoff.contains("apple_silicon_only: true"), "{handoff}");
+        assert!(
+            handoff.contains("host_class_affinity: apple-silicon"),
+            "{handoff}"
+        );
+        assert!(handoff.contains("not a training script"), "{handoff}");
+        assert!(
+            handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{handoff}"
+        );
+        assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+        assert!(handoff.contains(MLX_LORA_DOC), "{handoff}");
+        assert!(handoff.contains(MLX_REPO), "{handoff}");
+        assert!(handoff.contains(MLX_TRAIN_INSTALL), "{handoff}");
+        assert!(handoff.contains(MLX_LORA_COMMAND), "{handoff}");
+        assert!(handoff.contains(MLX_FUSE_COMMAND), "{handoff}");
+        assert!(handoff.contains("fused_model/"), "{handoff}");
+        assert!(handoff.contains("READY_FOR_LIVE_TEST: no"), "{handoff}");
+        assert!(!handoff.contains("READY_FOR_LIVE_TEST: yes"), "{handoff}");
+        assert!(!handoff.contains("executable: true"), "{handoff}");
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        assert!(next.contains("does not call mlx-lm"), "{next}");
+        assert!(next.contains("does not shell out"), "{next}");
+        assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains(MLX_FUSE_COMMAND), "{next}");
+        assert!(next.contains("mlx_lm.fuse --help"), "{next}");
+        assert!(
+            next.contains(&format!(
+                "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter <adapter-dir>",
+                out.display()
+            )),
+            "{next}"
+        );
+        assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+        assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
+        assert!(next.contains("refuse:host"), "{next}");
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        assert!(prepare_md.contains("Seat tag: llama3"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("Train base: Qwen/Qwen2.5-0.5B-Instruct"),
+            "{prepare_md}"
+        );
+        assert!(
+            prepare_md.contains("Host class affinity: apple-silicon"),
+            "{prepare_md}"
+        );
+        assert!(prepare_md.contains("did not call mlx-lm"), "{prepare_md}");
+        assert!(!prepare_md.contains("Dataset mode:"), "{prepare_md}");
+
+        let gauge = root.join("gauge");
+        run_max(
+            MLX_LM_LORA_ID,
+            &apple,
+            &estate,
+            &gauge,
+            "train",
+            "jason",
+            Some(10),
+        )
+        .unwrap();
+        let gauge_next = std::fs::read_to_string(gauge.join("NEXT.md")).unwrap();
+        assert!(
+            gauge_next.contains("does not write that count"),
+            "{gauge_next}"
+        );
+        assert!(gauge_next.contains("--max-steps 10"), "{gauge_next}");
+        assert!(!gauge.join("train_mlx.py").exists());
+
+        let lf = root.join("lf-apple");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &apple,
+            &estate,
+            &lf,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let recipe = std::fs::read_to_string(lf.join("recipe.yaml")).unwrap();
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
+        assert!(recipe.contains("lora_rank: 16"), "{recipe}");
+        assert!(!recipe.contains("mlx-lm-lora"), "{recipe}");
+        assert!(!recipe.contains("mlx_lm"), "{recipe}");
+        let lf_next = std::fs::read_to_string(lf.join("NEXT.md")).unwrap();
+        assert!(lf_next.contains("--driver mlx-lm-lora"), "{lf_next}");
+        assert!(lf_next.contains(MLX_LORA_DOC), "{lf_next}");
+        assert!(
+            lf_next.contains("does not write an MLX trainer"),
+            "{lf_next}"
+        );
+
+        let relative_raw = "./weights/Qwen2.5-0.5B-Instruct";
+        let expected = canonical_train_base(relative_raw, "llama3").unwrap();
+        let relative = with_train_base(estate.clone(), relative_raw);
+        let relative_out = root.join("relative");
+        let relative_doc = run(
+            MLX_LM_LORA_ID,
+            &apple,
+            &relative,
+            &relative_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(
+            relative_doc.train_base_model.as_deref(),
+            Some(expected.as_str())
+        );
+        let relative_handoff = std::fs::read_to_string(relative_out.join("MLX.md")).unwrap();
+        assert!(
+            relative_handoff.contains(&format!("train_base_model: \"{expected}\"")),
+            "{relative_handoff}"
+        );
+
+        let tampered_dir = root.join("tampered");
+        run(
+            MLX_LM_LORA_ID,
+            &apple,
+            &estate,
+            &tampered_dir,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let tampered_path = tampered_dir.join("MLX.md");
+        let tampered = std::fs::read_to_string(&tampered_path).unwrap().replace(
+            "train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"",
+            "train_base_model: \"meta-llama/Llama-3.2-1B-Instruct\"",
+        );
+        std::fs::write(&tampered_path, tampered).unwrap();
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let tampered_import = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &tampered_dir,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            tampered_import.to_string().contains("refuse:train-base"),
+            "{tampered_import}"
+        );
+        assert!(!tampered_dir.join("binding-proposal.json").exists());
+
+        let host_dir = root.join("tampered-host");
+        run(MLX_LM_LORA_ID, &apple, &estate, &host_dir, "train", "jason").unwrap();
+        let host_path = host_dir.join("MLX.md");
+        let host_body = std::fs::read_to_string(&host_path).unwrap().replace(
+            "host_class_affinity: apple-silicon",
+            "host_class_affinity: consumer-nvidia",
+        );
+        std::fs::write(&host_path, host_body).unwrap();
+        let host_import = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &host_dir,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            host_import.to_string().contains("refuse:host"),
+            "{host_import}"
+        );
+        assert!(!host_dir.join("binding-proposal.json").exists());
+
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.driver, MLX_LM_LORA_ID);
+        assert_eq!(proposal.trained_shape.as_deref(), Some("adapter"));
+        assert!(!proposal.promoted && !proposal.auto_apply && !proposal.estate_rewritten);
+
+        let drivers = train_enrich_drivers_for_prepare("train", APPLE_SILICON_HOST).unwrap();
+        assert!(drivers.contains(&MLX_LM_LORA_ID));
+        let all_dirs: Vec<_> = drivers
+            .iter()
+            .map(|id| root.join(format!("all-{id}")))
+            .collect();
+        let all_reqs: Vec<PrepareEnrichRequest<'_>> = drivers
+            .iter()
+            .zip(all_dirs.iter())
+            .map(|(id, dir)| PrepareEnrichRequest {
+                estate: &estate,
+                pack: &apple,
+                curator: "jason",
+                driver_id: *id,
+                job: "train",
+                out_dir: dir,
+                max_steps: None,
+                official_scale: false,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
+            })
+            .collect();
+        let all_docs = prepare_enrich_set(&all_reqs).unwrap();
+        assert_eq!(all_docs.len(), 8);
+        assert!(root.join("all-mlx-lm-lora").join("MLX.md").is_file());
+        assert!(!root.join("all-mlx-lm-lora").join("dataset.jsonl").exists());
+        let all_recipe =
+            std::fs::read_to_string(root.join("all-llamafactory-qlora").join("recipe.yaml"))
+                .unwrap();
+        assert!(
+            all_recipe.contains("quantization_method: bnb"),
+            "{all_recipe}"
+        );
+        assert!(!all_recipe.contains("mlx-lm-lora"), "{all_recipe}");
+        assert!(!all_recipe.contains("mlx_lm"), "{all_recipe}");
+        let all_unsloth =
+            std::fs::read_to_string(root.join("all-unsloth-qlora").join("UNSLOTH.md")).unwrap();
+        assert!(all_unsloth.contains("Nvidia-only"), "{all_unsloth}");
+    }
+
+    #[test]
     fn llamafactory_qlora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("llamafactory");
         let pack = fixture_pack();
@@ -6466,6 +7149,11 @@ mod tests {
         assert!(next.contains("--driver unsloth-qlora"), "{next}");
         assert!(next.contains("does not write a script"), "{next}");
         assert!(!next.contains("train_unsloth.py"), "{next}");
+        assert!(next.contains("--driver mlx-lm-lora"), "{next}");
+        assert!(next.contains("mlx_lm/LORA.md"), "{next}");
+        assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(!recipe.contains("mlx-lm-lora"), "{recipe}");
+        assert!(!recipe.contains("mlx_lm"), "{recipe}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             prepare_md.contains("llamafactory-cli train recipe.yaml"),
@@ -6960,10 +7648,7 @@ mod tests {
         );
         assert_eq!(llamafactory_template("microsoft/phi-2"), "default");
         assert_eq!(llamafactory_template("org/phi"), "default");
-        assert_eq!(
-            llamafactory_template("Qwen/Qwen2.5-0.5B-Instruct"),
-            "qwen"
-        );
+        assert_eq!(llamafactory_template("Qwen/Qwen2.5-0.5B-Instruct"), "qwen");
     }
 
     #[test]
@@ -6978,7 +7663,15 @@ mod tests {
         );
         let estate = fixture_estate();
         let out = root.join("qlora");
-        let doc = run(LLAMAFACTORY_QLORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
         assert_eq!(doc.job, "train");
         assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
         assert_eq!(doc.base_model, "llama3");
@@ -7093,7 +7786,10 @@ mod tests {
             nested_recipe.contains("quantization_method: bnb"),
             "{nested_recipe}"
         );
-        assert!(nested_recipe.contains("quantization_bit: 4"), "{nested_recipe}");
+        assert!(
+            nested_recipe.contains("quantization_bit: 4"),
+            "{nested_recipe}"
+        );
         assert!(nested_recipe.contains(nested_train), "{nested_recipe}");
         let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
         let nested_prepare = std::fs::read_to_string(nested_out.join("PREPARE.md")).unwrap();
@@ -7571,23 +8267,33 @@ mod tests {
             );
         }
         assert!(
-            !smoke_recipe.contains("quantization_bit") && !smoke_recipe.contains("quantization_method"),
+            !smoke_recipe.contains("quantization_bit")
+                && !smoke_recipe.contains("quantization_method"),
             "{smoke_recipe}"
         );
         let smoke_export = std::fs::read_to_string(smoke.join("export.yaml")).unwrap();
-        assert!(smoke_export.contains("# merge_status: not_run"), "{smoke_export}");
+        assert!(
+            smoke_export.contains("# merge_status: not_run"),
+            "{smoke_export}"
+        );
         assert!(
             smoke_export.contains("This prepare did not merge"),
             "{smoke_export}"
         );
         assert!(!smoke_export.contains("quantization_bit"), "{smoke_export}");
-        assert!(!smoke_export.contains("quantization_method"), "{smoke_export}");
+        assert!(
+            !smoke_export.contains("quantization_method"),
+            "{smoke_export}"
+        );
         assert_eq!(
             yaml_field(&smoke_recipe, "output_dir").as_deref(),
             yaml_field(&smoke_export, "adapter_name_or_path").as_deref()
         );
         let smoke_next = std::fs::read_to_string(smoke.join("NEXT.md")).unwrap();
-        assert!(smoke_next.contains("This prepare did not merge"), "{smoke_next}");
+        assert!(
+            smoke_next.contains("This prepare did not merge"),
+            "{smoke_next}"
+        );
         assert!(
             smoke_next.contains("The merge has not happened."),
             "{smoke_next}"
@@ -7661,7 +8367,10 @@ mod tests {
             official_next.contains("This prepare used `--official-scale`"),
             "{official_next}"
         );
-        assert!(official_next.contains("`cutoff_len` is 2048"), "{official_next}");
+        assert!(
+            official_next.contains("`cutoff_len` is 2048"),
+            "{official_next}"
+        );
 
         let qlora = root.join("official-qlora");
         prepare_enrich(&PrepareEnrichRequest {
@@ -7679,7 +8388,9 @@ mod tests {
         .unwrap();
         let qlora_recipe = std::fs::read_to_string(qlora.join("recipe.yaml")).unwrap();
         assert!(
-            qlora_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            qlora_recipe
+                .lines()
+                .any(|row| row.trim() == "cutoff_len: 2048"),
             "{qlora_recipe}"
         );
         assert!(
@@ -7688,17 +8399,24 @@ mod tests {
                 .any(|row| row.trim() == "num_train_epochs: 3.0"),
             "{qlora_recipe}"
         );
-        assert!(qlora_recipe.contains("quantization_bit: 4"), "{qlora_recipe}");
+        assert!(
+            qlora_recipe.contains("quantization_bit: 4"),
+            "{qlora_recipe}"
+        );
         assert!(
             qlora_recipe.contains("quantization_method: bnb"),
             "{qlora_recipe}"
         );
         assert!(
-            qlora_recipe.lines().any(|row| row.trim() == "lora_rank: 16"),
+            qlora_recipe
+                .lines()
+                .any(|row| row.trim() == "lora_rank: 16"),
             "{qlora_recipe}"
         );
         assert!(
-            qlora_recipe.lines().any(|row| row.trim() == "packing: true"),
+            qlora_recipe
+                .lines()
+                .any(|row| row.trim() == "packing: true"),
             "{qlora_recipe}"
         );
         let qlora_export = std::fs::read_to_string(qlora.join("export.yaml")).unwrap();
@@ -7720,15 +8438,21 @@ mod tests {
         .unwrap();
         let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
         assert!(
-            gauge_recipe.lines().any(|row| row.trim() == "max_steps: 10"),
+            gauge_recipe
+                .lines()
+                .any(|row| row.trim() == "max_steps: 10"),
             "{gauge_recipe}"
         );
         assert!(
-            gauge_recipe.lines().any(|row| row.trim() == "save_steps: 10"),
+            gauge_recipe
+                .lines()
+                .any(|row| row.trim() == "save_steps: 10"),
             "{gauge_recipe}"
         );
         assert!(
-            gauge_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            gauge_recipe
+                .lines()
+                .any(|row| row.trim() == "cutoff_len: 2048"),
             "{gauge_recipe}"
         );
         assert!(
@@ -7738,7 +8462,8 @@ mod tests {
             "{gauge_recipe}"
         );
         assert!(
-            !gauge_recipe.contains("quantization_bit") && !gauge_recipe.contains("quantization_method"),
+            !gauge_recipe.contains("quantization_bit")
+                && !gauge_recipe.contains("quantization_method"),
             "{gauge_recipe}"
         );
         let gauge_next = std::fs::read_to_string(gauge.join("NEXT.md")).unwrap();
@@ -7767,7 +8492,9 @@ mod tests {
             "{ax_yaml}"
         );
         assert!(
-            ax_yaml.lines().any(|row| row.trim() == "load_in_4bit: false"),
+            ax_yaml
+                .lines()
+                .any(|row| row.trim() == "load_in_4bit: false"),
             "{ax_yaml}"
         );
         assert!(
@@ -7781,7 +8508,9 @@ mod tests {
             "{ax_yaml}"
         );
         assert!(
-            ax_yaml.lines().any(|row| row.trim() == "sequence_len: 2048"),
+            ax_yaml
+                .lines()
+                .any(|row| row.trim() == "sequence_len: 2048"),
             "{ax_yaml}"
         );
         assert!(
@@ -7819,7 +8548,9 @@ mod tests {
             "{ax_q_yaml}"
         );
         assert!(
-            ax_q_yaml.lines().any(|row| row.trim() == "sequence_len: 4096"),
+            ax_q_yaml
+                .lines()
+                .any(|row| row.trim() == "sequence_len: 4096"),
             "{ax_q_yaml}"
         );
         assert!(
@@ -7861,7 +8592,10 @@ mod tests {
                 .any(|row| row.trim() == "adapter: lora"),
             "{ax_default_yaml}"
         );
-        assert!(!ax_default_yaml.contains("Official scale"), "{ax_default_yaml}");
+        assert!(
+            !ax_default_yaml.contains("Official scale"),
+            "{ax_default_yaml}"
+        );
 
         let state = root.join("cell");
         write_fixture_feed(&state);
@@ -7883,7 +8617,9 @@ mod tests {
         assert!(fed_doc.contains("\"dataset_mode\": \"feed\""), "{fed_doc}");
         let fed_recipe = std::fs::read_to_string(fed.join("recipe.yaml")).unwrap();
         assert!(
-            fed_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            fed_recipe
+                .lines()
+                .any(|row| row.trim() == "cutoff_len: 2048"),
             "{fed_recipe}"
         );
         assert!(
@@ -7909,7 +8645,9 @@ mod tests {
         assert!(err.to_string().contains("axolotl-qlora"), "{err}");
         assert!(!blocked.exists());
 
-        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let host = enrich_host_class_affinity(&estate, &pack);
+        let drivers = train_enrich_drivers_for_prepare("train", &host).unwrap();
+        assert!(!drivers.contains(&MLX_LM_LORA_ID), "{host}");
         let all_dirs: Vec<_> = drivers
             .iter()
             .map(|id| root.join(format!("all-{id}")))
@@ -7973,7 +8711,9 @@ mod tests {
             "{all_axq}"
         );
         assert!(
-            all_axq.lines().any(|row| row.trim() == "sequence_len: 4096"),
+            all_axq
+                .lines()
+                .any(|row| row.trim() == "sequence_len: 4096"),
             "{all_axq}"
         );
 
@@ -8178,7 +8918,11 @@ mod tests {
         assert!(!next.contains("Edit axolotl.yml"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
         assert!(next.contains("unslothai/unsloth"), "{next}");
+        assert!(next.contains("mlx-lm-lora"), "{next}");
+        assert!(next.contains("mlx_lm/LORA.md"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
+        assert!(!yaml.contains("mlx-lm-lora"), "{yaml}");
+        assert!(!yaml.contains("mlx_lm"), "{yaml}");
         assert!(next.contains("consumer-nvidia"), "{next}");
         assert!(next.contains("dataset_mode: scaffold"), "{next}");
         assert!(next.contains("refuse:dataset"), "{next}");
@@ -8238,7 +8982,9 @@ mod tests {
             "{win_yaml}"
         );
 
-        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let host = enrich_host_class_affinity(&estate, &pack);
+        let drivers = train_enrich_drivers_for_prepare("train", &host).unwrap();
+        assert!(!drivers.contains(&MLX_LM_LORA_ID), "{host}");
         let all_dirs: Vec<_> = drivers
             .iter()
             .map(|id| root.join(format!("all-{id}")))
@@ -8865,7 +9611,10 @@ mod tests {
         );
         assert!(many_text.contains("a.gguf"), "{many_text}");
         assert!(many_text.contains("b.gguf"), "{many_text}");
-        assert_eq!(std::fs::read(out.join("prepare.json")).unwrap(), gguf_record);
+        assert_eq!(
+            std::fs::read(out.join("prepare.json")).unwrap(),
+            gguf_record
+        );
         assert_eq!(
             std::fs::read(out.join("binding-proposal.json")).unwrap(),
             gguf_proposal_bytes
@@ -9013,7 +9762,8 @@ mod tests {
         std::fs::write(&outside_cfg, "{}\n").unwrap();
         let linked_adapter = root.join("linked-adapter");
         std::fs::create_dir_all(&linked_adapter).unwrap();
-        std::os::unix::fs::symlink(&outside_cfg, linked_adapter.join("adapter_config.json")).unwrap();
+        std::os::unix::fs::symlink(&outside_cfg, linked_adapter.join("adapter_config.json"))
+            .unwrap();
         let adapter_link = import_trained(&ImportTrainedRequest {
             estate: &estate,
             prepared_dir: &out,
@@ -9073,10 +9823,7 @@ mod tests {
             partial_text.contains("refuse:prepare-write"),
             "{partial_text}"
         );
-        assert!(
-            partial_text.contains("partial proposal"),
-            "{partial_text}"
-        );
+        assert!(partial_text.contains("partial proposal"), "{partial_text}");
         assert!(!out.join("binding-proposal.json").is_file());
         assert!(!out.join("prepare.json.importing").exists());
         assert!(!out.join("binding-proposal.json.importing").exists());
@@ -9157,10 +9904,9 @@ mod tests {
             std::fs::read(lora_out.join("binding-proposal.json")).unwrap(),
             prior_json
         );
-        let restored: EnrichPrepareDoc = serde_json::from_str(
-            &std::fs::read_to_string(lora_out.join("prepare.json")).unwrap(),
-        )
-        .unwrap();
+        let restored: EnrichPrepareDoc =
+            serde_json::from_str(&std::fs::read_to_string(lora_out.join("prepare.json")).unwrap())
+                .unwrap();
         assert_eq!(restored.trained_shape.as_deref(), Some("gguf"));
         let staged = apply_proposal(&ApplyProposalRequest {
             estate: &estate,
@@ -9551,7 +10297,9 @@ mod tests {
         assert!(ax_err.to_string().contains("feed/events.jsonl"), "{ax_err}");
         assert!(!missing_ax.exists());
 
-        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let host = enrich_host_class_affinity(&estate, &pack);
+        let drivers = train_enrich_drivers_for_prepare("train", &host).unwrap();
+        assert!(!drivers.contains(&MLX_LM_LORA_ID), "{host}");
         let dirs: Vec<_> = drivers
             .iter()
             .map(|id| root.join(format!("set-{id}")))

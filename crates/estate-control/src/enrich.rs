@@ -4,11 +4,11 @@
 use anyhow::{bail, Context, Result};
 use estate_schema::load_estate_unvalidated;
 use model_estate::{
-    default_enrich_out, default_train_enrich_driver_id, driver_default_job, import_prepared,
-    import_trained, list_prepared, load_enrich_pack, plan_gguf_convert, plan_local_seat,
-    prepare_enrich_set, render_prepared_index, render_train_enrich_catalog,
-    train_enrich_drivers_for_job, ImportPreparedRequest, ImportTrainedRequest,
-    PrepareEnrichRequest,
+    default_enrich_out, default_train_enrich_driver_id, driver_default_job,
+    enrich_host_class_affinity, import_prepared, import_trained, list_prepared, load_enrich_pack,
+    plan_gguf_convert, plan_local_seat, prepare_enrich_set, render_prepared_index,
+    render_train_enrich_catalog, train_enrich_drivers_for_job, train_enrich_drivers_for_prepare,
+    ImportPreparedRequest, ImportTrainedRequest, PrepareEnrichRequest,
 };
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,27 @@ pub(crate) fn cmd_enrich_prepare(
     let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
     let manifest = load_enrich_pack(pack, packs_dir)?;
-    let targets = prepare_targets(driver, all_drivers, out, state_dir, &manifest.id, &job)?;
+    let host = enrich_host_class_affinity(&estate, &manifest);
+    if all_drivers {
+        let allowed = train_enrich_drivers_for_job(&job)?;
+        let selected = train_enrich_drivers_for_prepare(&job, &host)?;
+        for id in &allowed {
+            if !selected.iter().any(|kept| kept == id) {
+                println!(
+                    "enrich prepare: omit driver={id} host_class_affinity={host} (prepares on apple-silicon; naming --driver {id} on this host is refuse:host)"
+                );
+            }
+        }
+    }
+    let targets = prepare_targets(
+        driver,
+        all_drivers,
+        out,
+        state_dir,
+        &manifest.id,
+        &job,
+        &host,
+    )?;
     let reqs: Vec<PrepareEnrichRequest<'_>> = targets
         .iter()
         .map(|(driver_id, out_dir)| PrepareEnrichRequest {
@@ -380,10 +400,11 @@ fn prepare_targets(
     state_dir: &Path,
     pack_id: &str,
     job: &str,
+    host_class_affinity: &str,
 ) -> Result<Vec<(String, PathBuf)>> {
     if all_drivers {
         let mut targets = Vec::new();
-        for driver_id in train_enrich_drivers_for_job(job)? {
+        for driver_id in train_enrich_drivers_for_prepare(job, host_class_affinity)? {
             let dir = match out {
                 Some(parent) => parent.join(driver_id),
                 None => default_enrich_out(state_dir, pack_id, driver_id),

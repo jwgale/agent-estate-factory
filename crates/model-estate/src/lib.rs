@@ -41,16 +41,17 @@ pub use mock::{
 pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
-    driver_default_job, enrich_join_facts, enrich_stage_dir, import_prepared, import_trained,
-    list_prepared, load_enrich_pack, local_enrich_tag, local_slm_model_param, parse_enrich_job,
-    prepare_enrich, prepare_enrich_set, read_enrich_stage, refuse_staged_apply,
-    render_prepared_index, render_train_enrich_catalog, resolve_train_enrich_driver,
-    train_enrich_catalog, train_enrich_drivers_for_job, ApplyProposalOutcome, ApplyProposalRequest,
+    driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
+    import_prepared, import_trained, list_prepared, load_enrich_pack, local_enrich_tag,
+    local_slm_model_param, parse_enrich_job, prepare_enrich, prepare_enrich_set, read_enrich_stage,
+    refuse_staged_apply, render_prepared_index, render_train_enrich_catalog,
+    resolve_train_enrich_driver, train_enrich_catalog, train_enrich_drivers_for_job,
+    train_enrich_drivers_for_prepare, ApplyProposalOutcome, ApplyProposalRequest,
     EnrichBindingProposal, EnrichBindingStage, EnrichJob, EnrichJobKind, EnrichJoinFact,
     EnrichPrepareDoc, EnrichStageCommit, ImportPreparedRequest, ImportTrainedRequest,
     PrepareEnrichRequest, PreparedEntry, TrainEnrichCard, TrainEnrichDriver, TrainEnrichProbe,
     AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, BINDING_PROPOSAL_SCHEMA, BINDING_STAGE_SCHEMA, LLAMAFACTORY_LORA_ID,
-    LLAMAFACTORY_QLORA_ID, PREPARE_SCHEMA, UNSLOTH_QLORA_ID,
+    LLAMAFACTORY_QLORA_ID, MLX_LM_LORA_ID, PREPARE_SCHEMA, UNSLOTH_QLORA_ID,
 };
 
 use estate_schema::{Estate, ModelBinding, ModelClass};

@@ -291,7 +291,7 @@ Suite (first-class):
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
 - Beachhead: curator packs, the specialist path, and TrainEnrichDriver.
-- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. unsloth-qlora is an optional Nvidia-only NEXT handoff and does not write a script. This page does not run a trainer.
+- estate enrich prepare writes artifacts. llamafactory-lora writes a LLaMA-Factory LoRA recipe (no quantization). llamafactory-qlora writes the QLoRA recipe. axolotl-lora writes the bf16 Axolotl YAML. axolotl-qlora writes the 4-bit Axolotl YAML. unsloth-qlora is an optional Nvidia-only NEXT handoff and does not write a script. mlx-lm-lora is an optional Apple Silicon NEXT handoff (MLX.md) and does not write a script. This page does not run a trainer.
 
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
@@ -315,7 +315,7 @@ const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
 estate help train prints this page. Job field is train or enrich.
-Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, and unsloth-qlora default to train.
+Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, and mlx-lm-lora default to train.
 --all-drivers defaults to enrich and includes a card only when that job
 is allowed. Prepare writes artifacts. It does not train.
 
@@ -361,12 +361,19 @@ default job train; requires bitsandbytes), axolotl-lora (bf16 Axolotl axolotl.ym
 sequence_len 2048, micro_batch_size 2, gradient_accumulation_steps 2, lora_r 16;
 default job train), axolotl-qlora (4-bit Axolotl axolotl.yml, load_in_4bit true,
 sequence_len 4096, micro_batch_size 2, gradient_accumulation_steps 4, lora_r 32;
-default job train), and unsloth-qlora (optional NEXT card, status optional,
+default job train), unsloth-qlora (optional NEXT card, status optional,
 Nvidia-only QLoRA handoff; writes UNSLOTH.md; does not write a script,
-a recipe, or dataset.jsonl; does not call Unsloth; default job train).
+a recipe, or dataset.jsonl; does not call Unsloth; default job train),
+and mlx-lm-lora (optional NEXT card, status optional, Apple Silicon
+LoRA handoff; writes MLX.md only when host_class_affinity is
+apple-silicon; another affinity is refuse:host and writes nothing;
+does not write a script, a recipe, or dataset.jsonl; does not call
+mlx-lm; default job train).
 A later entrant adds one catalog card. Floor and control dispatch
 do not match driver ids. --all-drivers prepares every card the job
-allows, into sibling directories. Omit --driver on prepare for the
+allows, into sibling directories. mlx-lm-lora is omitted unless
+host_class_affinity is apple-silicon, so a train set on any other
+affinity still prepares. Omit --driver on prepare for the
 first card. from-pack omits --driver to prepare every allowed card
 into .cell/enrich.
 
@@ -421,7 +428,9 @@ Omit the flag for the short LLaMA-Factory recipe. A prepare with
 unsloth-qlora is not a recipe card. --official-scale on that card
 alone is refuse:official-scale. --from-feed on that card alone is
 refuse:dataset. The card does not write max_steps. --max-steps 0
-is still refuse:max-steps.
+is still refuse:max-steps. mlx-lm-lora is the same kind of handoff
+for apple-silicon. --official-scale and --from-feed on that card
+alone are the same refuses. Another host class is refuse:host.
 
 export.yaml is the merge card. Prepare does not merge. NEXT.md says
 the merge has not happened, points at llamafactory-cli export, and
@@ -459,7 +468,7 @@ and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
 estate enrich import-trained is that same proposal for a llamafactory-lora,
-llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare whose job is train. --adapter
+llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, or mlx-lm-lora prepare whose job is train. --adapter
 is one of three shapes. An adapter output_dir contains adapter_config.json
 (the recipe output_dir, outputs/). A merged export_dir contains config.json
 and at least one .safetensors file whose name does not start with
@@ -504,8 +513,9 @@ apply-proposal and import-prepared leave the source estate unchanged.
 Promote stays off. No train POST.
 
 Opt-in walk: make enrich-prepare. make train-prepare writes
-LLaMA-Factory LoRA and QLoRA recipes and Axolotl LoRA and QLoRA recipes
-under /tmp and does not run either trainer. Neither is part of
+LLaMA-Factory LoRA and QLoRA recipes, Axolotl LoRA and QLoRA recipes,
+and the optional Unsloth and mlx-lm handoffs
+under /tmp and does not run a trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.

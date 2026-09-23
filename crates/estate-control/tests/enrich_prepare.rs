@@ -14,11 +14,12 @@ fn estate_bin() -> Command {
 fn tmp(name: &str) -> PathBuf {
     // Keep the throwaway dir off the checkout. A GPU token in the
     // checkout path would trip refuse:sku-banned on the out directory.
-    let path = std::env::temp_dir().join(format!(
-        "cell-one-enrich-cli-{}-{}",
-        name,
-        std::process::id()
-    ));
+    // A pid that contains 5090, 4090, 4080, or 3090 is the same refuse.
+    let mut token = std::process::id().to_string();
+    for needle in ["5090", "4090", "4080", "3090"] {
+        token = token.replace(needle, "0000");
+    }
+    let path = std::env::temp_dir().join(format!("cell-one-enrich-cli-{name}-{token}"));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).unwrap();
     path
@@ -72,6 +73,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("axolotl-lora"), "{body}");
         assert!(body.contains("axolotl-qlora"), "{body}");
         assert!(body.contains("unsloth-qlora"), "{body}");
+        assert!(body.contains("mlx-lm-lora"), "{body}");
+        assert!(body.contains("MLX.md"), "{body}");
+        assert!(body.contains("refuse:host"), "{body}");
+        assert!(body.contains("apple-silicon"), "{body}");
         assert!(body.contains("does not write a script"), "{body}");
         assert!(body.contains("Nvidia-only"), "{body}");
         assert!(body.contains("UNSLOTH.md"), "{body}");
@@ -110,6 +115,9 @@ fn help_enrich_and_train_name_the_seam() {
     assert!(listed.contains("llamafactory-qlora"), "{listed}");
     assert!(listed.contains("llamafactory-lora"), "{listed}");
     assert!(listed.contains("unsloth-qlora"), "{listed}");
+    assert!(listed.contains("mlx-lm-lora"), "{listed}");
+    assert!(listed.contains("apple-silicon"), "{listed}");
+    assert!(listed.contains("refuse:host"), "{listed}");
     assert!(listed.contains("status=optional"), "{listed}");
     assert!(listed.contains("axolotl-lora"), "{listed}");
     assert!(listed.contains("axolotl-qlora"), "{listed}");
@@ -432,6 +440,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("llamafactory-qlora"));
     assert!(!dispatch.contains("llamafactory-lora"));
     assert!(!dispatch.contains("unsloth-qlora"));
+    assert!(!dispatch.contains("mlx-lm-lora"));
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
     assert!(
         makefile.contains("train-prepare:"),
@@ -457,6 +466,9 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(train_script.contains("axolotl-qlora"), "{train_script}");
     assert!(train_script.contains("unsloth-qlora"), "{train_script}");
     assert!(train_script.contains("UNSLOTH.md"), "{train_script}");
+    assert!(train_script.contains("mlx-lm-lora"), "{train_script}");
+    assert!(train_script.contains("MLX.md"), "{train_script}");
+    assert!(train_script.contains("refuse:host"), "{train_script}");
     assert!(
         train_script.contains("does not call Unsloth"),
         "{train_script}"
@@ -1391,6 +1403,12 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
     assert!(all_text.contains("prepared=7"), "{all_text}");
+    assert!(all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
+    assert!(all_text.contains("refuse:host"), "{all_text}");
+    assert!(
+        !all_text.contains("enrich prepare: driver=mlx-lm-lora"),
+        "{all_text}"
+    );
     assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
@@ -1401,6 +1419,7 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     assert!(unsloth_dir.join("NEXT.md").is_file());
     assert!(!unsloth_dir.join("train_unsloth.py").exists());
     assert!(!unsloth_dir.join("dataset.jsonl").exists());
+    assert!(!state.join("enrich/overnight-traces/mlx-lm-lora").exists());
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
@@ -2137,11 +2156,15 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
     assert!(gauged.status.success(), "{}", text(&gauged));
     let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
     assert!(
-        gauge_recipe.lines().any(|row| row.trim() == "max_steps: 10"),
+        gauge_recipe
+            .lines()
+            .any(|row| row.trim() == "max_steps: 10"),
         "{gauge_recipe}"
     );
     assert!(
-        gauge_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+        gauge_recipe
+            .lines()
+            .any(|row| row.trim() == "cutoff_len: 2048"),
         "{gauge_recipe}"
     );
     assert!(!gauge_recipe.contains("quantization_bit"), "{gauge_recipe}");
@@ -2348,4 +2371,230 @@ fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
         "{proposal}"
     );
     assert!(proposal.contains("\"promoted\": false"), "{proposal}");
+}
+
+#[test]
+fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_silicon() {
+    let root = tmp("mlx-cli");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let before = estate_bytes();
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let seated_bytes = std::fs::read_to_string(&seated).unwrap();
+    let apple_src = std::fs::read_to_string(
+        repo_root().join("examples/fixtures/specialist-overnight.pack.json"),
+    )
+    .unwrap();
+    let apple_body = apple_src.replace(
+        "\"host_class_affinity\": \"any\"",
+        "\"host_class_affinity\": \"apple-silicon\"",
+    );
+    assert_ne!(apple_body, apple_src);
+    let apple_pack = root.join("apple.pack.json");
+    std::fs::write(&apple_pack, apple_body).unwrap();
+
+    let blocked = root.join("wrong-host");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "mlx-lm-lora",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:host"), "{refused_text}");
+    assert!(refused_text.contains("apple-silicon"), "{refused_text}");
+    assert!(!blocked.exists());
+    assert_eq!(estate_bytes(), before);
+
+    let seat_dir = root.join("seat-only-src");
+    std::fs::create_dir_all(&seat_dir).unwrap();
+    let seat_only = write_seated_estate(&seat_dir, "llama3");
+    let missing = root.join("missing-base");
+    let missing_out = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seat_only.display().to_string(),
+            "--pack",
+            &apple_pack.display().to_string(),
+            "--driver",
+            "mlx-lm-lora",
+            "--out",
+            &missing.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let missing_text = text(&missing_out);
+    assert!(!missing_out.status.success(), "{missing_text}");
+    assert!(missing_text.contains("refuse:train-base"), "{missing_text}");
+    assert!(!missing.exists());
+
+    let enrich_job = root.join("enrich-job");
+    let enrich = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &apple_pack.display().to_string(),
+            "--driver",
+            "mlx-lm-lora",
+            "--job",
+            "enrich",
+            "--out",
+            &enrich_job.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let enrich_text = text(&enrich);
+    assert!(!enrich.status.success(), "{enrich_text}");
+    assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
+    assert!(!enrich_job.exists());
+
+    let official = root.join("official");
+    let official_out = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &apple_pack.display().to_string(),
+            "--driver",
+            "mlx-lm-lora",
+            "--official-scale",
+            "--out",
+            &official.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let official_text = text(&official_out);
+    assert!(!official_out.status.success(), "{official_text}");
+    assert!(
+        official_text.contains("refuse:official-scale"),
+        "{official_text}"
+    );
+    assert!(!official.exists());
+
+    let out = root.join("handoff");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &apple_pack.display().to_string(),
+            "--driver",
+            "mlx-lm-lora",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    assert!(
+        prepared_text.contains("driver=mlx-lm-lora"),
+        "{prepared_text}"
+    );
+    assert!(
+        prepared_text.contains("estate_rewritten=false"),
+        "{prepared_text}"
+    );
+    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+    assert_eq!(estate_bytes(), before);
+    let handoff = std::fs::read_to_string(out.join("MLX.md")).unwrap();
+    assert!(handoff.contains("operator-owned"), "{handoff}");
+    assert!(handoff.contains("does not call mlx-lm"), "{handoff}");
+    assert!(
+        handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+        "{handoff}"
+    );
+    assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+    assert!(
+        handoff.contains("https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md"),
+        "{handoff}"
+    );
+    assert!(
+        handoff.contains("mlx_lm.fuse --model <path_to_model>"),
+        "{handoff}"
+    );
+    assert!(!out.join("dataset.jsonl").exists());
+    assert!(!out.join("recipe.yaml").exists());
+    assert!(out.read_dir().unwrap().all(|entry| {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        !name.ends_with(".py")
+    }));
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(next.contains("import-trained"), "{next}");
+    assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+    assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
+    assert!(
+        next.contains("mlx_lm.fuse --model <path_to_model>"),
+        "{next}"
+    );
+
+    let state = root.join("state");
+    let all_train = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &apple_pack.display().to_string(),
+            "--all-drivers",
+            "--job",
+            "train",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let all_text = text(&all_train);
+    assert!(all_train.status.success(), "{all_text}");
+    assert!(all_text.contains("prepared=8"), "{all_text}");
+    assert!(
+        all_text.contains("enrich prepare: driver=mlx-lm-lora"),
+        "{all_text}"
+    );
+    assert!(!all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
+    let mlx_dir = state.join("enrich/overnight-traces/mlx-lm-lora");
+    assert!(mlx_dir.join("MLX.md").is_file());
+    assert!(!mlx_dir.join("dataset.jsonl").exists());
+    let recipe = std::fs::read_to_string(
+        state.join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml"),
+    )
+    .unwrap();
+    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+    assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+    assert!(!recipe.contains("mlx-lm-lora"), "{recipe}");
+    assert!(!recipe.contains("mlx_lm"), "{recipe}");
+    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+    assert_eq!(estate_bytes(), before);
 }

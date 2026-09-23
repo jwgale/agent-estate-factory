@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, and the optional Unsloth handoff.
-# Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No Unsloth install. No GPU. No live train.
+# Train prepare fixture: example pack -> LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, the optional Unsloth handoff, and the optional mlx-lm handoff.
+# Throwaway dir. No LLaMA-Factory install. No Axolotl binary. No Unsloth install. No mlx-lm install. No GPU. No live train.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
 
@@ -692,7 +692,15 @@ estate enrich prepare \
   --pack "$PACK" \
   --all-drivers \
   --job train \
-  --state-dir "$WORKDIR/all-state"
+  --state-dir "$WORKDIR/all-state" \
+  >"$WORKDIR/all-drivers.out"
+grep -q "omit driver=mlx-lm-lora" "$WORKDIR/all-drivers.out"
+grep -q "refuse:host" "$WORKDIR/all-drivers.out"
+grep -q "prepared=7" "$WORKDIR/all-drivers.out"
+if [[ -e "$WORKDIR/all-state/enrich/overnight-traces/mlx-lm-lora" ]]; then
+  echo "FAIL  all-drivers on host any must omit mlx-lm-lora"
+  exit 1
+fi
 grep -q 'base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
 grep -q "^adapter: lora$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
 grep -q "^load_in_4bit: false$" "$WORKDIR/all-state/enrich/overnight-traces/axolotl-lora/axolotl.yml"
@@ -1010,4 +1018,168 @@ if [[ "$BEFORE" != "$AFTER_UNSLOTH" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, optional Unsloth handoff, official scale, feed hydrate, import-trained; SKIP live train)"
+echo "-- mlx-lm-lora refuses a non-apple host and writes a handoff on apple-silicon --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver mlx-lm-lora \
+  --out "$WORKDIR/mlx-wrong-host" \
+  >/tmp/train-prepare-mlx-host.out 2>/tmp/train-prepare-mlx-host.err
+mlx_host_rc=$?
+set -e
+if [[ "$mlx_host_rc" -eq 0 ]]; then
+  echo "FAIL  mlx-lm-lora on host any must refuse:host"
+  exit 1
+fi
+if ! grep -q "refuse:host" /tmp/train-prepare-mlx-host.out /tmp/train-prepare-mlx-host.err; then
+  echo "FAIL  mlx-lm-lora wrong host did not refuse:host"
+  cat /tmp/train-prepare-mlx-host.out /tmp/train-prepare-mlx-host.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/mlx-wrong-host" ]]; then
+  echo "FAIL  mlx-lm-lora refuse:host wrote an output directory"
+  exit 1
+fi
+
+APPLE_PACK="$WORKDIR/apple.pack.json"
+python3 - "$PACK" "$APPLE_PACK" <<'PY'
+import json, sys
+src, dest = sys.argv[1:]
+doc = json.load(open(src))
+doc["host_class_affinity"] = "apple-silicon"
+json.dump(doc, open(dest, "w"), indent=2)
+open(dest, "a").write("\n")
+PY
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED_ONLY" \
+  --pack "$APPLE_PACK" \
+  --driver mlx-lm-lora \
+  --out "$WORKDIR/mlx-seat-only" \
+  >/tmp/train-prepare-mlx-seat.out 2>/tmp/train-prepare-mlx-seat.err
+mlx_seat_rc=$?
+set -e
+if [[ "$mlx_seat_rc" -eq 0 ]]; then
+  echo "FAIL  mlx-lm-lora without a train base must refuse:train-base"
+  exit 1
+fi
+if ! grep -q "refuse:train-base" /tmp/train-prepare-mlx-seat.out /tmp/train-prepare-mlx-seat.err; then
+  echo "FAIL  mlx-lm-lora seat-only did not refuse:train-base"
+  cat /tmp/train-prepare-mlx-seat.out /tmp/train-prepare-mlx-seat.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/mlx-seat-only" ]]; then
+  echo "FAIL  mlx-lm-lora seat-only wrote an output directory"
+  exit 1
+fi
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$APPLE_PACK" \
+  --driver mlx-lm-lora \
+  --official-scale \
+  --out "$WORKDIR/mlx-official" \
+  >/tmp/train-prepare-mlx-official.out 2>/tmp/train-prepare-mlx-official.err
+mlx_official_rc=$?
+set -e
+if [[ "$mlx_official_rc" -eq 0 ]]; then
+  echo "FAIL  --official-scale on mlx-lm-lora must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:official-scale" /tmp/train-prepare-mlx-official.out /tmp/train-prepare-mlx-official.err; then
+  echo "FAIL  mlx-lm-lora official-scale did not refuse:official-scale"
+  cat /tmp/train-prepare-mlx-official.out /tmp/train-prepare-mlx-official.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/mlx-official" ]]; then
+  echo "FAIL  mlx official-scale refuse wrote an output directory"
+  exit 1
+fi
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$APPLE_PACK" \
+  --driver mlx-lm-lora \
+  --from-feed \
+  --state-dir "$WORKDIR" \
+  --out "$WORKDIR/mlx-feed" \
+  >/tmp/train-prepare-mlx-feed.out 2>/tmp/train-prepare-mlx-feed.err
+mlx_feed_rc=$?
+set -e
+if [[ "$mlx_feed_rc" -eq 0 ]]; then
+  echo "FAIL  --from-feed on mlx-lm-lora alone must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:dataset" /tmp/train-prepare-mlx-feed.out /tmp/train-prepare-mlx-feed.err; then
+  echo "FAIL  mlx-lm-lora from-feed did not refuse:dataset"
+  cat /tmp/train-prepare-mlx-feed.out /tmp/train-prepare-mlx-feed.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/mlx-feed" ]]; then
+  echo "FAIL  mlx from-feed refuse wrote an output directory"
+  exit 1
+fi
+
+SEATED_CKSUM_MLX="$(cksum "$SEATED")"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$APPLE_PACK" \
+  --driver mlx-lm-lora \
+  --out "$WORKDIR/mlx"
+test -f "$WORKDIR/mlx/MLX.md"
+test -f "$WORKDIR/mlx/PREPARE.md"
+test -f "$WORKDIR/mlx/NEXT.md"
+test -f "$WORKDIR/mlx/prepare.json"
+if compgen -G "$WORKDIR/mlx/"'*.py' > /dev/null; then
+  echo "FAIL  mlx-lm-lora must not write a python script"
+  exit 1
+fi
+if [[ -e "$WORKDIR/mlx/dataset.jsonl" || -e "$WORKDIR/mlx/recipe.yaml" || -e "$WORKDIR/mlx/axolotl.yml" ]]; then
+  echo "FAIL  mlx-lm-lora must not write a recipe"
+  exit 1
+fi
+grep -q "operator-owned" "$WORKDIR/mlx/MLX.md"
+grep -q "does not call mlx-lm" "$WORKDIR/mlx/MLX.md"
+grep -q "apple-silicon" "$WORKDIR/mlx/MLX.md"
+grep -q 'train_base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/mlx/MLX.md"
+grep -q 'seat_tag: "llama3"' "$WORKDIR/mlx/MLX.md"
+grep -q "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md" "$WORKDIR/mlx/NEXT.md"
+grep -q 'pip install "mlx-lm\[train\]"' "$WORKDIR/mlx/NEXT.md"
+grep -q "mlx_lm.fuse --model <path_to_model>" "$WORKDIR/mlx/NEXT.md"
+grep -q "import-trained" "$WORKDIR/mlx/NEXT.md"
+grep -q "READY_FOR_LIVE_TEST: no" "$WORKDIR/mlx/NEXT.md"
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/mlx/NEXT.md"; then
+  echo "FAIL  mlx-lm-lora must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+python3 - "$WORKDIR/mlx/prepare.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("driver") != "mlx-lm-lora" or doc.get("job") != "train":
+    raise SystemExit(f"FAIL  driver={doc.get('driver')} job={doc.get('job')}")
+if doc.get("base_model") != "llama3" or doc.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  seat={doc.get('base_model')} tag={doc.get('seat_tag')}")
+if doc.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  train_base={doc.get('train_base_model')}")
+if doc.get("host_class_affinity") != "apple-silicon":
+    raise SystemExit(f"FAIL  host={doc.get('host_class_affinity')}")
+if doc.get("dataset_mode") is not None:
+    raise SystemExit(f"FAIL  dataset_mode={doc.get('dataset_mode')}")
+if doc.get("promoted") is not False or doc.get("auto_apply") is not False or doc.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  mlx prepare claims a promote or an estate rewrite")
+PY
+if [[ "$(cksum "$SEATED")" != "$SEATED_CKSUM_MLX" ]]; then
+  echo "FAIL  mlx-lm-lora prepare rewrote the seated estate"
+  exit 1
+fi
+AFTER_MLX="$(cksum "$ESTATE")"
+if [[ "$BEFORE" != "$AFTER_MLX" ]]; then
+  echo "FAIL  mlx-lm-lora prepare rewrote examples/estate.yaml"
+  exit 1
+fi
+
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, optional Unsloth handoff, optional mlx-lm handoff, official scale, feed hydrate, import-trained; SKIP live train)"
