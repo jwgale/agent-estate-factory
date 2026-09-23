@@ -90,6 +90,10 @@ fn help_enrich_and_train_name_the_seam() {
             body.contains("examples/fixtures/qwen3-instruct.pack.json"),
             "{body}"
         );
+        assert!(
+            body.contains("examples/fixtures/qwen3-instruct-lora.pack.json"),
+            "{body}"
+        );
         assert!(body.contains("Qwen/Qwen3-4B-Instruct-2507"), "{body}");
         assert!(body.contains("llamafactory-cli train"), "{body}");
         assert!(body.contains("llamafactory-cli export"), "{body}");
@@ -512,6 +516,16 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(
         train_script.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
+        ),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("examples/fixtures/qwen3-instruct-lora.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
@@ -2039,6 +2053,22 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
     let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
     assert!(next.contains("does not require bitsandbytes"), "{next}");
     assert!(!next.contains("bitsandbytes>=0.49"), "{next}");
+    assert!(
+        next.contains(
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare."
+        ),
+        "{next}"
+    );
+    assert!(
+        !next.contains(
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
+        ),
+        "{next}"
+    );
+    assert!(
+        !next.contains("quantization_bit: 4") && !next.contains("quantization_method: bnb"),
+        "{next}"
+    );
     assert!(next.contains("pip install llamafactory"), "{next}");
     assert!(
         next.contains(&format!(
