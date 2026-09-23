@@ -905,6 +905,348 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     }
 }
 
+fn extract_shell_fn(script: &str, name: &str) -> String {
+    let marker = format!("{name}() {{");
+    let start = script
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing {name}()"));
+    let mut depth = 0i32;
+    for (i, ch) in script[start..].char_indices() {
+        if ch == '{' {
+            depth += 1;
+        } else if ch == '}' {
+            depth -= 1;
+            if depth == 0 {
+                return script[start..start + i + 1].to_string();
+            }
+        }
+    }
+    panic!("unclosed {name}()");
+}
+
+fn estate_resolver_body(script: &str) -> String {
+    format!(
+        "{}\n{}",
+        extract_shell_fn(script, "resolve_estate"),
+        extract_shell_fn(script, "estate")
+    )
+}
+
+fn first_estate_invocation(script: &str) -> usize {
+    script
+        .lines()
+        .position(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#')
+                || trimmed.starts_with("echo")
+                || trimmed.starts_with("estate()")
+            {
+                return false;
+            }
+            trimmed.starts_with("estate ") || trimmed.contains(" estate ")
+        })
+        .expect("script never invokes estate")
+}
+
+fn write_exec(path: &std::path::Path, body: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(path, body).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).unwrap();
+    }
+}
+
+fn run_extracted_resolver(
+    funcs: &str,
+    root: &std::path::Path,
+    estate_bin: Option<&std::path::Path>,
+    path: &str,
+) -> std::process::Output {
+    let dir = std::env::temp_dir().join(format!(
+        "cell-one-estate-resolve-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let harness = dir.join("harness.sh");
+    let body = format!(
+        "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$1\"\nBIN=\"${{ESTATE_BIN:-}}\"\n{funcs}\nresolve_estate\nprintf '%s\\n' \"${{ESTATE_CMD[@]}}\"\n"
+    );
+    std::fs::write(&harness, body).unwrap();
+    let mut cmd = std::process::Command::new("bash");
+    cmd.arg(&harness)
+        .arg(root)
+        .env("PATH", path)
+        .env_remove("ESTATE_BIN")
+        .env_remove("ESTATE_RESOLVED");
+    if let Some(bin) = estate_bin {
+        cmd.env("ESTATE_BIN", bin);
+    }
+    let output = cmd.output().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    output
+}
+
+#[test]
+fn journey_scripts_resolve_local_estate_before_cargo() {
+    let root = repo_root();
+    let rels = [
+        "scripts/qlora-journey.sh",
+        "scripts/train-next.sh",
+        "scripts/seat-journey.sh",
+        "scripts/lora-journey.sh",
+        "scripts/lf-beachhead-prepare.sh",
+        "scripts/train-prepare.sh",
+    ];
+    let mut bodies = Vec::new();
+    for rel in rels {
+        let script = std::fs::read_to_string(root.join(rel)).unwrap();
+        let syntax = std::process::Command::new("bash")
+            .arg("-n")
+            .arg(root.join(rel))
+            .output()
+            .unwrap();
+        assert!(
+            syntax.status.success(),
+            "{rel} failed bash -n: {}",
+            String::from_utf8_lossy(&syntax.stderr)
+        );
+        assert!(
+            script.contains(
+                "Resolves estate fail-closed: executable ESTATE_BIN, then target/release/estate,"
+            ),
+            "{rel} must document the release fallback"
+        );
+        assert!(
+            script.contains(
+                "then target/debug/estate, then cargo on PATH. Does not invent a binary."
+            ),
+            "{rel} must document the debug fallback"
+        );
+        let body = estate_resolver_body(&script);
+        let bin_exec = body
+            .find("[[ -n \"$BIN\" && -x \"$BIN\" ]]")
+            .unwrap_or_else(|| panic!("{rel} must prefer an executable ESTATE_BIN"));
+        let release = body
+            .find("[[ -x \"$ROOT/target/release/estate\" ]]")
+            .unwrap_or_else(|| panic!("{rel} must fall back to target/release/estate"));
+        let debug = body
+            .find("[[ -x \"$ROOT/target/debug/estate\" ]]")
+            .unwrap_or_else(|| panic!("{rel} must fall back to target/debug/estate"));
+        let cargo_path = body
+            .find("command -v cargo")
+            .unwrap_or_else(|| panic!("{rel} must keep cargo on PATH as the last resort"));
+        let cargo_run = body
+            .find("cargo run -q -p estate-control --")
+            .unwrap_or_else(|| panic!("{rel} must keep cargo run -q -p estate-control --"));
+        let unresolved = body
+            .find("estate binary unresolved")
+            .unwrap_or_else(|| panic!("{rel} must fail closed when nothing resolves"));
+        assert!(
+            bin_exec < release && release < debug && debug < cargo_path && cargo_path < cargo_run,
+            "{rel} resolver order drifted"
+        );
+        assert!(
+            cargo_run < unresolved,
+            "{rel} fail-closed message must follow the cargo branch"
+        );
+        let fail = &body[unresolved..];
+        assert!(fail.contains("ESTATE_BIN"), "{rel} {fail}");
+        assert!(fail.contains("target/release/estate"), "{rel} {fail}");
+        assert!(fail.contains("target/debug/estate"), "{rel} {fail}");
+        let non_exec = body
+            .find("ESTATE_BIN is set but not executable")
+            .unwrap_or_else(|| panic!("{rel} must refuse a set ESTATE_BIN that is not executable"));
+        assert!(
+            bin_exec < non_exec && non_exec < release,
+            "{rel} a bad ESTATE_BIN must not fall through to target/release/estate"
+        );
+        assert!(
+            body[non_exec..release].contains("exit 1"),
+            "{rel} a bad ESTATE_BIN must exit nonzero"
+        );
+        assert!(
+            body[unresolved..].contains("exit 1"),
+            "{rel} an unresolved estate must exit nonzero"
+        );
+        let call = script
+            .lines()
+            .position(|line| line == "resolve_estate")
+            .unwrap_or_else(|| panic!("{rel} must call resolve_estate before using estate"));
+        let invoke = first_estate_invocation(&script);
+        assert!(
+            call < invoke,
+            "{rel} resolve_estate at {call} must run before the estate invocation at {invoke}"
+        );
+        assert!(
+            !script.contains("READY_FOR_LIVE_TEST: yes\n"),
+            "{rel} must not flip READY_FOR_LIVE_TEST"
+        );
+        bodies.push(body);
+    }
+    assert!(
+        bodies.iter().all(|body| body == &bodies[0]),
+        "journey estate resolvers must stay the same fail-closed order"
+    );
+
+    let beachhead = std::fs::read_to_string(root.join("scripts/lf-beachhead-prepare.sh")).unwrap();
+    assert!(
+        !beachhead.contains("cargo build"),
+        "lf-beachhead-prepare must not require cargo build before a local estate binary"
+    );
+
+    for rel in [
+        "scripts/uniqueness-full.sh",
+        "scripts/uniqueness-ladder.sh",
+    ] {
+        let script = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !script.contains("resolve_estate") && !script.contains("target/release/estate"),
+            "{rel} only calls make and does not resolve estate itself"
+        );
+        assert!(
+            script.contains("READY_FOR_LIVE_TEST: no"),
+            "{rel} must keep READY_FOR_LIVE_TEST no"
+        );
+        assert!(
+            !script.contains("READY_FOR_LIVE_TEST: yes"),
+            "{rel} must not flip READY_FOR_LIVE_TEST"
+        );
+    }
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("resolve_estate"),
+            "{rel} must not grow the print-journey resolver"
+        );
+    }
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — local estate binary for print journeys")
+        .nth(1)
+        .expect("CHANGELOG missing the local estate binary slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "scripts/qlora-journey.sh",
+        "scripts/train-next.sh",
+        "scripts/seat-journey.sh",
+        "scripts/lora-journey.sh",
+        "scripts/lf-beachhead-prepare.sh",
+        "scripts/train-prepare.sh",
+        "ESTATE_BIN",
+        "target/release/estate",
+        "target/debug/estate",
+        "cargo run -q -p estate-control --",
+        "make uniqueness-full",
+        "make uniqueness-ladder",
+        "still only call `make`",
+    ] {
+        assert!(slice.contains(needle), "changelog slice missing {needle}: {slice}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+
+    let funcs = &bodies[0];
+    let work = std::env::temp_dir().join(format!(
+        "cell-one-estate-resolve-root-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&work);
+    let release = work.join("target/release/estate");
+    let debug = work.join("target/debug/estate");
+    let chosen = work.join("chosen-estate");
+    let not_exec = work.join("not-executable");
+    let fake_cargo = work.join("fake-bin/cargo");
+    write_exec(&release, "#!/bin/sh\nexit 0\n");
+    write_exec(&debug, "#!/bin/sh\nexit 0\n");
+    write_exec(&chosen, "#!/bin/sh\nexit 0\n");
+    std::fs::write(&not_exec, "not executable\n").unwrap();
+    write_exec(&fake_cargo, "#!/bin/sh\necho should-not-run >&2\nexit 99\n");
+    let bare_path = "/usr/bin:/bin";
+    let cargo_path = format!("{}:{bare_path}", fake_cargo.parent().unwrap().display());
+
+    let preferred = run_extracted_resolver(funcs, &work, Some(&chosen), bare_path);
+    assert!(preferred.status.success(), "{preferred:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&preferred.stdout).trim(),
+        chosen.display().to_string(),
+        "ESTATE_BIN must win over target/release/estate"
+    );
+
+    let release_first = run_extracted_resolver(funcs, &work, None, bare_path);
+    assert!(release_first.status.success(), "{release_first:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&release_first.stdout).trim(),
+        release.display().to_string(),
+        "target/release/estate must win over target/debug/estate"
+    );
+
+    std::fs::remove_file(&release).unwrap();
+    let debug_next = run_extracted_resolver(funcs, &work, None, bare_path);
+    assert!(debug_next.status.success(), "{debug_next:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&debug_next.stdout).trim(),
+        debug.display().to_string(),
+        "target/debug/estate must be used when release is missing and cargo is off PATH"
+    );
+
+    std::fs::remove_file(&debug).unwrap();
+    let cargo_last = run_extracted_resolver(funcs, &work, None, &cargo_path);
+    assert!(cargo_last.status.success(), "{cargo_last:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&cargo_last.stdout).lines().collect::<Vec<_>>(),
+        ["cargo", "run", "-q", "-p", "estate-control", "--"]
+    );
+
+    let missing = run_extracted_resolver(funcs, &work, None, bare_path);
+    assert!(
+        !missing.status.success(),
+        "missing estate must exit nonzero: {missing:?}"
+    );
+    let missing_err = String::from_utf8_lossy(&missing.stderr);
+    assert!(missing_err.contains("ESTATE_BIN"), "{missing_err}");
+    assert!(missing_err.contains("target/release/estate"), "{missing_err}");
+    assert!(missing_err.contains("target/debug/estate"), "{missing_err}");
+    assert!(missing.stdout.is_empty(), "{missing:?}");
+
+    write_exec(&release, "#!/bin/sh\nexit 0\n");
+    let bad_bin = run_extracted_resolver(funcs, &work, Some(&not_exec), bare_path);
+    assert!(!bad_bin.status.success(), "{bad_bin:?}");
+    let bad_err = String::from_utf8_lossy(&bad_bin.stderr);
+    assert!(bad_err.contains("ESTATE_BIN is set but not executable"), "{bad_err}");
+    assert!(bad_err.contains("target/release/estate"), "{bad_err}");
+    assert!(bad_err.contains("target/debug/estate"), "{bad_err}");
+    assert!(
+        !String::from_utf8_lossy(&bad_bin.stdout).contains(&release.display().to_string()),
+        "a set ESTATE_BIN must not fall through to target/release/estate"
+    );
+    let _ = std::fs::remove_dir_all(&work);
+}
+
 #[test]
 fn glossary_keeps_purpose_built_slm_in_suite() {
     let root = repo_root();

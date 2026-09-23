@@ -4,6 +4,8 @@
 # per smoke fixture, on a throwaway copy of examples/estate.yaml.
 # Does not train, merge, convert, create an Ollama model, or promote.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
+# Resolves estate fail-closed: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then cargo on PATH. Does not invent a binary.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,12 +26,36 @@ PHI_SMALL_BASE="microsoft/Phi-3-small-8k-instruct"
 PHI_QLORA_NOTE="Reproduce target beside Qwen LoRA/QLoRA."
 PHI_LORA_NOTE="Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare."
 
-estate() {
-  if [[ -n "$BIN" ]]; then
-    "$BIN" "$@"
-  else
-    cargo run -q -p estate-control -- "$@"
+# Fail closed when cargo is not on PATH.
+# Order: executable ESTATE_BIN, then target/release/estate,
+# then target/debug/estate, then `cargo run -q -p estate-control --`.
+# A set ESTATE_BIN that is not executable does not fall through.
+resolve_estate() {
+  if [[ -n "${ESTATE_RESOLVED:-}" ]]; then
+    return 0
   fi
+  if [[ -n "$BIN" && -x "$BIN" ]]; then
+    ESTATE_CMD=("$BIN")
+  elif [[ -n "$BIN" ]]; then
+    echo "FAIL  ESTATE_BIN is set but not executable: $BIN" >&2
+    echo "FAIL  refusing $ROOT/target/release/estate and $ROOT/target/debug/estate" >&2
+    exit 1
+  elif [[ -x "$ROOT/target/release/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/release/estate")
+  elif [[ -x "$ROOT/target/debug/estate" ]]; then
+    ESTATE_CMD=("$ROOT/target/debug/estate")
+  elif command -v cargo >/dev/null 2>&1; then
+    ESTATE_CMD=(cargo run -q -p estate-control --)
+  else
+    echo "FAIL  estate binary unresolved. Set ESTATE_BIN, or build $ROOT/target/release/estate or $ROOT/target/debug/estate. cargo is not on PATH." >&2
+    exit 1
+  fi
+  ESTATE_RESOLVED=1
+}
+
+estate() {
+  resolve_estate
+  "${ESTATE_CMD[@]}" "$@"
 }
 
 # Same column split as the beachhead lock: six cells, backticks stripped.
@@ -85,14 +111,7 @@ echo "READY_FOR_LIVE_TEST: no"
 echo "SKIP live train"
 echo
 
-if [[ -z "$BIN" ]]; then
-  cargo build -q -p estate-control
-  BIN="$ROOT/target/debug/estate"
-fi
-if [[ ! -x "$BIN" ]]; then
-  echo "FAIL  estate binary missing: $BIN"
-  exit 1
-fi
+resolve_estate
 
 BEFORE="$(cksum "$ESTATE")"
 rm -rf "$WORKDIR"

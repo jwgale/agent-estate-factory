@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — local estate binary for print journeys
+
+- Target C print journeys resolve `estate` fail-closed when `cargo` is not on PATH. `scripts/qlora-journey.sh`, `scripts/train-next.sh`, `scripts/seat-journey.sh`, `scripts/lora-journey.sh`, `scripts/lf-beachhead-prepare.sh`, and `scripts/train-prepare.sh` use an executable `ESTATE_BIN` first, then `target/release/estate`, then `target/debug/estate`, then `cargo run -q -p estate-control --` when `cargo` is on PATH. A set `ESTATE_BIN` that is not executable does not fall through. If none resolve, the script exits nonzero and names `ESTATE_BIN`, `target/release/estate`, and `target/debug/estate`. `make uniqueness-full` and `make uniqueness-ladder` still only call `make`. Print-only. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 ## This slice — print-only Target C uniqueness-full
 
 - `make uniqueness-full` (`scripts/uniqueness-full.sh`) runs the Target C print chain in order: `make qlora-journey`, then `make train-next`, then `make seat-journey`. If one step fails, the script exits nonzero before the next step. Print-only. It does not train, merge, convert, seat, or promote. It does not run `make lf-beachhead-prepare`. `make uniqueness-ladder` stays `make qlora-journey` then `make seat-journey` and does not run `make train-next`. Live train, live convert, and live seat still need a human GPU host and stay skipped. Not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked.
