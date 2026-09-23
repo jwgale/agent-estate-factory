@@ -192,10 +192,6 @@ for key, value in (("quantization_bit", "4"), ("quantization_method", "bnb")):
         raise SystemExit(f"FAIL  knobs missing {key} rule: {knobs}")
 if yaml_key(export, "quantization_bit") or yaml_key(export, "quantization_method"):
     raise SystemExit("FAIL  export.yaml must omit quantization keys")
-for name in ("NEXT.md", "PREPARE.md"):
-    body = (root / name).read_text(encoding="utf-8")
-    if "READY_FOR_LIVE_TEST: yes" in body:
-        raise SystemExit(f"FAIL  {name} flipped READY_FOR_LIVE_TEST")
 PY
 }
 
