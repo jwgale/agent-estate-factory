@@ -834,6 +834,9 @@ adapter_model*.safetensors is not merged evidence. A symlinked weights
 path or a symlinked marker is refuse:seat. It prints the ollama create
 line. For a GGUF it also prints the Modelfile whose FROM is that file,
 plus llama-cli -m and llama-server -m --port 8080 for that file.
+local-seat is print-only. It prints the Modelfile and does not write
+$PREPARED/Modelfile. Write that file from the printed contents before
+ollama create.
 Ollama stays the default print. --runtime llama.cpp selects those
 llama.cpp lines and still prints the Ollama line. A merged directory
 is not a llama.cpp seat: the report points at gguf-convert first and
@@ -868,7 +871,9 @@ directory (refuse:seat). A merged export or a GGUF passed to --adapter
 is refuse:adapter. unsloth-qlora and mlx-lm-lora --adapter are
 refuse:adapter even when the directory is a real adapter. A symlinked adapter path or a symlinked marker is
 refused the same way. The command prints the ollama create line and
-does not run it. llama.cpp does not load that adapter directory in one
+does not run it. local-seat is print-only. It prints the Modelfile
+and does not write that file. Write that file from the printed
+contents before ollama create. llama.cpp does not load that adapter directory in one
 line. --runtime llama.cpp with --adapter is refuse:runtime. Another
 runtime name is refuse:runtime after the shape checks.
 
@@ -920,11 +925,14 @@ estate enrich gguf-convert.
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
     --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 
-That prints ollama create for cell-enrich-<pack-id>. When --weights
+That prints ollama create for cell-enrich-<pack-id>. local-seat is
+print-only. It prints the Modelfile and does not write
+$PREPARED/Modelfile. Write that file from the printed contents before
+ollama create. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
 file. --runtime llama.cpp selects those lines. It does not create the
-model and does not run llama.cpp. After that print, run the printed
-ollama create line yourself. The same step stands when you already
+model and does not run llama.cpp. After you write that file, run the
+printed ollama create line yourself. The same step stands when you already
 ran ollama create outside this factory. This factory did not run
 ollama create. The standing next step records that GGUF.
 
@@ -1002,11 +1010,14 @@ estate enrich gguf-convert.
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\
     --weights .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
 
-That prints ollama create for cell-enrich-<pack-id>. When --weights
+That prints ollama create for cell-enrich-<pack-id>. local-seat is
+print-only. It prints the Modelfile and does not write
+$PREPARED/Modelfile. Write that file from the printed contents before
+ollama create. When --weights
 is the GGUF it also prints llama-cli -m and llama-server -m for that
 file. --runtime llama.cpp selects those lines. It does not create the
-model and does not run llama.cpp. After that print, run the printed
-ollama create line yourself. The same step stands when you already
+model and does not run llama.cpp. After you write that file, run the
+printed ollama create line yourself. The same step stands when you already
 ran ollama create outside this factory. This factory did not run
 ollama create. The standing next step records that GGUF.
 
@@ -1067,9 +1078,11 @@ It does not convert.
     --prepared <prepared> --weights <prepared>/export.gguf
 
 That prints ollama create for cell-enrich-<pack-id>, plus
-llama-cli -m and llama-server -m. It does not create the model.
-After that print, run the printed ollama create line yourself.
-The same step stands when you already ran ollama create outside
+llama-cli -m and llama-server -m. local-seat is print-only. It prints
+the Modelfile and does not write $PREPARED/Modelfile. Write that file
+from the printed contents before ollama create. It does not create the
+model. After you write that file, run the printed ollama create line
+yourself. The same step stands when you already ran ollama create outside
 this factory. This factory did not run ollama create. The standing
 next step records that GGUF.
 

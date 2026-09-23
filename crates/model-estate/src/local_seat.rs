@@ -22,7 +22,9 @@
 //! write that Modelfile and does not write GGUF. The operator owns the
 //! Axolotl merge. llama.cpp
 //! `convert_hf_to_gguf.py` is the external GGUF step. This module does not
-//! shell out and does not create a model.
+//! shell out, does not write the printed Modelfile, and does not create a model.
+//! When the report prints Modelfile text, that print is print-only: the operator
+//! writes the file at the path in the create line before `ollama create`.
 
 use crate::error::ModelError;
 use crate::train_enrich::{
@@ -38,6 +40,15 @@ use std::path::{Path, PathBuf};
 const MODELFILE_NAME: &str = "Modelfile";
 const GGUF_MAGIC: &[u8] = b"GGUF";
 const MODELFILE_MAX_BYTES: u64 = 64 * 1024;
+
+/// Operator line when the report prints Modelfile text and leaves the file unwritten.
+/// The path is the `-f` argument of the printed `ollama create` line.
+fn print_only_modelfile_line(modelfile: &Path) -> String {
+    format!(
+        "local-seat is print-only. It prints the Modelfile and does not write {}. Write that file from the printed contents before ollama create.",
+        modelfile.display()
+    )
+}
 
 /// Printed plan. `modelfile_on_disk` is true when `ollama create -f` can use
 /// the file that is already in the weights directory.
@@ -111,6 +122,9 @@ pub(crate) fn llamafactory_local_seat_note(
     let outfile = crate::gguf_convert::sibling_gguf_outfile(&export_dir);
     let gguf_convert = crate::gguf_convert::gguf_convert_cli(out_dir, &export_dir);
     let outputs = out_dir.join("outputs");
+    let printed_modelfile = out_dir.join(MODELFILE_NAME);
+    let gguf_print_only = print_only_modelfile_line(&printed_modelfile);
+    let adapter_print_only = print_only_modelfile_line(&outputs.join(MODELFILE_NAME));
     let merge_cli = crate::merge_adapt::printed_merge_adapt_cli(out_dir, &outputs);
     let export_line = crate::merge_adapt::printed_llamafactory_export_line(&export_yaml);
     let example_cmd = crate::merge_adapt::documented_llamafactory_export_example();
@@ -140,7 +154,7 @@ pub(crate) fn llamafactory_local_seat_note(
          {convert}\n\
          \n\
          Run the python3 line from a llama.cpp checkout. `convert_hf_to_gguf.py` is that checkout's script. `--outtype auto` is the script default (highest-fidelity 16-bit float, f16 or bf16). This factory does not choose a quantization type and does not print q8_0, tq1_0, or tq2_0. The outfile is {outfile}, a sibling of the merged directory, so the directory stays one shape.\n\
-         3. Seat with Ollama by default. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile. llama.cpp does not load the merged directory. After the convert, a GGUF local-seat also prints `llama-cli -m` and `llama-server -m` for that file. `--runtime llama.cpp` selects those lines and still prints the Ollama line. This factory does not run them.\n\
+         3. Seat with Ollama by default. On a GGUF, {gguf_print_only} `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile. llama.cpp does not load the merged directory. After the convert, a GGUF local-seat also prints `llama-cli -m` and `llama-server -m` for that file. `--runtime llama.cpp` selects those lines and still prints the Ollama line. This factory does not run them.\n\
          \n\
          Validate the directory or the GGUF and print the exact command:\n\
          \n\
@@ -150,13 +164,13 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          ollama create {tag} -f {modelfile}\n\
          \n\
-         When you pass a .gguf file, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file. It does not create the model and does not run llama.cpp. After the convert, point `--weights` at {outfile}.\n\
+         When you pass a .gguf file, {gguf_print_only} FROM is that file. The same print includes the `ollama create` line and the llama.cpp lines for that file. It does not create the model and does not run llama.cpp. After the convert, point `--weights` at {outfile}.\n\
          \n\
          After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {outfile}\n\
          \n\
-         To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. The command prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama and does not write the file. llama.cpp does not load that adapter directory in one line. `--runtime llama.cpp` with `--adapter` is refuse:runtime. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
+         To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. {adapter_print_only} FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama. llama.cpp does not load that adapter directory in one line. `--runtime llama.cpp` with `--adapter` is refuse:runtime. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
          \n\
          estate enrich local-seat --prepared {out} --adapter {outputs}\n\
          \n\
@@ -174,6 +188,8 @@ pub(crate) fn llamafactory_local_seat_note(
         export_yaml = export_yaml.display(),
         outfile = outfile.display(),
         outputs = outputs.display(),
+        gguf_print_only = gguf_print_only,
+        adapter_print_only = adapter_print_only,
         example_cmd = example_cmd,
         merge_doc = crate::merge_adapt::LLAMAFACTORY_MERGE_DOC,
         merge_cli = merge_cli,
@@ -219,6 +235,11 @@ pub(crate) fn axolotl_post_train_ladder(
     let seat_cli = crate::gguf_convert::local_seat_cli(out_dir, &merged);
     let outfile = crate::gguf_convert::sibling_gguf_outfile(&merged);
     let outfile_q = shell_quote(&outfile.display().to_string());
+    let gguf_modelfile = outfile
+        .parent()
+        .map(|parent| parent.join(MODELFILE_NAME))
+        .unwrap_or_else(|| PathBuf::from(MODELFILE_NAME));
+    let gguf_print_only = print_only_modelfile_line(&gguf_modelfile);
     format!(
         "\n\
          ## After train\n\
@@ -252,7 +273,7 @@ pub(crate) fn axolotl_post_train_ladder(
          \n\
          {seat_cli}\n\
          \n\
-         When the merged directory has a Modelfile, that command prints `ollama create {tag} -f {merged}/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file.\n\
+         When the merged directory has a Modelfile, that command prints `ollama create {tag} -f {merged}/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, {gguf_print_only} FROM is that file. The same print includes the `ollama create` line and the llama.cpp lines for that file.\n\
          After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that sibling GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outfile_q}\n\
@@ -277,6 +298,7 @@ pub(crate) fn axolotl_post_train_ladder(
         outputs_q = outputs_q,
         merged_q = merged_q,
         tag_q = tag_q,
+        gguf_print_only = gguf_print_only,
     )
 }
 
@@ -1223,16 +1245,20 @@ fn render_gguf(
     let llama_block = gguf_llama_cpp_block(runtime, &llama_cpp_commands);
     let write_note = if on_disk {
         if is_axolotl_driver(driver) {
-            "The Modelfile FROM already names this GGUF. The create line uses that file. Axolotl did not write this GGUF."
+            "The Modelfile FROM already names this GGUF. The create line uses that file. Axolotl did not write this GGUF.".to_string()
         } else {
             "The Modelfile FROM already names this GGUF. The create line uses that file."
+                .to_string()
         }
-    } else if is_axolotl_driver(driver) {
-        "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a Modelfile is in the same directory. Axolotl did not write this GGUF. This factory does not write the file and does not invent a chat template."
-    } else if driver == MLX_LM_LORA_ID {
-        "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. mlx_lm.fuse --export-gguf writes this file. The default name is ggml-model-f16.gguf inside the fuse save path. This factory does not write the file and does not invent a chat template."
     } else {
-        "Write the Modelfile below yourself, at the path in the create line. FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a LLaMA-Factory Modelfile is in the same directory. This factory does not write the file and does not invent a chat template."
+        let print_only = print_only_modelfile_line(&modelfile_path);
+        if is_axolotl_driver(driver) {
+            format!("{print_only} FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a Modelfile is in the same directory. Axolotl did not write this GGUF. This factory does not write the file and does not invent a chat template.")
+        } else if driver == MLX_LM_LORA_ID {
+            format!("{print_only} FROM is this GGUF. mlx_lm.fuse --export-gguf writes this file. The default name is ggml-model-f16.gguf inside the fuse save path. This factory does not write the file and does not invent a chat template.")
+        } else {
+            format!("{print_only} FROM is this GGUF. TEMPLATE and PARAMETER lines are copied when a LLaMA-Factory Modelfile is in the same directory. This factory does not write the file and does not invent a chat template.")
+        }
     };
     let printed = match &text {
         Some(body) => format!("\n{body}\n"),
@@ -1353,9 +1379,10 @@ fn render_adapter(
         " The adapter weights in this directory are the files import-trained records beside adapter_config.json."
     };
     let write_note = if on_disk {
-        "The Modelfile FROM is the seat tag and ADAPTER names this directory. The create line uses that file. This factory does not run ollama."
+        "The Modelfile FROM is the seat tag and ADAPTER names this directory. The create line uses that file. This factory does not run ollama.".to_string()
     } else {
-        "Write the Modelfile below yourself, at the path in the create line. FROM is the seat tag. ADAPTER is this adapter directory. This factory does not write the file, does not merge, and does not run ollama."
+        let print_only = print_only_modelfile_line(&modelfile_path);
+        format!("{print_only} FROM is the seat tag. ADAPTER is this adapter directory. This factory does not write the file, does not merge, and does not run ollama.")
     };
     let printed = match &text {
         Some(body) => format!("\n{body}\n"),
@@ -1758,6 +1785,20 @@ mod tests {
         "# ollama modelfile auto-generated by llamafactory\n\nFROM .\n\nTEMPLATE \"\"\"hello-template\"\"\"\n\nPARAMETER num_ctx 4096\n"
     }
 
+    fn assert_print_only_before_create(report: &str, modelfile: &Path, create: &str) {
+        let line = print_only_modelfile_line(modelfile);
+        let note_at = report
+            .find(&line)
+            .unwrap_or_else(|| panic!("missing print-only line in {report}"));
+        let create_at = report
+            .find(create)
+            .unwrap_or_else(|| panic!("missing create command in {report}"));
+        assert!(
+            note_at < create_at,
+            "print-only line must precede the create command: {report}"
+        );
+    }
+
     #[test]
     fn note_names_the_chain_and_the_seat_tag() {
         let note = llamafactory_local_seat_note(
@@ -1803,6 +1844,23 @@ mod tests {
         assert!(note.contains("READY_FOR_LIVE_TEST: no"), "{note}");
         assert!(!note.contains("READY_FOR_LIVE_TEST: yes"), "{note}");
         assert!(!estate_schema::contains_sku(&note), "{note}");
+        let gguf_line = print_only_modelfile_line(Path::new("/tmp/cell-one-pack/Modelfile"));
+        let print_at = note
+            .find(&gguf_line)
+            .unwrap_or_else(|| panic!("missing print-only line in {note}"));
+        let run_at = note
+            .find("run the printed ollama create line yourself")
+            .unwrap();
+        assert!(
+            print_at < run_at,
+            "print-only line must precede the create handoff: {note}"
+        );
+        assert!(
+            note.contains(&print_only_modelfile_line(Path::new(
+                "/tmp/cell-one-pack/outputs/Modelfile"
+            ))),
+            "{note}"
+        );
     }
 
     #[test]
@@ -1926,6 +1984,11 @@ mod tests {
             "{}",
             plan.report
         );
+        assert_print_only_before_create(
+            &plan.report,
+            &export.join(MODELFILE_NAME),
+            &plan.create_command,
+        );
         assert_eq!(
             std::fs::read_to_string(export.join(MODELFILE_NAME)).unwrap(),
             original
@@ -1948,7 +2011,11 @@ mod tests {
             "{}",
             plan.report
         );
-        assert!(plan.report.contains("standing next step"), "{}", plan.report);
+        assert!(
+            plan.report.contains("standing next step"),
+            "{}",
+            plan.report
+        );
         assert!(plan.report.contains("auto_apply=false"), "{}", plan.report);
         assert!(
             plan.report.contains("did not run ollama create"),
@@ -1969,9 +2036,14 @@ mod tests {
             "{}",
             plan.report
         );
-        let create_at = plan.report.find("ollama create").unwrap();
+        let create_at = plan.report.find(&plan.create_command).unwrap();
         let next_at = plan.report.find("standing next step").unwrap();
         assert!(create_at < next_at, "{}", plan.report);
+        assert_print_only_before_create(
+            &plan.report,
+            &root.join(MODELFILE_NAME),
+            &plan.create_command,
+        );
         assert!(!root.join(MODELFILE_NAME).exists());
     }
 
@@ -2000,6 +2072,18 @@ mod tests {
         );
         assert!(
             plan.report.contains("FROM already names this GGUF"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("local-seat is print-only"),
+            "an on-disk Modelfile is the file to pass: {}",
+            plan.report
+        );
+        assert!(
+            !plan
+                .report
+                .contains("Write that file from the printed contents"),
             "{}",
             plan.report
         );
@@ -2373,6 +2457,10 @@ mod tests {
             "{note}"
         );
         assert!(note.contains("Axolotl does not write GGUF"), "{note}");
+        assert!(
+            note.contains(&print_only_modelfile_line(&outputs.join(MODELFILE_NAME))),
+            "{note}"
+        );
         assert!(note.contains("does not take `--out`"), "{note}");
         assert!(note.contains("READY_FOR_LIVE_TEST: no"), "{note}");
         assert!(!note.contains("READY_FOR_LIVE_TEST: yes"), "{note}");
@@ -2657,6 +2745,12 @@ mod tests {
         assert!(plan.report.contains("promoted=false"), "{}", plan.report);
         assert!(!plan.modelfile_on_disk);
         assert!(plan.create_command.starts_with("ollama create "));
+        assert_print_only_before_create(
+            &plan.report,
+            &adapter.join(MODELFILE_NAME),
+            &plan.create_command,
+        );
+        assert!(!adapter.join(MODELFILE_NAME).exists());
 
         let config_only = root.join("config-only");
         std::fs::create_dir_all(&config_only).unwrap();
@@ -2863,7 +2957,7 @@ mod tests {
             "{}",
             plan.report
         );
-        let ollama_at = plan.report.find("ollama create").unwrap();
+        let ollama_at = plan.report.find(&plan.create_command).unwrap();
         let cli_at = plan.report.find("llama-cli -m").unwrap();
         assert!(ollama_at < cli_at, "{}", plan.report);
         assert!(
@@ -2898,7 +2992,7 @@ mod tests {
             selected.report
         );
         let cli_at = selected.report.find("llama-cli -m").unwrap();
-        let ollama_at = selected.report.find("ollama create").unwrap();
+        let ollama_at = selected.report.find(&selected.create_command).unwrap();
         assert!(cli_at < ollama_at, "{}", selected.report);
         assert_eq!(names(&dir), names_before);
 
@@ -3304,8 +3398,16 @@ mod tests {
         assert!(plan.report.contains("gguf-convert"), "{}", plan.report);
         assert!(plan.report.contains("Unsloth"), "{}", plan.report);
         assert!(!plan.report.contains("llama-cli -m"), "{}", plan.report);
-        assert!(plan.report.contains("READY_FOR_LIVE_TEST: no"), "{}", plan.report);
-        assert!(!plan.report.contains("LLaMA-Factory wrote"), "{}", plan.report);
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("LLaMA-Factory wrote"),
+            "{}",
+            plan.report
+        );
         assert!(!export.join(MODELFILE_NAME).exists());
 
         let cpp = plan_local_seat_for(&root, &export, "llama.cpp").unwrap();
@@ -3319,7 +3421,11 @@ mod tests {
         assert_eq!(seated.shape, "gguf");
         assert!(seated.report.contains("ollama create"), "{}", seated.report);
         assert!(seated.report.contains("llama-cli -m"), "{}", seated.report);
-        assert!(seated.report.contains("llama-server -m"), "{}", seated.report);
+        assert!(
+            seated.report.contains("llama-server -m"),
+            "{}",
+            seated.report
+        );
         assert!(!root.join(MODELFILE_NAME).exists());
 
         let adapter = root.join("lora");
@@ -3358,7 +3464,10 @@ mod tests {
         assert!(err.to_string().contains("symlink"), "{err}");
         assert!(!err.to_string().contains("llama-cli -m"), "{err}");
 
-        assert_eq!(std::fs::read(root.join("prepare.json")).unwrap(), prepare_before);
+        assert_eq!(
+            std::fs::read(root.join("prepare.json")).unwrap(),
+            prepare_before
+        );
         assert!(!export.join(MODELFILE_NAME).exists());
     }
 }

@@ -358,6 +358,26 @@ fn axolotl_prepare_prints_create_and_refuses_adapter_and_symlink() {
             "{driver}: {gguf_text}"
         );
         assert!(gguf_text.contains("ollama create"), "{driver}: {gguf_text}");
+        assert!(
+            gguf_text.contains("local-seat is print-only"),
+            "{driver}: {gguf_text}"
+        );
+        assert!(
+            gguf_text.contains(&format!(
+                "does not write {}",
+                root.join("Modelfile").display()
+            )),
+            "{driver}: {gguf_text}"
+        );
+        assert!(
+            gguf_text.contains("Write that file from the printed contents before ollama create"),
+            "{driver}: {gguf_text}"
+        );
+        let print_at = gguf_text.find("local-seat is print-only").unwrap();
+        let create_at = gguf_text
+            .find("ollama create cell-enrich-overnight-traces -f ")
+            .unwrap();
+        assert!(print_at < create_at, "{driver}: {gguf_text}");
         assert!(!root.join("Modelfile").exists(), "{driver}");
 
         let adapter = root.join("outputs");
@@ -500,6 +520,21 @@ fn adapter_seat_prints_the_modelfile_and_does_not_run_it() {
         "{seat_text}"
     );
     assert!(seat_text.contains("was not run"), "{seat_text}");
+    assert!(
+        seat_text.contains("local-seat is print-only"),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains(&format!(
+            "does not write {}",
+            adapter.join("Modelfile").display()
+        )),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains("Write that file from the printed contents before ollama create"),
+        "{seat_text}"
+    );
     assert!(
         seat_text.contains("local-seat did not create a model."),
         "{seat_text}"
@@ -670,10 +705,36 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
     assert!(seat_text.contains("--port 8080"), "{seat_text}");
     assert!(seat_text.contains("standing next step"), "{seat_text}");
     assert!(seat_text.contains("auto_apply=false"), "{seat_text}");
-    assert!(seat_text.contains("did not run ollama create"), "{seat_text}");
-    assert!(seat_text.contains("does not apply the estate"), "{seat_text}");
+    assert!(
+        seat_text.contains("did not run ollama create"),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains("does not apply the estate"),
+        "{seat_text}"
+    );
     assert!(seat_text.contains("READY_FOR_LIVE_TEST: no"), "{seat_text}");
-    let ollama_at = seat_text.find("ollama create").unwrap();
+    assert!(
+        seat_text.contains("local-seat is print-only"),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains(&format!(
+            "does not write {}",
+            dir.join("Modelfile").display()
+        )),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains("Write that file from the printed contents before ollama create"),
+        "{seat_text}"
+    );
+    let print_at = seat_text.find("local-seat is print-only").unwrap();
+    let create_cmd = seat_text
+        .find("ollama create cell-enrich-overnight-traces -f ")
+        .unwrap();
+    assert!(print_at < create_cmd, "{seat_text}");
+    let ollama_at = create_cmd;
     let cli_at = seat_text.find("llama-cli -m").unwrap();
     let next_at = seat_text.find("standing next step").unwrap();
     assert!(ollama_at < cli_at, "{seat_text}");
@@ -709,7 +770,9 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
     assert!(selected_text.contains("llama-cli -m "), "{selected_text}");
     assert!(selected_text.contains("ollama create"), "{selected_text}");
     let cli_at = selected_text.find("llama-cli -m").unwrap();
-    let ollama_at = selected_text.find("ollama create").unwrap();
+    let ollama_at = selected_text
+        .find("ollama create cell-enrich-overnight-traces -f ")
+        .unwrap();
     assert!(cli_at < ollama_at, "{selected_text}");
     assert!(!marker.exists(), "selected runtime executed a program");
     assert!(!root.join("Modelfile").exists());
@@ -1016,7 +1079,10 @@ fn unsloth_seats_merged_and_gguf_and_refuses_the_adapter() {
     assert!(merged_out.status.success(), "{merged_text}");
     assert!(merged_text.contains("ollama create"), "{merged_text}");
     assert!(!merged_text.contains("llama-cli -m"), "{merged_text}");
-    assert!(merged_text.contains("READY_FOR_LIVE_TEST: no"), "{merged_text}");
+    assert!(
+        merged_text.contains("READY_FOR_LIVE_TEST: no"),
+        "{merged_text}"
+    );
     assert!(!merged.join("Modelfile").exists());
     assert!(!marker.exists());
 

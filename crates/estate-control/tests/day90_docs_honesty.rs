@@ -818,9 +818,7 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     assert!(journey.contains(
         "`make uniqueness-full` runs the same prints with the train recipe in the middle: `make qlora-journey`, then `make train-next`, then `make seat-journey`."
     ));
-    assert!(journey.contains(
-        "The train step is the separate opt-in `make train-next`."
-    ));
+    assert!(journey.contains("The train step is the separate opt-in `make train-next`."));
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains(
         "`make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`."
@@ -885,7 +883,10 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
         !ladder_slice.contains("uniqueness-full"),
         "uniqueness-ladder changelog slice must stay the short chain: {ladder_slice}"
     );
-    assert!(ladder_slice.contains("make qlora-journey"), "{ladder_slice}");
+    assert!(
+        ladder_slice.contains("make qlora-journey"),
+        "{ladder_slice}"
+    );
     assert!(ladder_slice.contains("make seat-journey"), "{ladder_slice}");
     assert!(
         !ladder_slice.contains("make train-next"),
@@ -1104,10 +1105,7 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "lf-beachhead-prepare must not require cargo build before a local estate binary"
     );
 
-    for rel in [
-        "scripts/uniqueness-full.sh",
-        "scripts/uniqueness-ladder.sh",
-    ] {
+    for rel in ["scripts/uniqueness-full.sh", "scripts/uniqueness-ladder.sh"] {
         let script = std::fs::read_to_string(root.join(rel)).unwrap();
         assert!(
             !script.contains("resolve_estate") && !script.contains("target/release/estate"),
@@ -1158,7 +1156,10 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "make uniqueness-ladder",
         "still only call `make`",
     ] {
-        assert!(slice.contains(needle), "changelog slice missing {needle}: {slice}");
+        assert!(
+            slice.contains(needle),
+            "changelog slice missing {needle}: {slice}"
+        );
     }
     assert!(
         slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
@@ -1218,7 +1219,9 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
     let cargo_last = run_extracted_resolver(funcs, &work, None, &cargo_path);
     assert!(cargo_last.status.success(), "{cargo_last:?}");
     assert_eq!(
-        String::from_utf8_lossy(&cargo_last.stdout).lines().collect::<Vec<_>>(),
+        String::from_utf8_lossy(&cargo_last.stdout)
+            .lines()
+            .collect::<Vec<_>>(),
         ["cargo", "run", "-q", "-p", "estate-control", "--"]
     );
 
@@ -1229,7 +1232,10 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
     );
     let missing_err = String::from_utf8_lossy(&missing.stderr);
     assert!(missing_err.contains("ESTATE_BIN"), "{missing_err}");
-    assert!(missing_err.contains("target/release/estate"), "{missing_err}");
+    assert!(
+        missing_err.contains("target/release/estate"),
+        "{missing_err}"
+    );
     assert!(missing_err.contains("target/debug/estate"), "{missing_err}");
     assert!(missing.stdout.is_empty(), "{missing:?}");
 
@@ -1237,7 +1243,10 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
     let bad_bin = run_extracted_resolver(funcs, &work, Some(&not_exec), bare_path);
     assert!(!bad_bin.status.success(), "{bad_bin:?}");
     let bad_err = String::from_utf8_lossy(&bad_bin.stderr);
-    assert!(bad_err.contains("ESTATE_BIN is set but not executable"), "{bad_err}");
+    assert!(
+        bad_err.contains("ESTATE_BIN is set but not executable"),
+        "{bad_err}"
+    );
     assert!(bad_err.contains("target/release/estate"), "{bad_err}");
     assert!(bad_err.contains("target/debug/estate"), "{bad_err}");
     assert!(
@@ -1307,9 +1316,8 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         "the restore sentence must keep the fail-closed follow clause"
     );
     assert!(
-        source.contains(
-            "returns refuse:tokenizer for that export before the restore, for that list"
-        ),
+        source
+            .contains("returns refuse:tokenizer for that export before the restore, for that list"),
         "guidance must name the refuse before the restore"
     );
     assert!(
@@ -1337,8 +1345,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         ),
         "the re-run must not be followed by the refuse claim"
     );
-    let journeys =
-        std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let journeys = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     let section_10 = journeys
         .split("## 10. Target C seat ladder")
         .nth(1)
@@ -1408,7 +1415,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " name dereference when restoring tokenizer files");
+    assert_eq!(head, " print-only local-seat Modelfile");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1455,6 +1462,222 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
             "{rel} must not run seat-journey"
         );
         assert!(!body.contains("cp -aL"), "{rel} must not grow a copy step");
+    }
+}
+
+#[test]
+fn local_seat_print_only_names_the_unwritten_modelfile() {
+    let root = repo_root();
+    let needles = [
+        "local-seat is print-only",
+        "does not write",
+        "Modelfile",
+        "from the printed contents before",
+        "ollama create",
+    ];
+    let pages = [
+        "docs/local-seat.md",
+        "docs/TRAIN-ENRICH.md",
+        "docs/operator-enrich-journeys.md",
+        "crates/estate-control/src/help.rs",
+        "scripts/seat-journey.sh",
+        "crates/model-estate/src/local_seat.rs",
+    ];
+    for rel in pages {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap();
+        let flat = text.replace('`', "");
+        for needle in needles {
+            assert!(flat.contains(needle), "{rel} missing {needle}");
+        }
+        if !rel.ends_with(".rs") {
+            assert!(
+                !text.contains("READY_FOR_LIVE_TEST: yes")
+                    && !text.contains("READY_FOR_LIVE_TEST`: yes"),
+                "{rel} must keep READY_FOR_LIVE_TEST no"
+            );
+        }
+    }
+    for rel in [
+        "docs/local-seat.md",
+        "docs/TRAIN-ENRICH.md",
+        "docs/operator-enrich-journeys.md",
+        "crates/estate-control/src/help.rs",
+        "scripts/seat-journey.sh",
+    ] {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            text.contains("$PREPARED/Modelfile"),
+            "{rel} must name $PREPARED/Modelfile"
+        );
+    }
+
+    let source =
+        std::fs::read_to_string(root.join("crates/model-estate/src/local_seat.rs")).unwrap();
+    let production = source
+        .split("#[cfg(test)]")
+        .next()
+        .expect("local_seat production prefix");
+    assert!(
+        production
+            .contains("local-seat is print-only. It prints the Modelfile and does not write {}."),
+        "the printed line must name the unwritten path"
+    );
+    assert!(
+        production.contains("Write that file from the printed contents before ollama create."),
+        "{production}"
+    );
+    assert!(
+        !production.contains("std::fs::write"),
+        "local-seat must not write the Modelfile"
+    );
+    assert!(
+        !production.contains("std::process::Command"),
+        "local-seat must not shell out"
+    );
+    assert!(
+        !production.contains("READY_FOR_LIVE_TEST: yes"),
+        "local-seat must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    let seating = train
+        .split("## Local seat after LLaMA-Factory export")
+        .nth(1)
+        .expect("seating section")
+        .split("## Status and doctor")
+        .next()
+        .unwrap();
+    let step2_at = seating
+        .find("2. `estate enrich gguf-convert`")
+        .expect("seating step 2");
+    let step3_at = seating.find("3. `ollama create`").expect("seating step 3");
+    let step2 = &seating[step2_at..step3_at];
+    let refuse_at = step2
+        .find("`gguf-convert` returns `refuse:tokenizer`")
+        .expect("step 2 refuse");
+    let rerun_at = step2
+        .find("Then re-run `estate enrich gguf-convert`")
+        .expect("step 2 re-run");
+    assert!(
+        refuse_at < rerun_at,
+        "TRAIN-ENRICH seating step 2 must name the refuse before the re-run"
+    );
+    assert!(
+        !step2[rerun_at..].contains("returns `refuse:tokenizer`"),
+        "the re-run must not be followed by the refuse claim"
+    );
+
+    let journeys = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section_8 = journeys
+        .split("## 8. Target C")
+        .nth(1)
+        .expect("section 8")
+        .split("## 9.")
+        .next()
+        .unwrap();
+    let prove_at = section_8
+        .find("A live 5090 prove on 2026-09-23 hit two tokenizer problems")
+        .expect("section 8 tokenizer paragraph");
+    let next_heading = section_8[prove_at..]
+        .find("### 4.")
+        .expect("section 8 step 4");
+    let prove = &section_8[prove_at..prove_at + next_heading];
+    let prove_refuse = prove
+        .find("`gguf-convert` returns `refuse:tokenizer`")
+        .expect("section 8 refuse");
+    let prove_rerun = prove
+        .find("Then re-run `estate enrich gguf-convert`")
+        .expect("section 8 re-run");
+    assert!(
+        prove_refuse < prove_rerun,
+        "operator journey section 8 must name the refuse before the re-run"
+    );
+    assert!(
+        !prove[prove_rerun..].contains("returns `refuse:tokenizer`"),
+        "the re-run must not be followed by the refuse claim"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #143"),
+        "GATE-90 header must keep tip through PR #143: {gate_head}"
+    );
+    assert!(
+        gate_head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "GATE-90 header must keep the PR #143 tip SHA: {gate_head}"
+    );
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #143"),
+        "status header must keep tip through PR #143"
+    );
+    assert!(
+        status_head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "status header must keep the PR #143 tip SHA"
+    );
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " print-only local-seat Modelfile");
+    let slice = changelog
+        .split("## This slice — print-only local-seat Modelfile")
+        .nth(1)
+        .expect("CHANGELOG missing the print-only slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "local-seat is print-only",
+        "$PREPARED/Modelfile",
+        "from the printed contents before",
+        "ollama create",
+        "does not write",
+        "refuse:tokenizer",
+        "through PR #143",
+        "examples/estate.yaml",
+        "make seat-journey",
+        "READY_FOR_LIVE_TEST",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi"), "{slice}");
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
+    assert!(
+        cksum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {cksum_text}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("seat-journey"),
+            "{rel} must not run seat-journey"
+        );
     }
 }
 
