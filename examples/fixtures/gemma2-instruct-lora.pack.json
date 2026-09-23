@@ -1,0 +1,29 @@
+{
+  "id": "gemma2-instruct-lora",
+  "version": 0,
+  "schema": "cell-one.pack.v0",
+  "curator": "jason",
+  "policy": "manual",
+  "promoted": false,
+  "source": "fixture",
+  "from_events": 0,
+  "kinds": [],
+  "paths": [],
+  "agents": [],
+  "host_class": "any",
+  "job": "policy-precheck",
+  "adapter": null,
+  "path_counts": {
+    "frontier": 0,
+    "local": 0,
+    "proxy": 0,
+    "other": 0
+  },
+  "source_paths": ["feed/events.jsonl"],
+  "model_hint": "llama3",
+  "train_base_model": "google/gemma-2-2b-it",
+  "source_drivers": [],
+  "host_class_affinity": "any",
+  "created_at": "2026-09-23T00:00:00Z",
+  "note": "Smoke prepare for Gemma-2 Instruct LoRA. model_hint llama3 is the Ollama seat tag. train_base_model is the Hugging Face repo. gemma-2-2b-it is the smallest Instruct id in the LLaMA-Factory gemma2 group. The card is llamafactory-lora: template gemma2, lora_rank 8, and no quantization keys. Prepare does not download weights. Import is explicit apply. Feed never auto-promotes."
+}

@@ -433,11 +433,17 @@ Llama-3.2 vision, a Llama-3.2 base, and Llama-3.1 Instruct do not get that line.
 Gemma-2-2b-it, Gemma-2-9b-it, and Gemma-2-27b-it use template gemma2.
 A short gemma stem does not label those names gemma. gemma-2b and gemma-7b
 stay gemma. Gemma-3 stays off gemma2.
-examples/fixtures/gemma2-instruct.pack.json is the Gemma-2 Instruct smoke pack.
+examples/fixtures/gemma2-instruct.pack.json is the Gemma-2 Instruct QLoRA smoke pack.
 --driver llamafactory-qlora on that pack is a reproduce target beside
 Phi-3, Llama-3.2, and Qwen LoRA/QLoRA and still writes quantization_method bnb
 and quantization_bit 4. That reproduce line is QLoRA-only and only for a
 Gemma-2 Instruct id.
+examples/fixtures/gemma2-instruct-lora.pack.json is the Gemma-2 Instruct LoRA
+smoke pack. --driver llamafactory-lora on that pack is the non-quant twin
+of that QLoRA prepare. It writes template gemma2, lora_rank 8, and no
+quantization_bit or quantization_method. That reproduce line is LoRA-only
+and only for a Gemma-2 Instruct id. A Gemma-2 base, original Gemma, and
+Gemma-3 do not get that line.
 Mistral-7B-Instruct-v0.1, v0.2, and v0.3 use template mistral.
 A Mistral-7B base uses that same template and is not the reproduce target.
 Mistral-Small uses mistral_small. Mistral-Nemo uses ministral.

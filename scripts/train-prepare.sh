@@ -533,6 +533,76 @@ if prepare.get("promoted") is not False or prepare.get("auto_apply") is not Fals
     raise SystemExit("FAIL  gemma2 prepare must stay unpromoted")
 PY
 
+GEMMA2_LORA_PACK="$ROOT/examples/fixtures/gemma2-instruct-lora.pack.json"
+echo "-- gemma 2 instruct lora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$GEMMA2_LORA_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/gemma2-lora"
+grep -q "^template: gemma2$" "$WORKDIR/gemma2-lora/recipe.yaml"
+grep -q "^template: gemma2$" "$WORKDIR/gemma2-lora/export.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/gemma2-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/gemma2-lora/recipe.yaml"
+if grep -q "^template: gemma$" "$WORKDIR/gemma2-lora/recipe.yaml"; then
+  echo "FAIL  gemma2 instruct LoRA recipe used the original gemma template"
+  exit 1
+fi
+if grep -q "^template: gemma_" "$WORKDIR/gemma2-lora/recipe.yaml"; then
+  echo "FAIL  gemma2 LoRA recipe used a gemma_ template name"
+  exit 1
+fi
+grep -q 'model_name_or_path: "google/gemma-2-2b-it"' "$WORKDIR/gemma2-lora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/gemma2-lora/recipe.yaml"; then
+  echo "FAIL  gemma2 LoRA recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/gemma2-lora/recipe.yaml" "$WORKDIR/gemma2-lora/export.yaml"; then
+  echo "FAIL  gemma2 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/gemma2-lora/recipe.yaml" "$WORKDIR/gemma2-lora/export.yaml"; then
+  echo "FAIL  gemma2 LoRA recipe must omit quantization_method"
+  exit 1
+fi
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare." "$WORKDIR/gemma2-lora/NEXT.md"
+grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare." "$WORKDIR/gemma2-lora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA." "$WORKDIR/gemma2-lora/NEXT.md" "$WORKDIR/gemma2-lora/PREPARE.md"; then
+  echo "FAIL  gemma2 LoRA fixture prepare wrote the QLoRA reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/gemma2-lora/NEXT.md" "$WORKDIR/gemma2-lora/PREPARE.md"; then
+  echo "FAIL  gemma2 LoRA prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/gemma2-lora/train.py" || -e "$WORKDIR/gemma2-lora/train.sh" ]]; then
+  echo "FAIL  gemma2 LoRA prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/gemma2-lora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-lora":
+    raise SystemExit(f"FAIL  gemma2 lora driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  gemma2 lora seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "google/gemma-2-2b-it":
+    raise SystemExit(f"FAIL  gemma2 lora train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  gemma2 lora prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$GEMMA2_LORA_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/gemma2-lora-pack-qlora"
+if grep -q "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare." "$WORKDIR/gemma2-lora-pack-qlora/NEXT.md" "$WORKDIR/gemma2-lora-pack-qlora/PREPARE.md"; then
+  echo "FAIL  gemma2 LoRA fixture on the QLoRA card wrote the LoRA reproduce note"
+  exit 1
+fi
+grep -q "quantization_method: bnb" "$WORKDIR/gemma2-lora-pack-qlora/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/gemma2-lora-pack-qlora/recipe.yaml"
+
 MISTRAL_PACK="$ROOT/examples/fixtures/mistral-instruct.pack.json"
 echo "-- mistral instruct qlora reproduce target --"
 estate enrich prepare \
