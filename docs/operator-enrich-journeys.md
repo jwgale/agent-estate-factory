@@ -152,7 +152,7 @@ serve_as: cell-one-specialist
 
 The trainer trains on their own hardware. Weights come back to the operator. Journey 1 loads them with `ollama create`, or journey 2 points `CELL_LOCAL_ENDPOINT` at the other runtime. The pack id still enters through the curator paste. The prepared tag enters when `apply-proposal` stages `local_slm` and `estate apply --require-plan` writes that file. Returned weights do not promote themselves.
 
-No dataset pipeline and no trainer crate ship with this page.
+No trainer crate ships with this page. Prepare does not download a dataset. `--from-feed` copies rows that are already under the cell state directory. It checks `kind` and `object_class` before it copies a ShareGPT or Alpaca line, reads the opened file, and refuses when the sources together exceed 8 MiB.
 
 ## 4. Train a QLoRA with LLaMA-Factory, then seat it
 
@@ -171,7 +171,21 @@ estate enrich prepare \
   --state-dir .cell
 ```
 
-That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, `quantization_method: bnb`, and a short `cutoff_len` of 512. `model_name_or_path` is the train base. `template` is inferred from that train base. Use that same chat template when you seat. `prepare.json` says `job` `train`, stores `seat_tag` and `train_base_model`, and keeps `promoted`, `auto_apply`, and `estate_rewritten` false. If the pack lists `source_paths`, the JSONL names those paths and leaves the files unread. If the list is empty, the JSONL is a three-row stub and `NEXT.md` tells you to replace the rows.
+That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, `quantization_method: bnb`, and a short `cutoff_len` of 512. `model_name_or_path` is the train base. `template` is inferred from that train base. Use that same chat template when you seat. `prepare.json` says `job` `train`, stores `seat_tag` and `train_base_model`, and keeps `promoted`, `auto_apply`, and `estate_rewritten` false. It also stores `dataset_mode`. With no `--from-feed`, a pack that lists `source_paths` gets `dataset_mode` `scaffold`: the JSONL names those paths and leaves the files unread. An empty list is `dataset_mode` `stub` (three example rows). `PREPARE.md` and `NEXT.md` say these rows are not training data, and they name `refuse:dataset` for a later `--from-feed` whose file is missing.
+
+When those paths are already files under the cell state directory, hydrate and then train:
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id> \
+  --driver llamafactory-qlora \
+  --job train \
+  --from-feed \
+  --state-dir .cell
+```
+
+For source path `feed/events.jsonl`, the file is `.cell/feed/events.jsonl`. ShareGPT messages and Alpaca `instruction` / `output` lines are copied. A scrubbed feed event becomes a row when its `note` is present. Events with no note are skipped and counted. A missing file is `refuse:dataset` and writes nothing. This step does not download the source.
 
 The default recipe is one epoch and does not set `max_steps`. A short gauge run is the same prepare with `--max-steps 10`. LLaMA-Factory then overrides `num_train_epochs`. When that count is under 50, `save_steps` matches it so a checkpoint is written during the short run.
 
@@ -211,7 +225,7 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 
 A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate.
 
-When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` the same way. It writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`). A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. `--all-drivers --job train` writes the train base into `axolotl.yml` and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. `import-trained` takes that directory too. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
+When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` the same way, including `--from-feed` when the sources are already on disk. It writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`), and it stores the same `dataset_mode` fields. `PREPARE.md` and `NEXT.md` use the same dataset paragraph as the LLaMA-Factory card. A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. A missing feed file with `--from-feed` is `refuse:dataset` and writes nothing. `--all-drivers --job train` writes the train base into `axolotl.yml` and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. `import-trained` takes that directory too. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
 
 ## 5. Fail-closed moments
 

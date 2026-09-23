@@ -27,6 +27,7 @@ pub(crate) fn cmd_enrich_prepare(
     job: Option<&str>,
     curator: &str,
     max_steps: Option<u32>,
+    from_feed: bool,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -48,6 +49,8 @@ pub(crate) fn cmd_enrich_prepare(
             job: job.as_str(),
             out_dir,
             max_steps,
+            from_feed,
+            state_dir,
         })
         .collect();
     let docs = prepare_enrich_set(&reqs)?;
@@ -61,8 +64,17 @@ pub(crate) fn cmd_enrich_prepare(
             Some(train) => format!(" train_base={train}"),
             None => String::new(),
         };
+        let dataset = match doc.dataset_mode.as_deref() {
+            Some(mode) => format!(
+                " dataset_mode={mode} dataset_rows={} dataset_from_feed={} dataset_skipped={}",
+                doc.dataset_rows.unwrap_or(0),
+                doc.dataset_from_feed.unwrap_or(false),
+                doc.dataset_skipped.unwrap_or(0),
+            ),
+            None => String::new(),
+        };
         println!(
-            "enrich prepare: driver={} job={} pack={} base={}{train_base}",
+            "enrich prepare: driver={} job={} pack={} base={}{train_base}{dataset}",
             doc.driver, doc.job, doc.pack_id, doc.base_model
         );
         println!("  out: {}", out_dir.display());
@@ -91,6 +103,7 @@ pub(crate) fn cmd_enrich_from_pack(
     job: Option<&str>,
     curator: &str,
     max_steps: Option<u32>,
+    from_feed: bool,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
         bail!("refuse:driver: pass --driver or --all-drivers");
@@ -111,6 +124,7 @@ pub(crate) fn cmd_enrich_from_pack(
         job,
         curator,
         max_steps,
+        from_feed,
     )
 }
 

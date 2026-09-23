@@ -15,6 +15,8 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 
 `train_base_model` is an additive optional field on `pack.v0` and `specialist-pack.v0`. Empty means unset. `llamafactory-qlora` and `axolotl-lora` read `params.train_base_model` on the local binding when the pack field is empty. A bare Ollama seat tag in that field is `refuse:train-base`. A relative directory is written into the prepare envelope as an absolute path. A directory name that is an Ollama seat tag is the same refuse.
 
+`dataset_mode`, `dataset_rows`, `dataset_from_feed`, `dataset_skipped`, and `dataset_read_paths` are additive optional fields on `cell-one.enrich-prepare.v0`. Train recipe cards write them. Other cards omit them, so older prepare files and the ollama example stay valid. `dataset_mode` is `stub`, `scaffold`, or `feed`. `feed` means `--from-feed` copied rows already under the cell state directory. A missing source with that flag is `refuse:dataset`.
+
 `enrich-binding-proposal.v0.json` is the `local_slm` join (`cell-one.enrich-binding-proposal.v0`). `estate enrich import-prepared` writes it next to `prepare.json`. `auto_apply`, `promoted`, and `estate_rewritten` stay false. The command does not apply.
 
 `enrich-binding-stage.v0.json` is the plan input (`cell-one.enrich-binding-stage.v0`). `estate enrich apply-proposal` writes `staged-estate.yaml` plus this receipt under `{state}/enrich-stage/`. `applied` and `estate_rewritten` stay false until `estate apply --require-plan` succeeds. `auto_apply` stays false.

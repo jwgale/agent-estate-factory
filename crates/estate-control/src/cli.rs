@@ -494,6 +494,9 @@ pub(crate) enum EnrichCommand {
         /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
         #[arg(long)]
         max_steps: Option<u32>,
+        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.
+        #[arg(long, default_value_t = false)]
+        from_feed: bool,
     },
     /// Prepare an accepted pack into `{state_dir}/enrich`. Same refuses as prepare. Does not apply.
     FromPack {
@@ -521,6 +524,9 @@ pub(crate) enum EnrichCommand {
         /// Short LLaMA-Factory gauge run. Writes `max_steps` into recipe.yaml. Omit for the one-epoch recipe.
         #[arg(long)]
         max_steps: Option<u32>,
+        /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.
+        #[arg(long, default_value_t = false)]
+        from_feed: bool,
     },
     /// List prepared packs under `{state_dir}/enrich`. Does not create the directory.
     List {

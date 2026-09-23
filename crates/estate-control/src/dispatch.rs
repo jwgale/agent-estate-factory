@@ -190,6 +190,7 @@ pub(crate) fn run() -> Result<()> {
                 job,
                 curator,
                 max_steps,
+                from_feed,
             } => crate::enrich::cmd_enrich_prepare(
                 &estate,
                 &pack,
@@ -201,6 +202,7 @@ pub(crate) fn run() -> Result<()> {
                 job.as_deref(),
                 &curator,
                 max_steps,
+                from_feed,
             ),
             EnrichCommand::FromPack {
                 estate,
@@ -212,6 +214,7 @@ pub(crate) fn run() -> Result<()> {
                 job,
                 curator,
                 max_steps,
+                from_feed,
             } => crate::enrich::cmd_enrich_from_pack(
                 &estate,
                 &pack,
@@ -222,6 +225,7 @@ pub(crate) fn run() -> Result<()> {
                 job.as_deref(),
                 &curator,
                 max_steps,
+                from_feed,
             ),
             EnrichCommand::List { state_dir } => crate::enrich::cmd_enrich_list(&state_dir),
             EnrichCommand::ImportPrepared {
