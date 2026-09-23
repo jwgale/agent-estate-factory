@@ -3770,8 +3770,13 @@ fn qwen3_uses_nothink(name: &str) -> bool {
 }
 
 /// Family marker on one path segment. `None` when that segment names no known family.
+/// DeepSeek is first. `DeepSeek-R1-Distill-Qwen-1.5B` contains `qwen`, and
+/// `DeepSeek-R1-0528-Qwen3-8B` contains `qwen3`. Those ids are `deepseekr1`.
 fn template_for_segment(segment: &str) -> Option<&'static str> {
     let name = segment.to_ascii_lowercase();
+    if let Some(template) = deepseek_template_for_segment(&name) {
+        return Some(template);
+    }
     if name.contains("qwen3") {
         Some(if qwen3_uses_nothink(&name) {
             "qwen3_nothink"
@@ -3903,6 +3908,44 @@ fn gemma_template_for_segment(name: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// LLaMA-Factory `register_model_group` templates for DeepSeek.
+/// Longer stems win. `deepseek` is a prefix of `deepseek-r1`, `deepseek-v3`,
+/// `deepseek-coder`, and `deepseek-coder-v2`. `constants.py` names those
+/// groups `deepseekr1`, `deepseek3`, `deepseekcoder`, and `deepseek`.
+/// `template.py` registers those names. `deepseekr1` is a `ReasoningTemplate`.
+/// There is no `deepseek_r1` name.
+/// `DeepSeek-Coder-V2` is the `deepseek` group. `DeepSeek-Coder` v1 is
+/// `deepseekcoder`. `DeepSeek-V2-Chat-0628`, `DeepSeek-V2.5`, and `DeepSeek-V3`
+/// are `deepseek3`. `DeepSeek-V2` and `DeepSeek-V2-Chat` stay `deepseek`.
+/// The R1 group (`DeepSeek-R1-Distill-*`, `DeepSeek-R1`, `DeepSeek-R1-Zero`,
+/// and `DeepSeek-R1-0528`) is `deepseekr1`. A Qwen or Llama substring in a
+/// distill id does not select `qwen` or `llama3`.
+/// HF cache directories keep the repo id in one segment
+/// (`models--deepseek-ai--DeepSeek-R1-Distill-Qwen-1.5B`).
+fn deepseek_template_for_segment(name: &str) -> Option<&'static str> {
+    const GROUPS: &[(&[&str], &str)] = &[
+        (&["deepseek-r1"], "deepseekr1"),
+        (&["deepseek-v3"], "deepseek3"),
+        (
+            &[
+                "deepseek-v2.5",
+                "deepseek-v2-chat-0628",
+                "deepseek-v2-0628",
+            ],
+            "deepseek3",
+        ),
+        (&["deepseek-coder-v2"], "deepseek"),
+        (&["deepseek-coder"], "deepseekcoder"),
+        (&["deepseek"], "deepseek"),
+    ];
+    for (stems, template) in GROUPS {
+        if stems.iter().any(|stem| stem_at_boundary(name, stem)) {
+            return Some(*template);
+        }
+    }
+    None
 }
 
 fn stem_at_boundary(haystack: &str, stem: &str) -> bool {
@@ -4177,6 +4220,35 @@ fn gemma2_lora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> S
     }
 }
 
+/// QLoRA handoff when the train base is an official DeepSeek-R1-Distill chat id.
+/// Empty for DeepSeek-R1, DeepSeek-R1-Zero, DeepSeek-R1-0528, for the other
+/// DeepSeek templates, for the Qwen and Llama student checkpoints, and for the
+/// LoRA card. `constants.py` registers the six distill ids with
+/// `template="deepseekr1"` in the same call as the full R1 chat ids.
+/// `template.py` registers `deepseekr1` as a `ReasoningTemplate`.
+/// There is no `deepseek_r1` template. `examples/train_qlora` has no DeepSeek yaml.
+/// The six ids are chat models. They are not named Instruct.
+/// `DeepSeek-R1-Distill-Qwen-1.5B` is the smallest. A Qwen or Llama substring
+/// in that id does not select `qwen` or `llama3`.
+const DEEPSEEK_R1_DISTILL_QLORA_REPRODUCE_NOTE: &str = "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA. DeepSeek-R1-Distill chat (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B, deepseek-ai/DeepSeek-R1-Distill-Qwen-7B, deepseek-ai/DeepSeek-R1-Distill-Llama-8B, deepseek-ai/DeepSeek-R1-Distill-Qwen-14B, deepseek-ai/DeepSeek-R1-Distill-Qwen-32B, and deepseek-ai/DeepSeek-R1-Distill-Llama-70B) uses LLaMA-Factory template deepseekr1. constants.py registers that distill group with template deepseekr1, in the same call as DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528. template.py registers deepseekr1 as a ReasoningTemplate. There is no deepseek_r1 template. examples/train_qlora does not ship a DeepSeek yaml. These ids are chat models. They are not named Instruct. DeepSeek-R1-Distill-Qwen-1.5B is the smallest checkpoint in that distill group. The Qwen and Llama substrings in these ids do not select template qwen or llama3. The student checkpoints those distills were trained from stay on their own templates and are not this reproduce target: Qwen2.5-Math-1.5B, Qwen2.5-Math-7B, Qwen2.5-14B, and Qwen2.5-32B stay template qwen. Llama-3.1-8B and Llama-3.3-70B-Instruct stay template llama3. Qwen2.5 Instruct stays template qwen and is a different reproduce target. Llama-3.2 Instruct stays template llama3 and is a different reproduce target. DeepSeek-R1 and DeepSeek-R1-Zero use template deepseekr1 and are not this reproduce target. DeepSeek-R1-0528 and DeepSeek-R1-0528-Qwen3-8B use template deepseekr1 and are not this reproduce target. DeepSeek-V2 and DeepSeek-Coder-V2 use template deepseek. DeepSeek-V2.5 and DeepSeek-V3 use template deepseek3. DeepSeek-Coder uses template deepseekcoder. GPTQ, AWQ, and GGUF checkpoints of these distill ids are not this reproduce target. The seat tag and the train base stay separate. An Ollama tag such as deepseek-r1 or deepseek-r1:1.5b is a seat tag for this checkpoint. It is not the Hugging Face train base. This QLoRA recipe keeps quantization_method bnb and quantization_bit 4. This factory does not download weights.";
+
+fn deepseek_r1_distill_qlora_reproduce_note(
+    method: LlamaFactoryMethod,
+    train_base: &str,
+) -> String {
+    if method != LlamaFactoryMethod::Qlora {
+        return String::new();
+    }
+    let Some(segment) = llamafactory_template_segment(train_base) else {
+        return String::new();
+    };
+    if segment_is_deepseek_r1_distill(segment) {
+        format!("{DEEPSEEK_R1_DISTILL_QLORA_REPRODUCE_NOTE}\n\n")
+    } else {
+        String::new()
+    }
+}
+
 fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String {
     let mut note = phi_qlora_reproduce_note(method, train_base);
     note.push_str(&llama32_qlora_reproduce_note(method, train_base));
@@ -4184,6 +4256,7 @@ fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String
     note.push_str(&mistral_qlora_reproduce_note(method, train_base));
     note.push_str(&qwen3_instruct_qlora_reproduce_note(method, train_base));
     note.push_str(&qwen25_instruct_qlora_reproduce_note(method, train_base));
+    note.push_str(&deepseek_r1_distill_qlora_reproduce_note(method, train_base));
     note
 }
 
@@ -4305,9 +4378,51 @@ fn segment_is_qwen25_instruct(segment: &str) -> bool {
     STEMS.iter().any(|stem| stem_at_boundary(&name, stem))
 }
 
+/// Official DeepSeek-R1-Distill chat ids in the `template="deepseekr1"` group.
+/// `constants.py` lists the six HF repos and the six display names
+/// (`DeepSeek-R1-1.5B-Distill` through `DeepSeek-R1-70B-Distill`) in that
+/// same `register_model_group` as DeepSeek-R1, DeepSeek-R1-Zero, and
+/// DeepSeek-R1-0528. Those other ids use `deepseekr1` and are not this
+/// reproduce target. `DeepSeek-R1-0528-8B-Distill` is the Qwen3 student
+/// (`DeepSeek-R1-0528-Qwen3-8B`), not one of the six. A name that contains
+/// `instruct` is not this group. GPTQ, AWQ, and GGUF checkpoints are already
+/// converted or quantized. The Qwen and Llama student bases stay on `qwen`
+/// and `llama3`.
+fn segment_is_deepseek_r1_distill(segment: &str) -> bool {
+    let name = segment.to_ascii_lowercase();
+    if template_for_segment(segment) != Some("deepseekr1") {
+        return false;
+    }
+    if name.contains("0528")
+        || name.contains("instruct")
+        || name.contains("gptq")
+        || name.contains("awq")
+        || name.contains("gguf")
+        || name.contains("zero")
+    {
+        return false;
+    }
+    const STEMS: &[&str] = &[
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-qwen-14b",
+        "deepseek-r1-distill-qwen-7b",
+        "deepseek-r1-distill-qwen-1.5b",
+        "deepseek-r1-distill-llama-70b",
+        "deepseek-r1-distill-llama-8b",
+        "deepseek-r1-70b-distill",
+        "deepseek-r1-32b-distill",
+        "deepseek-r1-14b-distill",
+        "deepseek-r1-8b-distill",
+        "deepseek-r1-7b-distill",
+        "deepseek-r1-1.5b-distill",
+    ];
+    STEMS.iter().any(|stem| stem_at_boundary(&name, stem))
+}
+
 /// Chat template hint from the train base path. Confirm it before train. Seat the same chat format.
 /// The last segment wins when it names a family. A leaf such as `weights` or an HF snapshot hash
 /// walks toward the root until a segment names one. Unknown paths stay `default`.
+/// A DeepSeek segment is classified before a Qwen or Llama substring in that same segment.
 fn llamafactory_template(train_base: &str) -> &'static str {
     for segment in train_base_segments(train_base).into_iter().rev() {
         if let Some(template) = template_for_segment(segment) {
@@ -4447,6 +4562,12 @@ fn llamafactory_recipe_yaml(
          # LLaVA-NeXT-Mistral uses llava_next_mistral.\n\
          # A short mistral stem does not label Mistral-Small, Mistral-Nemo, or LLaVA-NeXT-Mistral as mistral.\n\
          # Ministral, Ministral-3, Codestral, Devstral, and Pixtral are different groups. This scan does not label them mistral.\n\
+         # DeepSeek-R1 (the distill ids, DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528) uses deepseekr1.\n\
+         # A DeepSeek name is classified before a qwen or llama substring. DeepSeek-R1-Distill-Qwen stays deepseekr1. DeepSeek-R1-Distill-Llama stays deepseekr1.\n\
+         # DeepSeek-R1-Distill chat ids (DeepSeek-R1-Distill-Qwen-1.5B, DeepSeek-R1-Distill-Qwen-7B, DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-Distill-Qwen-14B, DeepSeek-R1-Distill-Qwen-32B, and DeepSeek-R1-Distill-Llama-70B) are the deepseekr1 reproduce target.\n\
+         # DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 use deepseekr1 and are not that reproduce target.\n\
+         # DeepSeek-V2 and DeepSeek-Coder-V2 use deepseek. DeepSeek-V2.5 and DeepSeek-V3 use deepseek3. DeepSeek-Coder uses deepseekcoder.\n\
+         # There is no deepseek_r1 template. template.py registers deepseekr1.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
@@ -12900,6 +13021,582 @@ mod tests {
         let frontier_out = root.join("frontier");
         let frontier = run_feed(
             LLAMAFACTORY_LORA_ID,
+            &pack,
+            &local_only,
+            &frontier_out,
+            &frontier_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!frontier_out.exists());
+    }
+
+    #[test]
+    fn segment_is_deepseek_r1_distill_matches_the_chat_group() {
+        let distill = [
+            "DeepSeek-R1-Distill-Qwen-1.5B",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            "DEEPSEEK-AI/DEEPSEEK-R1-DISTILL-QWEN-1.5B",
+            "DeepSeek-R1-1.5B-Distill",
+            "DeepSeek-R1-7B-Distill",
+            "DeepSeek-R1-8B-Distill",
+            "DeepSeek-R1-14B-Distill",
+            "DeepSeek-R1-32B-Distill",
+            "DeepSeek-R1-70B-Distill",
+            "models--deepseek-ai--DeepSeek-R1-Distill-Qwen-1.5B",
+            "models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B",
+            "unsloth/DeepSeek-R1-Distill-Qwen-1.5B",
+        ];
+        for segment in distill {
+            assert!(
+                segment_is_deepseek_r1_distill(segment),
+                "{segment}"
+            );
+            assert_eq!(llamafactory_template(segment), "deepseekr1", "{segment}");
+        }
+        let excluded = [
+            "deepseek-ai/DeepSeek-R1",
+            "deepseek-ai/DeepSeek-R1-Zero",
+            "deepseek-ai/DeepSeek-R1-0528",
+            "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+            "DeepSeek-R1-0528-8B-Distill",
+            "DeepSeek-R1-671B-Chat",
+            "DeepSeek-R1-671B-Chat-Zero",
+            "deepseek-ai/DeepSeek-V3",
+            "deepseek-ai/DeepSeek-V3-Base",
+            "deepseek-ai/DeepSeek-V2.5",
+            "deepseek-ai/DeepSeek-V2-Chat-0628",
+            "deepseek-ai/DeepSeek-V2-Chat",
+            "deepseek-ai/DeepSeek-V2-Lite",
+            "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+            "deepseek-ai/deepseek-coder-6.7b-instruct",
+            "deepseek-ai/deepseek-llm-7b-chat",
+            "deepseek-ai/deepseek-math-7b-instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-GPTQ-Int4",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-AWQ",
+            "Qwen/Qwen2.5-Math-1.5B",
+            "Qwen/Qwen2.5-Math-7B",
+            "Qwen/Qwen2.5-14B",
+            "Qwen/Qwen2.5-32B",
+            "Qwen/Qwen2.5-1.5B-Instruct",
+            "Qwen/Qwen2.5-0.5B-Instruct",
+            "meta-llama/Llama-3.1-8B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.2-3B-Instruct",
+        ];
+        for segment in excluded {
+            assert!(
+                !segment_is_deepseek_r1_distill(segment),
+                "{segment}"
+            );
+        }
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+            "deepseekr1"
+        );
+        assert_ne!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+            "qwen"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
+            "deepseekr1"
+        );
+        assert_ne!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
+            "llama3"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"),
+            "deepseekr1"
+        );
+        assert_ne!(
+            llamafactory_template("deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"),
+            "qwen3"
+        );
+        assert_eq!(llamafactory_template("deepseek-ai/DeepSeek-R1"), "deepseekr1");
+        assert_eq!(llamafactory_template("deepseek-ai/DeepSeek-V3"), "deepseek3");
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-V2.5"),
+            "deepseek3"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-V2-Chat-0628"),
+            "deepseek3"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-V2-Chat"),
+            "deepseek"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"),
+            "deepseek"
+        );
+        assert_eq!(
+            llamafactory_template("deepseek-ai/deepseek-coder-6.7b-instruct"),
+            "deepseekcoder"
+        );
+        assert_eq!(llamafactory_template("Qwen/Qwen2.5-Math-1.5B"), "qwen");
+        assert_eq!(llamafactory_template("Qwen/Qwen2.5-0.5B-Instruct"), "qwen");
+        assert_eq!(llamafactory_template("meta-llama/Llama-3.1-8B"), "llama3");
+        assert_eq!(
+            llamafactory_template("meta-llama/Llama-3.3-70B-Instruct"),
+            "llama3"
+        );
+    }
+
+    #[test]
+    fn deepseek_r1_distill_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
+        const DISTILL_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA.";
+        const QWEN25_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA.";
+        const QWEN3_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA.";
+        const QWEN25_LORA_NOTE: &str =
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen2.5 Instruct QLoRA prepare.";
+        let root = tmp("deepseek-r1-distill-qlora");
+        let pack_path = repo_root().join("examples/fixtures/deepseek-r1-distill.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(pack.id, "deepseek-r1-distill");
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+        );
+        assert_eq!(pack.model_hint.as_deref(), Some("llama3"));
+        assert!(!pack.promoted);
+        let estate = fixture_estate();
+        let out = root.join("qlora");
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(yaml_line(&recipe, "template: deepseekr1"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: qwen"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: qwen3"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: llama3"), "{recipe}");
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(yaml_line(&recipe, "lora_rank: 16"), "{recipe}");
+        assert!(yaml_line(&recipe, "packing: true"), "{recipe}");
+        assert!(
+            recipe.contains("DeepSeek-R1-Distill chat ids (DeepSeek-R1-Distill-Qwen-1.5B, DeepSeek-R1-Distill-Qwen-7B, DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-Distill-Qwen-14B, DeepSeek-R1-Distill-Qwen-32B, and DeepSeek-R1-Distill-Llama-70B) are the deepseekr1 reproduce target."),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("model_name_or_path: \"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("\"llama3\"")
+            }),
+            "{recipe}"
+        );
+        assert!(recipe.contains("does not download weights"), "{recipe}");
+        assert!(recipe.contains("does not run llamafactory-cli"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(yaml_line(&export, "template: deepseekr1"), "{export}");
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(text.contains(DISTILL_NOTE), "{text}");
+            assert!(
+                text.contains("uses LLaMA-Factory template deepseekr1."),
+                "{text}"
+            );
+            assert!(
+                text.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+                "{text}"
+            );
+            assert!(text.contains("There is no deepseek_r1 template."), "{text}");
+            assert!(text.contains("deepseek-r1:1.5b"), "{text}");
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("quantization_method bnb"), "{text}");
+            assert!(text.contains("quantization_bit 4"), "{text}");
+            assert!(text.contains("refuse:tokenizer"), "{text}");
+            assert!(!text.contains(QWEN25_NOTE), "{text}");
+            assert!(!text.contains(QWEN3_NOTE), "{text}");
+            assert!(!text.contains(QWEN25_LORA_NOTE), "{text}");
+            assert!(
+                !text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA."
+                ),
+                "{text}"
+            );
+            assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+            assert!(text.contains("READY_FOR_LIVE_TEST: no"), "{text}");
+        }
+        assert!(!out.join("train.py").exists());
+        assert!(!out.join("train.sh").exists());
+
+        let lora_out = root.join("lora");
+        let lora = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(lora.base_model, "llama3");
+        assert_eq!(
+            lora.train_base_model.as_deref(),
+            Some("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+        );
+        let lora_recipe = std::fs::read_to_string(lora_out.join("recipe.yaml")).unwrap();
+        assert!(yaml_line(&lora_recipe, "template: deepseekr1"), "{lora_recipe}");
+        assert!(yaml_line(&lora_recipe, "lora_rank: 8"), "{lora_recipe}");
+        assert!(yaml_line(&lora_recipe, "packing: false"), "{lora_recipe}");
+        assert!(
+            !lora_recipe.contains("quantization_bit")
+                && !lora_recipe.contains("quantization_method"),
+            "{lora_recipe}"
+        );
+        let lora_next = std::fs::read_to_string(lora_out.join("NEXT.md")).unwrap();
+        let lora_prepare = std::fs::read_to_string(lora_out.join("PREPARE.md")).unwrap();
+        assert!(!lora_next.contains(DISTILL_NOTE), "{lora_next}");
+        assert!(!lora_prepare.contains(DISTILL_NOTE), "{lora_prepare}");
+        assert!(!lora_next.contains(QWEN25_NOTE), "{lora_next}");
+        assert!(!lora_next.contains(QWEN25_LORA_NOTE), "{lora_next}");
+
+        let bare = fixture_pack();
+        let seated = seated_estate("llama3");
+        for bad in [
+            "llama3",
+            "llama3:latest",
+            "deepseek-r1",
+            "deepseek-r1:1.5b",
+            "deepseek-r1:7b",
+            "deepseek-r1:8b",
+            "./deepseek-r1",
+            "../deepseek-r1",
+        ] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!(
+                "seat-{}",
+                bad.trim_start_matches('.').replace(['/', ':'], "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!bad_out.exists(), "{bad}");
+        }
+        for bad in [
+            "./deepseek-r1-distill-qwen-1.5b",
+            "/opt/hf/deepseek-r1-distill-qwen-1.5b",
+        ] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!("leaf-{}", bad.replace('/', "_")));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let nested_estate = with_train_base(
+            seated.clone(),
+            "./weights/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B/weights",
+        );
+        let nested_out = root.join("nested-7b");
+        let nested = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B/weights"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            yaml_line(&nested_recipe, "template: deepseekr1"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_method: bnb"),
+            "{nested_recipe}"
+        );
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        assert!(nested_next.contains(DISTILL_NOTE), "{nested_next}");
+        assert!(!nested_next.contains(QWEN25_NOTE), "{nested_next}");
+
+        let cases = [
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "deepseekr1", true),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "deepseekr1", true),
+            ("deepseek-ai/DeepSeek-R1-Distill-Llama-8B", "deepseekr1", true),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", "deepseekr1", true),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "deepseekr1", true),
+            ("deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseekr1", true),
+            ("unsloth/DeepSeek-R1-Distill-Qwen-1.5B", "deepseekr1", true),
+            ("lab/DeepSeek-R1-1.5B-Distill", "deepseekr1", true),
+            ("lab/DeepSeek-R1-7B-Distill", "deepseekr1", true),
+            ("lab/DeepSeek-R1-8B-Distill", "deepseekr1", true),
+            ("lab/DeepSeek-R1-14B-Distill", "deepseekr1", true),
+            ("lab/DeepSeek-R1-32B-Distill", "deepseekr1", true),
+            ("lab/DeepSeek-R1-70B-Distill", "deepseekr1", true),
+            (
+                "/home/user/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Qwen-1.5B/snapshots/abc123def456",
+                "deepseekr1",
+                true,
+            ),
+            (
+                "/tmp/Qwen2.5-0.5B-Instruct/DeepSeek-R1-Distill-Qwen-1.5B",
+                "deepseekr1",
+                true,
+            ),
+            (
+                "/tmp/DeepSeek-R1-Distill-Qwen-1.5B/Qwen2.5-0.5B-Instruct",
+                "qwen",
+                false,
+            ),
+            ("deepseek-ai/DeepSeek-R1", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-R1-Zero", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-R1-0528", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-R1-0528-Qwen3-8B", "deepseekr1", false),
+            ("lab/DeepSeek-R1-0528-8B-Distill", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-V3", "deepseek3", false),
+            ("deepseek-ai/DeepSeek-V2.5", "deepseek3", false),
+            ("deepseek-ai/DeepSeek-V2-Chat-0628", "deepseek3", false),
+            ("deepseek-ai/DeepSeek-V2-Chat", "deepseek", false),
+            ("deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct", "deepseek", false),
+            ("deepseek-ai/deepseek-coder-6.7b-instruct", "deepseekcoder", false),
+            ("deepseek-ai/deepseek-llm-7b-chat", "deepseek", false),
+            ("deepseek-ai/deepseek-math-7b-instruct", "deepseek", false),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B-GGUF", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-GPTQ-Int4", "deepseekr1", false),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-AWQ", "deepseekr1", false),
+            ("Qwen/Qwen2.5-Math-1.5B", "qwen", false),
+            ("Qwen/Qwen2.5-Math-7B", "qwen", false),
+            ("Qwen/Qwen2.5-14B", "qwen", false),
+            ("Qwen/Qwen2.5-32B", "qwen", false),
+            ("Qwen/Qwen2.5-1.5B-Instruct", "qwen", false),
+            ("Qwen/Qwen2.5-0.5B-Instruct", "qwen", false),
+            ("meta-llama/Llama-3.1-8B", "llama3", false),
+            ("meta-llama/Llama-3.3-70B-Instruct", "llama3", false),
+            ("meta-llama/Llama-3.2-3B-Instruct", "llama3", false),
+        ];
+        for (idx, (train, template, note)) in cases.iter().enumerate() {
+            let case_estate = with_train_base(seated.clone(), train);
+            let case_out = root.join(format!("case-{idx}"));
+            let case_doc = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &case_estate,
+                &case_out,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            assert_eq!(case_doc.base_model, "llama3", "{train}");
+            assert_eq!(case_doc.seat_tag.as_deref(), Some("llama3"), "{train}");
+            assert_eq!(case_doc.train_base_model.as_deref(), Some(*train), "{train}");
+            assert!(!case_doc.promoted && !case_doc.auto_apply && !case_doc.estate_rewritten);
+            let case_recipe = std::fs::read_to_string(case_out.join("recipe.yaml")).unwrap();
+            let template_line = format!("template: {template}");
+            assert!(
+                yaml_line(&case_recipe, &template_line),
+                "{train}\n{case_recipe}"
+            );
+            assert!(case_recipe.contains("quantization_method: bnb"), "{train}");
+            assert!(case_recipe.contains("quantization_bit: 4"), "{train}");
+            assert!(yaml_line(&case_recipe, "lora_rank: 16"), "{train}");
+            assert!(yaml_line(&case_recipe, "packing: true"), "{train}");
+            if *template != "qwen" {
+                assert!(!yaml_line(&case_recipe, "template: qwen"), "{train}");
+            }
+            let case_next = std::fs::read_to_string(case_out.join("NEXT.md")).unwrap();
+            let case_prepare = std::fs::read_to_string(case_out.join("PREPARE.md")).unwrap();
+            assert_eq!(case_next.contains(DISTILL_NOTE), *note, "{train}\n{case_next}");
+            assert_eq!(
+                case_prepare.contains(DISTILL_NOTE),
+                *note,
+                "{train}\n{case_prepare}"
+            );
+            if train.ends_with("Qwen2.5-0.5B-Instruct") {
+                assert!(case_next.contains(QWEN25_NOTE), "{train}\n{case_next}");
+                assert!(!case_next.contains(DISTILL_NOTE), "{train}\n{case_next}");
+            }
+            assert!(!case_next.contains("READY_FOR_LIVE_TEST: yes"), "{train}");
+            let lora_case = root.join(format!("lora-case-{idx}"));
+            run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &case_estate,
+                &lora_case,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            let lora_case_next = std::fs::read_to_string(lora_case.join("NEXT.md")).unwrap();
+            let lora_case_recipe = std::fs::read_to_string(lora_case.join("recipe.yaml")).unwrap();
+            assert!(
+                !lora_case_next.contains(DISTILL_NOTE),
+                "{train}\n{lora_case_next}"
+            );
+            assert!(
+                !lora_case_recipe.contains("quantization_bit")
+                    && !lora_case_recipe.contains("quantization_method"),
+                "{train}\n{lora_case_recipe}"
+            );
+            assert!(
+                yaml_line(&lora_case_recipe, &template_line),
+                "{train}\n{lora_case_recipe}"
+            );
+        }
+
+        let mut promoted_pack = pack.clone();
+        promoted_pack.promoted = true;
+        let promoted_out = root.join("promoted");
+        let promoted = run(
+            LLAMAFACTORY_QLORA_ID,
+            &promoted_pack,
+            &estate,
+            &promoted_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(promoted.to_string().contains("refuse:pack"), "{promoted}");
+        assert!(!promoted_out.exists());
+
+        let mut sacred_pack = pack.clone();
+        sacred_pack.id = "cyera".into();
+        let sacred_out = root.join("sacred-id");
+        let sacred = run(
+            LLAMAFACTORY_QLORA_ID,
+            &sacred_pack,
+            &estate,
+            &sacred_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!sacred_out.exists());
+
+        let sacred_base = with_train_base(
+            seated.clone(),
+            "cyera/DeepSeek-R1-Distill-Qwen-1.5B",
+        );
+        let sacred_base_out = root.join("sacred-base");
+        let sacred_train = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sacred_base,
+            &sacred_base_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            sacred_train.to_string().contains("refuse:sacred"),
+            "{sacred_train}"
+        );
+        assert!(!sacred_base_out.exists());
+
+        let sku_base = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf/5090/DeepSeek-R1-Distill-Qwen-1.5B",
+        );
+        let sku_out = root.join("sku-base");
+        let sku = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sku_base,
+            &sku_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!sku_out.exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let frontier_state = root.join("frontier-cell");
+        std::fs::create_dir_all(frontier_state.join("feed")).unwrap();
+        std::fs::write(
+            frontier_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier_out = root.join("frontier");
+        let frontier = run_feed(
+            LLAMAFACTORY_QLORA_ID,
             &pack,
             &local_only,
             &frontier_out,
