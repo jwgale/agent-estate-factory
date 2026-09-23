@@ -117,7 +117,7 @@ pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
 /// The export directory may not exist yet. This text does not scan it.
 pub(crate) fn export_tokenizer_guidance(train_base: &str) -> String {
     format!(
-        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. The same export can omit vocab.json and merges.txt. {restore} estate enrich gguf-convert returns refuse:tokenizer for that list, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line.",
+        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. JSON null under extra_special_tokens is the same refuse:tokenizer case: transformers calls .keys() on that non-object value. The same export can omit vocab.json and merges.txt. {restore} estate enrich gguf-convert returns refuse:tokenizer for that list, for JSON null, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line.",
         restore = tokenizer_restore_sentence(train_base)
     )
 }
@@ -159,7 +159,7 @@ fn inspect_export_tokenizer(dir: &Path, train_base: Option<&str>) -> Result<Stri
 
 fn tokenizer_pass_note(facts: &str, train_base: Option<&str>) -> String {
     format!(
-        "Tokenizer check passed. {facts}. A JSON list under extra_special_tokens is refuse:tokenizer. transformers raises AttributeError ('list' object has no attribute 'keys') inside convert_hf_to_gguf.py. A Qwen-family export missing vocab.json or merges.txt is the same refuse. Qwen-family here is config.json model_type or architectures starting with Qwen, or tokenizer_class containing Qwen. A merged export can write that list and omit those files. {restore}",
+        "Tokenizer check passed. {facts}. A JSON list or JSON null under extra_special_tokens is refuse:tokenizer. transformers raises AttributeError ('list' object has no attribute 'keys') inside convert_hf_to_gguf.py when the value is a list. JSON null is the same refuse: transformers calls .keys() on that non-object value. A Qwen-family export missing vocab.json or merges.txt is the same refuse. Qwen-family here is config.json model_type or architectures starting with Qwen, or tokenizer_class containing Qwen. A merged export can write that list and omit those files. {restore}",
         restore = tokenizer_restore_sentence(train_base.unwrap_or(""))
     )
 }
