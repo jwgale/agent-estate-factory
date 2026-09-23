@@ -122,6 +122,10 @@ fn help_names_the_convert_line() {
     assert!(body.contains("extra_special_tokens"), "{body}");
     assert!(body.contains("vocab.json"), "{body}");
     assert!(body.contains("merges.txt"), "{body}");
+    assert!(body.contains("HF cache snapshot"), "{body}");
+    assert!(body.contains("equivalent base checkout"), "{body}");
+    assert!(body.contains("into the export directory"), "{body}");
+    assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
     assert!(body.contains("axolotl-lora"), "{body}");
     assert!(body.contains("axolotl-qlora"), "{body}");
     assert!(body.contains("outputs/merged"), "{body}");
@@ -488,6 +492,10 @@ fn refuses_list_extra_special_tokens_without_spawning_or_copying() {
     assert!(body.contains("missing vocab.json"), "{body}");
     assert!(body.contains("missing merges.txt"), "{body}");
     assert!(body.contains("tokenizer_config.json.bak"), "{body}");
+    assert!(body.contains("HF cache snapshot"), "{body}");
+    assert!(body.contains("equivalent base checkout"), "{body}");
+    assert!(body.contains("into the export directory"), "{body}");
+    assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
     assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
     assert!(!body.contains("--outtype"), "{body}");
     assert!(!root.join("export.gguf").exists());
@@ -529,6 +537,10 @@ fn refuses_null_extra_special_tokens_without_spawning_or_copying() {
     assert!(!body.contains("missing vocab.json"), "{body}");
     assert!(!body.contains("missing merges.txt"), "{body}");
     assert!(body.contains("tokenizer_config.json.bak"), "{body}");
+    assert!(body.contains("HF cache snapshot"), "{body}");
+    assert!(body.contains("equivalent base checkout"), "{body}");
+    assert!(body.contains("into the export directory"), "{body}");
+    assert!(body.contains("re-run estate enrich gguf-convert"), "{body}");
     assert!(!body.contains("python3 convert_hf_to_gguf.py"), "{body}");
     assert!(!body.contains("--outtype"), "{body}");
     assert!(!root.join("export.gguf").exists());

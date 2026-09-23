@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — name the HF-cache tokenizer restore after refuse:tokenizer
+
+- After `refuse:tokenizer`, `NEXT.md`, `PREPARE.md`, the LLaMA-Factory `merge-adapt` report, and `estate help enrich` name the operator restore. Copy tokenizer files from the HF cache snapshot for the train base already on disk, or the equivalent base checkout, into the export directory. Keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`. Then re-run `estate enrich gguf-convert` on that export directory. JSON list, JSON null, and a Qwen-family export missing `vocab.json` or `merges.txt` stay the same refuse. The command does not download weights, does not copy tokenizer files, does not write `tokenizer_config.json.bak`, and does not print `python3 convert_hf_to_gguf.py` on that refuse. `make seat-journey` still asserts the refuse on the 5090-shaped export and stays off `make smoke`, `make gate-90`, and GitHub Actions. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — name JSON null in tokenizer guidance
 
 - `export_tokenizer_guidance` (the standing note on LLaMA-Factory `NEXT.md`, `PREPARE.md`, and the `merge-adapt` report) and `tokenizer_pass_note` name JSON null under `extra_special_tokens` as `refuse:tokenizer` beside a JSON list. JSON null is a non-object: transformers calls `.keys()` on that value. The list case still names `AttributeError: 'list' object has no attribute 'keys'`. `estate help enrich` names the same case. `docs/TRAIN-ENRICH.md`, `docs/local-seat.md`, `docs/operator-enrich-journeys.md`, and `docs/CELL-ONE-STATUS.md` name JSON null on the refuse rule beside the list. The 5090-shaped fixture stays a JSON list. The refuse check is unchanged: JSON null already returns `refuse:tokenizer`. An absent key and a JSON object still pass. The commands stay print-only. They do not download weights, do not copy tokenizer files, do not write `tokenizer_config.json.bak`, and do not spawn `convert_hf_to_gguf.py`. `READY_FOR_LIVE_TEST`: no.

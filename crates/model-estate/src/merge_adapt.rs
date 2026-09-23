@@ -1814,6 +1814,22 @@ mod tests {
             "{}",
             plan.report
         );
+        assert!(plan.report.contains("HF cache snapshot"), "{}", plan.report);
+        assert!(
+            plan.report.contains("equivalent base checkout"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("into the export directory"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("re-run estate enrich gguf-convert"),
+            "{}",
+            plan.report
+        );
         assert!(
             plan.report.contains(&plan.local_seat_command),
             "{}",
