@@ -542,6 +542,26 @@ llamafactory-qlora. DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 do
 not get that LoRA line. The smoke seat tag is llama3.
 An Ollama tag such as deepseek-r1 or deepseek-r1:1.5b is a seat tag for
 this checkpoint. It is not the Hugging Face train base.
+GLM-4 Chat ids use template glm4. That group in constants.py is
+zai-org/glm-4-9b-chat, zai-org/glm-4-9b-chat-1m, zai-org/GLM-4-9B-0414,
+and zai-org/GLM-4-32B-0414. The DEFAULT DownloadSource for GLM-4-9B-Chat
+is zai-org/glm-4-9b-chat. template.py registers glm4. There is no glm_4
+template. ChatGLM3 stays chatglm3. A GLM-4 base stays glm4 and does not
+get this line. GLM-Z1, GLM-4.1V, and GLM-4.5 do not get this line.
+Qwen2.5 Instruct stays qwen. Qwen3 Instruct stays qwen3_nothink.
+DeepSeek-R1-Distill chat stays deepseekr1.
+examples/fixtures/glm4-chat.pack.json is the GLM-4 Chat QLoRA smoke pack.
+Its train base is zai-org/glm-4-9b-chat. --driver llamafactory-qlora on
+that pack is a reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral,
+Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat and still
+writes quantization_method bnb and quantization_bit 4. That reproduce
+line is on llamafactory-qlora and only for those GLM-4 Chat ids.
+llamafactory-lora on the same ids writes template glm4, lora_rank 8,
+packing false, and no quantization_bit or quantization_method. It does
+not get that QLoRA line. This card does not add the LoRA twin.
+The smoke seat tag is llama3. An Ollama tag such as glm4, glm4:9b, or
+glm-4:9b is a seat tag for this checkpoint. It is not the Hugging Face
+train base.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
