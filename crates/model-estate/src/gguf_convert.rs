@@ -21,6 +21,14 @@
 //! and auto, and the default is auto (the highest-fidelity 16-bit float
 //! type). This card passes that default so the operator does not guess the
 //! flag. It does not pass a quantization type.
+//!
+//! When `tokenizer_config.json` is already in the merged directory, a JSON
+//! list under `extra_special_tokens` is `refuse:tokenizer`. transformers
+//! calls `.keys()` on that value. A Qwen-family export missing `vocab.json`
+//! or `merges.txt` is the same refuse. Qwen-family is `config.json`
+//! `model_type` or `architectures`, or `tokenizer_class`, naming Qwen.
+//! This module does not download tokenizer files, does not copy them, and
+//! does not run the script.
 
 use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
@@ -30,7 +38,12 @@ use crate::train_enrich::{
     MLX_LM_LORA_ID, UNSLOTH_GGUF_DOC, UNSLOTH_QLORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+/// `tokenizer_config.json` above this size is `refuse:tokenizer`.
+/// The check does not stream the file and does not print the convert line.
+const TOKENIZER_CHECK_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Printed plan. `outfile` is the sibling path the convert line names.
 /// This command does not create that file.
@@ -87,6 +100,234 @@ pub(crate) fn local_seat_cli(prepared: &Path, weights: &Path) -> String {
     )
 }
 
+/// Operator copy step. Names `train_base` when the prepare recorded one.
+/// Does not build a cache path and does not fetch.
+pub(crate) fn tokenizer_restore_sentence(train_base: &str) -> String {
+    let named = match train_base.trim() {
+        "" => "the train base on this prepare".to_string(),
+        base => format!("train base {base}"),
+    };
+    format!(
+        "Copy the tokenizer files from {named} already on disk (a local HF weights directory, or the HF cache snapshot for that repo). Qwen2.5 train bases normally include vocab.json and merges.txt, plus tokenizer_config.json and tokenizer.json. Keep the export tokenizer_config.json as tokenizer_config.json.bak before you replace it. This factory does not download weights, does not copy those files, and does not run convert_hf_to_gguf.py."
+    )
+}
+
+/// Standing note for LLaMA-Factory `NEXT.md`, `PREPARE.md`, and `merge-adapt`.
+/// The export directory may not exist yet. This text does not scan it.
+pub(crate) fn export_tokenizer_guidance(train_base: &str) -> String {
+    format!(
+        "After llamafactory-cli export writes the merged directory, and before convert_hf_to_gguf.py, check tokenizer_config.json in that directory. LLaMA-Factory export can save extra_special_tokens as a JSON list. transformers then raises AttributeError ('list' object has no attribute 'keys') while convert_hf_to_gguf.py loads the tokenizer. The same export can omit vocab.json and merges.txt. {restore} estate enrich gguf-convert returns refuse:tokenizer for that list, and for a Qwen-family export that is missing vocab.json or merges.txt. Qwen-family there means config.json model_type or architectures, or tokenizer_class, names Qwen. An object extra_special_tokens with those two files present still prints the convert line.",
+        restore = tokenizer_restore_sentence(train_base)
+    )
+}
+
+enum LoadedTokenizerConfig {
+    Absent,
+    Object(serde_json::Map<String, Value>),
+}
+
+fn inspect_export_tokenizer(dir: &Path, train_base: Option<&str>) -> Result<String, ModelError> {
+    let path = dir.join("tokenizer_config.json");
+    let loaded = load_tokenizer_config(&path)?;
+    let class = match &loaded {
+        LoadedTokenizerConfig::Object(map) => {
+            json_string(map, "tokenizer_class").map(str::to_string)
+        }
+        LoadedTokenizerConfig::Absent => None,
+    };
+    let config = optional_json_object(&dir.join("config.json"));
+    let qwen = directory_is_qwen(config.as_ref(), class.as_deref());
+    let mut problems = Vec::new();
+    if let LoadedTokenizerConfig::Object(map) = &loaded {
+        if let Some(problem) = extra_special_tokens_problem(map) {
+            problems.push(problem);
+        }
+    }
+    if qwen {
+        for name in ["vocab.json", "merges.txt"] {
+            if let Some(problem) = bpe_file_problem(dir, name)? {
+                problems.push(problem);
+            }
+        }
+    }
+    if !problems.is_empty() {
+        return Err(refuse_export_tokenizer(dir, train_base, &problems));
+    }
+    Ok(tokenizer_pass_note(&pass_facts(&loaded, qwen), train_base))
+}
+
+fn tokenizer_pass_note(facts: &str, train_base: Option<&str>) -> String {
+    format!(
+        "Tokenizer check passed. {facts}. A JSON list under extra_special_tokens is refuse:tokenizer. transformers raises AttributeError ('list' object has no attribute 'keys') inside convert_hf_to_gguf.py. A Qwen-family export missing vocab.json or merges.txt is the same refuse. Qwen-family here is config.json model_type or architectures starting with Qwen, or tokenizer_class containing Qwen. A merged export can write that list and omit those files. {restore}",
+        restore = tokenizer_restore_sentence(train_base.unwrap_or(""))
+    )
+}
+
+fn refuse_export_tokenizer(
+    dir: &Path,
+    train_base: Option<&str>,
+    problems: &[String],
+) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:tokenizer: {} {}. {}",
+        dir.display(),
+        problems.join("; "),
+        tokenizer_restore_sentence(train_base.unwrap_or(""))
+    ))
+}
+
+fn pass_facts(loaded: &LoadedTokenizerConfig, qwen: bool) -> String {
+    let config = match loaded {
+        LoadedTokenizerConfig::Absent => "this directory has no tokenizer_config.json".to_string(),
+        LoadedTokenizerConfig::Object(map) => match map.get("extra_special_tokens") {
+            Some(Value::Object(_)) => "extra_special_tokens is an object".to_string(),
+            _ => "extra_special_tokens is not a list".to_string(),
+        },
+    };
+    if qwen {
+        format!("{config}. vocab.json and merges.txt are in this directory")
+    } else {
+        config
+    }
+}
+
+fn extra_special_tokens_problem(map: &serde_json::Map<String, Value>) -> Option<String> {
+    let value = map.get("extra_special_tokens")?;
+    match value {
+        Value::Array(_) => Some(
+            "tokenizer_config.json extra_special_tokens is a JSON list. transformers calls .keys() on that value and raises AttributeError ('list' object has no attribute 'keys')".into(),
+        ),
+        Value::Object(_) | Value::Null => None,
+        Value::String(_) => Some(
+            "tokenizer_config.json extra_special_tokens is a JSON string. transformers calls .keys() on that value".into(),
+        ),
+        Value::Bool(_) => Some(
+            "tokenizer_config.json extra_special_tokens is a JSON bool. transformers calls .keys() on that value".into(),
+        ),
+        Value::Number(_) => Some(
+            "tokenizer_config.json extra_special_tokens is a JSON number. transformers calls .keys() on that value".into(),
+        ),
+    }
+}
+
+fn directory_is_qwen(
+    config: Option<&serde_json::Map<String, Value>>,
+    tokenizer_class: Option<&str>,
+) -> bool {
+    if let Some(map) = config {
+        if let Some(qwen) = config_is_qwen(map) {
+            return qwen;
+        }
+    }
+    tokenizer_class.is_some_and(|class| {
+        let name = class.trim();
+        !name.is_empty() && name.to_ascii_lowercase().contains("qwen")
+    })
+}
+
+/// `Some` when `model_type` or a non-empty `architectures` list decides.
+/// `None` when those keys are absent, so `tokenizer_class` can still decide.
+fn config_is_qwen(map: &serde_json::Map<String, Value>) -> Option<bool> {
+    if let Some(model_type) = json_string(map, "model_type") {
+        let name = model_type.trim();
+        if !name.is_empty() {
+            return Some(name.to_ascii_lowercase().starts_with("qwen"));
+        }
+    }
+    let arch = map.get("architectures").and_then(Value::as_array)?;
+    if arch.is_empty() {
+        return None;
+    }
+    Some(
+        arch.iter()
+            .any(|item| item.as_str().is_some_and(|name| name.to_ascii_lowercase().starts_with("qwen"))),
+    )
+}
+
+fn json_string<'a>(map: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
+    map.get(key).and_then(Value::as_str)
+}
+
+fn optional_json_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > TOKENIZER_CHECK_MAX_BYTES {
+        return None;
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<Value>(&text) {
+        Ok(Value::Object(map)) => Some(map),
+        _ => None,
+    }
+}
+
+fn load_tokenizer_config(path: &Path) -> Result<LoadedTokenizerConfig, ModelError> {
+    match std::fs::symlink_metadata(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(LoadedTokenizerConfig::Absent),
+        Err(err) => Err(ModelError::Other(format!(
+            "refuse:tokenizer: {}: {err}",
+            path.display()
+        ))),
+        Ok(meta) if meta.file_type().is_symlink() => Err(ModelError::Other(format!(
+            "refuse:tokenizer: {} is a symlink. enrich does not follow a symlinked tokenizer_config.json. Copy a regular file from the train base already on disk. Keep the export tokenizer_config.json as tokenizer_config.json.bak. This factory does not download weights and does not copy the file.",
+            path.display()
+        ))),
+        Ok(meta) if !meta.is_file() => Err(ModelError::Other(format!(
+            "refuse:tokenizer: {} is not a regular file.",
+            path.display()
+        ))),
+        Ok(meta) if meta.len() > TOKENIZER_CHECK_MAX_BYTES => Err(ModelError::Other(format!(
+            "refuse:tokenizer: {} is {} bytes. gguf-convert reads at most {} bytes of tokenizer_config.json and does not print the convert line.",
+            path.display(),
+            meta.len(),
+            TOKENIZER_CHECK_MAX_BYTES
+        ))),
+        Ok(_) => {
+            let bytes = std::fs::read(path).map_err(|err| {
+                ModelError::Other(format!("refuse:tokenizer: {}: {err}", path.display()))
+            })?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                ModelError::Other(format!(
+                    "refuse:tokenizer: {} is not utf-8. gguf-convert does not print the convert line.",
+                    path.display()
+                ))
+            })?;
+            match serde_json::from_str::<Value>(&text) {
+                Ok(Value::Object(map)) => Ok(LoadedTokenizerConfig::Object(map)),
+                Ok(_) => Err(ModelError::Other(format!(
+                    "refuse:tokenizer: {} is not a JSON object. gguf-convert does not print the convert line.",
+                    path.display()
+                ))),
+                Err(_) => Err(ModelError::Other(format!(
+                    "refuse:tokenizer: {} is not JSON, so gguf-convert cannot see whether extra_special_tokens is a list. This factory does not rewrite the file and does not print the convert line.",
+                    path.display()
+                ))),
+            }
+        }
+    }
+}
+
+fn bpe_file_problem(dir: &Path, name: &str) -> Result<Option<String>, ModelError> {
+    let path = dir.join(name);
+    match std::fs::symlink_metadata(&path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Some(format!("missing {name}"))),
+        Err(err) => Err(ModelError::Other(format!(
+            "refuse:tokenizer: {}: {err}",
+            path.display()
+        ))),
+        Ok(meta) if meta.is_file() => Ok(None),
+        Ok(meta) if meta.file_type().is_symlink() => {
+            if path.is_file() {
+                Ok(None)
+            } else {
+                Ok(Some(format!(
+                    "{name} is a symlink whose target is not a file"
+                )))
+            }
+        }
+        Ok(_) => Ok(Some(format!("{name} is not a file"))),
+    }
+}
+
 /// Read `prepare.json`, require a merged export, and build the convert report.
 /// Does not write and does not spawn a process.
 pub fn plan_gguf_convert(
@@ -137,6 +378,7 @@ pub fn plan_gguf_convert(
             )));
         }
     };
+    let tokenizer_note = inspect_export_tokenizer(&dir, doc.train_base_model.as_deref())?;
     let convert = printed_convert_line(&dir);
     let outfile = sibling_gguf_outfile(&dir);
     let seat = local_seat_cli(prepared_dir, &outfile);
@@ -175,6 +417,8 @@ pub fn plan_gguf_convert(
          {unsloth_note}\
          Run this from a llama.cpp checkout. convert_hf_to_gguf.py is that checkout's script. Its shebang is python3. --outtype auto is the script default: the highest-fidelity 16-bit float type (f16 or bf16) from the first loaded tensor. This line passes that default so the flag is not guessed. {quant_sentence} The outfile is a sibling of the merged directory. A .gguf file inside that directory makes the directory match two shapes, and local-seat and import-trained then refuse the directory.\n\
          \n\
+         {tokenizer_note}\n\
+         \n\
          {convert}\n\
          \n\
          Then seat that file. local-seat prints the ollama create line and, for that GGUF, llama-cli -m and llama-server -m. It does not create the model and does not run those programs.\n\
@@ -190,6 +434,7 @@ pub fn plan_gguf_convert(
         axolotl_note = axolotl_note,
         unsloth_note = unsloth_note,
         quant_sentence = quant_sentence,
+        tokenizer_note = tokenizer_note,
     );
     refuse_sacred_and_sku("gguf-convert report", &report)?;
     refuse_raw_secrets(&report).map_err(map_feed)?;
@@ -376,6 +621,21 @@ mod tests {
             plan.report
         );
         assert!(plan.report.contains("promoted=false"), "{}", plan.report);
+        assert!(
+            plan.report.contains("Tokenizer check passed"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("this directory has no tokenizer_config.json"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("refuse:tokenizer"),
+            "{}",
+            plan.report
+        );
         assert_eq!(names(&export), before);
         assert!(!outfile.exists());
         assert!(!export.join("model.gguf").exists());
@@ -1003,5 +1263,321 @@ mod tests {
         let err = plan_gguf_convert(&root, &export).unwrap_err();
         assert!(err.to_string().contains("refuse:prepared"), "{err}");
         assert!(!outfile.exists());
+    }
+
+    fn write_prepare_train(dir: &Path, train: &str) {
+        let body = format!(
+            "{{\n\
+               \"schema\": \"{PREPARE_SCHEMA}\",\n\
+               \"driver\": \"{LLAMAFACTORY_QLORA_ID}\",\n\
+               \"job\": \"train\",\n\
+               \"pack_id\": \"overnight-traces\",\n\
+               \"base_model\": \"llama3\",\n\
+               \"seat_tag\": \"llama3\",\n\
+               \"train_base_model\": \"{train}\",\n\
+               \"purpose\": \"fixture\",\n\
+               \"host_class_affinity\": \"any\",\n\
+               \"source_paths\": [],\n\
+               \"source_drivers\": [],\n\
+               \"artifacts\": [\"export.yaml\"],\n\
+               \"promoted\": false,\n\
+               \"auto_apply\": false,\n\
+               \"estate_rewritten\": false,\n\
+               \"note\": \"test\"\n\
+             }}\n"
+        );
+        std::fs::write(dir.join("prepare.json"), body).unwrap();
+    }
+
+    fn qwen_config() -> &'static str {
+        "{\"model_type\":\"qwen2\",\"architectures\":[\"Qwen2ForCausalLM\"]}\n"
+    }
+
+    fn assert_refuses_tokenizer(err: &impl std::fmt::Display) {
+        let text = err.to_string();
+        assert!(text.contains("refuse:tokenizer"), "{text}");
+        assert!(text.contains("tokenizer_config.json.bak"), "{text}");
+        assert!(text.contains("does not download weights"), "{text}");
+        assert!(text.contains("does not copy those files"), "{text}");
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+        assert!(!text.contains("--outtype"), "{text}");
+    }
+
+    #[test]
+    fn list_extra_special_tokens_refuses_and_writes_nothing() {
+        let root = tmp("list-tokens");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("config.json"), qwen_config()).unwrap();
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\n  \"extra_special_tokens\": [\"<|im_start|>\", \"<|im_end|>\"],\n  \"tokenizer_class\": \"Qwen2Tokenizer\"\n}\n",
+        )
+        .unwrap();
+        std::fs::write(export.join("vocab.json"), "{}\n").unwrap();
+        std::fs::write(export.join("merges.txt"), "a b\n").unwrap();
+        let before = names(&export);
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert_refuses_tokenizer(&err);
+        let text = err.to_string();
+        assert!(text.contains("JSON list"), "{text}");
+        assert!(text.contains("AttributeError"), "{text}");
+        assert!(text.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{text}");
+        assert!(!text.contains("missing vocab.json"), "{text}");
+        assert_eq!(names(&export), before);
+        assert!(!export.join("tokenizer_config.json.bak").exists());
+        assert!(!root.join("export.gguf").exists());
+    }
+
+    #[test]
+    fn qwen_export_missing_bpe_files_refuses_both_names() {
+        let root = tmp("missing-bpe");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("config.json"), qwen_config()).unwrap();
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":{\"im_end\":\"<|im_end|>\"},\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+        )
+        .unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert_refuses_tokenizer(&err);
+        let text = err.to_string();
+        assert!(text.contains("missing vocab.json"), "{text}");
+        assert!(text.contains("missing merges.txt"), "{text}");
+        assert!(!root.join("export.gguf").exists());
+
+        std::fs::write(export.join("vocab.json"), "{}\n").unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:tokenizer"), "{text}");
+        assert!(text.contains("missing merges.txt"), "{text}");
+        assert!(!text.contains("missing vocab.json"), "{text}");
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+    }
+
+    #[test]
+    fn qwen_list_and_missing_bpe_files_are_one_refuse() {
+        let root = tmp("list-and-missing");
+        write_prepare(&root, LLAMAFACTORY_LORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(
+            export.join("config.json"),
+            "{\"architectures\":[\"Qwen2ForCausalLM\"]}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":[]}\n",
+        )
+        .unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("JSON list"), "{text}");
+        assert!(text.contains("missing vocab.json"), "{text}");
+        assert!(text.contains("missing merges.txt"), "{text}");
+        assert!(text.contains("the train base on this prepare"), "{text}");
+        assert!(!text.contains("--outtype"), "{text}");
+    }
+
+    #[test]
+    fn restored_qwen_tokenizer_prints_the_convert_line() {
+        let root = tmp("restored-qwen");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("config.json"), qwen_config()).unwrap();
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":{\"im_end\":\"<|im_end|>\"},\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+        )
+        .unwrap();
+        std::fs::write(export.join("vocab.json"), "{\"<|endoftext|>\":0}\n").unwrap();
+        std::fs::write(export.join("merges.txt"), "a b\n").unwrap();
+        let before = names(&export);
+        let plan = plan_gguf_convert(&root, &export).unwrap();
+        assert!(
+            plan.convert_command.contains("python3 convert_hf_to_gguf.py"),
+            "{}",
+            plan.convert_command
+        );
+        assert!(plan.convert_command.contains("--outtype auto"), "{}", plan.convert_command);
+        assert!(
+            plan.report.contains("Tokenizer check passed"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("extra_special_tokens is an object"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("vocab.json and merges.txt are in this directory"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("Qwen/Qwen2.5-0.5B-Instruct"),
+            "{}",
+            plan.report
+        );
+        assert_eq!(names(&export), before);
+        assert!(!root.join("export.gguf").exists());
+        assert!(!export.join("tokenizer_config.json.bak").exists());
+    }
+
+    #[test]
+    fn llama_export_without_bpe_files_still_prints() {
+        let root = tmp("llama-no-bpe");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(
+            export.join("config.json"),
+            "{\"model_type\":\"llama\",\"architectures\":[\"LlamaForCausalLM\"]}\n",
+        )
+        .unwrap();
+        let plan = plan_gguf_convert(&root, &export).unwrap();
+        assert!(
+            plan.convert_command.contains("--outtype auto"),
+            "{}",
+            plan.convert_command
+        );
+        assert!(
+            !plan.report.contains("vocab.json and merges.txt are in this directory"),
+            "{}",
+            plan.report
+        );
+
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":[\"<s>\"],\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+        )
+        .unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("JSON list"), "{text}");
+        assert!(!text.contains("missing vocab.json"), "{text}");
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+    }
+
+    #[test]
+    fn qwen_train_base_without_directory_markers_still_prints() {
+        let root = tmp("qwen-base-stub");
+        write_prepare_train(&root, "Qwen/Qwen2.5-0.5B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        let plan = plan_gguf_convert(&root, &export).unwrap();
+        assert!(
+            plan.convert_command.contains("python3 convert_hf_to_gguf.py"),
+            "{}",
+            plan.convert_command
+        );
+        assert!(
+            plan.report.contains("Tokenizer check passed"),
+            "{}",
+            plan.report
+        );
+    }
+
+    #[test]
+    fn tokenizer_class_names_qwen_when_config_omits_model_type() {
+        let root = tmp("class-only");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"tokenizer_class\":\"Qwen2Tokenizer\"}\n",
+        )
+        .unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("missing vocab.json"), "{text}");
+        assert!(text.contains("missing merges.txt"), "{text}");
+    }
+
+    #[test]
+    fn symlinked_tokenizer_config_refuses_without_reading_the_target() {
+        let root = tmp("tok-link");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export");
+        merged(&export);
+        let real = root.join("real-tokenizer.json");
+        std::fs::write(
+            &real,
+            "{\"extra_special_tokens\":[\"<|im_start|>\"]}\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&real, export.join("tokenizer_config.json")).unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:tokenizer"), "{text}");
+        assert!(text.contains("symlink"), "{text}");
+        assert!(!text.contains("JSON list"), "{text}");
+        assert!(!text.contains("python3"), "{text}");
+        assert!(!root.join("export.gguf").exists());
+    }
+
+    #[test]
+    fn broken_tokenizer_config_refuses() {
+        let root = tmp("bad-json");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("tokenizer_config.json"), "not-json\n").unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("not JSON"), "{text}");
+        assert!(!text.contains("--outtype"), "{text}");
+
+        std::fs::write(export.join("tokenizer_config.json"), "[1,2]\n").unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("not a JSON object"), "{err}");
+
+        std::fs::write(
+            export.join("tokenizer_config.json"),
+            "{\"extra_special_tokens\":\"<|im_end|>\"}\n",
+        )
+        .unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        assert!(err.to_string().contains("JSON string"), "{err}");
+
+        let big = export.join("tokenizer_config.json");
+        let mut bytes = vec![b' '; (super::TOKENIZER_CHECK_MAX_BYTES as usize) + 1];
+        let last = bytes.len() - 1;
+        bytes[0] = b'{';
+        bytes[last] = b'}';
+        std::fs::write(&big, bytes).unwrap();
+        let err = plan_gguf_convert(&root, &export).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("reads at most"), "{text}");
+        assert!(!text.contains("python3 convert_hf_to_gguf.py"), "{text}");
+    }
+
+    #[test]
+    fn qwen_bpe_symlink_to_a_file_counts_as_present() {
+        let root = tmp("bpe-link");
+        write_prepare_train(&root, "meta-llama/Llama-3.2-1B-Instruct");
+        let export = root.join("export");
+        merged(&export);
+        std::fs::write(export.join("config.json"), "{\"model_type\":\"qwen2\"}\n").unwrap();
+        let vocab = root.join("real-vocab.json");
+        let merges = root.join("real-merges.txt");
+        std::fs::write(&vocab, "{}\n").unwrap();
+        std::fs::write(&merges, "a b\n").unwrap();
+        std::os::unix::fs::symlink(&vocab, export.join("vocab.json")).unwrap();
+        std::os::unix::fs::symlink(&merges, export.join("merges.txt")).unwrap();
+        let plan = plan_gguf_convert(&root, &export).unwrap();
+        assert!(
+            plan.report.contains("vocab.json and merges.txt are in this directory"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.convert_command.contains("--outtype auto"), "{}", plan.convert_command);
     }
 }

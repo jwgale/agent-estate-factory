@@ -719,6 +719,15 @@ The printed line is:
 The outfile is a sibling of the merged directory. The command then
 points at local-seat for that file. It does not run llama.cpp, does
 not write a GGUF, and does not choose a quantization type.
+When tokenizer_config.json in that directory has extra_special_tokens
+as a JSON list, gguf-convert is refuse:tokenizer. transformers raises
+AttributeError ('list' object has no attribute 'keys') during
+convert_hf_to_gguf.py. A Qwen-family export missing vocab.json or
+merges.txt is the same refuse. Qwen-family is config.json model_type
+or architectures, or tokenizer_class, naming Qwen. Copy those tokenizer
+files from the train base already on disk and keep the export
+tokenizer_config.json as tokenizer_config.json.bak. This factory does
+not download weights and does not copy the files.
 
   estate enrich gguf-convert \\
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
@@ -800,7 +809,9 @@ on a CUDA host. This factory does not run them.
 
 That prints python3 convert_hf_to_gguf.py with --outtype auto and an
 outfile beside the export directory. It does not convert. A missing
-export directory is refuse:seat.
+export directory is refuse:seat. A list extra_special_tokens, or a
+Qwen-family export missing vocab.json or merges.txt, is
+refuse:tokenizer.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-qlora \\
@@ -860,7 +871,9 @@ examples/merge_lora/qwen3_lora_sft.yaml. It does not merge.
 
 That prints python3 convert_hf_to_gguf.py with --outtype auto and an
 outfile beside the export directory. It does not convert. A missing
-export directory is refuse:seat.
+export directory is refuse:seat. A list extra_special_tokens, or a
+Qwen-family export missing vocab.json or merges.txt, is
+refuse:tokenizer.
 
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/llamafactory-lora \\

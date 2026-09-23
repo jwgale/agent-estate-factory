@@ -1696,6 +1696,8 @@ fn next_markdown(
                  \n\
                  This prepare did not merge. The merge has not happened. {export_dir} has no merged weights until llamafactory-cli export exits 0. Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. adapter_name_or_path is {adapter_dir}, the same path as recipe.yaml output_dir. After a finished train, adapter_config.json is in that directory. An early stop may leave the adapter only under checkpoint-<step> inside that directory. Point adapter_name_or_path at that checkpoint directory. This prepare does not rewrite export.yaml after train. A Modelfile that llamafactory-cli export writes into {export_dir} is that tool's file. This factory did not write it. LLaMA-Factory does not write GGUF. After the merge, estate enrich gguf-convert prints the llama.cpp convert_hf_to_gguf.py line (--outtype auto, outfile beside the export directory). Then seat tag {tag} on Ollama with FROM that GGUF. local-seat also prints llama-cli -m and llama-server -m for that GGUF file. A merged directory is not a llama.cpp seat until that convert. To load the adapter without a merge, estate enrich local-seat --prepared {out} --adapter {adapter_dir} prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. That Ollama model must already be this same train base. --weights on local-seat stays the merged or GGUF path and refuses this adapter directory. This factory does not run ollama create and does not run convert_hf_to_gguf.py.\n\
                  \n\
+                 {tokenizer_note}\n\
+                 \n\
                  After that tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.\n\
                  \n\
                  A later preference stage is a recipe flag (stage: dpo or stage: orpo, with ranking: true in dataset_info.json). This card does not build that dataset.\n\
@@ -1728,6 +1730,7 @@ fn next_markdown(
                 export_dir = export_dir.display(),
                 adapter_dir = adapter_dir.display(),
                 out = out_dir.display(),
+                tokenizer_note = crate::gguf_convert::export_tokenizer_guidance(train_base),
             ),
             format!(
                 "Adapter output_dir (directory contains adapter_config.json):\n\
@@ -3249,8 +3252,11 @@ fn llamafactory_prepare_steps(
          \n\
          This prepare did not merge. llamafactory-cli export has not run. The export directory has no merged weights. export.yaml is the merge card for that later command. This prepare does not rewrite export.yaml after train.\n\
          \n\
-         The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
+         The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n\
+         \n\
+         {tokenizer_note}\n",
         seat = job.base_model,
+        tokenizer_note = crate::gguf_convert::export_tokenizer_guidance(train_base),
         train = train_base,
         template = template,
         reproduce = reproduce,
@@ -8303,6 +8309,12 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("does not shell out to ollama"), "{next}");
+        assert!(next.contains("refuse:tokenizer"), "{next}");
+        assert!(next.contains("extra_special_tokens"), "{next}");
+        assert!(next.contains("vocab.json"), "{next}");
+        assert!(next.contains("merges.txt"), "{next}");
+        assert!(next.contains("tokenizer_config.json.bak"), "{next}");
+        assert!(next.contains("does not download weights"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
         assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
@@ -8335,6 +8347,9 @@ mod tests {
             "{prepare_md}"
         );
         assert!(prepare_md.contains("Seat tag: llama3"), "{prepare_md}");
+        assert!(prepare_md.contains("refuse:tokenizer"), "{prepare_md}");
+        assert!(prepare_md.contains("extra_special_tokens"), "{prepare_md}");
+        assert!(prepare_md.contains("tokenizer_config.json.bak"), "{prepare_md}");
         let prepare_json = std::fs::read_to_string(out.join("prepare.json")).unwrap();
         assert!(!prepare_json.contains("llamafactory-cli"), "{prepare_json}");
         assert!(
@@ -13062,6 +13077,11 @@ mod tests {
             assert!(text.contains("Seat tag is llama3"), "{text}");
             assert!(text.contains("quantization_method bnb"), "{text}");
             assert!(text.contains("quantization_bit 4"), "{text}");
+            assert!(text.contains("refuse:tokenizer"), "{text}");
+            assert!(text.contains("extra_special_tokens"), "{text}");
+            assert!(text.contains("vocab.json"), "{text}");
+            assert!(text.contains("merges.txt"), "{text}");
+            assert!(text.contains("tokenizer_config.json.bak"), "{text}");
             assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
         }
         assert!(!out.join("train.py").exists());
@@ -13106,6 +13126,8 @@ mod tests {
         let lora_prepare = std::fs::read_to_string(lora_out.join("PREPARE.md")).unwrap();
         assert!(!lora_next.contains(QWEN25_NOTE), "{lora_next}");
         assert!(!lora_prepare.contains(QWEN25_NOTE), "{lora_prepare}");
+        assert!(lora_next.contains("refuse:tokenizer"), "{lora_next}");
+        assert!(lora_prepare.contains("refuse:tokenizer"), "{lora_prepare}");
         assert!(!lora_next.contains(QWEN3_NOTE), "{lora_next}");
         assert!(!lora_next.contains(QWEN3_LORA_NOTE), "{lora_next}");
 
@@ -14574,11 +14596,18 @@ mod tests {
         assert!(next.contains("not training data"), "{next}");
         assert!(next.contains("--from-feed"), "{next}");
         assert!(next.contains("refuse:dataset"), "{next}");
+        assert!(next.contains("refuse:tokenizer"), "{next}");
+        assert!(next.contains("extra_special_tokens"), "{next}");
+        assert!(next.contains("vocab.json"), "{next}");
+        assert!(next.contains("merges.txt"), "{next}");
+        assert!(next.contains("tokenizer_config.json.bak"), "{next}");
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             prepare_md.contains("omits quantization_bit"),
             "{prepare_md}"
         );
+        assert!(prepare_md.contains("refuse:tokenizer"), "{prepare_md}");
+        assert!(prepare_md.contains("extra_special_tokens"), "{prepare_md}");
         assert!(
             prepare_md.contains("did not run llamafactory-cli"),
             "{prepare_md}"

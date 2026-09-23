@@ -33,7 +33,9 @@
 //! or write a directory.
 
 use crate::error::ModelError;
-use crate::gguf_convert::{gguf_convert_cli, local_seat_cli, printed_convert_line};
+use crate::gguf_convert::{
+    export_tokenizer_guidance, gguf_convert_cli, local_seat_cli, printed_convert_line,
+};
 use crate::local_seat::{classify_adapter, shell_quote};
 use crate::train_enrich::{
     is_axolotl_driver, is_llamafactory_driver, is_post_merge_print_driver, load_prepare_doc,
@@ -373,6 +375,8 @@ fn plan_llamafactory(
          \n\
          `llamafactory-cli export` writes export_dir. The file sets export_dir to {export_raw}. Resolved beside this prepare, that directory is {merged}. Current LLaMA-Factory export_model also writes Modelfile in that directory (FROM ., plus TEMPLATE from the train chat template). This factory does not write that Modelfile and does not invent a second template. LLaMA-Factory does not write GGUF. export_device choices in the example are cpu and auto. This file sets {device}. export_size is the shard size in gigabytes. This file sets {size}. export_legacy_format is {legacy}.\n\
          \n\
+         {tokenizer}\
+         \n\
          {next}\
          merge-adapt did not merge and did not write {merged}.\n\
          READY_FOR_LIVE_TEST: no.\n",
@@ -387,6 +391,7 @@ fn plan_llamafactory(
         size = card.export_size,
         legacy = card.export_legacy_format,
         keys = LLAMAFACTORY_EXPORT_KEYS.join(", "),
+        tokenizer = format!("{}\n", export_tokenizer_guidance(&train)),
         next = next_lines(&convert, &gguf, &seat),
     );
     Ok(MergeAdaptPlan {
@@ -1793,6 +1798,19 @@ mod tests {
         assert_eq!(plan.convert_command, printed_convert_line(export_dir));
         assert!(
             plan.report.contains(&plan.gguf_convert_command),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("refuse:tokenizer"), "{}", plan.report);
+        assert!(
+            plan.report.contains("extra_special_tokens"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("vocab.json"), "{}", plan.report);
+        assert!(plan.report.contains("merges.txt"), "{}", plan.report);
+        assert!(
+            plan.report.contains("tokenizer_config.json.bak"),
             "{}",
             plan.report
         );

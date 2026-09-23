@@ -395,6 +395,8 @@ python3 convert_hf_to_gguf.py .cell/enrich/<pack-id>/llamafactory-qlora/export -
 
 Run that line from a llama.cpp checkout. `--outtype auto` is the script default (highest-fidelity 16-bit float). The outfile is a sibling of the merged directory. This factory does not choose a quantization type.
 
+A live 5090 prove on 2026-09-23 hit two tokenizer problems in that export of `Qwen/Qwen2.5-0.5B-Instruct` before the convert could write a GGUF. `tokenizer_config.json` had `extra_special_tokens` as a list, and transformers raised `AttributeError: 'list' object has no attribute 'keys'`. The export also omitted `vocab.json` and `merges.txt`, which that train-base tokenizer includes. Copy the tokenizer files from the train base already on disk (the HF cache snapshot, or a local HF directory) into `export/`. Keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`. `gguf-convert` returns `refuse:tokenizer` for that list, and when the export is Qwen-family and either BPE file is missing. Qwen-family is `config.json` `model_type` or `architectures`, or `tokenizer_class`, naming Qwen. This factory does not download those files, does not copy them, and does not run the convert. The same export shape is recorded in [LLaMA-Factory issue 10169](https://github.com/hiyouga/LlamaFactory/issues/10169). After the files are restored, the convert on that prove wrote a 949M BF16 GGUF.
+
 ### 4. Print the Ollama create
 
 ```bash
@@ -501,6 +503,8 @@ python3 convert_hf_to_gguf.py .cell/enrich/<pack-id>/llamafactory-lora/export --
 ```
 
 Run that line from a llama.cpp checkout. `--outtype auto` is the script default (highest-fidelity 16-bit float). The outfile is a sibling of the merged directory. This factory does not choose a quantization type.
+
+The same tokenizer check as Target C applies after `llamafactory-cli export`. A JSON list under `extra_special_tokens`, or a Qwen-family export missing `vocab.json` or `merges.txt`, is `refuse:tokenizer`. Copy the tokenizer files from `Qwen/Qwen2.5-0.5B-Instruct` already on disk into `export/` and keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`. A live 5090 prove on 2026-09-23 used that restore and then wrote a 949M BF16 GGUF. This factory does not download those files and does not copy them. Detail is in section 8.
 
 ### 4. Print the Ollama create
 
