@@ -1,7 +1,9 @@
 # Cell One status (for Jason)
 
-Snapshot of **what is on `main` through PR #82**. Tip honesty: `convey leases`
-refuses a spawned cloud hop before it prints JSON. Not a live-box report.
+Snapshot of **what is on `main` through PR #140**
+(`35a88139dea58528e4bc5c7b31708b9716ce091b`,
+the LLaMA-Factory LoRA and QLoRA beachhead matrix).
+`READY_FOR_LIVE_TEST`: no. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
 Read with [`../README.md`](../README.md) -> [`NORTH-STAR.md`](NORTH-STAR.md)
@@ -9,6 +11,10 @@ Read with [`../README.md`](../README.md) -> [`NORTH-STAR.md`](NORTH-STAR.md)
 -> [`OPERATOR-DAY.md`](OPERATOR-DAY.md) -> [`GATE-90.md`](GATE-90.md).
 Parked boxes: [`DAY90-PLUS.md`](DAY90-PLUS.md).
 Live probe hand-off: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+Train/enrich tip: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md)
+-> [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md)
+-> [`operator-enrich-journeys.md`](operator-enrich-journeys.md) sections 8–10
+-> [`local-seat.md`](local-seat.md).
 
 ## Vision reset
 
@@ -19,13 +25,25 @@ not a PASS; not in smoke or Actions). Feed packs stay curator edit
 instructions. Control does not complete. Mac specialist
 complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
-## Train/enrich prepare (this slice)
+## Train/enrich uniqueness (tip through PR #140)
 
-You can prepare an enrich job for a purpose-built SLM. `estate enrich prepare` reads a pack and writes files. `--all-drivers` writes every card the job allows into sibling directories, or writes none if one card refuses. The enrich default skips `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, `unsloth-qlora`, and `mlx-lm-lora`. `--job train` includes them. `mlx-lm-lora` is included only when `host_class_affinity` is `apple-silicon`; another affinity is `refuse:host` when that driver is named, and `--all-drivers` omits it. The card writes `MLX.md` and does not call mlx-lm. Each directory has `prepare.json`, `PREPARE.md`, and `NEXT.md` (paths, the handoff command, fail-closed reminders). `estate enrich list` reads `.cell/enrich` and refuses when that directory is missing. After you create the local model outside the factory, `estate enrich import-prepared` checks the tag and the file and writes a `local_slm` binding proposal. `estate enrich apply-proposal` stages that binding. `estate plan` and `estate apply --require-plan` write the source estate. Apply without `--require-plan` leaves the source unchanged. The factory does not run the trainer. The `estate` binary does not call Ollama. `examples/estate.yaml` on `main` stays hash-locked and has no `params.model`, so prepare against it is `refuse:base-model`. `make enrich-prepare` checks the loop on a throwaway directory and expects `FROM llama3` on a copy that sets `params.model`, then stages the join and applies it with `--require-plan` on that copy. `estate enrich from-pack` is the same prepare for an accepted pack. `make enrich-live-prove` is opt-in: it runs `ollama create` when the seat is up, checks `ollama show`, and removes the tag. Promote stays off. A sacred line, a hardware SKU, a missing pack, the wrong curator, or a frontier tag with no frontier binding stops before those files exist. Neither walk is part of smoke or GitHub Actions. `llamafactory-lora` writes a LLaMA-Factory LoRA recipe with no quantization and the exact `llamafactory-cli train` line. `llamafactory-qlora` writes the QLoRA recipe. `axolotl-lora` writes the bf16 Axolotl YAML. `axolotl-qlora` writes the 4-bit Axolotl YAML. `NEXT.md` names `axolotl train`. The factory does not run those trainers, and `import-trained` returns the adapter through the existing proposal. `make train-prepare` is opt-in and prints `SKIP live train`. Default `dataset.jsonl` stays a scaffold unless `--from-feed` copies rows already under the cell state directory. A missing file is `refuse:dataset`. `estate enrich gguf-convert` prints the llama.cpp convert line for a merged export and does not convert. A JSON list or JSON null under `extra_special_tokens`, or a Qwen-family export missing `vocab.json` or `merges.txt`, is `refuse:tokenizer`. That refuse names restoring those tokenizer files from the HF cache snapshot for the train base, or the equivalent base checkout, into the export directory, then re-running `estate enrich gguf-convert`. The factory does not copy those tokenizer files and does not download them. `estate enrich local-seat` validates a merged export directory or a GGUF and prints the Ollama create line. Neither command runs Ollama or llama.cpp. `estate status` and `estate doctor` print each `prepare.json` under `.cell/enrich` (pack, driver, job, seat tag, train base, `trained_shape` when import-trained recorded it, and the out path) and stay silent when that directory is missing. A broken `prepare.json` or a symlink refuses. They do not invent a prepare count and they do not claim the factory trained. Catalog lines name `mlx-lm-lora` as optional beside `unsloth-qlora`. The popular Qwen path is Target C: `llamafactory-qlora` prepare (seat tag separate from `Qwen/Qwen2.5-0.5B-Instruct`), the `NEXT.md` train and export lines, `gguf-convert`, `local-seat`, then `import-trained`. `make qlora-journey` prints that ladder and checks the prepare artifacts. It does not train, convert, or promote. `READY_FOR_LIVE_TEST`: no. Page: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walk: [`operator-enrich-journeys.md`](operator-enrich-journeys.md) section 8. Seat: [`local-seat.md`](local-seat.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+The uniqueness bet on tip is one printed ladder: `estate enrich prepare`, the `NEXT.md` train and export lines, `estate enrich merge-adapt`, `estate enrich gguf-convert`, `estate enrich local-seat`, then `estate enrich import-trained`. The factory writes the recipe and prints the next command. It does not train, merge, convert, create an Ollama model, or download weights. `READY_FOR_LIVE_TEST`: no.
 
-## On `main` (PR #1–#82)
+The seat tag and the Hugging Face train base stay separate. The smoke seat tag is `llama3`. The train base is pack `train_base_model` or `params.train_base_model`. A bare Ollama tag (`llama3`, `llama3:latest`, `deepseek-r1`, `deepseek-r1:1.5b`, `glm4`, `glm4:9b`, `glm4:latest`, `glm-4:9b`) is `refuse:train-base` and writes nothing.
 
-Day 0-90 factory is merged. Horizon / Research / Sanctum on separate lanes.
+[`lf-beachhead-matrix.md`](lf-beachhead-matrix.md) is the print-only index: 8 families, each with a `llamafactory-qlora` row and a `llamafactory-lora` row. Phi-3 Instruct, Llama-3.2 Instruct, Gemma-2 Instruct, Mistral Instruct, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat. The DeepSeek-R1-Distill chat pair and the GLM-4 Chat pair are closed on tip. Kimi is not a row. `estate help enrich` and `estate help train` print that file. The table does not add a train family.
+
+Opt-in journeys stay off `make smoke`, `make gate-90`, and GitHub Actions. `make qlora-journey` prints Target C and `SKIP live train` (section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md)). `make lora-journey` prints Target A and `SKIP live train` (section 9). `make seat-journey` prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat` (section 10). `CELL_SEAT_LIVE=1` does not start a convert or an `ollama create`.
+
+`gguf-convert` returns `refuse:tokenizer` when `extra_special_tokens` is a JSON list or JSON null, and when a Qwen-family export is missing `vocab.json` or `merges.txt`. The refuse names the restore already on tip: copy tokenizer files from the HF cache snapshot for the train base, or the equivalent base checkout, into the export directory, keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`, then re-run `estate enrich gguf-convert`. The command does not copy those files and does not download them. The recorded 5090 case stays on [`local-seat.md`](local-seat.md).
+
+Pages: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: sections 8–10 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). Seat: [`local-seat.md`](local-seat.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md). `examples/estate.yaml` stays hash-locked. Prepare against that file is `refuse:base-model`.
+
+Prepare still writes files and does not apply the estate by itself. `--all-drivers` writes every card the job allows, or writes none if one card refuses. The enrich default skips `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, `unsloth-qlora`, and `mlx-lm-lora`. `--job train` includes them. `mlx-lm-lora` is included only when `host_class_affinity` is `apple-silicon`. Another affinity is `refuse:host` when that driver is named, and `--all-drivers` omits it. The card writes `MLX.md` and does not call mlx-lm. Each directory has `prepare.json`, `PREPARE.md`, and `NEXT.md`. `estate enrich list` refuses when `.cell/enrich` is missing. After you create the local model outside the factory, `estate enrich import-prepared` checks the tag and the file and writes a `local_slm` binding proposal. `estate enrich apply-proposal` stages that binding. `estate plan` and `estate apply --require-plan` write the source estate. Apply without `--require-plan` leaves the source unchanged. `make enrich-prepare` checks that loop on a throwaway copy and expects `FROM llama3` when the copy sets `params.model`. `estate enrich from-pack` is the same prepare for an accepted pack. `make enrich-live-prove` is opt-in: it runs `ollama create` when the seat is up, checks `ollama show`, and removes the tag. Promote stays off. A sacred line, a hardware SKU, a missing pack, the wrong curator, or a frontier tag with no frontier binding stops before those files exist. `axolotl-lora` writes the bf16 YAML. `axolotl-qlora` writes the 4-bit YAML. `NEXT.md` names `axolotl train`. `make train-prepare` prints `SKIP live train`. Default `dataset.jsonl` stays a scaffold unless `--from-feed` copies rows already under the cell state directory. A missing file is `refuse:dataset`. `estate status` and `estate doctor` print each `prepare.json` (pack, driver, job, seat tag, train base, `trained_shape` when import-trained recorded it, and the out path) and stay silent when that directory is missing. A broken `prepare.json` or a symlink refuses. They do not invent a prepare count and they do not claim the factory trained. Catalog lines name `mlx-lm-lora` as optional beside `unsloth-qlora`.
+
+## Day 0–90 factory (merged in PR #1–#82)
+
+Day 0-90 factory is merged. Current tip is PR #140 in the uniqueness section above. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
 Sanctum is first-class and is not Cyera.
 
@@ -302,13 +320,13 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 
 `estate convey declare` refuses before it writes a cloud hop lease when that placement lease is spawned. It does not record `spawned: false`. A missing placement file is not a spawned lease. An unspawned cloud hop still declares as not spawned. The placement file is not rewritten.
 
-## This slice
+## #81 in plain English
 
 `estate convey expire` refuses before it lists or forgets an expired cloud hop lease that is spawned. `expire --forget` does not drop that row. A missing mesh is not a spawned lease. An expired box hop still drops when that cloud row is not in the drop.
 
 `READY_FOR_LIVE_TEST`: no.
 
-## Bug fixes on #10–#82 plus this slice (plain English)
+## Bug fixes (#10–#82) and train/enrich slices on tip
 
 | PR | What was broken | What it does now |
 | --- | --- | --- |
@@ -417,6 +435,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | gguf import after seat | After a GGUF `local-seat` print, the next factory command was easy to miss, and a live `ollama create` could be read as something this factory had run or applied. | The GGUF `local-seat` report, `gguf-convert`, `NEXT.md`, and `estate help enrich` name the standing next step: `estate enrich import-trained` for that GGUF. The proposal stays `auto_apply=false`. The same step stands when `ollama create` already ran outside this factory. The factory does not run `ollama create` and does not apply the estate. `make seat-journey` asserts that print. READY no. |
 | export tokenizer | A live 5090 prove on 2026-09-23 exported `Qwen/Qwen2.5-0.5B-Instruct` and `convert_hf_to_gguf.py` failed. `tokenizer_config.json` had `extra_special_tokens` as a list, and the export omitted `vocab.json` and `merges.txt`. | `gguf-convert` returns `refuse:tokenizer` for that list, for JSON null under `extra_special_tokens`, and for a Qwen-family export missing those BPE files. JSON null is a non-object. `NEXT.md`, `PREPARE.md`, and the LLaMA-Factory `merge-adapt` report name the copy from the train base already on disk, with the export config kept as `tokenizer_config.json.bak`. The factory does not download or copy the files and does not run convert. READY no. |
 | tokenizer restore | After `refuse:tokenizer`, the operator still had to know to copy tokenizer files out of the HF cache into the export directory and run `gguf-convert` again. | `NEXT.md`, `PREPARE.md`, `estate help enrich`, and the `refuse:tokenizer` text name that restore: copy tokenizer files from the HF cache snapshot for the train base, or the equivalent base checkout, into the export directory, keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`, then re-run `estate enrich gguf-convert`. The command does not download, copy, write that `.bak`, or spawn convert. READY no. |
+| beachhead matrix | Reproduce targets were one CHANGELOG slice each, so tip did not show the closed LoRA and QLoRA pairs in one place. | PR #140. [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md) lists 8 families × LoRA and QLoRA. `estate help enrich` and `estate help train` print that file. DeepSeek-R1-Distill chat and GLM-4 Chat pairs are closed. Kimi is not a row. `make qlora-journey`, `make lora-journey`, and `make seat-journey` stay print-only and print `SKIP live train`. READY no. |
 
 ## Known-good local commands
 
