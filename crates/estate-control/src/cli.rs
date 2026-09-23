@@ -494,7 +494,7 @@ pub(crate) enum EnrichCommand {
         /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. Omit for the one-epoch recipe.
         #[arg(long)]
         max_steps: Option<u32>,
-        /// Official SFT scale from LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1. Omit for the short recipe. `--max-steps` still overrides epochs.
+        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. Omit for the short recipe. `--max-steps` still overrides epochs.
         #[arg(long, default_value_t = false)]
         official_scale: bool,
         /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.
@@ -527,7 +527,7 @@ pub(crate) enum EnrichCommand {
         /// Short gauge run. Writes `max_steps` into the LLaMA-Factory recipe and the Axolotl yaml. Omit for the one-epoch recipe.
         #[arg(long)]
         max_steps: Option<u32>,
-        /// Official SFT scale from LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1. Omit for the short recipe. `--max-steps` still overrides epochs.
+        /// Official SFT scale on LLaMA-Factory cards only (`examples/train_lora/qwen3_lora_sft.yaml`: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1). Axolotl stays on its example files. Omit for the short recipe. `--max-steps` still overrides epochs.
         #[arg(long, default_value_t = false)]
         official_scale: bool,
         /// Copy instruct rows from pack source_paths under --state-dir into dataset.jsonl. Omit to keep the scaffold. Does not download.

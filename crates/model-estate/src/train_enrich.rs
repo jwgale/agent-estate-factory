@@ -101,9 +101,9 @@ pub struct EnrichJob {
     pub out_dir: PathBuf,
     /// Explicit gauge cap. LLaMA-Factory and Axolotl both write `max_steps`. `None` leaves it unset.
     pub max_steps: Option<u32>,
-    /// Official SFT scale from `examples/train_lora/qwen3_lora_sft.yaml`.
-    /// LLaMA-Factory cards write cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1.
-    /// Axolotl writes epochs 3, grad accum 8, warmup 0.1. `false` keeps the short recipe.
+    /// Official SFT scale from LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`.
+    /// `--official-scale` applies to LLaMA-Factory cards only: cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1.
+    /// Axolotl stays on its example files. `false` keeps the short LLaMA-Factory recipe.
     pub official_scale: bool,
     /// Train recipe cards set this. Other cards leave it unset.
     pub dataset: Option<DatasetMaterial>,
@@ -678,8 +678,9 @@ pub struct PrepareEnrichRequest<'a> {
     pub out_dir: &'a Path,
     /// LLaMA-Factory gauge cap. `None` leaves `max_steps` off the recipe.
     pub max_steps: Option<u32>,
-    /// Write the official SFT scale (cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1).
-    /// `false` keeps the short recipe. `--max-steps` still overrides epochs.
+    /// `--official-scale` applies to LLaMA-Factory cards only: cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1.
+    /// Axolotl stays on its example files. `false` keeps the short LLaMA-Factory recipe.
+    /// `--max-steps` still overrides epochs.
     pub official_scale: bool,
     /// Copy instruct rows from pack `source_paths` under `state_dir`.
     pub from_feed: bool,
