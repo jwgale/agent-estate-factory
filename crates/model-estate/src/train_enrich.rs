@@ -4,7 +4,8 @@
 //! does not shell out, does not POST a train job, and does not rewrite the
 //! estate. `llamafactory-qlora` writes the LLaMA-Factory QLoRA recipe the
 //! operator runs outside the factory. `axolotl-lora` writes the Axolotl YAML
-//! recipe. Unsloth stays a NEXT.md pointer, not a card.
+//! recipe. Both recipe cards write the train base, and keep the Ollama seat
+//! tag for Modelfile `FROM`. Unsloth stays a NEXT.md pointer, not a card.
 //! `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
@@ -84,7 +85,8 @@ pub struct EnrichJob {
     /// Ollama seat tag. Modelfile `FROM` uses this. It is not a Hugging Face id.
     pub base_model: String,
     /// Hugging Face repo id or a local HF weights directory. `llamafactory-qlora`
-    /// writes this to `model_name_or_path`. Absent until the pack or the binding sets it.
+    /// writes this to `model_name_or_path`. `axolotl-lora` writes it to `base_model`.
+    /// Absent until the pack or the binding sets it.
     pub train_base_model: Option<String>,
     pub purpose: String,
     pub system_text: String,
@@ -163,7 +165,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
             integrates: "axolotl train LoRA/QLoRA recipe",
-            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. Default job is train. Does not shell out. The durable recipe card is llamafactory-qlora.",
+            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. The durable recipe card is llamafactory-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -186,6 +188,10 @@ pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
 pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
 
 const TRAIN_RECIPE_DRIVERS: &[&str] = &[LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID];
+
+fn is_train_recipe_driver(id: &str) -> bool {
+    TRAIN_RECIPE_DRIVERS.contains(&id)
+}
 
 /// Smoke-scale cutoff. LLaMA-Factory SFT examples use 2048 for a longer run.
 const LLAMAFACTORY_CUTOFF_LEN: u32 = 512;
@@ -303,7 +309,7 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
                 job.kind.as_str()
             )));
         }
-        let train_owned = require_llamafactory_train_base(job)?;
+        let train_owned = require_train_base(job)?;
         let train_base = train_owned.as_str();
         let (dataset, stub) = chat_dataset_jsonl(job)?;
         let recipe = llamafactory_recipe_yaml(job, stub, train_base);
@@ -377,26 +383,22 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
                 job.kind.as_str()
             )));
         }
+        let train_owned = require_train_base(job)?;
+        let train_base = train_owned.as_str();
         let (dataset, stub) = axolotl_dataset_jsonl(job)?;
-        let yaml = axolotl_recipe_yaml(job, stub);
+        let yaml = axolotl_recipe_yaml(job, stub, train_base);
         let host = axolotl_host_note(&job.host_class_affinity);
         let data_note = axolotl_dataset_note(stub, &job.source_paths);
-        let train_note = match job.train_base_model.as_deref() {
-            Some(train) => format!(
-                "\nPack or binding train_base_model is {train}. llamafactory-qlora writes that value to model_name_or_path. This card still writes base_model as the seat tag {base}. Edit axolotl.yml before you train when that seat tag is an Ollama id.\n",
-                base = job.base_model,
-            ),
-            None => String::new(),
-        };
         let steps = format!(
-            "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, and did not rewrite the estate.\n\
+            "This step wrote axolotl.yml and dataset.jsonl. The recipe is QLoRA (`load_in_4bit: true`, `adapter: qlora`), which is Axolotl's LoRA/QLoRA class. It did not run axolotl, did not train, did not download weights, and did not rewrite the estate.\n\
              \n\
              {host}\n\
              \n\
              {data_note}\n\
              \n\
-             base_model is {base}. That is the seated model tag, the same resolution as Modelfile FROM. Axolotl expects a Hugging Face repo id or a local weights directory. If {base} is only an Ollama tag, set base_model in axolotl.yml to that repo or directory before you train. This factory did not download weights.\n\
-             {train_note}\
+             Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
+             \n\
+             Train base is {train}. axolotl.yml sets base_model to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
              \n\
              To train full LoRA on that host, set `load_in_8bit: true`, `load_in_4bit: false`, and `adapter: lora` in axolotl.yml before you run it.\n\
              \n\
@@ -404,8 +406,9 @@ impl TrainEnrichDriver for AxolotlLoraDriver {
              \n\
              axolotl train axolotl.yml\n\
              \n\
-             The copy-paste line with the config path is in NEXT.md. Ollama stays the local-run seat after the weights exist.\n",
-            base = job.base_model,
+             The copy-paste line with the config path is in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist.\n",
+            seat = job.base_model,
+            train = train_base,
         );
         Ok(DriverPrepare {
             files: vec![
@@ -447,7 +450,7 @@ pub struct EnrichPrepareDoc {
     /// Same string as `base_model`. Present so a reader can see the seat without guessing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat_tag: Option<String>,
-    /// Hugging Face repo id or local HF weights directory for `llamafactory-qlora`.
+    /// Hugging Face repo id or local HF weights directory for the train recipe cards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub train_base_model: Option<String>,
     pub purpose: String,
@@ -667,15 +670,7 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
     }
     let mut job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
     refuse_job_text(&job)?;
-    if req.driver_id == LLAMAFACTORY_QLORA_ID {
-        if let Some(raw) = job.train_base_model.clone() {
-            let canonical = canonical_train_base(&raw, &job.base_model)?;
-            job.train_base_model = Some(canonical);
-            if let Some(train_base) = job.train_base_model.as_deref() {
-                refuse_sacred_and_sku("train base", train_base)?;
-            }
-        }
-    }
+    canonicalize_recipe_train_base(req.driver_id, &mut job)?;
     refuse_sacred_and_sku("out", &req.out_dir.display().to_string())?;
     let driver = resolve_train_enrich_driver(req.driver_id)?;
     let prepared = driver.prepare(&job)?;
@@ -900,7 +895,7 @@ fn enrich_job(
 }
 
 /// Pack `train_base_model`, then `params.train_base_model` on the seated local binding.
-/// Missing is `Ok(None)`. A bare Ollama tag stored here is refused later by `llamafactory-qlora`.
+/// Missing is `Ok(None)`. A bare Ollama tag stored here is refused later by the train recipe cards.
 fn resolve_train_base_model(
     estate: &Estate,
     pack: &PackManifest,
@@ -1217,26 +1212,10 @@ fn next_markdown(
         )
     } else if driver_id == AXOLOTL_LORA_ID {
         let command = axolotl_train_command(&config);
-        let train_note = match job.train_base_model.as_deref() {
-            Some(train) => format!(
-                "\nPack or binding train_base_model is {train}. llamafactory-qlora writes that value to model_name_or_path. This card still writes base_model as the seat tag {base}. Edit axolotl.yml before you train when that seat tag is an Ollama id.\n",
-                base = job.base_model,
-            ),
-            None => String::new(),
-        };
-        let seat_paragraph = match job.train_base_model.as_deref() {
-            Some(train) => format!(
-                "Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of train base {train} plus ADAPTER for the adapter directory. The seat tag {} is the id this cell already runs. This factory does not run ollama create.",
-                job.base_model
-            ),
-            None => format!(
-                "Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on that seat (a Modelfile FROM of a merged GGUF, or FROM {} plus ADAPTER for the adapter directory), record the join below. This factory does not run ollama create.",
-                job.base_model
-            ),
-        };
+        let train_base = job.train_base_model.as_deref().unwrap_or("");
         (
             format!(
-                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it.\n\
+                "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
                  \n\
                  {command}\n\
                  \n\
@@ -1244,17 +1223,18 @@ fn next_markdown(
                  \n\
                  {dataset}\n\
                  \n\
-                 base_model in axolotl.yml is {base}. Axolotl expects a Hugging Face repo id or a local weights directory. This factory did not download weights.\n\
-                 {train_note}\
+                 Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
                  \n\
-                 {seat_paragraph}\n\
+                 Train base is {train}. axolotl.yml sets base_model to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+                 \n\
+                 Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
                  llamafactory-qlora is the durable LLaMA-Factory recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
                 dataset = axolotl_dataset_note(job.source_paths.is_empty(), &job.source_paths),
-                base = job.base_model,
-                seat_paragraph = seat_paragraph,
+                seat = job.base_model,
+                train = train_base,
             ),
             format!(
                 "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
@@ -1567,7 +1547,7 @@ fn llamafactory_save_steps(max_steps: Option<u32>) -> u32 {
     }
 }
 
-fn require_llamafactory_train_base(job: &EnrichJob) -> Result<String, ModelError> {
+fn require_train_base(job: &EnrichJob) -> Result<String, ModelError> {
     match job
         .train_base_model
         .as_deref()
@@ -1782,11 +1762,25 @@ fn yaml_field(text: &str, key: &str) -> Option<String> {
     None
 }
 
-fn refuse_llamafactory_train_record(
+fn canonicalize_recipe_train_base(driver_id: &str, job: &mut EnrichJob) -> Result<(), ModelError> {
+    if !is_train_recipe_driver(driver_id) {
+        return Ok(());
+    }
+    if let Some(raw) = job.train_base_model.clone() {
+        let canonical = canonical_train_base(&raw, &job.base_model)?;
+        job.train_base_model = Some(canonical);
+        if let Some(train_base) = job.train_base_model.as_deref() {
+            refuse_sacred_and_sku("train base", train_base)?;
+        }
+    }
+    Ok(())
+}
+
+fn refuse_recipe_train_record(
     doc: &EnrichPrepareDoc,
     prepared_dir: &Path,
 ) -> Result<(), ModelError> {
-    if doc.driver != LLAMAFACTORY_QLORA_ID {
+    if !is_train_recipe_driver(&doc.driver) {
         return Ok(());
     }
     let train = match doc
@@ -1801,17 +1795,25 @@ fn refuse_llamafactory_train_record(
         }
         None => return Err(train_base_error("", &doc.base_model)),
     };
-    for name in ["recipe.yaml", "export.yaml"] {
+    let checks: &[(&str, &str)] = if doc.driver == LLAMAFACTORY_QLORA_ID {
+        &[
+            ("recipe.yaml", "model_name_or_path"),
+            ("export.yaml", "model_name_or_path"),
+        ]
+    } else {
+        &[("axolotl.yml", "base_model")]
+    };
+    for (name, key) in checks {
         let path = prepared_dir.join(name);
         let text = std::fs::read_to_string(&path).map_err(|_| {
             ModelError::Other(format!(
                 "refuse:train-base: {name} is missing, so the train base cannot be checked"
             ))
         })?;
-        let found = yaml_field(&text, "model_name_or_path").unwrap_or_default();
+        let found = yaml_field(&text, key).unwrap_or_default();
         if found != train {
             return Err(ModelError::Other(format!(
-                "refuse:train-base: {name} model_name_or_path is '{found}'. prepare.json train_base_model is '{train}'. Seat tag '{}' is the Ollama id for Modelfile FROM. These files must name the train base.",
+                "refuse:train-base: {name} {key} is '{found}'. prepare.json train_base_model is '{train}'. Seat tag '{}' is the Ollama id for Modelfile FROM. These files must name the train base.",
                 doc.base_model
             )));
         }
@@ -1971,7 +1973,7 @@ fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str) -> String {
     )
 }
 
-fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
+fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool, train_base: &str) -> String {
     let dataset = job.out_dir.join("dataset.jsonl");
     let prepared = job.out_dir.join("dataset_prepared");
     let outputs = job.out_dir.join("outputs");
@@ -1982,9 +1984,12 @@ fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
          # driver: {driver}\n\
          # job: train\n\
          # pack: {pack}\n\
+         # seat_tag: {seat}\n\
+         # train_base: {train_comment}\n\
          # Recipe only. Cell One does not run axolotl, does not download weights, and does not rewrite the estate.\n\
-         # base_model is the seated model tag (same resolution as Modelfile FROM).\n\
-         # Axolotl expects a Hugging Face repo id or a local weights directory.\n\
+         # seat_tag is the Ollama id for Modelfile FROM.\n\
+         # base_model is the train base: a Hugging Face repo id or a local directory of HF weights.\n\
+         # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_scaffold: {scaffold}\n\
          # {host}\n\
          base_model: {base}\n\
@@ -2018,7 +2023,9 @@ fn axolotl_recipe_yaml(job: &EnrichJob, stub: bool) -> String {
         schema = PREPARE_SCHEMA,
         driver = AXOLOTL_LORA_ID,
         pack = job.pack_id,
-        base = yaml_quote(&job.base_model),
+        seat = job.base_model,
+        train_comment = train_base,
+        base = yaml_quote(train_base),
         dataset = yaml_quote(&dataset.display().to_string()),
         prepared = yaml_quote(&prepared.display().to_string()),
         outputs = yaml_quote(&outputs.display().to_string()),
@@ -2181,7 +2188,7 @@ pub fn import_prepared(
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
-    refuse_llamafactory_train_record(&doc, req.prepared_dir)?;
+    refuse_recipe_train_record(&doc, req.prepared_dir)?;
     refuse_frontier_source_on_estate(&doc.source_drivers, req.estate).map_err(map_feed)?;
     let expected = local_enrich_tag(&doc.pack_id);
     refuse_sacred_and_sku("tag", req.tag)?;
@@ -2858,7 +2865,7 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
     let proposal_path = req.prepared_dir.join(BINDING_PROPOSAL_JSON);
     let proposal = parse_binding_proposal(&proposal_path)?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
-    refuse_llamafactory_train_record(&doc, req.prepared_dir)?;
+    refuse_recipe_train_record(&doc, req.prepared_dir)?;
     if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job {
         return Err(ModelError::Other(
             "refuse:prepare: prepare.json does not match the binding proposal".into(),
@@ -4031,12 +4038,46 @@ mod tests {
     fn axolotl_lora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("axolotl");
         let pack = fixture_pack();
-        let estate = seated_estate("llama3");
+        let seated = seated_estate("llama3");
+        let blocked = root.join("seat-only");
+        let err = run(AXOLOTL_LORA_ID, &pack, &seated, &blocked, "train", "jason").unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("llama3"), "{err}");
+        assert!(!err.to_string().contains("meta-llama"), "{err}");
+        assert!(!blocked.exists());
+
+        for bad in ["./llama3", "../llama3", "llama3:latest"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(bad.trim_start_matches('.').replace(['/', ':'], "_"));
+            let err = run(
+                AXOLOTL_LORA_ID,
+                &pack,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!err.to_string().contains("meta-llama"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let estate = with_train_base(seated.clone(), "Qwen/Qwen2.5-0.5B-Instruct");
         let out = root.join("recipe");
         let doc = run(AXOLOTL_LORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
         assert_eq!(doc.job, "train");
         assert_eq!(doc.driver, AXOLOTL_LORA_ID);
         assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
         assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
         for name in [
             "axolotl.yml",
@@ -4049,7 +4090,18 @@ mod tests {
             assert!(out.join(name).is_file(), "{name}");
         }
         let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
-        assert!(yaml.contains("base_model: \"llama3\""), "{yaml}");
+        assert!(
+            yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{yaml}"
+        );
+        assert!(
+            !yaml
+                .lines()
+                .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
+            "{yaml}"
+        );
+        assert!(!yaml.contains("meta-llama"), "{yaml}");
+        assert!(yaml.contains("# seat_tag: llama3"), "{yaml}");
         assert!(yaml.contains("adapter: qlora"), "{yaml}");
         assert!(yaml.contains("load_in_4bit: true"), "{yaml}");
         assert!(yaml.contains("type: alpaca"), "{yaml}");
@@ -4072,39 +4124,133 @@ mod tests {
             next.contains(&format!("axolotl train {}", config.display())),
             "{next}"
         );
+        assert!(next.contains("Seat tag is llama3"), "{next}");
+        assert!(
+            next.contains("Train base is Qwen/Qwen2.5-0.5B-Instruct"),
+            "{next}"
+        );
+        assert!(next.contains("does not map the seat tag"), "{next}");
+        assert!(
+            next.contains("FROM an Ollama model of this same train base, plus ADAPTER"),
+            "{next}"
+        );
+        assert!(!next.contains("FROM llama3 plus ADAPTER"), "{next}");
+        assert!(!next.contains("Edit axolotl.yml"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
         assert!(next.contains("unslothai/unsloth"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("consumer-nvidia"), "{next}");
-        assert!(next.contains("FROM llama3 plus ADAPTER"), "{next}");
 
-        let trained = with_train_base(estate.clone(), "Qwen/Qwen2.5-0.5B-Instruct");
-        let trained_out = root.join("with-train-base");
-        run(
+        let relative_raw = "./weights/Qwen2.5-0.5B-Instruct";
+        let expected = canonical_train_base(relative_raw, "llama3").unwrap();
+        let relative = with_train_base(seated.clone(), relative_raw);
+        let relative_out = root.join("relative");
+        let relative_doc = run(
             AXOLOTL_LORA_ID,
             &pack,
-            &trained,
-            &trained_out,
+            &relative,
+            &relative_out,
             "train",
             "jason",
         )
         .unwrap();
-        let trained_yaml = std::fs::read_to_string(trained_out.join("axolotl.yml")).unwrap();
-        assert!(
-            trained_yaml.contains("base_model: \"llama3\""),
-            "{trained_yaml}"
+        assert_eq!(
+            relative_doc.train_base_model.as_deref(),
+            Some(expected.as_str())
         );
-        let trained_next = std::fs::read_to_string(trained_out.join("NEXT.md")).unwrap();
+        assert_eq!(relative_doc.base_model, "llama3");
+        let relative_yaml = std::fs::read_to_string(relative_out.join("axolotl.yml")).unwrap();
+        let quoted = format!("base_model: \"{expected}\"");
+        assert!(relative_yaml.contains(&quoted), "{relative_yaml}");
+        assert!(!relative_yaml.contains("./weights"), "{relative_yaml}");
+        let relative_next = std::fs::read_to_string(relative_out.join("NEXT.md")).unwrap();
+        assert!(relative_next.contains(&expected), "{relative_next}");
+
+        let mut pack_wins = pack.clone();
+        pack_wins.train_base_model = Some("Qwen/Qwen2.5-0.5B-Instruct".into());
+        let binding_other = with_train_base(seated.clone(), "mistralai/Mistral-7B-Instruct-v0.3");
+        let win_out = root.join("pack-wins");
+        run(
+            AXOLOTL_LORA_ID,
+            &pack_wins,
+            &binding_other,
+            &win_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let win_yaml = std::fs::read_to_string(win_out.join("axolotl.yml")).unwrap();
         assert!(
-            trained_next.contains(
-                "FROM an Ollama model of train base Qwen/Qwen2.5-0.5B-Instruct plus ADAPTER"
-            ),
-            "{trained_next}"
+            win_yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{win_yaml}"
         );
         assert!(
-            !trained_next.contains("FROM llama3 plus ADAPTER"),
-            "{trained_next}"
+            !win_yaml.contains("mistralai/Mistral-7B-Instruct-v0.3"),
+            "{win_yaml}"
         );
+
+        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let all_dirs: Vec<_> = drivers
+            .iter()
+            .map(|id| root.join(format!("all-{id}")))
+            .collect();
+        let all_reqs: Vec<PrepareEnrichRequest<'_>> = drivers
+            .iter()
+            .zip(all_dirs.iter())
+            .map(|(id, dir)| PrepareEnrichRequest {
+                estate: &estate,
+                pack: &pack,
+                curator: "jason",
+                driver_id: *id,
+                job: "train",
+                out_dir: dir,
+                max_steps: None,
+            })
+            .collect();
+        let all_docs = prepare_enrich_set(&all_reqs).unwrap();
+        assert_eq!(all_docs.len(), 4);
+        let all_yaml =
+            std::fs::read_to_string(root.join("all-axolotl-lora").join("axolotl.yml")).unwrap();
+        assert!(
+            all_yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{all_yaml}"
+        );
+        assert!(
+            !all_yaml
+                .lines()
+                .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
+            "{all_yaml}"
+        );
+        let all_modelfile =
+            std::fs::read_to_string(root.join("all-ollama-modelfile").join("Modelfile")).unwrap();
+        assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
+
+        let missing_dirs: Vec<_> = drivers
+            .iter()
+            .map(|id| root.join(format!("missing-{id}")))
+            .collect();
+        let missing_reqs: Vec<PrepareEnrichRequest<'_>> = drivers
+            .iter()
+            .zip(missing_dirs.iter())
+            .map(|(id, dir)| PrepareEnrichRequest {
+                estate: &seated,
+                pack: &pack,
+                curator: "jason",
+                driver_id: *id,
+                job: "train",
+                out_dir: dir,
+                max_steps: None,
+            })
+            .collect();
+        let missing_set = prepare_enrich_set(&missing_reqs).unwrap_err();
+        assert!(
+            missing_set.to_string().contains("refuse:train-base"),
+            "{missing_set}"
+        );
+        for dir in &missing_dirs {
+            assert!(!dir.exists(), "{}", dir.display());
+        }
+
         let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             prepare_md.contains("axolotl train axolotl.yml"),
@@ -4226,6 +4372,58 @@ mod tests {
         assert!(!proposal.auto_apply && !proposal.promoted && !proposal.estate_rewritten);
         assert!(proposal.local_path.ends_with("adapter_config.json"));
         assert!(out.join("binding-proposal.json").is_file());
+
+        let yaml_path = out.join("axolotl.yml");
+        let original = std::fs::read_to_string(&yaml_path).unwrap();
+        std::fs::write(
+            &yaml_path,
+            original.replace(
+                "base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"",
+                "base_model: \"llama3\"",
+            ),
+        )
+        .unwrap();
+        let tampered = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            tampered.to_string().contains("refuse:train-base"),
+            "{tampered}"
+        );
+        assert!(tampered.to_string().contains("base_model"), "{tampered}");
+        std::fs::write(&yaml_path, &original).unwrap();
+
+        let mut legacy: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap())
+                .unwrap();
+        legacy.as_object_mut().unwrap().remove("train_base_model");
+        let legacy_dir = root.join("legacy");
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        for name in ["axolotl.yml", "dataset.jsonl", "PREPARE.md", "NEXT.md"] {
+            std::fs::copy(out.join(name), legacy_dir.join(name)).unwrap();
+        }
+        std::fs::write(
+            legacy_dir.join("prepare.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
+        let legacy_import = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &legacy_dir,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            legacy_import.to_string().contains("refuse:train-base"),
+            "{legacy_import}"
+        );
 
         let gguf = root.join("merged.gguf");
         std::fs::write(&gguf, "gguf-fixture").unwrap();

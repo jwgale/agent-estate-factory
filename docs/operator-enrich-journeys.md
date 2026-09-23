@@ -211,7 +211,7 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 
 A missing adapter is `refuse:adapter` before the proposal exists. A sacred token or a hardware SKU still refuses before any train output directory. `apply --require-plan` is the only step that writes the source estate.
 
-When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` the same way. It writes `axolotl.yml` and an Alpaca `dataset.jsonl`. On the CUDA host, run `axolotl train` on that yaml. `import-trained` takes that directory too. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
+When you want a second YAML recipe or a multi-GPU run, prepare `axolotl-lora` the same way. It writes `axolotl.yml` and an Alpaca `dataset.jsonl`. `base_model` in that yaml is the train base. `prepare.json` keeps the Ollama seat tag for Modelfile `FROM` and for the adapter join (`FROM` a merged GGUF, or `FROM` an Ollama model of that train base plus `ADAPTER`). A missing train base, a bare seat tag, or a local directory named like a seat tag (`./llama3`) is `refuse:train-base` and writes nothing. `--all-drivers --job train` writes the train base into `axolotl.yml` and leaves Modelfile `FROM` as the seat tag. On the CUDA host, run `axolotl train` on that yaml. `import-trained` takes that directory too. Unsloth stays the `NEXT.md` pointer on the LLaMA-Factory card. Opt-in check, with no LLaMA-Factory process and no Axolotl process: `make train-prepare`. It prints `SKIP live train`.
 
 ## 5. Fail-closed moments
 

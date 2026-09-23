@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Axolotl train base matches the seat split
+
+- `axolotl-lora` writes `base_model` in `axolotl.yml` from the train base (pack `train_base_model`, or `params.train_base_model` on the local binding; the pack wins). That value is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. A relative directory is stored as an absolute path.
+- The Ollama seat tag stays `base_model` and `seat_tag` in `prepare.json`, and in `NEXT.md`, for Modelfile `FROM` and the adapter join. `--all-drivers --job train` writes that train base into `axolotl.yml` and leaves Modelfile `FROM` as the seat tag.
+- A missing train base, a bare Ollama tag, or a local path whose directory name is an Ollama seat tag is `refuse:train-base` and writes nothing. `import-trained` refuses the same gap, and refuses when `axolotl.yml` `base_model` does not match `prepare.json`. This factory does not map a seat tag onto a Hub repo and does not download weights.
+- Unsloth stays a `NEXT.md` pointer. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — absolute local train base
 
 - A relative LLaMA-Factory train base (`./…` or `../…`) is stored as an absolute path in `recipe.yaml`, `export.yaml`, `prepare.json`, and `NEXT.md`. A Hugging Face repo id stays as typed. The weights directory does not need to exist at prepare time.

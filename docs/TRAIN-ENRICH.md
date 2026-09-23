@@ -12,7 +12,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `ollama-modelfile` | Integration. Writes a Modelfile (`FROM` + `SYSTEM`), `PREPARE.md`, and `NEXT.md` with the exact `ollama create` line. `FROM` is the seated model. Does not shell out. |
 | `external-manifest` | Portable JSON and YAML. Base model ref, purpose, host class affinity, dataset path hints from the pack `source_paths`. No vendor lock. `NEXT.md` names the files to hand off. |
 | `llamafactory-qlora` | Primary train card. Writes `recipe.yaml` (LLaMA-Factory SFT QLoRA: `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank 16, `cutoff_len` 512, `packing: true`), `export.yaml`, `dataset_info.json`, and instruct chat `dataset.jsonl`. `model_name_or_path` is the train base. The Ollama seat tag stays separate. Default job is `train`. `NEXT.md` has `pip install llamafactory`, `pip install 'bitsandbytes>=0.49'`, `llamafactory-cli train`, and `llamafactory-cli export`. Does not shell out. |
-| `axolotl-lora` | YAML recipe for a config-driven or multi-GPU run. Writes `axolotl.yml` (QLoRA: `load_in_4bit: true`, `adapter: qlora`) and Alpaca `dataset.jsonl`. Default job is `train`. `NEXT.md` has the exact `axolotl train` line. Does not shell out. |
+| `axolotl-lora` | YAML recipe for a config-driven or multi-GPU run. Writes `axolotl.yml` (QLoRA: `load_in_4bit: true`, `adapter: qlora`) and Alpaca `dataset.jsonl`. `base_model` is the train base. The Ollama seat tag stays in `prepare.json`. Default job is `train`. `NEXT.md` has the exact `axolotl train` line. Does not shell out. |
 | `NEXT.md` | Operator card in the output directory. Artifact paths, the handoff command, the `import-prepared` or `import-trained` line, and the fail-closed reminders. |
 | `estate enrich drivers` | Prints the catalog. `live=false`. A probe here does not train. |
 | `estate enrich prepare --all-drivers` | One call. Each card the job allows writes a sibling directory. A refuse writes none of them. The enrich default skips `llamafactory-qlora` and `axolotl-lora`. `--job train` includes them. |
@@ -40,15 +40,15 @@ LLaMA-Factory already runs QLoRA supervised fine-tuning from a YAML recipe. `lla
 
 Supported train hosts for `llamafactory-qlora` and `axolotl-lora` are `consumer-nvidia` and `rented-nvidia`. `host_class_affinity` comes from the pack when that field is set, otherwise from `params.host_class` on `local_slm`, otherwise from the pack `host_class`. An `apple-silicon` affinity still prepares. `NEXT.md` says the LLaMA-Factory card expects CUDA LLaMA-Factory. This factory does not write an MLX trainer.
 
-The seat tag and the LLaMA-Factory train base are two fields.
+The seat tag and the train base are two fields. `llamafactory-qlora` and `axolotl-lora` both use that split.
 
 The seat tag is the Ollama id for Modelfile `FROM`. Resolution: a pack `model_hint` that is already a model tag, otherwise `params.model` on the local binding. `prepare.json` stores it as `base_model` and `seat_tag`. The binding id `local_slm` is `refuse:base-model` and writes nothing.
 
-The train base is `model_name_or_path` in `recipe.yaml` and `export.yaml`. It is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights (an absolute path, or a path that starts with `./` or `../`). Set it on the pack as `train_base_model`, or on the local binding as `params.train_base_model`. The pack field wins when both are set. A relative directory is stored as an absolute path in `recipe.yaml`, `export.yaml`, `prepare.json`, and `NEXT.md`. LLaMA-Factory resolves a relative `model_name_or_path` from the process working directory, so the recipe keeps the absolute path. The directory does not need to exist at prepare time. `prepare.json` stores the resolved value as `train_base_model`. `template` is inferred from that train base. A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct` with template `qwen`. That repo id is an example an operator supplies. This factory does not turn the seat tag `llama3` into a Llama-3 Hub repo, and it does not download weights.
+The train base is `model_name_or_path` in `recipe.yaml` and `export.yaml`, and `base_model` in `axolotl.yml`. It is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights (an absolute path, or a path that starts with `./` or `../`). Set it on the pack as `train_base_model`, or on the local binding as `params.train_base_model`. The pack field wins when both are set. A relative directory is stored as an absolute path in `recipe.yaml`, `export.yaml`, `axolotl.yml`, `prepare.json`, and `NEXT.md`. LLaMA-Factory resolves a relative `model_name_or_path` from the process working directory, and Axolotl resolves a relative `base_model` the same way, so both recipes keep the absolute path. The directory does not need to exist at prepare time. `prepare.json` stores the resolved value as `train_base_model`. On the LLaMA-Factory card, `template` is inferred from that train base. A 5090 smoke seated `llama3` and trained `Qwen/Qwen2.5-0.5B-Instruct` with template `qwen`. That repo id is an example an operator supplies. This factory does not turn the seat tag `llama3` into a Llama-3 Hub repo, and it does not download weights.
 
-A missing train base, a bare Ollama tag (`llama3`, `llama3:latest`), or a local path whose directory name is an Ollama seat tag (`./llama3`, `../llama3`) is `refuse:train-base` and writes nothing. `--all-drivers --job train` refuses the whole set in that case, so no sibling directory is left behind.
+A missing train base, a bare Ollama tag (`llama3`, `llama3:latest`), or a local path whose directory name is an Ollama seat tag (`./llama3`, `../llama3`) is `refuse:train-base` and writes nothing. That refuse applies to `llamafactory-qlora` and to `axolotl-lora`. `--all-drivers --job train` refuses the whole set in that case, so no sibling directory is left behind.
 
-`base_model` in `axolotl.yml` stays the seat tag. Axolotl still expects a Hugging Face repo id or a local weights directory. When a train base is set, `NEXT.md` names it and tells you to edit `axolotl.yml` before you train. This card does not copy the train base into the Axolotl file.
+`base_model` in `axolotl.yml` is that same train base. `prepare.json` `base_model` and `seat_tag` stay the Ollama id for Modelfile `FROM` and for the adapter join. `NEXT.md` names the seat tag and the train base.
 
 On `llamafactory-qlora`, `dataset.jsonl` is instruct chat JSONL (`messages` of `role` and `content`). `dataset_info.json` marks it sharegpt so LLaMA-Factory applies the recipe `template`. That same chat template is what you seat. On `axolotl-lora`, `dataset.jsonl` is Alpaca JSONL (`instruction`, `input`, `output`), which Axolotl reads with `type: alpaca` and `ds_type: json`. When the pack has `source_paths`, each row names one of those paths. The factory does not read or download the files. When `source_paths` is empty, the file is a three-row stub and `NEXT.md` says to replace the rows. An empty source path string is `refuse:dataset`.
 
@@ -94,7 +94,7 @@ The train writes the LoRA adapter under `outputs/` (`adapter_config.json` and th
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. `NEXT.md` points at the Unsloth docs. This card does not call Unsloth and does not write a script.
 
-`axolotl-lora` is the same loop with a YAML recipe. Use it when you want a config file or a multi-GPU run.
+`axolotl-lora` is the same loop with a YAML recipe. Use it when you want a config file or a multi-GPU run. `base_model` in `axolotl.yml` is the train base. The seat tag stays in `prepare.json` for Ollama seating.
 
 ```bash
 estate enrich prepare \
@@ -107,7 +107,7 @@ estate enrich prepare \
 axolotl train .cell/enrich/<pack-id>/axolotl-lora/axolotl.yml
 ```
 
-That directory holds `axolotl.yml` and an Alpaca `dataset.jsonl`. `val_set_size` is `0.0` so a short scaffold does not try to split an eval set. Axolotl writes the adapter under `output_dir` in the yaml.
+That directory holds `axolotl.yml` and an Alpaca `dataset.jsonl`. `val_set_size` is `0.0` so a short scaffold does not try to split an eval set. Axolotl writes the adapter under `output_dir` in the yaml. `prepare.json` stores `base_model` and `seat_tag` as the Ollama id, and `train_base_model` as the value written to `base_model` in the yaml. After training, seat tag `cell-enrich-{pack_id}` on Ollama with `FROM` a merged GGUF, or `FROM` an Ollama model of this same train base plus `ADAPTER` for the adapter directory. The seat tag already on the cell is the id Ollama is running. This factory does not run `ollama create`.
 
 When the adapter directory or a GGUF exists, record the join. The prepared directory is the one you trained from.
 
@@ -134,7 +134,7 @@ estate apply --estate .cell/enrich-stage/staged-estate.yaml --state-dir .cell --
 make train-prepare
 ```
 
-Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`). A copy with only `params.model: llama3` is `refuse:train-base` and writes nothing. The success copy also sets `params.train_base_model` to `Qwen/Qwen2.5-0.5B-Instruct`. That prepare asserts `recipe.yaml` (`template: qwen`, `quantization_method: bnb`, no `max_steps`), the chat `dataset.jsonl`, the `llamafactory-cli train` line and the bitsandbytes install line in `NEXT.md`, and `prepare.json` with `job` `train`, `base_model` `llama3`, and that train base. A second prepare with `--max-steps 10` writes `max_steps` and `save_steps` 10. `axolotl.yml` still has an indented datasets list and still uses the seat tag. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run LLaMA-Factory or Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+Uses `examples/fixtures/specialist-overnight.pack.json`. Copies `examples/estate.yaml` into `/tmp/cell-one-train-prepare` (or `$TMPDIR`). A copy with only `params.model: llama3` is `refuse:train-base` and writes nothing. The success copy also sets `params.train_base_model` to `Qwen/Qwen2.5-0.5B-Instruct`. That prepare asserts `recipe.yaml` (`template: qwen`, `quantization_method: bnb`, no `max_steps`), the chat `dataset.jsonl`, the `llamafactory-cli train` line and the bitsandbytes install line in `NEXT.md`, and `prepare.json` with `job` `train`, `base_model` `llama3`, and that train base. A second prepare with `--max-steps 10` writes `max_steps` and `save_steps` 10. `axolotl.yml` keeps an indented datasets list and sets `base_model` to that same train base. `prepare.json` for that card keeps `base_model` `llama3` and `seat_tag` `llama3`. A seat-only copy is `refuse:train-base` for `axolotl-lora` too. `--all-drivers --job train` writes the train base into `axolotl.yml` and leaves Modelfile `FROM` as `llama3`. A stock estate is `refuse:base-model` and writes nothing. `--job enrich` is `refuse:job` and writes nothing. `import-trained` on a fixture adapter directory writes the proposal and does not apply. Leaves `examples/estate.yaml` unchanged. Prints `SKIP live train`. Does not run LLaMA-Factory or Axolotl. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 ```bash
 estate enrich from-pack \
@@ -249,7 +249,7 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | Operator path is missing or not a file | `refuse:path` |
 | Estate has no `local_slm` seat | `refuse:binding` |
 | `FROM` would be a binding id, a driver id, or empty | `refuse:base-model` |
-| `llamafactory-qlora` has no train base, or the value is still a bare Ollama tag, or `recipe.yaml` / `export.yaml` `model_name_or_path` does not match `prepare.json` `train_base_model` | `refuse:train-base` |
+| `llamafactory-qlora` or `axolotl-lora` has no train base, or the value is a bare Ollama tag or a seat-looking local leaf, or `model_name_or_path` / `axolotl.yml` `base_model` does not match `prepare.json` `train_base_model` | `refuse:train-base` |
 | `--max-steps 0` | `refuse:max-steps` |
 | `binding-proposal.json` is missing | `refuse:missing-proposal` |
 | Proposal schema, flags, or curator are wrong | `refuse:proposal` or `refuse:curator` |
