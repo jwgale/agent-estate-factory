@@ -2,6 +2,15 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — LLaMA-Factory LoRA without quantization
+
+- `llamafactory-lora` is a `TrainEnrichDriver` card beside `llamafactory-qlora`. `estate enrich prepare --driver llamafactory-lora` writes the same files (`recipe.yaml`, `export.yaml`, `dataset_info.json`, instruct chat `dataset.jsonl`). The recipe is SFT LoRA: `finetuning_type: lora`, no `quantization_bit`, no `quantization_method`, `lora_rank: 8`, `lora_alpha: 16`, `packing: false`. Rank 8 matches LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. `cutoff_len` stays 512. `NEXT.md` names the official longer values (`cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, `warmup_ratio` 0.1).
+- Select QLoRA with `--driver llamafactory-qlora`. That card still writes `quantization_bit: 4`, `quantization_method: bnb`, and rank 16, and `NEXT.md` still installs `pip install 'bitsandbytes>=0.49'`. The LoRA card's `NEXT.md` says that path does not require bitsandbytes.
+- `template` is inferred by scanning path segments of the train base on both LLaMA-Factory cards, starting at the last segment. A leaf such as `weights` or an HF snapshot hash uses the nearest ancestor that names a family. A Qwen3 name that contains `instruct` and does not contain `thinking`, or that contains `nothink`, uses `qwen3_nothink` (`Qwen/Qwen3-4B-Instruct-2507`). Other Qwen3 names use `qwen3`. Older Qwen names stay `qwen`.
+- `--from-feed` applies to `llamafactory-lora` the same way it applies to `llamafactory-qlora` and `axolotl-lora`. Default prepare still writes a scaffold (or a stub when `source_paths` is empty). `PREPARE.md` and `NEXT.md` on the LoRA card use that dataset honesty note and name `refuse:dataset`.
+- `export.yaml` still omits quantization on both cards. `refuse:train-base` and the seat-tag versus train-base split are unchanged, and they apply to `llamafactory-lora`. `import-trained` accepts that prepare. `--all-drivers --job train` writes the LoRA directory beside QLoRA.
+- The factory does not run `llamafactory-cli`. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — `--from-feed` checks the raw record, pins the opened file, and caps bytes
 
 - A line with `kind` or `object_class` is classified before ShareGPT or Alpaca dispatch. A frontier event wrapped as `messages` or `instruction` is `refuse:frontier-invent` when the estate has no frontier binding. Sacred, SKU, and raw-secret checks see the raw record, including fields that are not copied into the row.

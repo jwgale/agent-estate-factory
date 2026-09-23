@@ -2,10 +2,12 @@
 //!
 //! The local runtime stays a seat. Ollama is today's entrant. This module
 //! does not shell out, does not POST a train job, and does not rewrite the
-//! estate. `llamafactory-qlora` writes the LLaMA-Factory QLoRA recipe the
-//! operator runs outside the factory. `axolotl-lora` writes the Axolotl YAML
-//! recipe. Both recipe cards write the train base, and keep the Ollama seat
-//! tag for Modelfile `FROM`. Unsloth stays a NEXT.md pointer, not a card.
+//! estate. `llamafactory-lora` writes the LLaMA-Factory LoRA recipe (16-bit
+//! base, no quantization). `llamafactory-qlora` writes the QLoRA recipe.
+//! The operator runs either recipe outside the factory. `axolotl-lora` writes
+//! the Axolotl YAML recipe. Every recipe card writes the train base, and keeps
+//! the Ollama seat tag for Modelfile `FROM`. Unsloth stays a NEXT.md pointer,
+//! not a card.
 //! `external-manifest` stays the vendor-neutral hatch.
 //! Floor and estate-control dispatch do not match driver ids.
 
@@ -84,8 +86,9 @@ pub struct EnrichJob {
     pub pack_id: String,
     /// Ollama seat tag. Modelfile `FROM` uses this. It is not a Hugging Face id.
     pub base_model: String,
-    /// Hugging Face repo id or a local HF weights directory. `llamafactory-qlora`
-    /// writes this to `model_name_or_path`. `axolotl-lora` writes it to `base_model`.
+    /// Hugging Face repo id or a local HF weights directory. `llamafactory-lora`
+    /// and `llamafactory-qlora` write this to `model_name_or_path`.
+    /// `axolotl-lora` writes it to `base_model`.
     /// Absent until the pack or the binding sets it.
     pub train_base_model: Option<String>,
     pub purpose: String,
@@ -156,18 +159,29 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: LLAMAFACTORY_QLORA_ID,
             status: "integration",
             integrates: "llamafactory-cli train QLoRA recipe",
-            notes: "Primary train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. Train hosts are consumer-nvidia and rented-nvidia.",
+            notes: "QLoRA train card. Writes recipe.yaml (LLaMA-Factory SFT QLoRA, 4-bit bitsandbytes). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. 16-bit LoRA is llamafactory-lora. Train hosts are consumer-nvidia and rented-nvidia.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
-        build: || Box::new(LlamaFactoryQloraDriver),
+        build: || Box::new(LlamaFactoryDriver { method: LlamaFactoryMethod::Qlora }),
+    },
+    RegisteredDriver {
+        card: TrainEnrichCard {
+            driver_id: LLAMAFACTORY_LORA_ID,
+            status: "integration",
+            integrates: "llamafactory-cli train LoRA recipe",
+            notes: "LoRA train card. Writes recipe.yaml (LLaMA-Factory SFT LoRA, no quantization, rank 8). model_name_or_path is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. Does not require bitsandbytes. Train hosts are consumer-nvidia and rented-nvidia.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(LlamaFactoryDriver { method: LlamaFactoryMethod::Lora }),
     },
     RegisteredDriver {
         card: TrainEnrichCard {
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
             integrates: "axolotl train LoRA/QLoRA recipe",
-            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. The durable recipe card is llamafactory-qlora.",
+            notes: "YAML recipe for a config-driven or multi-GPU run. Writes axolotl.yml and dataset.jsonl. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. LLaMA-Factory LoRA is llamafactory-lora. LLaMA-Factory QLoRA is llamafactory-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -179,17 +193,73 @@ struct OllamaModelfileDriver;
 
 struct ExternalManifestDriver;
 
-struct LlamaFactoryQloraDriver;
+struct LlamaFactoryDriver {
+    method: LlamaFactoryMethod,
+}
 
 struct AxolotlLoraDriver;
 
-/// Primary train card. LLaMA-Factory already trains QLoRA from a YAML recipe. This id writes that recipe.
+/// QLoRA train card. LLaMA-Factory already trains 4-bit QLoRA from a YAML recipe. This id writes that recipe.
 pub const LLAMAFACTORY_QLORA_ID: &str = "llamafactory-qlora";
+
+/// LoRA train card. LLaMA-Factory already trains unquantized LoRA from a YAML recipe. This id writes that recipe.
+pub const LLAMAFACTORY_LORA_ID: &str = "llamafactory-lora";
 
 /// YAML train card. Axolotl already trains from a config. This id writes that recipe.
 pub const AXOLOTL_LORA_ID: &str = "axolotl-lora";
 
-const TRAIN_RECIPE_DRIVERS: &[&str] = &[LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID];
+/// Which LLaMA-Factory PEFT recipe a card writes. Selection is the driver id.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LlamaFactoryMethod {
+    /// 4-bit bitsandbytes QLoRA (`quantization_bit: 4`, `quantization_method: bnb`).
+    Qlora,
+    /// 16-bit LoRA. The recipe omits quantization.
+    Lora,
+}
+
+impl LlamaFactoryMethod {
+    fn driver_id(self) -> &'static str {
+        match self {
+            Self::Qlora => LLAMAFACTORY_QLORA_ID,
+            Self::Lora => LLAMAFACTORY_LORA_ID,
+        }
+    }
+
+    /// Official `examples/train_lora/qwen3_lora_sft.yaml` uses rank 8.
+    /// The QLoRA card keeps rank 16.
+    fn lora_rank(self) -> u32 {
+        match self {
+            Self::Qlora => 16,
+            Self::Lora => 8,
+        }
+    }
+
+    /// LLaMA-Factory uses `lora_rank * 2` when `lora_alpha` is unset.
+    fn lora_alpha(self) -> u32 {
+        self.lora_rank() * 2
+    }
+
+    /// The LoRA quickstart leaves `packing` unset. LLaMA-Factory's default is false.
+    /// QLoRA keeps packing on.
+    fn packing(self) -> bool {
+        matches!(self, Self::Qlora)
+    }
+}
+
+fn llamafactory_method(driver_id: &str) -> Option<LlamaFactoryMethod> {
+    match driver_id {
+        LLAMAFACTORY_QLORA_ID => Some(LlamaFactoryMethod::Qlora),
+        LLAMAFACTORY_LORA_ID => Some(LlamaFactoryMethod::Lora),
+        _ => None,
+    }
+}
+
+fn is_llamafactory_driver(id: &str) -> bool {
+    llamafactory_method(id).is_some()
+}
+
+const TRAIN_RECIPE_DRIVERS: &[&str] =
+    &[LLAMAFACTORY_QLORA_ID, LLAMAFACTORY_LORA_ID, AXOLOTL_LORA_ID];
 
 fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
@@ -197,8 +267,6 @@ fn is_train_recipe_driver(id: &str) -> bool {
 
 /// Smoke-scale cutoff. LLaMA-Factory SFT examples use 2048 for a longer run.
 const LLAMAFACTORY_CUTOFF_LEN: u32 = 512;
-const LLAMAFACTORY_LORA_RANK: u32 = 16;
-const LLAMAFACTORY_LORA_ALPHA: u32 = 32;
 const LLAMAFACTORY_SEED: u32 = 42;
 const LLAMAFACTORY_DATASET_NAME: &str = "cell_enrich";
 
@@ -295,9 +363,9 @@ impl TrainEnrichDriver for ExternalManifestDriver {
     }
 }
 
-impl TrainEnrichDriver for LlamaFactoryQloraDriver {
+impl TrainEnrichDriver for LlamaFactoryDriver {
     fn id(&self) -> &'static str {
-        LLAMAFACTORY_QLORA_ID
+        self.method.driver_id()
     }
 
     fn status(&self) -> &'static str {
@@ -305,9 +373,10 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
     }
 
     fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        let driver_id = self.method.driver_id();
         if job.kind != EnrichJobKind::Train {
             return Err(ModelError::Other(format!(
-                "refuse:job: {LLAMAFACTORY_QLORA_ID} prepares train; got {}",
+                "refuse:job: {driver_id} prepares train; got {}",
                 job.kind.as_str()
             )));
         }
@@ -315,49 +384,10 @@ impl TrainEnrichDriver for LlamaFactoryQloraDriver {
         let train_base = train_owned.as_str();
         let data = require_dataset(job)?;
         let dataset = data.chat_jsonl.clone();
-        let recipe = llamafactory_recipe_yaml(job, &data.mode, train_base);
-        let export = llamafactory_export_yaml(job, train_base);
+        let recipe = llamafactory_recipe_yaml(job, &data.mode, train_base, self.method);
+        let export = llamafactory_export_yaml(job, train_base, driver_id);
         let info = llamafactory_dataset_info();
-        let host = llamafactory_host_note(&job.host_class_affinity);
-        let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
-        let template = llamafactory_template(train_base);
-        let gauge = llamafactory_gauge_note(job.max_steps);
-        let steps = format!(
-            "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`). It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
-             \n\
-             {host}\n\
-             \n\
-             This card expects CUDA LLaMA-Factory.\n\
-             \n\
-             {data_note}\n\
-             \n\
-             Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
-             \n\
-             Train base is {train}. recipe.yaml and export.yaml set model_name_or_path to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
-             \n\
-             template is {template}. That hint comes from the train base name. Confirm it matches the model. Use that same chat template when you seat the model.\n\
-             \n\
-             {bits}\n\
-             \n\
-             {gauge}\n\
-             \n\
-             A later preference stage is a recipe flag (`stage: dpo` or `stage: orpo`, with `ranking: true` in dataset_info.json). This card does not build that dataset.\n\
-             \n\
-             From this directory, after LLaMA-Factory is installed on a CUDA host:\n\
-             \n\
-             {install}\n\
-             llamafactory-cli train recipe.yaml\n\
-             llamafactory-cli export export.yaml\n\
-             \n\
-             The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
-            rank = LLAMAFACTORY_LORA_RANK,
-            cutoff = LLAMAFACTORY_CUTOFF_LEN,
-            seat = job.base_model,
-            train = train_base,
-            template = template,
-            bits = llamafactory_bitsandbytes_note(),
-            install = llamafactory_install_lines(),
-        );
+        let steps = llamafactory_prepare_steps(self.method, job, train_base, data);
         Ok(DriverPrepare {
             files: vec![
                 ("recipe.yaml".into(), recipe),
@@ -679,7 +709,7 @@ pub fn prepare_enrich_set(
             .any(|req| is_train_recipe_driver(req.driver_id))
     {
         return Err(ModelError::Other(
-            "refuse:dataset: --from-feed applies to llamafactory-qlora and axolotl-lora. This prepare has no train recipe card. Omit --from-feed to keep the other cards.".into(),
+            "refuse:dataset: --from-feed applies to llamafactory-lora, llamafactory-qlora, and axolotl-lora. This prepare has no train recipe card. Omit --from-feed to keep the other cards.".into(),
         ));
     }
     let mut drivers = BTreeSet::new();
@@ -1220,7 +1250,7 @@ fn next_markdown(
             ),
             "Point --path at the weights file you loaded. Until then, manifest.json is the portable hatch.".to_string(),
         )
-    } else if driver_id == LLAMAFACTORY_QLORA_ID {
+    } else if let Some(method) = llamafactory_method(driver_id) {
         let recipe = out_dir.join("recipe.yaml");
         let export = out_dir.join("export.yaml");
         let train_command = llamafactory_train_command(&recipe);
@@ -1253,6 +1283,8 @@ fn next_markdown(
                  \n\
                  template in recipe.yaml and export.yaml is {template}. That hint comes from the train base name. Confirm it matches the model. Train and seat share the same chat template. When you seat on Ollama, the Modelfile TEMPLATE (or the GGUF chat template) must be that same chat format. This factory does not write a second template.\n\
                  \n\
+                 {shape}\n\
+                 \n\
                  {gauge}\n\
                  \n\
                  Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, FROM must be an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
@@ -1269,15 +1301,16 @@ fn next_markdown(
                  https://github.com/unslothai/unsloth\n\
                  \n\
                  axolotl-lora is the YAML recipe when you want a config-driven or multi-GPU run. This card does not call Axolotl.\n",
-                host = llamafactory_host_note(&job.host_class_affinity),
+                host = llamafactory_host_note(driver_id, &job.host_class_affinity),
                 dataset = train_dataset_blurb(job, CHAT_DATASET_SHAPE),
                 seat = job.base_model,
                 train = train_base,
                 template = template,
                 train_command = train_command,
                 export_command = export_command,
-                install = llamafactory_install_lines(),
-                bits = llamafactory_bitsandbytes_note(),
+                install = llamafactory_install_lines(method),
+                bits = llamafactory_bitsandbytes_note(method),
+                shape = llamafactory_shape_note(method),
                 gauge = llamafactory_gauge_note(job.max_steps),
             ),
             format!(
@@ -1305,7 +1338,7 @@ fn next_markdown(
                  \n\
                  Axolotl writes the adapter under the output_dir in axolotl.yml. Ollama stays the local-run seat. After you create tag {tag} on Ollama, record the join below. Use a Modelfile FROM of a merged GGUF, or FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
-                 llamafactory-qlora is the durable LLaMA-Factory recipe. This card does not call LLaMA-Factory.\n\
+                 llamafactory-lora is the unquantized LLaMA-Factory LoRA recipe. llamafactory-qlora is the 4-bit QLoRA recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n",
                 host = axolotl_host_note(&job.host_class_affinity),
                 dataset = train_dataset_blurb(job, ALPACA_DATASET_SHAPE),
@@ -1406,8 +1439,8 @@ fn axolotl_host_note(affinity: &str) -> String {
     cuda_train_host_note(AXOLOTL_LORA_ID, affinity, "axolotl train")
 }
 
-fn llamafactory_host_note(affinity: &str) -> String {
-    cuda_train_host_note(LLAMAFACTORY_QLORA_ID, affinity, "llamafactory-cli train")
+fn llamafactory_host_note(driver_id: &str, affinity: &str) -> String {
+    cuda_train_host_note(driver_id, affinity, "llamafactory-cli train")
 }
 
 const CHAT_DATASET_SHAPE: &str =
@@ -2298,12 +2331,95 @@ fn refuse_hydrated_text(relative: &str, line_no: usize, row: &HydratedRow) -> Re
 
 const LLAMAFACTORY_SAVE_STEPS: u32 = 50;
 
-fn llamafactory_install_lines() -> &'static str {
-    "pip install llamafactory\npip install 'bitsandbytes>=0.49'"
+fn llamafactory_install_lines(method: LlamaFactoryMethod) -> &'static str {
+    match method {
+        LlamaFactoryMethod::Qlora => "pip install llamafactory\npip install 'bitsandbytes>=0.49'",
+        LlamaFactoryMethod::Lora => "pip install llamafactory",
+    }
 }
 
-fn llamafactory_bitsandbytes_note() -> &'static str {
-    "QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. Install bitsandbytes in that same environment (`pip install 'bitsandbytes>=0.49'`). On a consumer RTX host, keep the torch CUDA wheel you already installed. A consumer RTX smoke on CUDA 12.8 used torch 2.11.0+cu128 and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. This factory does not install either package."
+fn llamafactory_bitsandbytes_note(method: LlamaFactoryMethod) -> &'static str {
+    match method {
+        LlamaFactoryMethod::Qlora => "QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. Install bitsandbytes in that same environment (`pip install 'bitsandbytes>=0.49'`). On a consumer RTX host, keep the torch CUDA wheel you already installed. A consumer RTX smoke on CUDA 12.8 used torch 2.11.0+cu128 and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. This factory does not install either package. 16-bit LoRA with no quantization is `--driver llamafactory-lora`. That path does not require bitsandbytes.",
+        LlamaFactoryMethod::Lora => "This LoRA path does not require bitsandbytes. recipe.yaml leaves the base at 16-bit and omits quantization. QLoRA (`--driver llamafactory-qlora`) still requires bitsandbytes. This factory does not install LLaMA-Factory.",
+    }
+}
+
+fn llamafactory_shape_note(method: LlamaFactoryMethod) -> String {
+    match method {
+        LlamaFactoryMethod::Qlora => format!(
+            "This card is 4-bit QLoRA (`quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {}, packing on).",
+            method.lora_rank()
+        ),
+        LlamaFactoryMethod::Lora => format!(
+            "This card is 16-bit LoRA. `lora_rank` is {}, matching LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. `lora_alpha` is {} (`lora_rank` times 2, the value LLaMA-Factory uses when `lora_alpha` is unset). `packing` is false, matching that file's unset packing (the LLaMA-Factory default). `cutoff_len` stays {cutoff}, `num_train_epochs` stays 1.0, `gradient_accumulation_steps` stays 4, and `warmup_ratio` stays 0.03 so a first prepare stays short. That official file uses `cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, and `warmup_ratio` 0.1. Raise those fields before a longer run.",
+            method.lora_rank(),
+            method.lora_alpha(),
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        ),
+    }
+}
+
+fn llamafactory_prepare_steps(
+    method: LlamaFactoryMethod,
+    job: &EnrichJob,
+    train_base: &str,
+    data: &DatasetMaterial,
+) -> String {
+    let driver_id = method.driver_id();
+    let host = llamafactory_host_note(driver_id, &job.host_class_affinity);
+    let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
+    let template = llamafactory_template(train_base);
+    let recipe_line = match method {
+        LlamaFactoryMethod::Qlora => format!(
+            "The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`).",
+            rank = method.lora_rank(),
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        ),
+        LlamaFactoryMethod::Lora => format!(
+            "The recipe is SFT LoRA (`stage: sft`, `finetuning_type: lora`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: false`). It omits quantization_bit and quantization_method.",
+            rank = method.lora_rank(),
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        ),
+    };
+    format!(
+        "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. {recipe_line} It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
+         \n\
+         {host}\n\
+         \n\
+         This card expects CUDA LLaMA-Factory.\n\
+         \n\
+         {data_note}\n\
+         \n\
+         Seat tag is {seat}. That is the Ollama id for Modelfile FROM. It comes from params.model on the local binding, or from a pack model_hint that is already a model tag.\n\
+         \n\
+         Train base is {train}. recipe.yaml and export.yaml set model_name_or_path to that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
+         \n\
+         template is {template}. That hint comes from the train base name. Confirm it matches the model. Use that same chat template when you seat the model.\n\
+         \n\
+         {bits}\n\
+         \n\
+         {shape}\n\
+         \n\
+         {gauge}\n\
+         \n\
+         A later preference stage is a recipe flag (`stage: dpo` or `stage: orpo`, with `ranking: true` in dataset_info.json). This card does not build that dataset.\n\
+         \n\
+         From this directory, after LLaMA-Factory is installed on a CUDA host:\n\
+         \n\
+         {install}\n\
+         llamafactory-cli train recipe.yaml\n\
+         llamafactory-cli export export.yaml\n\
+         \n\
+         The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
+        seat = job.base_model,
+        train = train_base,
+        template = template,
+        bits = llamafactory_bitsandbytes_note(method),
+        shape = llamafactory_shape_note(method),
+        gauge = llamafactory_gauge_note(job.max_steps),
+        install = llamafactory_install_lines(method),
+    )
 }
 
 fn llamafactory_gauge_note(max_steps: Option<u32>) -> String {
@@ -2457,6 +2573,9 @@ fn leaf_is_seat_tag(path: &str, seat: &str) -> bool {
         return true;
     }
     let folded = leaf.to_ascii_lowercase();
+    if leaf_is_layout_container(&folded) {
+        return false;
+    }
     if !looks_like_bare_seat_tag(&folded) {
         return false;
     }
@@ -2471,6 +2590,16 @@ fn seat_leaf_error(raw: &str, seat: &str) -> ModelError {
     ModelError::Other(format!(
         "refuse:train-base: '{raw}' ends in '{leaf}', which looks like an Ollama seat tag. Seat tag '{seat}' is the Ollama id for Modelfile FROM. Set pack field train_base_model, or params.train_base_model on the local binding, to a Hugging Face repo id (namespace/name) or to a local directory of HF weights. This factory does not map the seat tag onto a Hub repo and does not download weights."
     ))
+}
+
+/// HF cache and export layouts put the checkpoint name above the file leaf.
+/// `weights`, `snapshots`, and a hex commit id are not Ollama seat tags.
+/// A leaf that equals the seated tag (`llama3`, `./weights/llama3`) still refuses.
+fn leaf_is_layout_container(folded: &str) -> bool {
+    if matches!(folded, "weights" | "snapshots") {
+        return true;
+    }
+    folded.len() >= 12 && folded.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn looks_like_bare_seat_tag(value: &str) -> bool {
@@ -2569,7 +2698,7 @@ fn refuse_recipe_train_record(
         }
         None => return Err(train_base_error("", &doc.base_model)),
     };
-    let checks: &[(&str, &str)] = if doc.driver == LLAMAFACTORY_QLORA_ID {
+    let checks: &[(&str, &str)] = if is_llamafactory_driver(&doc.driver) {
         &[
             ("recipe.yaml", "model_name_or_path"),
             ("export.yaml", "model_name_or_path"),
@@ -2595,24 +2724,62 @@ fn refuse_recipe_train_record(
     Ok(())
 }
 
-/// Chat template hint from the train base name. Confirm it before train. Seat the same chat format.
-fn llamafactory_template(train_base: &str) -> &'static str {
-    let name = train_base.to_ascii_lowercase();
-    if name.contains("qwen3") {
-        "qwen3"
-    } else if name.contains("qwen") {
-        "qwen"
-    } else if name.contains("llama3") || name.contains("llama-3") {
-        "llama3"
-    } else if name.contains("mistral") {
-        "mistral"
-    } else if name.contains("gemma") {
-        "gemma"
-    } else if name.contains("phi") {
-        "phi"
+fn train_base_segments(train_base: &str) -> Vec<&str> {
+    let parts: Vec<&str> = train_base
+        .split(['/', '\\'])
+        .filter(|part| !part.trim().is_empty())
+        .collect();
+    if parts.is_empty() {
+        vec![train_base]
     } else {
-        "default"
+        parts
     }
+}
+
+/// Non-thinking Qwen3 instruct checkpoints use `qwen3_nothink`.
+/// `Qwen/Qwen3-4B-Instruct-2507` is that shape in `examples/train_lora/qwen3_lora_sft.yaml`.
+/// A name that contains `thinking` stays on `qwen3`. A name that contains `nothink` uses `qwen3_nothink`.
+fn qwen3_uses_nothink(name: &str) -> bool {
+    if name.contains("nothink") {
+        return true;
+    }
+    name.contains("instruct") && !name.contains("thinking")
+}
+
+/// Family marker on one path segment. `None` when that segment names no known family.
+fn template_for_segment(segment: &str) -> Option<&'static str> {
+    let name = segment.to_ascii_lowercase();
+    if name.contains("qwen3") {
+        Some(if qwen3_uses_nothink(&name) {
+            "qwen3_nothink"
+        } else {
+            "qwen3"
+        })
+    } else if name.contains("qwen") {
+        Some("qwen")
+    } else if name.contains("llama3") || name.contains("llama-3") {
+        Some("llama3")
+    } else if name.contains("mistral") {
+        Some("mistral")
+    } else if name.contains("gemma") {
+        Some("gemma")
+    } else if name.contains("phi") {
+        Some("phi")
+    } else {
+        None
+    }
+}
+
+/// Chat template hint from the train base path. Confirm it before train. Seat the same chat format.
+/// The last segment wins when it names a family. A leaf such as `weights` or an HF snapshot hash
+/// walks toward the root until a segment names one. Unknown paths stay `default`.
+fn llamafactory_template(train_base: &str) -> &'static str {
+    for segment in train_base_segments(train_base).into_iter().rev() {
+        if let Some(template) = template_for_segment(segment) {
+            return template;
+        }
+    }
+    "default"
 }
 
 fn llamafactory_dataset_info() -> String {
@@ -2622,10 +2789,18 @@ fn llamafactory_dataset_info() -> String {
     )
 }
 
-fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> String {
+fn llamafactory_recipe_yaml(
+    job: &EnrichJob,
+    mode: &str,
+    train_base: &str,
+    method: LlamaFactoryMethod,
+) -> String {
     let template = llamafactory_template(train_base);
     let outputs = job.out_dir.join("outputs");
-    let host = yaml_comment_line(&llamafactory_host_note(&job.host_class_affinity));
+    let host = yaml_comment_line(&llamafactory_host_note(
+        method.driver_id(),
+        &job.host_class_affinity,
+    ));
     let save_steps = llamafactory_save_steps(job.max_steps);
     let gauge = match job.max_steps {
         Some(steps) => format!(
@@ -2637,6 +2812,20 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> St
                 .to_string()
         }
     };
+    let (method_comment, quant_body) = match method {
+        LlamaFactoryMethod::Qlora => (
+            "# QLoRA is finetuning_type lora plus quantization_bit 4.\n\
+             # quantization_method is bnb. That is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch.\n",
+            "quantization_bit: 4\nquantization_method: bnb\n",
+        ),
+        LlamaFactoryMethod::Lora => (
+            "# LoRA is finetuning_type lora on a 16-bit base. This file does not quantize.\n\
+             # lora_rank 8 matches examples/train_lora/qwen3_lora_sft.yaml. lora_alpha is lora_rank times 2.\n\
+             # packing is false. That official file leaves packing unset. The LLaMA-Factory default is false.\n",
+            "",
+        ),
+    };
+    let packing = if method.packing() { "true" } else { "false" };
     format!(
         "# schema: {schema}\n\
          # driver: {driver}\n\
@@ -2647,13 +2836,15 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> St
          # Recipe only. Cell One does not run llamafactory-cli, does not download weights, and does not call CUDA.\n\
          # seat_tag is the Ollama id for Modelfile FROM.\n\
          # model_name_or_path is the train base: a Hugging Face repo id or a local directory of HF weights.\n\
-         # template is inferred from the train base. Confirm it matches the model.\n\
+         # template is inferred by scanning path segments of the train base, starting at the last segment.\n\
+         # A leaf such as weights or an HF snapshot hash uses the nearest ancestor that names a family.\n\
+         # A Qwen3 name containing instruct and not thinking, or containing nothink, uses qwen3_nothink.\n\
+         # Other Qwen3 names use qwen3. Older Qwen names use qwen.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
          # {host}\n\
-         # QLoRA is finetuning_type lora plus quantization_bit 4.\n\
-         # quantization_method is bnb. That is the LLaMA-Factory 0.9 token that selects the 4-bit bitsandbytes branch.\n\
+         {method_comment}\
          # Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n\
          model_name_or_path: {train}\n\
          trust_remote_code: true\n\
@@ -2667,13 +2858,12 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> St
          lora_rank: {rank}\n\
          lora_alpha: {alpha}\n\
          lora_target: all\n\
-         quantization_bit: 4\n\
-         quantization_method: bnb\n\
+         {quant_body}\
          dataset: {dataset_name}\n\
          dataset_dir: {dataset_dir}\n\
          template: {template}\n\
          cutoff_len: {cutoff}\n\
-         packing: true\n\
+         packing: {packing}\n\
          preprocessing_num_workers: 1\n\
          dataloader_num_workers: 1\n\
          output_dir: {outputs}\n\
@@ -2692,13 +2882,13 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> St
          bf16: true\n\
          seed: {seed}\n",
         schema = PREPARE_SCHEMA,
-        driver = LLAMAFACTORY_QLORA_ID,
+        driver = method.driver_id(),
         pack = job.pack_id,
         seat = job.base_model,
         train_comment = train_base,
         cutoff = LLAMAFACTORY_CUTOFF_LEN,
-        rank = LLAMAFACTORY_LORA_RANK,
-        alpha = LLAMAFACTORY_LORA_ALPHA,
+        rank = method.lora_rank(),
+        alpha = method.lora_alpha(),
         seed = LLAMAFACTORY_SEED,
         train = yaml_quote(train_base),
         dataset_name = LLAMAFACTORY_DATASET_NAME,
@@ -2709,10 +2899,13 @@ fn llamafactory_recipe_yaml(job: &EnrichJob, mode: &str, train_base: &str) -> St
         host = host,
         save_steps = save_steps,
         gauge = gauge,
+        method_comment = method_comment,
+        quant_body = quant_body,
+        packing = packing,
     )
 }
 
-fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str) -> String {
+fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str, driver_id: &str) -> String {
     let template = llamafactory_template(train_base);
     let adapter = job.out_dir.join("outputs");
     let export_dir = job.out_dir.join("export");
@@ -2737,7 +2930,7 @@ fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str) -> String {
          export_device: cpu\n\
          export_legacy_format: false\n",
         schema = PREPARE_SCHEMA,
-        driver = LLAMAFACTORY_QLORA_ID,
+        driver = driver_id,
         seat = job.base_model,
         train_comment = train_base,
         train = yaml_quote(train_base),
@@ -4299,22 +4492,29 @@ mod tests {
         assert!(ids.contains(&"ollama-modelfile"));
         assert!(ids.contains(&"external-manifest"));
         assert!(ids.contains(&LLAMAFACTORY_QLORA_ID));
+        assert!(ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(ids.contains(&AXOLOTL_LORA_ID));
         assert!(!ids.contains(&"unsloth-qlora"));
         let factory = train_enrich_card(LLAMAFACTORY_QLORA_ID).unwrap();
         assert_eq!(factory.default_job, EnrichJobKind::Train);
         assert!(factory.jobs.contains(&EnrichJobKind::Train));
         assert!(!factory.jobs.contains(&EnrichJobKind::Enrich));
+        let lora = train_enrich_card(LLAMAFACTORY_LORA_ID).unwrap();
+        assert_eq!(lora.default_job, EnrichJobKind::Train);
+        assert!(lora.jobs.contains(&EnrichJobKind::Train));
+        assert!(!lora.jobs.contains(&EnrichJobKind::Enrich));
         let axolotl = train_enrich_card(AXOLOTL_LORA_ID).unwrap();
         assert_eq!(axolotl.default_job, EnrichJobKind::Train);
         let enrich_ids = train_enrich_drivers_for_job("enrich").unwrap();
         assert!(!enrich_ids.contains(&LLAMAFACTORY_QLORA_ID));
+        assert!(!enrich_ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
         assert!(train_ids.contains(&LLAMAFACTORY_QLORA_ID));
+        assert!(train_ids.contains(&LLAMAFACTORY_LORA_ID));
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
-        assert_eq!(train_ids.len(), 4);
+        assert_eq!(train_ids.len(), 5);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -4331,6 +4531,7 @@ mod tests {
         assert!(rendered.contains("ollama-modelfile"), "{rendered}");
         assert!(rendered.contains("external-manifest"), "{rendered}");
         assert!(rendered.contains(LLAMAFACTORY_QLORA_ID), "{rendered}");
+        assert!(rendered.contains(LLAMAFACTORY_LORA_ID), "{rendered}");
         assert!(!rendered.contains("unsloth-qlora"), "{rendered}");
         assert!(rendered.contains(AXOLOTL_LORA_ID), "{rendered}");
         assert!(rendered.contains("live=false"), "{rendered}");
@@ -4887,6 +5088,417 @@ mod tests {
     }
 
     #[test]
+    fn llamafactory_template_follows_qwen3_thinking() {
+        let cases = [
+            ("Qwen/Qwen2.5-0.5B-Instruct", "qwen"),
+            ("Qwen/Qwen3-4B", "qwen3"),
+            ("Qwen/Qwen3-4B-Thinking-2507", "qwen3"),
+            ("Qwen/Qwen3-30B-A3B-Thinking-2507", "qwen3"),
+            ("Qwen/Qwen3-4B-Instruct-Thinking", "qwen3"),
+            ("Qwen/Qwen3-4B-Instruct-2507", "qwen3_nothink"),
+            ("Qwen/Qwen3-30B-A3B-Instruct-2507", "qwen3_nothink"),
+            ("/tmp/hf/Qwen3-4B-Instruct-2507", "qwen3_nothink"),
+            (
+                "/tmp/hf/Qwen3-4B-Instruct-2507/weights",
+                "qwen3_nothink",
+            ),
+            (
+                "/home/user/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/a1b2c3d4e5f6",
+                "qwen3_nothink",
+            ),
+            ("/tmp/Qwen3-4B-Thinking-2507/weights", "qwen3"),
+            ("/tmp/models/Qwen3-4B/snapshots/deadbeef", "qwen3"),
+            ("/tmp/qwen3-parent/Qwen2.5-0.5B-Instruct", "qwen"),
+            ("./weights/Qwen2.5-0.5B-Instruct", "qwen"),
+            ("meta-llama/Meta-Llama-3-8B-Instruct", "llama3"),
+            ("mistralai/Mistral-7B-Instruct-v0.3", "mistral"),
+            ("google/gemma-2-2b-it", "gemma"),
+            ("microsoft/phi-3-mini-4k-instruct", "phi"),
+            ("org/some-model", "default"),
+        ];
+        for (train, expect) in cases {
+            assert_eq!(llamafactory_template(train), expect, "{train}");
+        }
+    }
+
+    #[test]
+    fn llamafactory_lora_prepares_unquantized_and_keeps_the_seat_split() {
+        let root = tmp("llamafactory-lora");
+        let pack = fixture_pack();
+        let seated = seated_estate("llama3");
+        let blocked = root.join("seat-only");
+        let err = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &seated,
+            &blocked,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("llama3"), "{err}");
+        assert!(!err.to_string().contains("meta-llama"), "{err}");
+        assert!(!blocked.exists());
+
+        let leaf = with_train_base(seated.clone(), "./llama3");
+        let leaf_out = root.join("leaf");
+        let err = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &leaf,
+            &leaf_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(err.to_string().contains("Ollama seat tag"), "{err}");
+        assert!(!leaf_out.exists());
+
+        let estate = with_train_base(seated.clone(), "Qwen/Qwen2.5-0.5B-Instruct");
+        let out = root.join("recipe");
+        let doc = run(LLAMAFACTORY_LORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.driver, LLAMAFACTORY_LORA_ID);
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.dataset_mode.as_deref(), Some("scaffold"));
+        assert_eq!(doc.dataset_from_feed, Some(false));
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(recipe.contains("# driver: llamafactory-lora"), "{recipe}");
+        assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
+        assert!(
+            recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "lora_alpha: 16"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "packing: false"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "cutoff_len: 512"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.lines().any(|line| line.trim() == "template: qwen"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.contains("model_name_or_path: \"llama3\""),
+            "{recipe}"
+        );
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(!export.contains("quantization_method"), "{export}");
+        assert!(
+            export.lines().any(|line| line.trim() == "template: qwen"),
+            "{export}"
+        );
+        assert!(export.contains("finetuning_type: lora"), "{export}");
+        assert!(export.contains("# driver: llamafactory-lora"), "{export}");
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        assert!(
+            next.contains(&format!(
+                "llamafactory-cli train {}",
+                out.join("recipe.yaml").display()
+            )),
+            "{next}"
+        );
+        assert!(
+            next.contains(&format!(
+                "llamafactory-cli export {}",
+                out.join("export.yaml").display()
+            )),
+            "{next}"
+        );
+        assert!(next.contains("pip install llamafactory"), "{next}");
+        assert!(next.contains("does not require bitsandbytes"), "{next}");
+        assert!(!next.contains("bitsandbytes>=0.49"), "{next}");
+        assert!(!next.contains("2.11.0+cu128"), "{next}");
+        assert!(
+            next.contains("examples/train_lora/qwen3_lora_sft.yaml"),
+            "{next}"
+        );
+        assert!(next.contains("`cutoff_len` 2048"), "{next}");
+        assert!(next.contains("Seat tag is llama3"), "{next}");
+        assert!(next.contains("Qwen/Qwen2.5-0.5B-Instruct"), "{next}");
+        assert!(
+            next.contains("Do not set quantization_bit on export.yaml"),
+            "{next}"
+        );
+        assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains("dataset_mode: scaffold"), "{next}");
+        assert!(next.contains("not training data"), "{next}");
+        assert!(next.contains("--from-feed"), "{next}");
+        assert!(next.contains("refuse:dataset"), "{next}");
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        assert!(
+            prepare_md.contains("omits quantization_bit"),
+            "{prepare_md}"
+        );
+        assert!(
+            prepare_md.contains("did not run llamafactory-cli"),
+            "{prepare_md}"
+        );
+        assert!(
+            prepare_md.contains("does not require bitsandbytes"),
+            "{prepare_md}"
+        );
+        assert!(!prepare_md.contains("bitsandbytes>=0.49"), "{prepare_md}");
+        assert!(prepare_md.contains("dataset_mode: scaffold"), "{prepare_md}");
+        assert!(prepare_md.contains("not training data"), "{prepare_md}");
+        assert!(prepare_md.contains("--from-feed"), "{prepare_md}");
+
+        let enrich_out = root.join("enrich-job");
+        let err = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &enrich_out,
+            "enrich",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!enrich_out.exists());
+
+        let instruct = with_train_base(seated.clone(), "Qwen/Qwen3-4B-Instruct-2507");
+        let instruct_out = root.join("instruct-2507");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &instruct,
+            &instruct_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let instruct_recipe = std::fs::read_to_string(instruct_out.join("recipe.yaml")).unwrap();
+        assert!(
+            instruct_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{instruct_recipe}"
+        );
+        assert!(
+            !instruct_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3" || line.trim() == "template: qwen"),
+            "{instruct_recipe}"
+        );
+        assert!(
+            !instruct_recipe.contains("quantization_bit")
+                && !instruct_recipe.contains("quantization_method"),
+            "{instruct_recipe}"
+        );
+        let instruct_export = std::fs::read_to_string(instruct_out.join("export.yaml")).unwrap();
+        assert!(
+            instruct_export
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{instruct_export}"
+        );
+        assert!(
+            !instruct_export.contains("quantization_bit"),
+            "{instruct_export}"
+        );
+
+        let qlora_out = root.join("qlora-same-base");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &instruct,
+            &qlora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let qlora_recipe = std::fs::read_to_string(qlora_out.join("recipe.yaml")).unwrap();
+        assert!(
+            qlora_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.contains("quantization_bit: 4"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.contains("quantization_method: bnb"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe
+                .lines()
+                .any(|line| line.trim() == "lora_rank: 16"),
+            "{qlora_recipe}"
+        );
+        let qlora_next = std::fs::read_to_string(qlora_out.join("NEXT.md")).unwrap();
+        assert!(qlora_next.contains("bitsandbytes>=0.49"), "{qlora_next}");
+
+        let hybrid = with_train_base(seated.clone(), "Qwen/Qwen3-4B");
+        let hybrid_out = root.join("hybrid");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &hybrid,
+            &hybrid_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let hybrid_recipe = std::fs::read_to_string(hybrid_out.join("recipe.yaml")).unwrap();
+        assert!(
+            hybrid_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3"),
+            "{hybrid_recipe}"
+        );
+
+        let nested = with_train_base(
+            seated.clone(),
+            "/tmp/hf/Qwen3-4B-Instruct-2507/weights",
+        );
+        let nested_out = root.join("nested-weights");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &nested,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{nested_recipe}"
+        );
+        assert!(
+            !nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: default"),
+            "{nested_recipe}"
+        );
+        let nested_export = std::fs::read_to_string(nested_out.join("export.yaml")).unwrap();
+        assert!(
+            nested_export
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{nested_export}"
+        );
+
+        let snapshot = with_train_base(
+            seated.clone(),
+            "/home/user/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/a1b2c3d4e5f6",
+        );
+        let snapshot_out = root.join("snapshot-hash");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &snapshot,
+            &snapshot_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let snapshot_recipe = std::fs::read_to_string(snapshot_out.join("recipe.yaml")).unwrap();
+        assert!(
+            snapshot_recipe
+                .lines()
+                .any(|line| line.trim() == "template: qwen3_nothink"),
+            "{snapshot_recipe}"
+        );
+        assert!(
+            !snapshot_recipe
+                .lines()
+                .any(|line| line.trim() == "template: default"),
+            "{snapshot_recipe}"
+        );
+
+        let gauge_out = root.join("gauge");
+        run_max(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &gauge_out,
+            "train",
+            "jason",
+            Some(10),
+        )
+        .unwrap();
+        let gauge = std::fs::read_to_string(gauge_out.join("recipe.yaml")).unwrap();
+        assert!(
+            gauge.lines().any(|line| line.trim() == "max_steps: 10"),
+            "{gauge}"
+        );
+        assert!(
+            gauge.lines().any(|line| line.trim() == "save_steps: 10"),
+            "{gauge}"
+        );
+        assert!(
+            !gauge.contains("quantization_bit") && !gauge.contains("quantization_method"),
+            "{gauge}"
+        );
+
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.driver, LLAMAFACTORY_LORA_ID);
+        assert_eq!(proposal.binding_id, "local_slm");
+        let recipe_path = out.join("recipe.yaml");
+        let original = std::fs::read_to_string(&recipe_path).unwrap();
+        std::fs::write(
+            &recipe_path,
+            original.replace(
+                "model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\"",
+                "model_name_or_path: \"llama3\"",
+            ),
+        )
+        .unwrap();
+        let tampered = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            tampered.to_string().contains("refuse:train-base"),
+            "{tampered}"
+        );
+    }
+
+    #[test]
     fn axolotl_lora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("axolotl");
         let pack = fixture_pack();
@@ -5077,7 +5689,27 @@ mod tests {
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
-        assert_eq!(all_docs.len(), 4);
+        assert_eq!(all_docs.len(), 5);
+        let all_lora =
+            std::fs::read_to_string(root.join("all-llamafactory-lora").join("recipe.yaml"))
+                .unwrap();
+        assert!(all_lora.contains("finetuning_type: lora"), "{all_lora}");
+        assert!(
+            all_lora.lines().any(|line| line.trim() == "lora_rank: 8"),
+            "{all_lora}"
+        );
+        assert!(
+            all_lora.lines().any(|line| line.trim() == "packing: false"),
+            "{all_lora}"
+        );
+        assert!(
+            !all_lora.contains("quantization_bit") && !all_lora.contains("quantization_method"),
+            "{all_lora}"
+        );
+        assert!(
+            all_lora.lines().any(|line| line.trim() == "template: qwen"),
+            "{all_lora}"
+        );
         let all_yaml =
             std::fs::read_to_string(root.join("all-axolotl-lora").join("axolotl.yml")).unwrap();
         assert!(
@@ -5627,7 +6259,7 @@ mod tests {
             assert!(!dir.exists(), "{}", dir.display());
         }
 
-        for driver in [LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID] {
+        for driver in [LLAMAFACTORY_LORA_ID, LLAMAFACTORY_QLORA_ID, AXOLOTL_LORA_ID] {
             let out = root.join(driver);
             let doc = run_feed(driver, &pack, &estate, &out, &state, true).unwrap();
             assert_eq!(doc.dataset_mode.as_deref(), Some("feed"));
@@ -5936,7 +6568,15 @@ mod tests {
             "{ollama_err}"
         );
         assert!(
+            ollama_err.to_string().contains("llamafactory-lora"),
+            "{ollama_err}"
+        );
+        assert!(
             ollama_err.to_string().contains("llamafactory-qlora"),
+            "{ollama_err}"
+        );
+        assert!(
+            ollama_err.to_string().contains("axolotl-lora"),
             "{ollama_err}"
         );
         assert!(!ollama_out.exists());

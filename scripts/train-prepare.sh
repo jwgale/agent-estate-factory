@@ -253,6 +253,111 @@ grep -q '^num_train_epochs: 1.0$' "$WORKDIR/smoke/recipe.yaml"
 grep -q "quantization_method: bnb" "$WORKDIR/smoke/recipe.yaml"
 grep -q "template: qwen" "$WORKDIR/smoke/recipe.yaml"
 
+echo "-- llamafactory-lora default job is unquantized LoRA --"
+set +e
+estate enrich prepare \
+  --estate "$SEATED_ONLY" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/lora-seat-only" \
+  >/tmp/train-prepare-lora-seat.out 2>/tmp/train-prepare-lora-seat.err
+lora_seat_rc=$?
+set -e
+if [[ "$lora_seat_rc" -eq 0 ]]; then
+  echo "FAIL  llamafactory-lora without a train base must refuse:train-base"
+  exit 1
+fi
+if ! grep -q "refuse:train-base" /tmp/train-prepare-lora-seat.out /tmp/train-prepare-lora-seat.err; then
+  echo "FAIL  llamafactory-lora seat tag did not refuse:train-base"
+  cat /tmp/train-prepare-lora-seat.out /tmp/train-prepare-lora-seat.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/lora-seat-only" ]]; then
+  echo "FAIL  llamafactory-lora seat-only prepare wrote an output directory"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/llamafactory-lora"
+test -f "$WORKDIR/llamafactory-lora/recipe.yaml"
+test -f "$WORKDIR/llamafactory-lora/export.yaml"
+grep -q "finetuning_type: lora" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^template: qwen$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q 'model_name_or_path: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/llamafactory-lora/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/llamafactory-lora/recipe.yaml"; then
+  echo "FAIL  llamafactory-lora recipe.yaml must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/llamafactory-lora/recipe.yaml"; then
+  echo "FAIL  llamafactory-lora recipe.yaml must omit quantization_method"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/llamafactory-lora/export.yaml"; then
+  echo "FAIL  llamafactory-lora export.yaml must omit quantization_bit"
+  exit 1
+fi
+grep -q "does not require bitsandbytes" "$WORKDIR/llamafactory-lora/NEXT.md"
+if grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-lora/NEXT.md"; then
+  echo "FAIL  llamafactory-lora NEXT.md must not install bitsandbytes"
+  exit 1
+fi
+grep -q "pip install llamafactory" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "examples/train_lora/qwen3_lora_sft.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "llamafactory-cli train $WORKDIR/llamafactory-lora/recipe.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "llamafactory-cli export $WORKDIR/llamafactory-lora/export.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+python3 - "$WORKDIR/llamafactory-lora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-lora":
+    raise SystemExit(f"FAIL  driver={prepare.get('driver')}")
+if prepare.get("job") != "train":
+    raise SystemExit(f"FAIL  job={prepare.get('job')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "Qwen/Qwen2.5-0.5B-Instruct":
+    raise SystemExit(f"FAIL  train_base_model={prepare.get('train_base_model')}")
+PY
+
+QWEN3="$WORKDIR/estate-qwen3.yaml"
+python3 - "$ESTATE" "$QWEN3" <<'PY'
+import sys
+src, seated = sys.argv[1:]
+text = open(src).read()
+needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n"
+if needle not in text:
+    raise SystemExit("FAIL  local_slm params block missing")
+open(seated, "w").write(text.replace(
+    needle,
+    needle + '      model: "llama3"\n      train_base_model: "Qwen/Qwen3-4B-Instruct-2507"\n',
+    1,
+))
+PY
+estate enrich prepare \
+  --estate "$QWEN3" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/llamafactory-lora-qwen3"
+grep -q "^template: qwen3_nothink$" "$WORKDIR/llamafactory-lora-qwen3/recipe.yaml"
+grep -q "^template: qwen3_nothink$" "$WORKDIR/llamafactory-lora-qwen3/export.yaml"
+if grep -q "quantization_bit" "$WORKDIR/llamafactory-lora-qwen3/recipe.yaml"; then
+  echo "FAIL  qwen3 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+estate enrich prepare \
+  --estate "$QWEN3" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/llamafactory-qlora-qwen3"
+grep -q "^template: qwen3_nothink$" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/llamafactory-qlora-qwen3/recipe.yaml"
+grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-qlora-qwen3/NEXT.md"
+
 echo "-- axolotl-lora writes the train base, not the seat tag --"
 set +e
 estate enrich prepare \
@@ -398,14 +503,21 @@ estate enrich prepare \
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
+  --driver llamafactory-lora \
+  --from-feed \
+  --state-dir "$HYDRATE" \
+  --out "$WORKDIR/hydrated-lora"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
   --driver axolotl-lora \
   --from-feed \
   --state-dir "$HYDRATE" \
   --out "$WORKDIR/hydrated-ax"
-python3 - "$WORKDIR/hydrated-lf" "$WORKDIR/hydrated-ax" <<'PY'
+python3 - "$WORKDIR/hydrated-lf" "$WORKDIR/hydrated-lora" "$WORKDIR/hydrated-ax" <<'PY'
 import json, sys
 from pathlib import Path
-for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "instruction")):
+for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "messages"), (sys.argv[3], "instruction")):
     root = Path(directory)
     prepare = json.loads((root / "prepare.json").read_text())
     if prepare.get("dataset_mode") != "feed" or prepare.get("dataset_from_feed") is not True:
@@ -425,6 +537,13 @@ for directory, shape in ((sys.argv[1], "messages"), (sys.argv[2], "instruction")
         text = (root / name).read_text()
         if "dataset_mode: feed" not in text or "refuse:dataset" not in text:
             raise SystemExit(f"FAIL  {directory} {name} missing feed honesty")
+    recipe = root / "recipe.yaml"
+    if recipe.is_file() and "llamafactory-lora" in str(root):
+        body = recipe.read_text()
+        if "quantization_bit" in body or "quantization_method" in body:
+            raise SystemExit(f"FAIL  {directory} LoRA feed recipe quantized")
+        if "dataset_mode: feed" not in body:
+            raise SystemExit(f"FAIL  {directory} LoRA recipe missing feed mode")
 PY
 
 echo "-- all-drivers train writes the train base into axolotl.yml --"
@@ -440,6 +559,13 @@ if grep -Eq '^base_model: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/
   exit 1
 fi
 grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
+test -f "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"; then
+  echo "FAIL  all-drivers LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+grep -q "quantization_method: bnb" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-qlora/recipe.yaml"
 
 echo "-- import-trained records the LLaMA-Factory adapter on local_slm --"
 ADAPTER="$WORKDIR/adapter"
@@ -478,4 +604,4 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory recipe, Axolotl recipe, feed hydrate, import-trained; SKIP live train)"
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl recipe, feed hydrate, import-trained; SKIP live train)"

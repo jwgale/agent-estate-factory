@@ -154,9 +154,24 @@ The trainer trains on their own hardware. Weights come back to the operator. Jou
 
 No trainer crate ships with this page. Prepare does not download a dataset. `--from-feed` copies rows that are already under the cell state directory. It checks `kind` and `object_class` before it copies a ShareGPT or Alpaca line, reads the opened file, and refuses when the sources together exceed 8 MiB.
 
-## 4. Train a QLoRA with LLaMA-Factory, then seat it
+## 4. Train LoRA or QLoRA with LLaMA-Factory, then seat it
 
-On a consumer or rented Nvidia box, LLaMA-Factory already runs QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`.
+On a consumer or rented Nvidia box, LLaMA-Factory already runs LoRA and QLoRA supervised fine-tuning from a YAML recipe. This journey writes that recipe from a pack and brings the adapter back onto `local_slm`. The factory does not run `llamafactory-cli train`.
+
+Select the card with `--driver`. `llamafactory-lora` is the 16-bit LoRA quickstart (`examples/train_lora/qwen3_lora_sft.yaml` shape: `finetuning_type: lora`, no `quantization_bit`, `lora_rank` 8, `packing: false`). It does not require bitsandbytes. `llamafactory-qlora` is 4-bit QLoRA (`quantization_bit: 4`, `quantization_method: bnb`, rank 16) and still requires bitsandbytes. Both cards infer `template` by scanning path segments of the train base, starting at the last segment. A leaf such as `weights` or an HF snapshot hash uses the nearest ancestor that names a family. `Qwen/Qwen3-4B-Instruct-2507` uses `qwen3_nothink`. Other Qwen3 names use `qwen3`. `export.yaml` omits quantization on both.
+
+```bash
+estate enrich prepare \
+  --estate <your-estate.yaml> \
+  --pack <pack-id> \
+  --driver llamafactory-lora \
+  --job train \
+  --state-dir .cell
+
+pip install llamafactory
+llamafactory-cli train .cell/enrich/<pack-id>/llamafactory-lora/recipe.yaml
+llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-lora/export.yaml
+```
 
 `<your-estate.yaml>` is a lab copy. It needs `params.model` on `local_slm` (a model the seat already has, such as `llama3`) or a pack `model_hint` that is already a model tag. It also needs a train base: pack field `train_base_model`, or `params.train_base_model` on that same binding. The train base is a Hugging Face repo id (`namespace/name`) or a local directory of HF weights. A `./` or `../` directory is written into the recipe as an absolute path. A directory named like an Ollama seat tag (`./llama3`) is `refuse:train-base`. A 5090 smoke used `Qwen/Qwen2.5-0.5B-Instruct` while the seat tag stayed `llama3`. `examples/estate.yaml` on `main` stays hash-locked. A binding id as `FROM` is `refuse:base-model`. A missing train base, or a bare Ollama tag in that field, is `refuse:train-base`.
 
@@ -171,7 +186,7 @@ estate enrich prepare \
   --state-dir .cell
 ```
 
-That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, `quantization_method: bnb`, and a short `cutoff_len` of 512. `model_name_or_path` is the train base. `template` is inferred from that train base. Use that same chat template when you seat. `prepare.json` says `job` `train`, stores `seat_tag` and `train_base_model`, and keeps `promoted`, `auto_apply`, and `estate_rewritten` false. It also stores `dataset_mode`. With no `--from-feed`, a pack that lists `source_paths` gets `dataset_mode` `scaffold`: the JSONL names those paths and leaves the files unread. An empty list is `dataset_mode` `stub` (three example rows). `PREPARE.md` and `NEXT.md` say these rows are not training data, and they name `refuse:dataset` for a later `--from-feed` whose file is missing.
+That writes `.cell/enrich/<pack-id>/llamafactory-qlora/recipe.yaml`, `export.yaml`, `dataset_info.json`, and `dataset.jsonl`. The JSONL is instruct chat (`messages` of `role` and `content`). The recipe is 4-bit QLoRA with LoRA rank 16, packing on, `quantization_method: bnb`, and a short `cutoff_len` of 512. `model_name_or_path` is the train base. `template` is inferred from path segments of that train base, starting at the last segment. Use that same chat template when you seat. `prepare.json` says `job` `train`, stores `seat_tag` and `train_base_model`, and keeps `promoted`, `auto_apply`, and `estate_rewritten` false. It also stores `dataset_mode`. With no `--from-feed`, a pack that lists `source_paths` gets `dataset_mode` `scaffold`: the JSONL names those paths and leaves the files unread. An empty list is `dataset_mode` `stub` (three example rows). `PREPARE.md` and `NEXT.md` say these rows are not training data, and they name `refuse:dataset` for a later `--from-feed` whose file is missing.
 
 When those paths are already files under the cell state directory, hydrate and then train:
 
@@ -185,7 +200,7 @@ estate enrich prepare \
   --state-dir .cell
 ```
 
-For source path `feed/events.jsonl`, the file is `.cell/feed/events.jsonl`. ShareGPT messages and Alpaca `instruction` / `output` lines are copied. A scrubbed feed event becomes a row when its `note` is present. Events with no note are skipped and counted. A missing file is `refuse:dataset` and writes nothing. This step does not download the source.
+For source path `feed/events.jsonl`, the file is `.cell/feed/events.jsonl`. ShareGPT messages and Alpaca `instruction` / `output` lines are copied. A scrubbed feed event becomes a row when its `note` is present. Events with no note are skipped and counted. A missing file is `refuse:dataset` and writes nothing. This step does not download the source. `llamafactory-lora` takes the same `--from-feed` flag and writes those instruct rows into its chat `dataset.jsonl`. Its `PREPARE.md` and `NEXT.md` use the same dataset paragraph.
 
 The default recipe is one epoch and does not set `max_steps`. A short gauge run is the same prepare with `--max-steps 10`. LLaMA-Factory then overrides `num_train_epochs`. When that count is under 50, `save_steps` matches it so a checkpoint is written during the short run.
 
@@ -243,7 +258,7 @@ Text over 16KiB refuses before the POST. Credentials stay in the environment (`X
 
 Build rule (`integrate-vs-invent`): a feature earns its keep. If `ollama` or llama.cpp already does the job, tighten that driver.
 
-Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use LLaMA-Factory when the job is QLoRA from a durable recipe: `llamafactory-qlora` writes `recipe.yaml`, and you run `llamafactory-cli train` outside the factory (journey 4). Use Axolotl when you want a second YAML recipe or a multi-GPU run: `axolotl-lora` writes `axolotl.yml`, and you run `axolotl train` outside the factory. Unsloth QLoRA stays a `NEXT.md` pointer on Nvidia, not a registered card.
+Use Ollama for running a model on the host, including Ollama-on-Mac, and for building a purpose-built image from a base or from weights the trainer returned. The Modelfile and `ollama create` already do that job. Use llama.cpp when that same specialist protocol should run in the llama.cpp process: change `driver` on `local_slm` and point `CELL_LOCAL_ENDPOINT` at it. Use LLaMA-Factory when the job is LoRA or QLoRA from a durable recipe: `llamafactory-lora` writes the unquantized recipe and `llamafactory-qlora` writes the 4-bit recipe, and you run `llamafactory-cli train` outside the factory (journey 4). Use Axolotl when you want a second YAML recipe or a multi-GPU run: `axolotl-lora` writes `axolotl.yml`, and you run `axolotl train` outside the factory. Unsloth QLoRA stays a `NEXT.md` pointer on Nvidia, not a registered card.
 
 A new driver earns a catalog card when `ollama` and llama.cpp both lack the job. The card goes through catalog, route, and bind. The binding id stays `local_slm`. Floor core does not gain a vendor string. The driver stays a trait. The specialist process may be any language. Jason verifies before the card is Supported. Until that verification, the card stays stub or experimental and fails closed.
 
