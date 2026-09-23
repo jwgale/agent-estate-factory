@@ -8456,7 +8456,6 @@ mod tests {
         assert!(!proposal.promoted && !proposal.auto_apply && !proposal.estate_rewritten);
     }
 
-    #[test]
     fn assert_guidance_refuse_before_rerun(text: &str) {
         let claim = "returns refuse:tokenizer for that export before the restore";
         let claim_at = text
@@ -8475,6 +8474,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn llamafactory_qlora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("llamafactory");
         let pack = fixture_pack();
