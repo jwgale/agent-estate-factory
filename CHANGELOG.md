@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — optional mlx-lm LoRA handoff
+
+- `mlx-lm-lora` is an optional `TrainEnrichDriver` card (`status=optional`). `estate enrich prepare --driver mlx-lm-lora` writes `MLX.md`, `PREPARE.md`, `NEXT.md`, and `prepare.json` when `host_class_affinity` is `apple-silicon`. `MLX.md` is an operator-owned handoff. It records the Ollama seat tag, the train base, and `host_class_affinity: apple-silicon`. It is not an mlx-lm config and not a training script.
+- The card is the Apple Silicon LoRA handoff. It is not the product, and it does not make the `mlx` local-runtime card live. `NEXT.md` points at the public mlx-lm LoRA page (https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md), the install line that page publishes (`pip install "mlx-lm[train]"`), the command name `mlx_lm.lora`, and the fuse command that page publishes (`mlx_lm.fuse --model <path_to_model>`). This factory does not run that install, does not call mlx-lm, does not choose ranks or iterations, and does not shell out.
+- Another affinity (`any`, `consumer-nvidia`, `rented-nvidia`, or any other string) is `refuse:host` and writes nothing. `--all-drivers` omits this card unless the affinity is `apple-silicon`, and it prints that omission. The other train cards still prepare. A missing train base, a bare Ollama tag, or a seat-looking local leaf is `refuse:train-base` and writes nothing. `import-trained` accepts the prepare and refuses when `MLX.md` `train_base_model`, `seat_tag`, or `host_class_affinity` does not match `prepare.json`, and when that affinity is not `apple-silicon`.
+- This card does not write `dataset.jsonl`, a YAML recipe, or `max_steps`. `--from-feed` on this card alone is `refuse:dataset`. `--official-scale` on this card alone is `refuse:official-scale`. `--max-steps 0` is still `refuse:max-steps`. `--job enrich` is `refuse:job`. LLaMA-Factory `recipe.yaml` is unchanged. `NEXT.md` on the LLaMA-Factory and Axolotl cards names this handoff. `gguf-convert` and `local-seat` still read a LLaMA-Factory prepare.
+- Deliberately not invented: an MLX script, a recipe DSL, ranks, iterations, a dataset writer, a download, a process spawn, or a trainer call. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — optional Unsloth QLoRA handoff
 
 - `unsloth-qlora` is an optional `TrainEnrichDriver` card (`status=optional`). `estate enrich prepare --driver unsloth-qlora` writes `UNSLOTH.md`, `PREPARE.md`, `NEXT.md`, and `prepare.json`. `UNSLOTH.md` is an operator-owned handoff. It records the Ollama seat tag and the train base. It is not an Unsloth config and not a training script.
