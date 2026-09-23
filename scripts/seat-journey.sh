@@ -162,7 +162,7 @@ grep -q "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/NEXT.md"
 grep -q "estate enrich merge-adapt --prepared ${PREPARED} --adapter ${PREPARED}/outputs" "$PREPARED/NEXT.md"
 grep -q "estate enrich gguf-convert --prepared ${PREPARED} --weights ${PREPARED}/export" "$PREPARED/NEXT.md"
 grep -q "python3 convert_hf_to_gguf.py ${PREPARED}/export --outfile ${PREPARED}/export.gguf --outtype auto" "$PREPARED/NEXT.md"
-grep -q "estate enrich local-seat --prepared ${PREPARED} --weights ${PREPARED}/export.gguf" "$PREPARED/NEXT.md"
+grep -q "estate enrich local-seat --prepared ${PREPARED} --weights ${PREPARED}/export" "$PREPARED/NEXT.md"
 grep -q "estate enrich import-trained --estate <estate.yaml> --prepared ${PREPARED} --tag ${TAG} --adapter <gguf>" "$PREPARED/NEXT.md"
 grep -q "READY_FOR_LIVE_TEST: no" "$PREPARED/NEXT.md"
 
@@ -319,6 +319,30 @@ if [[ -e "$PREPARED/export.gguf" || -e "$PREPARED/export/model.gguf" ]]; then
   exit 1
 fi
 
+echo "-- empty GGUF is refuse:seat (magic required) --"
+: > "$PREPARED/export.gguf"
+set +e
+estate enrich local-seat \
+  --prepared "$PREPARED" \
+  --weights "$PREPARED/export.gguf" \
+  >"$WORKDIR/logs/seat-empty.out" 2>"$WORKDIR/logs/seat-empty.err"
+empty_rc=$?
+set -e
+if [[ "$empty_rc" -eq 0 ]]; then
+  echo "FAIL  local-seat must refuse an empty GGUF"
+  exit 1
+fi
+if ! grep -q "refuse:seat" "$WORKDIR/logs/seat-empty.out" "$WORKDIR/logs/seat-empty.err"; then
+  echo "FAIL  empty GGUF did not refuse:seat"
+  cat "$WORKDIR/logs/seat-empty.out" "$WORKDIR/logs/seat-empty.err"
+  exit 1
+fi
+if grep -q "ollama create" "$WORKDIR/logs/seat-empty.out" "$WORKDIR/logs/seat-empty.err"; then
+  echo "FAIL  empty GGUF printed a create line"
+  exit 1
+fi
+rm -f "$PREPARED/export.gguf"
+
 # local-seat reads the first four bytes. An empty file is refuse:seat.
 python3 - "$PREPARED/export.gguf" <<'PY'
 import pathlib, sys
@@ -409,7 +433,7 @@ fi
 
 echo
 echo "Printed lines (not executed):"
-grep -h -E 'llamafactory-cli export |python3 convert_hf_to_gguf.py |ollama create |llama-cli -m |llama-server -m |estate enrich import-trained ' "$WORKDIR/logs/merge.out" "$WORKDIR/logs/gguf-print.out" "$WORKDIR/logs/seat-gguf.out"
+grep -h -E '^(llamafactory-cli export |python3 convert_hf_to_gguf.py |ollama create |llama-cli -m |llama-server -m |estate enrich import-trained )' "$WORKDIR/logs/merge.out" "$WORKDIR/logs/gguf-print.out" "$WORKDIR/logs/seat-gguf.out"
 echo
 echo "PASS  seat-journey (Target C seat ladder printed; fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
 echo "READY_FOR_LIVE_TEST: no"
