@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Target C train step: print the live QLoRA train recipe from NEXT.md.
-# Prepares llamafactory-qlora on a throwaway seated estate, then prints the
+# Train-recipe print. Default card is Target C (llamafactory-qlora).
+# TRAIN_CARD=llamafactory-lora prints the Target A recipe: template qwen,
+# rank 8, no quantization, and no bitsandbytes install line.
+# Prepares that card on a throwaway seated estate, then prints the
 # install lines and llamafactory-cli train line that prepare wrote.
 # Does not install LLaMA-Factory, does not train, does not merge, does not
 # convert, does not create an Ollama model, and does not promote.
@@ -18,7 +20,23 @@ unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOIN
 
 # Throwaway dir stays out of the checkout. prepare refuses a hardware SKU
 # anywhere in the output path, including a parent directory name.
-WORKDIR="${WORKDIR:-${TMPDIR:-/tmp}/cell-one-train-next}"
+# Default card is the Target C QLoRA prepare. TRAIN_CARD=llamafactory-lora
+# is the Target A twin. make train-next pins the QLoRA card.
+TRAIN_CARD="${TRAIN_CARD:-llamafactory-qlora}"
+case "$TRAIN_CARD" in
+  llamafactory-qlora|llamafactory-lora) ;;
+  *)
+    echo "FAIL  TRAIN_CARD must be llamafactory-qlora or llamafactory-lora: $TRAIN_CARD" >&2
+    exit 1
+    ;;
+esac
+if [[ -z "${WORKDIR:-}" ]]; then
+  if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+    WORKDIR="${TMPDIR:-/tmp}/cell-one-train-next-lora"
+  else
+    WORKDIR="${TMPDIR:-/tmp}/cell-one-train-next"
+  fi
+fi
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 PACK="${PACK:-$ROOT/examples/fixtures/specialist-overnight.pack.json}"
 BIN="${ESTATE_BIN:-}"
@@ -62,22 +80,38 @@ if [[ ! -f "$PACK" ]]; then
   exit 0
 fi
 
-echo "== train-next (Target C: Qwen / LLaMA-Factory QLoRA train recipe; print-only) =="
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  echo "== train-next-lora (Target A: Qwen / LLaMA-Factory LoRA train recipe; print-only) =="
+else
+  echo "== train-next (Target C: Qwen / LLaMA-Factory QLoRA train recipe; print-only) =="
+fi
 echo "workdir: $WORKDIR"
+echo "card: $TRAIN_CARD"
 echo "Print-only. READY_FOR_LIVE_TEST: no"
 if [[ "${CELL_TRAIN_LIVE:-}" == "1" ]]; then
   echo "CELL_TRAIN_LIVE=1 is set. This journey stays print-only."
-  echo "Live train stays on the operator host (docs/operator-enrich-journeys.md section 8)."
+  if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+    echo "Live train stays on the operator host (docs/operator-enrich-journeys.md section 9)."
+  else
+    echo "Live train stays on the operator host (docs/operator-enrich-journeys.md section 8)."
+  fi
 fi
 echo "SKIP live train"
 echo
 echo "Train step (existing prepare card only):"
-echo "1. estate enrich prepare --driver llamafactory-qlora"
+echo "1. estate enrich prepare --driver ${TRAIN_CARD}"
 echo "   Seat tag stays the Ollama id. Train base is a Hugging Face repo id."
 echo "   Example seat ${SEAT_TAG}. Train base ${TRAIN_BASE}."
-echo "2. Print the NEXT.md train recipe. This factory does not run it."
-echo "   make uniqueness-ladder stays qlora-journey then seat-journey."
-echo "   This target is the opt-in middle step. The chain does not run it."
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  echo "   template qwen. lora_rank 8. No quantization. This card does not require bitsandbytes."
+  echo "2. Print the NEXT.md train recipe. This factory does not run it."
+  echo "   make uniqueness-full-lora runs this target between lora-journey and seat-journey-lora."
+  echo "   make train-next stays the QLoRA card."
+else
+  echo "2. Print the NEXT.md train recipe. This factory does not run it."
+  echo "   make uniqueness-ladder stays qlora-journey then seat-journey."
+  echo "   This target is the opt-in middle step. The chain does not run it."
+fi
 echo
 
 resolve_estate
@@ -107,7 +141,7 @@ set +e
 estate enrich prepare \
   --estate "$SEATED_ONLY" \
   --pack "$PACK" \
-  --driver llamafactory-qlora \
+  --driver "$TRAIN_CARD" \
   --job train \
   --out "$WORKDIR/seat-only" \
   >"$WORKDIR/logs/seat-only.out" 2>"$WORKDIR/logs/seat-only.err"
@@ -131,12 +165,16 @@ if [[ -e "$WORKDIR/seat-only" ]]; then
   exit 1
 fi
 
-echo "-- llamafactory-qlora prepare writes the Qwen QLoRA card --"
-PREPARED="$WORKDIR/llamafactory-qlora"
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  echo "-- llamafactory-lora prepare writes the Qwen LoRA card --"
+else
+  echo "-- llamafactory-qlora prepare writes the Qwen QLoRA card --"
+fi
+PREPARED="$WORKDIR/$TRAIN_CARD"
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
-  --driver llamafactory-qlora \
+  --driver "$TRAIN_CARD" \
   --job train \
   --out "$PREPARED" \
   >"$WORKDIR/logs/prepare.out"
@@ -155,11 +193,25 @@ if [[ -e "$PREPARED/train_unsloth.py" || -e "$PREPARED/convert_hf_to_gguf.py" ||
 fi
 
 grep -q "stage: sft" "$PREPARED/recipe.yaml"
-grep -q "quantization_bit: 4" "$PREPARED/recipe.yaml"
-grep -q "quantization_method: bnb" "$PREPARED/recipe.yaml"
-grep -q "lora_rank: 16" "$PREPARED/recipe.yaml"
 grep -q "template: qwen" "$PREPARED/recipe.yaml"
 grep -q "model_name_or_path: \"${TRAIN_BASE}\"" "$PREPARED/recipe.yaml"
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  grep -q "finetuning_type: lora" "$PREPARED/recipe.yaml"
+  grep -q "^lora_rank: 8$" "$PREPARED/recipe.yaml"
+  grep -q "^packing: false$" "$PREPARED/recipe.yaml"
+  if grep -q "quantization_bit" "$PREPARED/recipe.yaml" "$PREPARED/export.yaml"; then
+    echo "FAIL  llamafactory-lora recipe and export must omit quantization_bit"
+    exit 1
+  fi
+  if grep -q "quantization_method" "$PREPARED/recipe.yaml" "$PREPARED/export.yaml"; then
+    echo "FAIL  llamafactory-lora recipe and export must omit quantization_method"
+    exit 1
+  fi
+else
+  grep -q "quantization_bit: 4" "$PREPARED/recipe.yaml"
+  grep -q "quantization_method: bnb" "$PREPARED/recipe.yaml"
+  grep -q "lora_rank: 16" "$PREPARED/recipe.yaml"
+fi
 if grep -q "llamafactory-cli" "$PREPARED/prepare.json"; then
   echo "FAIL  prepare.json must not embed a train command"
   exit 1
@@ -172,9 +224,22 @@ if ! grep -q -F -x "pip install llamafactory" "$PREPARED/NEXT.md"; then
   echo "FAIL  NEXT.md missing train recipe line: pip install llamafactory"
   exit 1
 fi
-if ! grep -q -F -x "pip install 'bitsandbytes>=0.49'" "$PREPARED/NEXT.md"; then
-  echo "FAIL  NEXT.md missing train recipe line: pip install 'bitsandbytes>=0.49'"
-  exit 1
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  if grep -q -F -x "pip install 'bitsandbytes>=0.49'" "$PREPARED/NEXT.md"; then
+    echo "FAIL  llamafactory-lora NEXT.md must not install bitsandbytes"
+    exit 1
+  fi
+  if grep -q "bitsandbytes>=0.49" "$PREPARED/NEXT.md"; then
+    echo "FAIL  llamafactory-lora NEXT.md must not install bitsandbytes"
+    exit 1
+  fi
+  grep -q "does not require bitsandbytes" "$PREPARED/NEXT.md"
+  grep -q "^template: qwen$" "$PREPARED/recipe.yaml"
+else
+  if ! grep -q -F -x "pip install 'bitsandbytes>=0.49'" "$PREPARED/NEXT.md"; then
+    echo "FAIL  NEXT.md missing train recipe line: pip install 'bitsandbytes>=0.49'"
+    exit 1
+  fi
 fi
 if ! grep -q -F -x "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"; then
   echo "FAIL  NEXT.md missing train recipe line: llamafactory-cli train ${PREPARED}/recipe.yaml"
@@ -189,13 +254,13 @@ if ! grep -q -F -x "READY_FOR_LIVE_TEST: no." "$PREPARED/NEXT.md"; then
   exit 1
 fi
 
-python3 - "$PREPARED/prepare.json" "$TRAIN_BASE" "$SEAT_TAG" <<'PY'
+python3 - "$PREPARED/prepare.json" "$TRAIN_BASE" "$SEAT_TAG" "$TRAIN_CARD" <<'PY'
 import json, sys
-prepare_path, train_base, seat = sys.argv[1:]
+prepare_path, train_base, seat, card = sys.argv[1:]
 prepare = json.load(open(prepare_path))
 if prepare.get("schema") != "cell-one.enrich-prepare.v0":
     raise SystemExit(f"FAIL  schema={prepare.get('schema')}")
-if prepare.get("driver") != "llamafactory-qlora":
+if prepare.get("driver") != card:
     raise SystemExit(f"FAIL  driver={prepare.get('driver')}")
 if prepare.get("job") != "train":
     raise SystemExit(f"FAIL  job={prepare.get('job')}")
@@ -215,7 +280,11 @@ PY
 
 echo
 echo "Live train recipe from NEXT.md (not executed):"
-grep -F -x -e "pip install llamafactory" -e "pip install 'bitsandbytes>=0.49'" -e "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  grep -F -x -e "pip install llamafactory" -e "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"
+else
+  grep -F -x -e "pip install llamafactory" -e "pip install 'bitsandbytes>=0.49'" -e "llamafactory-cli train ${PREPARED}/recipe.yaml" "$PREPARED/NEXT.md"
+fi
 echo
 echo "Later merge line in NEXT.md (not executed):"
 grep -F -x -m 1 -e "llamafactory-cli export ${PREPARED}/export.yaml" "$PREPARED/NEXT.md"
@@ -228,10 +297,14 @@ if ! command -v llamafactory-cli >/dev/null 2>&1; then
 else
   echo "NOTE  llamafactory-cli is on PATH. This target does not run it."
 fi
-if python3 -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("bitsandbytes") else 1)'; then
-  echo "NOTE  bitsandbytes is importable. This target does not train."
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  echo "NOTE  llamafactory-lora does not require bitsandbytes. This target does not install it."
 else
-  echo "SKIP  bitsandbytes (not importable; informational)"
+  if python3 -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("bitsandbytes") else 1)'; then
+    echo "NOTE  bitsandbytes is importable. This target does not train."
+  else
+    echo "SKIP  bitsandbytes (not importable; informational)"
+  fi
 fi
 
 AFTER="$(cksum "$ESTATE")"
@@ -241,5 +314,9 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
 fi
 
 echo
-echo "PASS  train-next (Target C train recipe printed from NEXT.md; SKIP live train)"
+if [[ "$TRAIN_CARD" == "llamafactory-lora" ]]; then
+  echo "PASS  train-next-lora (Target A train recipe printed from NEXT.md; SKIP live train)"
+else
+  echo "PASS  train-next (Target C train recipe printed from NEXT.md; SKIP live train)"
+fi
 echo "READY_FOR_LIVE_TEST: no"

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Target C seat ladder: Qwen / LLaMA-Factory QLoRA print path.
-# Prepares llamafactory-qlora, asserts refuse:tokenizer on a 5090-shaped
-# export fixture, then prints merge-adapt, gguf-convert, local-seat, and
+# Seat ladder print path. Default card is Target C (llamafactory-qlora).
+# SEAT_CARD=llamafactory-lora is the Target A twin: same fixture stubs and
+# the same refuse:adapter, refuse:tokenizer, and refuse:seat checks.
+# Prepares that card, asserts refuse:tokenizer on a 5090-shaped export
+# fixture, then prints merge-adapt, gguf-convert, local-seat, and
 # import-trained once the good fixture stubs stand in for the merged
 # export and the sibling GGUF.
 # Does not install LLaMA-Factory, does not train, does not merge, does not
@@ -20,7 +22,23 @@ unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOIN
 
 # Throwaway dir stays out of the checkout. prepare refuses a hardware SKU
 # anywhere in the output path, including a parent directory name.
-WORKDIR="${WORKDIR:-${TMPDIR:-/tmp}/cell-one-seat-journey}"
+# Default card is the Target C QLoRA prepare. SEAT_CARD=llamafactory-lora
+# is the Target A twin. make seat-journey pins the QLoRA card.
+SEAT_CARD="${SEAT_CARD:-llamafactory-qlora}"
+case "$SEAT_CARD" in
+  llamafactory-qlora|llamafactory-lora) ;;
+  *)
+    echo "FAIL  SEAT_CARD must be llamafactory-qlora or llamafactory-lora: $SEAT_CARD" >&2
+    exit 1
+    ;;
+esac
+if [[ -z "${WORKDIR:-}" ]]; then
+  if [[ "$SEAT_CARD" == "llamafactory-lora" ]]; then
+    WORKDIR="${TMPDIR:-/tmp}/cell-one-seat-journey-lora"
+  else
+    WORKDIR="${TMPDIR:-/tmp}/cell-one-seat-journey"
+  fi
+fi
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 PACK="${PACK:-$ROOT/examples/fixtures/specialist-overnight.pack.json}"
 BIN="${ESTATE_BIN:-}"
@@ -65,8 +83,13 @@ if [[ ! -f "$PACK" ]]; then
   exit 0
 fi
 
-echo "== seat-journey (Target C: Qwen / LLaMA-Factory QLoRA seat ladder; print-only) =="
+if [[ "$SEAT_CARD" == "llamafactory-lora" ]]; then
+  echo "== seat-journey (Target A: Qwen / LLaMA-Factory LoRA seat ladder; print-only) =="
+else
+  echo "== seat-journey (Target C: Qwen / LLaMA-Factory QLoRA seat ladder; print-only) =="
+fi
 echo "workdir: $WORKDIR"
+echo "card: $SEAT_CARD"
 echo "READY_FOR_LIVE_TEST: no"
 if [[ "${CELL_SEAT_LIVE:-}" == "1" ]]; then
   echo "CELL_SEAT_LIVE=1 is set. This journey stays print-only."
@@ -77,7 +100,7 @@ echo "SKIP live convert"
 echo "SKIP live seat"
 echo
 echo "Ladder (existing commands only; fixture stubs, not weights):"
-echo "1. estate enrich prepare --driver llamafactory-qlora"
+echo "1. estate enrich prepare --driver ${SEAT_CARD}"
 echo "   Seat tag stays the Ollama id. Train base is a Hugging Face repo id."
 echo "   Example seat ${SEAT_TAG}. Train base ${TRAIN_BASE}."
 echo "2. estate enrich merge-adapt --prepared <prepared> --adapter <prepared>/outputs"
@@ -138,7 +161,7 @@ set +e
 estate enrich prepare \
   --estate "$SEATED_ONLY" \
   --pack "$PACK" \
-  --driver llamafactory-qlora \
+  --driver "$SEAT_CARD" \
   --job train \
   --out "$WORKDIR/seat-only" \
   >"$WORKDIR/logs/seat-only.out" 2>"$WORKDIR/logs/seat-only.err"
@@ -162,12 +185,16 @@ if [[ -e "$WORKDIR/seat-only" ]]; then
   exit 1
 fi
 
-echo "-- llamafactory-qlora prepare writes the Qwen QLoRA card --"
-PREPARED="$WORKDIR/llamafactory-qlora"
+if [[ "$SEAT_CARD" == "llamafactory-lora" ]]; then
+  echo "-- llamafactory-lora prepare writes the Qwen LoRA card --"
+else
+  echo "-- llamafactory-qlora prepare writes the Qwen QLoRA card --"
+fi
+PREPARED="$WORKDIR/$SEAT_CARD"
 estate enrich prepare \
   --estate "$SEATED" \
   --pack "$PACK" \
-  --driver llamafactory-qlora \
+  --driver "$SEAT_CARD" \
   --job train \
   --out "$PREPARED" \
   >"$WORKDIR/logs/prepare.out"
@@ -186,16 +213,35 @@ if [[ -e "$PREPARED/train_unsloth.py" || -e "$PREPARED/convert_hf_to_gguf.py" ||
 fi
 
 grep -q "stage: sft" "$PREPARED/recipe.yaml"
-grep -q "quantization_bit: 4" "$PREPARED/recipe.yaml"
-grep -q "quantization_method: bnb" "$PREPARED/recipe.yaml"
 grep -q "template: qwen" "$PREPARED/recipe.yaml"
 grep -q "model_name_or_path: \"${TRAIN_BASE}\"" "$PREPARED/recipe.yaml"
 grep -q "model_name_or_path: \"${TRAIN_BASE}\"" "$PREPARED/export.yaml"
 grep -q "adapter_name_or_path: \"${PREPARED}/outputs\"" "$PREPARED/export.yaml"
 grep -q "export_dir: \"${PREPARED}/export\"" "$PREPARED/export.yaml"
-if grep -q "quantization_bit" "$PREPARED/export.yaml"; then
-  echo "FAIL  export.yaml must not set quantization_bit"
-  exit 1
+if [[ "$SEAT_CARD" == "llamafactory-lora" ]]; then
+  grep -q "finetuning_type: lora" "$PREPARED/recipe.yaml"
+  grep -q "^lora_rank: 8$" "$PREPARED/recipe.yaml"
+  grep -q "^packing: false$" "$PREPARED/recipe.yaml"
+  if grep -q "quantization_bit" "$PREPARED/recipe.yaml" "$PREPARED/export.yaml"; then
+    echo "FAIL  llamafactory-lora recipe and export must omit quantization_bit"
+    exit 1
+  fi
+  if grep -q "quantization_method" "$PREPARED/recipe.yaml" "$PREPARED/export.yaml"; then
+    echo "FAIL  llamafactory-lora recipe and export must omit quantization_method"
+    exit 1
+  fi
+  if grep -q "bitsandbytes>=0.49" "$PREPARED/NEXT.md"; then
+    echo "FAIL  llamafactory-lora NEXT.md must not install bitsandbytes"
+    exit 1
+  fi
+  grep -q "does not require bitsandbytes" "$PREPARED/NEXT.md"
+else
+  grep -q "quantization_bit: 4" "$PREPARED/recipe.yaml"
+  grep -q "quantization_method: bnb" "$PREPARED/recipe.yaml"
+  if grep -q "quantization_bit" "$PREPARED/export.yaml"; then
+    echo "FAIL  export.yaml must not set quantization_bit"
+    exit 1
+  fi
 fi
 if grep -q "llamafactory-cli" "$PREPARED/prepare.json"; then
   echo "FAIL  prepare.json must not embed a train command"
@@ -220,13 +266,13 @@ grep -q "local-seat is print-only" "$PREPARED/NEXT.md"
 grep -q "does not write ${PREPARED}/Modelfile" "$PREPARED/NEXT.md"
 grep -q "Write that file from the printed contents before ollama create" "$PREPARED/NEXT.md"
 
-python3 - "$PREPARED/prepare.json" "$TRAIN_BASE" "$SEAT_TAG" <<'PY'
+python3 - "$PREPARED/prepare.json" "$TRAIN_BASE" "$SEAT_TAG" "$SEAT_CARD" <<'PY'
 import json, sys
-prepare_path, train_base, seat = sys.argv[1:]
+prepare_path, train_base, seat, card = sys.argv[1:]
 prepare = json.load(open(prepare_path))
 if prepare.get("schema") != "cell-one.enrich-prepare.v0":
     raise SystemExit(f"FAIL  schema={prepare.get('schema')}")
-if prepare.get("driver") != "llamafactory-qlora":
+if prepare.get("driver") != card:
     raise SystemExit(f"FAIL  driver={prepare.get('driver')}")
 if prepare.get("job") != "train":
     raise SystemExit(f"FAIL  job={prepare.get('job')}")
@@ -574,5 +620,9 @@ echo
 echo "Printed lines (not executed):"
 grep -h -E '^(llamafactory-cli export |python3 convert_hf_to_gguf.py |ollama create |llama-cli -m |llama-server -m |estate enrich import-trained )' "$WORKDIR/logs/merge.out" "$WORKDIR/logs/gguf-print.out" "$WORKDIR/logs/seat-gguf.out"
 echo
-echo "PASS  seat-journey (Target C seat ladder printed; refuse:tokenizer then fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
+if [[ "$SEAT_CARD" == "llamafactory-lora" ]]; then
+  echo "PASS  seat-journey (Target A LoRA seat ladder printed; refuse:adapter refuse:tokenizer refuse:seat; fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
+else
+  echo "PASS  seat-journey (Target C seat ladder printed; refuse:tokenizer then fixture stubs; SKIP live train; SKIP live convert; SKIP live seat)"
+fi
 echo "READY_FOR_LIVE_TEST: no"
