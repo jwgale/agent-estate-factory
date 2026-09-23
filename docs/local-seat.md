@@ -30,7 +30,7 @@ estate enrich gguf-convert \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
 ```
 
-`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora` or `llamafactory-qlora` with job `train`. `--weights` is the merged export directory. An adapter directory, a symlink, or a path that is already a GGUF is `refuse:seat`. The command writes nothing.
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with job `train`. `--weights` is the merged export directory. An adapter directory, a directory that only holds `export.yaml`, a symlink, or a path that is already a GGUF is `refuse:seat`. The command writes nothing.
 
 ## Command
 
@@ -40,7 +40,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
 ```
 
-`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora` or `llamafactory-qlora` with job `train`. `--weights` is the merged export directory or a `.gguf` file.
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with job `train`. `--weights` is the merged export directory or a `.gguf` file.
 
 The report names:
 
@@ -62,6 +62,20 @@ A GGUF directory that holds one `.gguf` file is the same shape. Point `--weights
 
 The report also prints the `import-trained` line for the same path. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`. `adapter_model-00001-of-00002.safetensors` is an adapter shard, not merged evidence. A Modelfile in that directory is part of that shape. A GGUF is a `.gguf` file. The seat tag on the proposal stays the prepare seat tag. `import-trained` records `trained_shape` and `trained_paths`. `import-trained` does not apply and does not promote. A symlinked `--weights` path, and a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`), is `refuse:seat`.
 
+## Axolotl
+
+`axolotl-lora` and `axolotl-qlora` use the same two commands. `--weights` is the operator-owned merged Hugging Face directory, or a `.gguf` file for `local-seat`. Axolotl does not write a Modelfile and does not write GGUF. This factory does not name a merge command. `PREPARE.md` and `NEXT.md` on those cards name the ladder: `axolotl train`, the operator merge, `gguf-convert`, `local-seat`, `import-trained`.
+
+```bash
+estate enrich gguf-convert \
+  --prepared .cell/enrich/<pack-id>/axolotl-qlora \
+  --weights <merged-hf-dir>
+
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/axolotl-qlora \
+  --weights <merged-hf-dir>
+```
+
 ## Refuses
 
 | Weights | Stop |
@@ -77,7 +91,7 @@ The report also prints the `import-trained` line for the same path. A merged exp
 | More than one `.gguf` file in a directory | `refuse:seat` |
 | File that is not `.gguf`, or a `.gguf` that does not start with GGUF magic | `refuse:seat` |
 | Modelfile with no `FROM` line, empty, or not utf-8 | `refuse:modelfile` |
-| Prepare driver is not `llamafactory-lora` or `llamafactory-qlora` | `refuse:driver` |
+| Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` | `refuse:driver` |
 | Job is not `train` | `refuse:job` |
 | `seat_tag` missing, or different from `base_model` | `refuse:seat` or `refuse:prepare` |
 | `promoted`, `auto_apply`, or `estate_rewritten` is true | `refuse:prepared` |

@@ -57,6 +57,8 @@ fn help_names_local_seat() {
     assert!(body.contains("--outtype auto"), "{body}");
     assert!(body.contains("convert_hf_to_gguf.py"), "{body}");
     assert!(body.contains("does not run ollama or llama.cpp"), "{body}");
+    assert!(body.contains("axolotl-lora"), "{body}");
+    assert!(body.contains("<merged-hf-dir>"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
 }
@@ -238,6 +240,183 @@ fn prepare_records_paths_and_local_seat_prints_the_create_line() {
     assert!(refused_text.contains("refuse:seat"), "{refused_text}");
     assert!(refused_text.contains("adapter directory"), "{refused_text}");
     assert!(!adapter.join("Modelfile").exists());
+}
+
+fn write_axolotl_prepare(dir: &std::path::Path, driver: &str) {
+    let body = format!(
+        r#"{{
+  "schema": "cell-one.enrich-prepare.v0",
+  "driver": "{driver}",
+  "job": "train",
+  "pack_id": "overnight-traces",
+  "base_model": "llama3",
+  "seat_tag": "llama3",
+  "purpose": "fixture",
+  "host_class_affinity": "any",
+  "source_paths": [],
+  "source_drivers": [],
+  "artifacts": ["axolotl.yml"],
+  "promoted": false,
+  "auto_apply": false,
+  "estate_rewritten": false,
+  "note": "test"
+}}
+"#
+    );
+    std::fs::write(dir.join("prepare.json"), body).unwrap();
+}
+
+#[test]
+fn axolotl_prepare_prints_create_and_refuses_adapter_and_symlink() {
+    for driver in ["axolotl-lora", "axolotl-qlora"] {
+        let root = tmp(&format!("ax-{driver}"));
+        write_axolotl_prepare(&root, driver);
+        let merged_dir = root.join("merged");
+        std::fs::create_dir_all(&merged_dir).unwrap();
+        std::fs::write(merged_dir.join("config.json"), "{}\n").unwrap();
+        std::fs::write(merged_dir.join("model.safetensors"), b"weights").unwrap();
+        let seat = estate_bin()
+            .args([
+                "enrich",
+                "local-seat",
+                "--prepared",
+                root.to_str().unwrap(),
+                "--weights",
+                merged_dir.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let seat_text = text(&seat);
+        assert!(seat.status.success(), "{driver}: {seat_text}");
+        assert!(seat_text.contains("shape=merged"), "{driver}: {seat_text}");
+        assert!(
+            seat_text.contains("seat_tag=llama3"),
+            "{driver}: {seat_text}"
+        );
+        assert!(
+            seat_text.contains(&format!(
+                "ollama create cell-enrich-overnight-traces -f {}",
+                merged_dir.join("Modelfile").display()
+            )),
+            "{driver}: {seat_text}"
+        );
+        assert!(
+            seat_text.contains("Axolotl does not write GGUF"),
+            "{driver}: {seat_text}"
+        );
+        assert!(
+            !seat_text.contains("LLaMA-Factory wrote"),
+            "{driver}: {seat_text}"
+        );
+        assert!(
+            seat_text.contains("local-seat did not create a model."),
+            "{driver}: {seat_text}"
+        );
+        assert!(
+            seat_text.contains("READY_FOR_LIVE_TEST: no"),
+            "{driver}: {seat_text}"
+        );
+        assert!(!merged_dir.join("Modelfile").exists(), "{driver}");
+        assert!(!root.join("merged.gguf").exists(), "{driver}");
+
+        let gguf = root.join("model.gguf");
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend_from_slice(&[0u8; 12]);
+        std::fs::write(&gguf, bytes).unwrap();
+        let gguf_seat = estate_bin()
+            .args([
+                "enrich",
+                "local-seat",
+                "--prepared",
+                root.to_str().unwrap(),
+                "--weights",
+                gguf.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let gguf_text = text(&gguf_seat);
+        assert!(gguf_seat.status.success(), "{driver}: {gguf_text}");
+        assert!(gguf_text.contains("shape=gguf"), "{driver}: {gguf_text}");
+        assert!(
+            gguf_text.contains("Axolotl did not write this GGUF"),
+            "{driver}: {gguf_text}"
+        );
+        assert!(gguf_text.contains("ollama create"), "{driver}: {gguf_text}");
+        assert!(!root.join("Modelfile").exists(), "{driver}");
+
+        let adapter = root.join("outputs");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let refused = estate_bin()
+            .args([
+                "enrich",
+                "local-seat",
+                "--prepared",
+                root.to_str().unwrap(),
+                "--weights",
+                adapter.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let refused_text = text(&refused);
+        assert!(!refused.status.success(), "{driver}: {refused_text}");
+        assert!(
+            refused_text.contains("refuse:seat"),
+            "{driver}: {refused_text}"
+        );
+        assert!(
+            refused_text.contains("adapter directory"),
+            "{driver}: {refused_text}"
+        );
+        assert!(
+            !refused_text.contains("ollama create"),
+            "{driver}: {refused_text}"
+        );
+
+        let card = root.join("export-card");
+        std::fs::create_dir_all(&card).unwrap();
+        std::fs::write(card.join("export.yaml"), "adapter_name_or_path: outputs\n").unwrap();
+        let card_seat = estate_bin()
+            .args([
+                "enrich",
+                "local-seat",
+                "--prepared",
+                root.to_str().unwrap(),
+                "--weights",
+                card.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let card_text = text(&card_seat);
+        assert!(!card_seat.status.success(), "{driver}: {card_text}");
+        assert!(card_text.contains("refuse:seat"), "{driver}: {card_text}");
+        assert!(
+            !card_text.contains("ollama create"),
+            "{driver}: {card_text}"
+        );
+
+        let linked = root.join("linked");
+        std::os::unix::fs::symlink(&merged_dir, &linked).unwrap();
+        let link_seat = estate_bin()
+            .args([
+                "enrich",
+                "local-seat",
+                "--prepared",
+                root.to_str().unwrap(),
+                "--weights",
+                linked.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let link_text = text(&link_seat);
+        assert!(!link_seat.status.success(), "{driver}: {link_text}");
+        assert!(link_text.contains("refuse:seat"), "{driver}: {link_text}");
+        assert!(link_text.contains("symlink"), "{driver}: {link_text}");
+        assert!(
+            !link_text.contains("ollama create"),
+            "{driver}: {link_text}"
+        );
+    }
 }
 
 fn dir_names(dir: &std::path::Path) -> Vec<String> {
