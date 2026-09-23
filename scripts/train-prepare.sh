@@ -1167,6 +1167,91 @@ grep -q "quantization_method: bnb" "$WORKDIR/deepseek-r1-distill-lora-pack-qlora
 grep -q "quantization_bit: 4" "$WORKDIR/deepseek-r1-distill-lora-pack-qlora/recipe.yaml"
 grep -q "^template: deepseekr1$" "$WORKDIR/deepseek-r1-distill-lora-pack-qlora/recipe.yaml"
 
+GLM4_PACK="$ROOT/examples/fixtures/glm4-chat.pack.json"
+echo "-- glm4 chat qlora reproduce target --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$GLM4_PACK" \
+  --driver llamafactory-qlora \
+  --out "$WORKDIR/glm4-chat-qlora"
+grep -q "^template: glm4$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+grep -q "^template: glm4$" "$WORKDIR/glm4-chat-qlora/export.yaml"
+grep -q "^lora_rank: 16$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+grep -q "^packing: true$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+if grep -q "^template: qwen$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"; then
+  echo "FAIL  glm4 chat recipe used the qwen template"
+  exit 1
+fi
+if grep -q "^template: llama3$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"; then
+  echo "FAIL  glm4 chat recipe used the llama3 template"
+  exit 1
+fi
+if grep -q "^template: deepseekr1$" "$WORKDIR/glm4-chat-qlora/recipe.yaml"; then
+  echo "FAIL  glm4 chat recipe used the deepseekr1 template"
+  exit 1
+fi
+grep -q "quantization_bit: 4" "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+grep -q 'model_name_or_path: "zai-org/glm-4-9b-chat"' "$WORKDIR/glm4-chat-qlora/recipe.yaml"
+if grep -q 'model_name_or_path: "llama3"' "$WORKDIR/glm4-chat-qlora/recipe.yaml"; then
+  echo "FAIL  glm4 recipe named the seat tag as model_name_or_path"
+  exit 1
+fi
+if grep -q "quantization_bit" "$WORKDIR/glm4-chat-qlora/export.yaml"; then
+  echo "FAIL  glm4 export.yaml must not set quantization_bit"
+  exit 1
+fi
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA." "$WORKDIR/glm4-chat-qlora/NEXT.md"
+grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA." "$WORKDIR/glm4-chat-qlora/PREPARE.md"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA." "$WORKDIR/glm4-chat-qlora/NEXT.md" "$WORKDIR/glm4-chat-qlora/PREPARE.md"; then
+  echo "FAIL  glm4 prepare took the DeepSeek-R1-Distill QLoRA reproduce note"
+  exit 1
+fi
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA." "$WORKDIR/glm4-chat-qlora/NEXT.md" "$WORKDIR/glm4-chat-qlora/PREPARE.md"; then
+  echo "FAIL  glm4 prepare took the qwen2.5 instruct reproduce note"
+  exit 1
+fi
+if grep -q "READY_FOR_LIVE_TEST: yes" "$WORKDIR/glm4-chat-qlora/NEXT.md" "$WORKDIR/glm4-chat-qlora/PREPARE.md"; then
+  echo "FAIL  glm4 prepare must keep READY_FOR_LIVE_TEST no"
+  exit 1
+fi
+if [[ -e "$WORKDIR/glm4-chat-qlora/train.py" || -e "$WORKDIR/glm4-chat-qlora/train.sh" ]]; then
+  echo "FAIL  glm4 prepare must not write a train script"
+  exit 1
+fi
+python3 - "$WORKDIR/glm4-chat-qlora/prepare.json" <<'PY'
+import json, sys
+prepare = json.load(open(sys.argv[1]))
+if prepare.get("driver") != "llamafactory-qlora":
+    raise SystemExit(f"FAIL  glm4 driver={prepare.get('driver')}")
+if prepare.get("base_model") != "llama3" or prepare.get("seat_tag") != "llama3":
+    raise SystemExit(f"FAIL  glm4 seat={prepare.get('base_model')} tag={prepare.get('seat_tag')}")
+if prepare.get("train_base_model") != "zai-org/glm-4-9b-chat":
+    raise SystemExit(f"FAIL  glm4 train_base_model={prepare.get('train_base_model')}")
+if prepare.get("promoted") is not False or prepare.get("auto_apply") is not False or prepare.get("estate_rewritten") is not False:
+    raise SystemExit("FAIL  glm4 prepare must stay unpromoted")
+PY
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$GLM4_PACK" \
+  --driver llamafactory-lora \
+  --out "$WORKDIR/glm4-chat-pack-lora"
+if grep -q "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA." "$WORKDIR/glm4-chat-pack-lora/NEXT.md" "$WORKDIR/glm4-chat-pack-lora/PREPARE.md"; then
+  echo "FAIL  glm4 fixture on the LoRA card wrote the QLoRA reproduce note"
+  exit 1
+fi
+grep -q "^template: glm4$" "$WORKDIR/glm4-chat-pack-lora/recipe.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/glm4-chat-pack-lora/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/glm4-chat-pack-lora/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/glm4-chat-pack-lora/recipe.yaml"; then
+  echo "FAIL  glm4 LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/glm4-chat-pack-lora/recipe.yaml"; then
+  echo "FAIL  glm4 LoRA recipe must omit quantization_method"
+  exit 1
+fi
+
 QWEN3_LORA_PACK="$ROOT/examples/fixtures/qwen3-instruct-lora.pack.json"
 echo "-- qwen3 instruct lora reproduce target --"
 estate enrich prepare \

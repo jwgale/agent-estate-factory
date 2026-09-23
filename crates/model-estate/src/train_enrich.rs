@@ -3791,6 +3791,8 @@ fn template_for_segment(segment: &str) -> Option<&'static str> {
         Some(template)
     } else if let Some(template) = gemma_template_for_segment(&name) {
         Some(template)
+    } else if let Some(template) = glm_template_for_segment(&name) {
+        Some(template)
     } else {
         phi_template_for_segment(&name)
     }
@@ -3908,6 +3910,38 @@ fn gemma_template_for_segment(name: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// LLaMA-Factory `register_model_group` templates for GLM.
+/// Longer stems win. `glm-4` is a prefix of `glm-4.1v`, `glm-4.5`, `glm-4.5v`,
+/// `glm-4.6v`, and `glm-4.7`, and `.` is not an alphanumeric boundary, so a
+/// short `glm-4` stem would label those groups `glm4`. `constants.py` names
+/// the GLM-4-9B / 0414 text group `glm4`. `template.py` registers `glm4`.
+/// There is no `glm_4` name. ChatGLM3 is `chatglm3`. GLM-Z1 is `glmz1`.
+/// GLM-4.1V is `glm4v`. GLM-4.5 is `glm4_moe`. GLM-4.5V and GLM-4.6V are
+/// `glm4_5v`. GLM-4.7 is `glm4_7`. GLM-OCR is `glm_ocr`.
+/// HF cache directories keep the repo id in one segment
+/// (`models--zai-org--glm-4-9b-chat`).
+fn glm_template_for_segment(name: &str) -> Option<&'static str> {
+    const GROUPS: &[(&[&str], &str)] = &[
+        (&["chatglm3", "chatglm-3"], "chatglm3"),
+        (&["glm-ocr", "glm_ocr"], "glm_ocr"),
+        (&["glm-z1", "glmz1"], "glmz1"),
+        (&["glm-4.1v", "glm4.1v", "glm-4-1v", "glm4v"], "glm4v"),
+        (
+            &["glm-4.6v", "glm4.6v", "glm-4.5v", "glm4.5v", "glm4_5v"],
+            "glm4_5v",
+        ),
+        (&["glm-4.7", "glm4.7", "glm4_7"], "glm4_7"),
+        (&["glm-4.5", "glm4.5", "glm4_moe", "glm4-moe"], "glm4_moe"),
+        (&["glm-4", "glm4"], "glm4"),
+    ];
+    for (stems, template) in GROUPS {
+        if stems.iter().any(|stem| stem_at_boundary(name, stem)) {
+            return Some(*template);
+        }
+    }
+    None
 }
 
 /// LLaMA-Factory `register_model_group` templates for DeepSeek.
@@ -4279,6 +4313,33 @@ fn deepseek_r1_distill_lora_reproduce_note(
     }
 }
 
+/// QLoRA handoff when the train base is an official GLM-4 Chat id in the
+/// `template="glm4"` group. Empty for a GLM-4 base, for GLM-Z1, for vision,
+/// for GLM-4.5 / 4.6 / 4.7, for GLM-OCR, for ChatGLM3, for GPTQ / AWQ / GGUF,
+/// for `glm-4-9b-chat-hf`, and for the LoRA card.
+/// `constants.py` registers GLM-4-9B, GLM-4-9B-Chat, GLM-4-9B-1M-Chat,
+/// GLM-4-0414-9B-Chat, GLM-4-0414-32B-Base, and GLM-4-0414-32B-Chat with
+/// `template="glm4"`. The DEFAULT DownloadSource for GLM-4-9B-Chat is
+/// `zai-org/glm-4-9b-chat`. `template.py` registers `glm4`. There is no
+/// `glm_4` template. `examples/train_qlora` has no GLM-4 yaml.
+/// This card does not add the LoRA twin. `llamafactory-lora` still writes
+/// template `glm4` and does not get this line.
+const GLM4_CHAT_QLORA_REPRODUCE_NOTE: &str = "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA. GLM-4 Chat (zai-org/glm-4-9b-chat, zai-org/glm-4-9b-chat-1m, zai-org/GLM-4-9B-0414, and zai-org/GLM-4-32B-0414) uses LLaMA-Factory template glm4. constants.py registers that group with template glm4. The DEFAULT DownloadSource for GLM-4-9B-Chat is zai-org/glm-4-9b-chat. ModelScope in that group is ZhipuAI/glm-4-9b-chat. template.py registers glm4. There is no glm_4 template. ChatGLM3 uses template chatglm3. examples/train_qlora does not ship a GLM-4 yaml. These ids are chat models. GLM-4-9B-Chat is the smallest popular chat checkpoint in that group. A GLM-4 base checkpoint (zai-org/glm-4-9b and zai-org/GLM-4-32B-Base-0414) uses template glm4 and is not this reproduce target. GLM-Z1 uses template glmz1 and is not this reproduce target. GLM-4.1V uses template glm4v and is not this reproduce target. GLM-4.5 uses template glm4_moe and is not this reproduce target. GLM-4.5V and GLM-4.6V use template glm4_5v and are not this reproduce target. GLM-4.7 uses template glm4_7 and is not this reproduce target. GLM-OCR uses template glm_ocr and is not this reproduce target. Kimi is not in this glm4 group. This scan does not claim Kimi. GPTQ, AWQ, and GGUF checkpoints of these chat ids are not this reproduce target. zai-org/glm-4-9b-chat-hf is not listed in that glm4 group and is not this reproduce target. The older THUDM/glm-4-9b-chat id is not the DEFAULT source in current constants.py. A model segment glm-4-9b-chat still matches this chat shape. The seat tag and the train base stay separate. An Ollama tag such as glm4, glm4:9b, glm4:latest, or glm4:9b-chat-q2_K is a seat tag for this checkpoint (Ollama library glm4). glm-4 and glm-4:9b are seat tags too. They are not the Hugging Face train base. This QLoRA recipe keeps quantization_method bnb and quantization_bit 4. This factory does not download weights.";
+
+fn glm4_chat_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
+    if method != LlamaFactoryMethod::Qlora {
+        return String::new();
+    }
+    let Some(segment) = llamafactory_template_segment(train_base) else {
+        return String::new();
+    };
+    if segment_is_glm4_chat(segment) {
+        format!("{GLM4_CHAT_QLORA_REPRODUCE_NOTE}\n\n")
+    } else {
+        String::new()
+    }
+}
+
 fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String {
     let mut note = phi_qlora_reproduce_note(method, train_base);
     note.push_str(&llama32_qlora_reproduce_note(method, train_base));
@@ -4287,6 +4348,7 @@ fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String
     note.push_str(&qwen3_instruct_qlora_reproduce_note(method, train_base));
     note.push_str(&qwen25_instruct_qlora_reproduce_note(method, train_base));
     note.push_str(&deepseek_r1_distill_qlora_reproduce_note(method, train_base));
+    note.push_str(&glm4_chat_qlora_reproduce_note(method, train_base));
     note
 }
 
@@ -4450,10 +4512,50 @@ fn segment_is_deepseek_r1_distill(segment: &str) -> bool {
     STEMS.iter().any(|stem| stem_at_boundary(&name, stem))
 }
 
+/// Official GLM-4 Chat ids in the `template="glm4"` group in `constants.py`.
+/// That same `register_model_group` also lists `GLM-4-9B` and
+/// `GLM-4-0414-32B-Base`. Those bases use `glm4` and are not this reproduce
+/// target. Hub ids: `glm-4-9b-chat`, `glm-4-9b-chat-1m`, `GLM-4-9B-0414`, and
+/// `GLM-4-32B-0414`. Display names: `GLM-4-9B-Chat`, `GLM-4-9B-1M-Chat`,
+/// `GLM-4-0414-9B-Chat`, and `GLM-4-0414-32B-Chat`. The DEFAULT DownloadSource
+/// for GLM-4-9B-Chat is `zai-org/glm-4-9b-chat`. `glm-4-9b-chat-hf` is not in
+/// that group. GLM-Z1 is `glmz1`. Vision ids are `glm4v` or `glm4_5v`.
+/// GLM-4.5 is `glm4_moe`. GLM-4.7 is `glm4_7`. GLM-OCR is `glm_ocr`.
+/// ChatGLM3 is `chatglm3`. GPTQ, AWQ, and GGUF checkpoints are already
+/// converted or quantized. A `-` after a chat stem is a boundary, so
+/// `glm-4-9b-chat-1m` matches `glm-4-9b-chat` and `glm-4-9b-chat-hf` matches
+/// that stem too. The `hf` stem drops the transformers sibling.
+fn segment_is_glm4_chat(segment: &str) -> bool {
+    let name = segment.to_ascii_lowercase();
+    if template_for_segment(segment) != Some("glm4") {
+        return false;
+    }
+    if name.contains("gptq")
+        || name.contains("awq")
+        || name.contains("gguf")
+        || name.contains("vision")
+        || stem_at_boundary(&name, "hf")
+        || stem_at_boundary(&name, "base")
+    {
+        return false;
+    }
+    const STEMS: &[&str] = &[
+        "glm-4-9b-chat-1m",
+        "glm-4-9b-1m-chat",
+        "glm-4-9b-chat",
+        "glm-4-0414-9b-chat",
+        "glm-4-9b-0414",
+        "glm-4-0414-32b-chat",
+        "glm-4-32b-0414",
+    ];
+    STEMS.iter().any(|stem| stem_at_boundary(&name, stem))
+}
+
 /// Chat template hint from the train base path. Confirm it before train. Seat the same chat format.
 /// The last segment wins when it names a family. A leaf such as `weights` or an HF snapshot hash
 /// walks toward the root until a segment names one. Unknown paths stay `default`.
 /// A DeepSeek segment is classified before a Qwen or Llama substring in that same segment.
+/// A GLM segment uses its own stems. `glm-4` does not take GLM-4.5, GLM-4.1V, or GLM-Z1.
 fn llamafactory_template(train_base: &str) -> &'static str {
     for segment in train_base_segments(train_base).into_iter().rev() {
         if let Some(template) = template_for_segment(segment) {
@@ -4599,6 +4701,11 @@ fn llamafactory_recipe_yaml(
          # DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 use deepseekr1 and are not that reproduce target.\n\
          # DeepSeek-V2 and DeepSeek-Coder-V2 use deepseek. DeepSeek-V2.5 and DeepSeek-V3 use deepseek3. DeepSeek-Coder uses deepseekcoder.\n\
          # There is no deepseek_r1 template. template.py registers deepseekr1.\n\
+         # GLM-4 (GLM-4-9B, GLM-4-9B-Chat, GLM-4-9B-Chat-1M, GLM-4-9B-0414, GLM-4-32B-0414, and GLM-4-32B-Base-0414) uses glm4.\n\
+         # GLM-4 Chat ids (GLM-4-9B-Chat, GLM-4-9B-Chat-1M, GLM-4-9B-0414, and GLM-4-32B-0414) are the glm4 reproduce target.\n\
+         # GLM-4-9B and GLM-4-32B-Base-0414 use glm4 and are not that reproduce target.\n\
+         # GLM-Z1 uses glmz1. GLM-4.1V uses glm4v. GLM-4.5 uses glm4_moe. GLM-4.5V and GLM-4.6V use glm4_5v. GLM-4.7 uses glm4_7. GLM-OCR uses glm_ocr. ChatGLM3 uses chatglm3.\n\
+         # There is no glm_4 template. template.py registers glm4.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
@@ -13643,6 +13750,476 @@ mod tests {
             seated.clone(),
             "/tmp/cell-one-hf/5090/DeepSeek-R1-Distill-Qwen-1.5B",
         );
+        let sku_out = root.join("sku-base");
+        let sku = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sku_base,
+            &sku_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!sku_out.exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let frontier_state = root.join("frontier-cell");
+        std::fs::create_dir_all(frontier_state.join("feed")).unwrap();
+        std::fs::write(
+            frontier_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier_out = root.join("frontier");
+        let frontier = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &frontier_out,
+            &frontier_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!frontier_out.exists());
+    }
+
+    #[test]
+    fn glm4_chat_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
+        const GLM4_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA.";
+        const DISTILL_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA.";
+        const QWEN25_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA.";
+        const QWEN3_NOTE: &str =
+            "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA.";
+        const DISTILL_LORA_NOTE: &str =
+            "Reproduce target on the unquantized LoRA card, the non-quant twin of the DeepSeek-R1-Distill chat QLoRA prepare.";
+        let root = tmp("glm4-chat-qlora");
+        let pack_path = repo_root().join("examples/fixtures/glm4-chat.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(pack.id, "glm4-chat");
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("zai-org/glm-4-9b-chat")
+        );
+        assert_eq!(pack.model_hint.as_deref(), Some("llama3"));
+        assert!(!pack.promoted);
+        let estate = fixture_estate();
+        let out = root.join("qlora");
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("zai-org/glm-4-9b-chat")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(yaml_line(&recipe, "template: glm4"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: qwen"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: llama3"), "{recipe}");
+        assert!(!yaml_line(&recipe, "template: deepseekr1"), "{recipe}");
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(yaml_line(&recipe, "lora_rank: 16"), "{recipe}");
+        assert!(yaml_line(&recipe, "packing: true"), "{recipe}");
+        assert!(
+            recipe.contains("GLM-4 Chat ids (GLM-4-9B-Chat, GLM-4-9B-Chat-1M, GLM-4-9B-0414, and GLM-4-32B-0414) are the glm4 reproduce target."),
+            "{recipe}"
+        );
+        assert!(
+            recipe.contains("model_name_or_path: \"zai-org/glm-4-9b-chat\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("\"llama3\"")
+            }),
+            "{recipe}"
+        );
+        assert!(recipe.contains("does not download weights"), "{recipe}");
+        assert!(recipe.contains("does not run llamafactory-cli"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(yaml_line(&export, "template: glm4"), "{export}");
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"zai-org/glm-4-9b-chat\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(text.contains(GLM4_NOTE), "{text}");
+            assert!(
+                text.contains("uses LLaMA-Factory template glm4."),
+                "{text}"
+            );
+            assert!(text.contains("zai-org/glm-4-9b-chat"), "{text}");
+            assert!(text.contains("There is no glm_4 template."), "{text}");
+            assert!(text.contains("template.py registers glm4."), "{text}");
+            assert!(text.contains("constants.py registers that group"), "{text}");
+            assert!(text.contains("glm4:9b"), "{text}");
+            assert!(text.contains("glm-4:9b"), "{text}");
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("quantization_method bnb"), "{text}");
+            assert!(text.contains("quantization_bit 4"), "{text}");
+            assert!(text.contains("refuse:tokenizer"), "{text}");
+            assert!(!text.contains(DISTILL_NOTE), "{text}");
+            assert!(!text.contains(QWEN25_NOTE), "{text}");
+            assert!(!text.contains(QWEN3_NOTE), "{text}");
+            assert!(!text.contains(DISTILL_LORA_NOTE), "{text}");
+            assert!(
+                text.contains("examples/train_qlora does not ship a GLM-4 yaml."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("omits quantization_bit and quantization_method"),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Phi-3, Llama-3.2, and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains(
+                    "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA."
+                ),
+                "{text}"
+            );
+            assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+            assert!(text.contains("READY_FOR_LIVE_TEST: no"), "{text}");
+        }
+        assert!(!out.join("train.py").exists());
+        assert!(!out.join("train.sh").exists());
+
+        let lora_out = root.join("lora");
+        let lora = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(lora.base_model, "llama3");
+        assert_eq!(
+            lora.train_base_model.as_deref(),
+            Some("zai-org/glm-4-9b-chat")
+        );
+        let lora_recipe = std::fs::read_to_string(lora_out.join("recipe.yaml")).unwrap();
+        assert!(yaml_line(&lora_recipe, "template: glm4"), "{lora_recipe}");
+        assert!(yaml_line(&lora_recipe, "lora_rank: 8"), "{lora_recipe}");
+        assert!(yaml_line(&lora_recipe, "packing: false"), "{lora_recipe}");
+        assert!(
+            !lora_recipe.contains("quantization_bit")
+                && !lora_recipe.contains("quantization_method"),
+            "{lora_recipe}"
+        );
+        let lora_next = std::fs::read_to_string(lora_out.join("NEXT.md")).unwrap();
+        let lora_prepare = std::fs::read_to_string(lora_out.join("PREPARE.md")).unwrap();
+        assert!(!lora_next.contains(GLM4_NOTE), "{lora_next}");
+        assert!(!lora_prepare.contains(GLM4_NOTE), "{lora_prepare}");
+        assert!(
+            !lora_next.contains("non-quant twin of the GLM-4"),
+            "{lora_next}"
+        );
+        assert!(!lora_next.contains("quantization_method bnb"), "{lora_next}");
+        assert!(!lora_next.contains("quantization_bit 4"), "{lora_next}");
+        assert!(!lora_next.contains(DISTILL_NOTE), "{lora_next}");
+        assert!(!lora_next.contains(DISTILL_LORA_NOTE), "{lora_next}");
+
+        let bare = fixture_pack();
+        let seated = seated_estate("llama3");
+        for bad in [
+            "llama3",
+            "llama3:latest",
+            "glm4",
+            "glm4:9b",
+            "glm4:latest",
+            "glm4:9b-chat-q2_K",
+            "glm-4",
+            "glm-4:9b",
+            "./glm4",
+            "../glm-4",
+        ] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!(
+                "seat-{}",
+                bad.trim_start_matches('.').replace(['/', ':'], "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!bad_out.exists(), "{bad}");
+        }
+        for bad in ["./glm-4-9b-chat", "/opt/hf/glm-4-9b-chat"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!("leaf-{}", bad.replace('/', "_")));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(err.to_string().contains("Ollama seat tag"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let nested_estate = with_train_base(
+            seated.clone(),
+            "./weights/zai-org/glm-4-9b-chat/weights",
+        );
+        let nested_out = root.join("nested-9b");
+        let nested = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/zai-org/glm-4-9b-chat/weights"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(yaml_line(&nested_recipe, "template: glm4"), "{nested_recipe}");
+        assert!(
+            nested_recipe.contains("quantization_method: bnb"),
+            "{nested_recipe}"
+        );
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        assert!(nested_next.contains(GLM4_NOTE), "{nested_next}");
+        assert!(!nested_next.contains(DISTILL_NOTE), "{nested_next}");
+        assert!(!nested_next.contains(QWEN25_NOTE), "{nested_next}");
+
+        let cases = [
+            ("zai-org/glm-4-9b-chat", "glm4", true),
+            ("zai-org/glm-4-9b-chat-1m", "glm4", true),
+            ("zai-org/GLM-4-9B-0414", "glm4", true),
+            ("zai-org/GLM-4-32B-0414", "glm4", true),
+            ("ZhipuAI/glm-4-9b-chat", "glm4", true),
+            ("THUDM/glm-4-9b-chat", "glm4", true),
+            ("LlamaFactory/glm-4-9b-chat", "glm4", true),
+            ("lab/GLM-4-9B-Chat", "glm4", true),
+            ("lab/GLM-4-9B-1M-Chat", "glm4", true),
+            ("lab/GLM-4-0414-9B-Chat", "glm4", true),
+            ("lab/GLM-4-0414-32B-Chat", "glm4", true),
+            (
+                "/home/user/.cache/huggingface/hub/models--zai-org--glm-4-9b-chat/snapshots/abc123def456",
+                "glm4",
+                true,
+            ),
+            (
+                "/tmp/Qwen2.5-0.5B-Instruct/zai-org/glm-4-9b-chat/weights",
+                "glm4",
+                true,
+            ),
+            (
+                "/tmp/glm-4-9b-chat/Qwen/Qwen2.5-0.5B-Instruct",
+                "qwen",
+                false,
+            ),
+            ("zai-org/glm-4-9b", "glm4", false),
+            ("zai-org/GLM-4-32B-Base-0414", "glm4", false),
+            ("lab/GLM-4-0414-32B-Base", "glm4", false),
+            ("zai-org/glm-4-9b-chat-hf", "glm4", false),
+            ("zai-org/glm-4-9b-chat-GPTQ-Int4", "glm4", false),
+            ("zai-org/glm-4-9b-chat-AWQ", "glm4", false),
+            ("zai-org/glm-4-9b-chat-GGUF", "glm4", false),
+            ("zai-org/GLM-Z1-9B-0414", "glmz1", false),
+            ("zai-org/GLM-Z1-32B-0414", "glmz1", false),
+            ("zai-org/GLM-4.1V-9B-Base", "glm4v", false),
+            ("zai-org/GLM-4.1V-9B-Thinking", "glm4v", false),
+            ("zai-org/GLM-4.5", "glm4_moe", false),
+            ("zai-org/GLM-4.5-Air", "glm4_moe", false),
+            ("zai-org/GLM-4.5V", "glm4_5v", false),
+            ("zai-org/GLM-4.6V", "glm4_5v", false),
+            ("zai-org/GLM-4.6V-Flash", "glm4_5v", false),
+            ("zai-org/GLM-4.7-Flash", "glm4_7", false),
+            ("zai-org/GLM-OCR", "glm_ocr", false),
+            ("zai-org/chatglm3-6b", "chatglm3", false),
+            ("moonshotai/Kimi-VL-A3B-Instruct", "default", false),
+            ("moonshotai/Kimi-Dev-72B", "default", false),
+            ("Qwen/Qwen2.5-0.5B-Instruct", "qwen", false),
+            ("Qwen/Qwen3-4B-Instruct-2507", "qwen3_nothink", false),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "deepseekr1", false),
+            ("meta-llama/Llama-3.2-3B-Instruct", "llama3", false),
+            ("microsoft/Phi-3-mini-4k-instruct", "phi", false),
+            ("google/gemma-2-2b-it", "gemma2", false),
+            ("mistralai/Mistral-7B-Instruct-v0.3", "mistral", false),
+        ];
+        for (idx, (train, template, note)) in cases.iter().enumerate() {
+            let case_estate = with_train_base(seated.clone(), train);
+            let case_out = root.join(format!("case-{idx}"));
+            let case_doc = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &case_estate,
+                &case_out,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            assert_eq!(case_doc.base_model, "llama3", "{train}");
+            assert_eq!(case_doc.seat_tag.as_deref(), Some("llama3"), "{train}");
+            assert_eq!(case_doc.train_base_model.as_deref(), Some(*train), "{train}");
+            assert!(!case_doc.promoted && !case_doc.auto_apply && !case_doc.estate_rewritten);
+            let case_recipe = std::fs::read_to_string(case_out.join("recipe.yaml")).unwrap();
+            let template_line = format!("template: {template}");
+            assert!(
+                yaml_line(&case_recipe, &template_line),
+                "{train}\n{case_recipe}"
+            );
+            assert!(case_recipe.contains("quantization_method: bnb"), "{train}");
+            assert!(case_recipe.contains("quantization_bit: 4"), "{train}");
+            assert!(yaml_line(&case_recipe, "lora_rank: 16"), "{train}");
+            assert!(yaml_line(&case_recipe, "packing: true"), "{train}");
+            let case_next = std::fs::read_to_string(case_out.join("NEXT.md")).unwrap();
+            let case_prepare = std::fs::read_to_string(case_out.join("PREPARE.md")).unwrap();
+            assert_eq!(case_next.contains(GLM4_NOTE), *note, "{train}\n{case_next}");
+            assert_eq!(
+                case_prepare.contains(GLM4_NOTE),
+                *note,
+                "{train}\n{case_prepare}"
+            );
+            if *note {
+                assert!(!case_next.contains(DISTILL_NOTE), "{train}\n{case_next}");
+                assert!(!case_next.contains(QWEN25_NOTE), "{train}\n{case_next}");
+                assert!(!case_next.contains(QWEN3_NOTE), "{train}\n{case_next}");
+            }
+            if train.ends_with("Qwen2.5-0.5B-Instruct") {
+                assert!(case_next.contains(QWEN25_NOTE), "{train}\n{case_next}");
+                assert!(!case_next.contains(GLM4_NOTE), "{train}\n{case_next}");
+            }
+            if train.ends_with("DeepSeek-R1-Distill-Qwen-1.5B") {
+                assert!(case_next.contains(DISTILL_NOTE), "{train}\n{case_next}");
+                assert!(!case_next.contains(GLM4_NOTE), "{train}\n{case_next}");
+            }
+            assert!(!case_next.contains("READY_FOR_LIVE_TEST: yes"), "{train}");
+            let lora_case = root.join(format!("lora-case-{idx}"));
+            run(
+                LLAMAFACTORY_LORA_ID,
+                &bare,
+                &case_estate,
+                &lora_case,
+                "train",
+                "jason",
+            )
+            .unwrap();
+            let lora_case_next = std::fs::read_to_string(lora_case.join("NEXT.md")).unwrap();
+            let lora_case_recipe = std::fs::read_to_string(lora_case.join("recipe.yaml")).unwrap();
+            assert!(!lora_case_next.contains(GLM4_NOTE), "{train}\n{lora_case_next}");
+            assert!(
+                !lora_case_recipe.contains("quantization_bit")
+                    && !lora_case_recipe.contains("quantization_method"),
+                "{train}\n{lora_case_recipe}"
+            );
+            assert!(
+                yaml_line(&lora_case_recipe, &template_line),
+                "{train}\n{lora_case_recipe}"
+            );
+            assert!(yaml_line(&lora_case_recipe, "lora_rank: 8"), "{train}");
+            assert!(yaml_line(&lora_case_recipe, "packing: false"), "{train}");
+        }
+
+        let mut promoted_pack = pack.clone();
+        promoted_pack.promoted = true;
+        let promoted_out = root.join("promoted");
+        let promoted = run(
+            LLAMAFACTORY_QLORA_ID,
+            &promoted_pack,
+            &estate,
+            &promoted_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(promoted.to_string().contains("refuse:pack"), "{promoted}");
+        assert!(!promoted_out.exists());
+
+        let mut sacred_pack = pack.clone();
+        sacred_pack.id = "cyera".into();
+        let sacred_out = root.join("sacred-id");
+        let sacred = run(
+            LLAMAFACTORY_QLORA_ID,
+            &sacred_pack,
+            &estate,
+            &sacred_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!sacred_out.exists());
+
+        let sacred_base = with_train_base(seated.clone(), "cyera/glm-4-9b-chat");
+        let sacred_base_out = root.join("sacred-base");
+        let sacred_train = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sacred_base,
+            &sacred_base_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            sacred_train.to_string().contains("refuse:sacred"),
+            "{sacred_train}"
+        );
+        assert!(!sacred_base_out.exists());
+
+        let sku_base = with_train_base(seated.clone(), "/tmp/cell-one-hf/5090/glm-4-9b-chat");
         let sku_out = root.join("sku-base");
         let sku = run(
             LLAMAFACTORY_QLORA_ID,
