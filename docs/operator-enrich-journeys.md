@@ -1,6 +1,6 @@
 # Operator journeys: train/enrich
 
-Walks for the suite goal: facilitate train and enrich of purpose-built small-parameter models. Today's beachhead is enrich packs, the specialist path, and an Axolotl recipe the operator runs outside the factory.
+Walks for the suite goal: facilitate train and enrich of purpose-built small-parameter models. Today's beachhead is enrich packs, the specialist path, and prepare cards the operator runs outside the factory: LLaMA-Factory LoRA and QLoRA, plus Axolotl bf16 LoRA and 4-bit QLoRA.
 
 Locked defaults: [`../charter.md`](../charter.md). Product page: [`NORTH-STAR.md`](NORTH-STAR.md). Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). Prepare command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Live paste target: [`LIVE-PROBES.md`](LIVE-PROBES.md).
 

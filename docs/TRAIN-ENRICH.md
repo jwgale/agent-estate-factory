@@ -25,7 +25,7 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 | `estate enrich apply-proposal` | Reads that proposal. Checks schema, curator, sacred, hardware, frontier, and `prepare.json`. Writes `{state}/enrich-stage/staged-estate.yaml` for `estate plan` and `estate apply --require-plan`. Does not apply. Does not rewrite the source estate. |
 | `estate help enrich` | Same page as `estate help train`. |
 | `make enrich-prepare` | Opt-in fixture walk. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
-| `make train-prepare` | Opt-in LLaMA-Factory recipe and Axolotl recipe. Prints `SKIP live train`. Does not run either trainer. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
+| `make train-prepare` | Opt-in LLaMA-Factory LoRA and QLoRA recipes and Axolotl LoRA and QLoRA recipes. Prints `SKIP live train`. Does not run either trainer. Not in `make smoke`, `make gate-90`, or GitHub Actions. |
 | `make enrich-live-prove` | Opt-in seated handoff. Runs `ollama create` when the seat is up, then removes the tag. Not a factory-wide live test. Off smoke, `gate-90`, and Actions. |
 
 Job field: `enrich` (default) or `train`. `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, and `axolotl-qlora` default to `train` and refuse `enrich`. Both jobs only prepare. The factory does not run a trainer.

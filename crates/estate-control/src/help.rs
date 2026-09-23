@@ -463,9 +463,9 @@ Point --estate at a lab copy. examples/estate.yaml on main stays hash-locked.
 apply-proposal and import-prepared leave the source estate unchanged.
 Promote stays off. No train POST.
 
-Opt-in walk: make enrich-prepare. make train-prepare writes a
-LLaMA-Factory recipe and an Axolotl recipe under /tmp and does not run either
-trainer. Neither is part of
+Opt-in walk: make enrich-prepare. make train-prepare writes
+LLaMA-Factory LoRA and QLoRA recipes and Axolotl LoRA and QLoRA recipes
+under /tmp and does not run either trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.

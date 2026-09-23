@@ -49,7 +49,7 @@ open(seated, "w").write(text.replace(
 ))
 PY
 
-echo "== train-prepare (LLaMA-Factory recipe and Axolotl recipe; not a live train) =="
+echo "== train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA; not a live train) =="
 echo "workdir: $WORKDIR"
 echo "SKIP live train"
 
@@ -740,4 +740,4 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl recipe, feed hydrate, import-trained; SKIP live train)"
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, feed hydrate, import-trained; SKIP live train)"
