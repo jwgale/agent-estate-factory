@@ -152,6 +152,10 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          When you pass a .gguf file, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file. It does not create the model and does not run llama.cpp. After the convert, point `--weights` at {outfile}.\n\
          \n\
+         After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {outfile}\n\
+         \n\
          To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. The command prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama and does not write the file. llama.cpp does not load that adapter directory in one line. `--runtime llama.cpp` with `--adapter` is refuse:runtime. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
          \n\
          estate enrich local-seat --prepared {out} --adapter {outputs}\n\
@@ -214,6 +218,7 @@ pub(crate) fn axolotl_post_train_ladder(
     let gguf_cli = crate::gguf_convert::gguf_convert_cli(out_dir, &merged);
     let seat_cli = crate::gguf_convert::local_seat_cli(out_dir, &merged);
     let outfile = crate::gguf_convert::sibling_gguf_outfile(&merged);
+    let outfile_q = shell_quote(&outfile.display().to_string());
     format!(
         "\n\
          ## After train\n\
@@ -248,6 +253,10 @@ pub(crate) fn axolotl_post_train_ladder(
          {seat_cli}\n\
          \n\
          When the merged directory has a Modelfile, that command prints `ollama create {tag} -f {merged}/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file.\n\
+         After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that sibling GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
+         \n\
+         estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outfile_q}\n\
+         \n\
          5. Record the same path. import-trained accepts the adapter directory, the merged directory, or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outputs_q}\n\
@@ -263,6 +272,7 @@ pub(crate) fn axolotl_post_train_ladder(
         outputs = outputs.display(),
         merged = merged.display(),
         outfile = outfile.display(),
+        outfile_q = outfile_q,
         prepared = prepared,
         outputs_q = outputs_q,
         merged_q = merged_q,
@@ -1243,7 +1253,7 @@ fn render_gguf(
         modelfile = modelfile_path.display(),
     );
     let tail = format!(
-        "import-trained records this GGUF on the local_slm proposal. A GGUF path is a .gguf file. The seat tag stays {seat_tag}. import-trained does not apply and does not promote.\n\
+        "Next, after you run that ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create and did not create the model. The standing next step records this GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
          \n\
          {import}\n\
          \n\
@@ -1612,7 +1622,7 @@ fn ollama_create(local_tag: &str, modelfile: &Path) -> String {
     )
 }
 
-fn import_trained_line(prepared_dir: &Path, local_tag: &str, weights: &Path) -> String {
+pub(crate) fn import_trained_line(prepared_dir: &Path, local_tag: &str, weights: &Path) -> String {
     format!(
         "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag {} --adapter {}",
         shell_quote(&prepared_dir.display().to_string()),
@@ -1773,6 +1783,16 @@ mod tests {
             "{note}"
         );
         assert!(note.contains("import-trained"), "{note}");
+        assert!(note.contains("standing next step"), "{note}");
+        assert!(note.contains("auto_apply=false"), "{note}");
+        assert!(note.contains("did not run ollama create"), "{note}");
+        assert!(note.contains("does not apply the estate"), "{note}");
+        assert!(
+            note.contains(
+                "estate enrich import-trained --estate <estate.yaml> --prepared /tmp/cell-one-pack --tag cell-enrich-overnight-traces --adapter /tmp/cell-one-pack/export.gguf"
+            ),
+            "{note}"
+        );
         assert!(
             note.contains(
                 "config.json and at least one .safetensors file whose name does not start with adapter_model"
@@ -1928,6 +1948,30 @@ mod tests {
             "{}",
             plan.report
         );
+        assert!(plan.report.contains("standing next step"), "{}", plan.report);
+        assert!(plan.report.contains("auto_apply=false"), "{}", plan.report);
+        assert!(
+            plan.report.contains("did not run ollama create"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("does not apply the estate"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains(&format!(
+                "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+                root.display(),
+                gguf.display()
+            )),
+            "{}",
+            plan.report
+        );
+        let create_at = plan.report.find("ollama create").unwrap();
+        let next_at = plan.report.find("standing next step").unwrap();
+        assert!(create_at < next_at, "{}", plan.report);
         assert!(!root.join(MODELFILE_NAME).exists());
     }
 
@@ -2318,6 +2362,16 @@ mod tests {
             "{note}"
         );
         assert!(note.contains("import-trained"), "{note}");
+        assert!(note.contains("standing next step"), "{note}");
+        assert!(note.contains("auto_apply=false"), "{note}");
+        assert!(note.contains("did not run ollama create"), "{note}");
+        assert!(note.contains("does not apply the estate"), "{note}");
+        assert!(
+            note.contains(
+                "estate enrich import-trained --estate <estate.yaml> --prepared '/tmp/cell one/axolotl-qlora' --tag cell-enrich-overnight-traces --adapter '/tmp/cell one/axolotl-qlora/outputs/merged.gguf'"
+            ),
+            "{note}"
+        );
         assert!(note.contains("Axolotl does not write GGUF"), "{note}");
         assert!(note.contains("does not take `--out`"), "{note}");
         assert!(note.contains("READY_FOR_LIVE_TEST: no"), "{note}");

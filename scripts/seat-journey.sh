@@ -71,8 +71,11 @@ echo "   Prints python3 convert_hf_to_gguf.py ... --outfile <prepared>/export.gg
 echo "4. estate enrich local-seat --prepared <prepared> --weights <prepared>/export.gguf"
 echo "   The GGUF stub starts with GGUF magic. Prints ollama create."
 echo "   This factory does not run it."
+echo "   After that print, the standing next step is import-trained for that GGUF."
+echo "   The same step stands when ollama create already ran outside this factory."
 echo "5. estate enrich import-trained --adapter <prepared>/export.gguf"
-echo "   Records trained_shape gguf and trained_paths. Does not apply. Does not promote."
+echo "   Records trained_shape gguf and trained_paths."
+echo "   The proposal stays auto_apply=false. Does not apply the estate. Does not promote."
 echo
 
 BEFORE="$(cksum "$ESTATE")"
@@ -172,6 +175,11 @@ grep -q "estate enrich gguf-convert --prepared ${PREPARED} --weights ${PREPARED}
 grep -q "python3 convert_hf_to_gguf.py ${PREPARED}/export --outfile ${PREPARED}/export.gguf --outtype auto" "$PREPARED/NEXT.md"
 grep -q "estate enrich local-seat --prepared ${PREPARED} --weights ${PREPARED}/export" "$PREPARED/NEXT.md"
 grep -q "estate enrich import-trained --estate <estate.yaml> --prepared ${PREPARED} --tag ${TAG} --adapter <gguf>" "$PREPARED/NEXT.md"
+grep -q "estate enrich import-trained --estate <estate.yaml> --prepared ${PREPARED} --tag ${TAG} --adapter ${PREPARED}/export.gguf" "$PREPARED/NEXT.md"
+grep -q "standing next step" "$PREPARED/NEXT.md"
+grep -q "auto_apply=false" "$PREPARED/NEXT.md"
+grep -q "did not run ollama create" "$PREPARED/NEXT.md"
+grep -q "does not apply the estate" "$PREPARED/NEXT.md"
 grep -q "READY_FOR_LIVE_TEST: no" "$PREPARED/NEXT.md"
 
 python3 - "$PREPARED/prepare.json" "$TRAIN_BASE" "$SEAT_TAG" <<'PY'
@@ -385,6 +393,11 @@ grep -q "Tokenizer check passed" "$WORKDIR/logs/gguf-print.out"
 grep -q "this directory has no tokenizer_config.json" "$WORKDIR/logs/gguf-print.out"
 grep -q "python3 convert_hf_to_gguf.py ${PREPARED}/export --outfile ${PREPARED}/export.gguf --outtype auto" "$WORKDIR/logs/gguf-print.out"
 grep -q "estate enrich local-seat --prepared ${PREPARED} --weights ${PREPARED}/export.gguf" "$WORKDIR/logs/gguf-print.out"
+grep -q "standing next step" "$WORKDIR/logs/gguf-print.out"
+grep -q "auto_apply=false" "$WORKDIR/logs/gguf-print.out"
+grep -q "did not run ollama create" "$WORKDIR/logs/gguf-print.out"
+grep -q "does not apply the estate" "$WORKDIR/logs/gguf-print.out"
+grep -q "estate enrich import-trained --estate <estate.yaml> --prepared ${PREPARED} --tag ${TAG} --adapter ${PREPARED}/export.gguf" "$WORKDIR/logs/gguf-print.out"
 grep -q "gguf-convert did not convert" "$WORKDIR/logs/gguf-print.out"
 grep -q "READY_FOR_LIVE_TEST: no" "$WORKDIR/logs/gguf-print.out"
 if [[ -e "$PREPARED/export.gguf" || -e "$PREPARED/export/model.gguf" ]]; then
@@ -440,6 +453,11 @@ grep -q "ollama create ${TAG} -f ${PREPARED}/Modelfile" "$WORKDIR/logs/seat-gguf
 grep -q "llama-cli -m " "$WORKDIR/logs/seat-gguf.out"
 grep -q "llama-server -m " "$WORKDIR/logs/seat-gguf.out"
 grep -q "estate enrich import-trained --estate <estate.yaml> --prepared ${PREPARED} --tag ${TAG} --adapter ${PREPARED}/export.gguf" "$WORKDIR/logs/seat-gguf.out"
+grep -q "standing next step" "$WORKDIR/logs/seat-gguf.out"
+grep -q "auto_apply=false" "$WORKDIR/logs/seat-gguf.out"
+grep -q "did not run ollama create" "$WORKDIR/logs/seat-gguf.out"
+grep -q "does not apply the estate" "$WORKDIR/logs/seat-gguf.out"
+grep -q "trained_shape is gguf" "$WORKDIR/logs/seat-gguf.out"
 grep -q "local-seat did not create a model" "$WORKDIR/logs/seat-gguf.out"
 grep -q "READY_FOR_LIVE_TEST: no" "$WORKDIR/logs/seat-gguf.out"
 if [[ -e "$PREPARED/Modelfile" ]]; then
@@ -466,6 +484,7 @@ fi
 grep -q "shape=gguf" "$WORKDIR/logs/import.out"
 grep -q "import-trained did not apply" "$WORKDIR/logs/import.out"
 grep -q "promoted=false" "$WORKDIR/logs/import.out"
+grep -q "auto_apply=false" "$WORKDIR/logs/import.out"
 
 python3 - "$PREPARED/prepare.json" "$PREPARED/binding-proposal.json" "$PREPARED/export.gguf" <<'PY'
 import json, sys

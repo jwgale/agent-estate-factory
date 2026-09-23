@@ -394,6 +394,7 @@ pub fn plan_gguf_convert(
     let convert = printed_convert_line(&dir);
     let outfile = sibling_gguf_outfile(&dir);
     let seat = local_seat_cli(prepared_dir, &outfile);
+    let import = crate::local_seat::import_trained_line(prepared_dir, &local_tag, &outfile);
     let axolotl_note = if is_axolotl_driver(&doc.driver) {
         "Axolotl does not write GGUF. The operator merged this Hugging Face directory outside this factory. This factory does not invent an Axolotl converter.\n\
          \n"
@@ -436,6 +437,10 @@ pub fn plan_gguf_convert(
          Then seat that file. local-seat prints the ollama create line and, for that GGUF, llama-cli -m and llama-server -m. It does not create the model and does not run those programs.\n\
          \n\
          {seat}\n\
+         \n\
+         After that local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and does not promote.\n\
+         \n\
+         {import}\n\
          \n\
          gguf-convert did not convert and did not write {outfile}.\n\
          READY_FOR_LIVE_TEST: no.\n",
@@ -602,6 +607,27 @@ mod tests {
             plan.report
         );
         assert_eq!(plan.local_seat_command, local_seat_cli(&root, &outfile));
+        assert!(plan.report.contains("standing next step"), "{}", plan.report);
+        assert!(plan.report.contains("auto_apply=false"), "{}", plan.report);
+        assert!(
+            plan.report.contains("did not run ollama create"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("does not apply the estate"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains(&format!(
+                "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+                root.display(),
+                outfile.display()
+            )),
+            "{}",
+            plan.report
+        );
         assert!(
             plan.report.contains("gguf-convert did not convert"),
             "{}",

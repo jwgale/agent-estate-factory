@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — name import-trained after a GGUF local-seat
+
+- After a GGUF `estate enrich local-seat` print, the standing next step is `estate enrich import-trained` for that file. `trained_shape` is `gguf`. The proposal stays `auto_apply=false`. The same step stands when `ollama create` already ran outside this factory. The report says this factory did not run `ollama create` and that `import-trained` does not apply the estate. `gguf-convert`, LLaMA-Factory and Axolotl `NEXT.md` / `PREPARE.md`, `estate help enrich`, and the operator pages name that step. A fused MLX directory stays `refuse:adapter`.
+- `make seat-journey` asserts that print on the GGUF stub and still records `trained_shape` `gguf`. It stays off `make smoke`, `make gate-90`, and GitHub Actions. `examples/estate.yaml` stays hash-locked. The commands do not spawn `ollama`, do not apply, and do not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — name the HF-cache tokenizer restore after refuse:tokenizer
 
 - After `refuse:tokenizer`, `NEXT.md`, `PREPARE.md`, the LLaMA-Factory `merge-adapt` report, and `estate help enrich` name the operator restore. Copy tokenizer files from the HF cache snapshot for the train base already on disk, or the equivalent base checkout, into the export directory. Keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`. Then re-run `estate enrich gguf-convert` on that export directory. JSON list, JSON null, and a Qwen-family export missing `vocab.json` or `merges.txt` stay the same refuse. The command does not download weights, does not copy tokenizer files, does not write `tokenizer_config.json.bak`, and does not print `python3 convert_hf_to_gguf.py` on that refuse. `make seat-journey` still asserts the refuse on the 5090-shaped export and stays off `make smoke`, `make gate-90`, and GitHub Actions. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.

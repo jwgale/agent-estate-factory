@@ -1748,7 +1748,10 @@ fn next_markdown(
                 outputs = outputs.display(),
                 export = export_dir.display(),
             ),
-            "Those three commands are the import-trained handoff for this card. --adapter is the output_dir this recipe wrote, the export_dir this export.yaml wrote, or a .gguf file. A path that is none of those shapes, or more than one, is refuse:adapter. import-trained records trained_shape and trained_paths on prepare.json and on the binding proposal. It does not rewrite the estate and it does not promote.".to_string(),
+            format!(
+                "Those three commands are the import-trained handoff for this card. --adapter is the output_dir this recipe wrote, the export_dir this export.yaml wrote, or a .gguf file. A path that is none of those shapes, or more than one, is refuse:adapter. import-trained records trained_shape and trained_paths on prepare.json and on the binding proposal. After a GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records the sibling GGUF {outfile}. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and it does not promote.",
+                outfile = crate::gguf_convert::sibling_gguf_outfile(&export_dir).display(),
+            ),
         )
     } else if let Some(method) = axolotl_method(driver_id) {
         let command = axolotl_train_command(&config);
@@ -1804,7 +1807,7 @@ fn next_markdown(
                 outputs = outputs.display(),
                 merged = merged.display(),
             ),
-            "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at output_dir/merged, the Hugging Face directory Axolotl writes. The third points --adapter at a .gguf file. Axolotl does not write GGUF. merge-adapt prints the axolotl merge-lora line. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line. For a GGUF it also prints llama-cli -m and llama-server -m. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote.".to_string(),
+            "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at output_dir/merged, the Hugging Face directory Axolotl writes. The third points --adapter at a .gguf file. Axolotl does not write GGUF. merge-adapt prints the axolotl merge-lora line. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line. For a GGUF it also prints llama-cli -m and llama-server -m. After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained records trained_shape and trained_paths. It does not apply the estate and it does not promote.".to_string(),
         )
     } else if driver_id == UNSLOTH_QLORA_ID {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -1860,7 +1863,7 @@ fn next_markdown(
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
             ),
-            "Point --adapter at the artifact you saved. import-trained records trained_shape and trained_paths. merge-adapt prints the merged_16bit line for the adapter directory. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line for that directory or for a GGUF file. local-seat --adapter is refuse:adapter. import-trained does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
+            "Point --adapter at the artifact you saved. import-trained records trained_shape and trained_paths. merge-adapt prints the merged_16bit line for the adapter directory. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line for that directory or for a GGUF file. local-seat --adapter is refuse:adapter. After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
         )
     } else if driver_id == MLX_LM_LORA_ID {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -1920,7 +1923,7 @@ fn next_markdown(
                  A fused MLX directory (config.json and model.safetensors, the mlx_lm.fuse save path) is refuse:adapter. import-trained does not record that directory as trained_shape merged.\n",
                 out = out_dir.display(),
             ),
-            "Point --adapter at the adapter directory or at the GGUF file. A fused MLX directory is refuse:adapter. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote. READY_FOR_LIVE_TEST: no.".to_string(),
+            "Point --adapter at the adapter directory or at the GGUF file. A fused MLX directory is refuse:adapter. import-trained records trained_shape and trained_paths. After local-seat prints the ollama create line for that GGUF file, run that line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF file. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate and it does not promote. A fused MLX directory stays refuse:adapter. READY_FOR_LIVE_TEST: no.".to_string(),
         )
     } else {
         (
@@ -2194,7 +2197,7 @@ fn mlx_handoff_md(job: &EnrichJob, train_base: &str) -> String {
          - an adapter directory that contains adapter_config.json\n\
          - one .gguf file, or a directory with exactly one top-level .gguf\n\
          \n\
-         A fused MLX directory is config.json and model.safetensors, the directory mlx_lm.fuse writes. import-trained refuses that directory (refuse:adapter). It does not record trained_shape merged for those weights. Seat ggml-model-f16.gguf with local-seat, then point import-trained at that file.\n\
+         A fused MLX directory is config.json and model.safetensors, the directory mlx_lm.fuse writes. import-trained refuses that directory (refuse:adapter). It does not record trained_shape merged for those weights. Seat ggml-model-f16.gguf with local-seat, then point import-trained at that file. After that local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF file. trained_shape is gguf. The proposal stays auto_apply=false. import-trained does not apply the estate. A fused MLX directory stays refuse:adapter.\n\
          \n\
          The command is in NEXT.md. import-trained does not promote and does not rewrite estate.yaml.\n\
          \n\

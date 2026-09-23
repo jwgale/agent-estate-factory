@@ -668,10 +668,16 @@ fn gguf_seat_prints_llama_cpp_lines_and_does_not_run_them() {
     );
     assert!(seat_text.contains("llama-server -m "), "{seat_text}");
     assert!(seat_text.contains("--port 8080"), "{seat_text}");
+    assert!(seat_text.contains("standing next step"), "{seat_text}");
+    assert!(seat_text.contains("auto_apply=false"), "{seat_text}");
+    assert!(seat_text.contains("did not run ollama create"), "{seat_text}");
+    assert!(seat_text.contains("does not apply the estate"), "{seat_text}");
     assert!(seat_text.contains("READY_FOR_LIVE_TEST: no"), "{seat_text}");
     let ollama_at = seat_text.find("ollama create").unwrap();
     let cli_at = seat_text.find("llama-cli -m").unwrap();
+    let next_at = seat_text.find("standing next step").unwrap();
     assert!(ollama_at < cli_at, "{seat_text}");
+    assert!(cli_at < next_at, "{seat_text}");
     assert!(
         !marker.exists(),
         "printed llama.cpp or ollama line was executed"

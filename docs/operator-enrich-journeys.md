@@ -327,7 +327,7 @@ estate enrich local-seat \
 
 The printed create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag`. `--weights` on that local-seat line is the sibling `.gguf`. local-seat prints a Modelfile whose FROM is that file. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). The command prints `ollama create cell-enrich-<pack-id> -f <export>/Modelfile`. It does not create the model.
 
-Then `import-trained --adapter` points at that same directory or GGUF. A merged export_dir is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`, with an optional Modelfile. `import-trained` records `trained_shape` and `trained_paths`. The seat tag on the proposal stays the prepare seat tag. `apply-proposal` and `estate apply --require-plan` stay the join. `READY_FOR_LIVE_TEST`: no. Page: [`local-seat.md`](local-seat.md).
+After a GGUF `local-seat` print, run the printed `ollama create` line yourself. The same step stands when you already ran `ollama create` outside this factory. This factory did not run `ollama create`. The standing next step is `import-trained --adapter` on that same GGUF. `trained_shape` is `gguf`. The proposal stays `auto_apply=false`. `import-trained` does not apply the estate. A merged export_dir is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`, with an optional Modelfile. `import-trained` records `trained_shape` and `trained_paths`. The seat tag on the proposal stays the prepare seat tag. `apply-proposal` and `estate apply --require-plan` stay the join. `READY_FOR_LIVE_TEST`: no. Page: [`local-seat.md`](local-seat.md).
 
 ## 8. Target C — Qwen / LLaMA-Factory QLoRA to the local seat
 
@@ -405,7 +405,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 ```
 
-The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
+The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. After that GGUF print, run the printed `ollama create` line yourself. The same step stands when you already ran `ollama create` outside this factory. This factory did not run `ollama create`. The standing next step records that GGUF. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
 
 To seat `outputs/` without a merge, pass `--adapter` instead of `--weights`. The printed Modelfile uses `FROM` `prepare.json` `seat_tag` and `ADAPTER` that directory. The command prints `ollama create` and does not run it. `--weights` still refuses the adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
 
@@ -419,7 +419,7 @@ Page: [`local-seat.md`](local-seat.md).
 
 ### 5. Record the shape
 
-`import-trained` writes `binding-proposal.json` for the existing `local_slm` seat and records `trained_shape` and `trained_paths` on that proposal and on `prepare.json`. It does not apply and does not promote. After the GGUF exists, point `--adapter` at that file. `trained_shape` is `gguf`.
+`import-trained` is the standing next step after the GGUF `local-seat` print. It writes `binding-proposal.json` for the existing `local_slm` seat and records `trained_shape` and `trained_paths` on that proposal and on `prepare.json`. After the GGUF exists, point `--adapter` at that file. `trained_shape` is `gguf`. The proposal stays `auto_apply=false`. `import-trained` does not apply the estate and does not promote.
 
 ```bash
 estate enrich import-trained \
@@ -514,7 +514,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-lora/export.gguf
 ```
 
-The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
+The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. After that GGUF print, run the printed `ollama create` line yourself. The same step stands when you already ran `ollama create` outside this factory. This factory did not run `ollama create`. The standing next step records that GGUF. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
 
 To seat `outputs/` without a merge, pass `--adapter` instead of `--weights`. The printed Modelfile uses `FROM` `prepare.json` `seat_tag` and `ADAPTER` that directory. The command prints `ollama create` and does not run it. `--weights` still refuses the adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
 
@@ -528,7 +528,7 @@ Page: [`local-seat.md`](local-seat.md).
 
 ### 5. Record the shape
 
-`import-trained` writes `binding-proposal.json` for the existing `local_slm` seat and records `trained_shape` and `trained_paths` on that proposal and on `prepare.json`. It does not apply and does not promote. After the GGUF exists, point `--adapter` at that file. `trained_shape` is `gguf`.
+`import-trained` is the standing next step after the GGUF `local-seat` print. It writes `binding-proposal.json` for the existing `local_slm` seat and records `trained_shape` and `trained_paths` on that proposal and on `prepare.json`. After the GGUF exists, point `--adapter` at that file. `trained_shape` is `gguf`. The proposal stays `auto_apply=false`. `import-trained` does not apply the estate and does not promote.
 
 ```bash
 estate enrich import-trained \
@@ -579,7 +579,7 @@ ollama create cell-enrich-overnight-traces -f <prepared>/Modelfile
 estate enrich import-trained --estate <your-estate.yaml> --prepared <prepared> --tag cell-enrich-overnight-traces --adapter <prepared>/export.gguf
 ```
 
-`gguf-convert` also prints the `local-seat` line for `export.gguf`. `local-seat` on that file also prints `llama-cli -m` and `llama-server -m`. `import-trained` records `trained_shape` `gguf` and `trained_paths` on the throwaway prepare and writes `binding-proposal.json`. It does not apply and does not rewrite `examples/estate.yaml`.
+`gguf-convert` also prints the `local-seat` line for `export.gguf`, then the standing next step: `estate enrich import-trained` for that same file. `local-seat` on that file prints `ollama create`, `llama-cli -m`, and `llama-server -m`, then the same import line. The report says to run `ollama create` yourself. This factory did not run `ollama create`. The proposal stays `auto_apply=false`. `import-trained` records `trained_shape` `gguf` and `trained_paths` on the throwaway prepare and writes `binding-proposal.json`. It does not apply the estate and does not rewrite `examples/estate.yaml`.
 
 The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` does not start a convert or an `ollama create`. Live train, merge, convert, and seat stay on the operator host, the CUDA steps in section 8. `make enrich-live-prove` still covers a from-pack Modelfile and `ollama create`. It does not cover a trained GGUF. `READY_FOR_LIVE_TEST`: no.
 
