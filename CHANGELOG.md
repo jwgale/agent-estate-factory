@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — `--from-feed` checks the raw record, pins the opened file, and caps bytes
+
+- A line with `kind` or `object_class` is classified before ShareGPT or Alpaca dispatch. A frontier event wrapped as `messages` or `instruction` is `refuse:frontier-invent` when the estate has no frontier binding. Sacred, SKU, and raw-secret checks see the raw record, including fields that are not copied into the row.
+- Prepare opens each source and reads that same file handle. The opened file must stay inside the cell state directory. A path that cannot be pinned is `refuse:dataset`.
+- Each source is at most 8 MiB. All sources together are at most 8 MiB. Each chat and Alpaca copy is at most 16 MiB. A total over that cap is `refuse:dataset`.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — dataset scaffold is honest, and `--from-feed` copies rows already on disk
 
 - Default `llamafactory-qlora` and `axolotl-lora` prepare still writes a scaffold `dataset.jsonl` (or a three-row stub when `source_paths` is empty). `prepare.json` records `dataset_mode`, `dataset_rows`, `dataset_from_feed` false, `dataset_skipped`, and `dataset_read_paths`. `PREPARE.md` and `NEXT.md` on both cards say those rows are not training data and name `refuse:dataset`.

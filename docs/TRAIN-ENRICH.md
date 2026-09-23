@@ -68,7 +68,9 @@ A line already on disk is an instruct row when it is one of the shapes the feed 
 - Alpaca: `instruction` and `output`, with optional `input`.
 - A scrubbed feed event (`kind`, plus a `note`). The note is the completion. Events with no note are counted in `dataset_skipped` and left out. If every event is skipped, prepare is `refuse:dataset`.
 
-This factory does not invent a completion for an event that has no note. A frontier event on an estate with no frontier binding is `refuse:frontier-invent`. Sacred text is `refuse:sacred`. A hardware SKU is `refuse:sku-banned`. A raw secret is `refuse:raw-secret`.
+This factory does not invent a completion for an event that has no note. Before a line is copied as ShareGPT or Alpaca, prepare checks the raw record. `kind` and `object_class` still classify a frontier event when the same line also has `messages` or `instruction`. A frontier event on an estate with no frontier binding is `refuse:frontier-invent`. Sacred text is `refuse:sacred`. A hardware SKU is `refuse:sku-banned`. A raw secret is `refuse:raw-secret`. Those checks see the event fields, not only the copied row.
+
+Prepare opens each source and reads that file handle. On Linux it resolves `/proc/self/fd` for the opened file (macOS uses the opened-file path) and refuses when that file sits outside the cell state directory. A missing pin is `refuse:dataset`. Each file is at most 8 MiB. All source files together are at most 8 MiB. Each of the chat and Alpaca copies is at most 16 MiB. A file, a total, or a copy over that cap is `refuse:dataset`.
 
 Operator loop: set the train base and prepare → optionally hydrate `dataset.jsonl` with `--from-feed` when the pack sources are already under the cell state directory → run the trainer named in `NEXT.md` on the CUDA host → `estate enrich import-trained`. Prepare does not train. `--from-feed` does not download.
 
@@ -274,7 +276,7 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 | `--driver` and `--all-drivers` together | `refuse:driver` |
 | Job is not `train` or `enrich` | `refuse:job` |
 | `llamafactory-qlora` or `axolotl-lora` with `--job enrich` | `refuse:job` |
-| A train source path is empty, `--from-feed` has nothing to read, or a source line is not an instruct row | `refuse:dataset` |
+| A train source path is empty, `--from-feed` has nothing to read, a source line is not an instruct row, a source resolves outside the cell directory, or the sources together exceed the byte cap | `refuse:dataset` |
 | `import-trained` on a prepare that is not a train recipe with job `train` | `refuse:driver` or `refuse:job` |
 | Adapter path is missing, or has no adapter config, weights, or GGUF | `refuse:adapter` |
 | `{state_dir}/enrich` is missing on list | `refuse:enrich-index` |

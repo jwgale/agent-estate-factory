@@ -499,8 +499,12 @@ pub struct DatasetMaterial {
 const DATASET_STUB: &str = "stub";
 const DATASET_SCAFFOLD: &str = "scaffold";
 const DATASET_FEED: &str = "feed";
-/// Local read cap. Prepare does not stream a trainer and does not download.
+/// Per-file read cap. Prepare does not stream a trainer and does not download.
 const DATASET_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// All `--from-feed` sources together. Many paths cannot stack past this.
+const DATASET_MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
+/// Each in-memory copy (chat JSONL and Alpaca JSONL).
+const DATASET_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const DATASET_MAX_ROWS: usize = 4096;
 
 pub struct PrepareEnrichRequest<'a> {
@@ -1701,20 +1705,16 @@ fn hydrate_dataset(
     }
     let mut rows = Vec::new();
     let mut skipped = 0usize;
+    let mut used_bytes = 0u64;
     for relative in &job.source_paths {
-        let file = feed_source_file(req.state_dir, relative)?;
-        let text = std::fs::read_to_string(&file).map_err(|err| {
-            ModelError::Other(format!(
-                "refuse:dataset: cannot read {}: {err}",
-                file.display()
-            ))
-        })?;
+        let text = read_feed_source(req.state_dir, relative, used_bytes)?;
+        used_bytes = used_bytes.saturating_add(text.len() as u64);
         let (found, skip) = parse_instruct_file(req.estate, relative, &text)?;
         skipped += skip;
         rows.extend(found);
         if rows.len() > DATASET_MAX_ROWS {
             return Err(ModelError::Other(format!(
-                "refuse:dataset: {relative} exceeds {DATASET_MAX_ROWS} instruct rows. Prepare does not stream a trainer and does not download a dataset."
+                "refuse:dataset: pack sources together exceed {DATASET_MAX_ROWS} instruct rows. Prepare does not stream a trainer and does not download a dataset."
             )));
         }
     }
@@ -1729,6 +1729,8 @@ fn hydrate_dataset(
     for row in &rows {
         append_jsonl(&mut chat_jsonl, &row.chat)?;
         append_jsonl(&mut alpaca_jsonl, &row.alpaca)?;
+        refuse_dataset_output(chat_jsonl.len())?;
+        refuse_dataset_output(alpaca_jsonl.len())?;
     }
     let count = rows.len();
     Ok(DatasetMaterial {
@@ -1748,7 +1750,26 @@ fn hydrate_dataset(
     })
 }
 
-fn feed_source_file(state_dir: &Path, relative: &str) -> Result<PathBuf, ModelError> {
+fn refuse_dataset_output(bytes: usize) -> Result<(), ModelError> {
+    if bytes > DATASET_MAX_OUTPUT_BYTES {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: dataset.jsonl would be {bytes} bytes. Prepare writes at most {DATASET_MAX_OUTPUT_BYTES} bytes for the chat copy and {DATASET_MAX_OUTPUT_BYTES} bytes for the Alpaca copy. This factory does not download a dataset."
+        )));
+    }
+    Ok(())
+}
+
+/// Open `relative` under `state_dir` and read that same file handle.
+///
+/// Containment uses the opened fd (`/proc/self/fd/<fd>` on Linux, `F_GETPATH`
+/// on macOS), then the bytes come from that fd. A symlink swap after the
+/// check cannot retarget the read. If the fd path cannot be resolved, prepare
+/// refuses. `bytes_already` is the total already accepted from earlier sources.
+fn read_feed_source(
+    state_dir: &Path,
+    relative: &str,
+    bytes_already: u64,
+) -> Result<String, ModelError> {
     let relative = relative.trim();
     if relative.is_empty() {
         return Err(ModelError::Other(
@@ -1762,44 +1783,131 @@ fn feed_source_file(state_dir: &Path, relative: &str) -> Result<PathBuf, ModelEr
     }
     let root = absolute_path(state_dir);
     let candidate = root.join(relative);
-    if !candidate.is_file() {
-        return Err(ModelError::Other(format!(
-            "refuse:dataset: {relative} is not a file at {}. Place that pack source under the cell state directory, or omit --from-feed to keep the scaffold. This factory does not download pack sources.",
-            candidate.display()
-        )));
-    }
-    let root_canon = std::fs::canonicalize(&root).map_err(|err| {
+    let root_canon = match std::fs::canonicalize(&root) {
+        Ok(path) => path,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(missing_feed_source(relative, &candidate));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:dataset: cannot resolve cell state directory {}: {err}",
+                root.display()
+            )));
+        }
+    };
+    let file = std::fs::File::open(&candidate).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            missing_feed_source(relative, &candidate)
+        } else {
+            ModelError::Other(format!(
+                "refuse:dataset: cannot read {relative} at {}: {err}. This factory does not download pack sources.",
+                candidate.display()
+            ))
+        }
+    })?;
+    let pinned = opened_file_path(&file).map_err(|err| {
         ModelError::Other(format!(
-            "refuse:dataset: cannot resolve cell state directory {}: {err}",
-            root.display()
+            "refuse:dataset: cannot pin {relative} to the cell state directory ({err}). Prepare refuses when the opened file cannot be resolved and does not download pack sources."
         ))
     })?;
-    let file_canon = std::fs::canonicalize(&candidate).map_err(|err| {
-        ModelError::Other(format!(
-            "refuse:dataset: cannot resolve {relative} at {}: {err}",
-            candidate.display()
-        ))
-    })?;
-    if !file_canon.starts_with(&root_canon) {
+    if !pinned.is_absolute() || !path_is_within(&root_canon, &pinned) {
         return Err(ModelError::Other(format!(
             "refuse:dataset: {relative} resolves outside the cell state directory {}. This factory does not read pack sources outside that directory and does not download them.",
             root_canon.display()
         )));
     }
-    let bytes = std::fs::metadata(&file_canon)
-        .map_err(|err| {
-            ModelError::Other(format!(
-                "refuse:dataset: cannot stat {}: {err}",
-                file_canon.display()
-            ))
-        })?
-        .len();
+    let meta = file.metadata().map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:dataset: cannot stat {relative}: {err}"
+        ))
+    })?;
+    if !meta.is_file() {
+        return Err(missing_feed_source(relative, &candidate));
+    }
+    let bytes = meta.len();
     if bytes > DATASET_MAX_BYTES {
         return Err(ModelError::Other(format!(
             "refuse:dataset: {relative} is {bytes} bytes. Prepare reads at most {DATASET_MAX_BYTES} bytes per source and does not download a dataset."
         )));
     }
-    Ok(file_canon)
+    let total = bytes_already.saturating_add(bytes);
+    if total > DATASET_MAX_TOTAL_BYTES {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: pack sources are {total} bytes together. Prepare reads at most {DATASET_MAX_TOTAL_BYTES} bytes across all source paths. This factory does not download a dataset."
+        )));
+    }
+    let text = read_capped_fd(file, relative)?;
+    let read_total = bytes_already.saturating_add(text.len() as u64);
+    if read_total > DATASET_MAX_TOTAL_BYTES {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: pack sources are {read_total} bytes together. Prepare reads at most {DATASET_MAX_TOTAL_BYTES} bytes across all source paths. This factory does not download a dataset."
+        )));
+    }
+    Ok(text)
+}
+
+fn path_is_within(root: &Path, file: &Path) -> bool {
+    file.starts_with(root) && file != root
+}
+
+fn missing_feed_source(relative: &str, candidate: &Path) -> ModelError {
+    ModelError::Other(format!(
+        "refuse:dataset: {relative} is not a file at {}. Place that pack source under the cell state directory, or omit --from-feed to keep the scaffold. This factory does not download pack sources.",
+        candidate.display()
+    ))
+}
+
+fn read_capped_fd(file: std::fs::File, relative: &str) -> Result<String, ModelError> {
+    use std::io::Read;
+    let mut file = file.take(DATASET_MAX_BYTES.saturating_add(1));
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).map_err(|err| {
+        ModelError::Other(format!("refuse:dataset: cannot read {relative}: {err}"))
+    })?;
+    if buf.len() as u64 > DATASET_MAX_BYTES {
+        return Err(ModelError::Other(format!(
+            "refuse:dataset: {relative} exceeds {DATASET_MAX_BYTES} bytes. Prepare reads at most {DATASET_MAX_BYTES} bytes per source and does not download a dataset."
+        )));
+    }
+    String::from_utf8(buf).map_err(|_| {
+        ModelError::Other(format!(
+            "refuse:dataset: {relative} is not UTF-8. Prepare does not download a dataset."
+        ))
+    })
+}
+
+/// Path of an already-opened file. Fail closed when the platform cannot name it.
+#[cfg(target_os = "linux")]
+fn opened_file_path(file: &std::fs::File) -> std::io::Result<PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+}
+
+#[cfg(target_os = "macos")]
+fn opened_file_path(file: &std::fs::File) -> std::io::Result<PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    const F_GETPATH: i32 = 50;
+    extern "C" {
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    let mut buf = [0u8; 4096];
+    let rc = unsafe { fcntl(file.as_raw_fd(), F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
+    let text = std::str::from_utf8(&buf[..end]).map_err(|err| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, err)
+    })?;
+    Ok(PathBuf::from(text))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn opened_file_path(_file: &std::fs::File) -> std::io::Result<PathBuf> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "opened-file path is unavailable",
+    ))
 }
 
 fn parse_instruct_file(
@@ -1842,6 +1950,9 @@ fn classify_instruct_line(
     line_no: usize,
     value: &serde_json::Value,
 ) -> Result<InstructLine, ModelError> {
+    // Event policy runs before ShareGPT / Alpaca dispatch. A frontier event
+    // wrapped as `messages` or `instruction` is still refuse:frontier-invent.
+    refuse_record_policy(estate, relative, line_no, value)?;
     if value.get("messages").is_some() {
         return Ok(InstructLine::Row(chat_source_row(relative, line_no, value)?));
     }
@@ -1856,6 +1967,95 @@ fn classify_instruct_line(
     Err(ModelError::Other(format!(
         "refuse:dataset: {relative} line {line_no} is not an instruct row. Accepted lines are ShareGPT messages, Alpaca instruction and output, or a scrubbed feed event with a note."
     )))
+}
+
+/// Frontier, sacred, SKU, and raw-secret checks on the source object.
+/// Shape dispatch has not copied `messages` or `instruction` yet.
+fn refuse_record_policy(
+    estate: &Estate,
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<(), ModelError> {
+    if let Some(event) = scrubbed_event_from_record(relative, line_no, value)? {
+        if classify_path(&event) == "frontier" {
+            refuse_frontier_source_on_estate(&["frontier".to_string()], estate).map_err(map_feed)?;
+        }
+    }
+    refuse_json_text(&format!("{relative} line {line_no}"), value)
+}
+
+fn scrubbed_event_from_record(
+    relative: &str,
+    line_no: usize,
+    value: &serde_json::Value,
+) -> Result<Option<ScrubbedEvent>, ModelError> {
+    let kind_value = value.get("kind");
+    let class_value = value.get("object_class");
+    let has_kind = kind_value.is_some() && !kind_value.unwrap().is_null();
+    let has_class = class_value.is_some() && !class_value.unwrap().is_null();
+    if !has_kind && !has_class {
+        return Ok(None);
+    }
+    let kind = if has_kind {
+        match kind_value {
+            Some(serde_json::Value::String(kind)) if !kind.trim().is_empty() => {
+                kind.trim().to_string()
+            }
+            Some(serde_json::Value::String(_)) => {
+                return Err(ModelError::Other(format!(
+                    "refuse:dataset: {relative} line {line_no} kind is empty"
+                )));
+            }
+            _ => {
+                return Err(ModelError::Other(format!(
+                    "refuse:dataset: {relative} line {line_no} kind is not a string"
+                )));
+            }
+        }
+    } else {
+        String::new()
+    };
+    Ok(Some(ScrubbedEvent {
+        kind,
+        agent_id: optional_text(value, "agent_id", relative, line_no)?,
+        decision: optional_text(value, "decision", relative, line_no)?,
+        object_class: optional_text(value, "object_class", relative, line_no)?,
+        note: optional_text(value, "note", relative, line_no)?,
+        ts: optional_text(value, "ts", relative, line_no)?.unwrap_or_default(),
+    }))
+}
+
+fn refuse_json_text(label: &str, value: &serde_json::Value) -> Result<(), ModelError> {
+    match value {
+        serde_json::Value::String(text) => refuse_text_policy(label, text),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                refuse_json_text(label, item)?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Object(map) => {
+            for (key, item) in map {
+                refuse_text_policy(label, key)?;
+                refuse_json_text(label, item)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn refuse_text_policy(label: &str, text: &str) -> Result<(), ModelError> {
+    refuse_sacred_and_sku(label, text)?;
+    refuse_raw_secrets(text).map_err(|err| {
+        let text = err.to_string();
+        if text.starts_with("refuse:") {
+            ModelError::Other(format!("{text} ({label})"))
+        } else {
+            ModelError::Other(format!("refuse:dataset: {label}: {text}"))
+        }
+    })
 }
 
 fn chat_source_row(
@@ -5652,6 +5852,28 @@ mod tests {
             "{escaped}"
         );
         assert!(!root.join("escaped").exists());
+        // The refuse above is the opened fd, not a path that is closed and
+        // reopened. Pin the same helper: an inside file stays under the state
+        // dir, and the symlink's fd names the outside target. A swap after
+        // open cannot retarget that fd; this test does not race one.
+        let inside_root = std::fs::canonicalize(&state).unwrap();
+        let inside_file = std::fs::File::open(state.join("feed/events.jsonl")).unwrap();
+        let inside_pin = opened_file_path(&inside_file).unwrap();
+        assert!(
+            path_is_within(&inside_root, &inside_pin),
+            "inside fd {} is not under {}",
+            inside_pin.display(),
+            inside_root.display()
+        );
+        let link_root = std::fs::canonicalize(&link_state).unwrap();
+        let outside_file = std::fs::File::open(link_state.join("feed/events.jsonl")).unwrap();
+        let outside_pin = opened_file_path(&outside_file).unwrap();
+        assert!(
+            !path_is_within(&link_root, &outside_pin),
+            "outside fd {} must not sit under {}",
+            outside_pin.display(),
+            link_root.display()
+        );
 
         let mut pairs = pack.clone();
         pairs.source_paths = vec!["feed/pairs.jsonl".into()];
@@ -5718,6 +5940,183 @@ mod tests {
             "{ollama_err}"
         );
         assert!(!ollama_out.exists());
+    }
+
+    #[test]
+    fn from_feed_refuses_frontier_metadata_before_shape() {
+        let root = tmp("frontier-wrap");
+        let pack = fixture_pack();
+        let estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let state = root.join("cell");
+        std::fs::create_dir_all(state.join("feed")).unwrap();
+        let sharegpt = "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":null,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"world\"}]}\n";
+        std::fs::write(state.join("feed/events.jsonl"), sharegpt).unwrap();
+        let wrapped = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &root.join("sharegpt"),
+            &state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            wrapped.to_string().contains("refuse:frontier-invent"),
+            "{wrapped}"
+        );
+        assert!(!root.join("sharegpt").exists());
+
+        let alpaca = "{\"kind\":\"model.frontier.complete\",\"instruction\":\"Say hi\",\"output\":\"hi\"}\n";
+        std::fs::write(state.join("feed/events.jsonl"), alpaca).unwrap();
+        let alpaca_err = run_feed(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &local_only,
+            &root.join("alpaca"),
+            &state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            alpaca_err.to_string().contains("refuse:frontier-invent"),
+            "{alpaca_err}"
+        );
+        assert!(!root.join("alpaca").exists());
+
+        let sacred = "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"mentions cyera\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"world\"}]}\n";
+        std::fs::write(state.join("feed/events.jsonl"), sacred).unwrap();
+        let sacred_err = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &root.join("sacred-wrap"),
+            &state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            sacred_err.to_string().contains("refuse:sacred"),
+            "{sacred_err}"
+        );
+        assert!(!root.join("sacred-wrap").exists());
+
+        let sku = "{\"kind\":\"box-5090\",\"object_class\":\"local\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"world\"}]}\n";
+        std::fs::write(state.join("feed/events.jsonl"), sku).unwrap();
+        let sku_err = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &root.join("sku-wrap"),
+            &state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            sku_err.to_string().contains("refuse:sku-banned"),
+            "{sku_err}"
+        );
+        assert!(!root.join("sku-wrap").exists());
+
+        let secret = "{\"kind\":\"model.local.precheck\",\"object_class\":\"local\",\"note\":\"api_key=abcd\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"world\"}]}\n";
+        std::fs::write(state.join("feed/events.jsonl"), secret).unwrap();
+        let secret_err = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &root.join("secret-wrap"),
+            &state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            secret_err.to_string().contains("refuse:raw-secret"),
+            "{secret_err}"
+        );
+        assert!(!root.join("secret-wrap").exists());
+
+        std::fs::write(state.join("feed/events.jsonl"), sharegpt).unwrap();
+        let allowed = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &root.join("bound"),
+            &state,
+            true,
+        )
+        .unwrap();
+        assert_eq!(allowed.dataset_mode.as_deref(), Some("feed"));
+        assert_eq!(allowed.dataset_rows, Some(1));
+        let jsonl = std::fs::read_to_string(root.join("bound/dataset.jsonl")).unwrap();
+        assert!(jsonl.contains("world"), "{jsonl}");
+        assert!(!jsonl.contains("Replace this scaffold"), "{jsonl}");
+    }
+
+    #[test]
+    fn from_feed_caps_aggregate_bytes_and_output() {
+        assert!(refuse_dataset_output(DATASET_MAX_OUTPUT_BYTES).is_ok());
+        let over = refuse_dataset_output(DATASET_MAX_OUTPUT_BYTES + 1).unwrap_err();
+        let over_text = over.to_string();
+        assert!(over_text.contains("refuse:dataset"), "{over_text}");
+        assert!(
+            over_text.contains(&DATASET_MAX_OUTPUT_BYTES.to_string()),
+            "{over_text}"
+        );
+
+        let root = tmp("aggregate");
+        let mut pack = fixture_pack();
+        pack.source_paths = vec!["feed/a.jsonl".into(), "feed/b.jsonl".into()];
+        let estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        let state = root.join("cell");
+        std::fs::create_dir_all(state.join("feed")).unwrap();
+        let one = sized_alpaca((DATASET_MAX_TOTAL_BYTES / 2) as usize + 1024);
+        assert!(one.len() as u64 <= DATASET_MAX_BYTES);
+        assert!(one.len() as u64 * 2 > DATASET_MAX_TOTAL_BYTES);
+        std::fs::write(state.join("feed/a.jsonl"), &one).unwrap();
+        let mut only = pack.clone();
+        only.source_paths = vec!["feed/a.jsonl".into()];
+        let single = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &only,
+            &estate,
+            &root.join("one"),
+            &state,
+            true,
+        )
+        .unwrap();
+        assert_eq!(single.dataset_rows, Some(1));
+        assert_eq!(single.dataset_mode.as_deref(), Some("feed"));
+
+        std::fs::write(state.join("feed/b.jsonl"), &one).unwrap();
+        let both = root.join("both");
+        let err = run_feed(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &both,
+            &state,
+            true,
+        )
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:dataset"), "{text}");
+        assert!(text.contains("together"), "{text}");
+        assert!(
+            text.contains(&DATASET_MAX_TOTAL_BYTES.to_string()),
+            "{text}"
+        );
+        assert!(!both.exists());
+    }
+
+    fn sized_alpaca(file_bytes: usize) -> String {
+        let head = "{\"instruction\":\"q\",\"input\":\"\",\"output\":\"";
+        let tail = "\"}\n";
+        assert!(file_bytes > head.len() + tail.len());
+        let fill = file_bytes - head.len() - tail.len();
+        format!("{head}{}{tail}", "a".repeat(fill))
     }
 
     #[test]

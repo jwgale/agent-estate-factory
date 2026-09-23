@@ -389,6 +389,11 @@ rows that are already under --state-dir (for example
 nothing. This factory does not download pack sources. ShareGPT
 messages, Alpaca instruction and output, and a scrubbed feed event
 with a note are the rows it copies. An event with no note is skipped.
+kind and object_class are checked before that copy, so a frontier
+event wrapped as messages is still refuse:frontier-invent when the
+estate has no frontier binding. Each source is at most 8 MiB, all
+sources together are at most 8 MiB, and prepare reads the opened
+file rather than a path it reopens.
 
 Each prepare writes prepare.json, PREPARE.md, and NEXT.md.
 NEXT.md has the handoff command, artifact paths, and fail-closed
