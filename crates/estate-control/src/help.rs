@@ -337,9 +337,13 @@ is allowed. Prepare writes artifacts. It does not train.
     --tag cell-enrich-overnight-traces \\
     --path .cell/enrich/overnight-traces/ollama-modelfile/Modelfile
   estate enrich import-trained --estate <your-estate.yaml> \\
+    --prepared .cell/enrich/overnight-traces/llamafactory-lora \\
+    --tag cell-enrich-overnight-traces \\
+    --adapter .cell/enrich/overnight-traces/llamafactory-lora/outputs
+  estate enrich import-trained --estate <your-estate.yaml> \\
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
     --tag cell-enrich-overnight-traces \\
-    --adapter <adapter-dir-or-gguf>
+    --adapter .cell/enrich/overnight-traces/llamafactory-qlora/outputs
   estate enrich apply-proposal --estate <your-estate.yaml> \\
     --prepared .cell/enrich/overnight-traces/ollama-modelfile \\
     --tag cell-enrich-overnight-traces --state-dir .cell
@@ -436,9 +440,20 @@ and binding-proposal.md for the existing local_slm seat.
 import-prepared does not apply.
 
 estate enrich import-trained is that same proposal for a llamafactory-lora,
-llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare whose job is train. --adapter is an adapter
-directory or a merged GGUF. It does not apply. apply-proposal, plan,
-and apply --require-plan stay the join. Ollama stays the local-run seat.
+llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare whose job is train. --adapter
+is one of three shapes. An adapter output_dir contains adapter_config.json
+(the recipe output_dir, outputs/). A merged export_dir contains config.json
+and at least one .safetensors file. A Modelfile in that directory is
+recorded when present (the export.yaml export_dir, export/). A GGUF path
+is a .gguf file. NEXT.md on llamafactory-lora and llamafactory-qlora prints
+the exact import-trained command for each shape, with the prepared
+directory filled in. A path that matches none of those shapes, or more
+than one, is refuse:adapter and writes no proposal. prepare.json and
+binding-proposal.json record trained_shape and trained_paths. It does
+not apply, does not promote, and does not rewrite the estate.
+apply-proposal, plan, and apply --require-plan stay the join. Ollama
+stays the local-run seat. Curator stays jason. Sacred, SKU, and a
+frontier source with no frontier binding still refuse.
 
 estate enrich apply-proposal reads that proposal, checks it against
 prepare.json, and writes {state}/enrich-stage/staged-estate.yaml.

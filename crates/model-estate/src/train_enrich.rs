@@ -384,6 +384,15 @@ const TRAIN_RECIPE_DRIVERS: &[&str] = &[
     AXOLOTL_QLORA_ID,
 ];
 
+/// `import-trained` shape: LLaMA-Factory or Axolotl `output_dir` with `adapter_config.json`.
+const TRAINED_SHAPE_ADAPTER: &str = "adapter";
+/// `import-trained` shape: merged `export_dir` with `config.json` and safetensors.
+const TRAINED_SHAPE_MERGED: &str = "merged";
+/// `import-trained` shape: a `.gguf` file, or a directory that holds one.
+const TRAINED_SHAPE_GGUF: &str = "gguf";
+
+const TRAINED_SHAPE_HINT: &str = "import-trained accepts an adapter output_dir (a directory with adapter_config.json), a merged export_dir (a directory with config.json and at least one .safetensors file, plus an optional Modelfile), or a GGUF file (.gguf)";
+
 fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
 }
@@ -613,6 +622,12 @@ pub struct EnrichPrepareDoc {
     /// Pack source paths actually read. Empty when the file is still a scaffold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dataset_read_paths: Option<Vec<String>>,
+    /// `adapter`, `merged`, or `gguf` after `import-trained` accepts an artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trained_shape: Option<String>,
+    /// Operator path plus the marker files that proved `trained_shape`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trained_paths: Option<Vec<String>>,
 }
 
 /// How `dataset.jsonl` was built for a train recipe card.
@@ -895,6 +910,8 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         dataset_from_feed: job.dataset.as_ref().map(|data| data.mode == DATASET_FEED),
         dataset_skipped: job.dataset.as_ref().map(|data| data.skipped),
         dataset_read_paths: job.dataset.as_ref().map(|data| data.read_paths.clone()),
+        trained_shape: None,
+        trained_paths: None,
     };
     let prepare_json = to_pretty(&doc)?;
     files.push(("prepare.json".into(), prepare_json));
@@ -1355,6 +1372,8 @@ fn next_markdown(
     } else if let Some(method) = llamafactory_method(driver_id) {
         let recipe = out_dir.join("recipe.yaml");
         let export = out_dir.join("export.yaml");
+        let outputs = out_dir.join("outputs");
+        let export_dir = out_dir.join("export");
         let train_command = llamafactory_train_command(&recipe);
         let export_command = llamafactory_export_command(&export);
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -1419,13 +1438,26 @@ fn next_markdown(
                 gauge = llamafactory_gauge_note(job.max_steps),
             ),
             format!(
-                "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
+                "Adapter output_dir (directory contains adapter_config.json):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {outputs}\n\
+                 \n\
+                 Merged export_dir (directory contains config.json and at least one .safetensors file; Modelfile is optional):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {export}\n\
+                 \n\
+                 GGUF path (a .gguf file converted after the merge; LLaMA-Factory does not write GGUF):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
+                outputs = outputs.display(),
+                export = export_dir.display(),
             ),
-            "Point --adapter at the LLaMA-Factory output directory (adapter_config.json inside it), the merged export (config.json plus safetensors), or a GGUF you converted.".to_string(),
+            "Those three commands are the import-trained handoff for this card. --adapter is the output_dir this recipe wrote, the export_dir this export.yaml wrote, or a .gguf file. A path that is none of those shapes, or more than one, is refuse:adapter. import-trained records trained_shape and trained_paths on prepare.json and on the binding proposal. It does not rewrite the estate and it does not promote.".to_string(),
         )
     } else if let Some(method) = axolotl_method(driver_id) {
         let command = axolotl_train_command(&config);
+        let outputs = out_dir.join("outputs");
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         (
             format!(
@@ -1460,10 +1492,17 @@ fn next_markdown(
                 gauge = axolotl_gauge_note(method, job.max_steps),
             ),
             format!(
-                "estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <adapter-dir-or-gguf>\n",
+                "Adapter output_dir (directory contains adapter_config.json):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {outputs}\n\
+                 \n\
+                 GGUF path (a .gguf file):\n\
+                 \n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
+                outputs = outputs.display(),
             ),
-            "Point --adapter at the Axolotl output directory (adapter_config.json inside it) or at a merged GGUF file.".to_string(),
+            "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at a .gguf file. import-trained also accepts a merged export_dir (config.json and at least one .safetensors file, optional Modelfile) when you have one. It records trained_shape and trained_paths. It does not rewrite the estate and it does not promote.".to_string(),
         )
     } else {
         (
@@ -3475,6 +3514,12 @@ pub struct EnrichBindingProposal {
     pub job: String,
     pub local_tag: String,
     pub local_path: String,
+    /// `adapter`, `merged`, or `gguf` when `import-trained` accepted an artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trained_shape: Option<String>,
+    /// Operator path plus the marker files that proved `trained_shape`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trained_paths: Option<Vec<String>>,
     pub binding_id: String,
     pub seated_driver: String,
     pub content_scanned: bool,
@@ -3573,6 +3618,8 @@ pub fn import_prepared(
         job: doc.job.clone(),
         local_tag: expected,
         local_path: path_text,
+        trained_shape: None,
+        trained_paths: None,
         binding_id: "local_slm".into(),
         seated_driver: seat.driver.clone(),
         content_scanned,
@@ -3625,22 +3672,34 @@ pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingPro
             doc.job
         )));
     }
-    let weights = resolve_adapter_artifact(req.adapter)?;
-    import_prepared(&ImportPreparedRequest {
+    let artifact = classify_trained_artifact(req.adapter)?;
+    scan_trained_sidecars(&artifact)?;
+    let mut proposal = import_prepared(&ImportPreparedRequest {
         estate: req.estate,
         prepared_dir: req.prepared_dir,
         tag: req.tag,
-        path: &weights,
+        path: &artifact.primary,
         curator: req.curator,
-    })
+    })?;
+    annotate_trained_proposal(req.prepared_dir, &mut proposal, &artifact)?;
+    record_trained_prepare(req.prepared_dir, &artifact)?;
+    Ok(proposal)
 }
 
-fn resolve_adapter_artifact(path: &Path) -> Result<PathBuf, ModelError> {
+struct TrainedArtifact {
+    shape: &'static str,
+    /// File `import_prepared` scans and stores as `local_path`.
+    primary: PathBuf,
+    /// Operator path first, then the marker files that proved the shape.
+    paths: Vec<String>,
+}
+
+fn classify_trained_artifact(path: &Path) -> Result<TrainedArtifact, ModelError> {
     let meta = match std::fs::metadata(path) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Err(ModelError::Other(format!(
-                "refuse:adapter: {} is missing",
+                "refuse:adapter: {} is missing. {TRAINED_SHAPE_HINT}",
                 path.display()
             )));
         }
@@ -3652,56 +3711,158 @@ fn resolve_adapter_artifact(path: &Path) -> Result<PathBuf, ModelError> {
         }
     };
     if meta.is_file() {
-        if is_adapter_file(path) {
-            return Ok(path.to_path_buf());
+        if is_gguf_name(path) {
+            return Ok(TrainedArtifact {
+                shape: TRAINED_SHAPE_GGUF,
+                primary: path.to_path_buf(),
+                paths: vec![path.display().to_string()],
+            });
         }
         return Err(ModelError::Other(format!(
-            "refuse:adapter: {} is not a gguf, safetensors, or adapter config",
+            "refuse:adapter: {} is a file and is not a GGUF. {TRAINED_SHAPE_HINT}",
             path.display()
         )));
     }
-    if meta.is_dir() {
-        for name in [
-            "adapter_config.json",
-            "adapter_model.safetensors",
-            "adapter_model.bin",
-        ] {
-            let candidate = path.join(name);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
+    if !meta.is_dir() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is not a file or directory. {TRAINED_SHAPE_HINT}",
+            path.display()
+        )));
+    }
+    let files = top_level_files(path)?;
+    let mut adapter_config = None;
+    let mut model_config = None;
+    let mut modelfile = None;
+    let mut safetensors = Vec::new();
+    let mut ggufs = Vec::new();
+    let mut adapter_weights = Vec::new();
+    for file in &files {
+        let name = file_name_lower(file);
+        if name == "adapter_config.json" {
+            adapter_config = Some(file.clone());
+        } else if name == "config.json" {
+            model_config = Some(file.clone());
         }
-        if let Some(gguf) = first_dir_file_with_suffix(path, ".gguf")? {
-            return Ok(gguf);
+        if file.file_name().and_then(|value| value.to_str()) == Some("Modelfile") {
+            modelfile = Some(file.clone());
         }
-        let config = path.join("config.json");
-        if config.is_file() && first_dir_file_with_suffix(path, ".safetensors")?.is_some() {
-            return Ok(config);
+        if name.ends_with(".safetensors") {
+            safetensors.push(file.clone());
+        }
+        if is_gguf_name(file) {
+            ggufs.push(file.clone());
+        }
+        if name == "adapter_model.safetensors" || name == "adapter_model.bin" {
+            adapter_weights.push(file.clone());
+        }
+    }
+    let adapter_hit = adapter_config.is_some();
+    let merged_hit = model_config.is_some() && !safetensors.is_empty();
+    let gguf_hit = !ggufs.is_empty();
+    let hits = usize::from(adapter_hit) + usize::from(merged_hit) + usize::from(gguf_hit);
+    if hits > 1 {
+        let mut names = Vec::new();
+        if adapter_hit {
+            names.push(TRAINED_SHAPE_ADAPTER);
+        }
+        if merged_hit {
+            names.push(TRAINED_SHAPE_MERGED);
+        }
+        if gguf_hit {
+            names.push(TRAINED_SHAPE_GGUF);
         }
         return Err(ModelError::Other(format!(
-            "refuse:adapter: {} has no adapter_config.json, adapter weights, or gguf",
+            "refuse:adapter: {} matches more than one trained shape ({}). Point --adapter at one artifact. {TRAINED_SHAPE_HINT}",
+            path.display(),
+            names.join(", ")
+        )));
+    }
+    if let Some(config) = adapter_config {
+        let mut paths = vec![path.display().to_string(), config.display().to_string()];
+        for weight in adapter_weights {
+            let text = weight.display().to_string();
+            if !paths.contains(&text) {
+                paths.push(text);
+            }
+        }
+        return Ok(TrainedArtifact {
+            shape: TRAINED_SHAPE_ADAPTER,
+            primary: config,
+            paths,
+        });
+    }
+    if merged_hit {
+        let config = match model_config {
+            Some(config) => config,
+            None => {
+                return Err(ModelError::Other(format!(
+                    "refuse:adapter: {} has no config.json. A merged export_dir needs config.json and at least one .safetensors file.",
+                    path.display()
+                )))
+            }
+        };
+        let mut paths = vec![path.display().to_string(), config.display().to_string()];
+        for file in safetensors {
+            paths.push(file.display().to_string());
+        }
+        if let Some(file) = modelfile {
+            paths.push(file.display().to_string());
+        }
+        return Ok(TrainedArtifact {
+            shape: TRAINED_SHAPE_MERGED,
+            primary: config,
+            paths,
+        });
+    }
+    if gguf_hit {
+        let primary = ggufs[0].clone();
+        let mut paths = vec![path.display().to_string()];
+        for file in ggufs {
+            paths.push(file.display().to_string());
+        }
+        return Ok(TrainedArtifact {
+            shape: TRAINED_SHAPE_GGUF,
+            primary,
+            paths,
+        });
+    }
+    if model_config.is_some() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has config.json and no .safetensors file. A merged export_dir needs config.json and at least one .safetensors file. An adapter output_dir needs adapter_config.json.",
+            path.display()
+        )));
+    }
+    if !safetensors.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has a .safetensors file and no config.json. A merged export_dir needs both. An adapter output_dir needs adapter_config.json.",
+            path.display()
+        )));
+    }
+    if !adapter_weights.is_empty() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has adapter weights and no adapter_config.json. An adapter output_dir needs adapter_config.json.",
             path.display()
         )));
     }
     Err(ModelError::Other(format!(
-        "refuse:adapter: {} is not a file or directory",
+        "refuse:adapter: {} is not an adapter output_dir, a merged export_dir, or a GGUF path. {TRAINED_SHAPE_HINT}",
         path.display()
     )))
 }
 
-fn is_adapter_file(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let lower = name.to_ascii_lowercase();
-    lower.ends_with(".gguf")
-        || lower.ends_with(".safetensors")
-        || lower == "adapter_config.json"
-        || lower == "adapter_model.bin"
+fn is_gguf_name(path: &Path) -> bool {
+    file_name_lower(path).ends_with(".gguf")
 }
 
-fn first_dir_file_with_suffix(dir: &Path, suffix: &str) -> Result<Option<PathBuf>, ModelError> {
-    let mut matches = Vec::new();
+fn file_name_lower(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn top_level_files(dir: &Path) -> Result<Vec<PathBuf>, ModelError> {
+    let mut files = Vec::new();
     let entries = std::fs::read_dir(dir)
         .map_err(|err| ModelError::Other(format!("refuse:adapter: {}: {err}", dir.display())))?;
     for entry in entries {
@@ -3709,20 +3870,181 @@ fn first_dir_file_with_suffix(dir: &Path, suffix: &str) -> Result<Option<PathBuf
             ModelError::Other(format!("refuse:adapter: {}: {err}", dir.display()))
         })?;
         let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if name.ends_with(suffix) {
-            matches.push(path);
+        if path.is_file() {
+            files.push(path);
         }
     }
-    matches.sort();
-    Ok(matches.into_iter().next())
+    files.sort();
+    Ok(files)
+}
+
+fn scan_trained_sidecars(artifact: &TrainedArtifact) -> Result<(), ModelError> {
+    for path_text in &artifact.paths {
+        refuse_sacred_and_sku("trained path", path_text)?;
+        let path = Path::new(path_text);
+        if path.file_name().and_then(|name| name.to_str()) != Some("Modelfile") {
+            continue;
+        }
+        let scanned = scan_operator_file(path)?;
+        if !scanned {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is not scanned text. import-trained records a Modelfile only when the file is UTF-8 and at most 1 MiB.",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn annotate_trained_proposal(
+    prepared_dir: &Path,
+    proposal: &mut EnrichBindingProposal,
+    artifact: &TrainedArtifact,
+) -> Result<(), ModelError> {
+    proposal.trained_shape = Some(artifact.shape.to_string());
+    proposal.trained_paths = Some(artifact.paths.clone());
+    proposal.note = format!(
+        "Proposal only. auto_apply=false. Trained shape is {shape}. Paths: {paths}. Next: estate enrich apply-proposal, then estate plan and estate apply --require-plan. import-trained does not apply, does not promote, and does not rewrite the estate. Operator file content_scanned={scanned}.",
+        shape = artifact.shape,
+        paths = artifact.paths.join(", "),
+        scanned = proposal.content_scanned,
+    );
+    let json = to_pretty(proposal)?;
+    let md = render_binding_proposal(proposal);
+    refuse_sacred_and_sku("binding proposal", &json)?;
+    refuse_sacred_and_sku("binding proposal", &md)?;
+    refuse_raw_secrets(&json).map_err(map_feed)?;
+    refuse_raw_secrets(&md).map_err(map_feed)?;
+    write_files(
+        prepared_dir,
+        &[
+            (BINDING_PROPOSAL_JSON.into(), json),
+            (BINDING_PROPOSAL_MD.into(), md),
+        ],
+    )?;
+    Ok(())
+}
+
+fn record_trained_prepare(
+    prepared_dir: &Path,
+    artifact: &TrainedArtifact,
+) -> Result<(), ModelError> {
+    let path = prepared_dir.join("prepare.json");
+    let text = std::fs::read_to_string(&path).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:prepare-unreadable: {}: {err}",
+            path.display()
+        ))
+    })?;
+    let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:prepare-unreadable: {}: {err}",
+            path.display()
+        ))
+    })?;
+    let obj = value.as_object_mut().ok_or_else(|| {
+        ModelError::Other(format!(
+            "refuse:prepare: {} is not an object",
+            path.display()
+        ))
+    })?;
+    for key in ["promoted", "auto_apply", "estate_rewritten"] {
+        if obj.get(key).and_then(|flag| flag.as_bool()) != Some(false) {
+            return Err(ModelError::Other(format!(
+                "refuse:prepared: {} promoted, auto_apply, and estate_rewritten must stay false",
+                path.display()
+            )));
+        }
+    }
+    obj.insert(
+        "trained_shape".into(),
+        serde_json::Value::String(artifact.shape.to_string()),
+    );
+    obj.insert(
+        "trained_paths".into(),
+        serde_json::Value::Array(
+            artifact
+                .paths
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
+    let body = to_pretty(&value)?;
+    refuse_sacred_and_sku("prepare.json", &body)?;
+    refuse_raw_secrets(&body).map_err(map_feed)?;
+    std::fs::write(&path, &body).map_err(|err| {
+        ModelError::Other(format!("refuse:prepare-write: {}: {err}", path.display()))
+    })?;
+    let doc = load_prepare_doc(&path)?;
+    if doc.trained_shape.as_deref() != Some(artifact.shape)
+        || doc.trained_paths.as_ref() != Some(&artifact.paths)
+        || doc.promoted
+        || doc.auto_apply
+        || doc.estate_rewritten
+    {
+        return Err(ModelError::Other(
+            "refuse:prepare: trained_shape record did not round-trip".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn accept_trained_record(
+    kind: &str,
+    shape: Option<&str>,
+    paths: Option<&[String]>,
+) -> Result<(), ModelError> {
+    match (shape, paths) {
+        (None, None) => Ok(()),
+        (Some(shape), Some(paths)) => {
+            if !matches!(
+                shape,
+                TRAINED_SHAPE_ADAPTER | TRAINED_SHAPE_MERGED | TRAINED_SHAPE_GGUF
+            ) {
+                return Err(ModelError::Other(format!(
+                    "refuse:{kind}: trained_shape '{shape}' is not adapter, merged, or gguf"
+                )));
+            }
+            if paths.is_empty() {
+                return Err(ModelError::Other(format!(
+                    "refuse:{kind}: trained_paths is empty"
+                )));
+            }
+            for path in paths {
+                refuse_sacred_and_sku("trained path", path)?;
+            }
+            Ok(())
+        }
+        (Some(_), None) => Err(ModelError::Other(format!(
+            "refuse:{kind}: trained_shape is set and trained_paths is missing"
+        ))),
+        (None, Some(_)) => Err(ModelError::Other(format!(
+            "refuse:{kind}: trained_paths is set and trained_shape is missing"
+        ))),
+    }
+}
+
+fn trained_records_agree(
+    doc: &EnrichPrepareDoc,
+    proposal: &EnrichBindingProposal,
+) -> Result<(), ModelError> {
+    let same = doc.trained_shape == proposal.trained_shape
+        && doc.trained_paths == proposal.trained_paths
+        && accept_trained_record(
+            "prepare",
+            doc.trained_shape.as_deref(),
+            doc.trained_paths.as_deref(),
+        )
+        .is_ok();
+    if same {
+        return Ok(());
+    }
+    Err(ModelError::Other(
+        "refuse:prepare: trained_shape and trained_paths on prepare.json do not match the binding proposal"
+            .into(),
+    ))
 }
 
 fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
@@ -3788,6 +4110,11 @@ fn load_prepare_doc(path: &Path) -> Result<EnrichPrepareDoc, ModelError> {
         refuse_sacred_and_sku("source driver", source)?;
     }
     resolve_train_enrich_driver(&doc.driver)?;
+    accept_trained_record(
+        "prepare",
+        doc.trained_shape.as_deref(),
+        doc.trained_paths.as_deref(),
+    )?;
     Ok(doc)
 }
 
@@ -3901,6 +4228,20 @@ fn yaml_scalar(value: &serde_json::Value) -> Result<String, ModelError> {
     }
 }
 
+fn trained_proposal_lines(proposal: &EnrichBindingProposal) -> String {
+    match (&proposal.trained_shape, &proposal.trained_paths) {
+        (Some(shape), Some(paths)) => {
+            let mut lines = format!("trained shape: {shape}\ntrained paths:\n");
+            for path in paths {
+                lines.push_str(&format!("- {path}\n"));
+            }
+            lines.push('\n');
+            lines
+        }
+        _ => String::new(),
+    }
+}
+
 fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
     format!(
         "# Binding proposal (local_slm)\n\
@@ -3915,6 +4256,7 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
          job: {job}\n\
          local tag: {tag}\n\
          operator path: {path}\n\
+         {trained}\
          prepared: {prepared}\n\
          seated driver: {seated}\n\
          content_scanned: {scanned}\n\
@@ -3937,6 +4279,7 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
         job = proposal.job,
         tag = proposal.local_tag,
         path = proposal.local_path,
+        trained = trained_proposal_lines(proposal),
         prepared = proposal.prepared_dir,
         seated = proposal.seated_driver,
         scanned = proposal.content_scanned,
@@ -4172,6 +4515,7 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
             "refuse:prepare: prepare.json does not match the binding proposal".into(),
         ));
     }
+    trained_records_agree(&doc, &proposal)?;
     refuse_frontier_source_on_estate(&doc.source_drivers, req.estate).map_err(map_feed)?;
     let expected = local_enrich_tag(&doc.pack_id);
     if req.tag != expected || proposal.local_tag != expected {
@@ -4439,6 +4783,11 @@ fn parse_binding_proposal(path: &Path) -> Result<EnrichBindingProposal, ModelErr
     refuse_sacred_and_sku("operator path", &proposal.local_path)?;
     refuse_sacred_and_sku("binding proposal", &proposal.paste_yaml)?;
     refuse_sacred_and_sku("binding proposal", &proposal.note)?;
+    accept_trained_record(
+        "proposal",
+        proposal.trained_shape.as_deref(),
+        proposal.trained_paths.as_deref(),
+    )?;
     Ok(proposal)
 }
 
@@ -5013,6 +5362,17 @@ mod tests {
         assert!(next.contains("--max-steps 10"), "{next}");
         assert!(next.contains("does not map the seat tag"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("outputs").display()
+        )), "{next}");
+        assert!(next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("export").display()
+        )), "{next}");
+        assert!(next.contains("--adapter <gguf>"), "{next}");
         assert!(next.contains("CUDA LLaMA-Factory"), "{next}");
         assert!(next.contains("does not write an MLX trainer"), "{next}");
         assert!(next.contains("same chat template"), "{next}");
@@ -5830,6 +6190,17 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("import-trained"), "{next}");
+        assert!(next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("outputs").display()
+        )), "{next}");
+        assert!(next.contains(&format!(
+            "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+            out.display(),
+            out.join("export").display()
+        )), "{next}");
+        assert!(next.contains("--adapter <gguf>"), "{next}");
         assert!(next.contains("dataset_mode: scaffold"), "{next}");
         assert!(next.contains("not training data"), "{next}");
         assert!(next.contains("--from-feed"), "{next}");
@@ -6585,6 +6956,313 @@ mod tests {
         .unwrap_err();
         assert!(wrong.to_string().contains("refuse:driver"), "{wrong}");
         assert!(!ollama_out.join("binding-proposal.json").is_file());
+    }
+
+    #[test]
+    fn import_trained_records_three_shapes_and_refuses_garbage() {
+        let root = tmp("trained-shapes");
+        let pack = fixture_pack();
+        let estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        let out = root.join("qlora");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let lora_out = root.join("lora");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let tag = "cell-enrich-overnight-traces";
+        for (dir, driver) in [
+            (&out, LLAMAFACTORY_QLORA_ID),
+            (&lora_out, LLAMAFACTORY_LORA_ID),
+        ] {
+            let next = std::fs::read_to_string(dir.join("NEXT.md")).unwrap();
+            for adapter in [dir.join("outputs"), dir.join("export")] {
+                assert!(
+                    next.contains(&format!(
+                        "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag {tag} --adapter {}",
+                        dir.display(),
+                        adapter.display()
+                    )),
+                    "{driver} {next}"
+                );
+            }
+            assert!(
+                next.contains(&format!(
+                    "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag {tag} --adapter <gguf>",
+                    dir.display()
+                )),
+                "{driver} {next}"
+            );
+        }
+
+        let curator = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &root.join("missing"),
+            curator: "ada",
+        })
+        .unwrap_err();
+        assert!(curator.to_string().contains("refuse:curator"), "{curator}");
+
+        let sacred_dir = root.join("cyera");
+        std::fs::create_dir_all(&sacred_dir).unwrap();
+        std::fs::write(sacred_dir.join("adapter_config.json"), "{}\n").unwrap();
+        let sacred = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &sacred_dir,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+
+        let garbage = root.join("garbage.txt");
+        std::fs::write(&garbage, "not weights\n").unwrap();
+        let garbage_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &garbage,
+            curator: "jason",
+        })
+        .unwrap_err();
+        let garbage_text = garbage_err.to_string();
+        assert!(garbage_text.contains("refuse:adapter"), "{garbage_text}");
+        assert!(
+            garbage_text.contains("is a file and is not a GGUF"),
+            "{garbage_text}"
+        );
+        assert!(
+            garbage_text.contains("adapter_config.json"),
+            "{garbage_text}"
+        );
+        assert!(garbage_text.contains("config.json"), "{garbage_text}");
+        assert!(garbage_text.contains(".safetensors"), "{garbage_text}");
+        assert!(garbage_text.contains(".gguf"), "{garbage_text}");
+        assert!(!out.join("binding-proposal.json").is_file());
+        let untouched = std::fs::read_to_string(out.join("prepare.json")).unwrap();
+        assert!(!untouched.contains("trained_shape"), "{untouched}");
+        assert!(untouched.contains("\"promoted\": false"), "{untouched}");
+        assert!(untouched.contains("\"auto_apply\": false"), "{untouched}");
+        assert!(
+            untouched.contains("\"estate_rewritten\": false"),
+            "{untouched}"
+        );
+
+        let empty = root.join("empty-dir");
+        std::fs::create_dir_all(&empty).unwrap();
+        let empty_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &empty,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            empty_err
+                .to_string()
+                .contains("is not an adapter output_dir, a merged export_dir, or a GGUF path"),
+            "{empty_err}"
+        );
+
+        let half = root.join("half-export");
+        std::fs::create_dir_all(&half).unwrap();
+        std::fs::write(half.join("config.json"), "{}\n").unwrap();
+        let half_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &half,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            half_err.to_string().contains("no .safetensors"),
+            "{half_err}"
+        );
+
+        let lone = root.join("model.safetensors");
+        std::fs::write(&lone, "weights").unwrap();
+        let lone_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &lone,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            lone_err.to_string().contains("is a file and is not a GGUF"),
+            "{lone_err}"
+        );
+        assert!(!out.join("binding-proposal.json").is_file());
+
+        let adapter = root.join("outputs");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{\"r\":8}\n").unwrap();
+        std::fs::write(adapter.join("adapter_model.safetensors"), "weights").unwrap();
+        let proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(proposal.trained_shape.as_deref(), Some("adapter"));
+        assert_eq!(proposal.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(proposal.curator, "jason");
+        assert_eq!(proposal.policy, "manual");
+        assert!(!proposal.auto_apply && !proposal.promoted && !proposal.estate_rewritten);
+        assert!(proposal.local_path.ends_with("adapter_config.json"));
+        let adapter_paths = proposal.trained_paths.clone().unwrap();
+        assert_eq!(adapter_paths[0], adapter.display().to_string());
+        assert!(adapter_paths
+            .iter()
+            .any(|path| path.ends_with("adapter_config.json")));
+        assert!(adapter_paths
+            .iter()
+            .any(|path| path.ends_with("adapter_model.safetensors")));
+        let prepare_text = std::fs::read_to_string(out.join("prepare.json")).unwrap();
+        let prepare: EnrichPrepareDoc = serde_json::from_str(&prepare_text).unwrap();
+        assert_eq!(prepare.trained_shape.as_deref(), Some("adapter"));
+        assert_eq!(prepare.trained_paths.as_ref(), Some(&adapter_paths));
+        assert!(!prepare.promoted && !prepare.auto_apply && !prepare.estate_rewritten);
+        let proposal_text = std::fs::read_to_string(out.join("binding-proposal.json")).unwrap();
+        let proposal_json: serde_json::Value = serde_json::from_str(&proposal_text).unwrap();
+        assert_eq!(proposal_json["trained_shape"], "adapter");
+        assert_eq!(proposal_json["curator"], "jason");
+        assert_eq!(proposal_json["auto_apply"], false);
+        assert_eq!(proposal_json["promoted"], false);
+        assert_eq!(proposal_json["estate_rewritten"], false);
+        let md = std::fs::read_to_string(out.join("binding-proposal.md")).unwrap();
+        assert!(md.contains("trained shape: adapter"), "{md}");
+        assert!(md.contains("adapter_config.json"), "{md}");
+        let source = root.join("estate.yaml");
+        std::fs::write(&source, estate_schema::render_estate_yaml(&estate).unwrap()).unwrap();
+        let before = std::fs::read(&source).unwrap();
+        let staged = apply_proposal(&ApplyProposalRequest {
+            estate: &estate,
+            estate_path: &source,
+            prepared_dir: &out,
+            tag,
+            curator: "jason",
+            state_dir: &root.join("state"),
+            verify_endpoint: None,
+        })
+        .unwrap();
+        assert!(matches!(staged, ApplyProposalOutcome::Staged(_)));
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let export = root.join("export");
+        std::fs::create_dir_all(&export).unwrap();
+        std::fs::write(export.join("config.json"), "{\"model_type\":\"qwen2\"}\n").unwrap();
+        std::fs::write(export.join("model.safetensors"), "merged").unwrap();
+        std::fs::write(
+            export.join("Modelfile"),
+            "FROM cell-enrich-overnight-traces\n",
+        )
+        .unwrap();
+        let merged = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &lora_out,
+            tag,
+            adapter: &export,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(merged.trained_shape.as_deref(), Some("merged"));
+        assert_eq!(merged.driver, LLAMAFACTORY_LORA_ID);
+        assert!(merged.local_path.ends_with("config.json"));
+        assert!(!merged.auto_apply && !merged.promoted && !merged.estate_rewritten);
+        let merged_paths = merged.trained_paths.clone().unwrap();
+        assert_eq!(merged_paths[0], export.display().to_string());
+        assert!(merged_paths
+            .iter()
+            .any(|path| path.ends_with("config.json")));
+        assert!(merged_paths
+            .iter()
+            .any(|path| path.ends_with("model.safetensors")));
+        assert!(merged_paths.iter().any(|path| path.ends_with("Modelfile")));
+        let lora_prepare: EnrichPrepareDoc =
+            serde_json::from_str(&std::fs::read_to_string(lora_out.join("prepare.json")).unwrap())
+                .unwrap();
+        assert_eq!(lora_prepare.trained_shape.as_deref(), Some("merged"));
+        assert_eq!(lora_prepare.trained_paths.as_ref(), Some(&merged_paths));
+        assert!(
+            !lora_prepare.promoted && !lora_prepare.auto_apply && !lora_prepare.estate_rewritten
+        );
+        let lora_md = std::fs::read_to_string(lora_out.join("binding-proposal.md")).unwrap();
+        assert!(lora_md.contains("trained shape: merged"), "{lora_md}");
+
+        let gguf = root.join("specialist.gguf");
+        std::fs::write(&gguf, "gguf-fixture").unwrap();
+        let gguf_proposal = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &gguf,
+            curator: "jason",
+        })
+        .unwrap();
+        assert_eq!(gguf_proposal.trained_shape.as_deref(), Some("gguf"));
+        assert_eq!(
+            gguf_proposal.trained_paths.as_ref().map(Vec::as_slice),
+            Some([gguf.display().to_string()].as_slice())
+        );
+        assert!(gguf_proposal.local_path.ends_with("specialist.gguf"));
+        assert!(
+            !gguf_proposal.auto_apply && !gguf_proposal.promoted && !gguf_proposal.estate_rewritten
+        );
+        let gguf_prepare: EnrichPrepareDoc =
+            serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap())
+                .unwrap();
+        assert_eq!(gguf_prepare.trained_shape.as_deref(), Some("gguf"));
+        assert_eq!(
+            gguf_prepare.trained_paths.as_ref(),
+            gguf_proposal.trained_paths.as_ref()
+        );
+
+        let mixed = root.join("mixed");
+        std::fs::create_dir_all(&mixed).unwrap();
+        std::fs::write(mixed.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(mixed.join("config.json"), "{}\n").unwrap();
+        std::fs::write(mixed.join("model.safetensors"), "merged").unwrap();
+        let mixed_err = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &out,
+            tag,
+            adapter: &mixed,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(
+            mixed_err
+                .to_string()
+                .contains("more than one trained shape"),
+            "{mixed_err}"
+        );
+        let still: EnrichPrepareDoc =
+            serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap())
+                .unwrap();
+        assert_eq!(still.trained_shape.as_deref(), Some("gguf"));
+        assert!(!still.promoted && !still.auto_apply && !still.estate_rewritten);
     }
 
     #[test]
