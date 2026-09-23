@@ -586,6 +586,20 @@ local-seat does not promote.
     --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
     --weights .cell/enrich/overnight-traces/llamafactory-qlora/export
 
+Pass --adapter instead of --weights to print the no-merge seat.
+--adapter is an adapter output_dir (adapter_config.json, the same
+marker import-trained accepts, plus the adapter weights when the train
+wrote them). The printed Modelfile uses FROM the prepare.json seat_tag
+and ADAPTER that directory. --weights still refuses an adapter
+directory (refuse:seat). A merged export or a GGUF passed to --adapter
+is refuse:adapter. A symlinked adapter path or a symlinked marker is
+refused the same way. The command prints the ollama create line and
+does not run it.
+
+  estate enrich local-seat \\
+    --prepared .cell/enrich/overnight-traces/llamafactory-qlora \\
+    --adapter .cell/enrich/overnight-traces/llamafactory-qlora/outputs
+
 Page: docs/local-seat.md. READY_FOR_LIVE_TEST stays no.
 
 Qwen QLoRA journey (Target C)

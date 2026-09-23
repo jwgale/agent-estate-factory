@@ -1,6 +1,7 @@
 //! Post-merge local seat. Validates an export directory or a GGUF and prints
 //! the ollama create line. Does not create a model.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -59,6 +60,8 @@ fn help_names_local_seat() {
     assert!(body.contains("does not run ollama or llama.cpp"), "{body}");
     assert!(body.contains("axolotl-lora"), "{body}");
     assert!(body.contains("<merged-hf-dir>"), "{body}");
+    assert!(body.contains("--adapter"), "{body}");
+    assert!(body.contains("ADAPTER"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
 }
@@ -112,6 +115,14 @@ fn prepare_records_paths_and_local_seat_prints_the_create_line() {
             "{name}: {page}"
         );
         assert!(page.contains("estate enrich local-seat"), "{name}");
+        assert!(
+            page.contains(&format!(
+                "estate enrich local-seat --prepared {} --adapter {}",
+                out_dir.display(),
+                out_dir.join("outputs").display()
+            )),
+            "{name}: {page}"
+        );
         assert!(page.contains("estate enrich gguf-convert"), "{name}");
         assert!(
             page.contains(&format!(
@@ -417,6 +428,171 @@ fn axolotl_prepare_prints_create_and_refuses_adapter_and_symlink() {
             "{driver}: {link_text}"
         );
     }
+}
+
+#[test]
+fn adapter_seat_prints_the_modelfile_and_does_not_run_it() {
+    let root = tmp("adapter-cli");
+    let estate = write_train_estate(&root, "llama3", "Qwen/Qwen2.5-0.5B-Instruct");
+    let pack = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+    let out_dir = root.join("qlora");
+    let prepared = estate_bin()
+        .args([
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            pack.to_str().unwrap(),
+            "--driver",
+            "llamafactory-qlora",
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    let estate_before = std::fs::read(&estate).unwrap();
+
+    let adapter = root.join("outputs");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{\"r\":8}\n").unwrap();
+    std::fs::write(adapter.join("adapter_model.safetensors"), b"weights").unwrap();
+    let before = dir_names(&adapter);
+
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let marker = root.join("ollama-was-run");
+    let script = bin.join("ollama");
+    std::fs::write(&script, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let seat = estate_bin()
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--adapter",
+            adapter.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let seat_text = text(&seat);
+    assert!(seat.status.success(), "{seat_text}");
+    assert!(seat_text.contains("shape=adapter"), "{seat_text}");
+    assert!(seat_text.contains("seat_tag=llama3"), "{seat_text}");
+    assert!(seat_text.contains("FROM llama3\n"), "{seat_text}");
+    assert!(seat_text.contains("ADAPTER "), "{seat_text}");
+    assert!(!seat_text.contains("FROM Qwen/"), "{seat_text}");
+    assert!(
+        seat_text.contains("Qwen/Qwen2.5-0.5B-Instruct"),
+        "{seat_text}"
+    );
+    assert!(
+        seat_text.contains("ollama create cell-enrich-overnight-traces -f "),
+        "{seat_text}"
+    );
+    assert!(seat_text.contains("was not run"), "{seat_text}");
+    assert!(
+        seat_text.contains("local-seat did not create a model."),
+        "{seat_text}"
+    );
+    assert!(seat_text.contains("READY_FOR_LIVE_TEST: no"), "{seat_text}");
+    assert!(
+        !seat_text.contains("READY_FOR_LIVE_TEST: yes"),
+        "{seat_text}"
+    );
+    assert!(!marker.exists(), "printed ollama create was executed");
+    assert_eq!(dir_names(&adapter), before);
+    assert!(!adapter.join("Modelfile").exists());
+    assert_eq!(std::fs::read(&estate).unwrap(), estate_before);
+
+    let merged = root.join("export");
+    std::fs::create_dir_all(&merged).unwrap();
+    std::fs::write(merged.join("config.json"), "{}\n").unwrap();
+    std::fs::write(merged.join("model.safetensors"), b"merged").unwrap();
+    let refused = estate_bin()
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--adapter",
+            merged.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(refused_text.contains("refuse:adapter"), "{refused_text}");
+    assert!(refused_text.contains("merged"), "{refused_text}");
+    assert!(!refused_text.contains("ollama create"), "{refused_text}");
+    assert!(!marker.exists(), "refused path executed ollama");
+
+    let missing_config = root.join("shards");
+    std::fs::create_dir_all(&missing_config).unwrap();
+    std::fs::write(missing_config.join("adapter_model.safetensors"), b"w").unwrap();
+    let missing = estate_bin()
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--adapter",
+            missing_config.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let missing_text = text(&missing);
+    assert!(!missing.status.success(), "{missing_text}");
+    assert!(missing_text.contains("refuse:adapter"), "{missing_text}");
+    assert!(
+        missing_text.contains("no adapter_config.json"),
+        "{missing_text}"
+    );
+    assert!(!marker.exists());
+
+    let real = root.join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::write(real.join("adapter_config.json"), "{}\n").unwrap();
+    std::fs::write(real.join("adapter_model.safetensors"), b"w").unwrap();
+    let linked = root.join("linked");
+    std::os::unix::fs::symlink(&real, &linked).unwrap();
+    let link = estate_bin()
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--adapter",
+            linked.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let link_text = text(&link);
+    assert!(!link.status.success(), "{link_text}");
+    assert!(link_text.contains("refuse:adapter"), "{link_text}");
+    assert!(link_text.contains("symlink"), "{link_text}");
+    assert!(!marker.exists());
+
+    let both = estate_bin()
+        .args([
+            "enrich",
+            "local-seat",
+            "--prepared",
+            out_dir.to_str().unwrap(),
+            "--weights",
+            merged.to_str().unwrap(),
+            "--adapter",
+            adapter.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let both_text = text(&both);
+    assert!(!both.status.success(), "{both_text}");
+    assert!(!marker.exists());
 }
 
 fn dir_names(dir: &std::path::Path) -> Vec<String> {

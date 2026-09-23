@@ -278,9 +278,15 @@ pub(crate) fn run() -> Result<()> {
             EnrichCommand::GgufConvert { prepared, weights } => {
                 crate::enrich::cmd_enrich_gguf_convert(&prepared, &weights)
             }
-            EnrichCommand::LocalSeat { prepared, weights } => {
-                crate::enrich::cmd_enrich_local_seat(&prepared, &weights)
-            }
+            EnrichCommand::LocalSeat {
+                prepared,
+                weights,
+                adapter,
+            } => crate::enrich::cmd_enrich_local_seat(
+                &prepared,
+                weights.as_deref(),
+                adapter.as_deref(),
+            ),
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },
         Command::Packs { command } => match command {

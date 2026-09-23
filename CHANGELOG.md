@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print the no-merge adapter seat
+
+- `estate enrich local-seat --adapter <output_dir>` prints a Modelfile for an adapter directory (`adapter_config.json`, the same marker `import-trained` accepts for `trained_shape=adapter`, plus adapter weights when the train wrote them). `FROM` is `prepare.json` `seat_tag` (the same string as `base_model`). `ADAPTER` is that directory. The report then prints `ollama create cell-enrich-{pack} -f <dir>/Modelfile`. The command does not write the file, does not run the line, does not merge, and does not promote.
+- `--weights` stays the merged export or GGUF path and still refuses an adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`. A missing `adapter_config.json` is `refuse:adapter`. A symlinked adapter path or a symlinked marker is refused with `O_NOFOLLOW`, the same way `local-seat` and `import-trained` already refuse symlinks.
+- `PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` name this print beside the merged and GGUF seat. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Axolotl convert and seat print path
 
 - `estate enrich gguf-convert` and `estate enrich local-seat` accept an `axolotl-lora` or `axolotl-qlora` train prepare plus a merged Hugging Face directory (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`). `gguf-convert` prints `python3 convert_hf_to_gguf.py <dir> --outfile <sibling>.gguf --outtype auto`. `local-seat` prints the same `ollama create` line it prints for a LLaMA-Factory export, including a sibling `.gguf`. Neither command shells out, writes a GGUF, or promotes.

@@ -1,11 +1,14 @@
-//! Post-merge local seat. Validates a merged Hugging Face directory or a
-//! GGUF file and prints the Ollama `create` next step.
+//! Local seat print. Validates a merged Hugging Face directory, a GGUF
+//! file, or an adapter `output_dir`, and prints the Ollama `create` next step.
 //!
 //! The prepare is `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`,
-//! or `axolotl-qlora`. LLaMA-Factory `export_model` writes the merged
-//! directory and a `Modelfile` whose `FROM` is `.`
-//! (`template.get_ollama_modelfile`). Axolotl does not write that Modelfile
-//! and does not write GGUF. The operator owns the Axolotl merge. llama.cpp
+//! or `axolotl-qlora`. `--weights` is the post-merge path (merged export or
+//! GGUF). `--adapter` is the no-merge path: a Modelfile whose `FROM` is
+//! `prepare.json` `seat_tag` and whose `ADAPTER` is the adapter directory.
+//! LLaMA-Factory `export_model` writes the merged directory and a `Modelfile`
+//! whose `FROM` is `.` (`template.get_ollama_modelfile`). Axolotl does not
+//! write that Modelfile and does not write GGUF. The operator owns the
+//! Axolotl merge. llama.cpp
 //! `convert_hf_to_gguf.py` is the external GGUF step. This module does not
 //! shell out and does not create a model.
 
@@ -52,6 +55,7 @@ pub(crate) fn llamafactory_local_seat_note(
     let convert = crate::gguf_convert::printed_convert_line(&export_dir);
     let outfile = crate::gguf_convert::sibling_gguf_outfile(&export_dir);
     let gguf_convert = crate::gguf_convert::gguf_convert_cli(out_dir, &export_dir);
+    let outputs = out_dir.join("outputs");
     format!(
         "\n\
          ## Local seat after export\n\
@@ -82,6 +86,10 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          When you pass a .gguf file, it prints a Modelfile whose FROM is that file and the same `ollama create` line. It does not create the model. After the convert, point `--weights` at {outfile}.\n\
          \n\
+         To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. The command prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama and does not write the file. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
+         \n\
+         estate enrich local-seat --prepared {out} --adapter {outputs}\n\
+         \n\
          Then record the same path. `import-trained` accepts a merged export_dir (config.json and at least one .safetensors file whose name does not start with adapter_model, optional Modelfile) or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {export_dir}\n\
@@ -95,6 +103,7 @@ pub(crate) fn llamafactory_local_seat_note(
         modelfile = modelfile.display(),
         export_yaml = export_yaml.display(),
         outfile = outfile.display(),
+        outputs = outputs.display(),
     )
 }
 
@@ -148,11 +157,57 @@ pub(crate) fn axolotl_post_train_ladder(out_dir: &Path, seat_tag: &str, pack_id:
     )
 }
 
-/// Read `prepare.json`, validate `weights`, and build the seat report.
-/// Does not write and does not spawn a process.
+struct SeatPrepare {
+    driver: String,
+    pack_id: String,
+    seat_tag: String,
+    train_base_model: Option<String>,
+    local_tag: String,
+}
+
+/// Read `prepare.json`, validate `weights` as a merged export or a GGUF, and
+/// build the seat report. An adapter directory is `refuse:seat`. Does not
+/// write and does not spawn a process.
 pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatPlan, ModelError> {
+    let prep = load_seat_prepare(prepared_dir, "weights", weights)?;
+    let shape = classify_weights(weights)?;
+    let plan = render_plan(
+        prepared_dir,
+        &prep.driver,
+        &prep.pack_id,
+        &prep.seat_tag,
+        &prep.local_tag,
+        shape,
+    )?;
+    finish_seat_plan(plan)
+}
+
+/// Read `prepare.json`, validate `adapter` as an adapter `output_dir`, and
+/// print the no-merge Modelfile. `FROM` is `prepare.json` `seat_tag`.
+/// `ADAPTER` is that directory. A merged export or a GGUF is `refuse:adapter`.
+/// Does not write and does not spawn a process.
+pub fn plan_adapter_seat(prepared_dir: &Path, adapter: &Path) -> Result<LocalSeatPlan, ModelError> {
+    let prep = load_seat_prepare(prepared_dir, "adapter", adapter)?;
+    let shape = classify_adapter(adapter)?;
+    let plan = render_adapter(
+        prepared_dir,
+        &prep.driver,
+        &prep.pack_id,
+        &prep.seat_tag,
+        prep.train_base_model.as_deref(),
+        &prep.local_tag,
+        shape,
+    )?;
+    finish_seat_plan(plan)
+}
+
+fn load_seat_prepare(
+    prepared_dir: &Path,
+    artifact_label: &str,
+    artifact: &Path,
+) -> Result<SeatPrepare, ModelError> {
     refuse_sacred_and_sku("prepared", &prepared_dir.display().to_string())?;
-    refuse_sacred_and_sku("weights", &weights.display().to_string())?;
+    refuse_sacred_and_sku(artifact_label, &artifact.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     if !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("local-seat", &doc.driver));
@@ -167,19 +222,32 @@ pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatP
         .seat_tag
         .clone()
         .ok_or_else(|| ModelError::Other("refuse:seat: prepare.json has no seat_tag".into()))?;
-    let local_tag = local_enrich_tag(&doc.pack_id);
-    let shape = classify_weights(weights)?;
-    let plan = render_plan(
-        prepared_dir,
-        &doc.driver,
-        &doc.pack_id,
-        &seat_tag,
-        &local_tag,
-        shape,
-    )?;
+    single_line("seat_tag", &seat_tag)?;
+    if let Some(train) = doc.train_base_model.as_deref() {
+        single_line("train_base_model", train)?;
+    }
+    Ok(SeatPrepare {
+        driver: doc.driver,
+        pack_id: doc.pack_id.clone(),
+        seat_tag,
+        train_base_model: doc.train_base_model,
+        local_tag: local_enrich_tag(&doc.pack_id),
+    })
+}
+
+fn finish_seat_plan(plan: LocalSeatPlan) -> Result<LocalSeatPlan, ModelError> {
     refuse_sacred_and_sku("local-seat report", &plan.report)?;
     refuse_raw_secrets(&plan.report).map_err(map_feed)?;
     Ok(plan)
+}
+
+fn single_line(label: &str, value: &str) -> Result<(), ModelError> {
+    if value.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err(ModelError::Other(format!(
+            "refuse:seat: {label} is not a single line"
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) enum WeightsShape {
@@ -195,12 +263,21 @@ pub(crate) enum WeightsShape {
 
 struct DirMarkers {
     adapter_config: bool,
+    adapter_config_path: Option<PathBuf>,
     config: bool,
     merged_safetensors: bool,
     adapter_weights: Vec<String>,
     ggufs: Vec<PathBuf>,
     modelfile: Option<PathBuf>,
     files: usize,
+}
+
+struct AdapterDir {
+    /// Canonical adapter directory. Printed as Modelfile `ADAPTER`.
+    dir: PathBuf,
+    config: PathBuf,
+    weights: Vec<String>,
+    modelfile: Option<PathBuf>,
 }
 
 pub(crate) fn classify_weights(weights: &Path) -> Result<WeightsShape, ModelError> {
@@ -264,7 +341,7 @@ fn classify_gguf_file(path: &Path) -> Result<PathBuf, ModelError> {
 }
 
 fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
-    let markers = scan_dir(dir)?;
+    let markers = scan_dir(dir, "refuse:seat")?;
     if markers.files == 0 {
         return Err(ModelError::Other(format!(
             "refuse:seat: {} is an empty directory",
@@ -292,7 +369,7 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
     }
     if markers.adapter_config {
         return Err(ModelError::Other(format!(
-            "refuse:seat: {} is an adapter directory. local-seat is the post-merge path. import-trained records the adapter. Seating an adapter uses a Modelfile FROM an Ollama model of the train base, plus ADAPTER.",
+            "refuse:seat: {} is an adapter directory. --weights is the merged export or GGUF path. Pass --adapter to print the no-merge seat (FROM the seat tag, ADAPTER this directory). import-trained records the adapter.",
             dir.display()
         )));
     }
@@ -365,9 +442,221 @@ fn classify_dir(dir: &Path) -> Result<WeightsShape, ModelError> {
     )))
 }
 
-fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
+fn classify_adapter(adapter: &Path) -> Result<AdapterDir, ModelError> {
+    let meta = match std::fs::symlink_metadata(adapter) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is missing. An adapter output_dir is a directory with adapter_config.json.",
+                adapter.display()
+            )));
+        }
+        Err(err) => {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {}: {err}",
+                adapter.display()
+            )));
+        }
+    };
+    if meta.file_type().is_symlink() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is a symlink. enrich does not follow a symlinked adapter path. Pass the real directory.",
+            adapter.display()
+        )));
+    }
+    if meta.is_file() {
+        let name = adapter
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if name.to_ascii_lowercase().ends_with(".gguf") {
+            return Err(ModelError::Other(format!(
+                "refuse:adapter: {} is a GGUF file. --adapter expects an adapter output_dir (adapter_config.json). Pass --weights for the GGUF seat.",
+                adapter.display()
+            )));
+        }
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is a file and is not an adapter output_dir. An adapter output_dir is a directory with adapter_config.json.",
+            adapter.display()
+        )));
+    }
+    if !meta.is_dir() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is not a file or directory",
+            adapter.display()
+        )));
+    }
+    let markers = scan_dir(adapter, "refuse:adapter")?;
+    if markers.files == 0 {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is an empty directory. An adapter output_dir needs adapter_config.json.",
+            adapter.display()
+        )));
+    }
+    let merged = markers.config && markers.merged_safetensors;
+    let gguf_count = markers.ggufs.len();
+    let mut shapes = Vec::new();
+    if markers.adapter_config {
+        shapes.push("adapter");
+    }
+    if merged {
+        shapes.push("merged");
+    }
+    if gguf_count > 0 {
+        shapes.push("gguf");
+    }
+    if shapes.len() > 1 {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} matches more than one trained shape ({}). Point --adapter at one adapter output_dir.",
+            adapter.display(),
+            shapes.join(", ")
+        )));
+    }
+    if let Some(config) = markers.adapter_config_path {
+        let containment = std::fs::canonicalize(adapter).map_err(|err| {
+            ModelError::Other(format!(
+                "refuse:adapter: cannot pin {}: {err}. local-seat refuses when the adapter directory cannot be resolved.",
+                adapter.display()
+            ))
+        })?;
+        pin_marker(&config, &containment)?;
+        for name in &markers.adapter_weights {
+            pin_marker(&adapter.join(name), &containment)?;
+        }
+        return Ok(AdapterDir {
+            dir: containment,
+            config,
+            weights: markers.adapter_weights,
+            modelfile: markers.modelfile,
+        });
+    }
+    if merged {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is a merged export. --adapter expects an adapter output_dir (adapter_config.json). Pass --weights for the merged seat.",
+            adapter.display()
+        )));
+    }
+    if gguf_count > 0 {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is a GGUF path. --adapter expects an adapter output_dir (adapter_config.json). Pass --weights for the GGUF seat.",
+            adapter.display()
+        )));
+    }
+    if markers.config && !markers.adapter_weights.is_empty() {
+        let names = markers.adapter_weights.join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has config.json and adapter weights ({names}) and no adapter_config.json. adapter_model.safetensors is not a merged export. An adapter output_dir needs adapter_config.json.",
+            adapter.display()
+        )));
+    }
+    if !markers.adapter_weights.is_empty() {
+        let names = markers.adapter_weights.join(", ");
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has adapter weights ({names}) and no adapter_config.json. An adapter output_dir needs adapter_config.json.",
+            adapter.display()
+        )));
+    }
+    if markers.config {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} has config.json and no adapter_config.json. An adapter output_dir needs adapter_config.json. A merged export_dir needs config.json and a .safetensors file whose name does not start with adapter_model.",
+            adapter.display()
+        )));
+    }
+    Err(ModelError::Other(format!(
+        "refuse:adapter: {} is not an adapter output_dir. An adapter output_dir is a directory with adapter_config.json.",
+        adapter.display()
+    )))
+}
+
+fn pin_marker(path: &Path, containment: &Path) -> Result<(), ModelError> {
+    let file = open_nofollow(path).map_err(|err| adapter_open_error(path, err))?;
+    let opened = opened_file_path(&file).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:adapter: cannot pin {} ({err}). local-seat refuses when the opened marker cannot be resolved.",
+            path.display()
+        ))
+    })?;
+    let pinned = std::fs::canonicalize(&opened).map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:adapter: cannot pin {} ({err}). local-seat refuses when the opened marker cannot be resolved.",
+            path.display()
+        ))
+    })?;
+    if !path_is_within(containment, &pinned) {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} resolves to {} outside {}. local-seat does not follow marker symlinks out of the adapter directory.",
+            path.display(),
+            pinned.display(),
+            containment.display()
+        )));
+    }
+    let meta = file.metadata().map_err(|err| {
+        ModelError::Other(format!(
+            "refuse:adapter: cannot stat {}: {err}",
+            path.display()
+        ))
+    })?;
+    if !meta.is_file() {
+        return Err(ModelError::Other(format!(
+            "refuse:adapter: {} is not a regular file. An adapter output_dir needs adapter_config.json as a regular file.",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn path_is_within(root: &Path, file: &Path) -> bool {
+    file.starts_with(root) && file != root
+}
+
+/// Path of an already-opened file. Fail closed when the platform cannot name it.
+#[cfg(target_os = "linux")]
+fn opened_file_path(file: &File) -> std::io::Result<PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+}
+
+#[cfg(target_os = "macos")]
+fn opened_file_path(file: &File) -> std::io::Result<PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    const F_GETPATH: i32 = 50;
+    extern "C" {
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    let mut buf = [0u8; 4096];
+    let rc = unsafe { fcntl(file.as_raw_fd(), F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
+    let text = std::str::from_utf8(&buf[..end])
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    Ok(PathBuf::from(text))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn opened_file_path(_file: &File) -> std::io::Result<PathBuf> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "opened-file path is unavailable",
+    ))
+}
+
+fn adapter_open_error(path: &Path, err: std::io::Error) -> ModelError {
+    if matches!(err.raw_os_error(), Some(40 | 62)) {
+        ModelError::Other(format!(
+            "refuse:adapter: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside the adapter directory.",
+            path.display()
+        ))
+    } else {
+        ModelError::Other(format!("refuse:adapter: {}: {err}", path.display()))
+    }
+}
+
+fn scan_dir(dir: &Path, refuse: &str) -> Result<DirMarkers, ModelError> {
     let mut markers = DirMarkers {
         adapter_config: false,
+        adapter_config_path: None,
         config: false,
         merged_safetensors: false,
         adapter_weights: Vec::new(),
@@ -376,24 +665,24 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
         files: 0,
     };
     let entries = std::fs::read_dir(dir)
-        .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
+        .map_err(|err| ModelError::Other(format!("{refuse}: {}: {err}", dir.display())))?;
     for entry in entries {
         let entry = entry
-            .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
+            .map_err(|err| ModelError::Other(format!("{refuse}: {}: {err}", dir.display())))?;
         let kind = entry
             .file_type()
-            .map_err(|err| ModelError::Other(format!("refuse:seat: {}: {err}", dir.display())))?;
+            .map_err(|err| ModelError::Other(format!("{refuse}: {}: {err}", dir.display())))?;
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             return Err(ModelError::Other(format!(
-                "refuse:seat: {} has no utf-8 name",
+                "{refuse}: {} has no utf-8 name",
                 entry.path().display()
             )));
         };
         if kind.is_symlink() {
             if is_seat_marker_name(name) {
                 return Err(ModelError::Other(format!(
-                    "refuse:seat: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside {}.",
+                    "{refuse}: {} is a symlink. enrich does not follow marker symlinks. The marker must be a regular file inside {}.",
                     entry.path().display(),
                     dir.display()
                 )));
@@ -406,7 +695,14 @@ fn scan_dir(dir: &Path) -> Result<DirMarkers, ModelError> {
         markers.files += 1;
         let lower = name.to_ascii_lowercase();
         if lower == "adapter_config.json" {
+            if markers.adapter_config {
+                return Err(ModelError::Other(format!(
+                    "{refuse}: {} has more than one adapter_config.json. An adapter output_dir has one.",
+                    dir.display()
+                )));
+            }
             markers.adapter_config = true;
+            markers.adapter_config_path = Some(entry.path());
             continue;
         }
         if lower == "adapter_model.bin" || is_adapter_safetensors(&lower) {
@@ -721,6 +1017,155 @@ fn render_gguf(
     })
 }
 
+fn render_adapter(
+    prepared_dir: &Path,
+    driver: &str,
+    pack_id: &str,
+    seat_tag: &str,
+    train_base: Option<&str>,
+    local_tag: &str,
+    shape: AdapterDir,
+) -> Result<LocalSeatPlan, ModelError> {
+    let from_token = modelfile_token(seat_tag);
+    let adapter_token = modelfile_token(&shape.dir.display().to_string());
+    let modelfile_path = shape.dir.join(MODELFILE_NAME);
+    let (on_disk, text) = match &shape.modelfile {
+        Some(path) => {
+            let existing = read_modelfile(path)?;
+            if adapter_modelfile_matches(&existing, seat_tag, &shape.dir) {
+                (true, None)
+            } else {
+                (
+                    false,
+                    Some(adapter_modelfile_body(
+                        seat_tag,
+                        local_tag,
+                        train_base,
+                        &from_token,
+                        &adapter_token,
+                    )),
+                )
+            }
+        }
+        None => (
+            false,
+            Some(adapter_modelfile_body(
+                seat_tag,
+                local_tag,
+                train_base,
+                &from_token,
+                &adapter_token,
+            )),
+        ),
+    };
+    let create = ollama_create(local_tag, &modelfile_path);
+    let import = import_trained_line(prepared_dir, local_tag, &shape.dir);
+    let weights = if shape.weights.is_empty() {
+        "none".to_string()
+    } else {
+        shape.weights.join(",")
+    };
+    let train_note = match train_base {
+        Some(train) => format!(
+            " That Ollama model must already be train base {train}. This factory does not create that base and does not download it."
+        ),
+        None => String::new(),
+    };
+    let weight_note = if shape.weights.is_empty() {
+        " No adapter weight file is in this directory. import-trained still records this shape from adapter_config.json. Ollama needs the weight file in this directory before create."
+    } else {
+        " The adapter weights in this directory are the files import-trained records beside adapter_config.json."
+    };
+    let write_note = if on_disk {
+        "The Modelfile FROM is the seat tag and ADAPTER names this directory. The create line uses that file. This factory does not run ollama."
+    } else {
+        "Write the Modelfile below yourself, at the path in the create line. FROM is the seat tag. ADAPTER is this adapter directory. This factory does not write the file, does not merge, and does not run ollama."
+    };
+    let printed = match &text {
+        Some(body) => format!("\n{body}\n"),
+        None => String::new(),
+    };
+    let report = format!(
+        "local-seat: shape=adapter seat_tag={seat_tag} local_tag={local_tag} modelfile_on_disk={on_disk}\n\
+         pack={pack_id}\n\
+         driver={driver}\n\
+         adapter={adapter}\n\
+         adapter_config={config}\n\
+         adapter_weights={weights}\n\
+         modelfile={modelfile}\n\
+         promoted=false auto_apply=false estate_rewritten=false\n\
+         \n\
+         {write_note} Seat tag {seat_tag} is prepare.json seat_tag, the same string as base_model, and the Ollama id this cell already runs.{train_note}{weight_note} The create name is {local_tag}. This factory does not run ollama, does not merge, and does not write a GGUF. The create line below is printed and was not run.\n\
+         {printed}\
+         {create}\n\
+         \n\
+         import-trained records this adapter directory on the local_slm proposal. An adapter output_dir contains adapter_config.json. The seat tag stays {seat_tag}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
+         \n\
+         {import}\n\
+         \n\
+         local-seat did not create a model.\n\
+         READY_FOR_LIVE_TEST: no.\n",
+        adapter = shape.dir.display(),
+        config = shape.config.display(),
+        modelfile = modelfile_path.display(),
+    );
+    Ok(LocalSeatPlan {
+        shape: "adapter".into(),
+        seat_tag: seat_tag.to_string(),
+        local_tag: local_tag.to_string(),
+        pack_id: pack_id.to_string(),
+        driver: driver.to_string(),
+        modelfile_on_disk: on_disk,
+        create_command: create,
+        modelfile_text: text,
+        report,
+    })
+}
+
+fn adapter_modelfile_body(
+    seat_tag: &str,
+    local_tag: &str,
+    train_base: Option<&str>,
+    from_token: &str,
+    adapter_token: &str,
+) -> String {
+    let mut header = format!("# seat_tag: {seat_tag}\n# local_tag: {local_tag}\n");
+    if let Some(train) = train_base {
+        header.push_str(&format!("# train_base_model: {train}\n"));
+    }
+    format!("{header}FROM {from_token}\nADAPTER {adapter_token}\n")
+}
+
+fn adapter_modelfile_matches(text: &str, seat_tag: &str, adapter_dir: &Path) -> bool {
+    let Some(from) = first_from(text) else {
+        return false;
+    };
+    let Some(adapter) = first_keyword(text, "ADAPTER") else {
+        return false;
+    };
+    from == seat_tag && adapter_points_at(adapter_dir, &adapter, adapter_dir)
+}
+
+fn adapter_points_at(modelfile_dir: &Path, adapter_arg: &str, adapter_dir: &Path) -> bool {
+    if adapter_arg.is_empty() {
+        return false;
+    }
+    let target = if from_arg_is_here(adapter_arg) {
+        modelfile_dir.to_path_buf()
+    } else if Path::new(adapter_arg).is_absolute() {
+        PathBuf::from(adapter_arg)
+    } else {
+        modelfile_dir.join(adapter_arg)
+    };
+    let Ok(left) = std::fs::canonicalize(&target) else {
+        return false;
+    };
+    let Ok(right) = std::fs::canonicalize(adapter_dir) else {
+        return false;
+    };
+    left == right
+}
+
 fn gguf_modelfile_body(
     seat_tag: &str,
     local_tag: &str,
@@ -806,8 +1251,12 @@ fn read_modelfile(path: &Path) -> Result<String, ModelError> {
 }
 
 fn first_from(text: &str) -> Option<String> {
+    first_keyword(text, "FROM")
+}
+
+fn first_keyword(text: &str, keyword: &str) -> Option<String> {
     text.lines().find_map(|line| {
-        let arg = from_argument(line)?;
+        let arg = keyword_argument(line, keyword)?;
         if arg.is_empty() {
             None
         } else {
@@ -817,13 +1266,17 @@ fn first_from(text: &str) -> Option<String> {
 }
 
 fn from_argument(line: &str) -> Option<String> {
+    keyword_argument(line, "FROM")
+}
+
+fn keyword_argument(line: &str, want: &str) -> Option<String> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
         return None;
     }
     let mut parts = trimmed.split_whitespace();
     let keyword = parts.next()?;
-    if !keyword.eq_ignore_ascii_case("FROM") {
+    if !keyword.eq_ignore_ascii_case(want) {
         return None;
     }
     let rest = trimmed[keyword.len()..].trim();
@@ -904,11 +1357,14 @@ fn convert_line(export_dir: &Path) -> String {
 }
 
 fn modelfile_from_token(path: &Path) -> String {
-    let text = path.display().to_string();
+    modelfile_token(&path.display().to_string())
+}
+
+fn modelfile_token(text: &str) -> String {
     if text.chars().any(|c| c.is_whitespace()) {
         format!("\"{}\"", text.replace('"', "\\\""))
     } else {
-        text
+        text.to_string()
     }
 }
 
@@ -1757,5 +2213,237 @@ mod tests {
         merged(&sacred, None);
         let err = plan_local_seat(&root, &sacred).unwrap_err();
         assert!(err.to_string().contains("refuse:sacred"), "{err}");
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut found = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        found.sort();
+        found
+    }
+
+    fn write_adapter(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("adapter_config.json"), "{\"r\":8}\n").unwrap();
+        std::fs::write(dir.join("adapter_model.safetensors"), b"adapter-weights").unwrap();
+    }
+
+    #[test]
+    fn adapter_seat_prints_from_seat_tag_and_does_not_write() {
+        let root = tmp("adapter-print");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let body = std::fs::read_to_string(root.join("prepare.json")).unwrap();
+        let body = body.replacen(
+            "\"base_model\": \"llama3\",\n",
+            "\"base_model\": \"llama3\",\n  \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\",\n",
+            1,
+        );
+        std::fs::write(root.join("prepare.json"), body).unwrap();
+        let adapter = root.join("outputs");
+        write_adapter(&adapter);
+        let before = names(&adapter);
+        let plan = plan_adapter_seat(&root, &adapter).unwrap();
+        assert_eq!(names(&adapter), before);
+        assert!(!adapter.join(MODELFILE_NAME).exists());
+        assert_eq!(plan.shape, "adapter");
+        let text = plan.modelfile_text.expect("printed modelfile");
+        let abs = std::fs::canonicalize(&adapter).unwrap();
+        assert!(text.contains("FROM llama3\n"), "{text}");
+        assert!(
+            text.contains(&format!("ADAPTER {}\n", abs.display())),
+            "{text}"
+        );
+        assert!(!text.contains("FROM Qwen"), "{text}");
+        assert!(
+            text.contains("# train_base_model: Qwen/Qwen2.5-0.5B-Instruct\n"),
+            "{text}"
+        );
+        let quoted = shell_quote(&abs.join(MODELFILE_NAME).display().to_string());
+        assert_eq!(
+            plan.create_command,
+            format!("ollama create cell-enrich-overnight-traces -f {quoted}")
+        );
+        assert!(
+            plan.report.contains(&plan.create_command),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("was not run"), "{}", plan.report);
+        assert!(
+            plan.report.contains("local-seat did not create a model."),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report
+                .contains("adapter_weights=adapter_model.safetensors"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("promoted=false"), "{}", plan.report);
+        assert!(!plan.modelfile_on_disk);
+        assert!(plan.create_command.starts_with("ollama create "));
+
+        let config_only = root.join("config-only");
+        std::fs::create_dir_all(&config_only).unwrap();
+        std::fs::write(config_only.join("adapter_config.json"), "{}\n").unwrap();
+        let bare = plan_adapter_seat(&root, &config_only).unwrap();
+        assert_eq!(bare.shape, "adapter");
+        assert!(
+            bare.report.contains("adapter_weights=none"),
+            "{}",
+            bare.report
+        );
+        assert!(bare.report.contains("was not run"), "{}", bare.report);
+        assert!(!config_only.join(MODELFILE_NAME).exists());
+    }
+
+    #[test]
+    fn adapter_seat_refuses_missing_config_merged_path_and_symlink() {
+        let root = tmp("adapter-refuse");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+
+        let weights_only = root.join("weights-only");
+        std::fs::create_dir_all(&weights_only).unwrap();
+        std::fs::write(weights_only.join("adapter_model.safetensors"), b"w").unwrap();
+        let err = plan_adapter_seat(&root, &weights_only).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("no adapter_config.json"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let shards = root.join("shards");
+        std::fs::create_dir_all(&shards).unwrap();
+        std::fs::write(shards.join("config.json"), "{}\n").unwrap();
+        std::fs::write(
+            shards.join("adapter_model-00001-of-00002.safetensors"),
+            b"w",
+        )
+        .unwrap();
+        let err = plan_adapter_seat(&root, &shards).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("adapter_config.json"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let merged_dir = root.join("merged");
+        std::fs::create_dir_all(&merged_dir).unwrap();
+        merged(&merged_dir, Some("FROM .\n"));
+        let err = plan_adapter_seat(&root, &merged_dir).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("merged"), "{text}");
+        assert!(text.contains("--weights"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let adapter = root.join("adapter");
+        write_adapter(&adapter);
+        let err = plan_local_seat(&root, &adapter).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("adapter directory"), "{text}");
+        assert!(text.contains("--adapter"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let real = root.join("real-adapter");
+        write_adapter(&real);
+        let linked = root.join("linked-adapter");
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+        let err = plan_adapter_seat(&root, &linked).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let marked = root.join("marked-adapter");
+        std::fs::create_dir_all(&marked).unwrap();
+        std::fs::write(marked.join("adapter_model.safetensors"), b"w").unwrap();
+        let outside = root.join("outside-adapter-config.json");
+        std::fs::write(&outside, "{}\n").unwrap();
+        std::os::unix::fs::symlink(&outside, marked.join("adapter_config.json")).unwrap();
+        let err = plan_adapter_seat(&root, &marked).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("symlink"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let err = plan_adapter_seat(&root, &gguf).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("GGUF"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+
+        let sacred = root.join("cyera-adapter");
+        std::fs::create_dir_all(&sacred).unwrap();
+        std::fs::write(sacred.join("adapter_config.json"), "{}\n").unwrap();
+        let err = plan_adapter_seat(&root, &sacred).unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        let sku = root.join("adapter-5090");
+        std::fs::create_dir_all(&sku).unwrap();
+        std::fs::write(sku.join("adapter_config.json"), "{}\n").unwrap();
+        let err = plan_adapter_seat(&root, &sku).unwrap_err();
+        assert!(err.to_string().contains("refuse:sku-banned"), "{err}");
+    }
+
+    #[test]
+    fn adapter_seat_accepts_sharded_weights_and_leaves_a_modelfile() {
+        let root = tmp("adapter-shard-ok");
+        write_prepare(&root, LLAMAFACTORY_LORA_ID, "train", Some("llama3"), false);
+        let adapter = root.join("outputs");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        std::fs::write(
+            adapter.join("adapter_model-00001-of-00002.safetensors"),
+            b"a",
+        )
+        .unwrap();
+        std::fs::write(
+            adapter.join("adapter_model-00002-of-00002.safetensors"),
+            b"b",
+        )
+        .unwrap();
+        let plan = plan_adapter_seat(&root, &adapter).unwrap();
+        assert_eq!(plan.shape, "adapter");
+        assert!(
+            plan.report
+                .contains("adapter_model-00001-of-00002.safetensors"),
+            "{}",
+            plan.report
+        );
+        assert!(plan.report.contains("was not run"), "{}", plan.report);
+        assert!(!adapter.join(MODELFILE_NAME).exists());
+
+        let abs = std::fs::canonicalize(&adapter).unwrap();
+        let path = adapter.join(MODELFILE_NAME);
+        let original = format!("FROM llama3\nADAPTER {}\n", abs.display());
+        std::fs::write(&path, &original).unwrap();
+        let seated = plan_adapter_seat(&root, &adapter).unwrap();
+        assert!(seated.modelfile_on_disk, "{}", seated.report);
+        assert!(seated.modelfile_text.is_none());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        assert!(seated.report.contains("was not run"), "{}", seated.report);
+
+        let mismatched = "FROM other\nADAPTER .\n";
+        std::fs::write(&path, mismatched).unwrap();
+        let reprinted = plan_adapter_seat(&root, &adapter).unwrap();
+        assert!(!reprinted.modelfile_on_disk);
+        let body = reprinted.modelfile_text.unwrap();
+        assert!(body.contains("FROM llama3\n"), "{body}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), mismatched);
     }
 }

@@ -34,7 +34,7 @@ pub use local::{
     SpecialistResult, UnwiredLocal,
 };
 pub use gguf_convert::{plan_gguf_convert, GgufConvertPlan};
-pub use local_seat::{plan_local_seat, LocalSeatPlan};
+pub use local_seat::{plan_adapter_seat, plan_local_seat, LocalSeatPlan};
 pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
 };

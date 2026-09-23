@@ -1654,7 +1654,7 @@ fn next_markdown(
                  \n\
                  {gauge}\n\
                  \n\
-                 This prepare did not merge. The merge has not happened. {export_dir} has no merged weights until llamafactory-cli export exits 0. Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. adapter_name_or_path is {adapter_dir}, the same path as recipe.yaml output_dir. After a finished train, adapter_config.json is in that directory. An early stop may leave the adapter only under checkpoint-<step> inside that directory. Point adapter_name_or_path at that checkpoint directory. This prepare does not rewrite export.yaml after train. A Modelfile that llamafactory-cli export writes into {export_dir} is that tool's file. This factory did not write it. LLaMA-Factory does not write GGUF. After the merge, estate enrich gguf-convert prints the llama.cpp convert_hf_to_gguf.py line (--outtype auto, outfile beside the export directory). Then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, FROM must be an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create and does not run convert_hf_to_gguf.py.\n\
+                 This prepare did not merge. The merge has not happened. {export_dir} has no merged weights until llamafactory-cli export exits 0. Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. adapter_name_or_path is {adapter_dir}, the same path as recipe.yaml output_dir. After a finished train, adapter_config.json is in that directory. An early stop may leave the adapter only under checkpoint-<step> inside that directory. Point adapter_name_or_path at that checkpoint directory. This prepare does not rewrite export.yaml after train. A Modelfile that llamafactory-cli export writes into {export_dir} is that tool's file. This factory did not write it. LLaMA-Factory does not write GGUF. After the merge, estate enrich gguf-convert prints the llama.cpp convert_hf_to_gguf.py line (--outtype auto, outfile beside the export directory). Then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, estate enrich local-seat --prepared {out} --adapter {adapter_dir} prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. That Ollama model must already be this same train base. --weights on local-seat stays the merged or GGUF path and refuses this adapter directory. This factory does not run ollama create and does not run convert_hf_to_gguf.py.\n\
                  \n\
                  After that tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.\n\
                  \n\
@@ -1687,6 +1687,7 @@ fn next_markdown(
                 gauge = llamafactory_gauge_note(job.max_steps, job.official_scale),
                 export_dir = export_dir.display(),
                 adapter_dir = adapter_dir.display(),
+                out = out_dir.display(),
             ),
             format!(
                 "Adapter output_dir (directory contains adapter_config.json):\n\
@@ -7423,6 +7424,14 @@ mod tests {
             "{next}"
         );
         assert!(next.contains("## Local seat after export"), "{next}");
+        assert!(
+            next.contains(&format!(
+                "estate enrich local-seat --prepared {} --adapter {}",
+                out.display(),
+                out.join("outputs").display()
+            )),
+            "{next}"
+        );
         assert!(next.contains("does not shell out to ollama"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");

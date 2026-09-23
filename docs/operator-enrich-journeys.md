@@ -217,7 +217,7 @@ llamafactory-cli export .cell/enrich/<pack-id>/llamafactory-qlora/export.yaml
 
 QLoRA needs bitsandbytes. `pip install llamafactory` and `llamafactory[torch,metrics]` 0.9.5 did not install it. On a consumer RTX host, keep the torch CUDA wheel you already installed. A 5090 smoke used torch 2.11.0+cu128 (CUDA 12.8) and bitsandbytes 0.50.2. That bitsandbytes install did not replace torch. If the torch wheel still does not match the CUDA install, use https://github.com/hiyouga/LLaMA-Factory#installation. This factory does not download weights and does not map the seat tag onto a Hub repo.
 
-The train saves the adapter under `outputs/` (`adapter_config.json` inside it). Merge with `export.yaml`. Do not set `quantization_bit` on that merge. LLaMA-Factory does not write GGUF. `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line for that merged directory (`--outtype auto`, outfile beside the directory). Then seat on Ollama with `FROM` that GGUF. To load the adapter without a merge, `FROM` must be an Ollama model of the same train base, plus `ADAPTER`. The seat tag is the id the cell already runs. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.
+The train saves the adapter under `outputs/` (`adapter_config.json` inside it). Merge with `export.yaml`. Do not set `quantization_bit` on that merge. LLaMA-Factory does not write GGUF. `estate enrich gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line for that merged directory (`--outtype auto`, outfile beside the directory). Then seat on Ollama with `FROM` that GGUF. To load the adapter without a merge, `estate enrich local-seat --adapter` prints a Modelfile. `FROM` is the seat tag (an Ollama model of the same train base). `ADAPTER` is the adapter directory. The command does not run that line. `--weights` stays the merged or GGUF path. After the tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. The optional card is `unsloth-qlora`. It writes `UNSLOTH.md`, an operator-owned handoff, and does not write a script. `NEXT.md` points at the Unsloth install page and the fine-tuning guide. This factory does not call Unsloth.
 
@@ -393,7 +393,17 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 ```
 
-The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. It does not create the model. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). A missing GGUF is `refuse:seat`. Page: [`local-seat.md`](local-seat.md).
+The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. It does not create the model. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). A missing GGUF is `refuse:seat`.
+
+To seat `outputs/` without a merge, pass `--adapter` instead of `--weights`. The printed Modelfile uses `FROM` `prepare.json` `seat_tag` and `ADAPTER` that directory. The command prints `ollama create` and does not run it. `--weights` still refuses the adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
+```
+
+Page: [`local-seat.md`](local-seat.md).
 
 ### 5. Record the shape
 
