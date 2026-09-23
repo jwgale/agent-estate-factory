@@ -190,7 +190,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: AXOLOTL_LORA_ID,
             status: "integration",
             integrates: "axolotl train LoRA recipe",
-            notes: "bf16 LoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter lora, load_in_4bit false) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/lora-1b.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, the operator merges to a Hugging Face directory. gguf-convert and local-seat print the llama.cpp and ollama lines. This card does not merge and does not write GGUF. 4-bit QLoRA is axolotl-qlora.",
+            notes: "bf16 LoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter lora, load_in_4bit false) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/lora-1b.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, merge-adapt prints axolotl merge-lora. Axolotl writes output_dir/merged. gguf-convert and local-seat print the llama.cpp and ollama lines. This card does not merge and does not write GGUF. 4-bit QLoRA is axolotl-qlora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -201,7 +201,7 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: AXOLOTL_QLORA_ID,
             status: "integration",
             integrates: "axolotl train QLoRA recipe",
-            notes: "4-bit QLoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter qlora, load_in_4bit true) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/qlora.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, the operator merges to a Hugging Face directory. gguf-convert and local-seat print the llama.cpp and ollama lines. This card does not merge and does not write GGUF. bf16 LoRA is axolotl-lora.",
+            notes: "4-bit QLoRA YAML for a config-driven or multi-GPU run. Writes axolotl.yml (adapter qlora, load_in_4bit true) and dataset.jsonl. sequence_len, micro_batch_size, gradient_accumulation_steps, and lora_r match examples/llama-3/qlora.yml. base_model is the train base (HF repo or local HF weights), separate from the Ollama seat tag. Default job is train. Does not shell out. After train, merge-adapt prints axolotl merge-lora, including the CLI --dequant line that writes a bf16 checkpoint. Axolotl writes output_dir/merged. gguf-convert and local-seat print the llama.cpp and ollama lines. This card does not merge and does not write GGUF. bf16 LoRA is axolotl-lora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
@@ -441,9 +441,9 @@ pub(crate) fn is_axolotl_driver(id: &str) -> bool {
     axolotl_method(id).is_some()
 }
 
-/// Print-only `gguf-convert` and `local-seat`.
+/// Print-only `merge-adapt`, `gguf-convert`, and `local-seat`.
 /// LLaMA-Factory merges with `llamafactory-cli export`.
-/// Axolotl uses the same merged Hugging Face markers after an operator merge.
+/// Axolotl merges with `axolotl merge-lora` into `output_dir/merged`.
 /// `unsloth-qlora` and `mlx-lm-lora` stay off this ladder.
 pub(crate) fn is_post_merge_print_driver(id: &str) -> bool {
     is_llamafactory_driver(id) || is_axolotl_driver(id)
@@ -1144,6 +1144,7 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
             &job.out_dir,
             &job.base_model,
             &job.pack_id,
+            driver.id(),
         );
         next.push_str(&note);
         if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
@@ -1710,6 +1711,7 @@ fn next_markdown(
     } else if let Some(method) = axolotl_method(driver_id) {
         let command = axolotl_train_command(&config);
         let outputs = out_dir.join("outputs");
+        let merged = outputs.join("merged");
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         (
             format!(
@@ -1732,7 +1734,7 @@ fn next_markdown(
                  \n\
                  {gauge}\n\
                  \n\
-                 Axolotl writes the adapter under the output_dir in axolotl.yml. This prepare did not merge. The operator merges that adapter into a Hugging Face directory (`config.json` and a `.safetensors` file whose name does not start with `adapter_model`). This factory does not merge and does not name a merge command. Axolotl does not write GGUF. After that directory exists, `gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line (`--outtype auto`), `local-seat` prints the `ollama create` line and, when the weights are a GGUF, llama-cli -m and llama-server -m for that file, and `import-trained` records the artifact. To load the adapter without a merge, FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. The create name is {tag}. This factory does not run ollama create and does not run convert_hf_to_gguf.py.\n\
+                 Axolotl writes the adapter under the output_dir in axolotl.yml. This prepare did not merge. After train, `estate enrich merge-adapt` prints Axolotl's `axolotl merge-lora` line and the `output_dir/merged` directory. This factory does not run that merge. Axolotl does not write GGUF. After that directory exists, `gguf-convert` prints the llama.cpp `convert_hf_to_gguf.py` line (`--outtype auto`), `local-seat` prints the `ollama create` line and, when the weights are a GGUF, llama-cli -m and llama-server -m for that file, and `import-trained` records the artifact. To load the adapter without a merge, FROM an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. The create name is {tag}. This factory does not run ollama create and does not run convert_hf_to_gguf.py.\n\
                  \n\
                  llamafactory-lora is the unquantized LLaMA-Factory LoRA recipe. llamafactory-qlora is the 4-bit QLoRA recipe. This card does not call LLaMA-Factory.\n\
                  Unsloth QLoRA is a faster single-GPU alternate on Nvidia only. The optional NEXT card is unsloth-qlora (https://github.com/unslothai/unsloth). This card does not call Unsloth.\n\
@@ -1751,15 +1753,16 @@ fn next_markdown(
                  \n\
                  Merged Hugging Face directory (config.json and at least one .safetensors file whose name does not start with adapter_model; Modelfile is optional). The operator owns that directory. This factory did not merge:\n\
                  \n\
-                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <merged-hf-dir>\n\
+                 estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter {merged}\n\
                  \n\
                  GGUF path (one .gguf file, or a directory with exactly one top-level .gguf). Axolotl does not write GGUF:\n\
                  \n\
                  estate enrich import-trained --estate <estate.yaml> --prepared {out} --tag {tag} --adapter <gguf>\n",
                 out = out_dir.display(),
                 outputs = outputs.display(),
+                merged = merged.display(),
             ),
-            "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at the operator-owned merged Hugging Face directory. The third points --adapter at a .gguf file. Axolotl does not write GGUF. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line. For a GGUF it also prints llama-cli -m and llama-server -m. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote.".to_string(),
+            "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at output_dir/merged, the Hugging Face directory Axolotl writes. The third points --adapter at a .gguf file. Axolotl does not write GGUF. merge-adapt prints the axolotl merge-lora line. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line. For a GGUF it also prints llama-cli -m and llama-server -m. import-trained records trained_shape and trained_paths. It does not rewrite the estate and it does not promote.".to_string(),
         )
     } else if driver_id == UNSLOTH_QLORA_ID {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -4150,7 +4153,7 @@ fn axolotl_prepare_steps(
          \n\
          axolotl train axolotl.yml\n\
          \n\
-         This prepare did not merge. The operator merges the adapter into a Hugging Face directory. This factory does not name a merge command. Axolotl does not write GGUF. The train command and the post-train ladder (gguf-convert, local-seat, import-trained) are in NEXT.md.\n",
+         This prepare did not merge. After train, `estate enrich merge-adapt` prints Axolotl's `axolotl merge-lora` line and the `output_dir/merged` directory. This factory does not run that merge. Axolotl does not write GGUF. The train command and the post-train ladder (merge-adapt, gguf-convert, local-seat, import-trained) are in NEXT.md.\n",
         seat = job.base_model,
         train = train_base,
         shape = axolotl_shape_note(method),
@@ -10327,15 +10330,47 @@ mod tests {
         assert!(!next.contains("FROM llama3 plus ADAPTER"), "{next}");
         assert!(!next.contains("Edit axolotl.yml"), "{next}");
         assert!(next.contains("import-trained"), "{next}");
+        let outputs = out.join("outputs");
+        let merged = outputs.join("merged");
+        assert!(
+            next.contains(&format!(
+                "estate enrich merge-adapt --prepared {} --adapter {}",
+                out.display(),
+                outputs.display()
+            )),
+            "{next}"
+        );
+        assert!(
+            next.contains(&format!(
+                "axolotl merge-lora {} --lora-model-dir={}",
+                config.display(),
+                outputs.display()
+            )),
+            "{next}"
+        );
+        assert!(!next.contains("--dequant"), "{next}");
         assert!(next.contains("estate enrich gguf-convert"), "{next}");
         assert!(next.contains("--outtype auto"), "{next}");
-        assert!(next.contains("--weights <merged-hf-dir>"), "{next}");
+        assert!(
+            next.contains(&format!(
+                "estate enrich gguf-convert --prepared {} --weights {}",
+                out.display(),
+                merged.display()
+            )),
+            "{next}"
+        );
+        assert!(
+            next.contains(&format!(
+                "python3 convert_hf_to_gguf.py {} --outfile {} --outtype auto",
+                merged.display(),
+                outputs.join("merged.gguf").display()
+            )),
+            "{next}"
+        );
         assert!(next.contains("estate enrich local-seat"), "{next}");
         assert!(next.contains("Axolotl does not write GGUF"), "{next}");
-        assert!(next.contains("does not name a merge command"), "{next}");
         assert!(next.contains("This prepare did not merge"), "{next}");
-        assert!(!next.contains("merge-lora"), "{next}");
-        assert!(!next.contains("axolotl merge"), "{next}");
+        assert!(!next.contains("<merged-hf-dir>"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
         assert!(next.contains("unslothai/unsloth"), "{next}");
@@ -10516,7 +10551,12 @@ mod tests {
             prepare_md.contains("This prepare did not merge"),
             "{prepare_md}"
         );
-        assert!(!prepare_md.contains("merge-lora"), "{prepare_md}");
+        assert!(
+            prepare_md.contains("estate enrich merge-adapt"),
+            "{prepare_md}"
+        );
+        assert!(prepare_md.contains("axolotl merge-lora"), "{prepare_md}");
+        assert!(!prepare_md.contains("--dequant"), "{prepare_md}");
 
         let enrich_out = root.join("enrich-job");
         let err = run(
@@ -11606,18 +11646,29 @@ mod tests {
             "{yaml}"
         );
         assert!(!next.contains("Edit axolotl.yml"), "{next}");
+        let qlora_outputs = out.join("outputs");
+        let qlora_merged = qlora_outputs.join("merged");
+        assert!(
+            next.contains(&format!(
+                "axolotl merge-lora {} --lora-model-dir={} --dequant",
+                config.display(),
+                qlora_outputs.display()
+            )),
+            "{next}"
+        );
+        assert!(next.contains("estate enrich merge-adapt"), "{next}");
         assert!(next.contains("estate enrich gguf-convert"), "{next}");
         assert!(next.contains("estate enrich local-seat"), "{next}");
         assert!(next.contains("--outtype auto"), "{next}");
+        assert!(next.contains(&qlora_merged.display().to_string()), "{next}");
         assert!(next.contains("Axolotl does not write GGUF"), "{next}");
-        assert!(!next.contains("merge-lora"), "{next}");
-        assert!(!next.contains("axolotl merge"), "{next}");
         assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
         let qlora_prepare = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
         assert!(
             qlora_prepare.contains("estate enrich local-seat"),
             "{qlora_prepare}"
         );
+        assert!(qlora_prepare.contains("--dequant"), "{qlora_prepare}");
 
         let gauge_out = root.join("gauge");
         run_max(

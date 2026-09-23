@@ -59,7 +59,8 @@ fn help_names_local_seat() {
     assert!(body.contains("convert_hf_to_gguf.py"), "{body}");
     assert!(body.contains("does not run ollama or llama.cpp"), "{body}");
     assert!(body.contains("axolotl-lora"), "{body}");
-    assert!(body.contains("<merged-hf-dir>"), "{body}");
+    assert!(body.contains("outputs/merged"), "{body}");
+    assert!(body.contains("estate enrich merge-adapt"), "{body}");
     assert!(body.contains("--adapter"), "{body}");
     assert!(body.contains("ADAPTER"), "{body}");
     assert!(body.contains("llama-cli -m"), "{body}");

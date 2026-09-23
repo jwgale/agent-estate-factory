@@ -275,6 +275,9 @@ pub(crate) fn run() -> Result<()> {
                 &curator,
                 verify_local_tag,
             ),
+            EnrichCommand::MergeAdapt { prepared, adapter } => {
+                crate::enrich::cmd_enrich_merge_adapt(&prepared, &adapter)
+            }
             EnrichCommand::GgufConvert { prepared, weights } => {
                 crate::enrich::cmd_enrich_gguf_convert(&prepared, &weights)
             }

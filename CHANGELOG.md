@@ -2,6 +2,16 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print the adapter merge into a Hugging Face directory
+
+- `estate enrich merge-adapt --prepared <dir> --adapter <adapter-dir>` prints the documented external merge for an `axolotl-lora`, `axolotl-qlora`, `llamafactory-lora`, or `llamafactory-qlora` train prepare. `--adapter` is a directory with `adapter_config.json`.
+- Axolotl's line is `axolotl merge-lora <axolotl.yml> --lora-model-dir=<adapter>` (https://docs.axolotl.ai/docs/getting-started.html section 4.4 and https://docs.axolotl.ai/docs/cli.html). Axolotl writes `{output_dir}/merged`. This prepare sets `output_dir` to `outputs`, so the directory is `outputs/merged`. `axolotl merge-lora` does not take `--out`. `axolotl-qlora` also prints that line with `--dequant`, the CLI flag that writes a bf16 checkpoint. Both lines write that same directory.
+- When a LLaMA-Factory prepare has no `export.yaml`, the print is the PEFT `merge_and_unload` snippet and `save_pretrained` to `{prepared}/merged`, beside `outputs/`. When `export.yaml` is present, the report also names `llamafactory-cli export` and that file's `export_dir`. The PEFT snippet stays the printed merge for the adapter argument.
+- The report then prints `estate enrich gguf-convert` and `estate enrich local-seat` with `--weights` pointing at that merged directory, and the `python3 convert_hf_to_gguf.py` line with `--outtype auto`. The command does not merge, does not shell out, does not write the directory, and does not promote.
+- A merged Hugging Face directory or a GGUF passed as `--adapter` is `refuse:adapter`. A missing `adapter_config.json`, a symlink, a sacred token, a hardware SKU, the wrong driver, and the wrong job refuse on the same paths `local-seat` and `gguf-convert` already use. `unsloth-qlora` and `mlx-lm-lora` stay `refuse:driver`.
+- `PREPARE.md` and `NEXT.md` on the Axolotl cards name `merge-adapt` after `axolotl train`.
+- `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Gemma-2 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `gemma2` for `google/gemma-2-2b-it`, `google/gemma-2-9b-it`, and `google/gemma-2-27b-it`, including those ids as nested path segments and HF cache directories (`models--google--gemma-2-2b-it`). A Gemma-2 base uses that same template. Original Gemma (`gemma-2b`, `gemma-7b`) stays `gemma`. Gemma-3 stays off `gemma2`. A short `gemma` stem does not take the Gemma-2 names. The name follows LLaMA-Factory `register_model_group` in `constants.py` and `gemma2` in `template.py`. There is no `gemma_2` template.

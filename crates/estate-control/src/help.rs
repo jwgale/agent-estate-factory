@@ -441,21 +441,30 @@ load_in_4bit true), matching examples/llama-3/qlora.yml. sequence_len,
 micro_batch_size, gradient_accumulation_steps, and lora_r are the values
 in those files. prepare.json base_model and seat_tag stay the Ollama id
 for Modelfile FROM and for the adapter join. NEXT.md names axolotl train.
-After axolotl train, the operator merges the adapter into a Hugging
-Face directory (config.json and a .safetensors file whose name does
-not start with adapter_model). This factory does not name a merge
-command. Axolotl does not write GGUF. Then gguf-convert prints
+After axolotl train, estate enrich merge-adapt prints Axolotl's
+axolotl merge-lora line (docs.axolotl.ai getting-started section 4.4
+and the CLI page). --lora-model-dir is the adapter directory
+(adapter_config.json). Axolotl writes the merged Hugging Face
+directory to output_dir/merged. This prepare sets output_dir to
+outputs, so that directory is outputs/merged. axolotl merge-lora
+does not take --out. axolotl-qlora also prints the CLI --dequant
+line. That flag writes a bf16 checkpoint for a quantized base. Both
+lines write output_dir/merged. This factory does not run the merge.
+Axolotl does not write GGUF. Then gguf-convert prints
 python3 convert_hf_to_gguf.py with --outtype auto, local-seat prints
 ollama create, and import-trained records the adapter directory, that
 merged directory, or a .gguf file. unsloth-qlora and mlx-lm-lora stay
 off this print ladder (refuse:driver).
 
+  estate enrich merge-adapt \\
+    --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
+    --adapter .cell/enrich/<pack-id>/axolotl-qlora/outputs
   estate enrich gguf-convert \\
     --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
-    --weights <merged-hf-dir>
+    --weights .cell/enrich/<pack-id>/axolotl-qlora/outputs/merged
   estate enrich local-seat \\
     --prepared .cell/enrich/<pack-id>/axolotl-qlora \\
-    --weights <merged-hf-dir>
+    --weights .cell/enrich/<pack-id>/axolotl-qlora/outputs/merged
 
 The LoRA card does not require bitsandbytes. QLoRA still needs
 bitsandbytes: pip install 'bitsandbytes>=0.49'.
@@ -564,6 +573,23 @@ under /tmp and does not run a trainer. Neither is part of
 make smoke, make gate-90, or Actions. make enrich-live-prove runs ollama create on a throwaway
 cell when the seat is up, then removes the tag. It is an opt-in seated
 handoff. It is not a factory-wide live test. READY_FOR_LIVE_TEST stays no.
+estate enrich merge-adapt prints the external adapter merge for an
+axolotl-lora, axolotl-qlora, llamafactory-lora, or llamafactory-qlora
+train prepare. --adapter is an adapter directory (adapter_config.json).
+A merged Hugging Face directory or a GGUF is refuse:adapter. For
+Axolotl the printed line is axolotl merge-lora with --lora-model-dir.
+axolotl-qlora also prints --dequant. Axolotl writes output_dir/merged.
+For a LLaMA-Factory adapter when export.yaml was not the merge, the
+print is the PEFT merge_and_unload snippet and save_pretrained to
+the prepared directory's merged folder, beside outputs. When
+export.yaml is present, the report also names llamafactory-cli export.
+The command does not merge, does not shell out, and does not promote.
+It then prints gguf-convert and local-seat for that merged directory.
+
+  estate enrich merge-adapt \\
+    --prepared .cell/enrich/overnight-traces/axolotl-qlora \\
+    --adapter .cell/enrich/overnight-traces/axolotl-qlora/outputs
+
 estate enrich gguf-convert prints the llama.cpp convert line for a
 merged Hugging Face directory (config.json and at least one
 .safetensors file whose name does not start with adapter_model) from
