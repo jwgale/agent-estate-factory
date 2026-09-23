@@ -610,33 +610,66 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
 }
 
 #[test]
-fn cell_one_status_tip_names_pr_140_beachhead() {
+fn cell_one_status_tip_names_pr_143() {
     let root = repo_root();
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     assert!(
         !status.contains("through PR #82"),
-        "status tip must name PR #140, not through PR #82"
+        "status tip must not freeze at through PR #82"
     );
-    let head: String = status.lines().take(12).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #140"),
-        "status header must name tip through PR #140: {head}"
+        !status.contains("what is on `main` through PR #140"),
+        "status snapshot must name tip through PR #143"
+    );
+    assert!(
+        !status.contains("on tip through PR #142"),
+        "prepare walk stays PR #142; tip is PR #143"
+    );
+    let head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("through PR #143"),
+        "status header must name tip through PR #143: {head}"
+    );
+    assert!(
+        head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "status header must name the PR #143 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("beachhead matrix is PR #140"),
+        "status header must keep the beachhead matrix at PR #140: {head}"
     );
     assert!(
         head.contains("35a88139dea58528e4bc5c7b31708b9716ce091b"),
-        "status header must name the PR #140 tip SHA: {head}"
+        "status header must keep the PR #140 matrix SHA: {head}"
+    );
+    assert!(
+        head.contains("prepare walk of that matrix is PR #142"),
+        "status header must keep the prepare walk at PR #142: {head}"
+    );
+    assert!(
+        head.contains("d2dcdb97c2c960e8b93715391d77075055a8b0ce"),
+        "status header must keep the PR #142 prepare-walk SHA: {head}"
+    );
+    assert!(
+        head.contains("make lf-beachhead-prepare"),
+        "status header must name the prepare walk: {head}"
+    );
+    assert!(
+        head.contains("GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143"),
+        "status header must attribute the Remaining row to PR #143: {head}"
     );
     assert!(
         head.contains("READY_FOR_LIVE_TEST`: no") || head.contains("READY_FOR_LIVE_TEST: no"),
         "status header must keep READY_FOR_LIVE_TEST no: {head}"
     );
     assert!(
-        !head.contains("READY_FOR_LIVE_TEST: yes") && !head.contains("READY_FOR_LIVE_TEST`: yes"),
-        "status header must not flip READY_FOR_LIVE_TEST: {head}"
+        !status.contains("READY_FOR_LIVE_TEST: yes")
+            && !status.contains("READY_FOR_LIVE_TEST`: yes"),
+        "status must not flip READY_FOR_LIVE_TEST"
     );
 
     let uniq = status
-        .split("## Train/enrich uniqueness (tip through PR #140)")
+        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
         .nth(1)
         .expect("uniqueness section")
         .split("\n## ")
@@ -650,6 +683,15 @@ fn cell_one_status_tip_names_pr_140_beachhead() {
     assert!(uniq.contains("make qlora-journey"), "{uniq}");
     assert!(uniq.contains("make lora-journey"), "{uniq}");
     assert!(uniq.contains("make seat-journey"), "{uniq}");
+    assert!(uniq.contains("make lf-beachhead-prepare"), "{uniq}");
+    assert!(
+        uniq.contains("PR #142"),
+        "uniqueness section must keep the prepare walk at PR #142"
+    );
+    assert!(
+        uniq.contains("via PR #143"),
+        "uniqueness section must name GATE-90 Remaining via PR #143"
+    );
     assert!(uniq.contains("SKIP live train"), "{uniq}");
     assert!(uniq.contains("extra_special_tokens"), "{uniq}");
     assert!(
@@ -683,14 +725,19 @@ fn cell_one_status_tip_names_pr_140_beachhead() {
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     let slice = changelog
-        .split("## This slice — Cell One status tip honesty through PR #140")
+        .split("## This slice — Cell One status tip honesty through PR #143")
         .nth(1)
         .expect("CHANGELOG missing the tip-honesty slice")
         .split("## This slice —")
         .next()
         .unwrap();
-    assert!(slice.contains("35a88139dea58528e4bc5c7b31708b9716ce091b"), "{slice}");
-    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
+    assert!(
+        slice.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "{slice}"
+    );
+    assert!(slice.contains("PR #140"), "{slice}");
+    assert!(slice.contains("PR #142"), "{slice}");
+    assert!(slice.contains("make lf-beachhead-prepare"), "{slice}");
     assert!(
         slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
         "{slice}"

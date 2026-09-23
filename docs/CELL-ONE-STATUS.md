@@ -1,10 +1,12 @@
 # Cell One status (for Jason)
 
-Snapshot of **what is on `main` through PR #140**
-(`35a88139dea58528e4bc5c7b31708b9716ce091b`,
-the LLaMA-Factory LoRA and QLoRA beachhead matrix).
-The print-only prepare walk of that matrix is on tip through PR #142
+Snapshot of **what is on `main` through PR #143**
+(`3acdec3983ea581976649ba4b7cc41a4cd22d31d`).
+The LLaMA-Factory LoRA and QLoRA beachhead matrix is PR #140
+(`35a88139dea58528e4bc5c7b31708b9716ce091b`).
+The print-only prepare walk of that matrix is PR #142
 (`d2dcdb97c2c960e8b93715391d77075055a8b0ce`).
+GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143.
 `READY_FOR_LIVE_TEST`: no. Not a live-box report.
 Not a release. Workspace crates are `0.1.0` (crate version, not crates.io).
 
@@ -27,7 +29,7 @@ not a PASS; not in smoke or Actions). Feed packs stay curator edit
 instructions. Control does not complete. Mac specialist
 complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
-## Train/enrich uniqueness (tip through PR #140)
+## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)
 
 The uniqueness bet on tip is one printed ladder: `estate enrich prepare`, the `NEXT.md` train and export lines, `estate enrich merge-adapt`, `estate enrich gguf-convert`, `estate enrich local-seat`, then `estate enrich import-trained`. The factory writes the recipe and prints the next command. It does not train, merge, convert, create an Ollama model, or download weights. `READY_FOR_LIVE_TEST`: no.
 
@@ -35,7 +37,7 @@ The seat tag and the Hugging Face train base stay separate. The smoke seat tag i
 
 [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md) is the print-only index: 8 families, each with a `llamafactory-qlora` row and a `llamafactory-lora` row. Phi-3 Instruct, Llama-3.2 Instruct, Gemma-2 Instruct, Mistral Instruct, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat. The DeepSeek-R1-Distill chat pair and the GLM-4 Chat pair are closed on tip. Kimi is not a row. `estate help enrich` and `estate help train` print that file. The table does not add a train family.
 
-Opt-in journeys stay off `make smoke`, `make gate-90`, and GitHub Actions. `make qlora-journey` prints Target C and `SKIP live train` (section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md)). `make lora-journey` prints Target A and `SKIP live train` (section 9). `make seat-journey` prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat` (section 10). `make lf-beachhead-prepare` (PR #142, `d2dcdb97c2c960e8b93715391d77075055a8b0ce`) prepares every row of that table on a throwaway copy of `examples/estate.yaml`, checks the row knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row. `CELL_SEAT_LIVE=1` does not start a convert or an `ollama create`.
+Opt-in journeys stay off `make smoke`, `make gate-90`, and GitHub Actions. `make qlora-journey` prints Target C and `SKIP live train` (section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md)). `make lora-journey` prints Target A and `SKIP live train` (section 9). `make seat-journey` prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat` (section 10). `make lf-beachhead-prepare` (PR #142, `d2dcdb97c2c960e8b93715391d77075055a8b0ce`) prepares every row of that table on a throwaway copy of `examples/estate.yaml`, checks the row knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row. `CELL_SEAT_LIVE=1` does not start a convert or an `ollama create`. [`GATE-90.md`](GATE-90.md) Remaining names `make lf-beachhead-prepare` via PR #143 (`3acdec3983ea581976649ba4b7cc41a4cd22d31d`).
 
 `gguf-convert` returns `refuse:tokenizer` when `extra_special_tokens` is a JSON list or JSON null, and when a Qwen-family export is missing `vocab.json` or `merges.txt`. The refuse names the restore already on tip: copy tokenizer files from the HF cache snapshot for the train base, or the equivalent base checkout, into the export directory, keep the export `tokenizer_config.json` as `tokenizer_config.json.bak`, then re-run `estate enrich gguf-convert`. The command does not copy those files and does not download them. The recorded 5090 case stays on [`local-seat.md`](local-seat.md).
 
@@ -45,7 +47,7 @@ Prepare still writes files and does not apply the estate by itself. `--all-drive
 
 ## Day 0–90 factory (merged in PR #1–#82)
 
-Day 0-90 factory is merged. The beachhead matrix in the uniqueness section above is PR #140. The print-only prepare walk of that matrix is PR #142. Horizon / Research / Sanctum on separate lanes.
+Day 0-90 factory is merged. The beachhead matrix in the uniqueness section above is PR #140. The print-only prepare walk of that matrix is PR #142. GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143. Horizon / Research / Sanctum on separate lanes.
 Sacred dual-layer KEEP: Cyera CI and Rust classroom stay out of the estate.
 Sanctum is first-class and is not Cyera.
 

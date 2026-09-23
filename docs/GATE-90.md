@@ -1,6 +1,6 @@
 # Day-90 gate (local only)
 
-The Day-90 factory gate is local cargo test. `make gate-90` wraps `cargo test --workspace`. Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). `READY_FOR_LIVE_TEST`: no. The live tip story is [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md): the qlora, lora, and seat journeys, the LLaMA-Factory beachhead matrix, and the print-only prepare walk through PR #142 (`d2dcdb97c2c960e8b93715391d77075055a8b0ce`). See [`OPERATOR-DAY.md`](OPERATOR-DAY.md).
+The Day-90 factory gate is local cargo test. `make gate-90` wraps `cargo test --workspace`. Hosted CI is compile-only (`cargo check --workspace --locked` on `pull_request`). `READY_FOR_LIVE_TEST`: no. The live tip story is [`CELL-ONE-STATUS.md`](CELL-ONE-STATUS.md) through PR #143 (`3acdec3983ea581976649ba4b7cc41a4cd22d31d`): the qlora, lora, and seat journeys, the LLaMA-Factory beachhead matrix (PR #140), and the print-only prepare walk (PR #142). Remaining names `make lf-beachhead-prepare`. See [`OPERATOR-DAY.md`](OPERATOR-DAY.md).
 
 `make gate-90` is the Day-90 operator entrypoint. It is green without a Mac, a GPU, or a cloud spawn. What is still parked (native MLX, cloud-spawn) is in [`DAY90-PLUS.md`](DAY90-PLUS.md). Recorded proofs that already ran are in [`LIVE-PROBES.md`](LIVE-PROBES.md). They are not required to keep this gate green.
 
