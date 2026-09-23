@@ -118,6 +118,7 @@ Green above does not mean a box ran. Recorded proofs are not parked, and they ar
 | `make real-world` | Opt-in ladder after the gate. SKIP without `CELL_LOCAL_ENDPOINT`. Not in smoke or Actions. Not a PASS. |
 | `make qlora-journey` | Opt-in Qwen QLoRA ladder. Checks prepare artifacts. Does not train. Not in smoke or Actions. Not a live train. |
 | `make lora-journey` | Opt-in Qwen LoRA ladder. Checks prepare artifacts. Does not train. Not in smoke or Actions. Not a live train. |
+| `make seat-journey` | Opt-in Qwen QLoRA seat ladder. Prints merge, convert, seat, and import against fixture stubs. Does not train. Not in smoke or Actions. Not a live train. |
 
 Fail closed: sacred exclusions, SKU in ids (including probe ids), unknown apiVersion/kind, missing local (no frontier fallback), cloud-agent spawn, auto-promote, Sanctum-as-Cyera bleed, omit-locked sacred file.
 

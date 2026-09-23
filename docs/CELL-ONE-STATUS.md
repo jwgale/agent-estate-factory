@@ -408,6 +408,7 @@ Apply and resume refuse before they write when a cloud-agent lease is spawned, o
 | axolotl lora/qlora | `axolotl-lora` was named LoRA and wrote QLoRA (`load_in_4bit: true`, `adapter: qlora`), so a public LoRA quickstart needed a hand edit. | `--driver axolotl-lora` writes bf16 LoRA matching `examples/llama-3/lora-1b.yml` (`adapter: lora`, `load_in_4bit: false`, `sequence_len` 2048, `micro_batch_size` 2, `gradient_accumulation_steps` 2, `lora_r` 16). `--driver axolotl-qlora` writes 4-bit QLoRA matching `examples/llama-3/qlora.yml`. `--max-steps` writes Axolotl `max_steps` and omits `saves_per_epoch`. `--from-feed` hydrates both. `NEXT.md` names `axolotl train`. `refuse:train-base`, sacred, SKU, and frontier stay. READY no. |
 | qwen qlora journey | The Qwen / LLaMA-Factory QLoRA path was split across the train page and the seat page, so an operator had to assemble prepare, train, export, convert, seat, and import. | Target C is that ladder in order, using the commands that already print the next step. Seat tag `llama3` stays separate from train base `Qwen/Qwen2.5-0.5B-Instruct`. `make qlora-journey` checks the prepare artifacts and leaves a missing export as `refuse:seat`. It does not train, convert, or promote. READY no. |
 | qwen lora journey | The Qwen / LLaMA-Factory LoRA path had the same commands and no single operator ladder, so prepare, train, export, merge, convert, seat, and import stayed split across the train page and the seat page. | Target A is that ladder in order, using the commands that already print the next step. Seat tag `llama3` stays separate from train base `Qwen/Qwen2.5-0.5B-Instruct`. `template` is `qwen`. The recipe omits quantization. `make lora-journey` checks the prepare artifacts and leaves a missing export as `refuse:seat`. It does not train, merge, convert, or promote. READY no. |
+| qwen qlora seat ladder | `make qlora-journey` and `make lora-journey` stop at `refuse:seat` when the merged export and the GGUF are missing, so the happy-path print lines had no single opt-in check. | `make seat-journey` prepares the Target C card and prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. The GGUF stub starts with GGUF magic. `import-trained` records `trained_shape` `gguf`. It does not train, convert, or create a model. READY no. |
 
 ## Known-good local commands
 
@@ -426,6 +427,7 @@ make real-world       # opt-in: check + vanilla doctor; live SKIP without CELL_L
 make enrich-prepare   # opt-in: prepare through require-plan apply on a throwaway lab copy (not in smoke)
 make qlora-journey    # opt-in: Target C Qwen QLoRA ladder; checks prepare artifacts; does not train (not in smoke)
 make lora-journey     # opt-in: Target A Qwen LoRA ladder; checks prepare artifacts; does not train (not in smoke)
+make seat-journey     # opt-in: Target C seat ladder; fixture stubs; does not train or convert (not in smoke)
 estate help           # Day-90 topics, including enrich, frontier, and day90-mixed
 ```
 

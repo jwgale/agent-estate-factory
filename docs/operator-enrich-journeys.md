@@ -12,6 +12,8 @@ Popular path (Target C): Qwen through LLaMA-Factory QLoRA, then a printed GGUF c
 
 Unquantized path (Target A): Qwen through LLaMA-Factory LoRA, then a printed merge, a printed GGUF convert, a printed Ollama create, and `import-trained` to record the shape. Section 9. The seat tag and the train base stay separate. Opt-in check: `make lora-journey`. It prints that ladder and checks the prepare artifacts. It does not train, does not merge, does not convert, and does not promote.
 
+Print path once a merged export and a GGUF exist (Target C seat ladder): the same Qwen QLoRA prepare, then fixture stubs, then the printed `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` lines. Section 10. Opt-in check: `make seat-journey`. It prints those lines. It does not train, does not convert, does not create a model, and does not promote.
+
 ## What stays fixed
 
 | Piece | Stays |
@@ -433,7 +435,7 @@ The same command records the other two shapes when that is the artifact you have
 make qlora-journey
 ```
 
-That opt-in script prints this ladder, prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, the `NEXT.md` train and export lines, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+That opt-in script prints this ladder, prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, the `NEXT.md` train and export lines, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `make seat-journey` (section 10) is the opt-in that prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` after fixture stubs stand in for the merged export and the GGUF.
 
 ## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat
 
@@ -541,3 +543,40 @@ make lora-journey
 ```
 
 That opt-in script prints this ladder, prepares `llamafactory-lora` on a throwaway copy of `examples/estate.yaml`, and checks the artifacts: seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, `template: qwen`, rank 8, `packing: false`, no quantization keys, the `NEXT.md` train and export lines, the printed merge-adapt line, the printed convert line, the printed seat line, and the import lines. A seat tag with no train base is `refuse:train-base` and writes nothing. `gguf-convert` and `local-seat` against a missing export are `refuse:seat` and write no GGUF. The script prints `SKIP live train`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
+## 10. Target C seat ladder — fixture stubs print the merge, convert, seat, and import
+
+`make qlora-journey` prints the Target C ladder and stops at `refuse:seat` when `export/` and `export.gguf` are missing. This section is the opt-in print path that runs after fixture stubs stand in for that merged export and the sibling GGUF. The stubs are files the script writes in a throwaway directory. They are not weights. The factory prints the commands that already exist. It does not train, does not run `llamafactory-cli`, does not run `convert_hf_to_gguf.py`, does not run `ollama create`, and does not promote.
+
+The prepare is the same Target C card as section 8: `llamafactory-qlora`, seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, pack `examples/fixtures/specialist-overnight.pack.json`. `<your-estate.yaml>` is a lab copy. `examples/estate.yaml` stays hash-locked.
+
+A seat tag with no train base is `refuse:train-base` and writes nothing. Before the stubs exist, `merge-adapt` on a missing `outputs/` is `refuse:adapter`. `gguf-convert` on a missing `export/` is `refuse:seat`. `local-seat` on a missing `export.gguf` is `refuse:seat`. Those refuses write no export directory and no GGUF.
+
+The script then writes three fixture stubs under the prepared directory:
+
+| Stub | What the printer needs |
+| --- | --- |
+| `outputs/adapter_config.json` | `merge-adapt` reads an adapter directory. `export.yaml` `adapter_name_or_path` is that directory. |
+| `export/config.json` and `export/model.safetensors` | A merged export is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`. `gguf-convert` prints for that directory. |
+| `export.gguf` | The first four bytes are `GGUF`. `local-seat` refuses a file that does not start with that magic. `import-trained` records the file. |
+
+`export.gguf` stays beside `export/`. A `.gguf` inside `export/` makes the directory match two shapes, and both `local-seat` and `import-trained` then refuse the directory.
+
+The printed lines are the same shapes section 8 names. For the overnight pack the create name is `cell-enrich-overnight-traces`:
+
+```bash
+llamafactory-cli export <prepared>/export.yaml
+python3 convert_hf_to_gguf.py <prepared>/export --outfile <prepared>/export.gguf --outtype auto
+ollama create cell-enrich-overnight-traces -f <prepared>/Modelfile
+estate enrich import-trained --estate <your-estate.yaml> --prepared <prepared> --tag cell-enrich-overnight-traces --adapter <prepared>/export.gguf
+```
+
+`gguf-convert` also prints the `local-seat` line for `export.gguf`. `local-seat` on that file also prints `llama-cli -m` and `llama-server -m`. `import-trained` records `trained_shape` `gguf` and `trained_paths` on the throwaway prepare and writes `binding-proposal.json`. It does not apply and does not rewrite `examples/estate.yaml`.
+
+The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` does not start a convert or an `ollama create`. Live train, merge, convert, and seat stay on the operator host, the CUDA steps in section 8. `make enrich-live-prove` still covers a from-pack Modelfile and `ollama create`. It does not cover a trained GGUF. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make seat-journey
+```
+
+That opt-in script prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml`, checks the Qwen QLoRA card (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`, `quantization_bit: 4`, `quantization_method: bnb`), asserts the three refuses, writes the stubs, and checks the printed lines. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.

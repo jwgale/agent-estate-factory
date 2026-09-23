@@ -100,6 +100,7 @@ Walk:       make enrich-prepare
 Train:      make train-prepare
 QLoRA walk: make qlora-journey
 LoRA walk:  make lora-journey
+Seat walk:  make seat-journey
 Live prove: make enrich-live-prove
 ";
 
@@ -366,6 +367,7 @@ is allowed. Prepare writes artifacts. It does not train.
   make train-prepare
   make qlora-journey
   make lora-journey
+  make seat-journey
   make enrich-live-prove
 
 TrainEnrichDriver lives in the data plane (model-estate).
@@ -882,6 +884,45 @@ artifacts, and prints SKIP live train. It does not run a trainer,
 does not merge, and does not convert. Not in make smoke, make gate-90,
 or Actions. READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 9, Target A).
+
+Target C seat ladder
+--------------------
+Opt-in print path for the same Qwen QLoRA card once a merged export
+and a GGUF exist. make qlora-journey leaves those commands at
+refuse:seat. make seat-journey prepares llamafactory-qlora (seat
+llama3, train base Qwen/Qwen2.5-0.5B-Instruct) on a throwaway estate
+copy, writes fixture stubs, and prints the lines. The adapter stub
+is outputs/adapter_config.json. The merged stub is export/config.json
+plus export/model.safetensors. The GGUF stub starts with GGUF magic.
+An empty file is refuse:seat.
+
+  estate enrich merge-adapt \\
+    --prepared <prepared> --adapter <prepared>/outputs
+
+That prints llamafactory-cli export. It does not merge.
+
+  estate enrich gguf-convert \\
+    --prepared <prepared> --weights <prepared>/export
+
+That prints python3 convert_hf_to_gguf.py with --outtype auto.
+It does not convert.
+
+  estate enrich local-seat \\
+    --prepared <prepared> --weights <prepared>/export.gguf
+
+That prints ollama create for cell-enrich-<pack-id>, plus
+llama-cli -m and llama-server -m. It does not create the model.
+
+  estate enrich import-trained --estate <your-estate.yaml> \\
+    --prepared <prepared> --tag cell-enrich-<pack-id> \\
+    --adapter <prepared>/export.gguf
+
+import-trained records trained_shape gguf. It does not apply.
+The script prints SKIP live train, SKIP live convert, and
+SKIP live seat. CELL_SEAT_LIVE=1 does not run those programs.
+Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 10, Target C seat ladder).
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
 Journeys: docs/operator-enrich-journeys.md.

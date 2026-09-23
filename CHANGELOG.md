@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Target C seat ladder (print-only fixture stubs)
+
+- `make seat-journey` prepares `llamafactory-qlora` (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`) on a throwaway copy of `examples/estate.yaml`, then prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` once fixture stubs exist. The adapter stub is `outputs/adapter_config.json`. The merged stub is `export/config.json` plus `export/model.safetensors` (a name that does not start with `adapter_model`). The GGUF stub is `export.gguf` and starts with GGUF magic. `local-seat` prints `ollama create` plus `llama-cli -m` and `llama-server -m`. `import-trained` records `trained_shape` `gguf`. A missing adapter is `refuse:adapter`. A missing export or GGUF is `refuse:seat`.
+- The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. It does not run `llamafactory-cli`, `convert_hf_to_gguf.py`, or `ollama create`. `CELL_SEAT_LIVE=1` does not start those programs. Live train, merge, convert, and seat stay on the operator host (section 8 of the journeys page). `make enrich-live-prove` still covers a from-pack Modelfile.
+- The walk is section 10 of `docs/operator-enrich-journeys.md`. `docs/TRAIN-ENRICH.md` and `estate help enrich` / `estate help train` name the same check.
+- Not in `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Qwen2.5 Instruct QLoRA reproduce target
 
 - `llamafactory-qlora` infers LLaMA-Factory template `qwen` for `Qwen/Qwen2.5-0.5B-Instruct`, `Qwen/Qwen2.5-1.5B-Instruct`, `Qwen/Qwen2.5-3B-Instruct`, `Qwen/Qwen2.5-7B-Instruct`, `Qwen/Qwen2.5-14B-Instruct`, `Qwen/Qwen2.5-32B-Instruct`, `Qwen/Qwen2.5-72B-Instruct`, `Qwen/Qwen2.5-7B-Instruct-1M`, and `Qwen/Qwen2.5-14B-Instruct-1M`, including those ids as nested path segments and HF cache directories (`models--Qwen--Qwen2.5-0.5B-Instruct`). `constants.py` registers that text group with `template="qwen"`. `template.py` registers `qwen`. There is no `qwen2_5` template. A Qwen2.5 base uses `qwen` and is not this reproduce target. A name that contains `thinking` is not this reproduce target. Qwen2 Instruct stays `qwen` and is not this reproduce target. Qwen2.5-Coder and Qwen2.5-Math stay `qwen` and are not this reproduce target. Qwen2.5-VL is the `qwen2_vl` group and is not this reproduce target. GPTQ and AWQ checkpoints are not this reproduce target. Qwen3 Instruct stays `qwen3_nothink`.
