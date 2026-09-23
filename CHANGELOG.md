@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — print-only Target C uniqueness-full
+
+- `make uniqueness-full` (`scripts/uniqueness-full.sh`) runs the Target C print chain in order: `make qlora-journey`, then `make train-next`, then `make seat-journey`. If one step fails, the script exits nonzero before the next step. Print-only. It does not train, merge, convert, seat, or promote. It does not run `make lf-beachhead-prepare`. `make uniqueness-ladder` stays `make qlora-journey` then `make seat-journey` and does not run `make train-next`. Live train, live convert, and live seat still need a human GPU host and stay skipped. Not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked.
+
 ## This slice — print-only Target C train-next
 
 - `make train-next` (`scripts/train-next.sh`) prepares `llamafactory-qlora` on a throwaway copy of `examples/estate.yaml` (seat tag `llama3`, train base `Qwen/Qwen2.5-0.5B-Instruct`) and prints the `NEXT.md` train recipe: `pip install llamafactory`, `pip install 'bitsandbytes>=0.49'`, and `llamafactory-cli train` on that `recipe.yaml`. It also prints the `llamafactory-cli export` line and does not run it. `CELL_TRAIN_LIVE=1` stays print-only. A missing `llamafactory-cli` or bitsandbytes is an informational SKIP. `make uniqueness-ladder` stays `make qlora-journey` then `make seat-journey` and does not run this target. Not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked.

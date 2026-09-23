@@ -548,6 +548,364 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
 }
 
 #[test]
+fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile
+            .lines()
+            .any(|line| line.trim() == "uniqueness-full:"),
+        "Makefile missing uniqueness-full"
+    );
+    assert!(makefile.contains("scripts/uniqueness-full.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "uniqueness-full must stay off smoke, gate-90, and Actions"
+    );
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("uniqueness-full"),
+        "uniqueness-full must be a phony target"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("uniqueness-full"),
+        "gate-90 must not run uniqueness-full: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("uniqueness-full"),
+        "smoke must not run uniqueness-full: {smoke}"
+    );
+    let ladder_recipe = makefile
+        .split("\nuniqueness-ladder:\n")
+        .nth(1)
+        .expect("uniqueness-ladder recipe")
+        .lines()
+        .next()
+        .unwrap()
+        .trim();
+    assert_eq!(
+        ladder_recipe, "bash scripts/uniqueness-ladder.sh",
+        "uniqueness-ladder recipe must stay the qlora-then-seat script"
+    );
+    assert!(
+        makefile.contains(
+            "# Opt-in print-only Target C uniqueness chain: qlora-journey then seat-journey.\n# Does not run train-next."
+        ),
+        "uniqueness-ladder comment must keep train-next as the separate opt-in"
+    );
+
+    let script_path = root.join("scripts/uniqueness-full.sh");
+    assert!(script_path.is_file(), "scripts/uniqueness-full.sh missing");
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "Does not train, merge, convert, seat, or promote.",
+        "make qlora-journey",
+        "make train-next",
+        "make seat-journey",
+        "make uniqueness-ladder stays qlora-journey then seat-journey and does not run train-next.",
+        "Live train, live convert, and live seat still need a human GPU host and stay skipped.",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "PASS  uniqueness-full",
+    ] {
+        assert!(script.contains(needle), "uniqueness-full missing {needle}");
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "uniqueness-full must keep READY_FOR_LIVE_TEST no"
+    );
+    let qlora_invoke = script
+        .find("make -C \"$ROOT\" qlora-journey")
+        .expect("chain must invoke qlora-journey");
+    let train_invoke = script
+        .find("make -C \"$ROOT\" train-next")
+        .expect("chain must invoke train-next");
+    let seat_invoke = script
+        .find("make -C \"$ROOT\" seat-journey")
+        .expect("chain must invoke seat-journey");
+    assert!(
+        qlora_invoke < train_invoke && train_invoke < seat_invoke,
+        "chain order must be qlora-journey, then train-next, then seat-journey"
+    );
+    assert!(
+        script[qlora_invoke..train_invoke].contains("exit 1"),
+        "qlora-journey failure must exit before train-next"
+    );
+    assert!(
+        script[train_invoke..seat_invoke].contains("exit 1"),
+        "train-next failure must exit before seat-journey"
+    );
+    assert!(
+        script[seat_invoke..].contains("exit 1"),
+        "seat-journey failure must exit nonzero"
+    );
+    let commands: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#') && !trimmed.starts_with("echo")
+        })
+        .collect();
+    let joined = commands.join("\n");
+    let qlora = joined
+        .find("qlora-journey")
+        .expect("chain must run qlora-journey");
+    let train = joined
+        .find("train-next")
+        .expect("chain must run train-next");
+    let seat = joined
+        .find("seat-journey")
+        .expect("chain must run seat-journey");
+    assert!(
+        qlora < train && train < seat,
+        "command order must be qlora-journey, then train-next, then seat-journey"
+    );
+    assert!(
+        !joined.contains("lf-beachhead-prepare"),
+        "uniqueness-full must not run lf-beachhead-prepare"
+    );
+    let shells_out = commands.iter().any(|line| {
+        line.contains("llamafactory-cli")
+            || line.contains("convert_hf_to_gguf.py")
+            || line.contains("ollama ")
+            || line.contains("import-trained")
+            || line.contains("gguf-convert")
+            || line.contains("local-seat")
+            || line.contains("merge-adapt")
+    });
+    assert!(
+        !shells_out,
+        "uniqueness-full must not train, merge, convert, seat, or import"
+    );
+
+    let ladder = std::fs::read_to_string(root.join("scripts/uniqueness-ladder.sh")).unwrap();
+    assert!(
+        ladder.contains(
+            "The train step is a separate opt-in: make train-next. This chain does not run it."
+        ),
+        "uniqueness-ladder must keep train-next as the separate middle opt-in"
+    );
+    assert!(
+        ladder.contains("Chain: make qlora-journey, then make seat-journey."),
+        "uniqueness-ladder must stay qlora-journey then seat-journey"
+    );
+    assert!(
+        !ladder.contains("uniqueness-full"),
+        "uniqueness-ladder script must stay free of the full chain"
+    );
+    let ladder_commands: Vec<&str> = ladder
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#') && !trimmed.starts_with("echo")
+        })
+        .collect();
+    let ladder_joined = ladder_commands.join("\n");
+    let ladder_qlora = ladder_joined
+        .find("qlora-journey")
+        .expect("uniqueness-ladder must run qlora-journey");
+    let ladder_seat = ladder_joined
+        .find("seat-journey")
+        .expect("uniqueness-ladder must run seat-journey");
+    assert!(
+        ladder_qlora < ladder_seat,
+        "uniqueness-ladder must run qlora-journey before seat-journey"
+    );
+    assert!(
+        !ladder_joined.contains("train-next"),
+        "uniqueness-ladder must not run train-next"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+    let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("through PR #143"),
+        "GATE-90 header must keep tip through PR #143: {head}"
+    );
+    assert!(
+        head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "GATE-90 header must keep the PR #143 tip SHA: {head}"
+    );
+    let remaining = gate
+        .split("## Remaining Day-90+ (honest)")
+        .nth(1)
+        .expect("remaining section");
+    let row = remaining
+        .lines()
+        .find(|line| line.contains("| `make uniqueness-full` |"))
+        .expect("remaining row for uniqueness-full");
+    let row_qlora = row.find("qlora-journey").expect("row names qlora-journey");
+    let row_train = row.find("train-next").expect("row names train-next");
+    let row_seat = row.find("seat-journey").expect("row names seat-journey");
+    assert!(
+        row_qlora < row_train && row_train < row_seat,
+        "remaining row order must be qlora-journey, then train-next, then seat-journey: {row}"
+    );
+    assert!(row.contains("Does not train"), "{row}");
+    assert!(row.contains("Not in smoke or Actions"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+    let ladder_row = remaining
+        .lines()
+        .find(|line| line.contains("| `make uniqueness-ladder` |"))
+        .expect("remaining row for uniqueness-ladder");
+    assert!(
+        ladder_row.contains("qlora-journey then seat-journey"),
+        "{ladder_row}"
+    );
+    assert!(
+        ladder_row.contains("Does not run train-next"),
+        "{ladder_row}"
+    );
+    assert!(
+        !ladder_row.contains("uniqueness-full"),
+        "uniqueness-ladder remaining row must stay the short chain: {ladder_row}"
+    );
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(16).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #143"),
+        "status header must keep tip through PR #143"
+    );
+    assert!(
+        status_head.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
+        "status header must keep the PR #143 tip SHA"
+    );
+    let uniq = status
+        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
+        .nth(1)
+        .expect("uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(
+        uniq.contains(
+            "`make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`."
+        ),
+        "{uniq}"
+    );
+    assert!(
+        uniq.contains(
+            "`make uniqueness-ladder` stays `make qlora-journey`, then `make seat-journey`, and does not run `make train-next`."
+        ),
+        "{uniq}"
+    );
+    assert!(
+        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
+        "uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains(
+        "`make uniqueness-full` runs the same prints with the train recipe in the middle: `make qlora-journey`, then `make train-next`, then `make seat-journey`."
+    ));
+    assert!(journey.contains(
+        "The train step is the separate opt-in `make train-next`."
+    ));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains(
+        "`make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`."
+    ));
+    assert!(train.contains(
+        "`make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`."
+    ));
+    assert!(
+        !journey.contains("READY_FOR_LIVE_TEST: yes")
+            && !train.contains("READY_FOR_LIVE_TEST: yes"),
+        "operator pages must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make uniqueness-full runs make qlora-journey, then make train-next,\nthen make seat-journey."
+    ));
+    assert!(help.contains("make uniqueness-ladder does not run it."));
+    assert!(help.contains("stays qlora-journey then seat-journey."));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — print-only Target C uniqueness-full")
+        .nth(1)
+        .expect("CHANGELOG missing the uniqueness-full slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("make uniqueness-full"), "{slice}");
+    assert!(slice.contains("scripts/uniqueness-full.sh"), "{slice}");
+    let slice_qlora = slice
+        .find("make qlora-journey")
+        .expect("changelog names qlora-journey");
+    let slice_train = slice
+        .find("make train-next")
+        .expect("changelog names train-next");
+    let slice_seat = slice
+        .find("make seat-journey")
+        .expect("changelog names seat-journey");
+    assert!(
+        slice_qlora < slice_train && slice_train < slice_seat,
+        "changelog order must be qlora-journey, then train-next, then seat-journey: {slice}"
+    );
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+    let ladder_slice = changelog
+        .split("## This slice — print-only Target C uniqueness ladder")
+        .nth(1)
+        .expect("CHANGELOG missing the uniqueness ladder slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        !ladder_slice.contains("uniqueness-full"),
+        "uniqueness-ladder changelog slice must stay the short chain: {ladder_slice}"
+    );
+    assert!(ladder_slice.contains("make qlora-journey"), "{ladder_slice}");
+    assert!(ladder_slice.contains("make seat-journey"), "{ladder_slice}");
+    assert!(
+        !ladder_slice.contains("make train-next"),
+        "uniqueness-ladder changelog slice must not absorb train-next: {ladder_slice}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("uniqueness-full"),
+            "{rel} must not run uniqueness-full"
+        );
+    }
+}
+
+#[test]
 fn glossary_keeps_purpose_built_slm_in_suite() {
     let root = repo_root();
     let glossary = std::fs::read_to_string(root.join("docs/UBIQUITOUS_LANGUAGE.md")).unwrap();
