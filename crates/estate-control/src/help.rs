@@ -60,7 +60,10 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             Ok(())
         }
         Some("enrich") | Some("train") => {
-            print!("{ENRICH}");
+            let (head, tail) = ENRICH.split_once(ENRICH_MATRIX_ANCHOR).expect(
+                "enrich help keeps the prepare-does-not-train anchor for the beachhead matrix",
+            );
+            print!("{head}{ENRICH_MATRIX_ANCHOR}\n{LF_BEACHHEAD_MATRIX}\n{tail}");
             Ok(())
         }
         Some(other) => {
@@ -327,6 +330,11 @@ This page does not plan, apply, or probe. Off make smoke,
 make gate-90, and Actions.
 ";
 
+/// Operator table in `docs/lf-beachhead-matrix.md`. `estate help enrich` prints these bytes.
+const LF_BEACHHEAD_MATRIX: &str = include_str!("../../../docs/lf-beachhead-matrix.md");
+
+const ENRICH_MATRIX_ANCHOR: &str = "Prepare writes artifacts. It does not train.\n";
+
 const ENRICH: &str = "\
 enrich — train/enrich prepare
 =============================
@@ -334,6 +342,10 @@ estate help train prints this page. Job field is train or enrich.
 Default job is enrich. llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, and mlx-lm-lora default to train.
 --all-drivers defaults to enrich and includes a card only when that job
 is allowed. Prepare writes artifacts. It does not train.
+
+The table above is docs/lf-beachhead-matrix.md. estate help enrich
+and estate help train print that file. A bare Ollama seat tag on
+those train bases is refuse:train-base.
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\

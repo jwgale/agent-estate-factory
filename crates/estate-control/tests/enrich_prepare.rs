@@ -207,6 +207,279 @@ fn help_enrich_and_train_name_the_seam() {
 }
 
 #[test]
+fn lf_beachhead_matrix_lists_every_smoke_fixture() {
+    let root = repo_root();
+    let matrix_rel = "docs/lf-beachhead-matrix.md";
+    let matrix = std::fs::read_to_string(root.join(matrix_rel)).unwrap();
+    let help_src = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(
+        help_src.contains("include_str!(\"../../../docs/lf-beachhead-matrix.md\")"),
+        "estate help must print the matrix file"
+    );
+    assert!(
+        matrix.contains("refuse:train-base"),
+        "matrix must name refuse:train-base for a bare Ollama seat tag"
+    );
+    assert!(
+        matrix.contains("READY_FOR_LIVE_TEST`: no") || matrix.contains("READY_FOR_LIVE_TEST: no"),
+        "{matrix}"
+    );
+    assert!(
+        !matrix.contains("READY_FOR_LIVE_TEST: yes")
+            && !matrix.contains("READY_FOR_LIVE_TEST`: yes"),
+        "matrix must keep READY_FOR_LIVE_TEST no"
+    );
+    assert!(
+        !matrix.to_ascii_lowercase().contains("kimi/"),
+        "matrix must not add a Kimi train base"
+    );
+
+    let expected = [
+        (
+            "Phi-3 Instruct",
+            "llamafactory-qlora",
+            "microsoft/Phi-3-mini-4k-instruct",
+            "phi",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/phi3-instruct.pack.json",
+        ),
+        (
+            "Phi-3 Instruct",
+            "llamafactory-lora",
+            "microsoft/Phi-3-mini-4k-instruct",
+            "phi",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/phi3-instruct-lora.pack.json",
+        ),
+        (
+            "Llama-3.2 Instruct",
+            "llamafactory-qlora",
+            "meta-llama/Llama-3.2-3B-Instruct",
+            "llama3",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/llama32-instruct.pack.json",
+        ),
+        (
+            "Llama-3.2 Instruct",
+            "llamafactory-lora",
+            "meta-llama/Llama-3.2-3B-Instruct",
+            "llama3",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/llama32-instruct-lora.pack.json",
+        ),
+        (
+            "Gemma-2 Instruct",
+            "llamafactory-qlora",
+            "google/gemma-2-2b-it",
+            "gemma2",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/gemma2-instruct.pack.json",
+        ),
+        (
+            "Gemma-2 Instruct",
+            "llamafactory-lora",
+            "google/gemma-2-2b-it",
+            "gemma2",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/gemma2-instruct-lora.pack.json",
+        ),
+        (
+            "Mistral Instruct",
+            "llamafactory-qlora",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+            "mistral",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/mistral-instruct.pack.json",
+        ),
+        (
+            "Mistral Instruct",
+            "llamafactory-lora",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+            "mistral",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/mistral-instruct-lora.pack.json",
+        ),
+        (
+            "Qwen2.5 Instruct",
+            "llamafactory-qlora",
+            "Qwen/Qwen2.5-0.5B-Instruct",
+            "qwen",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/qwen25-instruct.pack.json",
+        ),
+        (
+            "Qwen2.5 Instruct",
+            "llamafactory-lora",
+            "Qwen/Qwen2.5-0.5B-Instruct",
+            "qwen",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/qwen25-instruct-lora.pack.json",
+        ),
+        (
+            "Qwen3 Instruct",
+            "llamafactory-qlora",
+            "Qwen/Qwen3-4B-Instruct-2507",
+            "qwen3_nothink",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/qwen3-instruct.pack.json",
+        ),
+        (
+            "Qwen3 Instruct",
+            "llamafactory-lora",
+            "Qwen/Qwen3-4B-Instruct-2507",
+            "qwen3_nothink",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/qwen3-instruct-lora.pack.json",
+        ),
+        (
+            "DeepSeek-R1-Distill chat",
+            "llamafactory-qlora",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            "deepseekr1",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/deepseek-r1-distill.pack.json",
+        ),
+        (
+            "DeepSeek-R1-Distill chat",
+            "llamafactory-lora",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            "deepseekr1",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/deepseek-r1-distill-lora.pack.json",
+        ),
+        (
+            "GLM-4 Chat",
+            "llamafactory-qlora",
+            "zai-org/glm-4-9b-chat",
+            "glm4",
+            "rank 16, packing true, quantization_method bnb, quantization_bit 4",
+            "examples/fixtures/glm4-chat.pack.json",
+        ),
+        (
+            "GLM-4 Chat",
+            "llamafactory-lora",
+            "zai-org/glm-4-9b-chat",
+            "glm4",
+            "rank 8, packing false, no quantization_bit, no quantization_method",
+            "examples/fixtures/glm4-chat-lora.pack.json",
+        ),
+    ];
+
+    let mut parsed = Vec::new();
+    for line in matrix.lines() {
+        if !line.starts_with("| ") || line.contains("---") || line.contains("Family |") {
+            continue;
+        }
+        let cells: Vec<String> = line
+            .trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+            .collect();
+        assert_eq!(cells.len(), 6, "matrix row must keep six columns: {line}");
+        parsed.push(cells);
+    }
+    assert_eq!(
+        parsed.len(),
+        expected.len(),
+        "matrix row count drifted from the beachhead inventory"
+    );
+
+    let mut seen = Vec::new();
+    for (row, expect) in parsed.iter().zip(expected) {
+        let (family, card, train_base, template, knobs, fixture) = expect;
+        assert_eq!(row[0], family, "family drift");
+        assert_eq!(row[1], card, "card drift");
+        assert_eq!(row[2], train_base, "train base drift");
+        assert_eq!(row[3], template, "template drift");
+        assert_eq!(row[4], knobs, "knobs drift");
+        assert_eq!(row[5], fixture, "fixture drift");
+        let path = root.join(fixture);
+        assert!(path.is_file(), "missing beachhead fixture {fixture}");
+        let pack: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(pack["train_base_model"], train_base, "{fixture}");
+        assert_eq!(pack["model_hint"], "llama3", "{fixture}");
+        seen.push(fixture.to_string());
+    }
+
+    let mut mentioned = fixture_paths_in(&matrix);
+    mentioned.sort();
+    seen.sort();
+    assert_eq!(
+        mentioned, seen,
+        "matrix fixture paths must be exactly the beachhead rows"
+    );
+
+    for rel in ["docs/TRAIN-ENRICH.md", "docs/operator-enrich-journeys.md"] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            body.contains("lf-beachhead-matrix.md"),
+            "{rel} must point at the beachhead matrix"
+        );
+        assert!(
+            !body.contains("READY_FOR_LIVE_TEST: yes"),
+            "{rel} must keep READY_FOR_LIVE_TEST no"
+        );
+    }
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — LLaMA-Factory LoRA and QLoRA beachhead matrix")
+        .nth(1)
+        .expect("CHANGELOG missing the beachhead matrix slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
+    assert!(slice.contains("READY_FOR_LIVE_TEST`: no"), "{slice}");
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"), "{slice}");
+
+    for topic in ["enrich", "train"] {
+        let out = estate_bin().args(["help", topic]).output().unwrap();
+        let body = text(&out);
+        assert!(out.status.success(), "{topic}: {body}");
+        assert!(
+            body.contains("# LLaMA-Factory LoRA and QLoRA beachhead matrix"),
+            "{topic} help must print the matrix"
+        );
+        assert!(body.contains("docs/lf-beachhead-matrix.md"), "{body}");
+        for fixture in &seen {
+            assert!(body.contains(fixture), "{topic} help missing {fixture}");
+        }
+        let matrix_at = body
+            .find("# LLaMA-Factory LoRA and QLoRA beachhead matrix")
+            .unwrap();
+        let pointer_at = body
+            .find("The table above is docs/lf-beachhead-matrix.md")
+            .expect("help pointer");
+        assert!(
+            matrix_at < pointer_at,
+            "help must print the matrix before the path pointer"
+        );
+        assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
+    }
+}
+
+fn fixture_paths_in(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("examples/fixtures/") {
+        let tail = &rest[start..];
+        let end = tail
+            .find(|c: char| {
+                !(c.is_ascii_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_')
+            })
+            .unwrap_or(tail.len());
+        let path = &tail[..end];
+        if path.ends_with(".pack.json") {
+            out.push(path.to_string());
+        }
+        rest = &tail[end..];
+    }
+    out
+}
+
+#[test]
 fn prepare_both_drivers_and_refuses_without_writing() {
     let root = tmp("cli");
     let estate = fixture("examples/estate.yaml");

@@ -1,0 +1,28 @@
+# LLaMA-Factory LoRA and QLoRA beachhead matrix
+
+Print-only index of the current LLaMA-Factory reproduce targets. Each row is one smoke prepare on the ladder that already exists: `estate enrich prepare`, the `NEXT.md` train and export lines, `estate enrich merge-adapt`, `estate enrich gguf-convert`, `estate enrich local-seat`, and `estate enrich import-trained`. This factory does not train, merge, convert, or create an Ollama model. `estate help enrich` and `estate help train` print this page. `READY_FOR_LIVE_TEST`: no.
+
+The smoke seat tag on every pack is `model_hint` `llama3`. That string is the Ollama seat. The train base is `train_base_model`. A bare Ollama seat tag (`llama3`, `llama3:latest`, `deepseek-r1`, `deepseek-r1:1.5b`, `glm4`, `glm4:9b`, `glm4:latest`, `glm-4:9b`) is `refuse:train-base` and writes nothing. This factory does not map the seat tag onto a Hub repo and does not download weights. `examples/estate.yaml` stays hash-locked.
+
+QLoRA rows are `llamafactory-qlora`: `lora_rank` 16, `packing` true, `quantization_method` `bnb`, `quantization_bit` 4. LoRA rows are `llamafactory-lora`, the non-quant twin: `lora_rank` 8, `packing` false, no `quantization_bit`, and no `quantization_method`. The smoke id is the beachhead checkpoint. Wider group rules stay in [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md) and [`operator-enrich-journeys.md`](operator-enrich-journeys.md). These rows are not journeys on `make smoke`, `make gate-90`, or GitHub Actions.
+
+| Family | Card | Train base | Template | Knobs | Smoke fixture |
+| --- | --- | --- | --- | --- | --- |
+| Phi-3 Instruct | llamafactory-qlora | `microsoft/Phi-3-mini-4k-instruct` | `phi` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/phi3-instruct.pack.json` |
+| Phi-3 Instruct | llamafactory-lora | `microsoft/Phi-3-mini-4k-instruct` | `phi` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/phi3-instruct-lora.pack.json` |
+| Llama-3.2 Instruct | llamafactory-qlora | `meta-llama/Llama-3.2-3B-Instruct` | `llama3` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/llama32-instruct.pack.json` |
+| Llama-3.2 Instruct | llamafactory-lora | `meta-llama/Llama-3.2-3B-Instruct` | `llama3` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/llama32-instruct-lora.pack.json` |
+| Gemma-2 Instruct | llamafactory-qlora | `google/gemma-2-2b-it` | `gemma2` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/gemma2-instruct.pack.json` |
+| Gemma-2 Instruct | llamafactory-lora | `google/gemma-2-2b-it` | `gemma2` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/gemma2-instruct-lora.pack.json` |
+| Mistral Instruct | llamafactory-qlora | `mistralai/Mistral-7B-Instruct-v0.3` | `mistral` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/mistral-instruct.pack.json` |
+| Mistral Instruct | llamafactory-lora | `mistralai/Mistral-7B-Instruct-v0.3` | `mistral` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/mistral-instruct-lora.pack.json` |
+| Qwen2.5 Instruct | llamafactory-qlora | `Qwen/Qwen2.5-0.5B-Instruct` | `qwen` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/qwen25-instruct.pack.json` |
+| Qwen2.5 Instruct | llamafactory-lora | `Qwen/Qwen2.5-0.5B-Instruct` | `qwen` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/qwen25-instruct-lora.pack.json` |
+| Qwen3 Instruct | llamafactory-qlora | `Qwen/Qwen3-4B-Instruct-2507` | `qwen3_nothink` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/qwen3-instruct.pack.json` |
+| Qwen3 Instruct | llamafactory-lora | `Qwen/Qwen3-4B-Instruct-2507` | `qwen3_nothink` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/qwen3-instruct-lora.pack.json` |
+| DeepSeek-R1-Distill chat | llamafactory-qlora | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `deepseekr1` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/deepseek-r1-distill.pack.json` |
+| DeepSeek-R1-Distill chat | llamafactory-lora | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `deepseekr1` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/deepseek-r1-distill-lora.pack.json` |
+| GLM-4 Chat | llamafactory-qlora | `zai-org/glm-4-9b-chat` | `glm4` | rank 16, packing true, quantization_method bnb, quantization_bit 4 | `examples/fixtures/glm4-chat.pack.json` |
+| GLM-4 Chat | llamafactory-lora | `zai-org/glm-4-9b-chat` | `glm4` | rank 8, packing false, no quantization_bit, no quantization_method | `examples/fixtures/glm4-chat-lora.pack.json` |
+
+Phi-3-small stays template `phi_small`. The QLoRA reproduce line still covers that id. The LoRA row does not. Phi-4 and Phi-4-mini are not rows. Llama-3.2 vision stays `mllama`. There is no `llama3_2` template. A Gemma-2 base stays `gemma2` and is not the Instruct row. Original Gemma stays `gemma`. A Mistral-7B base stays `mistral` and is not the Instruct row. There is no `mistral_7` template. A Qwen2.5 base, Qwen2.5-Coder, Qwen2.5-Math, and Qwen2.5-VL are not the Instruct row. There is no `qwen2_5` template. A Qwen3 thinking or base id stays `qwen3`. DeepSeek-R1, DeepSeek-R1-Zero, and DeepSeek-R1-0528 stay `deepseekr1` and are not the distill row. There is no `deepseek_r1` template. A GLM-4 base stays `glm4` and is not the chat row. There is no `glm_4` template. Kimi is not a row.

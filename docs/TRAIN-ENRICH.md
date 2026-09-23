@@ -4,6 +4,8 @@ Operator page for the first durable train/enrich beachhead. Words: [`UBIQUITOUS_
 
 `estate enrich prepare` writes artifacts for a purpose-built SLM. It does not train. It does not POST. It does not rewrite `estate.yaml`. Promote stays off.
 
+The LLaMA-Factory LoRA and QLoRA reproduce targets are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` and `estate help train` print that file. Each row is a smoke prepare on the existing ladder (prepare, the `NEXT.md` train and export lines, `merge-adapt`, `gguf-convert`, `local-seat`, `import-trained`). The table does not add a train family. A bare Ollama seat tag on those train bases is `refuse:train-base`. `READY_FOR_LIVE_TEST`: no.
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page.
