@@ -607,7 +607,8 @@ pub(crate) enum EnrichCommand {
         #[arg(long)]
         weights: PathBuf,
     },
-    /// Print the ollama create line for a merged export, a GGUF, or an adapter directory.
+    /// Print the seat line for a merged export, a GGUF, or an adapter directory.
+    /// Ollama is the default print. A GGUF also prints llama-cli and llama-server.
     /// Does not create, does not shell out, and does not promote.
     LocalSeat {
         /// Directory that holds a llamafactory-lora, llamafactory-qlora, axolotl-lora, or axolotl-qlora prepare.json.
@@ -622,6 +623,9 @@ pub(crate) enum EnrichCommand {
         /// A merged export or a GGUF is refuse:adapter. Not with --weights.
         #[arg(long, conflicts_with = "weights", required_unless_present = "weights")]
         adapter: Option<PathBuf>,
+        /// Printed local-run software. ollama (default) keeps ollama create and, for a GGUF, also prints llama-cli and llama-server. llama.cpp selects those GGUF lines. A merged directory still points at gguf-convert first. --adapter with llama.cpp is refuse:runtime.
+        #[arg(long, default_value = "ollama")]
+        runtime: String,
     },
     /// List registered TrainEnrichDriver cards. Does not prepare.
     Drivers,

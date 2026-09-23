@@ -1,5 +1,13 @@
 //! Local seat print. Validates a merged Hugging Face directory, a GGUF
-//! file, or an adapter `output_dir`, and prints the Ollama `create` next step.
+//! file, or an adapter `output_dir`, and prints the next seat line.
+//!
+//! Ollama is the default print (`ollama create`). A GGUF also prints the
+//! documented llama.cpp lines `llama-cli -m` and `llama-server -m` for that
+//! file. `--runtime llama.cpp` selects those lines and still prints the
+//! Ollama line. A merged Hugging Face directory is not a llama.cpp seat:
+//! the report points at `convert_hf_to_gguf.py` first. An adapter directory
+//! stays the Ollama `ADAPTER` print. llama.cpp does not load that directory
+//! in one line, so `--runtime llama.cpp` on `--adapter` is `refuse:runtime`.
 //!
 //! The prepare is `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`,
 //! or `axolotl-qlora`. `--weights` is the post-merge path (merged export or
@@ -28,6 +36,8 @@ const MODELFILE_MAX_BYTES: u64 = 64 * 1024;
 
 /// Printed plan. `modelfile_on_disk` is true when `ollama create -f` can use
 /// the file that is already in the weights directory.
+/// `create_command` is that Ollama line. `llama_cpp_commands` names an existing
+/// GGUF for `llama-cli` and `llama-server`. Empty when the weights are not a GGUF.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalSeatPlan {
     pub shape: String,
@@ -35,11 +45,51 @@ pub struct LocalSeatPlan {
     pub local_tag: String,
     pub pack_id: String,
     pub driver: String,
+    /// `ollama` or `llama.cpp`. Ollama stays the default print.
+    pub runtime: String,
     pub modelfile_on_disk: bool,
     pub create_command: String,
+    /// `llama-cli -m` and `llama-server -m` for a GGUF file. Empty otherwise.
+    pub llama_cpp_commands: Vec<String>,
     /// Modelfile text the operator writes. Empty when the on-disk file is the one to pass.
     pub modelfile_text: Option<String>,
     pub report: String,
+}
+
+/// Local-run software named by the printed seat lines.
+/// Ollama is today's default. llama.cpp is the GGUF seat beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalSeatRuntime {
+    Ollama,
+    LlamaCpp,
+}
+
+impl LocalSeatRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ollama => "ollama",
+            Self::LlamaCpp => "llama.cpp",
+        }
+    }
+
+    /// `ollama`, `llama.cpp`, and the llama.cpp aliases [`crate::parse_runtime`]
+    /// already accepts (`llama-cpp`, `llamacpp`). Other catalog cards are not a print.
+    pub fn parse(raw: &str) -> Result<Self, ModelError> {
+        refuse_sacred_and_sku("runtime", raw)?;
+        match crate::parse_runtime(raw) {
+            Some(crate::LocalRuntime::Ollama) => Ok(Self::Ollama),
+            Some(crate::LocalRuntime::LlamaCpp) => Ok(Self::LlamaCpp),
+            Some(other) => Err(ModelError::Other(format!(
+                "refuse:runtime: local-seat prints ollama or llama.cpp, found '{}'. {} is a catalog card and not a printed seat on this command.",
+                raw.trim(),
+                other.as_str()
+            ))),
+            None => Err(ModelError::Other(format!(
+                "refuse:runtime: local-seat prints ollama or llama.cpp, found '{}'",
+                raw.trim()
+            ))),
+        }
+    }
 }
 
 /// Operator card appended to LLaMA-Factory `PREPARE.md` and `NEXT.md`.
@@ -74,7 +124,7 @@ pub(crate) fn llamafactory_local_seat_note(
          {convert}\n\
          \n\
          Run the python3 line from a llama.cpp checkout. `convert_hf_to_gguf.py` is that checkout's script. `--outtype auto` is the script default (highest-fidelity 16-bit float, f16 or bf16). This factory does not choose a quantization type and does not print q8_0, tq1_0, or tq2_0. The outfile is {outfile}, a sibling of the merged directory, so the directory stays one shape.\n\
-         3. Seat with Ollama. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.\n\
+         3. Seat with Ollama by default. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile. llama.cpp does not load the merged directory. After the convert, a GGUF local-seat also prints `llama-cli -m` and `llama-server -m` for that file. `--runtime llama.cpp` selects those lines and still prints the Ollama line. This factory does not run them.\n\
          \n\
          Validate the directory or the GGUF and print the exact command:\n\
          \n\
@@ -84,9 +134,9 @@ pub(crate) fn llamafactory_local_seat_note(
          \n\
          ollama create {tag} -f {modelfile}\n\
          \n\
-         When you pass a .gguf file, it prints a Modelfile whose FROM is that file and the same `ollama create` line. It does not create the model. After the convert, point `--weights` at {outfile}.\n\
+         When you pass a .gguf file, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file. It does not create the model and does not run llama.cpp. After the convert, point `--weights` at {outfile}.\n\
          \n\
-         To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. The command prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama and does not write the file. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
+         To seat the adapter without a merge, pass `--adapter` instead of `--weights`. The adapter directory is {outputs}. It holds adapter_config.json (the same marker import-trained accepts for trained_shape=adapter) and the adapter weights when the train wrote them. The command prints a Modelfile. FROM is seat tag {seat}. ADAPTER is that directory. It does not run ollama and does not write the file. llama.cpp does not load that adapter directory in one line. `--runtime llama.cpp` with `--adapter` is refuse:runtime. `--weights` still refuses that directory (refuse:seat). A merged export or a GGUF passed to `--adapter` is refuse:adapter. A symlinked adapter path or a symlinked marker is refused the same way.\n\
          \n\
          estate enrich local-seat --prepared {out} --adapter {outputs}\n\
          \n\
@@ -133,11 +183,11 @@ pub(crate) fn axolotl_post_train_ladder(out_dir: &Path, seat_tag: &str, pack_id:
          estate enrich gguf-convert --prepared {prepared} --weights <merged-hf-dir>\n\
          \n\
          That prints `python3 convert_hf_to_gguf.py <merged-hf-dir> --outfile <sibling>.gguf --outtype auto`. `--outtype auto` is the script default (highest-fidelity 16-bit float, f16 or bf16). The outfile is a sibling of the merged directory. Run the python3 line from a llama.cpp checkout. `convert_hf_to_gguf.py` is that checkout's script. This factory does not choose a quantization type and does not print q8_0, tq1_0, or tq2_0.\n\
-         4. Seat with Ollama. `local-seat` prints the `ollama create` line for the merged directory or for the sibling `.gguf`. It does not create the model.\n\
+         4. Seat with Ollama by default. `local-seat` prints the `ollama create` line for the merged directory or for the sibling `.gguf`. When the weights are that `.gguf`, it also prints `llama-cli -m` and `llama-server -m` for the file. A merged directory still points at gguf-convert first. llama.cpp does not load the merged directory. `--runtime llama.cpp` selects the GGUF lines and still prints the Ollama line. It does not create the model and does not run llama.cpp.\n\
          \n\
          estate enrich local-seat --prepared {prepared} --weights <merged-hf-dir>\n\
          \n\
-         When the merged directory has a Modelfile, that command prints `ollama create {tag} -f <merged-hf-dir>/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, it prints a Modelfile whose FROM is that file and the same `ollama create` line.\n\
+         When the merged directory has a Modelfile, that command prints `ollama create {tag} -f <merged-hf-dir>/Modelfile`. Axolotl did not write that Modelfile. When you pass the sibling .gguf, it prints a Modelfile whose FROM is that file, the same `ollama create` line, and the llama.cpp lines for that file.\n\
          5. Record the same path. import-trained accepts the adapter directory, the merged directory, or a .gguf file. The seat tag on the proposal stays {seat}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          estate enrich import-trained --estate <estate.yaml> --prepared {prepared} --tag {tag_q} --adapter {outputs_q}\n\
@@ -166,17 +216,32 @@ struct SeatPrepare {
 }
 
 /// Read `prepare.json`, validate `weights` as a merged export or a GGUF, and
-/// build the seat report. An adapter directory is `refuse:seat`. Does not
-/// write and does not spawn a process.
+/// build the seat report. Runtime is Ollama. An adapter directory is
+/// `refuse:seat`. Does not write and does not spawn a process.
 pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatPlan, ModelError> {
+    plan_local_seat_for(prepared_dir, weights, LocalSeatRuntime::Ollama.as_str())
+}
+
+/// Same as [`plan_local_seat`] with an explicit runtime name.
+/// Shape, sacred, SKU, driver, and job checks run before the runtime parse.
+/// `ollama` is the default print. `llama.cpp` selects the GGUF lines.
+/// A merged directory still points at the convert line. Does not write and
+/// does not spawn a process.
+pub fn plan_local_seat_for(
+    prepared_dir: &Path,
+    weights: &Path,
+    runtime: &str,
+) -> Result<LocalSeatPlan, ModelError> {
     let prep = load_seat_prepare(prepared_dir, "weights", weights)?;
     let shape = classify_weights(weights)?;
+    let runtime = LocalSeatRuntime::parse(runtime)?;
     let plan = render_plan(
         prepared_dir,
         &prep.driver,
         &prep.pack_id,
         &prep.seat_tag,
         &prep.local_tag,
+        runtime,
         shape,
     )?;
     finish_seat_plan(plan)
@@ -187,8 +252,24 @@ pub fn plan_local_seat(prepared_dir: &Path, weights: &Path) -> Result<LocalSeatP
 /// `ADAPTER` is that directory. A merged export or a GGUF is `refuse:adapter`.
 /// Does not write and does not spawn a process.
 pub fn plan_adapter_seat(prepared_dir: &Path, adapter: &Path) -> Result<LocalSeatPlan, ModelError> {
+    plan_adapter_seat_for(prepared_dir, adapter, LocalSeatRuntime::Ollama.as_str())
+}
+
+/// Same as [`plan_adapter_seat`]. `--runtime llama.cpp` is `refuse:runtime`
+/// after the adapter shape checks. llama.cpp does not load an
+/// `adapter_config.json` directory in one line. Does not write and does not
+/// spawn a process.
+pub fn plan_adapter_seat_for(
+    prepared_dir: &Path,
+    adapter: &Path,
+    runtime: &str,
+) -> Result<LocalSeatPlan, ModelError> {
     let prep = load_seat_prepare(prepared_dir, "adapter", adapter)?;
     let shape = classify_adapter(adapter)?;
+    let runtime = LocalSeatRuntime::parse(runtime)?;
+    if runtime == LocalSeatRuntime::LlamaCpp {
+        return Err(refuse_adapter_llama_cpp());
+    }
     let plan = render_adapter(
         prepared_dir,
         &prep.driver,
@@ -196,9 +277,16 @@ pub fn plan_adapter_seat(prepared_dir: &Path, adapter: &Path) -> Result<LocalSea
         &prep.seat_tag,
         prep.train_base_model.as_deref(),
         &prep.local_tag,
+        runtime,
         shape,
     )?;
     finish_seat_plan(plan)
+}
+
+fn refuse_adapter_llama_cpp() -> ModelError {
+    ModelError::Other(
+        "refuse:runtime: llama.cpp does not load an adapter directory (adapter_config.json) as a one-line seat. --adapter stays the Ollama ADAPTER print (FROM the seat tag, ADAPTER this directory). Omit --runtime or pass --runtime ollama. This factory does not convert the adapter.".into(),
+    )
 }
 
 fn load_seat_prepare(
@@ -809,6 +897,7 @@ fn render_plan(
     pack_id: &str,
     seat_tag: &str,
     local_tag: &str,
+    runtime: LocalSeatRuntime,
     shape: WeightsShape,
 ) -> Result<LocalSeatPlan, ModelError> {
     match shape {
@@ -818,6 +907,7 @@ fn render_plan(
             pack_id,
             seat_tag,
             local_tag,
+            runtime,
             &dir,
             modelfile,
         ),
@@ -827,9 +917,45 @@ fn render_plan(
             pack_id,
             seat_tag,
             local_tag,
+            runtime,
             &file,
             modelfile,
         ),
+    }
+}
+
+/// Documented llama.cpp load lines for an existing GGUF.
+/// `llama-cli -m` and `llama-server -m` are the programs ggml-org/llama.cpp
+/// documents. `--port 8080` is the server example's port (the program default).
+fn llama_cpp_seat_lines(gguf: &Path) -> Vec<String> {
+    let quoted = shell_quote(&gguf.display().to_string());
+    vec![
+        format!("llama-cli -m {quoted}"),
+        format!("llama-server -m {quoted} --port 8080"),
+    ]
+}
+
+fn gguf_llama_cpp_block(runtime: LocalSeatRuntime, commands: &[String]) -> String {
+    let lines = commands.join("\n");
+    let lead = match runtime {
+        LocalSeatRuntime::Ollama => {
+            "Ollama stays the default print. llama.cpp seats this same GGUF. llama-cli and llama-server are the documented programs in ggml-org/llama.cpp. -m names this file. --port 8080 is the llama-server example port. llama.cpp does not read the Modelfile. This factory does not run those programs, does not download a model, and does not quantize."
+        }
+        LocalSeatRuntime::LlamaCpp => {
+            "Selected runtime is llama.cpp. llama-cli and llama-server are the documented programs in ggml-org/llama.cpp. -m names this file. --port 8080 is the llama-server example port. llama.cpp does not read the Modelfile. This factory does not run those programs, does not download a model, and does not quantize."
+        }
+    };
+    format!("{lead}\n\n{lines}\n")
+}
+
+fn merged_llama_cpp_note(runtime: LocalSeatRuntime) -> &'static str {
+    match runtime {
+        LocalSeatRuntime::Ollama => {
+            "llama.cpp does not load this Hugging Face directory. The convert line above writes the sibling GGUF. After that file exists, local-seat --weights on the file prints llama-cli and llama-server for it. This factory does not run those programs on this directory."
+        }
+        LocalSeatRuntime::LlamaCpp => {
+            "Selected runtime is llama.cpp. llama.cpp does not load this Hugging Face directory. The convert line above stays first. After that sibling GGUF exists, local-seat --weights on the file prints llama-cli and llama-server for it. This factory does not run those programs on this directory."
+        }
     }
 }
 
@@ -878,6 +1004,7 @@ fn render_merged(
     pack_id: &str,
     seat_tag: &str,
     local_tag: &str,
+    runtime: LocalSeatRuntime,
     dir: &Path,
     modelfile: Option<PathBuf>,
 ) -> Result<LocalSeatPlan, ModelError> {
@@ -889,8 +1016,10 @@ fn render_merged(
     let outfile = crate::gguf_convert::sibling_gguf_outfile(dir);
     let gguf_convert = crate::gguf_convert::gguf_convert_cli(prepared_dir, dir);
     let from_note = merged_from_note(driver, on_disk, &modelfile_path)?;
+    let llama_note = merged_llama_cpp_note(runtime);
+    let runtime_name = runtime.as_str();
     let report = format!(
-        "local-seat: shape=merged seat_tag={seat_tag} local_tag={local_tag} modelfile_on_disk={on_disk}\n\
+        "local-seat: shape=merged seat_tag={seat_tag} local_tag={local_tag} runtime={runtime_name} modelfile_on_disk={on_disk}\n\
          pack={pack_id}\n\
          driver={driver}\n\
          weights={weights}\n\
@@ -909,6 +1038,8 @@ fn render_merged(
          \n\
          Then run local-seat again with --weights pointing at that .gguf file.\n\
          \n\
+         {llama_note}\n\
+         \n\
          import-trained records this merged directory on the local_slm proposal. A merged export_dir is config.json and at least one .safetensors file whose name does not start with adapter_model. A Modelfile in that directory is part of that shape. The seat tag stays {seat_tag}. import-trained records trained_shape and trained_paths. import-trained does not apply and does not promote.\n\
          \n\
          {import}\n\
@@ -925,8 +1056,10 @@ fn render_merged(
         local_tag: local_tag.to_string(),
         pack_id: pack_id.to_string(),
         driver: driver.to_string(),
+        runtime: runtime_name.into(),
         modelfile_on_disk: on_disk,
         create_command: create,
+        llama_cpp_commands: Vec::new(),
         modelfile_text: None,
         report,
     })
@@ -938,6 +1071,7 @@ fn render_gguf(
     pack_id: &str,
     seat_tag: &str,
     local_tag: &str,
+    runtime: LocalSeatRuntime,
     file: &Path,
     modelfile: Option<PathBuf>,
 ) -> Result<LocalSeatPlan, ModelError> {
@@ -968,6 +1102,8 @@ fn render_gguf(
     };
     let create = ollama_create(local_tag, &modelfile_path);
     let import = import_trained_line(prepared_dir, local_tag, file);
+    let llama_cpp_commands = llama_cpp_seat_lines(&gguf_abs);
+    let llama_block = gguf_llama_cpp_block(runtime, &llama_cpp_commands);
     let write_note = if on_disk {
         if is_axolotl_driver(driver) {
             "The Modelfile FROM already names this GGUF. The create line uses that file. Axolotl did not write this GGUF."
@@ -983,8 +1119,9 @@ fn render_gguf(
         Some(body) => format!("\n{body}\n"),
         None => String::new(),
     };
-    let report = format!(
-        "local-seat: shape=gguf seat_tag={seat_tag} local_tag={local_tag} modelfile_on_disk={on_disk}\n\
+    let runtime_name = runtime.as_str();
+    let header = format!(
+        "local-seat: shape=gguf seat_tag={seat_tag} local_tag={local_tag} runtime={runtime_name} modelfile_on_disk={on_disk}\n\
          pack={pack_id}\n\
          driver={driver}\n\
          weights={weights}\n\
@@ -992,26 +1129,45 @@ fn render_gguf(
          promoted=false auto_apply=false estate_rewritten=false\n\
          \n\
          {write_note} Seat tag {seat_tag} is the Ollama id this cell already runs. The create name is {local_tag}. This factory does not run ollama and does not run llama.cpp.\n\
-         {printed}\
-         {create}\n\
-         \n\
-         import-trained records this GGUF on the local_slm proposal. A GGUF path is a .gguf file. The seat tag stays {seat_tag}. import-trained does not apply and does not promote.\n\
+         {printed}",
+        weights = file.display(),
+        modelfile = modelfile_path.display(),
+    );
+    let tail = format!(
+        "import-trained records this GGUF on the local_slm proposal. A GGUF path is a .gguf file. The seat tag stays {seat_tag}. import-trained does not apply and does not promote.\n\
          \n\
          {import}\n\
          \n\
          local-seat did not create a model.\n\
-         READY_FOR_LIVE_TEST: no.\n",
-        weights = file.display(),
-        modelfile = modelfile_path.display(),
+         READY_FOR_LIVE_TEST: no.\n"
     );
+    let report = if runtime == LocalSeatRuntime::LlamaCpp {
+        format!(
+            "{header}{llama_block}\n\
+             Ollama is the other seat. The create line below was not run.\n\
+             \n\
+             {create}\n\
+             \n\
+             {tail}"
+        )
+    } else {
+        format!(
+            "{header}{create}\n\
+             \n\
+             {llama_block}\n\
+             {tail}"
+        )
+    };
     Ok(LocalSeatPlan {
         shape: "gguf".into(),
         seat_tag: seat_tag.to_string(),
         local_tag: local_tag.to_string(),
         pack_id: pack_id.to_string(),
         driver: driver.to_string(),
+        runtime: runtime_name.into(),
         modelfile_on_disk: on_disk,
         create_command: create,
+        llama_cpp_commands,
         modelfile_text: text,
         report,
     })
@@ -1024,6 +1180,7 @@ fn render_adapter(
     seat_tag: &str,
     train_base: Option<&str>,
     local_tag: &str,
+    runtime: LocalSeatRuntime,
     shape: AdapterDir,
 ) -> Result<LocalSeatPlan, ModelError> {
     let from_token = modelfile_token(seat_tag);
@@ -1085,8 +1242,9 @@ fn render_adapter(
         Some(body) => format!("\n{body}\n"),
         None => String::new(),
     };
+    let runtime_name = runtime.as_str();
     let report = format!(
-        "local-seat: shape=adapter seat_tag={seat_tag} local_tag={local_tag} modelfile_on_disk={on_disk}\n\
+        "local-seat: shape=adapter seat_tag={seat_tag} local_tag={local_tag} runtime={runtime_name} modelfile_on_disk={on_disk}\n\
          pack={pack_id}\n\
          driver={driver}\n\
          adapter={adapter}\n\
@@ -1095,7 +1253,7 @@ fn render_adapter(
          modelfile={modelfile}\n\
          promoted=false auto_apply=false estate_rewritten=false\n\
          \n\
-         {write_note} Seat tag {seat_tag} is prepare.json seat_tag, the same string as base_model, and the Ollama id this cell already runs.{train_note}{weight_note} The create name is {local_tag}. This factory does not run ollama, does not merge, and does not write a GGUF. The create line below is printed and was not run.\n\
+         {write_note} Seat tag {seat_tag} is prepare.json seat_tag, the same string as base_model, and the Ollama id this cell already runs.{train_note}{weight_note} The create name is {local_tag}. This factory does not run ollama, does not merge, and does not write a GGUF. The create line below is printed and was not run. llama.cpp does not load this adapter directory. The printed seat stays the Ollama ADAPTER Modelfile. This factory does not convert the adapter.\n\
          {printed}\
          {create}\n\
          \n\
@@ -1115,8 +1273,10 @@ fn render_adapter(
         local_tag: local_tag.to_string(),
         pack_id: pack_id.to_string(),
         driver: driver.to_string(),
+        runtime: runtime_name.into(),
         modelfile_on_disk: on_disk,
         create_command: create,
+        llama_cpp_commands: Vec::new(),
         modelfile_text: text,
         report,
     })
@@ -2445,5 +2605,284 @@ mod tests {
         let body = reprinted.modelfile_text.unwrap();
         assert!(body.contains("FROM llama3\n"), "{body}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), mismatched);
+    }
+
+    fn assert_no_llama_cpp_command_line(report: &str) {
+        for line in report.lines() {
+            let trimmed = line.trim_start();
+            assert!(
+                !trimmed.starts_with("llama-cli ") && !trimmed.starts_with("llama-server "),
+                "{report}"
+            );
+        }
+    }
+
+    #[test]
+    fn gguf_prints_ollama_and_llama_cpp_lines_for_the_file() {
+        let root = tmp("gguf-runtime");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let dir = root.join("one");
+        std::fs::create_dir_all(&dir).unwrap();
+        let gguf = dir.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let before = std::fs::read(&gguf).unwrap();
+        let names_before = names(&dir);
+        let plan = plan_local_seat(&root, &dir).unwrap();
+        let abs = std::fs::canonicalize(&gguf).unwrap();
+        let quoted = shell_quote(&abs.display().to_string());
+        assert_eq!(plan.shape, "gguf");
+        assert_eq!(plan.runtime, "ollama");
+        assert!(plan.create_command.starts_with("ollama create "));
+        assert_eq!(
+            plan.llama_cpp_commands,
+            vec![
+                format!("llama-cli -m {quoted}"),
+                format!("llama-server -m {quoted} --port 8080"),
+            ]
+        );
+        assert!(plan.report.contains("runtime=ollama"), "{}", plan.report);
+        assert!(
+            plan.report.contains(&plan.llama_cpp_commands[0]),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains(&plan.llama_cpp_commands[1]),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("does not read the Modelfile"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("Ollama stays the default print"),
+            "{}",
+            plan.report
+        );
+        let ollama_at = plan.report.find("ollama create").unwrap();
+        let cli_at = plan.report.find("llama-cli -m").unwrap();
+        assert!(ollama_at < cli_at, "{}", plan.report);
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            !plan.report.contains("READY_FOR_LIVE_TEST: yes"),
+            "{}",
+            plan.report
+        );
+        assert_eq!(std::fs::read(&gguf).unwrap(), before);
+        assert_eq!(names(&dir), names_before);
+        assert!(!dir.join(MODELFILE_NAME).exists());
+
+        let file_plan = plan_local_seat(&root, &gguf).unwrap();
+        assert_eq!(file_plan.llama_cpp_commands, plan.llama_cpp_commands);
+        assert!(
+            !file_plan.llama_cpp_commands[0].ends_with(&format!(" {}", dir.display())),
+            "{}",
+            file_plan.llama_cpp_commands[0]
+        );
+
+        let selected = plan_local_seat_for(&root, &gguf, "llama.cpp").unwrap();
+        assert_eq!(selected.runtime, "llama.cpp");
+        assert_eq!(selected.llama_cpp_commands, plan.llama_cpp_commands);
+        assert!(selected.create_command.starts_with("ollama create "));
+        assert!(
+            selected.report.contains("Selected runtime is llama.cpp"),
+            "{}",
+            selected.report
+        );
+        let cli_at = selected.report.find("llama-cli -m").unwrap();
+        let ollama_at = selected.report.find("ollama create").unwrap();
+        assert!(cli_at < ollama_at, "{}", selected.report);
+        assert_eq!(names(&dir), names_before);
+
+        let alias = plan_local_seat_for(&root, &gguf, "llama-cpp").unwrap();
+        assert_eq!(alias.runtime, "llama.cpp");
+        assert_eq!(alias.llama_cpp_commands, plan.llama_cpp_commands);
+    }
+
+    #[test]
+    fn gguf_llama_cpp_line_quotes_a_metacharacter_path() {
+        let root = tmp("gguf-quote");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let gguf = root.join("model;drop.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let plan = plan_local_seat(&root, &gguf).unwrap();
+        let abs = std::fs::canonicalize(&gguf).unwrap();
+        let quoted = shell_quote(&abs.display().to_string());
+        assert!(quoted.starts_with('\''), "{quoted}");
+        assert_eq!(plan.llama_cpp_commands[0], format!("llama-cli -m {quoted}"));
+        assert_eq!(
+            plan.llama_cpp_commands[1],
+            format!("llama-server -m {quoted} --port 8080")
+        );
+        assert!(
+            plan.report.contains(&plan.llama_cpp_commands[0]),
+            "{}",
+            plan.report
+        );
+        assert!(!root.join(MODELFILE_NAME).exists());
+    }
+
+    #[test]
+    fn merged_points_at_convert_and_does_not_print_llama_cpp_load() {
+        let root = tmp("merged-runtime");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export");
+        std::fs::create_dir_all(&export).unwrap();
+        merged(&export, Some("FROM .\n"));
+        let plan = plan_local_seat(&root, &export).unwrap();
+        assert_eq!(plan.runtime, "ollama");
+        assert!(plan.llama_cpp_commands.is_empty());
+        assert!(plan.create_command.starts_with("ollama create "));
+        assert!(
+            plan.report.contains("convert_hf_to_gguf.py"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report
+                .contains("does not load this Hugging Face directory"),
+            "{}",
+            plan.report
+        );
+        assert_no_llama_cpp_command_line(&plan.report);
+        assert!(!root.join("export.gguf").exists());
+
+        let selected = plan_local_seat_for(&root, &export, "llama.cpp").unwrap();
+        assert_eq!(selected.runtime, "llama.cpp");
+        assert!(selected.llama_cpp_commands.is_empty());
+        assert!(selected.create_command.starts_with("ollama create "));
+        assert!(
+            selected.report.contains("convert_hf_to_gguf.py"),
+            "{}",
+            selected.report
+        );
+        assert!(
+            selected.report.contains("Selected runtime is llama.cpp"),
+            "{}",
+            selected.report
+        );
+        assert!(
+            selected
+                .report
+                .contains("does not load this Hugging Face directory"),
+            "{}",
+            selected.report
+        );
+        assert_no_llama_cpp_command_line(&selected.report);
+        assert!(!export.join("model.gguf").exists());
+        assert_eq!(
+            std::fs::read_to_string(export.join(MODELFILE_NAME)).unwrap(),
+            "FROM .\n"
+        );
+    }
+
+    #[test]
+    fn adapter_stays_ollama_and_llama_cpp_runtime_refuses_after_shape_checks() {
+        let root = tmp("adapter-runtime");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let adapter = root.join("outputs");
+        write_adapter(&adapter);
+        let plan = plan_adapter_seat(&root, &adapter).unwrap();
+        assert_eq!(plan.runtime, "ollama");
+        assert!(plan.llama_cpp_commands.is_empty());
+        assert!(plan.report.contains("FROM llama3\n"), "{}", plan.report);
+        assert!(plan.report.contains("ADAPTER "), "{}", plan.report);
+        assert!(
+            plan.report.contains("does not load this adapter directory"),
+            "{}",
+            plan.report
+        );
+        assert!(!plan.report.contains("llama-cli"), "{}", plan.report);
+        assert!(!adapter.join(MODELFILE_NAME).exists());
+
+        let err = plan_adapter_seat_for(&root, &adapter, "llama.cpp").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:runtime"), "{text}");
+        assert!(text.contains("adapter_config.json"), "{text}");
+        assert!(text.contains("does not convert the adapter"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+        assert!(!text.contains("ollama create"), "{text}");
+        assert!(!adapter.join(MODELFILE_NAME).exists());
+
+        let linked = root.join("linked-adapter");
+        std::os::unix::fs::symlink(&adapter, &linked).unwrap();
+        let err = plan_adapter_seat_for(&root, &linked, "llama.cpp").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("symlink"), "{text}");
+        assert!(!text.contains("refuse:runtime"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let err = plan_adapter_seat_for(&root, &gguf, "llama.cpp").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:adapter"), "{text}");
+        assert!(text.contains("GGUF"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+    }
+
+    #[test]
+    fn runtime_parse_does_not_weaken_shape_job_or_sacred_refuses() {
+        let root = tmp("runtime-order");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let missing = root.join("missing.gguf");
+        let err = plan_local_seat_for(&root, &missing, "mlx").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("missing"), "{text}");
+        assert!(!text.contains("refuse:runtime"), "{text}");
+
+        let gguf = root.join("model.gguf");
+        std::fs::write(&gguf, gguf_bytes()).unwrap();
+        let err = plan_local_seat_for(&root, &gguf, "mlx").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:runtime"), "{text}");
+        assert!(text.contains("mlx"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+
+        let err = plan_local_seat_for(&root, &gguf, "cyera").unwrap_err();
+        assert!(err.to_string().contains("refuse:sacred"), "{err}");
+
+        let sku = root.join("seat-5090.gguf");
+        std::fs::write(&sku, gguf_bytes()).unwrap();
+        let err = plan_local_seat_for(&root, &sku, "llama.cpp").unwrap_err();
+        assert!(err.to_string().contains("refuse:sku-banned"), "{err}");
+        assert!(!err.to_string().contains("llama-cli"), "{err}");
+
+        let linked = root.join("linked.gguf");
+        std::os::unix::fs::symlink(&gguf, &linked).unwrap();
+        let err = plan_local_seat_for(&root, &linked, "llama.cpp").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:seat"), "{text}");
+        assert!(text.contains("symlink"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+
+        let export = root.join("export");
+        std::fs::create_dir_all(&export).unwrap();
+        merged(&export, Some("FROM .\n"));
+        write_prepare(&root, "unsloth-qlora", "train", Some("llama3"), false);
+        let err = plan_local_seat_for(&root, &export, "llama.cpp").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("refuse:driver"), "{text}");
+        assert!(text.contains("unsloth-qlora"), "{text}");
+        assert!(!text.contains("llama-cli"), "{text}");
+
+        write_prepare(
+            &root,
+            LLAMAFACTORY_QLORA_ID,
+            "enrich",
+            Some("llama3"),
+            false,
+        );
+        let err = plan_local_seat_for(&root, &export, "not-a-runtime").unwrap_err();
+        assert!(err.to_string().contains("refuse:job"), "{err}");
+        assert!(!err.to_string().contains("refuse:runtime"), "{err}");
     }
 }

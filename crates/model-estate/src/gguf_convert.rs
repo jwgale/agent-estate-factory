@@ -133,7 +133,7 @@ pub fn plan_gguf_convert(
          \n\
          {convert}\n\
          \n\
-         Then seat that file. local-seat prints the ollama create line. It does not create the model.\n\
+         Then seat that file. local-seat prints the ollama create line and, for that GGUF, llama-cli -m and llama-server -m. It does not create the model and does not run those programs.\n\
          \n\
          {seat}\n\
          \n\

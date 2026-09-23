@@ -282,10 +282,12 @@ pub(crate) fn run() -> Result<()> {
                 prepared,
                 weights,
                 adapter,
+                runtime,
             } => crate::enrich::cmd_enrich_local_seat(
                 &prepared,
                 weights.as_deref(),
                 adapter.as_deref(),
+                &runtime,
             ),
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },

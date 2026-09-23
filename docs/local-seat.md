@@ -17,7 +17,7 @@ python3 convert_hf_to_gguf.py <merged-dir> --outfile <sibling>.gguf --outtype au
 ```
 
 `--outtype auto` is `convert_hf_to_gguf.py`'s default (highest-fidelity 16-bit float, f16 or bf16). The outfile is a sibling of the merged directory (`export.gguf` beside `export`). A `.gguf` inside the merged directory makes that directory match two shapes. This factory does not run the script and does not choose a quantization type. `q8_0`, `tq1_0`, and `tq2_0` stay off this card. `llama-quantize` is a later llama.cpp tool. This factory does not print a quant command.
-4. Seat with Ollama. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.
+4. Seat with Ollama. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile. A GGUF also prints `llama-cli -m` and `llama-server -m` for that file. A merged directory is not a llama.cpp seat until the convert writes the sibling GGUF.
 5. `estate enrich import-trained` records that same path on the `local_slm` proposal. `estate enrich apply-proposal`, then `estate plan` and `estate apply --require-plan`, stay the join.
 
 `PREPARE.md` and `NEXT.md` on both LLaMA-Factory cards repeat this chain.
@@ -58,6 +58,15 @@ ollama create cell-enrich-<pack-id> -f <export>/Modelfile
 
 When `--weights` is a `.gguf` file, the report prints a Modelfile whose FROM is that file, then the `ollama create` line. When a LLaMA-Factory Modelfile is in the same directory, TEMPLATE and PARAMETER lines are copied into the printed text. The file on disk is left as it was. Save the printed text, then run the create line. This factory does not invent a chat template.
 
+The same GGUF report also prints the documented llama.cpp lines for that file:
+
+```bash
+llama-cli -m <gguf>
+llama-server -m <gguf> --port 8080
+```
+
+`llama-cli -m` and `llama-server -m` are the programs ggml-org/llama.cpp documents for an existing GGUF. `--port 8080` is that server example's port. llama.cpp does not read the Modelfile. Ollama stays the default print, so the `ollama create` line stays in the report. `--runtime llama.cpp` prints the llama.cpp lines first and still prints the Ollama line. A directory that holds one `.gguf` file names that file, not the directory. This factory does not run `llama-cli` or `llama-server`.
+
 A GGUF directory that holds one `.gguf` file is the same shape. Point `--weights` at the file when the directory also holds other shapes.
 
 The report also prints the `import-trained` line for the same path. A merged export_dir is `config.json` and at least one `.safetensors` file whose name does not start with `adapter_model`. `adapter_model-00001-of-00002.safetensors` is an adapter shard, not merged evidence. A Modelfile in that directory is part of that shape. A GGUF is a `.gguf` file. The seat tag on the proposal stays the prepare seat tag. `import-trained` records `trained_shape` and `trained_paths`. `import-trained` does not apply and does not promote. A symlinked `--weights` path, and a symlinked marker (`config.json`, `Modelfile`, `.gguf`, `.safetensors`), is `refuse:seat`.
@@ -85,6 +94,8 @@ estate enrich local-seat \
   --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
   --adapter .cell/enrich/<pack-id>/llamafactory-qlora/outputs
 ```
+
+llama.cpp does not load this adapter directory in one line. The print stays the Ollama `ADAPTER` Modelfile. `--runtime llama.cpp` with `--adapter` is `refuse:runtime`. This factory does not convert the adapter.
 
 The report shape is `adapter`. It prints a Modelfile:
 
@@ -114,6 +125,8 @@ ADAPTER <adapter-directory>
 | More than one of adapter, merged, and GGUF | `refuse:seat` |
 | More than one `.gguf` file in a directory | `refuse:seat` |
 | File that is not `.gguf`, or a `.gguf` that does not start with GGUF magic | `refuse:seat` |
+| `--runtime` other than `ollama` or `llama.cpp` (`llama-cpp` and `llamacpp` are the `llama.cpp` aliases) | `refuse:runtime` (after the shape checks) |
+| `--runtime llama.cpp` with `--adapter` | `refuse:runtime` (llama.cpp does not load an adapter directory in one line) |
 | Modelfile with no `FROM` line, empty, or not utf-8 | `refuse:modelfile` |
 | Prepare driver is not `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` | `refuse:driver` |
 | Job is not `train` | `refuse:job` |

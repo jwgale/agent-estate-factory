@@ -393,7 +393,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export.gguf
 ```
 
-The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. It does not create the model. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). A missing GGUF is `refuse:seat`.
+The create name is `cell-enrich-<pack-id>`. The seat tag in the report is `prepare.json` `seat_tag` (`llama3` in the example). The command prints a Modelfile whose `FROM` is that GGUF, then `ollama create cell-enrich-<pack-id> -f` that file. The same report prints `llama-cli -m` and `llama-server -m` for that GGUF. `--runtime llama.cpp` selects those lines. Ollama stays the default print. It does not create the model and does not run llama.cpp. To seat the merged directory itself, point `--weights` at `export` when that directory contains the LLaMA-Factory Modelfile (`FROM .`). That directory still points at `gguf-convert` before any llama.cpp load line. A missing GGUF is `refuse:seat`.
 
 To seat `outputs/` without a merge, pass `--adapter` instead of `--weights`. The printed Modelfile uses `FROM` `prepare.json` `seat_tag` and `ADAPTER` that directory. The command prints `ollama create` and does not run it. `--weights` still refuses the adapter directory (`refuse:seat`). A merged export or a GGUF passed to `--adapter` is `refuse:adapter`.
 
