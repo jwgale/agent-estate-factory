@@ -81,6 +81,9 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("refuse:train-base"), "{body}");
         assert!(body.contains("train_base_model"), "{body}");
         assert!(body.contains("--max-steps"), "{body}");
+        assert!(body.contains("--official-scale"), "{body}");
+        assert!(body.contains("refuse:official-scale"), "{body}");
+        assert!(body.contains("refuse:export"), "{body}");
         assert!(body.contains("params.model"), "{body}");
         assert!(body.contains("docs/TRAIN-ENRICH.md"), "{body}");
         assert!(body.contains("docs/LIVE-PROBES.md"), "{body}");
@@ -1924,6 +1927,8 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
     );
     let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
     assert!(!export.contains("quantization_bit"), "{export}");
+    assert!(export.contains("# merge_status: not_run"), "{export}");
+    assert!(export.contains("This prepare did not merge"), "{export}");
     assert!(
         export
             .lines()
@@ -2030,5 +2035,152 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
     let still: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
     assert_eq!(still["trained_shape"], "adapter");
+    assert_eq!(estate_bytes(), before);
+}
+
+#[test]
+fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
+    let root = tmp("official-scale");
+    let sacred = fixture("policy/sacred.yaml");
+    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+    let before = estate_bytes();
+
+    let out = root.join("lora");
+    let prepared = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--official-scale",
+            "--out",
+            &out.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let prepared_text = text(&prepared);
+    assert!(prepared.status.success(), "{prepared_text}");
+    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+    for line in [
+        "cutoff_len: 2048",
+        "num_train_epochs: 3.0",
+        "gradient_accumulation_steps: 8",
+        "warmup_ratio: 0.1",
+        "lora_rank: 8",
+        "packing: false",
+    ] {
+        assert!(
+            recipe.lines().any(|row| row.trim() == line),
+            "{line} missing\n{recipe}"
+        );
+    }
+    assert!(
+        !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
+        "{recipe}"
+    );
+    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+    assert!(next.contains("This prepare did not merge"), "{next}");
+    assert!(next.contains("The merge has not happened."), "{next}");
+    assert!(
+        next.contains("Do not set quantization_bit on export.yaml"),
+        "{next}"
+    );
+    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+    assert!(!export.contains("quantization_bit"), "{export}");
+    assert!(export.contains("# merge_status: not_run"), "{export}");
+
+    let gauge = root.join("gauge");
+    let gauged = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "llamafactory-lora",
+            "--official-scale",
+            "--max-steps",
+            "10",
+            "--out",
+            &gauge.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(gauged.status.success(), "{}", text(&gauged));
+    let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
+    assert!(
+        gauge_recipe.lines().any(|row| row.trim() == "max_steps: 10"),
+        "{gauge_recipe}"
+    );
+    assert!(
+        gauge_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+        "{gauge_recipe}"
+    );
+    assert!(!gauge_recipe.contains("quantization_bit"), "{gauge_recipe}");
+
+    let blocked = root.join("ollama");
+    let refused = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "prepare",
+            "--estate",
+            &seated.display().to_string(),
+            "--pack",
+            &pack,
+            "--driver",
+            "ollama-modelfile",
+            "--official-scale",
+            "--out",
+            &blocked.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let refused_text = text(&refused);
+    assert!(!refused.status.success(), "{refused_text}");
+    assert!(
+        refused_text.contains("refuse:official-scale"),
+        "{refused_text}"
+    );
+    assert!(!blocked.exists());
+
+    let export_path = out.join("export.yaml");
+    let original = std::fs::read_to_string(&export_path).unwrap();
+    std::fs::write(&export_path, format!("{original}quantization_bit: 4\n")).unwrap();
+    let adapter = root.join("adapter");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+    let imported = estate_bin()
+        .args([
+            "--sacred",
+            &sacred,
+            "enrich",
+            "import-trained",
+            "--estate",
+            &seated.display().to_string(),
+            "--prepared",
+            &out.display().to_string(),
+            "--tag",
+            "cell-enrich-overnight-traces",
+            "--adapter",
+            &adapter.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    let imported_text = text(&imported);
+    assert!(!imported.status.success(), "{imported_text}");
+    assert!(imported_text.contains("refuse:export"), "{imported_text}");
     assert_eq!(estate_bytes(), before);
 }

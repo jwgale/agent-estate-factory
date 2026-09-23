@@ -308,6 +308,16 @@ if grep -q "bitsandbytes>=0.49" "$WORKDIR/llamafactory-lora/NEXT.md"; then
 fi
 grep -q "pip install llamafactory" "$WORKDIR/llamafactory-lora/NEXT.md"
 grep -q "examples/train_lora/qwen3_lora_sft.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "^cutoff_len: 512$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^num_train_epochs: 1.0$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^gradient_accumulation_steps: 4$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "^warmup_ratio: 0.03$" "$WORKDIR/llamafactory-lora/recipe.yaml"
+grep -q "# merge_status: not_run" "$WORKDIR/llamafactory-lora/export.yaml"
+grep -q "This prepare did not merge" "$WORKDIR/llamafactory-lora/export.yaml"
+grep -q "This prepare did not merge" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "The merge has not happened." "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "Do not set quantization_bit on export.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
+grep -q "llamafactory-cli export has not run" "$WORKDIR/llamafactory-lora/PREPARE.md"
 grep -q "llamafactory-cli train $WORKDIR/llamafactory-lora/recipe.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
 grep -q "llamafactory-cli export $WORKDIR/llamafactory-lora/export.yaml" "$WORKDIR/llamafactory-lora/NEXT.md"
 python3 - "$WORKDIR/llamafactory-lora/prepare.json" <<'PY'
@@ -740,4 +750,138 @@ if [[ "$BEFORE" != "$AFTER" ]]; then
   exit 1
 fi
 
-echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, feed hydrate, import-trained; SKIP live train)"
+echo "-- official-scale writes the qwen3 lora sft fields and keeps the gauge path --"
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --official-scale \
+  --out "$WORKDIR/lora-official"
+grep -q "^cutoff_len: 2048$" "$WORKDIR/lora-official/recipe.yaml"
+grep -q "^num_train_epochs: 3.0$" "$WORKDIR/lora-official/recipe.yaml"
+grep -q "^gradient_accumulation_steps: 8$" "$WORKDIR/lora-official/recipe.yaml"
+grep -q "^warmup_ratio: 0.1$" "$WORKDIR/lora-official/recipe.yaml"
+grep -q "^lora_rank: 8$" "$WORKDIR/lora-official/recipe.yaml"
+grep -q "^packing: false$" "$WORKDIR/lora-official/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/lora-official/recipe.yaml"; then
+  echo "FAIL  official-scale LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+if grep -q "quantization_method" "$WORKDIR/lora-official/recipe.yaml"; then
+  echo "FAIL  official-scale LoRA recipe must omit quantization_method"
+  exit 1
+fi
+if grep -q "^max_steps:" "$WORKDIR/lora-official/recipe.yaml"; then
+  echo "FAIL  official-scale without --max-steps must leave max_steps unset"
+  exit 1
+fi
+grep -q "This prepare did not merge" "$WORKDIR/lora-official/NEXT.md"
+grep -q "The merge has not happened." "$WORKDIR/lora-official/NEXT.md"
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-lora \
+  --official-scale \
+  --max-steps 10 \
+  --out "$WORKDIR/lora-official-gauge"
+grep -q "^max_steps: 10$" "$WORKDIR/lora-official-gauge/recipe.yaml"
+grep -q "^save_steps: 10$" "$WORKDIR/lora-official-gauge/recipe.yaml"
+grep -q "^cutoff_len: 2048$" "$WORKDIR/lora-official-gauge/recipe.yaml"
+grep -q "^num_train_epochs: 3.0$" "$WORKDIR/lora-official-gauge/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/lora-official-gauge/recipe.yaml"; then
+  echo "FAIL  official-scale gauge LoRA recipe must omit quantization_bit"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver llamafactory-qlora \
+  --official-scale \
+  --out "$WORKDIR/qlora-official"
+grep -q "^cutoff_len: 2048$" "$WORKDIR/qlora-official/recipe.yaml"
+grep -q "quantization_bit: 4" "$WORKDIR/qlora-official/recipe.yaml"
+grep -q "quantization_method: bnb" "$WORKDIR/qlora-official/recipe.yaml"
+if grep -q "quantization_bit" "$WORKDIR/qlora-official/export.yaml"; then
+  echo "FAIL  official-scale QLoRA export.yaml must omit quantization_bit"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-lora \
+  --official-scale \
+  --out "$WORKDIR/axolotl-official"
+grep -q "^adapter: lora$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "^load_in_4bit: false$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "^num_epochs: 1$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "^gradient_accumulation_steps: 2$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "^sequence_len: 2048$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "^warmup_ratio: 0.1$" "$WORKDIR/axolotl-official/axolotl.yml"
+grep -q "This card stays on examples/llama-3/lora-1b.yml" "$WORKDIR/axolotl-official/NEXT.md"
+if grep -q "^adapter: qlora$" "$WORKDIR/axolotl-official/axolotl.yml"; then
+  echo "FAIL  official-scale axolotl-lora must stay bf16 LoRA"
+  exit 1
+fi
+
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver axolotl-qlora \
+  --official-scale \
+  --out "$WORKDIR/axolotl-qlora-official"
+grep -q "^adapter: qlora$" "$WORKDIR/axolotl-qlora-official/axolotl.yml"
+grep -q "^load_in_4bit: true$" "$WORKDIR/axolotl-qlora-official/axolotl.yml"
+grep -q "^sequence_len: 4096$" "$WORKDIR/axolotl-qlora-official/axolotl.yml"
+grep -q "^num_epochs: 4$" "$WORKDIR/axolotl-qlora-official/axolotl.yml"
+grep -q "^gradient_accumulation_steps: 4$" "$WORKDIR/axolotl-qlora-official/axolotl.yml"
+
+set +e
+estate enrich prepare \
+  --estate "$SEATED" \
+  --pack "$PACK" \
+  --driver ollama-modelfile \
+  --official-scale \
+  --out "$WORKDIR/ollama-official" \
+  >/tmp/train-prepare-official-ollama.out 2>/tmp/train-prepare-official-ollama.err
+official_ollama_rc=$?
+set -e
+if [[ "$official_ollama_rc" -eq 0 ]]; then
+  echo "FAIL  --official-scale on ollama-modelfile must refuse"
+  exit 1
+fi
+if ! grep -q "refuse:official-scale" /tmp/train-prepare-official-ollama.out /tmp/train-prepare-official-ollama.err; then
+  echo "FAIL  ollama official-scale did not refuse:official-scale"
+  cat /tmp/train-prepare-official-ollama.out /tmp/train-prepare-official-ollama.err
+  exit 1
+fi
+if [[ -e "$WORKDIR/ollama-official" ]]; then
+  echo "FAIL  official-scale refuse wrote an output directory"
+  exit 1
+fi
+
+QUANT_DIR="$WORKDIR/lora-quant-export"
+cp -a "$WORKDIR/lora-official" "$QUANT_DIR"
+printf '\nquantization_bit: 4\n' >> "$QUANT_DIR/export.yaml"
+set +e
+estate enrich import-trained \
+  --estate "$SEATED" \
+  --prepared "$QUANT_DIR" \
+  --tag cell-enrich-overnight-traces \
+  --adapter "$ADAPTER" \
+  >/tmp/train-prepare-quant-export.out 2>/tmp/train-prepare-quant-export.err
+quant_rc=$?
+set -e
+if [[ "$quant_rc" -eq 0 ]]; then
+  echo "FAIL  quantized export.yaml must refuse:export"
+  exit 1
+fi
+if ! grep -q "refuse:export" /tmp/train-prepare-quant-export.out /tmp/train-prepare-quant-export.err; then
+  echo "FAIL  quantized export did not refuse:export"
+  cat /tmp/train-prepare-quant-export.out /tmp/train-prepare-quant-export.err
+  exit 1
+fi
+
+echo "PASS  train-prepare (LLaMA-Factory LoRA and QLoRA, Axolotl LoRA and QLoRA, official scale, feed hydrate, import-trained; SKIP live train)"

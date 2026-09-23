@@ -408,7 +408,21 @@ The LoRA card does not require bitsandbytes. QLoRA still needs
 bitsandbytes: pip install 'bitsandbytes>=0.49'.
 A short gauge run passes --max-steps 10. Axolotl writes max_steps and
 omits saves_per_epoch on that gauge. The default recipe leaves
-max_steps unset.
+max_steps unset. Pass --official-scale to write the LLaMA-Factory
+examples/train_lora/qwen3_lora_sft.yaml scale on llamafactory-lora and
+llamafactory-qlora only: cutoff_len 2048, num_train_epochs 3.0,
+gradient_accumulation_steps 8, warmup_ratio 0.1.
+Rank, packing, and quantization stay on the selected LLaMA-Factory card.
+--max-steps still overrides epochs. axolotl-lora and axolotl-qlora
+stay on their example files when that flag is set.
+Omit the flag for the short LLaMA-Factory recipe. A prepare with
+--official-scale and no train recipe card is refuse:official-scale.
+
+export.yaml is the merge card. Prepare does not merge. NEXT.md says
+the merge has not happened, points at llamafactory-cli export, and
+says to leave that file unquantized. import-trained refuses
+export.yaml when it sets quantization_bit or quantization_method
+(refuse:export). A comment line does not trip that refuse.
 
 dataset.jsonl defaults to a scaffold (or a three-row stub when the
 pack source_paths list is empty). prepare.json records dataset_mode,

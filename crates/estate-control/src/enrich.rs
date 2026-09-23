@@ -36,6 +36,7 @@ pub(crate) fn cmd_enrich_prepare(
     job: Option<&str>,
     curator: &str,
     max_steps: Option<u32>,
+    official_scale: bool,
     from_feed: bool,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
@@ -58,6 +59,7 @@ pub(crate) fn cmd_enrich_prepare(
             job: job.as_str(),
             out_dir,
             max_steps,
+            official_scale,
             from_feed,
             state_dir,
         })
@@ -112,6 +114,7 @@ pub(crate) fn cmd_enrich_from_pack(
     job: Option<&str>,
     curator: &str,
     max_steps: Option<u32>,
+    official_scale: bool,
     from_feed: bool,
 ) -> Result<()> {
     if all_drivers && driver.is_some() {
@@ -133,6 +136,7 @@ pub(crate) fn cmd_enrich_from_pack(
         job,
         curator,
         max_steps,
+        official_scale,
         from_feed,
     )
 }

@@ -101,6 +101,10 @@ pub struct EnrichJob {
     pub out_dir: PathBuf,
     /// Explicit gauge cap. LLaMA-Factory and Axolotl both write `max_steps`. `None` leaves it unset.
     pub max_steps: Option<u32>,
+    /// Official SFT scale from LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`.
+    /// `--official-scale` applies to LLaMA-Factory cards only: cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1.
+    /// Axolotl stays on its example files. `false` keeps the short LLaMA-Factory recipe.
+    pub official_scale: bool,
     /// Train recipe cards set this. Other cards leave it unset.
     pub dataset: Option<DatasetMaterial>,
 }
@@ -397,8 +401,12 @@ fn is_train_recipe_driver(id: &str) -> bool {
     TRAIN_RECIPE_DRIVERS.contains(&id)
 }
 
-/// Smoke-scale cutoff. LLaMA-Factory SFT examples use 2048 for a longer run.
+/// Smoke-scale cutoff. `--official-scale` writes 2048.
 const LLAMAFACTORY_CUTOFF_LEN: u32 = 512;
+/// `examples/train_lora/qwen3_lora_sft.yaml` cutoff_len.
+const LLAMAFACTORY_OFFICIAL_CUTOFF_LEN: u32 = 2048;
+const LLAMAFACTORY_SMOKE_GRAD_ACCUM: u32 = 4;
+const LLAMAFACTORY_OFFICIAL_GRAD_ACCUM: u32 = 8;
 const LLAMAFACTORY_SEED: u32 = 42;
 const LLAMAFACTORY_DATASET_NAME: &str = "cell_enrich";
 
@@ -670,6 +678,10 @@ pub struct PrepareEnrichRequest<'a> {
     pub out_dir: &'a Path,
     /// LLaMA-Factory gauge cap. `None` leaves `max_steps` off the recipe.
     pub max_steps: Option<u32>,
+    /// `--official-scale` applies to LLaMA-Factory cards only: cutoff 2048, epochs 3.0, grad accum 8, warmup 0.1.
+    /// Axolotl stays on its example files. `false` keeps the short LLaMA-Factory recipe.
+    /// `--max-steps` still overrides epochs.
+    pub official_scale: bool,
     /// Copy instruct rows from pack `source_paths` under `state_dir`.
     pub from_feed: bool,
     /// Cell state directory. Pack source paths are relative to this directory.
@@ -835,6 +847,18 @@ pub fn prepare_enrich_set(
             TRAIN_RECIPE_DRIVERS.join(", ")
         )));
     }
+    if reqs.iter().any(|req| req.official_scale)
+        && !reqs
+            .iter()
+            .any(|req| is_train_recipe_driver(req.driver_id))
+    {
+        return Err(ModelError::Other(
+            format!(
+                "refuse:official-scale: --official-scale applies to {}. This prepare has no train recipe card. Omit --official-scale to keep the other cards.",
+                TRAIN_RECIPE_DRIVERS.join(", ")
+            ),
+        ));
+    }
     let mut drivers = BTreeSet::new();
     let mut outs = BTreeSet::new();
     for req in reqs {
@@ -877,7 +901,14 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
             kind.as_str()
         )));
     }
-    let mut job = enrich_job(req.pack, req.estate, kind, req.out_dir, req.max_steps)?;
+    let mut job = enrich_job(
+        req.pack,
+        req.estate,
+        kind,
+        req.out_dir,
+        req.max_steps,
+        req.official_scale,
+    )?;
     refuse_job_text(&job)?;
     canonicalize_recipe_train_base(req.driver_id, &mut job)?;
     if is_train_recipe_driver(req.driver_id) {
@@ -1099,6 +1130,7 @@ fn enrich_job(
     kind: EnrichJobKind,
     out_dir: &Path,
     max_steps: Option<u32>,
+    official_scale: bool,
 ) -> Result<EnrichJob, ModelError> {
     let purpose = {
         let note = pack.note.trim();
@@ -1129,6 +1161,7 @@ fn enrich_job(
         source_drivers: pack.source_drivers.clone(),
         out_dir: absolute_path(out_dir),
         max_steps,
+        official_scale,
         dataset: None,
     };
     Ok(job)
@@ -1399,8 +1432,9 @@ fn next_markdown(
     } else if let Some(method) = llamafactory_method(driver_id) {
         let recipe = out_dir.join("recipe.yaml");
         let export = out_dir.join("export.yaml");
-        let outputs = out_dir.join("outputs");
-        let export_dir = out_dir.join("export");
+        let adapter_dir = llamafactory_adapter_dir(job);
+        let export_dir = llamafactory_export_dir(job);
+        let outputs = adapter_dir.clone();
         let train_command = llamafactory_train_command(&recipe);
         let export_command = llamafactory_export_command(&export);
         let train_base = job.train_base_model.as_deref().unwrap_or("");
@@ -1437,7 +1471,7 @@ fn next_markdown(
                  \n\
                  {gauge}\n\
                  \n\
-                 Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, FROM must be an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
+                 This prepare did not merge. The merge has not happened. {export_dir} has no merged weights until llamafactory-cli export exits 0. Merge with llamafactory-cli export. Do not set quantization_bit on export.yaml, and do not merge a quantized base. adapter_name_or_path is {adapter_dir}, the same path as recipe.yaml output_dir. After a finished train, adapter_config.json is in that directory. An early stop may leave the adapter only under checkpoint-<step> inside that directory. Point adapter_name_or_path at that checkpoint directory. This prepare does not rewrite export.yaml after train. A Modelfile that llamafactory-cli export writes into {export_dir} is that tool's file. This factory did not write it. LLaMA-Factory does not write GGUF. After the merge, convert with llama.cpp if you want a GGUF, then seat tag {tag} on Ollama with FROM that GGUF. To load the adapter without a merge, FROM must be an Ollama model of this same train base, plus ADAPTER for the adapter directory. The seat tag {seat} is the id this cell already runs. This factory does not run ollama create.\n\
                  \n\
                  After that tag is seated, send a short prompt that checks the pack purpose. This factory does not run that smoke eval.\n\
                  \n\
@@ -1461,8 +1495,10 @@ fn next_markdown(
                 export_command = export_command,
                 install = llamafactory_install_lines(method),
                 bits = llamafactory_bitsandbytes_note(method),
-                shape = llamafactory_shape_note(method),
-                gauge = llamafactory_gauge_note(job.max_steps),
+                shape = llamafactory_shape_note(method, job.official_scale),
+                gauge = llamafactory_gauge_note(job.max_steps, job.official_scale),
+                export_dir = export_dir.display(),
+                adapter_dir = adapter_dir.display(),
             ),
             format!(
                 "Adapter output_dir (directory contains adapter_config.json):\n\
@@ -1516,7 +1552,7 @@ fn next_markdown(
                 seat = job.base_model,
                 train = train_base,
                 shape = axolotl_shape_note(method),
-                gauge = axolotl_gauge_note(method, job.max_steps),
+                gauge = axolotl_gauge_note(method, job.max_steps, job.official_scale),
             ),
             format!(
                 "Adapter output_dir (directory contains adapter_config.json):\n\
@@ -2535,19 +2571,36 @@ fn llamafactory_bitsandbytes_note(method: LlamaFactoryMethod) -> &'static str {
     }
 }
 
-fn llamafactory_shape_note(method: LlamaFactoryMethod) -> String {
+fn llamafactory_shape_note(method: LlamaFactoryMethod, official_scale: bool) -> String {
+    let scale = llamafactory_scale_clause(method, official_scale);
     match method {
         LlamaFactoryMethod::Qlora => format!(
-            "This card is 4-bit QLoRA (`quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {}, packing on).",
+            "This card is 4-bit QLoRA (`quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {}, packing on). {scale}",
             method.lora_rank()
         ),
         LlamaFactoryMethod::Lora => format!(
-            "This card is 16-bit LoRA. `lora_rank` is {}, matching LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. `lora_alpha` is {} (`lora_rank` times 2, the value LLaMA-Factory uses when `lora_alpha` is unset). `packing` is false, matching that file's unset packing (the LLaMA-Factory default). `cutoff_len` stays {cutoff}, `num_train_epochs` stays 1.0, `gradient_accumulation_steps` stays 4, and `warmup_ratio` stays 0.03 so a first prepare stays short. That official file uses `cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, and `warmup_ratio` 0.1. Raise those fields before a longer run.",
+            "This card is 16-bit LoRA. `lora_rank` is {}, matching LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. `lora_alpha` is {} (`lora_rank` times 2, the value LLaMA-Factory uses when `lora_alpha` is unset). `packing` is false, matching that file's unset packing (the LLaMA-Factory default). {scale}",
             method.lora_rank(),
             method.lora_alpha(),
-            cutoff = LLAMAFACTORY_CUTOFF_LEN,
         ),
     }
+}
+
+fn llamafactory_scale_clause(method: LlamaFactoryMethod, official_scale: bool) -> String {
+    if official_scale {
+        return "This prepare used `--official-scale`. `cutoff_len` is 2048, `num_train_epochs` is 3.0, `gradient_accumulation_steps` is 8, and `warmup_ratio` is 0.1, matching LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml`. Rank, packing, and quantization stay on this card. `--max-steps` still overrides `num_train_epochs` when it is set.".into();
+    }
+    let lead = match method {
+        LlamaFactoryMethod::Lora => format!(
+            "`cutoff_len` stays {cutoff}, `num_train_epochs` stays 1.0, `gradient_accumulation_steps` stays 4, and `warmup_ratio` stays 0.03 so a first prepare stays short. That official file uses `cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, and `warmup_ratio` 0.1.",
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        ),
+        LlamaFactoryMethod::Qlora => format!(
+            "`cutoff_len` stays {cutoff}, `num_train_epochs` stays 1.0, `gradient_accumulation_steps` stays 4, and `warmup_ratio` stays 0.03 so a first prepare stays short. LLaMA-Factory `examples/train_lora/qwen3_lora_sft.yaml` uses `cutoff_len` 2048, `num_train_epochs` 3.0, `gradient_accumulation_steps` 8, and `warmup_ratio` 0.1.",
+            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        ),
+    };
+    format!("{lead} Re-prepare with `--official-scale` to write those four fields.")
 }
 
 fn llamafactory_prepare_steps(
@@ -2561,20 +2614,21 @@ fn llamafactory_prepare_steps(
     let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
     let template = llamafactory_template(train_base);
     let reproduce = phi_qlora_reproduce_note(method, train_base);
+    let scale = llamafactory_scale(job.official_scale);
     let recipe_line = match method {
         LlamaFactoryMethod::Qlora => format!(
             "The recipe is SFT QLoRA (`stage: sft`, `finetuning_type: lora`, `quantization_bit: 4`, `quantization_method: bnb`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: true`).",
             rank = method.lora_rank(),
-            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+            cutoff = scale.cutoff,
         ),
         LlamaFactoryMethod::Lora => format!(
             "The recipe is SFT LoRA (`stage: sft`, `finetuning_type: lora`, LoRA rank {rank}, `cutoff_len` {cutoff}, `packing: false`). It omits quantization_bit and quantization_method.",
             rank = method.lora_rank(),
-            cutoff = LLAMAFACTORY_CUTOFF_LEN,
+            cutoff = scale.cutoff,
         ),
     };
     format!(
-        "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. {recipe_line} It did not run llamafactory-cli, did not train, did not download weights, and did not call CUDA.\n\
+        "This step wrote recipe.yaml, export.yaml, dataset_info.json, and dataset.jsonl. {recipe_line} It did not run llamafactory-cli, did not train, did not merge, did not download weights, and did not call CUDA.\n\
          \n\
          {host}\n\
          \n\
@@ -2603,20 +2657,26 @@ fn llamafactory_prepare_steps(
          llamafactory-cli train recipe.yaml\n\
          llamafactory-cli export export.yaml\n\
          \n\
+         This prepare did not merge. llamafactory-cli export has not run. The export directory has no merged weights. export.yaml is the merge card for that later command. This prepare does not rewrite export.yaml after train.\n\
+         \n\
          The copy-paste lines with absolute paths are in NEXT.md. Ollama stays the local-run seat after the adapter or the merged weights exist. This factory does not export GGUF.\n",
         seat = job.base_model,
         train = train_base,
         template = template,
         reproduce = reproduce,
         bits = llamafactory_bitsandbytes_note(method),
-        shape = llamafactory_shape_note(method),
-        gauge = llamafactory_gauge_note(job.max_steps),
+        shape = llamafactory_shape_note(method, job.official_scale),
+        gauge = llamafactory_gauge_note(job.max_steps, job.official_scale),
         install = llamafactory_install_lines(method),
     )
 }
 
-fn llamafactory_gauge_note(max_steps: Option<u32>) -> String {
-    let base = "A short gauge run does not need a full epoch. Re-prepare with `--max-steps 10`. LLaMA-Factory overrides `num_train_epochs` when `max_steps` is set. When that count is under 50, this prepare sets `save_steps` to the same count so a checkpoint is written during the short run. The default recipe keeps `num_train_epochs: 1.0` and `save_steps: 50`, and leaves `max_steps` unset.";
+fn llamafactory_gauge_note(max_steps: Option<u32>, official_scale: bool) -> String {
+    let base = if official_scale {
+        "This prepare used --official-scale. cutoff_len is 2048, num_train_epochs is 3.0, gradient_accumulation_steps is 8, and warmup_ratio is 0.1. A short gauge run passes `--max-steps 10` on the same prepare. LLaMA-Factory overrides `num_train_epochs` when `max_steps` is set. When that count is under 50, this prepare sets `save_steps` to the same count so a checkpoint is written during the short run."
+    } else {
+        "A short gauge run does not need a full epoch. Re-prepare with `--max-steps 10`. LLaMA-Factory overrides `num_train_epochs` when `max_steps` is set. When that count is under 50, this prepare sets `save_steps` to the same count so a checkpoint is written during the short run. The default recipe keeps `num_train_epochs: 1.0` and `save_steps: 50`, and leaves `max_steps` unset."
+    };
     match max_steps {
         Some(steps) => format!("{base}\n\nThis recipe is a gauge run with max_steps {steps}."),
         None => base.to_string(),
@@ -2918,6 +2978,22 @@ fn refuse_recipe_train_record(
                 doc.base_model
             )));
         }
+        if *name == "export.yaml" {
+            refuse_quantized_export(&text)?;
+        }
+    }
+    Ok(())
+}
+
+/// A real yaml key. Comment lines are ignored, so a note can name the hazard
+/// without refusing a card this prepare already wrote.
+fn refuse_quantized_export(text: &str) -> Result<(), ModelError> {
+    for key in ["quantization_bit", "quantization_method"] {
+        if yaml_field(text, key).is_some() {
+            return Err(ModelError::Other(format!(
+                "refuse:export: export.yaml sets {key}. LLaMA-Factory refuses to merge adapters into a quantized model. Leave export.yaml unquantized. This prepare did not merge."
+            )));
+        }
     }
     Ok(())
 }
@@ -3041,6 +3117,47 @@ fn llamafactory_dataset_info() -> String {
     )
 }
 
+struct LlamaFactoryScale {
+    cutoff: u32,
+    grad_accum: u32,
+    epochs: &'static str,
+    warmup: &'static str,
+}
+
+fn llamafactory_scale(official_scale: bool) -> LlamaFactoryScale {
+    if official_scale {
+        LlamaFactoryScale {
+            cutoff: LLAMAFACTORY_OFFICIAL_CUTOFF_LEN,
+            grad_accum: LLAMAFACTORY_OFFICIAL_GRAD_ACCUM,
+            epochs: "3.0",
+            warmup: "0.1",
+        }
+    } else {
+        LlamaFactoryScale {
+            cutoff: LLAMAFACTORY_CUTOFF_LEN,
+            grad_accum: LLAMAFACTORY_SMOKE_GRAD_ACCUM,
+            epochs: "1.0",
+            warmup: "0.03",
+        }
+    }
+}
+
+fn llamafactory_adapter_dir(job: &EnrichJob) -> PathBuf {
+    job.out_dir.join("outputs")
+}
+
+fn llamafactory_export_dir(job: &EnrichJob) -> PathBuf {
+    job.out_dir.join("export")
+}
+
+fn llamafactory_scale_comment(official_scale: bool, cutoff: u32) -> String {
+    if official_scale {
+        "# Official scale from examples/train_lora/qwen3_lora_sft.yaml: cutoff_len 2048, num_train_epochs 3.0, gradient_accumulation_steps 8, warmup_ratio 0.1.\n".into()
+    } else {
+        format!("# Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n")
+    }
+}
+
 fn llamafactory_recipe_yaml(
     job: &EnrichJob,
     mode: &str,
@@ -3048,7 +3165,8 @@ fn llamafactory_recipe_yaml(
     method: LlamaFactoryMethod,
 ) -> String {
     let template = llamafactory_template(train_base);
-    let outputs = job.out_dir.join("outputs");
+    let outputs = llamafactory_adapter_dir(job);
+    let scale = llamafactory_scale(job.official_scale);
     let host = yaml_comment_line(&llamafactory_host_note(
         method.driver_id(),
         &job.host_class_affinity,
@@ -3059,6 +3177,10 @@ fn llamafactory_recipe_yaml(
             "# Gauge run. max_steps {steps} overrides num_train_epochs.\n\
              max_steps: {steps}\n"
         ),
+        None if job.official_scale => {
+            "# Official scale keeps num_train_epochs 3.0. A short gauge run passes --max-steps. This file leaves max_steps unset.\n"
+                .to_string()
+        }
         None => {
             "# One epoch. A short gauge run passes --max-steps. This file leaves max_steps unset.\n"
                 .to_string()
@@ -3099,7 +3221,7 @@ fn llamafactory_recipe_yaml(
          # dataset_mode: {mode}\n\
          # {host}\n\
          {method_comment}\
-         # Smoke-scale cutoff_len is {cutoff}. Official SFT examples use 2048 for a longer run.\n\
+         {scale_comment}\
          model_name_or_path: {train}\n\
          trust_remote_code: true\n\
          stage: sft\n\
@@ -3127,12 +3249,12 @@ fn llamafactory_recipe_yaml(
          save_only_model: false\n\
          report_to: none\n\
          per_device_train_batch_size: 1\n\
-         gradient_accumulation_steps: 4\n\
+         gradient_accumulation_steps: {grad_accum}\n\
          learning_rate: 1.0e-4\n\
-         num_train_epochs: 1.0\n\
+         num_train_epochs: {epochs}\n\
          {gauge}\
          lr_scheduler_type: cosine\n\
-         warmup_ratio: 0.03\n\
+         warmup_ratio: {warmup}\n\
          bf16: true\n\
          seed: {seed}\n",
         schema = PREPARE_SCHEMA,
@@ -3140,7 +3262,11 @@ fn llamafactory_recipe_yaml(
         pack = job.pack_id,
         seat = job.base_model,
         train_comment = train_base,
-        cutoff = LLAMAFACTORY_CUTOFF_LEN,
+        cutoff = scale.cutoff,
+        grad_accum = scale.grad_accum,
+        epochs = scale.epochs,
+        warmup = scale.warmup,
+        scale_comment = llamafactory_scale_comment(job.official_scale, scale.cutoff),
         rank = method.lora_rank(),
         alpha = method.lora_alpha(),
         seed = LLAMAFACTORY_SEED,
@@ -3161,17 +3287,23 @@ fn llamafactory_recipe_yaml(
 
 fn llamafactory_export_yaml(job: &EnrichJob, train_base: &str, driver_id: &str) -> String {
     let template = llamafactory_template(train_base);
-    let adapter = job.out_dir.join("outputs");
-    let export_dir = job.out_dir.join("export");
+    let adapter = llamafactory_adapter_dir(job);
+    let export_dir = llamafactory_export_dir(job);
     format!(
         "# schema: {schema}\n\
          # driver: {driver}\n\
          # seat_tag: {seat}\n\
          # train_base: {train_comment}\n\
+         # merge_status: not_run\n\
+         # This prepare did not merge. The merge has not happened.\n\
+         # export_dir is empty until llamafactory-cli export exits 0.\n\
          # Merge only. Leave this file unquantized. Do not merge a quantized base.\n\
          # model_name_or_path is the train base: the unquantized Hugging Face repo or local HF weights you trained from.\n\
          # The seat tag is the Ollama id for Modelfile FROM. It is a different field.\n\
-         # adapter_name_or_path is the train output_dir.\n\
+         # adapter_name_or_path equals recipe.yaml output_dir.\n\
+         # After a finished train, adapter_config.json is in that directory.\n\
+         # An early stop may leave the adapter only under checkpoint-<step> inside that directory. Point adapter_name_or_path at that checkpoint directory. This prepare does not rewrite this file after train.\n\
+         # A Modelfile that llamafactory-cli export writes into export_dir belongs to that tool. This factory did not write it.\n\
          # LLaMA-Factory does not export GGUF. Convert the merge with llama.cpp if you want an Ollama GGUF.\n\
          # template is inferred from the train base and must match recipe.yaml. Train and seat share one chat template.\n\
          model_name_or_path: {train}\n\
@@ -3254,15 +3386,29 @@ fn axolotl_shape_note(method: AxolotlMethod) -> String {
     }
 }
 
-fn axolotl_gauge_note(method: AxolotlMethod, max_steps: Option<u32>) -> String {
+fn axolotl_gauge_note(
+    method: AxolotlMethod,
+    max_steps: Option<u32>,
+    official_scale: bool,
+) -> String {
     let epochs = method.num_epochs();
     let base = format!(
         "A short gauge run does not need the full num_epochs ({epochs}). Re-prepare with `--max-steps 10`. Axolotl's `max_steps` precedes `num_epochs`: when both are set, training stops at `max_steps`. When that count is under {AXOLOTL_SAVE_STEPS}, this prepare sets `save_steps` to the same count and omits `saves_per_epoch`. Axolotl refuses to set both. The default recipe keeps `num_epochs` {epochs} and `saves_per_epoch` 1, and leaves `max_steps` unset."
     );
-    match max_steps {
+    let mut note = match max_steps {
         Some(steps) => format!("{base}\n\nThis recipe is a gauge run with max_steps {steps}."),
         None => base,
+    };
+    if official_scale {
+        note.push_str(&format!(
+            "\n\nThis prepare used --official-scale. That flag writes the LLaMA-Factory SFT scale on llamafactory-lora and llamafactory-qlora. This card stays on {}: num_epochs {}, gradient_accumulation_steps {}, sequence_len {}, warmup_ratio 0.1.",
+            method.example_file(),
+            method.num_epochs(),
+            method.gradient_accumulation_steps(),
+            method.sequence_len(),
+        ));
     }
+    note
 }
 
 fn axolotl_prepare_steps(
@@ -3313,7 +3459,7 @@ fn axolotl_prepare_steps(
         seat = job.base_model,
         train = train_base,
         shape = axolotl_shape_note(method),
-        gauge = axolotl_gauge_note(method, job.max_steps),
+        gauge = axolotl_gauge_note(method, job.max_steps, job.official_scale),
     )
 }
 
@@ -5542,6 +5688,7 @@ mod tests {
             job,
             out_dir: out,
             max_steps,
+            official_scale: false,
             from_feed: false,
             state_dir: Path::new(".cell"),
         })
@@ -5563,6 +5710,7 @@ mod tests {
             job: "train",
             out_dir: out,
             max_steps: None,
+            official_scale: false,
             from_feed,
             state_dir,
         })
@@ -6894,6 +7042,507 @@ mod tests {
     }
 
     #[test]
+    fn official_scale_and_export_merge_honesty() {
+        let root = tmp("official-scale");
+        let pack = fixture_pack();
+        let estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+
+        let smoke = root.join("smoke-lora");
+        run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &smoke,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let smoke_recipe = std::fs::read_to_string(smoke.join("recipe.yaml")).unwrap();
+        for line in [
+            "cutoff_len: 512",
+            "num_train_epochs: 1.0",
+            "gradient_accumulation_steps: 4",
+            "warmup_ratio: 0.03",
+            "lora_rank: 8",
+            "packing: false",
+        ] {
+            assert!(
+                smoke_recipe.lines().any(|row| row.trim() == line),
+                "{line} missing from {smoke_recipe}"
+            );
+        }
+        assert!(
+            !smoke_recipe.contains("quantization_bit") && !smoke_recipe.contains("quantization_method"),
+            "{smoke_recipe}"
+        );
+        let smoke_export = std::fs::read_to_string(smoke.join("export.yaml")).unwrap();
+        assert!(smoke_export.contains("# merge_status: not_run"), "{smoke_export}");
+        assert!(
+            smoke_export.contains("This prepare did not merge"),
+            "{smoke_export}"
+        );
+        assert!(!smoke_export.contains("quantization_bit"), "{smoke_export}");
+        assert!(!smoke_export.contains("quantization_method"), "{smoke_export}");
+        assert_eq!(
+            yaml_field(&smoke_recipe, "output_dir").as_deref(),
+            yaml_field(&smoke_export, "adapter_name_or_path").as_deref()
+        );
+        let smoke_next = std::fs::read_to_string(smoke.join("NEXT.md")).unwrap();
+        assert!(smoke_next.contains("This prepare did not merge"), "{smoke_next}");
+        assert!(
+            smoke_next.contains("The merge has not happened."),
+            "{smoke_next}"
+        );
+        assert!(
+            smoke_next.contains("Do not set quantization_bit on export.yaml"),
+            "{smoke_next}"
+        );
+        assert!(
+            smoke_next.contains("does not rewrite export.yaml after train"),
+            "{smoke_next}"
+        );
+        let export_dir = yaml_field(&smoke_export, "export_dir").unwrap();
+        assert!(smoke_next.contains(&export_dir), "{smoke_next}");
+        assert!(export_dir.ends_with("/export"), "{export_dir}");
+        let smoke_prepare = std::fs::read_to_string(smoke.join("PREPARE.md")).unwrap();
+        assert!(
+            smoke_prepare.contains("This prepare did not merge"),
+            "{smoke_prepare}"
+        );
+        assert!(
+            smoke_prepare.contains("llamafactory-cli export has not run"),
+            "{smoke_prepare}"
+        );
+
+        let official = root.join("official-lora");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_LORA_ID,
+            job: "train",
+            out_dir: &official,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let official_recipe = std::fs::read_to_string(official.join("recipe.yaml")).unwrap();
+        for line in [
+            "cutoff_len: 2048",
+            "num_train_epochs: 3.0",
+            "gradient_accumulation_steps: 8",
+            "warmup_ratio: 0.1",
+            "lora_rank: 8",
+            "packing: false",
+        ] {
+            assert!(
+                official_recipe.lines().any(|row| row.trim() == line),
+                "{line} missing from {official_recipe}"
+            );
+        }
+        assert!(
+            official_recipe.contains("examples/train_lora/qwen3_lora_sft.yaml"),
+            "{official_recipe}"
+        );
+        assert!(
+            !official_recipe
+                .lines()
+                .any(|row| row.trim_start().starts_with("max_steps:")),
+            "{official_recipe}"
+        );
+        assert!(
+            !official_recipe.contains("quantization_bit")
+                && !official_recipe.contains("quantization_method"),
+            "{official_recipe}"
+        );
+        let official_next = std::fs::read_to_string(official.join("NEXT.md")).unwrap();
+        assert!(
+            official_next.contains("This prepare used `--official-scale`"),
+            "{official_next}"
+        );
+        assert!(official_next.contains("`cutoff_len` is 2048"), "{official_next}");
+
+        let qlora = root.join("official-qlora");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_QLORA_ID,
+            job: "train",
+            out_dir: &qlora,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let qlora_recipe = std::fs::read_to_string(qlora.join("recipe.yaml")).unwrap();
+        assert!(
+            qlora_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe
+                .lines()
+                .any(|row| row.trim() == "num_train_epochs: 3.0"),
+            "{qlora_recipe}"
+        );
+        assert!(qlora_recipe.contains("quantization_bit: 4"), "{qlora_recipe}");
+        assert!(
+            qlora_recipe.contains("quantization_method: bnb"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.lines().any(|row| row.trim() == "lora_rank: 16"),
+            "{qlora_recipe}"
+        );
+        assert!(
+            qlora_recipe.lines().any(|row| row.trim() == "packing: true"),
+            "{qlora_recipe}"
+        );
+        let qlora_export = std::fs::read_to_string(qlora.join("export.yaml")).unwrap();
+        assert!(!qlora_export.contains("quantization_bit"), "{qlora_export}");
+
+        let gauge = root.join("official-gauge");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_LORA_ID,
+            job: "train",
+            out_dir: &gauge,
+            max_steps: Some(10),
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
+        assert!(
+            gauge_recipe.lines().any(|row| row.trim() == "max_steps: 10"),
+            "{gauge_recipe}"
+        );
+        assert!(
+            gauge_recipe.lines().any(|row| row.trim() == "save_steps: 10"),
+            "{gauge_recipe}"
+        );
+        assert!(
+            gauge_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            "{gauge_recipe}"
+        );
+        assert!(
+            gauge_recipe
+                .lines()
+                .any(|row| row.trim() == "num_train_epochs: 3.0"),
+            "{gauge_recipe}"
+        );
+        assert!(
+            !gauge_recipe.contains("quantization_bit") && !gauge_recipe.contains("quantization_method"),
+            "{gauge_recipe}"
+        );
+        let gauge_next = std::fs::read_to_string(gauge.join("NEXT.md")).unwrap();
+        assert!(
+            gauge_next.contains("gauge run with max_steps 10"),
+            "{gauge_next}"
+        );
+
+        let ax = root.join("axolotl-official");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: AXOLOTL_LORA_ID,
+            job: "train",
+            out_dir: &ax,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let ax_yaml = std::fs::read_to_string(ax.join("axolotl.yml")).unwrap();
+        assert!(
+            ax_yaml.lines().any(|row| row.trim() == "adapter: lora"),
+            "{ax_yaml}"
+        );
+        assert!(
+            ax_yaml.lines().any(|row| row.trim() == "load_in_4bit: false"),
+            "{ax_yaml}"
+        );
+        assert!(
+            ax_yaml.lines().any(|row| row.trim() == "num_epochs: 1"),
+            "{ax_yaml}"
+        );
+        assert!(
+            ax_yaml
+                .lines()
+                .any(|row| row.trim() == "gradient_accumulation_steps: 2"),
+            "{ax_yaml}"
+        );
+        assert!(
+            ax_yaml.lines().any(|row| row.trim() == "sequence_len: 2048"),
+            "{ax_yaml}"
+        );
+        assert!(
+            ax_yaml.lines().any(|row| row.trim() == "warmup_ratio: 0.1"),
+            "{ax_yaml}"
+        );
+        let ax_next = std::fs::read_to_string(ax.join("NEXT.md")).unwrap();
+        assert!(
+            ax_next.contains("This card stays on examples/llama-3/lora-1b.yml"),
+            "{ax_next}"
+        );
+        let ax_q = root.join("axolotl-qlora-official");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: AXOLOTL_QLORA_ID,
+            job: "train",
+            out_dir: &ax_q,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap();
+        let ax_q_yaml = std::fs::read_to_string(ax_q.join("axolotl.yml")).unwrap();
+        assert!(
+            ax_q_yaml.lines().any(|row| row.trim() == "adapter: qlora"),
+            "{ax_q_yaml}"
+        );
+        assert!(
+            ax_q_yaml
+                .lines()
+                .any(|row| row.trim() == "load_in_4bit: true"),
+            "{ax_q_yaml}"
+        );
+        assert!(
+            ax_q_yaml.lines().any(|row| row.trim() == "sequence_len: 4096"),
+            "{ax_q_yaml}"
+        );
+        assert!(
+            ax_q_yaml.lines().any(|row| row.trim() == "num_epochs: 4"),
+            "{ax_q_yaml}"
+        );
+        let ax_default = root.join("axolotl-default");
+        run(
+            AXOLOTL_LORA_ID,
+            &pack,
+            &estate,
+            &ax_default,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let ax_default_yaml = std::fs::read_to_string(ax_default.join("axolotl.yml")).unwrap();
+        assert!(
+            ax_default_yaml
+                .lines()
+                .any(|row| row.trim() == "num_epochs: 1"),
+            "{ax_default_yaml}"
+        );
+        assert!(
+            ax_default_yaml
+                .lines()
+                .any(|row| row.trim() == "gradient_accumulation_steps: 2"),
+            "{ax_default_yaml}"
+        );
+        assert!(
+            ax_default_yaml
+                .lines()
+                .any(|row| row.trim() == "warmup_ratio: 0.1"),
+            "{ax_default_yaml}"
+        );
+        assert!(
+            ax_default_yaml
+                .lines()
+                .any(|row| row.trim() == "adapter: lora"),
+            "{ax_default_yaml}"
+        );
+        assert!(!ax_default_yaml.contains("Official scale"), "{ax_default_yaml}");
+
+        let state = root.join("cell");
+        write_fixture_feed(&state);
+        let fed = root.join("feed-official");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_LORA_ID,
+            job: "train",
+            out_dir: &fed,
+            max_steps: None,
+            official_scale: true,
+            from_feed: true,
+            state_dir: &state,
+        })
+        .unwrap();
+        let fed_doc = std::fs::read_to_string(fed.join("prepare.json")).unwrap();
+        assert!(fed_doc.contains("\"dataset_mode\": \"feed\""), "{fed_doc}");
+        let fed_recipe = std::fs::read_to_string(fed.join("recipe.yaml")).unwrap();
+        assert!(
+            fed_recipe.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            "{fed_recipe}"
+        );
+        assert!(
+            !fed_recipe.contains("quantization_bit") && !fed_recipe.contains("quantization_method"),
+            "{fed_recipe}"
+        );
+
+        let blocked = root.join("ollama-official");
+        let err = prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: "ollama-modelfile",
+            job: "enrich",
+            out_dir: &blocked,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:official-scale"), "{err}");
+        assert!(err.to_string().contains("axolotl-qlora"), "{err}");
+        assert!(!blocked.exists());
+
+        let drivers = train_enrich_drivers_for_job("train").unwrap();
+        let all_dirs: Vec<_> = drivers
+            .iter()
+            .map(|id| root.join(format!("all-{id}")))
+            .collect();
+        let all_reqs: Vec<PrepareEnrichRequest<'_>> = drivers
+            .iter()
+            .zip(all_dirs.iter())
+            .map(|(id, dir)| PrepareEnrichRequest {
+                estate: &estate,
+                pack: &pack,
+                curator: "jason",
+                driver_id: *id,
+                job: "train",
+                out_dir: dir,
+                max_steps: None,
+                official_scale: true,
+                from_feed: false,
+                state_dir: Path::new(".cell"),
+            })
+            .collect();
+        let all_docs = prepare_enrich_set(&all_reqs).unwrap();
+        assert_eq!(all_docs.len(), 6);
+        let all_modelfile =
+            std::fs::read_to_string(root.join("all-ollama-modelfile").join("Modelfile")).unwrap();
+        assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
+        let all_lora =
+            std::fs::read_to_string(root.join("all-llamafactory-lora").join("recipe.yaml")).unwrap();
+        assert!(
+            all_lora.lines().any(|row| row.trim() == "cutoff_len: 2048"),
+            "{all_lora}"
+        );
+        assert!(
+            !all_lora.contains("quantization_bit") && !all_lora.contains("quantization_method"),
+            "{all_lora}"
+        );
+        let all_ax =
+            std::fs::read_to_string(root.join("all-axolotl-lora").join("axolotl.yml")).unwrap();
+        assert!(
+            all_ax.lines().any(|row| row.trim() == "adapter: lora"),
+            "{all_ax}"
+        );
+        assert!(
+            all_ax.lines().any(|row| row.trim() == "num_epochs: 1"),
+            "{all_ax}"
+        );
+        let all_axq =
+            std::fs::read_to_string(root.join("all-axolotl-qlora").join("axolotl.yml")).unwrap();
+        assert!(
+            all_axq.lines().any(|row| row.trim() == "adapter: qlora"),
+            "{all_axq}"
+        );
+        assert!(
+            all_axq.lines().any(|row| row.trim() == "sequence_len: 4096"),
+            "{all_axq}"
+        );
+
+        let adapter = root.join("adapter");
+        std::fs::create_dir_all(&adapter).unwrap();
+        std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+        let export_path = official.join("export.yaml");
+        let original_export = std::fs::read_to_string(&export_path).unwrap();
+        let checkpoint = official.join("outputs").join("checkpoint-10");
+        let retargeted = original_export.replace(
+            &format!(
+                "adapter_name_or_path: \"{}\"",
+                official.join("outputs").display()
+            ),
+            &format!("adapter_name_or_path: \"{}\"", checkpoint.display()),
+        );
+        assert_ne!(retargeted, original_export);
+        std::fs::write(&export_path, &retargeted).unwrap();
+        import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &official,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+
+        let commented = format!("# quantization_bit: 4\n{original_export}");
+        std::fs::write(&export_path, &commented).unwrap();
+        import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &official,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap();
+
+        std::fs::write(
+            &export_path,
+            format!("{original_export}quantization_bit: 4\n"),
+        )
+        .unwrap();
+        let quant = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &official,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(quant.to_string().contains("refuse:export"), "{quant}");
+        assert!(quant.to_string().contains("quantization_bit"), "{quant}");
+        assert!(
+            quant.to_string().contains("This prepare did not merge"),
+            "{quant}"
+        );
+
+        std::fs::write(
+            &export_path,
+            format!("{original_export}quantization_method: bnb\n"),
+        )
+        .unwrap();
+        let method = import_trained(&ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir: &official,
+            tag: "cell-enrich-overnight-traces",
+            adapter: &adapter,
+            curator: "jason",
+        })
+        .unwrap_err();
+        assert!(method.to_string().contains("refuse:export"), "{method}");
+        assert!(
+            method.to_string().contains("quantization_method"),
+            "{method}"
+        );
+    }
+
+    #[test]
     fn axolotl_lora_prepares_a_recipe_and_imports_the_adapter() {
         let root = tmp("axolotl");
         let pack = fixture_pack();
@@ -7095,6 +7744,7 @@ mod tests {
                 job: "train",
                 out_dir: dir,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             })
@@ -7152,6 +7802,7 @@ mod tests {
                 job: "train",
                 out_dir: dir,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             })
@@ -8401,6 +9052,7 @@ mod tests {
                 job: "train",
                 out_dir: dir,
                 max_steps: None,
+                official_scale: false,
                 from_feed: true,
                 state_dir: &missing_state,
             })
@@ -8707,6 +9359,7 @@ mod tests {
             job: "enrich",
             out_dir: &ollama_out,
             max_steps: None,
+            official_scale: false,
             from_feed: true,
             state_dir: &state,
         })
@@ -8932,6 +9585,7 @@ mod tests {
                 job: "enrich",
                 out_dir: &manifest_out,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             },
@@ -8943,6 +9597,7 @@ mod tests {
                 job: "enrich",
                 out_dir: &ollama_out,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             },
@@ -8978,6 +9633,7 @@ mod tests {
                 job: "enrich",
                 out_dir: &blocked_m,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             },
@@ -8989,6 +9645,7 @@ mod tests {
                 job: "enrich",
                 out_dir: &blocked_o,
                 max_steps: None,
+                official_scale: false,
                 from_feed: false,
                 state_dir: Path::new(".cell"),
             },
