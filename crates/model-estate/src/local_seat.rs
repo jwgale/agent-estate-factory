@@ -824,14 +824,32 @@ fn modelfile_from_token(path: &Path) -> String {
 }
 
 fn shell_quote(text: &str) -> String {
-    if text
-        .chars()
-        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\' | '$' | '`'))
-    {
+    if text.chars().any(shell_quote_char) {
         format!("'{}'", text.replace('\'', "'\\''"))
     } else {
         text.to_string()
     }
+}
+
+fn shell_quote_char(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(
+            c,
+            '"' | '\''
+                | '\\'
+                | '$'
+                | '`'
+                | ';'
+                | '|'
+                | '&'
+                | '<'
+                | '>'
+                | '('
+                | ')'
+                | '!'
+                | '*'
+                | '?'
+        )
 }
 
 fn file_name(path: &Path) -> Result<String, ModelError> {
@@ -1174,6 +1192,50 @@ mod tests {
         std::fs::write(root.join("mf").join(MODELFILE_NAME), "FROM .\n").unwrap();
         let err = plan_local_seat(&root, &root.join("mf")).unwrap_err();
         assert!(err.to_string().contains("no merged weights"), "{err}");
+    }
+
+    #[test]
+    fn shell_quote_wraps_metacharacters_in_the_printed_command() {
+        assert_eq!(shell_quote("/tmp/cell-one"), "/tmp/cell-one");
+        assert_eq!(shell_quote("a'b"), r"'a'\''b'");
+        let mut apostrophe_and_semi = String::from("'a'");
+        apostrophe_and_semi.push('\\');
+        apostrophe_and_semi.push('\'');
+        apostrophe_and_semi.push_str("';b'");
+        assert_eq!(shell_quote("a';b"), apostrophe_and_semi);
+        for raw in [';', '|', '&', '<', '>', '(', ')', '\n', '!', '*', '?'] {
+            let quoted = shell_quote(&format!("/tmp/cell{raw}one"));
+            assert!(
+                quoted.starts_with('\'') && quoted.ends_with('\''),
+                "{raw:?} -> {quoted}"
+            );
+            assert!(quoted.contains(raw), "{raw:?} -> {quoted}");
+        }
+
+        let root = tmp("quote");
+        write_prepare(&root, LLAMAFACTORY_QLORA_ID, "train", Some("llama3"), false);
+        let export = root.join("export;drop");
+        std::fs::create_dir_all(&export).unwrap();
+        merged(&export, Some("FROM .\n"));
+        let plan = plan_local_seat(&root, &export).unwrap();
+        let modelfile = export.join(MODELFILE_NAME);
+        let quoted = shell_quote(&modelfile.display().to_string());
+        assert!(quoted.starts_with('\''), "{quoted}");
+        assert_eq!(
+            plan.create_command,
+            format!("ollama create cell-enrich-overnight-traces -f {quoted}")
+        );
+        assert!(plan.report.contains(&plan.create_command), "{}", plan.report);
+        assert!(
+            plan.report.contains("READY_FOR_LIVE_TEST: no"),
+            "{}",
+            plan.report
+        );
+        assert!(
+            plan.report.contains("local-seat did not create a model."),
+            "{}",
+            plan.report
+        );
     }
 
     #[test]
