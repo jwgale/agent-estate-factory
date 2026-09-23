@@ -581,16 +581,19 @@ if grep -q "Edit axolotl.yml" "$WORKDIR/axolotl/NEXT.md"; then
   echo "FAIL  axolotl-lora NEXT.md must not ask for a hand edit"
   exit 1
 fi
-grep -q "estate enrich gguf-convert --prepared $WORKDIR/axolotl --weights <merged-hf-dir>" "$WORKDIR/axolotl/NEXT.md"
-grep -q "estate enrich local-seat --prepared $WORKDIR/axolotl --weights <merged-hf-dir>" "$WORKDIR/axolotl/NEXT.md"
-grep -q "python3 convert_hf_to_gguf.py <merged-hf-dir> --outfile <sibling>.gguf --outtype auto" "$WORKDIR/axolotl/NEXT.md"
-grep -q "Axolotl does not write GGUF" "$WORKDIR/axolotl/NEXT.md"
-grep -q "Axolotl does not write GGUF" "$WORKDIR/axolotl/PREPARE.md"
-grep -q "estate enrich gguf-convert --prepared $WORKDIR/axolotl --weights <merged-hf-dir>" "$WORKDIR/axolotl/PREPARE.md"
-if grep -q "merge-lora" "$WORKDIR/axolotl/NEXT.md" "$WORKDIR/axolotl/PREPARE.md"; then
-  echo "FAIL  axolotl-lora must not invent a merge command"
+grep -q "estate enrich merge-adapt --prepared $WORKDIR/axolotl --adapter $WORKDIR/axolotl/outputs" "$WORKDIR/axolotl/NEXT.md"
+grep -q "axolotl merge-lora $WORKDIR/axolotl/axolotl.yml --lora-model-dir=$WORKDIR/axolotl/outputs" "$WORKDIR/axolotl/NEXT.md"
+if grep -q -- "--dequant" "$WORKDIR/axolotl/NEXT.md" "$WORKDIR/axolotl/PREPARE.md"; then
+  echo "FAIL  axolotl-lora merge print must stay the bf16 line"
   exit 1
 fi
+grep -q "estate enrich gguf-convert --prepared $WORKDIR/axolotl --weights $WORKDIR/axolotl/outputs/merged" "$WORKDIR/axolotl/NEXT.md"
+grep -q "estate enrich local-seat --prepared $WORKDIR/axolotl --weights $WORKDIR/axolotl/outputs/merged" "$WORKDIR/axolotl/NEXT.md"
+grep -q "python3 convert_hf_to_gguf.py $WORKDIR/axolotl/outputs/merged --outfile $WORKDIR/axolotl/outputs/merged.gguf --outtype auto" "$WORKDIR/axolotl/NEXT.md"
+grep -q "Axolotl does not write GGUF" "$WORKDIR/axolotl/NEXT.md"
+grep -q "Axolotl does not write GGUF" "$WORKDIR/axolotl/PREPARE.md"
+grep -q "estate enrich merge-adapt --prepared $WORKDIR/axolotl --adapter $WORKDIR/axolotl/outputs" "$WORKDIR/axolotl/PREPARE.md"
+grep -q "axolotl merge-lora $WORKDIR/axolotl/axolotl.yml --lora-model-dir=$WORKDIR/axolotl/outputs" "$WORKDIR/axolotl/PREPARE.md"
 
 echo "-- axolotl-qlora matches examples/llama-3/qlora.yml --"
 estate enrich prepare \
@@ -619,12 +622,11 @@ if grep -q "Edit axolotl.yml" "$WORKDIR/axolotl-qlora/NEXT.md"; then
   echo "FAIL  axolotl-qlora NEXT.md must not ask for a hand edit"
   exit 1
 fi
-grep -q "estate enrich gguf-convert --prepared $WORKDIR/axolotl-qlora --weights <merged-hf-dir>" "$WORKDIR/axolotl-qlora/NEXT.md"
+grep -q "estate enrich merge-adapt --prepared $WORKDIR/axolotl-qlora --adapter $WORKDIR/axolotl-qlora/outputs" "$WORKDIR/axolotl-qlora/NEXT.md"
+grep -q "axolotl merge-lora $WORKDIR/axolotl-qlora/axolotl.yml --lora-model-dir=$WORKDIR/axolotl-qlora/outputs --dequant" "$WORKDIR/axolotl-qlora/NEXT.md"
+grep -q "estate enrich gguf-convert --prepared $WORKDIR/axolotl-qlora --weights $WORKDIR/axolotl-qlora/outputs/merged" "$WORKDIR/axolotl-qlora/NEXT.md"
 grep -q "Axolotl does not write GGUF" "$WORKDIR/axolotl-qlora/PREPARE.md"
-if grep -q "merge-lora" "$WORKDIR/axolotl-qlora/NEXT.md"; then
-  echo "FAIL  axolotl-qlora must not invent a merge command"
-  exit 1
-fi
+grep -q "axolotl merge-lora $WORKDIR/axolotl-qlora/axolotl.yml --lora-model-dir=$WORKDIR/axolotl-qlora/outputs --dequant" "$WORKDIR/axolotl-qlora/PREPARE.md"
 
 echo "-- axolotl --max-steps writes max_steps and omits saves_per_epoch --"
 estate enrich prepare \

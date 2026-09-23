@@ -9,6 +9,7 @@ mod frontier;
 mod local;
 mod gguf_convert;
 mod local_seat;
+mod merge_adapt;
 mod mock;
 mod path;
 mod train_enrich;
@@ -34,6 +35,7 @@ pub use local::{
     SpecialistResult, UnwiredLocal,
 };
 pub use gguf_convert::{plan_gguf_convert, GgufConvertPlan};
+pub use merge_adapt::{plan_merge_adapt, MergeAdaptPlan};
 pub use local_seat::{
     plan_adapter_seat, plan_adapter_seat_for, plan_local_seat, plan_local_seat_for, LocalSeatPlan,
     LocalSeatRuntime,

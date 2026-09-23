@@ -597,6 +597,18 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value_t = false)]
         verify_local_tag: bool,
     },
+    /// Print the external adapter merge into a Hugging Face directory.
+    /// Axolotl prints `axolotl merge-lora`. A LLaMA-Factory adapter when
+    /// export.yaml was not the merge prints the PEFT `merge_and_unload` snippet.
+    /// Does not merge, does not shell out, and does not promote.
+    MergeAdapt {
+        /// Directory that holds an axolotl-lora, axolotl-qlora, llamafactory-lora, or llamafactory-qlora prepare.json.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Adapter output_dir (`adapter_config.json`). A merged Hugging Face directory or a GGUF is refuse:adapter.
+        #[arg(long)]
+        adapter: PathBuf,
+    },
     /// Print the llama.cpp convert_hf_to_gguf.py line for a merged export.
     /// Does not convert, does not shell out, and does not promote.
     GgufConvert {

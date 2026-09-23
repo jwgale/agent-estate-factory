@@ -117,7 +117,8 @@ fn help_names_the_convert_line() {
     assert!(body.contains("does not run llama.cpp"), "{body}");
     assert!(body.contains("axolotl-lora"), "{body}");
     assert!(body.contains("axolotl-qlora"), "{body}");
-    assert!(body.contains("<merged-hf-dir>"), "{body}");
+    assert!(body.contains("outputs/merged"), "{body}");
+    assert!(body.contains("estate enrich merge-adapt"), "{body}");
     assert!(body.contains("READY_FOR_LIVE_TEST stays no"), "{body}");
     assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
 }

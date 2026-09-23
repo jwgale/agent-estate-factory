@@ -73,16 +73,20 @@ The report also prints the `import-trained` line for the same path. A merged exp
 
 ## Axolotl
 
-`axolotl-lora` and `axolotl-qlora` use the same two commands. `--weights` is the operator-owned merged Hugging Face directory, or a `.gguf` file for `local-seat`. Axolotl does not write a Modelfile and does not write GGUF. This factory does not name a merge command. `PREPARE.md` and `NEXT.md` on those cards name the ladder: `axolotl train`, the operator merge, `gguf-convert`, `local-seat`, `import-trained`.
+`axolotl-lora` and `axolotl-qlora` use the same seat commands after `estate enrich merge-adapt`. That print names `axolotl merge-lora`. Axolotl writes `outputs/merged`. `--weights` is that Hugging Face directory, or a `.gguf` file for `local-seat`. Axolotl does not write a Modelfile and does not write GGUF. `PREPARE.md` and `NEXT.md` on those cards name the ladder: `axolotl train`, `merge-adapt`, `gguf-convert`, `local-seat`, `import-trained`.
 
 ```bash
+estate enrich merge-adapt \
+  --prepared .cell/enrich/<pack-id>/axolotl-qlora \
+  --adapter .cell/enrich/<pack-id>/axolotl-qlora/outputs
+
 estate enrich gguf-convert \
   --prepared .cell/enrich/<pack-id>/axolotl-qlora \
-  --weights <merged-hf-dir>
+  --weights .cell/enrich/<pack-id>/axolotl-qlora/outputs/merged
 
 estate enrich local-seat \
   --prepared .cell/enrich/<pack-id>/axolotl-qlora \
-  --weights <merged-hf-dir>
+  --weights .cell/enrich/<pack-id>/axolotl-qlora/outputs/merged
 ```
 
 ## Adapter seat without a merge
