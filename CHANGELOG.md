@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Llama-3.2 Instruct QLoRA reproduce target
+
+- `llamafactory-qlora` infers LLaMA-Factory template `llama3` for `meta-llama/Llama-3.2-1B-Instruct` and `meta-llama/Llama-3.2-3B-Instruct`, including those ids as nested path segments and HF cache directories (`models--meta-llama--Llama-3.2-3B-Instruct`). Llama-3.2 vision infers `mllama`. `llama3-llava-next` infers `llava_next_llama3`. `llama-30b` stays `default`. A short `llama-3` stem does not take those names. The names follow LLaMA-Factory `register_model_group` in `constants.py`. There is no `llama3_2` template.
+- The QLoRA card still writes `quantization_method: bnb` and `quantization_bit: 4`. `prepare.json` keeps the Ollama seat tag on `base_model` / `seat_tag` and the Llama repo on `train_base_model`. `NEXT.md` and `PREPARE.md` name this prepare as a reproduce target beside Phi-3 and Qwen LoRA/QLoRA. A bare Ollama tag stays `refuse:train-base`.
+- `examples/fixtures/llama32-instruct.pack.json` is the smoke pack (`model_hint` `llama3`, `train_base_model` `meta-llama/Llama-3.2-3B-Instruct`). Prepare does not download weights. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — print a llama.cpp seat for an existing GGUF
 
 - `estate enrich local-seat` on a GGUF file, or a directory that holds one `.gguf` file, still prints the Ollama `ollama create` line. It also prints the documented llama.cpp lines `llama-cli -m <file>` and `llama-server -m <file> --port 8080`. `-m` names that GGUF. `--port 8080` is the llama-server example port. `--runtime llama.cpp` prints those lines first and still prints the Ollama line. Ollama stays the default print. The command does not run either program, does not write a file, and does not promote.

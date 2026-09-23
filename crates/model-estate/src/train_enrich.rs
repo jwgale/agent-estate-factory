@@ -1622,7 +1622,7 @@ fn next_markdown(
         let export_command = llamafactory_export_command(&export);
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         let template = llamafactory_template(train_base);
-        let reproduce = phi_qlora_reproduce_note(method, train_base);
+        let reproduce = qlora_reproduce_notes(method, train_base);
         (
             format!(
                 "Run this on a CUDA host (consumer-nvidia or rented-nvidia). This factory does not run it, does not download weights, and does not call CUDA.\n\
@@ -3143,7 +3143,7 @@ fn llamafactory_prepare_steps(
     let host = llamafactory_host_note(driver_id, &job.host_class_affinity);
     let data_note = dataset_card_note(CHAT_DATASET_SHAPE, data);
     let template = llamafactory_template(train_base);
-    let reproduce = phi_qlora_reproduce_note(method, train_base);
+    let reproduce = qlora_reproduce_notes(method, train_base);
     let scale = llamafactory_scale(job.official_scale);
     let recipe_line = match method {
         LlamaFactoryMethod::Qlora => format!(
@@ -3589,8 +3589,8 @@ fn template_for_segment(segment: &str) -> Option<&'static str> {
         })
     } else if name.contains("qwen") {
         Some("qwen")
-    } else if name.contains("llama3") || name.contains("llama-3") {
-        Some("llama3")
+    } else if let Some(template) = llama_template_for_segment(&name) {
+        Some(template)
     } else if name.contains("mistral") {
         Some("mistral")
     } else if name.contains("gemma") {
@@ -3611,6 +3611,42 @@ fn phi_template_for_segment(name: &str) -> Option<&'static str> {
         (&["phi-3-small", "phi3-small"], "phi_small"),
         (&["phi-3.5", "phi3.5"], "phi"),
         (&["phi-3", "phi3"], "phi"),
+    ];
+    for (stems, template) in GROUPS {
+        if stems.iter().any(|stem| stem_at_boundary(name, stem)) {
+            return Some(*template);
+        }
+    }
+    None
+}
+
+/// LLaMA-Factory `register_model_group` templates for Llama.
+/// Longer stems win. `llama-3` is a prefix of `llama-3.2`, and `.` is not an
+/// alphanumeric boundary, so a short `contains("llama-3")` labels
+/// `Llama-3.2-11B-Vision-Instruct` as `llama3`. That group is `mllama`.
+/// The same short stem matches `llama3-llava-next-8b-hf` (`llava_next_llama3`).
+/// `contains("llama-3")` also matches `llama-30b`, which has no template.
+/// `stem_at_boundary` stops on that digit.
+/// Text Llama-3, Llama-3.1, Llama-3.2 Instruct, and Llama-3.3 share `template="llama3"`.
+/// There is no `llama3_2` name in `constants.py` or `template.py`.
+/// HF cache directories keep the repo id in one segment
+/// (`models--meta-llama--Llama-3.2-3B-Instruct`).
+fn llama_template_for_segment(name: &str) -> Option<&'static str> {
+    const GROUPS: &[(&[&str], &str)] = &[
+        (
+            &[
+                "llama-3.2-11b-vision",
+                "llama-3.2-90b-vision",
+                "llama3.2-11b-vision",
+                "llama3.2-90b-vision",
+            ],
+            "mllama",
+        ),
+        (
+            &["llama3-llava-next", "llava-next-llama3"],
+            "llava_next_llama3",
+        ),
+        (&["llama-3", "llama3"], "llama3"),
     ];
     for (stems, template) in GROUPS {
         if stems.iter().any(|stem| stem_at_boundary(name, stem)) {
@@ -3654,6 +3690,48 @@ fn phi_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> Str
         "phi" | "phi_small" => format!("{PHI_QLORA_REPRODUCE_NOTE}\n\n"),
         _ => String::new(),
     }
+}
+
+/// QLoRA handoff when the train base is Llama-3.2 Instruct (1B or 3B).
+/// Empty for vision (`mllama`), for other `llama3` families, and for the LoRA card.
+const LLAMA32_QLORA_REPRODUCE_NOTE: &str = "Reproduce target beside Phi-3 and Qwen LoRA/QLoRA. Llama-3.2 Instruct (Llama-3.2-1B-Instruct and Llama-3.2-3B-Instruct) uses LLaMA-Factory template llama3. Llama-3.2 vision uses template mllama. The Phi-3 reproduce target stays template phi or phi_small. The Qwen LoRA/QLoRA reproduce target stays template qwen, qwen3, or qwen3_nothink. This QLoRA recipe keeps quantization_method bnb and quantization_bit 4. The seat tag and the train base stay separate. This factory does not download weights.";
+
+fn llama32_qlora_reproduce_note(method: LlamaFactoryMethod, train_base: &str) -> String {
+    if method != LlamaFactoryMethod::Qlora {
+        return String::new();
+    }
+    let Some(segment) = llamafactory_template_segment(train_base) else {
+        return String::new();
+    };
+    if segment_is_llama32_text_instruct(segment) {
+        format!("{LLAMA32_QLORA_REPRODUCE_NOTE}\n\n")
+    } else {
+        String::new()
+    }
+}
+
+fn qlora_reproduce_notes(method: LlamaFactoryMethod, train_base: &str) -> String {
+    let mut note = phi_qlora_reproduce_note(method, train_base);
+    note.push_str(&llama32_qlora_reproduce_note(method, train_base));
+    note
+}
+
+/// The segment that supplied `llamafactory_template`. Later segments that name
+/// no family are skipped, the same walk as the template itself.
+fn llamafactory_template_segment(train_base: &str) -> Option<&str> {
+    train_base_segments(train_base)
+        .into_iter()
+        .rev()
+        .find(|segment| template_for_segment(segment).is_some())
+}
+
+fn segment_is_llama32_text_instruct(segment: &str) -> bool {
+    let name = segment.to_ascii_lowercase();
+    if llama_template_for_segment(&name) != Some("llama3") {
+        return false;
+    }
+    let is_32 = stem_at_boundary(&name, "llama-3.2") || stem_at_boundary(&name, "llama3.2");
+    is_32 && name.contains("instruct")
 }
 
 /// Chat template hint from the train base path. Confirm it before train. Seat the same chat format.
@@ -3774,6 +3852,9 @@ fn llamafactory_recipe_yaml(
          # Other Qwen3 names use qwen3. Older Qwen names use qwen.\n\
          # Phi-3 mini, Phi-3 medium, and Phi-3.5 use phi. Phi-3-small uses phi_small.\n\
          # Phi-4 uses phi4. Phi-4-mini uses phi4_mini.\n\
+         # Llama-3, Llama-3.1, Llama-3.2 Instruct, and Llama-3.3 use llama3.\n\
+         # Llama-3.2 vision uses mllama. llama3-llava-next uses llava_next_llama3.\n\
+         # A short llama-3 stem does not label those names llama3. llama-30b stays default.\n\
          # Use this same chat template when you seat the model.\n\
          # This factory does not map the seat tag onto a Hub repo.\n\
          # dataset_mode: {mode}\n\
@@ -7948,6 +8029,91 @@ mod tests {
     }
 
     #[test]
+    fn llamafactory_template_maps_llama32_instruct_including_nested_paths() {
+        let instruct = [
+            "meta-llama/Llama-3.2-3B-Instruct",
+            "meta-llama/Llama-3.2-1B-Instruct",
+            "META-LLAMA/LLAMA-3.2-3B-INSTRUCT",
+            "unsloth/Llama-3.2-3B-Instruct",
+            "Llama-3.2-3B-Instruct",
+            "Llama3.2-3B-Instruct",
+            "/opt/hf/meta-llama/Llama-3.2-3B-Instruct",
+            "./weights/Llama-3.2-1B-Instruct",
+            "/opt/hf/meta-llama/Llama-3.2-3B-Instruct/weights",
+            "/opt/hf/meta-llama/Llama-3.2-3B-Instruct/snapshots/deadbeef",
+            "/home/user/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/snapshots/abc123",
+            "/home/user/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B-Instruct/snapshots/def456",
+            "/tmp/phi-4/Llama-3.2-3B-Instruct",
+            "/tmp/qwen3-parent/Llama-3.2-1B-Instruct",
+            "/tmp/llama-30b/Llama-3.2-3B-Instruct",
+            "/tmp/llama3-llava-next-8b-hf/Llama-3.2-3B-Instruct",
+        ];
+        for train in instruct {
+            assert_eq!(llamafactory_template(train), "llama3", "{train}");
+            assert_ne!(llamafactory_template(train), "llama3_2", "{train}");
+        }
+        let vision = [
+            "meta-llama/Llama-3.2-11B-Vision",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+            "Llama3.2-11B-Vision-Instruct",
+            "/opt/hf/meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "./weights/Llama-3.2-90B-Vision-Instruct",
+            "/home/user/.cache/huggingface/hub/models--meta-llama--Llama-3.2-11B-Vision-Instruct/snapshots/abc",
+            "/tmp/Llama-3.2-3B-Instruct/Llama-3.2-11B-Vision-Instruct",
+            "/tmp/qwen3-parent/Llama-3.2-11B-Vision",
+        ];
+        for train in vision {
+            assert_eq!(llamafactory_template(train), "mllama", "{train}");
+        }
+        assert_eq!(
+            llamafactory_template("llava-hf/llama3-llava-next-8b-hf"),
+            "llava_next_llama3"
+        );
+        assert_eq!(
+            llamafactory_template("LLaVA-NeXT-Llama3-8B-Chat"),
+            "llava_next_llama3"
+        );
+        assert_eq!(
+            llamafactory_template("/opt/hf/llama3-llava-next-8b-hf/snapshots/abc"),
+            "llava_next_llama3"
+        );
+        assert_eq!(llamafactory_template("huggyllama/llama-30b"), "default");
+        assert_eq!(llamafactory_template("huggyllama/llama-7b"), "default");
+        assert_eq!(llamafactory_template("/opt/hf/llama-30b"), "default");
+        assert_eq!(
+            llamafactory_template("meta-llama/Meta-Llama-3-8B-Instruct"),
+            "llama3"
+        );
+        assert_eq!(
+            llamafactory_template("meta-llama/Meta-Llama-3.1-8B-Instruct"),
+            "llama3"
+        );
+        assert_eq!(
+            llamafactory_template("meta-llama/Llama-3.3-70B-Instruct"),
+            "llama3"
+        );
+        assert_eq!(llamafactory_template("meta-llama/Llama-3.2-3B"), "llama3");
+        assert_eq!(
+            llamafactory_template("shenzhi-wang/Llama3-8B-Chinese-Chat"),
+            "llama3"
+        );
+        assert_eq!(
+            llamafactory_template("/tmp/Llama-3.2-3B-Instruct/Phi-3-mini-4k-instruct"),
+            "phi"
+        );
+        assert_eq!(
+            llamafactory_template("/tmp/Llama-3.2-3B-Instruct/Qwen2.5-0.5B-Instruct"),
+            "qwen"
+        );
+        assert_eq!(
+            llamafactory_template("meta-llama/Llama-2-7b-chat-hf"),
+            "default"
+        );
+    }
+
+    #[test]
     fn phi3_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
         let root = tmp("phi3-qlora");
         let pack_path = repo_root().join("examples/fixtures/phi3-instruct.pack.json");
@@ -8142,6 +8308,429 @@ mod tests {
         let qwen_prepare = std::fs::read_to_string(qwen_out.join("PREPARE.md")).unwrap();
         assert!(!qwen_next.contains("Reproduce target beside Qwen LoRA/QLoRA."));
         assert!(!qwen_prepare.contains("Reproduce target beside Qwen LoRA/QLoRA."));
+    }
+
+    #[test]
+    fn llama32_qlora_prepare_emits_template_bnb_and_keeps_the_seat_split() {
+        let root = tmp("llama32-qlora");
+        let pack_path = repo_root().join("examples/fixtures/llama32-instruct.pack.json");
+        let pack: PackManifest =
+            serde_json::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+        assert_eq!(
+            pack.train_base_model.as_deref(),
+            Some("meta-llama/Llama-3.2-3B-Instruct")
+        );
+        assert_eq!(pack.model_hint.as_deref(), Some("llama3"));
+        let estate = fixture_estate();
+        let out = root.join("qlora");
+        let doc = run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.job, "train");
+        assert_eq!(doc.driver, LLAMAFACTORY_QLORA_ID);
+        assert_eq!(doc.base_model, "llama3");
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("meta-llama/Llama-3.2-3B-Instruct")
+        );
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+        assert!(
+            recipe.lines().any(|line| line.trim() == "template: llama3"),
+            "{recipe}"
+        );
+        assert!(
+            !recipe
+                .lines()
+                .any(|line| line.trim().starts_with("template: llama3_")),
+            "{recipe}"
+        );
+        assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+        assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+        assert!(recipe.contains("Llama-3.2 vision uses mllama"), "{recipe}");
+        assert!(
+            recipe.contains("model_name_or_path: \"meta-llama/Llama-3.2-3B-Instruct\""),
+            "{recipe}"
+        );
+        assert!(
+            !recipe.lines().any(|line| {
+                line.trim_start().starts_with("model_name_or_path:") && line.contains("\"llama3\"")
+            }),
+            "{recipe}"
+        );
+        assert!(recipe.contains("does not download weights"), "{recipe}");
+        assert!(recipe.contains("does not run llamafactory-cli"), "{recipe}");
+        let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+        assert!(
+            export.lines().any(|line| line.trim() == "template: llama3"),
+            "{export}"
+        );
+        assert!(!export.contains("quantization_bit"), "{export}");
+        assert!(
+            export.contains("model_name_or_path: \"meta-llama/Llama-3.2-3B-Instruct\""),
+            "{export}"
+        );
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+        for text in [&next, &prepare_md] {
+            assert!(
+                text.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+                "{text}"
+            );
+            assert!(text.contains("template llama3"), "{text}");
+            assert!(text.contains("template mllama"), "{text}");
+            assert!(text.contains("Seat tag is llama3"), "{text}");
+            assert!(text.contains("meta-llama/Llama-3.2-3B-Instruct"), "{text}");
+            assert!(text.contains("quantization_method bnb"), "{text}");
+            assert!(text.contains("quantization_bit 4"), "{text}");
+            assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+        }
+        assert!(!out.join("train.py").exists());
+
+        let lora_out = root.join("lora");
+        let lora = run(
+            LLAMAFACTORY_LORA_ID,
+            &pack,
+            &estate,
+            &lora_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(lora.base_model, "llama3");
+        assert_eq!(
+            lora.train_base_model.as_deref(),
+            Some("meta-llama/Llama-3.2-3B-Instruct")
+        );
+        let lora_recipe = std::fs::read_to_string(lora_out.join("recipe.yaml")).unwrap();
+        assert!(
+            lora_recipe
+                .lines()
+                .any(|line| line.trim() == "template: llama3"),
+            "{lora_recipe}"
+        );
+        assert!(
+            !lora_recipe.contains("quantization_bit")
+                && !lora_recipe.contains("quantization_method"),
+            "{lora_recipe}"
+        );
+        let lora_next = std::fs::read_to_string(lora_out.join("NEXT.md")).unwrap();
+        assert!(
+            !lora_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{lora_next}"
+        );
+
+        let bare = fixture_pack();
+        let seated = seated_estate("llama3");
+        for bad in ["llama3", "llama3:latest", "./llama3", "../llama3"] {
+            let bad_estate = with_train_base(seated.clone(), bad);
+            let bad_out = root.join(format!(
+                "seat-{}",
+                bad.trim_start_matches('.').replace('/', "_")
+            ));
+            let err = run(
+                LLAMAFACTORY_QLORA_ID,
+                &bare,
+                &bad_estate,
+                &bad_out,
+                "train",
+                "jason",
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("refuse:train-base"),
+                "{bad}: {err}"
+            );
+            assert!(!err.to_string().contains("meta-llama"), "{bad}: {err}");
+            assert!(!bad_out.exists(), "{bad}");
+        }
+
+        let nested_estate =
+            with_train_base(seated.clone(), "./weights/meta-llama/Llama-3.2-1B-Instruct");
+        let nested_out = root.join("nested-1b");
+        let nested = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &nested_estate,
+            &nested_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let nested_train = nested.train_base_model.as_deref().unwrap();
+        assert!(
+            nested_train.ends_with("/weights/meta-llama/Llama-3.2-1B-Instruct"),
+            "{nested_train}"
+        );
+        assert_eq!(nested.base_model, "llama3");
+        let nested_recipe = std::fs::read_to_string(nested_out.join("recipe.yaml")).unwrap();
+        assert!(
+            nested_recipe
+                .lines()
+                .any(|line| line.trim() == "template: llama3"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_method: bnb"),
+            "{nested_recipe}"
+        );
+        assert!(
+            nested_recipe.contains("quantization_bit: 4"),
+            "{nested_recipe}"
+        );
+        assert!(nested_recipe.contains(nested_train), "{nested_recipe}");
+        let nested_next = std::fs::read_to_string(nested_out.join("NEXT.md")).unwrap();
+        let nested_prepare = std::fs::read_to_string(nested_out.join("PREPARE.md")).unwrap();
+        assert!(nested_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."));
+        assert!(nested_prepare.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."));
+        assert!(
+            nested_next.contains("Llama-3.2-1B-Instruct"),
+            "{nested_next}"
+        );
+
+        let base_estate = with_train_base(seated.clone(), "meta-llama/Llama-3.2-3B");
+        let base_out = root.join("base-3b");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &base_estate,
+            &base_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let base_recipe = std::fs::read_to_string(base_out.join("recipe.yaml")).unwrap();
+        assert!(
+            base_recipe
+                .lines()
+                .any(|line| line.trim() == "template: llama3"),
+            "{base_recipe}"
+        );
+        let base_next = std::fs::read_to_string(base_out.join("NEXT.md")).unwrap();
+        assert!(
+            !base_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{base_next}"
+        );
+
+        let older_estate = with_train_base(seated.clone(), "meta-llama/Meta-Llama-3.1-8B-Instruct");
+        let older_out = root.join("llama31");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &older_estate,
+            &older_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let older_recipe = std::fs::read_to_string(older_out.join("recipe.yaml")).unwrap();
+        assert!(
+            older_recipe
+                .lines()
+                .any(|line| line.trim() == "template: llama3"),
+            "{older_recipe}"
+        );
+        let older_next = std::fs::read_to_string(older_out.join("NEXT.md")).unwrap();
+        assert!(
+            !older_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{older_next}"
+        );
+
+        let vision_estate = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf/meta-llama/Llama-3.2-11B-Vision-Instruct",
+        );
+        let vision_out = root.join("vision");
+        let vision = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &vision_estate,
+            &vision_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(vision.base_model, "llama3");
+        assert_eq!(
+            vision.train_base_model.as_deref(),
+            Some("/tmp/cell-one-hf/meta-llama/Llama-3.2-11B-Vision-Instruct")
+        );
+        let vision_recipe = std::fs::read_to_string(vision_out.join("recipe.yaml")).unwrap();
+        assert!(
+            vision_recipe
+                .lines()
+                .any(|line| line.trim() == "template: mllama"),
+            "{vision_recipe}"
+        );
+        assert!(
+            vision_recipe.contains("quantization_method: bnb"),
+            "{vision_recipe}"
+        );
+        assert!(
+            vision_recipe.contains("quantization_bit: 4"),
+            "{vision_recipe}"
+        );
+        let vision_next = std::fs::read_to_string(vision_out.join("NEXT.md")).unwrap();
+        assert!(
+            !vision_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{vision_next}"
+        );
+        assert!(
+            !vision_next.contains("Reproduce target beside Qwen LoRA/QLoRA."),
+            "{vision_next}"
+        );
+
+        let thirty_estate = with_train_base(seated.clone(), "huggyllama/llama-30b");
+        let thirty_out = root.join("llama30");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &thirty_estate,
+            &thirty_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let thirty_recipe = std::fs::read_to_string(thirty_out.join("recipe.yaml")).unwrap();
+        assert!(
+            thirty_recipe
+                .lines()
+                .any(|line| line.trim() == "template: default"),
+            "{thirty_recipe}"
+        );
+        let thirty_next = std::fs::read_to_string(thirty_out.join("NEXT.md")).unwrap();
+        assert!(
+            !thirty_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{thirty_next}"
+        );
+
+        let llava_estate = with_train_base(seated.clone(), "llava-hf/llama3-llava-next-8b-hf");
+        let llava_out = root.join("llava");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &llava_estate,
+            &llava_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let llava_recipe = std::fs::read_to_string(llava_out.join("recipe.yaml")).unwrap();
+        assert!(
+            llava_recipe
+                .lines()
+                .any(|line| line.trim() == "template: llava_next_llama3"),
+            "{llava_recipe}"
+        );
+        let llava_next = std::fs::read_to_string(llava_out.join("NEXT.md")).unwrap();
+        assert!(
+            !llava_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{llava_next}"
+        );
+
+        let qwen_estate = with_train_base(seated.clone(), "Qwen/Qwen2.5-0.5B-Instruct");
+        let qwen_out = root.join("qwen");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &qwen_estate,
+            &qwen_out,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let qwen_next = std::fs::read_to_string(qwen_out.join("NEXT.md")).unwrap();
+        assert!(
+            !qwen_next.contains("Reproduce target beside Phi-3 and Qwen LoRA/QLoRA."),
+            "{qwen_next}"
+        );
+
+        let mut sacred_pack = pack.clone();
+        sacred_pack.id = "cyera".into();
+        let sacred_out = root.join("sacred-id");
+        let sacred = run(
+            LLAMAFACTORY_QLORA_ID,
+            &sacred_pack,
+            &estate,
+            &sacred_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sacred.to_string().contains("refuse:sacred"), "{sacred}");
+        assert!(!sacred_out.exists());
+
+        let sacred_base = with_train_base(seated.clone(), "cyera/Llama-3.2-3B-Instruct");
+        let sacred_base_out = root.join("sacred-base");
+        let sacred_train = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sacred_base,
+            &sacred_base_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(
+            sacred_train.to_string().contains("refuse:sacred"),
+            "{sacred_train}"
+        );
+        assert!(!sacred_base_out.exists());
+
+        let sku_base = with_train_base(
+            seated.clone(),
+            "/tmp/cell-one-hf/5090/Llama-3.2-3B-Instruct",
+        );
+        let sku_out = root.join("sku-base");
+        let sku = run(
+            LLAMAFACTORY_QLORA_ID,
+            &bare,
+            &sku_base,
+            &sku_out,
+            "train",
+            "jason",
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!sku_out.exists());
+
+        let mut local_only = estate.clone();
+        local_only
+            .model_bindings
+            .retain(|binding| binding.class != ModelClass::Frontier);
+        let frontier_state = root.join("frontier-cell");
+        std::fs::create_dir_all(frontier_state.join("feed")).unwrap();
+        std::fs::write(
+            frontier_state.join("feed/events.jsonl"),
+            "{\"kind\":\"model.frontier.complete\",\"object_class\":\"frontier\",\"note\":\"bytes=4\",\"ts\":\"2026-09-21T00:00:00Z\"}\n",
+        )
+        .unwrap();
+        let frontier_out = root.join("frontier");
+        let frontier = run_feed(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &local_only,
+            &frontier_out,
+            &frontier_state,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("refuse:frontier-invent"),
+            "{frontier}"
+        );
+        assert!(!frontier_out.exists());
     }
 
     #[test]

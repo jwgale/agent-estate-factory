@@ -461,6 +461,18 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(train_script.contains("llamafactory-lora"), "{train_script}");
     assert!(train_script.contains("qwen3_nothink"), "{train_script}");
     assert!(
+        train_script.contains("examples/fixtures/llama32-instruct.pack.json"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("meta-llama/Llama-3.2-3B-Instruct"),
+        "{train_script}"
+    );
+    assert!(
+        train_script.contains("^template: llama3$"),
+        "{train_script}"
+    );
+    assert!(
         train_script.contains("does not require bitsandbytes"),
         "{train_script}"
     );
