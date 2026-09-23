@@ -439,6 +439,18 @@ examples/fixtures/mistral-instruct.pack.json is the Mistral Instruct smoke pack.
 Phi-3, Llama-3.2, Gemma-2, and Qwen LoRA/QLoRA and still writes quantization_method bnb
 and quantization_bit 4. That reproduce line is QLoRA-only and only for a
 Mistral-7B Instruct id.
+Qwen/Qwen3-4B-Instruct-2507, Qwen/Qwen3-30B-A3B-Instruct-2507,
+Qwen/Qwen3-235B-A22B-Instruct-2507, and Qwen/Qwen3-Next-80B-A3B-Instruct
+use template qwen3_nothink. examples/train_lora/qwen3_lora_sft.yaml names
+Qwen/Qwen3-4B-Instruct-2507 with that template. A Qwen3 thinking or base id,
+including Qwen/Qwen3-4B and Qwen/Qwen3-4B-Thinking-2507, uses qwen3 and is
+not this reproduce target. Qwen2 and Qwen2.5, including
+Qwen/Qwen2.5-0.5B-Instruct, stay template qwen.
+examples/fixtures/qwen3-instruct.pack.json is the Qwen3 Instruct smoke pack.
+--driver llamafactory-qlora on that pack is a reproduce target beside
+Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA and still writes
+quantization_method bnb and quantization_bit 4. That reproduce line is
+QLoRA-only and only for that Qwen3 Instruct shape.
 Select LoRA with --driver llamafactory-lora (16-bit base, no
 quantization_bit, lora_rank 8, packing false). Select QLoRA with
 --driver llamafactory-qlora (quantization_bit 4, quantization_method bnb,
