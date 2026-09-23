@@ -40,7 +40,7 @@ estate enrich local-seat \
   --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
 ```
 
-`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, or `axolotl-qlora` with job `train`. `--weights` is the merged export directory or a `.gguf` file.
+`--prepared` is the directory that holds `prepare.json` for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, `axolotl-qlora`, `unsloth-qlora`, or `mlx-lm-lora` with job `train`. `--weights` is the merged export directory or a `.gguf` file. `unsloth-qlora` seats the merged 16-bit directory or one `.gguf` file. `mlx-lm-lora` seats one `.gguf` file. A fused MLX directory is `refuse:seat`.
 
 The report names:
 
