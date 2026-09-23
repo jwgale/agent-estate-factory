@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Print-only operator checklist for the recorded Target C live uniqueness ladder.
 # Reads docs/LIVE-PROBES.md section "Target C live uniqueness (5090-class)"
-# and prints the ordered operator steps. Does not train, convert, shell out
-# to ollama, or promote. Does not invent a live PASS.
+# and prints the ordered operator steps. After step 8 (import-trained,
+# trained_shape gguf, auto_apply=false) it prints Standing next (estate).
+# That coda names plan, apply --require-plan, and reconcile. It does not
+# execute them. Does not train, convert, shell out to ollama, or promote.
+# Does not invent a live PASS.
 # Resolves estate fail-closed: executable ESTATE_BIN, then target/release/estate,
 # then target/debug/estate, then cargo on PATH. Does not invent a binary.
 # Does not execute that binary.
@@ -152,5 +155,147 @@ case "$sum" in
     ;;
 esac
 
+# Standing next (estate) is print-only. The checks below refuse a coda that
+# claims this factory applied, promoted, trained, converted, or shelled out.
+standing_next_coda() {
+  cat <<EOF
+Standing next (estate) — after step 8 (import-trained, trained_shape gguf, auto_apply=false):
+Print-only. READY_FOR_LIVE_TEST: no
+This checklist resolves the estate command and does not execute it.
+1. The proposal stays auto_apply=false. The factory does not apply the estate without an explicit operator --require-plan path. The curator path is packs accept --curator jason. That accept writes edit instructions and does not rewrite estate.yaml.
+2. No promote. No auto-promote. examples/estate.yaml stays unchanged unless the operator deliberately applies a plan. Promote commands stay refused.
+3. Existing entrypoints (print only; this checklist does not execute them):
+   $prefix enrich apply-proposal --estate <lab-estate.yaml> --prepared <prepared> --tag <tag> --state-dir .cell
+      Writes {state}/enrich-stage/staged-estate.yaml. Does not apply. Does not rewrite the source estate.
+   $prefix plan --estate <lab-estate.yaml> --plans-dir plans --state-dir .cell
+      Writes reviewable markdown under plans/. Does not apply.
+   $prefix plan diff --estate <lab-estate.yaml> --plans-dir plans --state-dir .cell
+      Compares plans. Does not apply.
+   $prefix plan export-pr --estate <lab-estate.yaml> --plans-dir plans --out plans/PR.md
+      Writes markdown for a human PR. Does not apply.
+   $prefix apply --dry-run --estate <lab-estate.yaml> --state-dir .cell
+      Prints blast radius and a reconcile preview. Does not write leases.
+   $prefix apply --estate <lab-estate.yaml> --state-dir .cell
+      Without --require-plan, converges the cell and leaves the source estate unchanged.
+   $prefix apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason
+      The source estate is written only when this apply succeeds. Point --estate at a lab copy.
+   $prefix apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --require-fresh-plan --curator jason
+      Also fails when the covering plan against_hash does not match the last apply. This checklist does not execute it.
+   $prefix reconcile --estate <lab-estate.yaml> --state-dir .cell
+      Report only. Does not apply.
+   $prefix reconcile --suggest --estate <lab-estate.yaml> --state-dir .cell
+      Writes a patch file. Never auto-applies. The operator still applies by hand.
+   $prefix packs accept --id <pack-id> --curator jason
+      Writes enrich-pack edit instructions. Does not rewrite estate.yaml. Jason pastes them by hand.
+   $prefix packs promote --id <pack-id>
+      Always fails. Auto-promote is locked off. This checklist does not execute it.
+   $prefix feed promote --id <pack-id>
+      Always fails. Auto-promote is locked off. This checklist does not execute it.
+4. Recorded PASS stays in docs/LIVE-PROBES.md section Target C live uniqueness (5090-class). This print is not a live PASS. Re-prove card: make uniqueness-prove-checklist.
+The factory does not train, convert, shell out to ollama, or promote.
+CELL_TRAIN_LIVE=1 stays print-only.
+CELL_SEAT_LIVE=1 stays print-only.
+Not native MLX.
+Not in make smoke, make gate-90, or GitHub Actions.
+This checklist does not write a Modelfile and does not shell out to ollama.
+5. Phrase-check passed: this coda does not claim the factory applied, promoted, trained, converted, or shelled out to ollama.
+EOF
+}
+
+coda_require() {
+  local needle="$1"
+  if ! grep -q -F -- "$needle" <<<"$coda"; then
+    echo "FAIL  standing next coda missing phrase: $needle" >&2
+    exit 1
+  fi
+}
+
+coda_forbid() {
+  local needle="$1"
+  if grep -q -F -- "$needle" <<<"$coda"; then
+    echo "FAIL  standing next coda claims: $needle" >&2
+    exit 1
+  fi
+}
+
+coda_before() {
+  local earlier="$1"
+  local later="$2"
+  local a b
+  a="$(grep -n -F -m1 -- "$earlier" <<<"$coda" | cut -d: -f1 || true)"
+  b="$(grep -n -F -m1 -- "$later" <<<"$coda" | cut -d: -f1 || true)"
+  if [[ -z "$a" || -z "$b" || "$a" -ge "$b" ]]; then
+    echo "FAIL  standing next coda order: $earlier must precede $later" >&2
+    exit 1
+  fi
+}
+
+coda="$(standing_next_coda)"
+
+coda_require "Standing next (estate)"
+coda_require "The proposal stays auto_apply=false."
+coda_require "does not apply the estate without an explicit operator --require-plan path"
+coda_require "packs accept --curator jason"
+coda_require "No promote. No auto-promote."
+coda_require "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan."
+coda_require "Existing entrypoints (print only; this checklist does not execute them):"
+coda_require "$prefix enrich apply-proposal --estate <lab-estate.yaml>"
+coda_require "$prefix plan --estate <lab-estate.yaml> --plans-dir plans --state-dir .cell"
+coda_require "$prefix apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason"
+coda_require "$prefix reconcile --estate <lab-estate.yaml> --state-dir .cell"
+coda_require "$prefix reconcile --suggest --estate <lab-estate.yaml> --state-dir .cell"
+coda_require "$prefix packs accept --id <pack-id> --curator jason"
+coda_require "Always fails. Auto-promote is locked off."
+coda_require "Recorded PASS stays in docs/LIVE-PROBES.md section Target C live uniqueness (5090-class)."
+coda_require "Re-prove card: make uniqueness-prove-checklist."
+coda_require "This print is not a live PASS."
+coda_require "READY_FOR_LIVE_TEST: no"
+coda_require "The factory does not train, convert, shell out to ollama, or promote."
+coda_require "This checklist does not write a Modelfile and does not shell out to ollama."
+coda_require "CELL_TRAIN_LIVE=1 stays print-only."
+coda_require "CELL_SEAT_LIVE=1 stays print-only."
+coda_require "Not native MLX."
+coda_require "Phrase-check passed:"
+
+coda_before "The proposal stays auto_apply=false." "No promote. No auto-promote."
+coda_before "No promote. No auto-promote." "Existing entrypoints (print only; this checklist does not execute them):"
+coda_before "enrich apply-proposal --estate <lab-estate.yaml>" " plan --estate <lab-estate.yaml> --plans-dir plans"
+coda_before " plan --estate <lab-estate.yaml> --plans-dir plans" " apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason"
+coda_before " apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason" " reconcile --estate <lab-estate.yaml> --state-dir .cell"
+coda_before " reconcile --estate <lab-estate.yaml> --state-dir .cell" " reconcile --suggest"
+coda_before "packs accept --id <pack-id> --curator jason" "Recorded PASS stays in docs/LIVE-PROBES.md"
+coda_before "Re-prove card: make uniqueness-prove-checklist." "Phrase-check passed:"
+
+coda_forbid "READY_FOR_LIVE_TEST: yes"
+coda_forbid "The factory applied"
+coda_forbid "The factory promoted"
+coda_forbid "The factory trained"
+coda_forbid "The factory converted"
+coda_forbid "This checklist applied"
+coda_forbid "This checklist promoted"
+coda_forbid "This checklist trained"
+coda_forbid "This checklist converted"
+coda_forbid "The factory shelled out"
+coda_forbid "This checklist shelled out"
+coda_forbid "wrote examples/estate.yaml"
+coda_forbid "wrote the Modelfile"
+coda_forbid "--estate examples/estate.yaml"
+coda_forbid "Kimi"
+coda_forbid "kimi"
+
+while IFS= read -r line; do
+  if [[ -z "$line" ]]; then
+    continue
+  fi
+  if printf '%s\n' "$line" | grep -Eq '(^|[^[:alnum:]_-])(applied|promoted|trained|converted)([^[:alnum:]_-]|$)|shelled out to ollama'; then
+    if ! printf '%s\n' "$line" | grep -Eq 'does not|did not|Never |No '; then
+      echo "FAIL  standing next coda claims an action: $line" >&2
+      exit 1
+    fi
+  fi
+done <<<"$coda"
+
+echo
+printf '%s\n' "$coda"
 echo
 echo "Recorded PASS stays in docs/LIVE-PROBES.md. This print is not a live PASS."

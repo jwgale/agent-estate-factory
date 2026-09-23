@@ -969,6 +969,12 @@ stays qlora-journey then seat-journey.
 make uniqueness-prove-checklist prints the recorded Target C operator
 steps from docs/LIVE-PROBES.md. It does not train, convert, shell out
 to ollama, or promote. It does not invent a live PASS.
+After step 8 (import-trained, trained_shape gguf, auto_apply=false)
+it prints Standing next (estate). The proposal stays auto_apply=false.
+The factory does not apply the estate without an explicit operator
+--require-plan path. No promote and no auto-promote. The coda names
+plan, apply --require-plan, and reconcile and does not execute them.
+The re-prove card is make uniqueness-prove-checklist.
 CELL_TRAIN_LIVE=1 stays print-only. CELL_SEAT_LIVE=1 stays print-only.
 Not native MLX. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.

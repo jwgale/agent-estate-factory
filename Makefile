@@ -224,7 +224,10 @@ uniqueness-full:
 	bash scripts/uniqueness-full.sh
 
 # Opt-in print-only operator checklist for the recorded Target C live uniqueness ladder.
-# Prints ordered steps from docs/LIVE-PROBES.md. Does not train, convert, shell out to ollama, or promote.
+# Prints ordered steps from docs/LIVE-PROBES.md. After step 8 (import-trained) it prints
+# Standing next (estate): auto_apply=false, no promote, and the existing plan / apply /
+# reconcile entrypoints. Print only. Does not execute them.
+# Does not train, convert, shell out to ollama, or promote.
 # Does not invent a live PASS. CELL_TRAIN_LIVE=1 and CELL_SEAT_LIVE=1 stay print-only.
 # Not native MLX.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.

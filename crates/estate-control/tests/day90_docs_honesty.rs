@@ -1636,7 +1636,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #155");
+    assert_eq!(head, " Standing next (estate) after import-trained");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -1971,7 +1971,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #155");
+    assert_eq!(head, " Standing next (estate) after import-trained");
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -2244,7 +2244,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #155");
+    assert_eq!(head, " Standing next (estate) after import-trained");
     let slice = changelog
         .split("## This slice — Target C live uniqueness prove on a 5090-class host")
         .nth(1)
@@ -2401,6 +2401,25 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         "Target C live uniqueness (5090-class)",
         "Do not add to make smoke, make gate-90, or GitHub Actions",
         "docs/LIVE-PROBES.md",
+        "Standing next (estate)",
+        "does not apply the estate without an explicit operator --require-plan path",
+        "No promote. No auto-promote.",
+        "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan.",
+        "Existing entrypoints (print only; this checklist does not execute them):",
+        "plan --estate <lab-estate.yaml>",
+        "apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason",
+        "reconcile --estate <lab-estate.yaml>",
+        "reconcile --suggest",
+        "packs accept --id <pack-id> --curator jason",
+        "Always fails. Auto-promote is locked off.",
+        "Re-prove card: make uniqueness-prove-checklist.",
+        "Phrase-check passed:",
+        "coda_forbid \"The factory applied\"",
+        "coda_forbid \"The factory promoted\"",
+        "coda_forbid \"The factory trained\"",
+        "coda_forbid \"The factory converted\"",
+        "coda_forbid \"The factory shelled out\"",
+        "coda_forbid \"--estate examples/estate.yaml\"",
     ] {
         assert!(
             script.contains(needle),
@@ -2408,8 +2427,11 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         );
     }
     assert!(
-        !script.contains("READY_FOR_LIVE_TEST: yes"),
-        "uniqueness-prove-checklist must keep READY_FOR_LIVE_TEST no"
+        script
+            .lines()
+            .filter(|line| line.contains("READY_FOR_LIVE_TEST: yes"))
+            .all(|line| line.trim_start().starts_with("coda_forbid ")),
+        "uniqueness-prove-checklist must keep READY_FOR_LIVE_TEST no except the coda forbid"
     );
     let executed: Vec<&str> = script
         .lines()
@@ -2418,6 +2440,9 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
             if trimmed.starts_with('#')
                 || trimmed.starts_with("echo")
                 || trimmed.starts_with("require_phrase ")
+                || trimmed.starts_with("coda_require ")
+                || trimmed.starts_with("coda_forbid ")
+                || trimmed.starts_with("coda_before ")
                 || trimmed.starts_with("ESTATE_CMD=(")
                 || trimmed.starts_with("prefix=")
             {
@@ -2476,6 +2501,11 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     assert!(row.contains("Does not invent a live PASS"), "{row}");
     assert!(row.contains("Not native MLX"), "{row}");
     assert!(row.contains("LIVE-PROBES.md"), "{row}");
+    assert!(row.contains("Standing next (estate)"), "{row}");
+    assert!(row.contains("auto_apply=false"), "{row}");
+    assert!(row.contains("--require-plan"), "{row}");
+    assert!(row.contains("does not execute them"), "{row}");
+    assert!(row.contains("reconcile"), "{row}");
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(18).collect::<Vec<_>>().join("\n");
@@ -2504,6 +2534,11 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .unwrap();
     assert!(uniq.contains("make uniqueness-prove-checklist"), "{uniq}");
     assert!(uniq.contains("does not invent a new live PASS"), "{uniq}");
+    assert!(uniq.contains("Standing next (estate)"), "{uniq}");
+    assert!(
+        uniq.contains("does not execute them"),
+        "uniqueness section must name the print-only estate coda: {uniq}"
+    );
     assert!(
         uniq.contains("CELL_TRAIN_LIVE=1") && uniq.contains("CELL_SEAT_LIVE=1"),
         "{uniq}"
@@ -2516,9 +2551,13 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     assert!(journey.contains("make uniqueness-prove-checklist"));
     assert!(journey.contains("does not invent a new live PASS"));
+    assert!(journey.contains("Standing next (estate)"));
+    assert!(journey.contains("does not execute them"));
     let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("`make uniqueness-prove-checklist`"));
     assert!(train.contains("does not invent a new live PASS"));
+    assert!(train.contains("Standing next (estate)"));
+    assert!(train.contains("does not execute them"));
     let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
     let section = probes
         .split("## Target C live uniqueness (5090-class)")
@@ -2531,6 +2570,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     assert!(section.contains("does not invent a new live PASS"));
     let seat = std::fs::read_to_string(root.join("docs/local-seat.md")).unwrap();
     assert!(seat.contains("make uniqueness-prove-checklist"));
+    assert!(seat.contains("Standing next (estate)"));
     assert!(
         !journey.contains("READY_FOR_LIVE_TEST: yes")
             && !train.contains("READY_FOR_LIVE_TEST: yes")
@@ -2541,6 +2581,8 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
     assert!(help.contains("make uniqueness-prove-checklist"));
     assert!(help.contains("does not invent a live PASS"));
+    assert!(help.contains("Standing next (estate)"));
+    assert!(help.contains("does not execute them"));
     assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
@@ -2551,7 +2593,60 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #155");
+    assert_eq!(head, " Standing next (estate) after import-trained");
+    let standing = changelog
+        .split("## This slice — Standing next (estate) after import-trained")
+        .nth(1)
+        .expect("CHANGELOG missing the standing next slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make uniqueness-prove-checklist",
+        "scripts/uniqueness-prove-checklist.sh",
+        "trained_shape` `gguf`",
+        "auto_apply=false",
+        "--require-plan",
+        "packs accept --curator jason",
+        "No promote and no auto-promote",
+        "estate plan",
+        "estate apply --require-plan",
+        "estate reconcile",
+        "estate reconcile --suggest",
+        "does not execute them",
+        "docs/LIVE-PROBES.md",
+        "Target C live uniqueness (5090-class)",
+        "The re-prove card is `make uniqueness-prove-checklist`",
+        "The factory does not train, convert, shell out to ollama, or promote.",
+        "does not invent a new live PASS",
+        "CELL_TRAIN_LIVE=1",
+        "CELL_SEAT_LIVE=1",
+        "Not native MLX",
+        "through PR #155",
+        "cbecb0b554a655a5276e0c75b8fdc59d55c77f76",
+        "does not move that tip",
+        "43770130 3391",
+    ] {
+        assert!(
+            standing.contains(needle),
+            "standing next CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(
+        standing.contains("READY_FOR_LIVE_TEST`: no")
+            || standing.contains("READY_FOR_LIVE_TEST: no"),
+        "{standing}"
+    );
+    assert!(
+        !standing.contains("READY_FOR_LIVE_TEST: yes")
+            && !standing.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{standing}"
+    );
+    assert!(!standing.to_ascii_lowercase().contains("kimi"), "{standing}");
+    assert!(
+        !standing.contains("through PR #156"),
+        "standing next slice must leave tip framing through PR #155: {standing}"
+    );
     let slice = changelog
         .split("## This slice — print-only Target C uniqueness prove checklist")
         .nth(1)
@@ -2695,6 +2790,46 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
                 .unwrap_or_else(|| panic!("missing step {mark}"));
             assert!(at >= prev, "step order drifted at {mark}");
             prev = at;
+        }
+        let coda_marks = [
+            "Standing next (estate)",
+            "1. The proposal stays auto_apply=false.",
+            "2. No promote. No auto-promote.",
+            "3. Existing entrypoints (print only; this checklist does not execute them):",
+            "enrich apply-proposal --estate <lab-estate.yaml>",
+            " plan --estate <lab-estate.yaml> --plans-dir plans",
+            " apply --estate <lab-estate.yaml> --state-dir .cell --require-plan --curator jason",
+            " reconcile --estate <lab-estate.yaml> --state-dir .cell",
+            " reconcile --suggest",
+            "packs accept --id <pack-id> --curator jason",
+            "packs promote --id <pack-id>",
+            "feed promote --id <pack-id>",
+            "4. Recorded PASS stays in docs/LIVE-PROBES.md section Target C live uniqueness (5090-class).",
+            "Re-prove card: make uniqueness-prove-checklist.",
+            "5. Phrase-check passed:",
+        ];
+        for mark in coda_marks {
+            let at = stdout
+                .find(mark)
+                .unwrap_or_else(|| panic!("missing coda mark {mark}\n{stdout}"));
+            assert!(at >= prev, "coda order drifted at {mark}");
+            prev = at;
+        }
+        for claim in [
+            "READY_FOR_LIVE_TEST: yes",
+            "The factory applied",
+            "The factory promoted",
+            "The factory trained",
+            "The factory converted",
+            "The factory shelled out",
+            "This checklist applied",
+            "wrote examples/estate.yaml",
+            "--estate examples/estate.yaml",
+        ] {
+            assert!(
+                !stdout.contains(claim),
+                "checklist claimed {claim}\n{stdout}"
+            );
         }
         assert!(
             !stdout
