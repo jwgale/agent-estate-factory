@@ -139,6 +139,186 @@ fn gate_90_tip_names_cell_one_through_pr_143() {
 }
 
 #[test]
+fn uniqueness_ladder_chains_target_c_prints_and_stays_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile
+            .lines()
+            .any(|line| line.trim() == "uniqueness-ladder:"),
+        "Makefile missing uniqueness-ladder"
+    );
+    assert!(makefile.contains("scripts/uniqueness-ladder.sh"));
+    assert!(
+        makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
+        "uniqueness-ladder must stay off smoke, gate-90, and Actions"
+    );
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("uniqueness-ladder"),
+        "uniqueness-ladder must be a phony target"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("uniqueness-ladder"),
+        "gate-90 must not run uniqueness-ladder: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("uniqueness-ladder"),
+        "smoke must not run uniqueness-ladder: {smoke}"
+    );
+
+    let script_path = root.join("scripts/uniqueness-ladder.sh");
+    assert!(
+        script_path.is_file(),
+        "scripts/uniqueness-ladder.sh missing"
+    );
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "Does not train, merge, convert, seat, or promote.",
+        "make qlora-journey",
+        "make seat-journey",
+        "Live train, live convert, and live seat still need a human GPU host and stay skipped.",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+    ] {
+        assert!(
+            script.contains(needle),
+            "uniqueness-ladder missing {needle}"
+        );
+    }
+    assert!(
+        !script.contains("READY_FOR_LIVE_TEST: yes"),
+        "uniqueness-ladder must keep READY_FOR_LIVE_TEST no"
+    );
+    let commands: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#') && !trimmed.starts_with("echo")
+        })
+        .collect();
+    let joined = commands.join("\n");
+    let qlora = joined
+        .find("qlora-journey")
+        .expect("chain must run qlora-journey");
+    let seat = joined
+        .find("seat-journey")
+        .expect("chain must run seat-journey");
+    assert!(qlora < seat, "qlora-journey must run before seat-journey");
+    assert!(
+        !joined.contains("lf-beachhead-prepare"),
+        "uniqueness-ladder must not run lf-beachhead-prepare"
+    );
+    let shells_out = commands.iter().any(|line| {
+        line.contains("llamafactory-cli")
+            || line.contains("convert_hf_to_gguf.py")
+            || line.contains("ollama ")
+            || line.contains("import-trained")
+            || line.contains("gguf-convert")
+            || line.contains("local-seat")
+            || line.contains("merge-adapt")
+    });
+    assert!(
+        !shells_out,
+        "uniqueness-ladder must not train, merge, convert, seat, or import"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes"),
+        "GATE-90 must not flip READY_FOR_LIVE_TEST"
+    );
+    let remaining = gate
+        .split("## Remaining Day-90+ (honest)")
+        .nth(1)
+        .expect("remaining section");
+    let row = remaining
+        .lines()
+        .find(|line| line.contains("`make uniqueness-ladder`"))
+        .expect("remaining row for uniqueness-ladder");
+    assert!(row.contains("qlora-journey then seat-journey"), "{row}");
+    assert!(row.contains("Does not train"), "{row}");
+    assert!(row.contains("Not in smoke or Actions"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let uniq = status
+        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
+        .nth(1)
+        .expect("uniqueness section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(uniq.contains("make uniqueness-ladder"), "{uniq}");
+    assert!(
+        uniq.contains("make qlora-journey") && uniq.contains("make seat-journey"),
+        "{uniq}"
+    );
+    assert!(
+        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
+        "uniqueness section must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("make uniqueness-ladder"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("make uniqueness-ladder"));
+    assert!(
+        !journey.contains("READY_FOR_LIVE_TEST: yes")
+            && !train.contains("READY_FOR_LIVE_TEST: yes"),
+        "operator pages must keep READY_FOR_LIVE_TEST no"
+    );
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — print-only Target C uniqueness ladder")
+        .nth(1)
+        .expect("CHANGELOG missing the uniqueness ladder slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(slice.contains("make uniqueness-ladder"), "{slice}");
+    assert!(slice.contains("make qlora-journey"), "{slice}");
+    assert!(slice.contains("make seat-journey"), "{slice}");
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("uniqueness-ladder"),
+            "{rel} must not run uniqueness-ladder"
+        );
+    }
+}
+
+#[test]
 fn glossary_keeps_purpose_built_slm_in_suite() {
     let root = repo_root();
     let glossary = std::fs::read_to_string(root.join("docs/UBIQUITOUS_LANGUAGE.md")).unwrap();

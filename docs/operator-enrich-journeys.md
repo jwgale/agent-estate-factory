@@ -14,6 +14,8 @@ Unquantized path (Target A): Qwen through LLaMA-Factory LoRA, then a printed mer
 
 Print path once a merged export and a GGUF exist (Target C seat ladder): the same Qwen QLoRA prepare, then a 5090-shaped export that is `refuse:tokenizer`, then fixture stubs, then the printed `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` lines. Section 10. Opt-in check: `make seat-journey`. It prints those lines. It does not train, does not convert, does not create a model, and does not promote.
 
+`make uniqueness-ladder` runs that Target C print path in order: `make qlora-journey`, then `make seat-journey`. Print-only. It does not train, merge, convert, seat, or promote, and it does not run `make lf-beachhead-prepare`. Live train, live convert, and live seat still need a human GPU host and stay skipped. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions. Opt-in prepare walk: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the matrix knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row.
 
 ## What stays fixed
