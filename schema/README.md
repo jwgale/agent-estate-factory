@@ -52,3 +52,5 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 Policy files (not schema snapshots): `policy/cell-one.policy.v0.yaml`, `policy/sacred.yaml`.
 
 Documentary ids without a snapshot file: `cell-one.reconcile-suggest.v0` (`reconcile --suggest`), `cell-one.enrich-accept.v0` (`packs accept`), `cell-one.backup-prune.v0` (`backup --prune`). Same freeze rule: additive ok, rename → v1.
+
+`export_yaml` and `modelfile` are additive optional fields on `cell-one.enrich-prepare.v0`. Prepare writes `export_yaml` when that prepare wrote `export.yaml`, and `modelfile` when that prepare wrote `Modelfile`. The LLaMA-Factory Modelfile inside a later `export_dir` is a separate file. Older prepare files stay valid.

@@ -591,6 +591,16 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value_t = false)]
         verify_local_tag: bool,
     },
+    /// Validate a merged export directory or a GGUF and print the ollama create line.
+    /// Does not create, does not shell out, and does not promote.
+    LocalSeat {
+        /// Directory that holds a llamafactory-lora or llamafactory-qlora prepare.json.
+        #[arg(long)]
+        prepared: PathBuf,
+        /// Merged export directory (config.json and .safetensors, optional Modelfile) or a .gguf file.
+        #[arg(long)]
+        weights: PathBuf,
+    },
     /// List registered TrainEnrichDriver cards. Does not prepare.
     Drivers,
 }

@@ -7,6 +7,7 @@ mod catalog;
 mod error;
 mod frontier;
 mod local;
+mod local_seat;
 mod mock;
 mod path;
 mod train_enrich;
@@ -31,6 +32,7 @@ pub use local::{
     HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
     SpecialistResult, UnwiredLocal,
 };
+pub use local_seat::{plan_local_seat, LocalSeatPlan};
 pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
 };

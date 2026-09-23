@@ -352,6 +352,32 @@ Prepare loads the estate the same way pack import does: parsed, then the enrich 
 
 Those prepare stops happen before the output directory is created. `--all-drivers` stages every card first, so one refuse leaves no sibling directory from that call. List does not create `.cell/enrich`. Import writes the proposal only after the gates pass. `apply-proposal` writes `enrich-stage/` only after its gates pass. Same tag and binding again is a no-op and does not rewrite the stage.
 
+## Local seat after LLaMA-Factory export
+
+`llamafactory-cli export` writes the merged directory named by `export_dir` in `export.yaml`. Current LLaMA-Factory `export_model` also writes `Modelfile` in that directory. The file starts with `FROM .` and carries TEMPLATE from the train chat template (`template.get_ollama_modelfile`). This factory does not write that Modelfile and does not invent a second template.
+
+`prepare.json` records `export_yaml` when prepare wrote `export.yaml`, and `modelfile` when prepare wrote `Modelfile`. The `ollama-modelfile` card records `modelfile`. The LLaMA-Factory cards record `export_yaml`. The Modelfile that export writes later, inside `export_dir`, is not the prepare-time `modelfile` field.
+
+Seat the merged weights on the local runtime outside the factory:
+
+1. Export with the `llamafactory-cli export` line in `NEXT.md`.
+2. GGUF conversion stays on a llama.cpp checkout: `convert_hf_to_gguf.py` on the merged directory. This factory does not run that script and does not choose a quantization type.
+3. `ollama create` uses FROM the GGUF, or the merged directory when LLaMA-Factory wrote the Modelfile.
+
+`estate enrich local-seat` validates the directory or the GGUF and prints that create line. The create name is `cell-enrich-{pack_id}`. The seat tag is `prepare.json` `seat_tag` (the same string as `base_model`). The command does not create the model, does not shell out, and does not promote.
+
+```bash
+estate enrich local-seat \
+  --prepared .cell/enrich/<pack-id>/llamafactory-qlora \
+  --weights .cell/enrich/<pack-id>/llamafactory-qlora/export
+```
+
+Point `--weights` at a `.gguf` file after the llama.cpp convert. The command prints a Modelfile whose FROM is that file. When a LLaMA-Factory Modelfile sits in the same directory, TEMPLATE and PARAMETER lines are copied into the printed text. The bytes on disk stay as they were.
+
+`import-trained` records the same path on the `local_slm` proposal. A merged export_dir is `config.json` and at least one `.safetensors` file, and a Modelfile there is part of that shape. A GGUF is a `.gguf` file. An adapter `output_dir` (`adapter_config.json`) stays on `import-trained`. `local-seat` refuses that directory. The seat tag on the proposal stays the prepare seat tag. `import-trained` does not apply and does not promote.
+
+`PREPARE.md` and `NEXT.md` on `llamafactory-lora` and `llamafactory-qlora` carry this chain. Page: [`local-seat.md`](local-seat.md). `READY_FOR_LIVE_TEST`: no.
+
 ## Opt-in walk
 
 ```bash
