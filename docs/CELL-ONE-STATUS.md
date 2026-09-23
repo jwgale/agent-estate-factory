@@ -37,6 +37,8 @@ complete is a recorded PASS (`Pong` on the MacBook Air, tip `2ab78a4`).
 
 The uniqueness bet on tip is one printed ladder: `estate enrich prepare`, the `NEXT.md` train and export lines, `estate enrich merge-adapt`, `estate enrich gguf-convert`, `estate enrich local-seat`, then `estate enrich import-trained`. The factory writes the recipe and prints the next command. It does not train, merge, convert, create an Ollama model, or download weights. `READY_FOR_LIVE_TEST`: no.
 
+An operator ran that ladder outside the factory on a Linux 5090-class host on 2026-09-23. The recorded PASS is [Target C live uniqueness (5090-class)](LIVE-PROBES.md). The factory did not train, convert, shell out to ollama, or promote. That prove is not in `make smoke`, `make gate-90`, or GitHub Actions, and it is not native MLX. `examples/estate.yaml` stayed hash-locked. `READY_FOR_LIVE_TEST`: no.
+
 The seat tag and the Hugging Face train base stay separate. The smoke seat tag is `llama3`. The train base is pack `train_base_model` or `params.train_base_model`. A bare Ollama tag (`llama3`, `llama3:latest`, `deepseek-r1`, `deepseek-r1:1.5b`, `glm4`, `glm4:9b`, `glm4:latest`, `glm-4:9b`) is `refuse:train-base` and writes nothing.
 
 [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md) is the print-only index: 8 families, each with a `llamafactory-qlora` row and a `llamafactory-lora` row. Phi-3 Instruct, Llama-3.2 Instruct, Gemma-2 Instruct, Mistral Instruct, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat. The DeepSeek-R1-Distill chat pair and the GLM-4 Chat pair are closed on tip. Kimi is not a row. `estate help enrich` and `estate help train` print that file. The table does not add a train family.
