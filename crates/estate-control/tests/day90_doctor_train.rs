@@ -95,8 +95,14 @@ fn assert_catalog_is_the_card(text: &str) {
             && text.contains("train_catalog unsloth-lora status=optional live=false"),
         "{text}"
     );
+    assert_eq!(
+        text.matches("train_catalog mlx-lm-lora status=optional live=false")
+            .count(),
+        1,
+        "{text}"
+    );
     assert!(
-        text.contains("train_catalog mlx-lm-lora status=optional live=false"),
+        !text.contains("train_catalog mlx-lm-lora status=integration"),
         "{text}"
     );
     assert!(
@@ -468,4 +474,84 @@ fn doctor_names_unsloth_cards_and_refuses_a_bad_prepare_before_factory_ready() {
     assert_prepare_is_a_record(&text);
     assert_no_invented_prepare_count(&text);
     assert!(!text.contains("trained_shape="), "{text}");
+}
+
+#[test]
+fn doctor_names_mlx_lm_lora_and_refuses_a_bad_prepare_before_factory_ready() {
+    let root = repo_root();
+    let bin = env!("CARGO_BIN_EXE_estate");
+    let dir = tmp("mlx");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+
+    let (ok, text) = doctor(&bin, &root, &state);
+    assert!(ok, "{text}");
+    assert!(text.contains("factory ready"), "{text}");
+    assert_catalog_is_the_card(&text);
+    assert_no_invented_prepare_count(&text);
+    assert!(
+        !text.contains("train_prepare:"),
+        "missing enrich directory must stay silent: {text}"
+    );
+    assert!(!text.contains("live PASS"), "{text}");
+
+    let prepare = state.join("enrich/overnight-traces/mlx-lm-lora/prepare.json");
+    std::fs::create_dir_all(prepare.parent().unwrap()).unwrap();
+    let body = prepare_for("mlx-lm-lora", "overnight-traces", None, false);
+    std::fs::write(&prepare, &body).unwrap();
+
+    let (ok, text) = doctor(&bin, &root, &state);
+    assert!(ok, "{text}");
+    assert!(text.contains("factory ready"), "{text}");
+    assert_catalog_is_the_card(&text);
+    assert_no_invented_prepare_count(&text);
+    assert!(
+        text.contains("ok    train_prepare: pack=overnight-traces driver=mlx-lm-lora job=train seat_tag=llama3 train_base=Qwen/Qwen2.5-0.5B-Instruct"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("out={}", prepare.parent().unwrap().display())),
+        "{text}"
+    );
+    assert!(!text.contains("trained_shape="), "{text}");
+    assert_prepare_is_a_record(&text);
+    assert_eq!(text.matches("ok    train_prepare:").count(), 1, "{text}");
+    assert!(!text.contains("live PASS"), "{text}");
+
+    std::fs::write(&prepare, "not-json\n").unwrap();
+    let (ok, text) = doctor(&bin, &root, &state);
+    assert!(!ok, "{text}");
+    assert!(text.contains("prepare.json"), "{text}");
+    assert!(text.contains("FAIL"), "{text}");
+    assert!(!text.contains("factory ready"), "{text}");
+    assert!(
+        !text.contains("ok    train_prepare:"),
+        "garbage mlx prepare must not become a clean train line: {text}"
+    );
+    assert_eq!(std::fs::read_to_string(&prepare).unwrap(), "not-json\n");
+
+    std::fs::write(
+        &prepare,
+        prepare_for("mlx-lm-lora", "overnight-traces", None, true),
+    )
+    .unwrap();
+    let (ok, text) = doctor(&bin, &root, &state);
+    assert!(!ok, "{text}");
+    assert!(text.contains("refuse:prepared:"), "{text}");
+    assert!(text.contains("promoted"), "{text}");
+    assert!(!text.contains("factory ready"), "{text}");
+    assert!(
+        !text.contains("ok    train_prepare:"),
+        "a promoted mlx prepare must not become a clean train line: {text}"
+    );
+
+    std::fs::write(&prepare, &body).unwrap();
+    let (ok, text) = doctor(&bin, &root, &state);
+    assert!(ok, "{text}");
+    assert!(text.contains("factory ready"), "{text}");
+    assert!(text.contains("driver=mlx-lm-lora"), "{text}");
+    assert_prepare_is_a_record(&text);
+    assert_no_invented_prepare_count(&text);
+    assert!(!text.contains("trained_shape="), "{text}");
+    assert!(!text.contains("live PASS"), "{text}");
 }
