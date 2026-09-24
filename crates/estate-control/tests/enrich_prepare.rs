@@ -619,7 +619,7 @@ fn cell_one_status_tip_names_pr_161() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #167"
+        "status snapshot must name tip through PR #169"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
@@ -649,10 +649,14 @@ fn cell_one_status_tip_names_pr_161() {
         !status.contains("on tip through PR #142"),
         "prepare walk stays PR #142; tip is PR #165"
     );
-    let head: String = status.lines().take(31).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(33).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #167"),
-        "status header must name tip through PR #167: {head}"
+        head.contains("through PR #169"),
+        "status header must name tip through PR #169: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #167"),
+        "status header must not freeze the snapshot at PR #167: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #165"),
@@ -718,6 +722,22 @@ fn cell_one_status_tip_names_pr_161() {
             && head.contains("once each")
             && head.contains("not relabeled integration"),
         "status header must name the Unsloth doctor and status lock: {head}"
+    );
+    assert!(
+        head.contains("aa374875f221be908ff473c8096eeea1c0f32846"),
+        "status header must name the PR #169 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("Tip honesty through PR #167 is PR #168")
+            && head.contains("45f8808dbb9d8c837619ae5015aa26777f46f0a6"),
+        "status header must name PR #168 tip honesty through PR #167: {head}"
+    );
+    assert!(
+        head.contains("make purpose-build-checklist")
+            && head.contains("operator section 15")
+            && head.contains("does not run them")
+            && head.contains("make uniqueness-prove-checklist"),
+        "status header must name the print-only purpose-build checklist: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #161"),
@@ -1298,6 +1318,48 @@ fn cell_one_status_tip_names_pr_161() {
     assert!(
         !tip167.contains("through PR #165 (`7a1b3d54d37b38977c5570679d7f3922b9404d4a`)"),
         "tip slice must not freeze at the PR #165 tip SHA: {tip167}"
+    );
+
+    let tip169 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #169")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #169 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip169.contains("aa374875f221be908ff473c8096eeea1c0f32846"),
+        "{tip169}"
+    );
+    assert!(
+        tip169.contains("45f8808dbb9d8c837619ae5015aa26777f46f0a6"),
+        "{tip169}"
+    );
+    assert!(tip169.contains("PR #168"), "{tip169}");
+    assert!(tip169.contains("PR #169"), "{tip169}");
+    assert!(tip169.contains("make purpose-build-checklist"), "{tip169}");
+    assert!(tip169.contains("does not run them"), "{tip169}");
+    assert!(tip169.contains("make uniqueness-prove-checklist"), "{tip169}");
+    assert!(tip169.contains("only live uniqueness prove"), "{tip169}");
+    assert!(tip169.contains("via PR #143"), "{tip169}");
+    assert!(
+        tip169.contains("does not invent a new live PASS"),
+        "{tip169}"
+    );
+    assert!(tip169.contains("43770130 3391"), "{tip169}");
+    assert!(
+        tip169.contains("READY_FOR_LIVE_TEST`: no") || tip169.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip169}"
+    );
+    assert!(
+        !tip169.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip169.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip169}"
+    );
+    assert!(!tip169.to_ascii_lowercase().contains("kimi/"), "{tip169}");
+    assert!(
+        !tip169.contains("through PR #167 (`c244e721d7275651ecfa1c8f4578ba008a668aa9`)"),
+        "tip slice must not freeze at the PR #167 tip SHA: {tip169}"
     );
 }
 
@@ -4469,7 +4531,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only purpose-build operator checklist");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4690,7 +4752,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only purpose-build operator checklist");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4910,7 +4972,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only purpose-build operator checklist");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4958,7 +5020,8 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     assert!(status.contains("make axolotl-lora-journey"));
     assert!(status.contains("make uniqueness-axolotl-lora"));
     assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #167"));
+    assert!(status.contains("through PR #169"));
+    assert!(status.contains("aa374875f221be908ff473c8096eeea1c0f32846"));
     assert!(status.contains("c244e721d7275651ecfa1c8f4578ba008a668aa9"));
     assert!(status.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"));
     assert!(!status.contains("READY_FOR_LIVE_TEST: yes"));
