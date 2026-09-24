@@ -42,7 +42,7 @@ use crate::train_enrich::{
     load_prepare_doc, local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record,
     refuse_sacred_and_sku, EnrichJobKind, EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID,
     LLAMAFACTORY_QLORA_ID, MLX_LM_LORA_ID, MLX_LORA_DOC, UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC,
-    UNSLOTH_LORA_ID, UNSLOTH_OLLAMA_DOC, UNSLOTH_VLLM_DOC,
+    UNSLOTH_LORA_ID, UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::io::Read;
