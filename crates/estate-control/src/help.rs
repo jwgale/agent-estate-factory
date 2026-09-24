@@ -118,6 +118,7 @@ LoRA train: make train-next-lora
 LoRA seat:  make seat-journey-lora
 LoRA full:  make uniqueness-full-lora
 Prove list: make uniqueness-prove-checklist
+Purpose:    make purpose-build-checklist
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -417,6 +418,7 @@ READY_FOR_LIVE_TEST stays no.
   make seat-journey-lora
   make uniqueness-full-lora
   make uniqueness-prove-checklist
+  make purpose-build-checklist
   make lf-beachhead-prepare
   make enrich-live-prove
 
@@ -997,6 +999,13 @@ The factory does not apply the estate without an explicit operator
 --require-plan path. No promote and no auto-promote. The coda names
 plan, apply --require-plan, and reconcile and does not execute them.
 The re-prove card is make uniqueness-prove-checklist.
+make purpose-build-checklist prints purpose-build on demand. It points
+at the print-only cards already on tip and does not run them. After
+import-trained (trained_shape gguf, auto_apply=false) it prints
+Standing next (estate). The coda names apply-proposal, plan,
+apply --require-plan, and reconcile and does not execute them.
+It does not invent a live PASS. The recorded PASS stays the only
+live uniqueness prove. Walk: docs/operator-enrich-journeys.md (section 15).
 CELL_TRAIN_LIVE=1 stays print-only. CELL_SEAT_LIVE=1 stays print-only.
 Not native MLX. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
