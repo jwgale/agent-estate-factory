@@ -88,6 +88,7 @@ echo "   Beachhead rows: make lf-beachhead-prepare (SKIP live train). This check
 echo "   LLaMA-Factory QLoRA: make qlora-journey. LLaMA-Factory LoRA: make lora-journey."
 echo "   Optional paths: make axolotl-qlora-journey, make axolotl-lora-journey, make unsloth-qlora-journey, make unsloth-lora-journey."
 echo "   Apple Silicon print pointer: make mlx-lm-lora-journey. This checklist does not run it. Not native MLX."
+echo "   Host and stack picker: make purpose-build-pick (operator section 17). This checklist does not run it."
 echo "   Prepare against a throwaway copy. examples/estate.yaml stays the hash-locked example."
 echo "2. Train handoff, train-next style. Print the NEXT.md recipe. SKIP live train."
 echo "   Print check (does not train): make train-next or make train-next-lora. This checklist does not run them."

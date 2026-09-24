@@ -2924,7 +2924,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
+    assert_eq!(head, " print-only purpose-build host picker");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3288,7 +3288,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
+    assert_eq!(head, " print-only purpose-build host picker");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3686,7 +3686,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
+    assert_eq!(head, " print-only purpose-build host picker");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4064,7 +4064,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
+    assert_eq!(head, " print-only purpose-build host picker");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4756,7 +4756,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
+    assert_eq!(head, " print-only purpose-build host picker");
     let named = changelog
         .split("## This slice — help names the purpose-build checklist")
         .nth(1)
@@ -5013,4 +5013,292 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
 
     let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
     assert_eq!(before, after, "checklist must not rewrite examples/estate.yaml");
+}
+
+#[test]
+fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile
+            .lines()
+            .any(|line| line.trim() == "purpose-build-pick:"),
+        "Makefile missing purpose-build-pick"
+    );
+    assert!(makefile.contains("scripts/purpose-build-pick.sh"));
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("purpose-build-pick"),
+        "purpose-build-pick must be a phony target"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("purpose-build-pick"),
+        "gate-90 must not run purpose-build-pick: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("purpose-build-pick"),
+        "smoke must not run purpose-build-pick: {smoke}"
+    );
+    assert!(makefile.contains(
+        "print-only host and stack picker for purpose-build journeys (operator section 17)"
+    ));
+
+    let script_path = root.join("scripts/purpose-build-pick.sh");
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "does not run them",
+        "does not resolve or execute estate",
+        "make lf-beachhead-prepare",
+        "make qlora-journey",
+        "make uniqueness-full",
+        "make unsloth-qlora-journey",
+        "make uniqueness-unsloth",
+        "make axolotl-qlora-journey",
+        "make uniqueness-axolotl",
+        "make mlx-lm-lora-journey",
+        "make uniqueness-mlx",
+        "refuse:host",
+        "make lora-journey",
+        "make uniqueness-full-lora",
+        "make unsloth-lora-journey",
+        "make uniqueness-unsloth-lora",
+        "make axolotl-lora-journey",
+        "make uniqueness-axolotl-lora",
+        "make purpose-build-checklist",
+        "make uniqueness-prove-checklist",
+        "43770130 3391",
+        "does not invent a new live PASS",
+        "This print is not a live PASS.",
+        "only live uniqueness prove",
+        "Not native MLX.",
+        "CELL_TRAIN_LIVE=1 stays print-only.",
+        "CELL_SEAT_LIVE=1 stays print-only.",
+        "CELL_TRAIN_LIVE=1 is set. This journey stays print-only.",
+        "CELL_SEAT_LIVE=1 is set. This journey stays print-only.",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "Purpose-build picker: make purpose-build-pick.",
+    ] {
+        assert!(script.contains(needle), "purpose-build-pick missing {needle}");
+    }
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        !script.to_ascii_lowercase().contains("kimi"),
+        "picker must not name Kimi"
+    );
+    let executed: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') || trimmed.starts_with("echo") || trimmed.starts_with("printf")
+            {
+                return false;
+            }
+            trimmed.contains("ollama ")
+                || trimmed.contains("llamafactory-cli")
+                || trimmed.contains("convert_hf_to_gguf.py")
+                || trimmed.contains("mlx_lm")
+                || trimmed.starts_with("make ")
+                || trimmed.contains(" estate enrich ")
+        })
+        .collect();
+    assert!(
+        executed.is_empty(),
+        "purpose-build-pick must not train, fuse, convert, or shell out: {executed:?}"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #177"),
+        "GATE-90 header stays through PR #177: {gate_head}"
+    );
+    assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
+    let row = gate
+        .lines()
+        .find(|line| line.contains("| `make purpose-build-pick` |"))
+        .expect("remaining row for purpose-build-pick");
+    assert!(row.contains("operator section 17"), "{row}");
+    assert!(row.contains("Does not execute them"), "{row}");
+    assert!(row.contains("Does not invent a live PASS"), "{row}");
+    assert!(row.contains("Not native MLX"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section = journey
+        .split("## 17. Purpose-build pick — host and stack table")
+        .nth(1)
+        .expect("operator section 17");
+    assert!(section.contains("make purpose-build-pick"));
+    assert!(section.contains("make uniqueness-full"));
+    assert!(section.contains("refuse:host"));
+    assert!(section.contains("make uniqueness-full-lora"));
+    assert!(section.contains("43770130 3391"));
+    assert!(section.contains("only live uniqueness prove"));
+    assert!(!journey.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make purpose-build-pick is the print-only host and stack picker for purpose-build journeys (operator section 17)"
+    ));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("`make purpose-build-pick`"));
+    assert!(readme.contains(
+        "print-only host and stack picker for purpose-build journeys (operator section 17)"
+    ));
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(41).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #177"));
+    assert!(status.contains("make purpose-build-pick # opt-in:"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " print-only purpose-build host picker");
+    let slice = changelog
+        .split("## This slice — print-only purpose-build host picker")
+        .nth(1)
+        .expect("CHANGELOG missing the picker slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make purpose-build-pick",
+        "scripts/purpose-build-pick.sh",
+        "make lf-beachhead-prepare",
+        "make qlora-journey",
+        "make uniqueness-full",
+        "make mlx-lm-lora-journey",
+        "make uniqueness-mlx",
+        "refuse:host",
+        "make lora-journey",
+        "make uniqueness-full-lora",
+        "operator section 17",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #177",
+        "3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "Not native MLX",
+        "does not add Kimi",
+    ] {
+        assert!(slice.contains(needle), "picker CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no")
+    );
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(changelog.contains(
+        "## This slice — GATE-90 and Cell One tip honesty through PR #177"
+    ));
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("purpose-build-pick"),
+            "{rel} must not run purpose-build-pick"
+        );
+    }
+
+    let before = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    let syntax = std::process::Command::new("bash")
+        .arg("-n")
+        .arg(&script_path)
+        .output()
+        .unwrap();
+    assert!(
+        syntax.status.success(),
+        "{}",
+        String::from_utf8_lossy(&syntax.stderr)
+    );
+
+    for (train, seat) in [(false, false), (true, true)] {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&script_path)
+            .current_dir(&root)
+            .env_remove("XAI_API_KEY");
+        if train {
+            cmd.env("CELL_TRAIN_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_TRAIN_LIVE");
+        }
+        if seat {
+            cmd.env("CELL_SEAT_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_SEAT_LIVE");
+        }
+        let output = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        assert!(
+            output.status.success(),
+            "picker failed train={train} seat={seat}\n{stdout}\n{stderr}"
+        );
+        assert!(stderr.is_empty(), "{stderr}");
+        for needle in [
+            "Print-only. READY_FOR_LIVE_TEST: no",
+            "Nvidia / CUDA",
+            "primary",
+            "make lf-beachhead-prepare",
+            "make qlora-journey",
+            "make uniqueness-full",
+            "optional",
+            "make unsloth-qlora-journey",
+            "integration",
+            "make axolotl-qlora-journey",
+            "Apple Silicon",
+            "make mlx-lm-lora-journey",
+            "make uniqueness-mlx",
+            "refuse:host",
+            "Target A LoRA twin",
+            "make lora-journey",
+            "make uniqueness-full-lora",
+            "make unsloth-lora-journey",
+            "make uniqueness-unsloth-lora",
+            "make axolotl-lora-journey",
+            "make uniqueness-axolotl-lora",
+            "cksum: 43770130 3391 ",
+            "This print is not a live PASS.",
+            "Purpose-build picker: make purpose-build-pick.",
+            "This picker does not run it.",
+        ] {
+            assert!(stdout.contains(needle), "output missing {needle}\n{stdout}");
+        }
+        assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"));
+        if train {
+            assert!(stdout.contains("CELL_TRAIN_LIVE=1 is set. This journey stays print-only."));
+        }
+        if seat {
+            assert!(stdout.contains("CELL_SEAT_LIVE=1 is set. This journey stays print-only."));
+        }
+    }
+    let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    assert_eq!(before, after, "picker must not rewrite examples/estate.yaml");
 }
