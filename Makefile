@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora purpose-build-checklist
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -331,6 +331,20 @@ unsloth-lora-journey:
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 uniqueness-unsloth-lora:
 	bash scripts/uniqueness-unsloth-lora.sh
+
+# Opt-in print-only purpose-build operator checklist.
+# Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth),
+# the train-next SKIP, merge-adapt, gguf-convert, local-seat, and import-trained.
+# After import-trained it prints Standing next (estate): auto_apply=false, no promote,
+# and the existing apply-proposal / plan / apply --require-plan / reconcile entrypoints.
+# Print only. Does not execute them.
+# Does not train, convert, shell out to ollama, promote, or apply the estate.
+# Does not invent a live PASS. The recorded Target C PASS stays the only live uniqueness prove.
+# CELL_TRAIN_LIVE=1 and CELL_SEAT_LIVE=1 stay print-only.
+# Not native MLX.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+purpose-build-checklist:
+	bash scripts/purpose-build-checklist.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
