@@ -9,10 +9,11 @@
 //! LLaMA-Factory export keeps the config key and drops the tensors.
 
 use anyhow::{bail, Result};
-use safetensors::tensor::{Dtype, SafeTensors, TensorView};
+use safetensors::tensor::{Dtype, TensorInfo, TensorView};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 pub const REPAIR_SHARD: &str = "model-export-repair.safetensors";
@@ -45,8 +46,8 @@ pub fn preview_repair(base: &Path, merged: &Path) -> Result<RepairReport> {
             files: Vec::new(),
         });
     }
-    let base_tensors = read_tensors(base)?;
-    let merged_tensors = read_tensors(merged)?;
+    let base_tensors = read_catalog(base)?;
+    let merged_tensors = read_catalog(merged)?;
     let mut missing: Vec<String> = base_tensors
         .keys()
         .filter(|name| !merged_tensors.contains_key(*name))
@@ -76,13 +77,15 @@ pub fn repair_export(base: &Path, merged: &Path) -> Result<RepairReport> {
         );
     }
     let report = preview_repair(base, merged)?;
+    let base_count = read_catalog(base)?.len();
+    refuse_implausible(&report.tensors, base_count)?;
     if report.tensors.is_empty() && report.files.is_empty() {
         verify_config_matches_tensors(merged)?;
         return Ok(report);
     }
     if !report.tensors.is_empty() {
-        let base_tensors = read_tensors(base)?;
-        write_repair_shard(merged, &base_tensors, &report.tensors)?;
+        let catalog = read_catalog(base)?;
+        write_repair_shard(merged, &catalog, &report.tensors)?;
     }
     for name in &report.files {
         let from = base.join(name);
@@ -137,51 +140,175 @@ fn is_sidecar(name: &str) -> bool {
         || lower == "chat_template.jinja"
 }
 
-struct StoredTensor {
+struct LocatedTensor {
     dtype: Dtype,
     shape: Vec<usize>,
-    data: Vec<u8>,
+    data_start: u64,
+    data_end: u64,
+    /// Byte length of the JSON header. Tensor bytes begin at 8 + header_len.
+    header_len: u64,
+    shard: PathBuf,
 }
 
-fn read_tensors(dir: &Path) -> Result<BTreeMap<String, StoredTensor>> {
+fn mtp_prefixed(name: &str) -> bool {
+    name.starts_with("mtp.")
+        || name.starts_with("model.mtp.")
+        || name.starts_with("model.language_model.mtp.")
+}
+
+/// An all-MTP gap is the patch this step exists for. Any other missing name
+/// must stay within 32 tensors and 2% of the base catalog.
+fn refuse_implausible(missing: &[String], base_count: usize) -> Result<()> {
+    if missing.is_empty() || missing.iter().all(|name| mtp_prefixed(name)) {
+        return Ok(());
+    }
+    let over_count = missing.len() > 32;
+    let over_ratio =
+        base_count == 0 || missing.len().saturating_mul(100) > base_count.saturating_mul(2);
+    if !over_count && !over_ratio {
+        return Ok(());
+    }
+    let sample = missing
+        .iter()
+        .take(10)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    bail!(
+        "refuse:classify-journey: export-repair missing {} tensors is not an MTP patch (allow every name starting with mtp., model.mtp., or model.language_model.mtp.; otherwise at most 32 tensors and 2% of {base_count} base tensors). Sample: {sample}",
+        missing.len()
+    );
+}
+
+/// Tensor names and locations from safetensors headers only. Does not read tensor bytes.
+fn read_catalog(dir: &Path) -> Result<BTreeMap<String, LocatedTensor>> {
     let mut out = BTreeMap::new();
+    if !dir.is_dir() {
+        return Ok(out);
+    }
     for path in shard_paths(dir)? {
-        let bytes = fs::read(&path).map_err(|err| {
-            anyhow::anyhow!(
-                "refuse:classify-journey: export-repair cannot read {}: {err}",
-                path.display()
-            )
-        })?;
-        let tensors = SafeTensors::deserialize(&bytes).map_err(|err| {
-            anyhow::anyhow!(
-                "refuse:classify-journey: export-repair {} is not safetensors: {err}",
-                path.display()
-            )
-        })?;
-        for name in tensors.names() {
-            let view = tensors.tensor(name).map_err(|err| {
-                anyhow::anyhow!(
-                    "refuse:classify-journey: export-repair cannot read tensor {name} in {}: {err}",
-                    path.display()
-                )
-            })?;
-            if out.contains_key(name) {
+        let (header_len, tensors) = read_header(&path)?;
+        for (name, info) in tensors {
+            if out.contains_key(&name) {
                 bail!(
                     "refuse:classify-journey: export-repair duplicate tensor {name} in {}",
                     dir.display()
                 );
             }
+            let (data_start, data_end) = info.data_offsets;
             out.insert(
-                name.to_string(),
-                StoredTensor {
-                    dtype: view.dtype(),
-                    shape: view.shape().to_vec(),
-                    data: view.data().to_vec(),
+                name,
+                LocatedTensor {
+                    dtype: info.dtype,
+                    shape: info.shape,
+                    data_start: data_start as u64,
+                    data_end: data_end as u64,
+                    header_len,
+                    shard: path.clone(),
                 },
             );
         }
     }
     Ok(out)
+}
+
+fn read_header(path: &Path) -> Result<(u64, BTreeMap<String, TensorInfo>)> {
+    let mut file = File::open(path).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair cannot read {}: {err}",
+            path.display()
+        )
+    })?;
+    let mut len_buf = [0u8; 8];
+    file.read_exact(&mut len_buf).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair {} is not safetensors: {err}",
+            path.display()
+        )
+    })?;
+    let header_len = u64::from_le_bytes(len_buf);
+    if header_len > 100_000_000 {
+        bail!(
+            "refuse:classify-journey: export-repair {} header is too large",
+            path.display()
+        );
+    }
+    let mut header = vec![0u8; header_len as usize];
+    file.read_exact(&mut header).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair {} header is truncated: {err}",
+            path.display()
+        )
+    })?;
+    let value: Value = serde_json::from_slice(&header).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair {} header is not JSON: {err}",
+            path.display()
+        )
+    })?;
+    let obj = value.as_object().ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair {} header is not an object",
+            path.display()
+        )
+    })?;
+    let mut tensors = BTreeMap::new();
+    for (name, info) in obj {
+        if name == "__metadata__" {
+            continue;
+        }
+        let parsed: TensorInfo = serde_json::from_value(info.clone()).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-journey: export-repair tensor {name} in {} has a bad header: {err}",
+                path.display()
+            )
+        })?;
+        tensors.insert(name.clone(), parsed);
+    }
+    Ok((header_len, tensors))
+}
+
+fn sum_nbytes(dir: &Path, weight_map: &BTreeMap<String, Value>) -> Result<u64> {
+    let mut headers: BTreeMap<String, BTreeMap<String, TensorInfo>> = BTreeMap::new();
+    let mut total = 0u64;
+    for (name, file) in weight_map {
+        let file = file.as_str().unwrap_or("");
+        if !headers.contains_key(file) {
+            let (_len, parsed) = read_header(&dir.join(file))?;
+            headers.insert(file.to_string(), parsed);
+        }
+        let info = headers
+            .get(file)
+            .and_then(|map| map.get(name))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "refuse:classify-journey: export-repair tensor {name} is missing from {file}"
+                )
+            })?;
+        let (start, end) = info.data_offsets;
+        total += (end.saturating_sub(start)) as u64;
+    }
+    Ok(total)
+}
+
+fn read_tensor_bytes(tensor: &LocatedTensor) -> Result<Vec<u8>> {
+    let len = tensor
+        .data_end
+        .checked_sub(tensor.data_start)
+        .ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: export-repair bad data_offsets")
+        })?;
+    let mut file = File::open(&tensor.shard)?;
+    let offset = 8 + tensor.header_len + tensor.data_start;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut buf = vec![0u8; len as usize];
+    file.read_exact(&mut buf).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: export-repair cannot read tensor bytes in {}: {err}",
+            tensor.shard.display()
+        )
+    })?;
+    Ok(buf)
 }
 
 fn shard_paths(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -235,7 +362,7 @@ fn shard_paths(dir: &Path) -> Result<Vec<PathBuf>> {
 
 fn write_repair_shard(
     merged: &Path,
-    base: &BTreeMap<String, StoredTensor>,
+    base: &BTreeMap<String, LocatedTensor>,
     names: &[String],
 ) -> Result<()> {
     let mut views = Vec::new();
@@ -246,12 +373,8 @@ fn write_repair_shard(
                 "refuse:classify-journey: export-repair tensor {name} disappeared from the base snapshot"
             );
         };
-        owned.push((
-            name.clone(),
-            tensor.dtype,
-            tensor.shape.clone(),
-            tensor.data.clone(),
-        ));
+        let data = read_tensor_bytes(tensor)?;
+        owned.push((name.clone(), tensor.dtype, tensor.shape.clone(), data));
     }
     for (name, dtype, shape, data) in &owned {
         let view = TensorView::new(*dtype, shape.clone(), data).map_err(|err| {
@@ -298,29 +421,27 @@ fn update_index(merged: &Path, names: &[String]) -> Result<()> {
             }
         }
     } else {
-        for path in shard_paths(merged)? {
-            let bytes = fs::read(&path)?;
-            let tensors = SafeTensors::deserialize(&bytes).map_err(|err| {
-                anyhow::anyhow!(
-                    "refuse:classify-journey: export-repair {} is not safetensors: {err}",
-                    path.display()
-                )
-            })?;
-            let file = path
+        for (name, tensor) in read_catalog(merged)? {
+            if tensor.shard.file_name().and_then(|n| n.to_str()) == Some(REPAIR_SHARD) {
+                continue;
+            }
+            let file = tensor
+                .shard
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("model.safetensors")
                 .to_string();
-            for name in tensors.names() {
-                weight_map.insert(name.to_string(), Value::String(file.clone()));
-            }
+            weight_map.insert(name, Value::String(file));
         }
     }
     for name in names {
         weight_map.insert(name.clone(), Value::String(REPAIR_SHARD.to_string()));
     }
+    let total = sum_nbytes(merged, &weight_map)?;
+    let mut meta = metadata.as_object().cloned().unwrap_or_default();
+    meta.insert("total_size".into(), json!(total));
     let report = json!({
-        "metadata": metadata,
+        "metadata": meta,
         "weight_map": weight_map,
     });
     fs::write(
@@ -340,7 +461,7 @@ fn verify_config_matches_tensors(merged: &Path) -> Result<()> {
     }
     let config: Value = serde_json::from_str(&fs::read_to_string(&config_path)?)?;
     let (layers, mtp) = declared_counts(&config);
-    let tensors = read_tensors(merged)?;
+    let tensors = read_catalog(merged)?;
     let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
     if let Some(layers) = layers {
         for index in 0..layers {
@@ -520,19 +641,26 @@ mod tests {
             "model.safetensors",
             &[("model.layers.0.input_layernorm.weight", &weight)],
         );
-        fs::write(base.join("config.json"), r#"{"num_hidden_layers":1}"#).unwrap();
+        let deepseek =
+            r#"{"architectures":["Qwen2ForCausalLM"],"model_type":"qwen2","num_hidden_layers":1}"#;
+        fs::write(base.join("config.json"), deepseek).unwrap();
         fs::write(base.join("tokenizer.json"), "tok").unwrap();
         write_shard(
             &merged,
             "model.safetensors",
             &[("model.layers.0.input_layernorm.weight", &weight)],
         );
-        fs::write(merged.join("config.json"), r#"{"num_hidden_layers":1}"#).unwrap();
+        fs::write(merged.join("config.json"), deepseek).unwrap();
         fs::write(merged.join("tokenizer.json"), "tok").unwrap();
         let before = fs::read(merged.join("model.safetensors")).unwrap();
         let report = repair_export(&base, &merged).unwrap();
         assert!(report.tensors.is_empty() && report.files.is_empty());
-        assert_eq!(report.summary(), "export-repair: nothing missing");
+        assert_eq!(
+            report.summary(),
+            "export-repair: nothing missing",
+            "DeepSeek-R1-Distill keeps the same tensors and is a no-op"
+        );
+        assert!(!deepseek.contains("mtp_num_hidden_layers"));
         assert!(!merged.join(REPAIR_SHARD).exists());
         assert!(!merged.join(INDEX_NAME).exists());
         assert_eq!(fs::read(merged.join("model.safetensors")).unwrap(), before);
@@ -576,7 +704,8 @@ mod tests {
 
     fn write_sharded(dir: &Path, names: &[String]) {
         fs::create_dir_all(dir).unwrap();
-        let data = [9u8, 0, 0, 0];
+        let f32 = [9u8, 0, 0, 0];
+        let bf16 = [0x80u8, 0x3f];
         let mid = names.len() / 2;
         let shards = [
             (
@@ -590,12 +719,22 @@ mod tests {
         ];
         let mut weight_map = serde_json::Map::new();
         for (file, group) in shards {
-            let views: Vec<_> = group
+            let owned: Vec<(String, Dtype, Vec<u8>)> = group
                 .iter()
                 .map(|name| {
+                    if name == "mtp.layers.0.input_layernorm.weight" {
+                        (name.clone(), Dtype::BF16, bf16.to_vec())
+                    } else {
+                        (name.clone(), Dtype::F32, f32.to_vec())
+                    }
+                })
+                .collect();
+            let views: Vec<_> = owned
+                .iter()
+                .map(|(name, dtype, data)| {
                     (
                         name.clone(),
-                        TensorView::new(Dtype::F32, vec![1], &data).unwrap(),
+                        TensorView::new(*dtype, vec![1], data).unwrap(),
                     )
                 })
                 .collect();
@@ -699,8 +838,65 @@ mod tests {
         assert_eq!(config["text_config"]["mtp_num_hidden_layers"], 1);
         assert_eq!(config["text_config"]["mtp_use_dedicated_embeddings"], false);
         assert_eq!(config["text_config"]["num_hidden_layers"], 32);
+        assert_eq!(after["metadata"]["total_size"], 723 * 4 + 14 * 4 + 2);
+        let (_len, repaired) = read_header(&merged.join(REPAIR_SHARD)).unwrap();
+        assert_eq!(
+            repaired["mtp.layers.0.input_layernorm.weight"].dtype,
+            Dtype::BF16
+        );
+        let bf = read_tensor_bytes(&LocatedTensor {
+            dtype: Dtype::BF16,
+            shape: vec![1],
+            data_start: repaired["mtp.layers.0.input_layernorm.weight"]
+                .data_offsets
+                .0 as u64,
+            data_end: repaired["mtp.layers.0.input_layernorm.weight"]
+                .data_offsets
+                .1 as u64,
+            header_len: _len,
+            shard: merged.join(REPAIR_SHARD),
+        })
+        .unwrap();
+        assert_eq!(bf, [0x80, 0x3f]);
         let again = repair_export(&base, &merged).unwrap();
         assert!(again.tensors.is_empty(), "{again:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refuses_a_prefix_mismatch_and_writes_nothing() {
+        let root =
+            std::env::temp_dir().join(format!("export-repair-prefix-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let base = root.join("base");
+        let merged = root.join("merged");
+        let data = [7u8, 0, 0, 0];
+        let mut base_names = Vec::new();
+        let mut merged_names = Vec::new();
+        for index in 0..40 {
+            base_names.push(format!("model.language_model.layers.{index}.weight"));
+            merged_names.push(format!("model.layers.{index}.weight"));
+        }
+        let base_tensors: Vec<(&str, &[u8])> = base_names
+            .iter()
+            .map(|name| (name.as_str(), data.as_slice()))
+            .collect();
+        let merged_tensors: Vec<(&str, &[u8])> = merged_names
+            .iter()
+            .map(|name| (name.as_str(), data.as_slice()))
+            .collect();
+        write_shard(&base, "model.safetensors", &base_tensors);
+        write_shard(&merged, "model.safetensors", &merged_tensors);
+        fs::write(base.join("config.json"), r#"{"num_hidden_layers":40}"#).unwrap();
+        fs::write(merged.join("config.json"), r#"{"num_hidden_layers":40}"#).unwrap();
+        let before = fs::read(merged.join("model.safetensors")).unwrap();
+        let err = repair_export(&base, &merged).unwrap_err().to_string();
+        assert!(err.contains("not an MTP patch"), "{err}");
+        assert!(err.contains("40"), "{err}");
+        assert!(err.contains("model.language_model.layers."), "{err}");
+        assert_eq!(fs::read(merged.join("model.safetensors")).unwrap(), before);
+        assert!(!merged.join(REPAIR_SHARD).exists());
+        assert!(!merged.join(INDEX_NAME).exists());
         let _ = fs::remove_dir_all(&root);
     }
 
