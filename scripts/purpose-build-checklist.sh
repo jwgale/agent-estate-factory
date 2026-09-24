@@ -65,7 +65,7 @@ echo "That recorded PASS stays the only live uniqueness prove."
 echo "This checklist does not invent a new live PASS."
 echo "The re-prove card stays make uniqueness-prove-checklist. This checklist does not run it."
 echo "examples/estate.yaml stays unchanged."
-echo "This checklist does not run make lf-beachhead-prepare, make qlora-journey, make lora-journey, make train-next, make train-next-lora, make seat-journey, make axolotl-qlora-journey, make axolotl-lora-journey, make unsloth-qlora-journey, make unsloth-lora-journey, or make mlx-lm-lora-journey."
+echo "This checklist does not run make lf-beachhead-prepare, make qlora-journey, make lora-journey, make train-next, make train-next-lora, make seat-journey, make axolotl-qlora-journey, make axolotl-lora-journey, make unsloth-qlora-journey, make unsloth-lora-journey, make mlx-lm-lora-journey, make deepseek-r1-distill-journey, make uniqueness-deepseek, make deepseek-r1-distill-lora-journey, make uniqueness-deepseek-lora, make glm4-chat-journey, make uniqueness-glm, make glm4-chat-lora-journey, or make uniqueness-glm-lora."
 
 if [[ "${CELL_TRAIN_LIVE:-}" == "1" ]]; then
   echo "CELL_TRAIN_LIVE=1 is set. This journey stays print-only."
@@ -88,6 +88,8 @@ echo "   Beachhead rows: make lf-beachhead-prepare (SKIP live train). This check
 echo "   LLaMA-Factory QLoRA: make qlora-journey. LLaMA-Factory LoRA: make lora-journey."
 echo "   Optional paths: make axolotl-qlora-journey, make axolotl-lora-journey, make unsloth-qlora-journey, make unsloth-lora-journey."
 echo "   Apple Silicon print pointer: make mlx-lm-lora-journey. This checklist does not run it. Not native MLX."
+echo "   DeepSeek-R1-Distill chat print pointer: make deepseek-r1-distill-journey and make uniqueness-deepseek, plus the LoRA twin make deepseek-r1-distill-lora-journey and make uniqueness-deepseek-lora (operator section 19). This checklist does not run them."
+echo "   GLM-4 Chat print pointer: make glm4-chat-journey and make uniqueness-glm, plus the LoRA twin make glm4-chat-lora-journey and make uniqueness-glm-lora (operator section 20). This checklist does not run them."
 echo "   Host and stack picker: make purpose-build-pick (operator section 17). This checklist does not run it."
 echo "   Prepare against a throwaway copy. examples/estate.yaml stays the hash-locked example."
 echo "2. Train handoff, train-next style. Print the NEXT.md recipe. SKIP live train."
