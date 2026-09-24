@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Opt-in tev1 classify journey. Default is print.
+# Opt-in tev1 classify journey. Default is print and the local train driver.
 # Set TEV1_RUN=1 to execute train, merge, GGUF, Ollama, and eval.
+# Set TRAIN_DRIVER=together to select the Together LoRA driver.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
 # Does not invent a live PASS.
 set -euo pipefail
@@ -14,6 +15,7 @@ BASE="${BASE:-Qwen/Qwen3.5-4B}"
 TAG="${TAG:-tev1-specialist}"
 QUANT="${QUANT:-Q4_K_M}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:11434}"
+TRAIN_DRIVER="${TRAIN_DRIVER:-local}"
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 BIN="${ESTATE_BIN:-}"
 
@@ -49,6 +51,17 @@ if [[ -n "${LLAMA_CPP_DIR:-}" ]]; then
 fi
 if [[ -n "${BASE_TAG:-}" ]]; then
   ARGS+=(--base-tag "$BASE_TAG")
+fi
+if [[ "$TRAIN_DRIVER" != "local" && "$TRAIN_DRIVER" != "together" ]]; then
+  echo "FAIL  TRAIN_DRIVER must be local or together" >&2
+  exit 1
+fi
+ARGS+=(--train-driver "$TRAIN_DRIVER")
+if [[ -n "${TOGETHER_MODEL:-}" ]]; then
+  ARGS+=(--together-model "$TOGETHER_MODEL")
+fi
+if [[ -n "${TOGETHER_API_KEY_ENV:-}" ]]; then
+  ARGS+=(--api-key-env "$TOGETHER_API_KEY_ENV")
 fi
 if [[ "${TEV1_RUN:-}" == "1" ]]; then
   echo "run requested; this still does not invent a live PASS"

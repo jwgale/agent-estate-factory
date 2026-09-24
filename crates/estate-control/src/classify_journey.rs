@@ -4,14 +4,13 @@
 //! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
 //! `--base-tag` is an opt-in library tag and skips that base build.
 
-use crate::classify::{
-    cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi, EvalGate,
-};
+use crate::classify::{cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi, EvalGate};
 use anyhow::{bail, Result};
 use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -25,6 +24,11 @@ pub const DEFAULT_TAG: &str = "tev1-specialist";
 pub const DEFAULT_DATASET: &str = "tev1_decisions";
 /// Default quant for both seats. `f16` skips `llama-quantize`.
 pub const DEFAULT_QUANT: &str = "Q4_K_M";
+/// Together fine-tune model id. Same Hub-style name as the local base. Override with `--together-model`.
+pub const DEFAULT_TOGETHER_MODEL: &str = "Qwen/Qwen3.5-4B";
+/// Together REST root. Fine-tune calls use this only when `--train-driver together` and `--run`.
+pub const DEFAULT_TOGETHER_API: &str = "https://api.together.ai/v1";
+pub const DEFAULT_TOGETHER_KEY_ENV: &str = "TOGETHER_API_KEY";
 
 const QWEN35_RECENT: &str = "Qwen3.5 needs a recent llama.cpp checkout";
 
@@ -117,6 +121,30 @@ impl JourneyPaths {
 
     fn manifest_path(&self, step: &str) -> PathBuf {
         self.manifests.join(format!("{step}.json"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum TrainDriver {
+    /// `llamafactory-cli train` on this host. This is the default.
+    Local,
+    /// Upload the prepared dataset and launch a Together LoRA job. `--print` does not call the network.
+    Together,
+}
+
+impl TrainDriver {
+    fn fingerprint(self, together_model: &str) -> String {
+        match self {
+            TrainDriver::Local => "local".into(),
+            TrainDriver::Together => format!("together\n{together_model}"),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrainDriver::Local => "local",
+            TrainDriver::Together => "together",
+        }
     }
 }
 
@@ -271,7 +299,11 @@ fn modelfile_from_token(path: &Path) -> String {
 }
 
 fn yaml_scalar(text: &str) -> String {
-    if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c == ':' || c == '#') {
+    if text.is_empty()
+        || text
+            .chars()
+            .any(|c| c.is_whitespace() || c == ':' || c == '#')
+    {
         format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
         text.to_string()
@@ -386,7 +418,7 @@ pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
     }
     if quantize.is_none() {
         missing.push(format!(
-            "llama-quantize is missing under {} (expected llama-quantize, build/bin/llama-quantize, bin/llama-quantize, or llama-quantize on PATH)",
+            "llama-quantize is missing under {} (expected llama-quantize, build/bin/llama-quantize, or bin/llama-quantize). A PATH binary is not used when this directory is set",
             dir.display()
         ));
     }
@@ -409,12 +441,7 @@ fn llama_quantize_bin(dir: &Path) -> Option<PathBuf> {
         dir.join("build").join("bin").join("llama-quantize"),
         dir.join("bin").join("llama-quantize"),
     ];
-    for candidate in candidates {
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    which("llama-quantize")
+    candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
 #[derive(Clone, Debug)]
@@ -539,11 +566,19 @@ fn fetch_inputs(base: &str) -> String {
     sha256_text(base)
 }
 
-fn pipeline_inputs(base: &str, dataset: &Path, recipe: &Path, quant: &str) -> Option<String> {
+fn pipeline_inputs(
+    base: &str,
+    dataset: &Path,
+    recipe: &Path,
+    quant: &str,
+    train_driver: TrainDriver,
+    together_model: &str,
+) -> Option<String> {
     let dataset_bytes = fs::read(dataset).ok()?;
     let recipe_bytes = fs::read(recipe).ok()?;
+    let driver = train_driver.fingerprint(together_model);
     Some(sha256_text(&format!(
-        "{base}\n{}\n{}\n{quant}",
+        "{base}\n{}\n{}\n{quant}\n{driver}",
         sha256_bytes(&dataset_bytes),
         sha256_bytes(&recipe_bytes)
     )))
@@ -620,7 +655,14 @@ fn ollama_inputs(
 fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs> {
     let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
     let resolved = resolved_base_dir(req.base, paths).display().to_string();
-    let pipeline = pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant);
+    let pipeline = pipeline_inputs(
+        &resolved,
+        &paths.dataset_jsonl,
+        &paths.recipe,
+        req.quant,
+        req.train_driver,
+        req.together_model,
+    );
     let recipe = recipe_decision_inputs(
         &resolved,
         req.base,
@@ -754,7 +796,10 @@ fn decide_ollama(
         };
     };
     match read_manifest(manifest_path) {
-        Some(manifest) if manifest.inputs == expected && manifest.gguf_sha256.as_deref() == Some(gguf_sha.as_str()) => {
+        Some(manifest)
+            if manifest.inputs == expected
+                && manifest.gguf_sha256.as_deref() == Some(gguf_sha.as_str()) =>
+        {
             if check_show && !ollama_has_model(tag) {
                 Decision {
                     action: StepAction::Run,
@@ -767,7 +812,10 @@ fn decide_ollama(
                 }
             }
         }
-        Some(manifest) if manifest.gguf_sha256.is_some() && manifest.gguf_sha256.as_deref() != Some(gguf_sha.as_str()) => {
+        Some(manifest)
+            if manifest.gguf_sha256.is_some()
+                && manifest.gguf_sha256.as_deref() != Some(gguf_sha.as_str()) =>
+        {
             Decision {
                 action: StepAction::Run,
                 redo: Some("GGUF hash changed".into()),
@@ -796,6 +844,8 @@ struct PlanCtx<'a> {
     llama: Option<&'a LlamaCpp>,
     inputs: &'a Inputs,
     check_ollama: bool,
+    train_driver: TrainDriver,
+    together_model: &'a str,
 }
 
 fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
@@ -833,6 +883,18 @@ fn convert_line(ctx: &PlanCtx<'_>, src: &str, outfile: &Path) -> String {
     }
 }
 
+fn train_command(ctx: &PlanCtx<'_>) -> String {
+    match ctx.train_driver {
+        TrainDriver::Local => format!("llamafactory-cli train {}", ctx.paths.recipe.display()),
+        TrainDriver::Together => format!(
+            "together upload {} model {} lora; poll; GET /finetune/download checkpoint=adapter -> {}",
+            ctx.paths.dataset_jsonl.display(),
+            ctx.together_model,
+            ctx.paths.adapter_dir.display()
+        ),
+    }
+}
+
 fn quantize_line(ctx: &PlanCtx<'_>, f16: &Path, outfile: &Path) -> String {
     match ctx.llama {
         Some(llama) => argv_line(&llama.quantize_argv(f16, outfile, ctx.quant)),
@@ -844,7 +906,8 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     let paths = ctx.paths;
     let mut steps = Vec::new();
 
-    let prepare_ready = paths.heldout.is_file() && paths.dataset_jsonl.is_file() && paths.dataset_info.is_file();
+    let prepare_ready =
+        paths.heldout.is_file() && paths.dataset_jsonl.is_file() && paths.dataset_info.is_file();
     let prepare = if prepare_ready {
         decide_file(
             &paths.dataset_jsonl,
@@ -867,7 +930,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     let base_dir_s = base_dir.display().to_string();
     let fetch_marker = base_dir.join("config.json");
     let fetch = if fetch_marker.is_file() {
-        decide_file(&fetch_marker, &paths.manifest_path("fetch-base"), &ctx.inputs.fetch)
+        decide_file(
+            &fetch_marker,
+            &paths.manifest_path("fetch-base"),
+            &ctx.inputs.fetch,
+        )
     } else {
         Decision {
             action: StepAction::Run,
@@ -916,11 +983,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
             redo: None,
         },
     };
-    steps.push(step_detail(
-        "train",
-        &train,
-        format!("llamafactory-cli train {}", paths.recipe.display()),
-    ));
+    steps.push(step_detail("train", &train, train_command(ctx)));
 
     let merged = paths.export_dir.join("config.json");
     let merge = match ctx.inputs.pipeline.as_deref() {
@@ -1177,10 +1240,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         detail: format!("write {}", paths.comparison.display()),
     });
 
-    debug_assert_eq!(
-        steps.iter().map(|s| s.name).collect::<Vec<_>>(),
-        STEP_ORDER
-    );
+    debug_assert_eq!(steps.iter().map(|s| s.name).collect::<Vec<_>>(), STEP_ORDER);
     steps
 }
 
@@ -1212,7 +1272,10 @@ pub fn side_score(report: &Value) -> Result<SideScore> {
         .pointer("/latency_ms/p95")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
-    let thinking_leak = report.get("thinking_leak").and_then(Value::as_u64).unwrap_or(0);
+    let thinking_leak = report
+        .get("thinking_leak")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     Ok(SideScore {
         accuracy,
         invalid,
@@ -1299,6 +1362,10 @@ pub struct JourneyRequest<'a> {
     pub min_delta: Option<f64>,
     pub min_accuracy: Option<f64>,
     pub timeout_secs: u64,
+    pub train_driver: TrainDriver,
+    pub together_model: &'a str,
+    pub together_base_url: &'a str,
+    pub api_key_env: Option<&'a str>,
 }
 
 fn library_tag(base_tag: Option<&str>) -> Option<&str> {
@@ -1312,10 +1379,20 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     if req.base.trim().is_empty() {
         bail!("refuse:classify-journey: --base is empty");
     }
+    if req.train_driver == TrainDriver::Together && req.together_model.trim().is_empty() {
+        bail!("refuse:classify-journey: --together-model is empty");
+    }
+    if req.train_driver == TrainDriver::Together && req.together_base_url.trim().is_empty() {
+        bail!("refuse:classify-journey: --together-base-url is empty");
+    }
     if req.tag.trim().is_empty() {
         bail!("refuse:classify-journey: model tag is empty");
     }
-    if req.quant.trim().is_empty() || req.quant.chars().any(|c| c.is_whitespace() || c == '/' || c == '\\')
+    if req.quant.trim().is_empty()
+        || req
+            .quant
+            .chars()
+            .any(|c| c.is_whitespace() || c == '/' || c == '\\')
     {
         bail!("refuse:classify-journey: --quant is empty or not a llama-quantize type");
     }
@@ -1339,6 +1416,8 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         llama: llama.as_ref(),
         inputs: &inputs,
         check_ollama: false,
+        train_driver: req.train_driver,
+        together_model: req.together_model,
     };
     if !req.run {
         let steps = plan_with(&ctx);
@@ -1368,7 +1447,8 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     match verdict {
         Some(false) => bail!(
             "classify-journey: threshold missed; specialist accuracy {:.4} delta {:.4}",
-            comparison.specialist_accuracy, comparison.delta
+            comparison.specialist_accuracy,
+            comparison.delta
         ),
         Some(true) => println!("classify-journey: threshold met"),
         None => {}
@@ -1386,7 +1466,11 @@ fn print_plan(
     println!("classify journey: print");
     println!("base: {} template: {template}", req.base);
     let base_seat = library.unwrap_or(DEFAULT_BUILT_BASE_TAG);
-    let seat_kind = if library.is_some() { "library-tag" } else { "pipeline" };
+    let seat_kind = if library.is_some() {
+        "library-tag"
+    } else {
+        "pipeline"
+    };
     println!(
         "base_tag: {base_seat} base_seat: {seat_kind} specialist_tag: {} quant: {} endpoint: {} api: ollama-native",
         req.tag, req.quant, req.endpoint
@@ -1402,6 +1486,18 @@ fn print_plan(
     if req.llama_cpp_dir.is_none() {
         println!("{QWEN35_RECENT}. Set --llama-cpp-dir or LLAMA_CPP_DIR before --run.");
     }
+    println!(
+        "train_driver: {} {}",
+        req.train_driver.as_str(),
+        match req.train_driver {
+            TrainDriver::Local => "llamafactory-cli train".to_string(),
+            TrainDriver::Together => format!(
+                "model {} api-key-env {} dry-run no network",
+                req.together_model,
+                req.api_key_env.unwrap_or(DEFAULT_TOGETHER_KEY_ENV)
+            ),
+        }
+    );
     println!("out: {}", paths.out.display());
     for step in steps {
         let word = match step.action {
@@ -1434,13 +1530,16 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
             llama: Some(llama),
             inputs: &inputs,
             check_ollama: name.starts_with("ollama-create"),
+            train_driver: req.train_driver,
+            together_model: req.together_model,
         };
         let steps = plan_with(&ctx);
-        let step = steps
-            .iter()
-            .find(|step| step.name == *name)
-            .expect("step");
+        let step = steps.iter().find(|step| step.name == *name).expect("step");
         if step.action == StepAction::Skip {
+            if *name == "fetch-base" {
+                let dir = resolved_base_dir(req.base, paths);
+                validate_snapshot(&dir)?;
+            }
             println!("skip {}", step.name);
             continue;
         }
@@ -1478,18 +1577,27 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     run_argv(&hf_download_argv(bin, req.base, &dir))?;
                 }
                 validate_snapshot(&dir)?;
-                write_manifest(&paths.manifest_path("fetch-base"), &fetch_inputs(req.base), None)?;
+                write_manifest(
+                    &paths.manifest_path("fetch-base"),
+                    &fetch_inputs(req.base),
+                    None,
+                )?;
             }
             "recipe" => {
                 write_recipe(req, paths)?;
                 write_step_manifest(req, paths, "recipe", None)?;
             }
             "train" => {
-                run_argv(&[
-                    "llamafactory-cli".into(),
-                    "train".into(),
-                    paths.recipe.display().to_string(),
-                ])?;
+                match req.train_driver {
+                    TrainDriver::Local => {
+                        run_argv(&[
+                            "llamafactory-cli".into(),
+                            "train".into(),
+                            paths.recipe.display().to_string(),
+                        ])?;
+                    }
+                    TrainDriver::Together => run_together_train(req, paths)?,
+                }
                 validate_adapter(&paths.adapter_dir)?;
                 write_pipeline_manifest(req, paths, "train")?;
             }
@@ -1616,7 +1724,11 @@ fn write_step_manifest(
     write_manifest(&paths.manifest_path(step), &key, gguf_sha256)
 }
 
-fn write_pipeline_manifest(req: &JourneyRequest<'_>, paths: &JourneyPaths, step: &str) -> Result<()> {
+fn write_pipeline_manifest(
+    req: &JourneyRequest<'_>,
+    paths: &JourneyPaths,
+    step: &str,
+) -> Result<()> {
     write_step_manifest(req, paths, step, None)
 }
 
@@ -1630,7 +1742,10 @@ fn seat_gguf(
 ) -> Result<()> {
     let gguf = paths.seated_gguf(which, req.quant);
     if !gguf.is_file() {
-        bail!("refuse:classify-journey: GGUF missing at {}", gguf.display());
+        bail!(
+            "refuse:classify-journey: GGUF missing at {}",
+            gguf.display()
+        );
     }
     let gguf_sha = file_sha(&gguf).ok_or_else(|| {
         anyhow::anyhow!("refuse:classify-journey: cannot hash {}", gguf.display())
@@ -1672,32 +1787,34 @@ fn snapshot_tokenizer(dir: &Path) -> bool {
 }
 
 fn snapshot_has_weights(dir: &Path) -> bool {
+    let index = dir.join("model.safetensors.index.json");
+    if index.is_file() {
+        let Ok(text) = fs::read_to_string(&index) else {
+            return false;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            return false;
+        };
+        let Some(map) = value.get("weight_map").and_then(Value::as_object) else {
+            return false;
+        };
+        let mut shards: Vec<&str> = map.values().filter_map(Value::as_str).collect();
+        shards.sort_unstable();
+        shards.dedup();
+        return !shards.is_empty() && shards.iter().all(|name| file_nonempty(&dir.join(name)));
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
-    let safetensors = entries.filter_map(|entry| entry.ok()).any(|entry| {
+    entries.filter_map(|entry| entry.ok()).any(|entry| {
         let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
         name.ends_with(".safetensors") && file_nonempty(&entry.path())
-    });
-    if safetensors {
-        return true;
-    }
-    let index = dir.join("model.safetensors.index.json");
-    let Ok(text) = fs::read_to_string(&index) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<Value>(&text) else {
-        return false;
-    };
-    let Some(map) = value.get("weight_map").and_then(Value::as_object) else {
-        return false;
-    };
-    let shards: Vec<&str> = map.values().filter_map(Value::as_str).collect();
-    !shards.is_empty() && shards.iter().all(|name| file_nonempty(&dir.join(name)))
+    })
 }
 
 fn validate_snapshot(dir: &Path) -> Result<()> {
-    if !dir.join("config.json").is_file() || !snapshot_tokenizer(dir) || !snapshot_has_weights(dir) {
+    if !dir.join("config.json").is_file() || !snapshot_tokenizer(dir) || !snapshot_has_weights(dir)
+    {
         bail!(
             "refuse:classify-journey: base snapshot {} needs config.json, tokenizer files, and non-empty weights",
             dir.display()
@@ -1707,7 +1824,9 @@ fn validate_snapshot(dir: &Path) -> Result<()> {
 }
 
 fn file_nonempty(path: &Path) -> bool {
-    fs::metadata(path).map(|meta| meta.is_file() && meta.len() > 0).unwrap_or(false)
+    fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
 }
 
 fn dir_has_weights(dir: &Path) -> bool {
@@ -1854,7 +1973,10 @@ fn write_comparison(
 
 fn read_json(path: &Path) -> Result<Value> {
     let text = fs::read_to_string(path).map_err(|e| {
-        anyhow::anyhow!("refuse:classify-journey: cannot read {}: {e}", path.display())
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot read {}: {e}",
+            path.display()
+        )
     })?;
     Ok(serde_json::from_str(&text)?)
 }
@@ -1896,6 +2018,334 @@ fn ollama_has_model(tag: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn together_key_env<'a>(req: &'a JourneyRequest<'_>) -> &'a str {
+    req.api_key_env
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(DEFAULT_TOGETHER_KEY_ENV)
+}
+
+fn read_together_key(name: &str) -> Result<String> {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        bail!("refuse:classify-journey: api-key-env must be an environment variable name");
+    }
+    match std::env::var(name) {
+        Ok(value) if !value.is_empty() => Ok(value),
+        _ => bail!("refuse:classify-journey: set {name}"),
+    }
+}
+
+fn scrub_secret(text: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        text.to_string()
+    } else {
+        text.replace(secret, "[redacted]")
+    }
+}
+
+fn together_root(base: &str) -> String {
+    base.trim().trim_end_matches('/').to_string()
+}
+
+fn run_together_train(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<()> {
+    let env_name = together_key_env(req);
+    let key = read_together_key(env_name)?;
+    let root = together_root(req.together_base_url);
+    let dataset = fs::read(&paths.dataset_jsonl).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot read {}: {err}",
+            paths.dataset_jsonl.display()
+        )
+    })?;
+    println!(
+        "together upload {} model {} (key env {env_name}; value not printed)",
+        paths.dataset_jsonl.display(),
+        req.together_model
+    );
+    let file_id = together_upload(&root, &key, &dataset)?;
+    together_wait_file(&root, &key, &file_id, req.timeout_secs)?;
+    let job_id = together_create_job(&root, &key, &file_id, req.together_model)?;
+    println!("together job {job_id}");
+    let status = together_poll_job(&root, &key, &job_id, req.timeout_secs)?;
+    if status != "completed" {
+        bail!("refuse:classify-journey: together job {job_id} ended {status}");
+    }
+    let bytes = together_download_adapter(&root, &key, &job_id, req.timeout_secs)?;
+    unpack_adapter_tar(&bytes, &paths.adapter_dir)?;
+    let note = json!({
+        "schema": "cell-one.classify-journey-together.v0",
+        "job_id": job_id,
+        "file_id": file_id,
+        "model": req.together_model,
+        "status": status,
+        "checkpoint": "adapter",
+        "live_pass_recorded": false,
+    });
+    fs::write(
+        paths.out.join("together-job.json"),
+        format!("{}\n", serde_json::to_string_pretty(&note)?),
+    )?;
+    Ok(())
+}
+
+fn together_agent(timeout_secs: u64) -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(timeout_secs.max(1)))
+        .build()
+}
+
+fn together_json(
+    method: &str,
+    url: &str,
+    key: &str,
+    body: Option<&Value>,
+    timeout_secs: u64,
+) -> Result<Value> {
+    let agent = together_agent(timeout_secs);
+    let send = |req: ureq::Request| -> Result<ureq::Response> {
+        let req = req
+            .set("Authorization", &format!("Bearer {key}"))
+            .set("Accept", "application/json");
+        match body {
+            Some(value) => req.send_json(value.clone()),
+            None => req.call(),
+        }
+        .map_err(|err| together_http_err(url, key, err))
+    };
+    let resp = match method {
+        "POST" => send(agent.post(url))?,
+        "GET" => send(agent.get(url))?,
+        other => bail!("refuse:classify-journey: together method {other}"),
+    };
+    let raw = resp.into_string().unwrap_or_default();
+    serde_json::from_str(&raw).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: together response is not json ({err}): {}",
+            scrub_secret(&raw.chars().take(180).collect::<String>(), key)
+        )
+    })
+}
+
+fn together_http_err(url: &str, key: &str, err: ureq::Error) -> anyhow::Error {
+    let (status, body) = match err {
+        ureq::Error::Status(code, resp) => (code, resp.into_string().unwrap_or_default()),
+        other => (0, other.to_string()),
+    };
+    let snippet: String = body.chars().take(180).collect();
+    anyhow::anyhow!(
+        "refuse:classify-journey: together {url} status {status}: {}",
+        scrub_secret(&snippet, key)
+    )
+}
+
+fn together_upload(root: &str, key: &str, dataset: &[u8]) -> Result<String> {
+    let boundary = "----cell-one-together";
+    let mut body = Vec::new();
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"purpose\"\r\n\r\nfine-tune\r\n",
+    );
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"file\"; filename=\"dataset.jsonl\"\r\n",
+    );
+    body.extend_from_slice(b"Content-Type: application/jsonl\r\n\r\n");
+    body.extend_from_slice(dataset);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    let url = format!("{root}/files");
+    let agent = together_agent(120);
+    let resp = agent
+        .post(&url)
+        .set("Authorization", &format!("Bearer {key}"))
+        .set(
+            "Content-Type",
+            &format!("multipart/form-data; boundary={boundary}"),
+        )
+        .send_bytes(&body)
+        .map_err(|err| together_http_err(&url, key, err))?;
+    let raw = resp.into_string().unwrap_or_default();
+    let value: Value = serde_json::from_str(&raw).map_err(|_| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: together upload response is not json: {}",
+            scrub_secret(&raw.chars().take(180).collect::<String>(), key)
+        )
+    })?;
+    value
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: together upload returned no file id")
+        })
+}
+
+fn together_wait_file(root: &str, key: &str, file_id: &str, timeout_secs: u64) -> Result<()> {
+    let url = format!("{root}/files/{file_id}");
+    for _ in 0..150 {
+        let value = together_json("GET", &url, key, None, timeout_secs)?;
+        match value.get("processing_status").and_then(Value::as_str) {
+            None => return Ok(()),
+            Some("COMPLETED") => return Ok(()),
+            Some(status) if status.eq_ignore_ascii_case("invalid_format") || status == "FAILED" => {
+                bail!("refuse:classify-journey: together file {file_id} {status}");
+            }
+            Some(_) => std::thread::sleep(std::time::Duration::from_millis(200)),
+        }
+    }
+    bail!("refuse:classify-journey: together file {file_id} did not finish processing")
+}
+
+fn together_create_job(root: &str, key: &str, file_id: &str, model: &str) -> Result<String> {
+    let url = format!("{root}/fine-tunes");
+    let body = json!({
+        "training_file": file_id,
+        "model": model,
+        "lora": true,
+        "lora_r": 8,
+        "lora_alpha": 16,
+        "n_epochs": 1,
+        "n_checkpoints": 1,
+        "learning_rate": 0.0001,
+        "suffix": "tev1",
+        "training_type": {"type": "Lora", "lora_r": 8, "lora_alpha": 16}
+    });
+    let value = together_json("POST", &url, key, Some(&body), 120)?;
+    value
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: together create returned no job id")
+        })
+}
+
+fn together_poll_job(root: &str, key: &str, job_id: &str, timeout_secs: u64) -> Result<String> {
+    let url = format!("{root}/fine-tunes/{job_id}");
+    for _ in 0..54_000 {
+        let value = together_json("GET", &url, key, None, timeout_secs)?;
+        let status = value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        match status.as_str() {
+            "completed" | "error" | "cancelled" | "user_error" => return Ok(status),
+            "pending" | "queued" | "running" | "compressing" | "uploading" | "cancel_requested" => {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            "" => bail!("refuse:classify-journey: together job {job_id} has no status"),
+            other => bail!("refuse:classify-journey: together job {job_id} status {other}"),
+        }
+    }
+    bail!("refuse:classify-journey: together job {job_id} did not finish")
+}
+
+fn together_download_adapter(
+    root: &str,
+    key: &str,
+    job_id: &str,
+    timeout_secs: u64,
+) -> Result<Vec<u8>> {
+    let url = format!("{root}/finetune/download?ft_id={job_id}&checkpoint=adapter");
+    let agent = together_agent(timeout_secs.max(30));
+    let resp = agent
+        .get(&url)
+        .set("Authorization", &format!("Bearer {key}"))
+        .call()
+        .map_err(|err| together_http_err(&url, key, err))?;
+    let mut bytes = Vec::new();
+    resp.into_reader().read_to_end(&mut bytes).map_err(|err| {
+        anyhow::anyhow!("refuse:classify-journey: together download read failed: {err}")
+    })?;
+    if bytes.len() >= 4
+        && bytes[0] == 0x28
+        && bytes[1] == 0xB5
+        && bytes[2] == 0x2F
+        && bytes[3] == 0xFD
+    {
+        bail!(
+            "refuse:classify-journey: together download is zstd-compressed. This driver unpacks an uncompressed tar of the adapter checkpoint"
+        );
+    }
+    Ok(bytes)
+}
+
+fn unpack_adapter_tar(bytes: &[u8], dir: &Path) -> Result<()> {
+    fs::create_dir_all(dir)?;
+    if bytes.len() < 512 {
+        bail!("refuse:classify-journey: together adapter download is not a tar");
+    }
+    let mut offset = 0;
+    let mut wrote = 0;
+    while offset + 512 <= bytes.len() {
+        let header = &bytes[offset..offset + 512];
+        if header.iter().all(|b| *b == 0) {
+            break;
+        }
+        let magic = &header[257..262];
+        if magic != b"ustar" {
+            bail!("refuse:classify-journey: together adapter download is not a ustar archive");
+        }
+        let name = tar_name(header)?;
+        let size = tar_size(&header[124..136])?;
+        let typeflag = header[156];
+        offset += 512;
+        let data_end = offset + size;
+        if data_end > bytes.len() {
+            bail!("refuse:classify-journey: together adapter tar is truncated");
+        }
+        let data = &bytes[offset..data_end];
+        offset = data_end + ((512 - (size % 512)) % 512);
+        if name.is_empty()
+            || typeflag == b'5'
+            || typeflag == b'L'
+            || typeflag == b'g'
+            || typeflag == b'x'
+        {
+            continue;
+        }
+        if name.contains("..") || name.starts_with('/') || name.contains('\\') {
+            bail!("refuse:classify-journey: together adapter tar path is refused");
+        }
+        let file_name = Path::new(&name).file_name().ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: together adapter tar path is refused")
+        })?;
+        fs::write(dir.join(file_name), data)?;
+        wrote += 1;
+    }
+    if wrote == 0 {
+        bail!("refuse:classify-journey: together adapter tar has no files");
+    }
+    Ok(())
+}
+
+fn tar_name(header: &[u8]) -> Result<String> {
+    let short = tar_str(&header[0..100]);
+    let prefix = tar_str(&header[345..500]);
+    if prefix.is_empty() {
+        Ok(short)
+    } else {
+        Ok(format!("{prefix}/{short}"))
+    }
+}
+
+fn tar_str(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
+}
+
+fn tar_size(bytes: &[u8]) -> Result<usize> {
+    let text = tar_str(bytes);
+    if text.is_empty() {
+        return Ok(0);
+    }
+    usize::from_str_radix(text.trim(), 8).map_err(|_| {
+        anyhow::anyhow!("refuse:classify-journey: together adapter tar size is not octal")
+    })
+}
+
 fn run_argv(argv: &[String]) -> Result<()> {
     let line = argv_line(argv);
     println!("{line}");
@@ -1932,7 +2382,10 @@ mod tests {
     fn qwen35_template_comes_from_llamafactory_and_other_bases_use_the_scanner() {
         assert_eq!(train_template(DEFAULT_BASE), "qwen3_5");
         assert_eq!(train_template("Qwen/Qwen3.5-4B-Base"), "qwen3_5");
-        assert_eq!(train_template("Qwen/Qwen3-4B-Instruct-2507"), "qwen3_nothink");
+        assert_eq!(
+            train_template("Qwen/Qwen3-4B-Instruct-2507"),
+            "qwen3_nothink"
+        );
         assert_eq!(train_template("Qwen/Qwen3-4B"), "qwen3");
         assert_eq!(train_template("Qwen/Qwen2.5-3B-Instruct"), "qwen");
     }
@@ -1956,15 +2409,26 @@ mod tests {
         assert!(!recipe.contains("qwen3_5_nothink:"), "{recipe}");
         assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
         assert!(recipe.contains("max_steps: 2"), "{recipe}");
-        assert_eq!(recipe_dataset_name(&recipe).as_deref(), Some(DEFAULT_DATASET));
+        assert_eq!(
+            recipe_dataset_name(&recipe).as_deref(),
+            Some(DEFAULT_DATASET)
+        );
         let info = json!({
             DEFAULT_DATASET: {
                 "file_name": "dataset.jsonl",
                 "formatting": "sharegpt"
             }
         });
-        assert_eq!(dataset_name_in_info(&info).as_deref(), Some(DEFAULT_DATASET));
-        let export = export_yaml(DEFAULT_BASE, DEFAULT_BASE, &paths.adapter_dir, &paths.export_dir);
+        assert_eq!(
+            dataset_name_in_info(&info).as_deref(),
+            Some(DEFAULT_DATASET)
+        );
+        let export = export_yaml(
+            DEFAULT_BASE,
+            DEFAULT_BASE,
+            &paths.adapter_dir,
+            &paths.export_dir,
+        );
         assert!(export.contains("enable_thinking: false"), "{export}");
         assert!(export.contains("template: qwen3_5"), "{export}");
         let model = journey_modelfile(&paths.seated_gguf("specialist", DEFAULT_QUANT));
@@ -1978,7 +2442,12 @@ mod tests {
         assert!(quoted.contains("FROM \""), "{quoted}");
         assert!(shared.starts_with("FROM \""), "{shared}");
         assert!(quoted.contains("specialist Q4.gguf"));
-        let from = quoted.lines().next().unwrap().trim_start_matches("FROM ").trim_matches('"');
+        let from = quoted
+            .lines()
+            .next()
+            .unwrap()
+            .trim_start_matches("FROM ")
+            .trim_matches('"');
         assert!(Path::new(from).is_absolute(), "{quoted}");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2001,7 +2470,10 @@ mod tests {
                 .trim_start_matches("FROM ")
                 .trim_matches('"');
             assert!(Path::new(from).is_absolute(), "{text}");
-            assert!(from.contains(&gguf.file_name().unwrap().to_string_lossy().to_string()), "{text}");
+            assert!(
+                from.contains(&gguf.file_name().unwrap().to_string_lossy().to_string()),
+                "{text}"
+            );
         }
         let _ = fs::remove_dir_all(&rel);
     }
@@ -2031,22 +2503,44 @@ mod tests {
             llama: None,
             inputs: &inputs,
             check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
         };
         let fresh = plan_with(&ctx);
         let names: Vec<_> = fresh.iter().map(|s| s.name).collect();
         assert_eq!(names, STEP_ORDER);
-        let base = fresh.iter().find(|s| s.name == "gguf-convert-base").unwrap();
-        assert!(base.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{base:?}");
+        let base = fresh
+            .iter()
+            .find(|s| s.name == "gguf-convert-base")
+            .unwrap();
+        assert!(
+            base.detail
+                .contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"),
+            "{base:?}"
+        );
         assert!(base.detail.contains("--outtype f16"), "{base:?}");
         assert!(base.detail.contains("base-hf"), "{base:?}");
         assert!(!base.detail.contains(DEFAULT_BASE), "{base:?}");
         let fetch = fresh.iter().find(|s| s.name == "fetch-base").unwrap();
-        assert!(fetch.detail.contains("huggingface-cli download"), "{fetch:?}");
+        assert!(
+            fetch.detail.contains("huggingface-cli download"),
+            "{fetch:?}"
+        );
         assert!(fetch.detail.contains(DEFAULT_BASE), "{fetch:?}");
         assert!(fetch.detail.contains("--local-dir"), "{fetch:?}");
-        let spec = fresh.iter().find(|s| s.name == "gguf-convert-specialist").unwrap();
-        assert!(spec.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{spec:?}");
-        let quant = fresh.iter().find(|s| s.name == "quantize-specialist").unwrap();
+        let spec = fresh
+            .iter()
+            .find(|s| s.name == "gguf-convert-specialist")
+            .unwrap();
+        assert!(
+            spec.detail
+                .contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"),
+            "{spec:?}"
+        );
+        let quant = fresh
+            .iter()
+            .find(|s| s.name == "quantize-specialist")
+            .unwrap();
         assert!(quant.detail.contains("Q4_K_M"), "{quant:?}");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2082,10 +2576,14 @@ mod tests {
             &paths.dataset_jsonl,
             &paths.recipe,
             DEFAULT_QUANT,
+            TrainDriver::Local,
+            DEFAULT_TOGETHER_MODEL,
         )
         .unwrap();
         let endpoint = "http://127.0.0.1:11434";
-        let model_path = resolved_base_dir(DEFAULT_BASE, &paths).display().to_string();
+        let model_path = resolved_base_dir(DEFAULT_BASE, &paths)
+            .display()
+            .to_string();
         let recipe_key = recipe_decision_inputs(
             &model_path,
             DEFAULT_BASE,
@@ -2175,13 +2673,21 @@ mod tests {
             llama: None,
             inputs: &inputs,
             check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
         };
         let again = plan_with(&ctx);
         for step in &again {
             if step.name == "compare" {
                 assert_eq!(step.action, StepAction::Run);
             } else {
-                assert_eq!(step.action, StepAction::Skip, "{} {}", step.name, step.detail);
+                assert_eq!(
+                    step.action,
+                    StepAction::Skip,
+                    "{} {}",
+                    step.name,
+                    step.detail
+                );
             }
         }
 
@@ -2278,7 +2784,10 @@ mod tests {
         let stale = plan_with(&ctx);
         let train = stale.iter().find(|s| s.name == "train").unwrap();
         assert_eq!(train.action, StepAction::Run);
-        assert!(train.detail.contains("redo train: missing manifest"), "{train:?}");
+        assert!(
+            train.detail.contains("redo train: missing manifest"),
+            "{train:?}"
+        );
 
         write_manifest(&paths.manifest_path("train"), &pipeline, None).unwrap();
         fs::write(&paths.dataset_jsonl, "row-changed\n").unwrap();
@@ -2287,6 +2796,8 @@ mod tests {
             &paths.dataset_jsonl,
             &paths.recipe,
             DEFAULT_QUANT,
+            TrainDriver::Local,
+            DEFAULT_TOGETHER_MODEL,
         )
         .unwrap();
         assert_ne!(changed, pipeline);
@@ -2318,7 +2829,10 @@ mod tests {
         };
         let redone = plan_with(&ctx);
         let train = redone.iter().find(|s| s.name == "train").unwrap();
-        assert!(train.detail.contains("redo train: inputs changed"), "{train:?}");
+        assert!(
+            train.detail.contains("redo train: inputs changed"),
+            "{train:?}"
+        );
         fs::write(&seated_s, "spec-q-mutated").unwrap();
         let gguf_changed = plan_with(&ctx);
         let seat = gguf_changed
@@ -2326,7 +2840,8 @@ mod tests {
             .find(|s| s.name == "ollama-create-specialist")
             .unwrap();
         assert!(
-            seat.detail.contains("redo ollama-create-specialist: GGUF hash changed"),
+            seat.detail
+                .contains("redo ollama-create-specialist: GGUF hash changed"),
             "{seat:?}"
         );
         let _ = fs::remove_dir_all(&dir);
@@ -2356,6 +2871,8 @@ mod tests {
             llama: None,
             inputs: &inputs,
             check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
         };
         let steps = plan_with(&ctx);
         for name in ["gguf-convert-base", "quantize-base", "ollama-create-base"] {
@@ -2363,9 +2880,15 @@ mod tests {
             assert_eq!(step.action, StepAction::Skip, "{step:?}");
             assert!(step.detail.contains("precision may differ"), "{step:?}");
         }
-        let quant = steps.iter().find(|s| s.name == "quantize-specialist").unwrap();
+        let quant = steps
+            .iter()
+            .find(|s| s.name == "quantize-specialist")
+            .unwrap();
         assert_eq!(quant.action, StepAction::Skip);
-        assert!(quant.detail.contains("f16 skips llama-quantize"), "{quant:?}");
+        assert!(
+            quant.detail.contains("f16 skips llama-quantize"),
+            "{quant:?}"
+        );
     }
 
     #[test]
@@ -2375,7 +2898,10 @@ mod tests {
         assert!(text.contains("llamafactory-cli is not on PATH"), "{text}");
         assert!(text.contains("LLAMA_CPP_DIR is unset"), "{text}");
         assert!(text.contains(QWEN35_RECENT), "{text}");
-        assert!(text.contains("huggingface-cli and hf are not on PATH"), "{text}");
+        assert!(
+            text.contains("huggingface-cli and hf are not on PATH"),
+            "{text}"
+        );
         assert!(text.contains("HF_TOKEN"), "{text}");
         assert!(text.contains("ollama is not on PATH"), "{text}");
         assert!(text.contains("no GPU"), "{text}");
@@ -2392,12 +2918,18 @@ mod tests {
         fs::create_dir_all(dir.join("build/bin")).unwrap();
         fs::write(dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
         fs::write(dir.join("build/bin/llama-quantize"), "").unwrap();
-        assert!(resolve_llama_cpp(&dir).unwrap().quantize.ends_with("build/bin/llama-quantize"));
+        assert!(resolve_llama_cpp(&dir)
+            .unwrap()
+            .quantize
+            .ends_with("build/bin/llama-quantize"));
         let bin_dir = dir.join("bin-only");
         fs::create_dir_all(bin_dir.join("bin")).unwrap();
         fs::write(bin_dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
         fs::write(bin_dir.join("bin/llama-quantize"), "").unwrap();
-        assert!(resolve_llama_cpp(&bin_dir).unwrap().quantize.ends_with("bin/llama-quantize"));
+        assert!(resolve_llama_cpp(&bin_dir)
+            .unwrap()
+            .quantize
+            .ends_with("bin/llama-quantize"));
         let llama = resolve_llama_cpp(&dir).unwrap();
         let outfile = dir.join("base.f16.gguf");
         let export = dir.join("export");
@@ -2476,6 +3008,8 @@ mod tests {
             llama: None,
             inputs: &inputs,
             check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
         };
         let hub = plan_with(&ctx);
         let fetch = hub.iter().find(|s| s.name == "fetch-base").unwrap();
@@ -2486,8 +3020,16 @@ mod tests {
         ));
         assert_eq!(fetch.detail, expected);
         let convert = hub.iter().find(|s| s.name == "gguf-convert-base").unwrap();
-        assert!(convert.detail.contains(&paths.base_hf.display().to_string()), "{convert:?}");
-        assert!(!convert.detail.contains("Qwen/Qwen3.5-4B --outfile"), "{convert:?}");
+        assert!(
+            convert
+                .detail
+                .contains(&paths.base_hf.display().to_string()),
+            "{convert:?}"
+        );
+        assert!(
+            !convert.detail.contains("Qwen/Qwen3.5-4B --outfile"),
+            "{convert:?}"
+        );
 
         let local = dir.join("already");
         fs::create_dir_all(&local).unwrap();
@@ -2512,12 +3054,17 @@ mod tests {
             llama: None,
             inputs: &inputs,
             check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
         };
         let passed = plan_with(&ctx);
         let fetch = passed.iter().find(|s| s.name == "fetch-base").unwrap();
         assert_eq!(fetch.detail, format!("local base {local_s}"));
         assert!(!fetch.detail.contains("download"), "{fetch:?}");
-        let convert = passed.iter().find(|s| s.name == "gguf-convert-base").unwrap();
+        let convert = passed
+            .iter()
+            .find(|s| s.name == "gguf-convert-base")
+            .unwrap();
         assert!(convert.detail.contains(&local_s), "{convert:?}");
         assert!(validate_snapshot(&local).is_err());
         fs::write(local.join("config.json"), "{}\n").unwrap();
@@ -2533,6 +3080,23 @@ mod tests {
         assert!(validate_snapshot(&local).is_err());
         fs::write(local.join("model-00001-of-00001.safetensors"), "shard\n").unwrap();
         assert!(validate_snapshot(&local).is_ok());
+        fs::write(
+            local.join("model.safetensors.index.json"),
+            "{\"weight_map\":{\"a\":\"model-00001-of-00002.safetensors\",\"b\":\"model-00002-of-00002.safetensors\"}}\n",
+        )
+        .unwrap();
+        fs::write(local.join("model-00001-of-00002.safetensors"), "one\n").unwrap();
+        assert!(
+            !snapshot_has_weights(&local),
+            "an index requires every named shard"
+        );
+        fs::write(local.join("model-00002-of-00002.safetensors"), "").unwrap();
+        assert!(
+            !snapshot_has_weights(&local),
+            "an empty shard is not weights"
+        );
+        fs::write(local.join("model-00002-of-00002.safetensors"), "two\n").unwrap();
+        assert!(snapshot_has_weights(&local));
         assert!(validate_gguf(&paths.base_f16).is_err());
         fs::write(&paths.base_f16, b"GGUF").unwrap();
         assert!(validate_gguf(&paths.base_f16).is_ok());

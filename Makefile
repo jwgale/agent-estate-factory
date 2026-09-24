@@ -465,8 +465,9 @@ classify-prepare:
 classify-eval:
 	bash scripts/classify-eval.sh
 
-# Opt-in tev1 reproduce journey. Default is --print.
+# Opt-in tev1 reproduce journey. Default is --print and local llamafactory-cli train.
 # TEV1_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
+# TRAIN_DRIVER=together selects the Together LoRA driver. It is still opt-in.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 # Does not record a live PASS.
 tev1-journey:

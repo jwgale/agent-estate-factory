@@ -358,6 +358,10 @@ pub(crate) fn run() -> Result<()> {
                 min_delta,
                 min_accuracy,
                 timeout_secs,
+                train_driver,
+                together_model,
+                together_base_url,
+                api_key_env,
             } => {
                 let input = input.unwrap_or_else(|| {
                     PathBuf::from("examples/fixtures/tev1-decisions.jsonl")
@@ -385,6 +389,10 @@ pub(crate) fn run() -> Result<()> {
                         min_delta,
                         min_accuracy,
                         timeout_secs,
+                        train_driver,
+                        together_model: &together_model,
+                        together_base_url: &together_base_url,
+                        api_key_env: api_key_env.as_deref(),
                     },
                 )
             }

@@ -25,7 +25,7 @@ Operator loop on a 5090-class host:
 
 Eval scores one letter at temperature 0 with a short completion. `--api openai` (the default) sends `chat_template_kwargs.enable_thinking` false. `--api ollama` sends `reasoning_effort` `none` on `/v1/chat/completions`. `--api ollama-native` posts `/api/chat` with `think` false. A leading `<think>` block is stripped and counted as `thinking_leak`. It writes accuracy, per-label confusion, invalid-output count, and latency p50/p95. `--api-key-env` names the variable that holds a bearer token. The value is never printed. `--dry-run` and `--mock` do not call the network. Mock is a letter script, not a model score.
 
-Together hosted fine-tune is an optional hosted driver for the same letter target. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
+Together hosted fine-tune is an optional train driver for the same letter target. `estate classify journey --train-driver together` uploads the prepared `dataset.jsonl` and launches a LoRA job on `Qwen/Qwen3.5-4B` (override with `--together-model`). `--print` does not call the network. `--run` reads `TOGETHER_API_KEY` (or the variable named by `--api-key-env`) and never prints the value. A completed job downloads the adapter checkpoint into `outputs/` and the existing merge, GGUF, Ollama, and eval steps continue. The local driver stays the default. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
 
 Opt-in only: `make classify-prepare`, `make classify-eval`, and `make tev1-journey`. They are not in `make smoke`, `make gate-90`, or GitHub Actions.
 
@@ -37,6 +37,9 @@ export LLAMA_CPP_DIR=/path/to/llama.cpp
 # Leave about 40GB free for the Qwen3.5-4B snapshot, the export, and the GGUFs.
 estate classify journey --print --llama-cpp-dir "$LLAMA_CPP_DIR"
 estate classify journey --run --llama-cpp-dir "$LLAMA_CPP_DIR" --base Qwen/Qwen3.5-4B --quant Q4_K_M --tag tev1-specialist
+# Optional hosted train. Still not in smoke, gate-90, or Actions. READY_FOR_LIVE_TEST: no.
+# TRAIN_DRIVER=together make tev1-journey
+estate classify journey --print --train-driver together --together-model Qwen/Qwen3.5-4B
 ```
 
 Command details are `estate classify prepare --help`, `estate classify eval --help`, and `estate classify journey --help`.
