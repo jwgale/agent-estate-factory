@@ -311,7 +311,7 @@ fn journey_prefers_hf_when_both_downloaders_are_on_path() {
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
         ])
-        .env("PATH", tools.display().to_string())
+        .env("PATH", format!("{}:/usr/bin:/bin", tools.display()))
         .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
         .output()
         .unwrap();
@@ -365,7 +365,7 @@ fn journey_falls_back_to_huggingface_cli_when_hf_is_absent() {
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
         ])
-        .env("PATH", tools.display().to_string())
+        .env("PATH", format!("{}:/usr/bin:/bin", tools.display()))
         .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
         .output()
         .unwrap();
@@ -407,7 +407,7 @@ fn journey_deprecated_huggingface_cli_names_the_hf_install() {
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
         ])
-        .env("PATH", tools.display().to_string())
+        .env("PATH", format!("{}:/usr/bin:/bin", tools.display()))
         .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
         .output()
         .unwrap();
