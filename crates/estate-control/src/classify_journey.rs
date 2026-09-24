@@ -150,16 +150,16 @@ const QWEN35_NOTHINK_TEMPLATE: &str = "\
 ";
 
 /// Non-thinking DeepSeek-R1-Distill prompt.
-/// LLaMA-Factory `deepseekr1` is a `ReasoningTemplate` and does not override
-/// `thought_words`, so they stay `("<think>\n", "\n</think>\n\n")`.
-/// `Template.add_thought("")` concatenates those words to `<think>\n\n</think>\n\n`.
-/// With `enable_thinking: false`, `ReasoningTemplate.encode_oneturn` appends that
-/// empty thought to the prompt after `<｜Assistant｜>` (no extra newline) so the
-/// letter is the only target and `num_predict 8` is not spent on `<think>`.
+/// LLaMA-Factory `deepseekr1` `format_user` is `<｜User｜>{{content}}<｜Assistant｜>`
+/// with no newlines. `format_assistant` is the default `{{content}}` plus
+/// `eos_token` `<｜end▁of▁sentence｜>`, also with no newline. The HF chat
+/// template concatenates the same way (`'<｜User｜>' + content`, and
+/// `'<｜Assistant｜>' + content + '<｜end▁of▁sentence｜>'`).
+/// `thought_words` stay `("<think>\n", "\n</think>\n\n")`. `add_thought("")`
+/// is `<think>\n\n</think>\n\n`, appended after the generation `<｜Assistant｜>`
+/// when `enable_thinking` is false.
 const DEEPSEEK_R1_TEMPLATE: &str = "\
-{{ if .System }}<｜begin▁of▁sentence｜>{{ .System }}{{ else }}<｜begin▁of▁sentence｜>{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<｜User｜>
-{{ .Content }}{{ else if eq .Role \"assistant\" }}<｜Assistant｜>
-{{ .Content }}<｜end▁of▁sentence｜>{{ end }}{{ end }}<｜Assistant｜><think>
+{{ if .System }}<｜begin▁of▁sentence｜>{{ .System }}{{ else }}<｜begin▁of▁sentence｜>{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<｜User｜>{{ .Content }}{{ else if eq .Role \"assistant\" }}<｜Assistant｜>{{ .Content }}<｜end▁of▁sentence｜>{{ end }}{{ end }}<｜Assistant｜><think>
 
 </think>
 
@@ -3660,6 +3660,211 @@ mod tests {
             "{model}"
         );
         assert!(!model.contains("<|im_end|>"), "{model}");
+    }
+
+    #[test]
+    fn deepseek_system_user_prompt_matches_llamafactory() {
+        let system = "Classify the row.";
+        let user = "choose one letter";
+        let rendered = render_ollama_template(
+            DEEPSEEK_R1_TEMPLATE,
+            system,
+            &[("user", user)],
+        );
+        let expected = format!(
+            "<｜begin▁of▁sentence｜>{system}<｜User｜>{user}<｜Assistant｜><think>\n\n</think>\n\n"
+        );
+        assert_eq!(rendered, expected);
+        let history = render_ollama_template(
+            DEEPSEEK_R1_TEMPLATE,
+            "",
+            &[("assistant", "A")],
+        );
+        assert!(
+            history.contains("<｜Assistant｜>A<｜end▁of▁sentence｜>"),
+            "{history}"
+        );
+        assert!(
+            DEEPSEEK_R1_TEMPLATE
+                .contains("<｜Assistant｜>{{ .Content }}<｜end▁of▁sentence｜>"),
+            "format_assistant is content then eos with no newline\n{DEEPSEEK_R1_TEMPLATE}"
+        );
+        assert!(
+            !DEEPSEEK_R1_TEMPLATE.contains("<｜User｜>\n"),
+            "{DEEPSEEK_R1_TEMPLATE}"
+        );
+        assert!(
+            !DEEPSEEK_R1_TEMPLATE.contains("<｜Assistant｜>\n"),
+            "{DEEPSEEK_R1_TEMPLATE}"
+        );
+    }
+
+    /// Subset of Ollama's Go text/template used by the journey Modelfiles.
+    fn render_ollama_template(template: &str, system: &str, messages: &[(&str, &str)]) -> String {
+        let toks = tokenize_go_template(template);
+        let mut i = 0;
+        eval_go(&toks, &mut i, system, messages, None)
+    }
+
+    fn tokenize_go_template(template: &str) -> Vec<GoTok<'_>> {
+        let mut toks = Vec::new();
+        let mut rest = template;
+        while let Some(start) = rest.find("{{") {
+            if start > 0 {
+                toks.push(GoTok::Text(&rest[..start]));
+            }
+            let after = &rest[start + 2..];
+            let end = after
+                .find("}}")
+                .expect("unclosed go template action");
+            toks.push(GoTok::Action(after[..end].trim()));
+            rest = &after[end + 2..];
+        }
+        if !rest.is_empty() {
+            toks.push(GoTok::Text(rest));
+        }
+        toks
+    }
+
+    fn eval_go(
+        toks: &[GoTok<'_>],
+        i: &mut usize,
+        system: &str,
+        messages: &[(&str, &str)],
+        message: Option<(&str, &str)>,
+    ) -> String {
+        let mut out = String::new();
+        while *i < toks.len() {
+            match toks[*i] {
+                GoTok::Text(text) => {
+                    out.push_str(text);
+                    *i += 1;
+                }
+                GoTok::Action(action) if action == "end" || action == "else" || action.starts_with("else if") => {
+                    break;
+                }
+                GoTok::Action(".System") => {
+                    out.push_str(system);
+                    *i += 1;
+                }
+                GoTok::Action(".Content") => {
+                    out.push_str(message.expect("content outside a message").1);
+                    *i += 1;
+                }
+                GoTok::Action("if .System") => {
+                    *i += 1;
+                    out.push_str(&take_if(toks, i, system, messages, message, !system.is_empty()));
+                }
+                GoTok::Action("range .Messages") => {
+                    *i += 1;
+                    let body = *i;
+                    if messages.is_empty() {
+                        skip_go(toks, i);
+                    } else {
+                        for message in messages {
+                            *i = body;
+                            out.push_str(&eval_go(toks, i, system, messages, Some(*message)));
+                        }
+                    }
+                    expect_end(toks, i);
+                }
+                GoTok::Action(action) if action.starts_with("if eq .Role ") => {
+                    let want = action
+                        .trim_start_matches("if eq .Role ")
+                        .trim_matches('"');
+                    let role = message.map(|(role, _)| role).unwrap_or("");
+                    *i += 1;
+                    out.push_str(&take_if(
+                        toks,
+                        i,
+                        system,
+                        messages,
+                        message,
+                        role == want,
+                    ));
+                }
+                other => panic!("unexpected go action {other:?}"),
+            }
+        }
+        out
+    }
+
+    fn take_if(
+        toks: &[GoTok<'_>],
+        i: &mut usize,
+        system: &str,
+        messages: &[(&str, &str)],
+        message: Option<(&str, &str)>,
+        cond: bool,
+    ) -> String {
+        if cond {
+            let body = eval_go(toks, i, system, messages, message);
+            if matches!(toks.get(*i), Some(GoTok::Action(a)) if a.starts_with("else")) {
+                *i += 1;
+                skip_go(toks, i);
+            }
+            expect_end(toks, i);
+            body
+        } else {
+            skip_go(toks, i);
+            match toks.get(*i) {
+                Some(GoTok::Action("else")) => {
+                    *i += 1;
+                    let body = eval_go(toks, i, system, messages, message);
+                    expect_end(toks, i);
+                    body
+                }
+                Some(GoTok::Action(action)) if action.starts_with("else if eq .Role ") => {
+                    let want = action
+                        .trim_start_matches("else if eq .Role ")
+                        .trim_matches('"');
+                    let role = message.map(|(role, _)| role).unwrap_or("");
+                    *i += 1;
+                    take_if(toks, i, system, messages, message, role == want)
+                }
+                _ => {
+                    expect_end(toks, i);
+                    String::new()
+                }
+            }
+        }
+    }
+
+    fn expect_end(toks: &[GoTok<'_>], i: &mut usize) {
+        match toks.get(*i) {
+            Some(GoTok::Action("end")) => *i += 1,
+            other => panic!("expected end, got {other:?} at {i}"),
+        }
+    }
+
+    fn skip_go(toks: &[GoTok<'_>], i: &mut usize) {
+        let mut depth = 0;
+        while *i < toks.len() {
+            match toks[*i] {
+                GoTok::Action(action)
+                    if depth == 0 && (action == "end" || action == "else" || action.starts_with("else if")) =>
+                {
+                    break;
+                }
+                GoTok::Action(action)
+                    if action.starts_with("if ") || action == "range .Messages" =>
+                {
+                    depth += 1;
+                    *i += 1;
+                }
+                GoTok::Action("end") => {
+                    depth -= 1;
+                    *i += 1;
+                }
+                _ => *i += 1,
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum GoTok<'a> {
+        Text(&'a str),
+        Action(&'a str),
     }
 
     #[test]
