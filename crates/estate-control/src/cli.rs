@@ -665,14 +665,14 @@ pub(crate) enum ClassifyCommand {
         #[arg(long)]
         api_key_env: Option<String>,
         /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news. `devign` downloads google/code_x_glue_cc_defect_detection. `rust_idiom` downloads the Rust subset of bigcode/commitpackft.
-        /// Import already holds out the official test split. Prepare does not split again.
+        /// Import already holds out the official test split for ag_news and devign. rust_idiom holds out a seeded commit split (seed 42), not an official test split. Prepare does not split again.
         /// The default tag and `--out` gain a suffix such as `-agnews-3000` so sizes can coexist.
         #[arg(long)]
         dataset: Option<String>,
         /// Class-balanced train rows for `--dataset`. `all` keeps the official train split.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows for `--dataset`, drawn only from the official test split.
+        /// Held-out rows for `--dataset`, drawn only from the official test split, or from the seeded commit holdout for rust_idiom.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Local HF dataset snapshot. Same as `classify import --from-local`. Not modified.

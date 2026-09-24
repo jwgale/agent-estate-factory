@@ -149,6 +149,10 @@ const RUST_SOURCE_COMMITS: u64 = 2_996;
 /// Both sides non-empty and different. Counted from `data/rust/data.jsonl`.
 const RUST_USABLE_PAIRS: u64 = 2_340;
 const RUST_HOLDOUT_SEED: u64 = 42;
+/// Shape of the CommitPair expand and drop rules. A change invalidates native caches
+/// even when the expanded row counts stay the same.
+const COMMIT_PAIR_TRANSFORM: &str =
+    "drop-empty-or-identical;expand-old0-new1;holdout-one-fifth-whole-commit";
 
 const MULTI_NLI_CLASSES: &[ClassSpec] = &[
     ClassSpec {
@@ -1779,16 +1783,19 @@ fn acquire_commit_pairs(
     write_native_rows(&partial_path(&test_final), &test_rows)?;
     publish_native(&train_final)?;
     publish_native(&test_final)?;
-    let manifest = json!({
-        "hf_id": preset.hf_id,
-        "source": "local-jsonl",
-        "source_dir": source.dir_display,
-        "source_fp": source.token,
-        "jsonl": source.files,
-        "train_rows": train_rows.len(),
-        "test_rows": test_rows.len(),
-        "complete": true,
-    });
+    let manifest = commit_pair_manifest(
+        preset,
+        json!({
+            "hf_id": preset.hf_id,
+            "source": "local-jsonl",
+            "source_dir": source.dir_display,
+            "source_fp": source.token,
+            "jsonl": source.files,
+            "train_rows": train_rows.len(),
+            "test_rows": test_rows.len(),
+            "complete": true,
+        }),
+    )?;
     fs::write(
         native.join("manifest.json"),
         format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2195,14 +2202,17 @@ fn fetch_commit_pairs(
     write_native_rows(&partial_path(&test_final), &test_rows)?;
     publish_native(&train_final)?;
     publish_native(&test_final)?;
-    let manifest = json!({
-        "hf_id": preset.hf_id,
-        "source": "datasets-server rows API",
-        "config": preset.rows_config,
-        "train_rows": train_rows.len(),
-        "test_rows": test_rows.len(),
-        "complete": true,
-    });
+    let manifest = commit_pair_manifest(
+        preset,
+        json!({
+            "hf_id": preset.hf_id,
+            "source": "datasets-server rows API",
+            "config": preset.rows_config,
+            "train_rows": train_rows.len(),
+            "test_rows": test_rows.len(),
+            "complete": true,
+        }),
+    )?;
     fs::write(
         native.join("manifest.json"),
         format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2288,10 +2298,38 @@ fn cache_verified(preset: &DatasetPreset, native: &Path) -> Result<bool> {
     }
     let train_rows = value.get("train_rows").and_then(Value::as_u64);
     let test_rows = value.get("test_rows").and_then(Value::as_u64);
-    Ok(train_rows == Some(preset.official_train)
-        && test_rows == Some(preset.official_test)
-        && count_complete_lines(&train_path)? == preset.official_train
-        && count_complete_lines(&test_path)? == preset.official_test)
+    if train_rows != Some(preset.official_train)
+        || test_rows != Some(preset.official_test)
+        || count_complete_lines(&train_path)? != preset.official_train
+        || count_complete_lines(&test_path)? != preset.official_test
+    {
+        return Ok(false);
+    }
+    if let SourceShape::CommitPair { holdout_seed, .. } = preset.shape {
+        // Missing or mismatched seed/transform must rebuild. Row counts alone are not the split.
+        if value.get("holdout_seed").and_then(Value::as_u64) != Some(holdout_seed) {
+            return Ok(false);
+        }
+        if value.get("pair_transform").and_then(Value::as_str) != Some(COMMIT_PAIR_TRANSFORM) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn commit_pair_manifest(preset: &DatasetPreset, mut manifest: Value) -> Result<Value> {
+    let SourceShape::CommitPair { holdout_seed, .. } = preset.shape else {
+        bail!(
+            "refuse:classify-import: {} is not a commit-pair preset",
+            preset.alias
+        );
+    };
+    let obj = manifest
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-import: native manifest is not an object"))?;
+    obj.insert("holdout_seed".into(), json!(holdout_seed));
+    obj.insert("pair_transform".into(), json!(COMMIT_PAIR_TRANSFORM));
+    Ok(manifest)
 }
 
 fn publish_native(final_path: &Path) -> Result<()> {
@@ -4460,6 +4498,8 @@ mod tests {
         assert!(native["jsonl"].to_string().contains("data.jsonl"));
         assert_eq!(native["train_rows"], 3_744);
         assert_eq!(native["test_rows"], 936);
+        assert_eq!(native["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(native["pair_transform"], COMMIT_PAIR_TRANSFORM);
 
         let rows_root = root.join("rows");
         fs::create_dir_all(&rows_root).unwrap();
@@ -4504,6 +4544,141 @@ mod tests {
         assert!(argv.iter().any(|arg| arg == "--include"));
         assert!(argv.iter().any(|arg| arg == "data/rust/*"));
         assert!(argv.iter().any(|arg| arg == "bigcode/commitpackft"));
+        let rows_manifest: Value =
+            serde_json::from_str(&fs::read_to_string(rows_root.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(rows_manifest["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(rows_manifest["pair_transform"], COMMIT_PAIR_TRANSFORM);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn commit_pair_cache_rejects_a_missing_or_mismatched_holdout_seed() {
+        let preset = preset_by_name("rust_idiom").unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "import-holdout-id-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let native = root.join("rust_idiom").join("native");
+        fs::create_dir_all(&native).unwrap();
+        let row = "{\"index\":0,\"text\":\"stale-holdout\",\"label\":0}\n";
+        fs::write(
+            native.join("train.jsonl"),
+            row.repeat(preset.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("test.jsonl"),
+            row.repeat(preset.official_test as usize),
+        )
+        .unwrap();
+        let write_manifest = |extra: &str| {
+            fs::write(
+                native.join("manifest.json"),
+                format!(
+                    "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}{extra}}}\n",
+                    serde_json::to_string(preset.hf_id).unwrap(),
+                    preset.official_train,
+                    preset.official_test
+                ),
+            )
+            .unwrap();
+        };
+        write_manifest("");
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a cache with no holdout_seed must not verify"
+        );
+        write_manifest(",\"holdout_seed\":7,\"pair_transform\":\"drop-empty-or-identical;expand-old0-new1;holdout-one-fifth-whole-commit\"");
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a mismatched holdout_seed must not verify"
+        );
+        write_manifest(&format!(",\"holdout_seed\":{RUST_HOLDOUT_SEED}"));
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a cache with no pair_transform must not verify"
+        );
+        write_manifest(&format!(
+            ",\"holdout_seed\":{RUST_HOLDOUT_SEED},\"pair_transform\":\"other-transform\""
+        ));
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a mismatched pair_transform must not verify"
+        );
+        write_manifest(&format!(
+            ",\"holdout_seed\":{RUST_HOLDOUT_SEED},\"pair_transform\":{transform}",
+            transform = serde_json::to_string(COMMIT_PAIR_TRANSFORM).unwrap()
+        ));
+        assert!(cache_verified(preset, &native).unwrap());
+
+        let ag = preset_by_name("ag_news").unwrap();
+        let ag_native = root.join("ag");
+        fs::create_dir_all(&ag_native).unwrap();
+        fs::write(
+            ag_native.join("train.jsonl"),
+            row.repeat(ag.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            ag_native.join("test.jsonl"),
+            row.repeat(ag.official_test as usize),
+        )
+        .unwrap();
+        fs::write(
+            ag_native.join("manifest.json"),
+            format!(
+                "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}}}\n",
+                serde_json::to_string(ag.hf_id).unwrap(),
+                ag.official_train,
+                ag.official_test
+            ),
+        )
+        .unwrap();
+        assert!(
+            cache_verified(ag, &ag_native).unwrap(),
+            "labeled-column caches do not require holdout_seed"
+        );
+
+        write_manifest("");
+        let source = root.join("nas").join("data").join("rust");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("data.jsonl"), b"{\"lang\":\"Rust\"}\n").unwrap();
+        let io = fake_io(false, false);
+        classify_import_with(
+            &ImportRequest {
+                dataset: "rust_idiom",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &root.join("sampled-rebuild"),
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&root.join("nas")),
+                fetch: ImportFetch::Bulk,
+                python: Some("python3"),
+                cache_root: Some(&root),
+            },
+            &io,
+        )
+        .unwrap();
+        let rebuilt = fs::read_to_string(native.join("train.jsonl")).unwrap();
+        assert!(
+            rebuilt.contains("fn old_"),
+            "missing holdout_seed must rebuild the native split"
+        );
+        assert!(!rebuilt.contains("stale-holdout"));
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(native.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(manifest["pair_transform"], COMMIT_PAIR_TRANSFORM);
         let _ = fs::remove_dir_all(&root);
     }
 }
