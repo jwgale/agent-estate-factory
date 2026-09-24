@@ -2036,6 +2036,151 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
 }
 
 #[test]
+fn devign_import_and_journey_print_reuse_the_tev1_path() {
+    let help = bin()
+        .args(["classify", "import", "--help"])
+        .output()
+        .unwrap();
+    let help_out = String::from_utf8_lossy(&help.stdout);
+    assert!(help.status.success(), "{help_out}");
+    assert!(
+        help_out.contains("devign"),
+        "import help should name devign\n{help_out}"
+    );
+    assert!(
+        help_out.contains("google/code_x_glue_cc_defect_detection"),
+        "{help_out}"
+    );
+    let journey_help = bin()
+        .args(["classify", "journey", "--help"])
+        .output()
+        .unwrap();
+    let journey_help_out = String::from_utf8_lossy(&journey_help.stdout);
+    assert!(journey_help.status.success(), "{journey_help_out}");
+    assert!(
+        journey_help_out.contains("devign"),
+        "journey help should name devign\n{journey_help_out}"
+    );
+
+    let root = std::env::temp_dir().join(format!("devign-import-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let train = root.join("native-train.jsonl");
+    let test = root.join("native-test.jsonl");
+    fs::write(
+        &train,
+        concat!(
+            "{\"index\":1,\"text\":\"void secure(){}\",\"label\":false}\n",
+            "{\"index\":2,\"text\":\"void insecure(){}\",\"label\":1}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &test,
+        concat!(
+            "{\"index\":11,\"text\":\"void held_secure(){}\",\"label\":0}\n",
+            "{\"index\":12,\"text\":\"void held_insecure(){}\",\"label\":true}\n",
+        ),
+    )
+    .unwrap();
+    let out = root.join("import");
+    let imported = bin()
+        .args([
+            "classify",
+            "import",
+            "--dataset",
+            "devign",
+            "--train-size",
+            "all",
+            "--heldout-size",
+            "all",
+            "--seed",
+            "42",
+            "--native-train",
+            train.to_str().unwrap(),
+            "--native-test",
+            test.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    let stderr = String::from_utf8_lossy(&imported.stderr);
+    assert!(imported.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("Do not redistribute"), "{stdout}");
+    assert!(stdout.contains("option_order=fixed"), "{stdout}");
+    let train_body = fs::read_to_string(out.join("train.jsonl")).unwrap();
+    assert!(train_body.contains("\"answer\":\"A\""));
+    assert!(train_body.contains("\"answer\":\"B\""));
+    assert!(train_body.contains("\"key\":\"secure\""));
+    assert!(train_body.contains("\"key\":\"insecure\""));
+    for line in train_body.lines() {
+        let row: serde_json::Value = serde_json::from_str(line).unwrap();
+        let opts = row["options"].as_array().unwrap();
+        assert_eq!(opts[0]["label"], "A");
+        assert_eq!(opts[1]["label"], "B");
+    }
+
+    let journey = root.join("journey");
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dataset",
+            "google/code_x_glue_cc_defect_detection",
+            "--train-size",
+            "3000",
+            "--heldout-size",
+            "all",
+            "--seed",
+            "42",
+            "--out",
+            journey.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let printed_out = String::from_utf8_lossy(&printed.stdout);
+    let printed_err = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{printed_out}\n{printed_err}");
+    assert!(
+        printed_out.contains("tev1-specialist-devign-3000"),
+        "{printed_out}"
+    );
+    assert!(
+        printed_out.contains("dataset: google/code_x_glue_cc_defect_detection"),
+        "{printed_out}"
+    );
+    assert!(printed_out.contains("no-second-split"), "{printed_out}");
+    assert!(printed_out.contains("Qwen/Qwen3.5-4B"), "{printed_out}");
+    assert!(
+        printed_out.contains("READY_FOR_LIVE_TEST: no"),
+        "{printed_out}"
+    );
+    for name in [
+        "prepare",
+        "fetch-base",
+        "recipe",
+        "train",
+        "merge-export",
+        "export-repair",
+        "eval-base",
+        "eval-specialist",
+        "compare",
+    ] {
+        assert!(printed_out.contains(name), "{name} missing\n{printed_out}");
+    }
+    assert!(
+        !journey.exists(),
+        "print must not write {}",
+        journey.display()
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn glm4_classify_make_wrapper_is_opt_in() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let makefile = fs::read_to_string(root.join("Makefile")).unwrap();

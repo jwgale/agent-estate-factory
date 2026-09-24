@@ -2088,7 +2088,7 @@ pub struct JourneyRequest<'a> {
     pub seat: SeatChat,
     pub llama_note: &'a str,
     pub preset: JourneyPreset,
-    /// `ag_news` (or a Hub id) replaces the built-in fixture. Import already made the held-out split.
+    /// `ag_news` or `devign` (or a Hub id) replaces the built-in fixture. Import already made the held-out split.
     pub import_dataset: Option<&'a str>,
     pub train_size: &'a str,
     pub heldout_size: &'a str,
