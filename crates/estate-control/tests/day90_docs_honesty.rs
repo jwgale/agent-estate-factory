@@ -3530,7 +3530,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3894,7 +3894,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4408,7 +4408,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4786,7 +4786,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5505,7 +5505,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let named_journeys = changelog
         .split("## This slice — checklist names DeepSeek and GLM print journeys")
         .nth(1)
@@ -5991,7 +5991,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -6310,7 +6310,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -6594,7 +6594,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
@@ -6869,7 +6869,7 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only GLM-4 Chat journey")
         .nth(1)
@@ -7040,7 +7040,7 @@ fn purpose_build_operator_surfaces_name_the_journey() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — operator surfaces name purpose-build on demand")
         .nth(1)
@@ -7204,7 +7204,7 @@ fn purpose_build_surfaces_name_mid_software_build_entry() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — operator surfaces name mid-software-build purpose-build")
         .nth(1)
@@ -7305,7 +7305,7 @@ fn help_names_mid_software_build_purpose_build_entry() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #193");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — help names mid-software-build purpose-build")
         .nth(1)
@@ -7361,4 +7361,148 @@ fn help_names_mid_software_build_purpose_build_entry() {
         sum.starts_with("43770130 3391"),
         "examples/estate.yaml cksum drifted: {sum}"
     );
+}
+
+#[test]
+fn train_enrich_names_purpose_build_mid_software_build_entry() {
+    let root = repo_root();
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    let intro = train
+        .split("## Target C — Qwen QLoRA operator journey")
+        .next()
+        .unwrap();
+    assert!(intro.contains(
+        "When an SLM fits mid-software-build, or on demand, `make purpose-build-journey` is the print-only purpose-build on-demand entry."
+    ));
+    assert!(intro.contains(
+        "It runs `make purpose-build-pick`, then `make purpose-build-checklist`. Those two targets are the parts."
+    ));
+    assert!(intro.contains("section 18"));
+    assert!(intro.contains("The journey runs the pick (section 17), then the checklist (section 15)."));
+    assert!(intro.contains(
+        "DeepSeek-R1-Distill (section 19) and GLM-4 Chat (section 20) are sibling print-only journeys reachable from the pick and the checklist."
+    ));
+    assert!(intro.contains("They are not steps of this journey."));
+    assert!(!intro.contains("sections 15–20"));
+    assert!(intro.contains("The re-prove card stays `make uniqueness-prove-checklist`."));
+    assert!(intro.contains("stays the only live uniqueness prove"));
+    assert!(
+        !intro.contains("READY_FOR_LIVE_TEST: yes") && !intro.contains("READY_FOR_LIVE_TEST`: yes")
+    );
+
+    let table = train
+        .split("## What exists today")
+        .nth(1)
+        .expect("What exists today")
+        .split("## Facilitated vs invented")
+        .next()
+        .unwrap();
+    let mlx = table
+        .find("| `make uniqueness-mlx` |")
+        .expect("uniqueness-mlx row");
+    let live = table
+        .find("| `make enrich-live-prove` |")
+        .expect("enrich-live-prove row");
+    let between = &table[mlx..live];
+    let row_markers = [
+        "| `make purpose-build-checklist` |",
+        "| `make purpose-build-pick` |",
+        "| `make purpose-build-journey` |",
+        "| `make deepseek-r1-distill-journey` |",
+        "| `make uniqueness-deepseek` |",
+        "| `make deepseek-r1-distill-lora-journey` |",
+        "| `make uniqueness-deepseek-lora` |",
+        "| `make glm4-chat-journey` |",
+        "| `make uniqueness-glm` |",
+        "| `make glm4-chat-lora-journey` |",
+        "| `make uniqueness-glm-lora` |",
+    ];
+    for marker in row_markers {
+        let row = table
+            .lines()
+            .find(|line| line.contains(marker))
+            .unwrap_or_else(|| panic!("What exists today missing {marker}"));
+        for needle in [
+            "print-only",
+            "Does not train, convert, seat",
+            "promote",
+            "or apply",
+            "Not in `make smoke`, `make gate-90`, or GitHub Actions",
+            "Does not invent a live PASS",
+        ] {
+            assert!(row.contains(needle), "{marker} row missing {needle}: {row}");
+        }
+    }
+    assert!(!between.to_ascii_lowercase().contains("kimi"));
+    assert!(
+        !train.contains("READY_FOR_LIVE_TEST: yes") && !train.contains("READY_FOR_LIVE_TEST`: yes")
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(4).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #193")
+            && gate_head.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4"),
+        "GATE-90 tip header stays through PR #193"
+    );
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    assert!(status.lines().take(4).any(|line| {
+        line.contains("through PR #193") && line.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4")
+    }));
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    assert!(
+        probes.contains("Tip framing\nthrough PR #193")
+            && probes.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4"),
+        "LIVE-PROBES tip framing stays through PR #193"
+    );
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .unwrap()
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
+    let slice = changelog
+        .split("## This slice — TRAIN-ENRICH names the purpose-build mid-software-build entry")
+        .nth(1)
+        .expect("CHANGELOG missing the TRAIN-ENRICH naming slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "docs/TRAIN-ENRICH.md",
+        "mid-software-build",
+        "make purpose-build-journey",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "section 18",
+        "The journey runs the pick (section 17), then the checklist (section 15).",
+        "sibling print-only journeys",
+        "They are not steps of this journey.",
+        "operator section 19",
+        "operator section 20",
+        "do not invent a live PASS",
+        "make uniqueness-prove-checklist",
+        "does not move the GATE-90, Cell One, or live-probes tip header",
+        "through PR #193",
+        "86b1ad5d344006e7489b24fe14fef7b8b16215f4",
+        "43770130 3391",
+        "does not add Kimi",
+        "does not add DeepSeek or GLM journey code",
+        "READY_FOR_LIVE_TEST`: no",
+    ] {
+        assert!(slice.contains(needle), "TRAIN-ENRICH naming slice missing {needle}");
+    }
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #193"));
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(sum.starts_with("43770130 3391"), "examples/estate.yaml cksum drifted: {sum}");
 }
