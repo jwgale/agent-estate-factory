@@ -539,6 +539,7 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value = ".cell/classify-journey")]
         out: PathBuf,
         /// Hugging Face train base. Default `Qwen/Qwen3.5-4B` (LLaMA-Factory template `qwen3_5`).
+        /// A Hub id is downloaded into `base-hf` and converted from that directory. A local weights directory is used as-is.
         #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE)]
         base: String,
         /// Opt-in Ollama library tag for the base eval. Omit to build the base with the same convert, quant, and Modelfile as the specialist. A set tag can differ in precision.
@@ -570,6 +571,7 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value_t = false)]
         print: bool,
         /// Run the steps. Skips a step only when its manifest matches the current inputs.
+        /// Eval and Ollama skips also include the specialist tag, endpoint, and base tag. The recipe skip includes `max_steps`, the dataset name, and the template.
         #[arg(long, default_value_t = false)]
         run: bool,
         /// Replace a file `--out` and a non-empty prepare directory.

@@ -230,7 +230,7 @@ export_legacy_format: false
 }
 
 /// Journey Modelfile. Same shape for the base and the specialist. `FROM` is the only difference.
-/// Not `local_seat`'s `gguf_modelfile`.
+/// Not `local_seat`'s `gguf_modelfile`. `FROM` uses the same token rules as `modelfile_token`.
 pub fn journey_modelfile(gguf: &Path) -> String {
     format!(
         "\
@@ -240,8 +240,18 @@ PARAMETER num_predict 8
 PARAMETER stop <|im_end|>
 TEMPLATE \"\"\"{QWEN35_NOTHINK_TEMPLATE}\"\"\"
 ",
-        gguf = gguf.display(),
+        gguf = modelfile_from_token(gguf),
     )
+}
+
+/// Quote a Modelfile token the same way `local_seat::modelfile_token` does.
+fn modelfile_from_token(path: &Path) -> String {
+    let text = path.display().to_string();
+    if text.chars().any(|c| c.is_whitespace()) {
+        format!("\"{}\"", text.replace('"', "\\\""))
+    } else {
+        text
+    }
 }
 
 fn yaml_scalar(text: &str) -> String {
@@ -258,7 +268,11 @@ pub fn dataset_name_in_info(info: &Value) -> Option<String> {
             .next()
             .filter(|_| map.len() == 1)
             .cloned()
-            .or_else(|| map.keys().find(|k| map[*k].get("file_name").is_some()).cloned())
+            .or_else(|| {
+                map.keys()
+                    .find(|k| map[*k].get("file_name").is_some())
+                    .cloned()
+            })
     })
 }
 
@@ -472,6 +486,12 @@ struct Inputs {
     prepare: String,
     fetch: String,
     pipeline: Option<String>,
+    /// Desired recipe from the CLI. Independent of the recipe file on disk.
+    recipe: Option<String>,
+    /// Eval skip key: pipeline plus tag, endpoint, and base seat.
+    eval: Option<String>,
+    ollama_base: Option<String>,
+    ollama_spec: Option<String>,
 }
 
 fn sha256_bytes(bytes: &[u8]) -> String {
@@ -501,15 +521,6 @@ fn fetch_inputs(base: &str) -> String {
     sha256_text(base)
 }
 
-fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs> {
-    let resolved = resolved_base_dir(req.base, paths).display().to_string();
-    Ok(Inputs {
-        prepare: prepare_inputs(req.input, req.seed, req.held_out_ratio)?,
-        fetch: fetch_inputs(req.base),
-        pipeline: pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant),
-    })
-}
-
 fn pipeline_inputs(base: &str, dataset: &Path, recipe: &Path, quant: &str) -> Option<String> {
     let dataset_bytes = fs::read(dataset).ok()?;
     let recipe_bytes = fs::read(recipe).ok()?;
@@ -518,6 +529,128 @@ fn pipeline_inputs(base: &str, dataset: &Path, recipe: &Path, quant: &str) -> Op
         sha256_bytes(&dataset_bytes),
         sha256_bytes(&recipe_bytes)
     )))
+}
+
+/// Recipe skip key from the CLI, not from the recipe file that a previous run left behind.
+fn recipe_decision_inputs(
+    model_path: &str,
+    template_from: &str,
+    dataset_name: &str,
+    dataset: &Path,
+    out: &Path,
+    adapter_dir: &Path,
+    max_steps: Option<u32>,
+) -> Option<String> {
+    let dataset_bytes = fs::read(dataset).ok()?;
+    let desired = lora_recipe_yaml(
+        model_path,
+        template_from,
+        dataset_name,
+        out,
+        adapter_dir,
+        max_steps,
+    );
+    Some(sha256_text(&format!(
+        "recipe-decision\n{model_path}\n{}\n{dataset_name}\n{}\n{desired}",
+        sha256_bytes(&dataset_bytes),
+        train_template(template_from),
+    )))
+}
+
+fn seat_material(
+    specialist_tag: &str,
+    endpoint: &str,
+    library_tag: Option<&str>,
+    built_base_tag: &str,
+) -> String {
+    let mode = if library_tag.is_some() {
+        "library-tag"
+    } else {
+        "pipeline"
+    };
+    let base_tag = library_tag.unwrap_or(built_base_tag);
+    format!("{specialist_tag}\n{endpoint}\n{mode}\n{base_tag}")
+}
+
+fn eval_inputs(
+    pipeline: &str,
+    specialist_tag: &str,
+    endpoint: &str,
+    library_tag: Option<&str>,
+    built_base_tag: &str,
+) -> String {
+    sha256_text(&format!(
+        "eval\n{pipeline}\n{}",
+        seat_material(specialist_tag, endpoint, library_tag, built_base_tag)
+    ))
+}
+
+fn ollama_inputs(
+    pipeline: &str,
+    tag: &str,
+    specialist_tag: &str,
+    endpoint: &str,
+    library_tag: Option<&str>,
+    built_base_tag: &str,
+) -> String {
+    sha256_text(&format!(
+        "ollama\n{pipeline}\n{tag}\n{}",
+        seat_material(specialist_tag, endpoint, library_tag, built_base_tag)
+    ))
+}
+
+fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs> {
+    let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+    let resolved = resolved_base_dir(req.base, paths).display().to_string();
+    let pipeline = pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant);
+    let recipe = recipe_decision_inputs(
+        &resolved,
+        req.base,
+        req.dataset_name,
+        &paths.dataset_jsonl,
+        &paths.out,
+        &paths.adapter_dir,
+        req.max_steps,
+    );
+    let library = library_tag(req.base_tag);
+    let eval = pipeline.as_ref().map(|pipeline| {
+        eval_inputs(
+            pipeline,
+            req.tag,
+            req.endpoint,
+            library,
+            DEFAULT_BUILT_BASE_TAG,
+        )
+    });
+    let ollama_base = pipeline.as_ref().map(|pipeline| {
+        ollama_inputs(
+            pipeline,
+            DEFAULT_BUILT_BASE_TAG,
+            req.tag,
+            req.endpoint,
+            library,
+            DEFAULT_BUILT_BASE_TAG,
+        )
+    });
+    let ollama_spec = pipeline.as_ref().map(|pipeline| {
+        ollama_inputs(
+            pipeline,
+            req.tag,
+            req.tag,
+            req.endpoint,
+            library,
+            DEFAULT_BUILT_BASE_TAG,
+        )
+    });
+    Ok(Inputs {
+        prepare,
+        fetch: fetch_inputs(req.base),
+        pipeline,
+        recipe,
+        eval,
+        ollama_base,
+        ollama_spec,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -534,7 +667,10 @@ fn read_manifest(path: &Path) -> Option<Manifest> {
         .get("gguf_sha256")
         .and_then(Value::as_str)
         .map(str::to_string);
-    Some(Manifest { inputs, gguf_sha256 })
+    Some(Manifest {
+        inputs,
+        gguf_sha256,
+    })
 }
 
 fn write_manifest(path: &Path, inputs: &str, gguf_sha256: Option<&str>) -> Result<()> {
@@ -546,7 +682,10 @@ fn write_manifest(path: &Path, inputs: &str, gguf_sha256: Option<&str>) -> Resul
         "inputs": inputs,
         "gguf_sha256": gguf_sha256,
     });
-    fs::write(path, format!("{}\n", serde_json::to_string_pretty(&report)?))?;
+    fs::write(
+        path,
+        format!("{}\n", serde_json::to_string_pretty(&report)?),
+    )?;
     Ok(())
 }
 
@@ -627,6 +766,7 @@ fn decide_ollama(
     }
 }
 
+#[derive(Clone, Copy)]
 struct PlanCtx<'a> {
     paths: &'a JourneyPaths,
     base: &'a str,
@@ -688,7 +828,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
 
     let prepare_ready = paths.heldout.is_file() && paths.dataset_jsonl.is_file() && paths.dataset_info.is_file();
     let prepare = if prepare_ready {
-        decide_file(&paths.dataset_jsonl, &paths.manifest_path("prepare"), &ctx.inputs.prepare)
+        decide_file(
+            &paths.dataset_jsonl,
+            &paths.manifest_path("prepare"),
+            &ctx.inputs.prepare,
+        )
     } else {
         Decision {
             action: StepAction::Run,
@@ -720,8 +864,8 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     steps.push(step_detail("fetch-base", &fetch, fetch_cmd));
 
     let recipe = if paths.recipe.is_file() && paths.export_yaml.is_file() {
-        if let Some(pipeline) = ctx.inputs.pipeline.as_deref() {
-            decide_file(&paths.recipe, &paths.manifest_path("recipe"), pipeline)
+        if let Some(recipe_key) = ctx.inputs.recipe.as_deref() {
+            decide_file(&paths.recipe, &paths.manifest_path("recipe"), recipe_key)
         } else {
             Decision {
                 action: StepAction::Run,
@@ -788,7 +932,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         }
     } else {
         match ctx.inputs.pipeline.as_deref() {
-            Some(pipeline) => decide_file(&paths.base_f16, &paths.manifest_path("gguf-convert-base"), pipeline),
+            Some(pipeline) => decide_file(
+                &paths.base_f16,
+                &paths.manifest_path("gguf-convert-base"),
+                pipeline,
+            ),
             None if paths.base_f16.is_file() => Decision {
                 action: StepAction::Run,
                 redo: Some("missing manifest".into()),
@@ -844,7 +992,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         }
     } else {
         match ctx.inputs.pipeline.as_deref() {
-            Some(pipeline) => decide_file(&base_seated, &paths.manifest_path("quantize-base"), pipeline),
+            Some(pipeline) => decide_file(
+                &base_seated,
+                &paths.manifest_path("quantize-base"),
+                pipeline,
+            ),
             None if base_seated.is_file() => Decision {
                 action: StepAction::Run,
                 redo: Some("missing manifest".into()),
@@ -908,11 +1060,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
             redo: None,
         }
     } else {
-        match ctx.inputs.pipeline.as_deref() {
-            Some(pipeline) => decide_ollama(
+        match ctx.inputs.ollama_base.as_deref() {
+            Some(key) => decide_ollama(
                 &base_seated,
                 &paths.manifest_path("ollama-create-base"),
-                pipeline,
+                key,
                 ctx.check_ollama,
                 ctx.built_base_tag,
             ),
@@ -938,11 +1090,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         ctx.specialist_tag,
         paths.specialist_modelfile.display()
     );
-    let create_spec = match ctx.inputs.pipeline.as_deref() {
-        Some(pipeline) => decide_ollama(
+    let create_spec = match ctx.inputs.ollama_spec.as_deref() {
+        Some(key) => decide_ollama(
             &specialist_seated,
             &paths.manifest_path("ollama-create-specialist"),
-            pipeline,
+            key,
             ctx.check_ollama,
             ctx.specialist_tag,
         ),
@@ -958,9 +1110,9 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     ));
 
     let eval_base_model = ctx.library_tag.unwrap_or(ctx.built_base_tag);
-    let eval_base = match ctx.inputs.pipeline.as_deref() {
-        Some(pipeline) if paths.base_report.is_file() => {
-            decide_file(&paths.base_report, &paths.manifest_path("eval-base"), pipeline)
+    let eval_base = match ctx.inputs.eval.as_deref() {
+        Some(key) if paths.base_report.is_file() => {
+            decide_file(&paths.base_report, &paths.manifest_path("eval-base"), key)
         }
         _ if paths.base_report.is_file() => Decision {
             action: StepAction::Run,
@@ -977,11 +1129,11 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         format!("classify eval --api ollama-native model {eval_base_model}"),
     ));
 
-    let eval_spec = match ctx.inputs.pipeline.as_deref() {
-        Some(pipeline) if paths.specialist_report.is_file() => decide_file(
+    let eval_spec = match ctx.inputs.eval.as_deref() {
+        Some(key) if paths.specialist_report.is_file() => decide_file(
             &paths.specialist_report,
             &paths.manifest_path("eval-specialist"),
-            pipeline,
+            key,
         ),
         _ if paths.specialist_report.is_file() => Decision {
             action: StepAction::Run,
@@ -1312,8 +1464,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
             }
             "recipe" => {
                 write_recipe(req, paths)?;
-                let pipeline = pipeline_key(req, paths)?;
-                write_manifest(&paths.manifest_path("recipe"), &pipeline, None)?;
+                write_step_manifest(req, paths, "recipe", None)?;
             }
             "train" => {
                 run_argv(&[
@@ -1424,14 +1575,31 @@ fn redo_reason(detail: &str) -> Option<&str> {
     Some(reason.split(';').next().unwrap_or(reason).trim())
 }
 
-fn pipeline_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<String> {
-    let resolved = resolved_base_dir(req.base, paths).display().to_string();
-    pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant)
+fn step_manifest_key(inputs: &Inputs, step: &str) -> Result<String> {
+    let key = match step {
+        "recipe" => inputs.recipe.as_deref(),
+        "eval-base" | "eval-specialist" => inputs.eval.as_deref(),
+        "ollama-create-base" => inputs.ollama_base.as_deref(),
+        "ollama-create-specialist" => inputs.ollama_spec.as_deref(),
+        _ => inputs.pipeline.as_deref(),
+    };
+    key.map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))
 }
 
+fn write_step_manifest(
+    req: &JourneyRequest<'_>,
+    paths: &JourneyPaths,
+    step: &str,
+    gguf_sha256: Option<&str>,
+) -> Result<()> {
+    let inputs = load_inputs(req, paths)?;
+    let key = step_manifest_key(&inputs, step)?;
+    write_manifest(&paths.manifest_path(step), &key, gguf_sha256)
+}
+
 fn write_pipeline_manifest(req: &JourneyRequest<'_>, paths: &JourneyPaths, step: &str) -> Result<()> {
-    write_manifest(&paths.manifest_path(step), &pipeline_key(req, paths)?, None)
+    write_step_manifest(req, paths, step, None)
 }
 
 fn seat_gguf(
@@ -1469,8 +1637,7 @@ fn seat_gguf(
     if !ollama_has_model(tag) {
         bail!("refuse:classify-journey: ollama show {tag} failed after create");
     }
-    let pipeline = pipeline_key(req, paths)?;
-    write_manifest(&paths.manifest_path(step), &pipeline, Some(&gguf_sha))?;
+    write_step_manifest(req, paths, step, Some(&gguf_sha))?;
     Ok(())
 }
 
@@ -1580,10 +1747,13 @@ fn write_comparison(
         Some(false) => "missed",
         None => "unset",
     };
-    let base_seat = if library.is_some() { "library-tag" } else { "pipeline" };
-    let precision_warning = library.map(|_| {
-        "base-tag is a library tag. Its precision may differ from the specialist quant."
-    });
+    let base_seat = if library.is_some() {
+        "library-tag"
+    } else {
+        "pipeline"
+    };
+    let precision_warning = library
+        .map(|_| "base-tag is a library tag. Its precision may differ from the specialist quant.");
     let report = json!({
         "schema": "cell-one.classify-journey.v0",
         "base": req.base,
@@ -1674,15 +1844,14 @@ fn ollama_has_model(tag: &str) -> bool {
 fn run_argv(argv: &[String]) -> Result<()> {
     let line = argv_line(argv);
     println!("{line}");
-    let (bin, args) = argv.split_first().ok_or_else(|| {
-        anyhow::anyhow!("refuse:classify-journey: empty command")
-    })?;
+    let (bin, args) = argv
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: empty command"))?;
     let bin_path = if bin.contains('/') || bin.contains('\\') {
         PathBuf::from(bin)
     } else {
-        which(bin).ok_or_else(|| {
-            anyhow::anyhow!("refuse:classify-journey: {bin} is not on PATH")
-        })?
+        which(bin)
+            .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: {bin} is not on PATH"))?
     };
     let status = Command::new(&bin_path).args(args).status().map_err(|e| {
         anyhow::anyhow!(
@@ -1748,6 +1917,12 @@ mod tests {
         assert!(model.contains("PARAMETER num_predict 8"), "{model}");
         assert!(model.contains("<think>\n\n</think>"), "{model}");
         assert!(model.starts_with("FROM "), "{model}");
+        let spaced = dir.join("seat dir").join("specialist Q4.gguf");
+        let quoted = journey_modelfile(&spaced);
+        let shared = model_estate::gguf_modelfile(&spaced);
+        assert_eq!(quoted.lines().next(), shared.lines().next(), "{quoted}");
+        assert!(quoted.contains("FROM \""));
+        assert!(quoted.contains("specialist Q4.gguf"));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1760,6 +1935,10 @@ mod tests {
             prepare: "prep".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            recipe: None,
+            eval: None,
+            ollama_base: None,
+            ollama_spec: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
@@ -1818,7 +1997,48 @@ mod tests {
         fs::write(&paths.base_report, "{}\n").unwrap();
         fs::write(&paths.specialist_report, "{}\n").unwrap();
         let prepare = String::from("prepare-key");
-        let pipeline = pipeline_inputs(DEFAULT_BASE, &paths.dataset_jsonl, &paths.recipe, DEFAULT_QUANT).unwrap();
+        let pipeline = pipeline_inputs(
+            DEFAULT_BASE,
+            &paths.dataset_jsonl,
+            &paths.recipe,
+            DEFAULT_QUANT,
+        )
+        .unwrap();
+        let endpoint = "http://127.0.0.1:11434";
+        let model_path = resolved_base_dir(DEFAULT_BASE, &paths).display().to_string();
+        let recipe_key = recipe_decision_inputs(
+            &model_path,
+            DEFAULT_BASE,
+            DEFAULT_DATASET,
+            &paths.dataset_jsonl,
+            &paths.out,
+            &paths.adapter_dir,
+            None,
+        )
+        .unwrap();
+        let eval_key = eval_inputs(
+            &pipeline,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+        );
+        let ollama_base = ollama_inputs(
+            &pipeline,
+            DEFAULT_BUILT_BASE_TAG,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+        );
+        let ollama_spec = ollama_inputs(
+            &pipeline,
+            DEFAULT_TAG,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+        );
         for step in [
             "prepare",
             "fetch-base",
@@ -1833,25 +2053,25 @@ mod tests {
             "eval-specialist",
         ] {
             let fetch_key = fetch_inputs(DEFAULT_BASE);
-            let key = if step == "prepare" {
-                prepare.as_str()
-            } else if step == "fetch-base" {
-                fetch_key.as_str()
-            } else {
-                pipeline.as_str()
+            let key = match step {
+                "prepare" => prepare.as_str(),
+                "fetch-base" => fetch_key.as_str(),
+                "recipe" => recipe_key.as_str(),
+                "eval-base" | "eval-specialist" => eval_key.as_str(),
+                _ => pipeline.as_str(),
             };
             write_manifest(&paths.manifest_path(step), key, None).unwrap();
         }
         let spec_sha = file_sha(&seated_s).unwrap();
         write_manifest(
             &paths.manifest_path("ollama-create-specialist"),
-            &pipeline,
+            &ollama_spec,
             Some(&spec_sha),
         )
         .unwrap();
         write_manifest(
             &paths.manifest_path("ollama-create-base"),
-            &pipeline,
+            &ollama_base,
             Some(&file_sha(&seated_b).unwrap()),
         )
         .unwrap();
@@ -1859,6 +2079,10 @@ mod tests {
             prepare: prepare.clone(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(pipeline.clone()),
+            recipe: Some(recipe_key.clone()),
+            eval: Some(eval_key.clone()),
+            ollama_base: Some(ollama_base),
+            ollama_spec: Some(ollama_spec),
         };
         let ctx = PlanCtx {
             paths: &paths,
@@ -1881,6 +2105,95 @@ mod tests {
             }
         }
 
+        let bumped = recipe_decision_inputs(
+            &model_path,
+            DEFAULT_BASE,
+            DEFAULT_DATASET,
+            &paths.dataset_jsonl,
+            &paths.out,
+            &paths.adapter_dir,
+            Some(4),
+        )
+        .unwrap();
+        assert_ne!(bumped, recipe_key);
+        let bumped_inputs = Inputs {
+            recipe: Some(bumped),
+            ..inputs.clone()
+        };
+        let bumped_ctx = PlanCtx {
+            inputs: &bumped_inputs,
+            ..ctx
+        };
+        let recipe_step = plan_with(&bumped_ctx)
+            .into_iter()
+            .find(|s| s.name == "recipe")
+            .unwrap();
+        assert_eq!(recipe_step.action, StepAction::Run, "{recipe_step:?}");
+        assert!(
+            recipe_step.detail.contains("inputs changed"),
+            "{recipe_step:?}"
+        );
+
+        let retagged = eval_inputs(
+            &pipeline,
+            "other-tag",
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+        );
+        assert_ne!(retagged, eval_key);
+        let retag_inputs = Inputs {
+            eval: Some(retagged.clone()),
+            ollama_spec: Some(ollama_inputs(
+                &pipeline,
+                "other-tag",
+                "other-tag",
+                endpoint,
+                None,
+                DEFAULT_BUILT_BASE_TAG,
+            )),
+            ..inputs.clone()
+        };
+        let retag_ctx = PlanCtx {
+            inputs: &retag_inputs,
+            specialist_tag: "other-tag",
+            ..ctx
+        };
+        let planned = plan_with(&retag_ctx);
+        let eval_step = planned
+            .iter()
+            .find(|s| s.name == "eval-specialist")
+            .unwrap();
+        assert_eq!(eval_step.action, StepAction::Run, "{eval_step:?}");
+        let seat_step = planned
+            .iter()
+            .find(|s| s.name == "ollama-create-specialist")
+            .unwrap();
+        assert_eq!(seat_step.action, StepAction::Run, "{seat_step:?}");
+
+        let moved = eval_inputs(
+            &pipeline,
+            DEFAULT_TAG,
+            "http://127.0.0.1:9",
+            Some("qwen3.5:4b"),
+            DEFAULT_BUILT_BASE_TAG,
+        );
+        assert_ne!(moved, eval_key);
+        let moved_inputs = Inputs {
+            eval: Some(moved),
+            ..inputs.clone()
+        };
+        let moved_ctx = PlanCtx {
+            inputs: &moved_inputs,
+            library_tag: Some("qwen3.5:4b"),
+            ..ctx
+        };
+        let eval_base = plan_with(&moved_ctx)
+            .into_iter()
+            .find(|s| s.name == "eval-base")
+            .unwrap();
+        assert_eq!(eval_base.action, StepAction::Run, "{eval_base:?}");
+
         fs::remove_file(paths.manifest_path("train")).unwrap();
         let stale = plan_with(&ctx);
         let train = stale.iter().find(|s| s.name == "train").unwrap();
@@ -1889,12 +2202,35 @@ mod tests {
 
         write_manifest(&paths.manifest_path("train"), &pipeline, None).unwrap();
         fs::write(&paths.dataset_jsonl, "row-changed\n").unwrap();
-        let changed = pipeline_inputs(DEFAULT_BASE, &paths.dataset_jsonl, &paths.recipe, DEFAULT_QUANT).unwrap();
+        let changed = pipeline_inputs(
+            DEFAULT_BASE,
+            &paths.dataset_jsonl,
+            &paths.recipe,
+            DEFAULT_QUANT,
+        )
+        .unwrap();
         assert_ne!(changed, pipeline);
         let inputs = Inputs {
             prepare,
             fetch: fetch_inputs(DEFAULT_BASE),
-            pipeline: Some(changed),
+            pipeline: Some(changed.clone()),
+            recipe: Some(recipe_key),
+            eval: Some(eval_inputs(
+                &changed,
+                DEFAULT_TAG,
+                endpoint,
+                None,
+                DEFAULT_BUILT_BASE_TAG,
+            )),
+            ollama_base: None,
+            ollama_spec: Some(ollama_inputs(
+                &changed,
+                DEFAULT_TAG,
+                DEFAULT_TAG,
+                endpoint,
+                None,
+                DEFAULT_BUILT_BASE_TAG,
+            )),
         };
         let ctx = PlanCtx {
             inputs: &inputs,
@@ -1924,6 +2260,10 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            recipe: None,
+            eval: None,
+            ollama_base: None,
+            ollama_spec: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
@@ -1974,9 +2314,20 @@ mod tests {
         fs::write(dir.join("build/bin/llama-quantize"), "").unwrap();
         let llama = resolve_llama_cpp(&dir).unwrap();
         let outfile = dir.join("base.f16.gguf");
-        let argv = llama.convert_argv(DEFAULT_BASE, &outfile);
+        let export = dir.join("export");
+        fs::create_dir_all(&export).unwrap();
+        let argv = llama.convert_argv(&export.display().to_string(), &outfile);
         let line = argv_line(&argv);
-        assert_eq!(line, format!("python3 {} {} --outfile {} --outtype f16", llama.convert.display(), DEFAULT_BASE, outfile.display()));
+        assert_eq!(
+            line,
+            format!(
+                "python3 {} {} --outfile {} --outtype f16",
+                llama.convert.display(),
+                export.display(),
+                outfile.display()
+            )
+        );
+        assert!(!argv.iter().any(|arg| arg == DEFAULT_BASE));
         let missing = dir.join("nope");
         let err = resolve_llama_cpp(&missing).unwrap_err().to_string();
         assert!(err.contains(QWEN35_RECENT), "{err}");
@@ -2023,6 +2374,10 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            recipe: None,
+            eval: None,
+            ollama_base: None,
+            ollama_spec: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
@@ -2055,6 +2410,10 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(&local_s),
             pipeline: None,
+            recipe: None,
+            eval: None,
+            ollama_base: None,
+            ollama_spec: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
