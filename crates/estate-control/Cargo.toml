@@ -15,6 +15,7 @@ floor-supervisor.workspace = true
 model-estate.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+safetensors.workspace = true
 ureq.workspace = true
 flate2.workspace = true
 zstd.workspace = true

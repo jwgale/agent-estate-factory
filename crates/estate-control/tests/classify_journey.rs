@@ -14,6 +14,12 @@ fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/tev1-decisions.jsonl")
 }
 
+fn write_tiny_safetensors(path: &std::path::Path) {
+    // One F32 tensor. Header length is 8-byte aligned, matching the safetensors spec.
+    let bytes: &[u8] = b"p\x00\x00\x00\x00\x00\x00\x00{\"model.language_model.layers.0.input_layernorm.weight\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,4]}}       \x01\x00\x00\x00";
+    fs::write(path, bytes).unwrap();
+}
+
 fn write_exe(dir: &std::path::Path, name: &str, body: &str) {
     let path = dir.join(name);
     let mut file = fs::File::create(&path).unwrap();
@@ -46,7 +52,13 @@ done
 mkdir -p "$local_dir"
 printf '%s\n' '{}' > "$local_dir/config.json"
 printf '%s\n' '{}' > "$local_dir/tokenizer.json"
-printf 'w\n' > "$local_dir/model.safetensors"
+python3 - "$local_dir/model.safetensors" <<'PY'
+import json, struct, sys
+header = {"model.language_model.layers.0.input_layernorm.weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}
+payload = json.dumps(header, separators=(",", ":")).encode()
+payload += b" " * ((8 - (len(payload) % 8)) % 8)
+open(sys.argv[1], "wb").write(struct.pack("<Q", len(payload)) + payload + b"\x01\x00\x00\x00")
+PY
 "#,
     );
     write_exe(
@@ -69,7 +81,13 @@ if [ "$mode" = "export" ]; then
   mkdir -p "$out"
   printf '%s\n' '{}' > "$out/config.json"
   printf '%s\n' '{}' > "$out/tokenizer.json"
-  printf 'w\n' > "$out/model.safetensors"
+  python3 - "$out/model.safetensors" <<'PY'
+import json, struct, sys
+header = {"model.language_model.layers.0.input_layernorm.weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}
+payload = json.dumps(header, separators=(",", ":")).encode()
+payload += b" " * ((8 - (len(payload) % 8)) % 8)
+open(sys.argv[1], "wb").write(struct.pack("<Q", len(payload)) + payload + b"\x01\x00\x00\x00")
+PY
   exit 0
 fi
 echo "unexpected $mode" >&2
@@ -178,6 +196,7 @@ fn journey_print_lists_steps_without_tools() {
         "recipe",
         "train",
         "merge-export",
+        "export-repair",
         "gguf-convert-base",
         "gguf-convert-specialist",
         "quantize-base",
@@ -198,6 +217,8 @@ fn journey_print_lists_steps_without_tools() {
     assert!(stdout.contains("--outtype f16"), "{stdout}");
     assert!(stdout.contains("Q4_K_M"), "{stdout}");
     assert!(stdout.contains("ollama-native"), "{stdout}");
+    assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
+    assert!(stdout.contains("mtp.*"), "{stdout}");
     assert!(
         stdout.contains("Qwen3.5 needs a recent llama.cpp checkout"),
         "{stdout}"
@@ -802,8 +823,14 @@ fn journey_run_stops_before_compare_when_ollama_is_down() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(!out.status.success(), "{text}");
-    assert!(text.contains("unusable score"), "{text}");
+    assert!(text.contains("ollama load probe failed"), "{text}");
+    assert!(text.contains("base.Q4_K_M.gguf"), "{text}");
+    assert!(!text.contains("run eval-base"), "{text}");
     assert!(!work.join("comparison.json").is_file(), "{text}");
+    assert!(
+        !work.join("manifests/ollama-create-base.json").is_file(),
+        "{text}"
+    );
     assert!(!work.join("manifests/eval-base.json").is_file(), "{text}");
     let _ = fs::remove_dir_all(&root);
 }
@@ -828,7 +855,7 @@ fn journey_run_local_base_does_not_download() {
     fs::create_dir_all(&local).unwrap();
     fs::write(local.join("config.json"), "{}\n").unwrap();
     fs::write(local.join("tokenizer.json"), "{}\n").unwrap();
-    fs::write(local.join("model.safetensors"), "w\n").unwrap();
+    write_tiny_safetensors(&local.join("model.safetensors"));
     let work = root.join("work");
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let port = match server.server_addr() {
@@ -1412,7 +1439,7 @@ fn skipped_fetch_validates_snapshot_and_quantize_stays_under_llama_cpp_dir() {
                 .respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
         }
     });
-    fs::write(local.join("model.safetensors"), "w\n").unwrap();
+    write_tiny_safetensors(&local.join("model.safetensors"));
     let first = bin()
         .args([
             "classify",
@@ -1512,6 +1539,7 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
         "recipe",
         "train",
         "merge-export",
+        "export-repair",
         "gguf-convert-base",
         "gguf-convert-specialist",
         "quantize-base",
@@ -1536,6 +1564,8 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
     assert!(stdout.contains("deepseek-r1-distill-base"), "{stdout}");
     assert!(stdout.contains("llamafactory-cli train"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(stdout.contains("export-repair"), "{stdout}");
+    assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
     assert!(
         !stdout.contains("Qwen/Qwen3.5-4B"),
         "tev1 default base leaked\n{stdout}"
