@@ -34,9 +34,12 @@ pub use local::{
     HttpLocal, LiveOverlay, LocalDriver, MlxDriver, MockLocal, SpecialistJob, SpecialistRequest,
     SpecialistResult, UnwiredLocal,
 };
-pub use gguf_convert::{plan_gguf_convert, GgufConvertPlan};
+pub use gguf_convert::{
+    convert_hf_to_gguf_line, convert_hf_to_gguf_outfile, plan_gguf_convert, GgufConvertPlan,
+};
 pub use merge_adapt::{plan_merge_adapt, MergeAdaptPlan};
 pub use local_seat::{
+    gguf_modelfile, ollama_create_line,
     plan_adapter_seat, plan_adapter_seat_for, plan_local_seat, plan_local_seat_for, LocalSeatPlan,
     LocalSeatRuntime,
 };
@@ -47,7 +50,8 @@ pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
     driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
-    import_prepared, import_trained, list_prepared, load_enrich_pack, local_enrich_tag,
+    import_prepared, import_trained, list_prepared, llamafactory_template_name, load_enrich_pack,
+    local_enrich_tag,
     local_slm_model_param, parse_enrich_job, prepare_enrich, prepare_enrich_set, read_enrich_stage,
     refuse_staged_apply, render_prepared_index, render_train_enrich_catalog,
     resolve_train_enrich_driver, train_catalog_facts, train_enrich_catalog,

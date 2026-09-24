@@ -27,7 +27,16 @@ Eval uses an OpenAI-compatible chat completion, temperature 0, `max_tokens` 8, a
 
 Together hosted fine-tune is an optional hosted driver for the same letter target. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
 
-Opt-in only: `make classify-prepare` and `make classify-eval`. They are not in `make smoke`, `make gate-90`, or GitHub Actions. Command details are `estate classify prepare --help` and `estate classify eval --help`.
+Opt-in only: `make classify-prepare`, `make classify-eval`, and `make tev1-journey`. They are not in `make smoke`, `make gate-90`, or GitHub Actions.
+
+`estate classify journey` runs that loop as one command. The default base is `Qwen/Qwen3.5-4B` with LLaMA-Factory template `qwen3_5` (`constants.py` registers that id as Qwen3.5-4B-Thinking). `--base` selects another id. `--print` (the default, and `make tev1-journey`) writes nothing. `--run` trains, merges, converts, seats, and evals the Ollama base tag against the specialist. It skips a step whose output is already on disk. It refuses when `llamafactory-cli`, `convert_hf_to_gguf.py`, `ollama`, or a GPU is missing. `--min-delta` and `--min-accuracy` set a local exit code. The comparison file is local output. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify journey --print
+estate classify journey --run --base Qwen/Qwen3.5-4B --base-tag qwen3.5:4b --tag tev1-specialist
+```
+
+Command details are `estate classify prepare --help`, `estate classify eval --help`, and `estate classify journey --help`.
 
 ## Target C — Qwen QLoRA operator journey
 

@@ -1641,6 +1641,16 @@ fn from_points_at(modelfile_dir: Option<&Path>, from_arg: &str, gguf: &Path) -> 
     left == right
 }
 
+/// Modelfile body whose `FROM` is a GGUF path. Same token rules as `local-seat`.
+pub fn gguf_modelfile(gguf: &Path) -> String {
+    format!("FROM {}\n", modelfile_token(&gguf.display().to_string()))
+}
+
+/// `ollama create` line `local-seat` prints for a Modelfile.
+pub fn ollama_create_line(tag: &str, modelfile: &Path) -> String {
+    ollama_create(tag, modelfile)
+}
+
 fn ollama_create(local_tag: &str, modelfile: &Path) -> String {
     format!(
         "ollama create {} -f {}",
