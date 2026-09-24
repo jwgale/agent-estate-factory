@@ -5343,3 +5343,213 @@ fn unsloth_lora_journey_stays_print_only_and_off_smoke() {
         );
     }
 }
+
+#[test]
+fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in ["mlx-lm-lora-journey:", "uniqueness-mlx:"] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/mlx-lm-lora-journey.sh"));
+    assert!(makefile.contains("scripts/uniqueness-mlx.sh"));
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("mlx-lm-lora-journey") && phony.contains("uniqueness-mlx"),
+        "mlx journey targets must be phony"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("mlx-lm-lora-journey") && !gate90.contains("uniqueness-mlx"),
+        "gate-90 must not run the mlx journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("mlx-lm-lora-journey") && !smoke.contains("uniqueness-mlx"),
+        "smoke must not run the mlx journey: {smoke}"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/mlx-lm-lora-journey.sh")).unwrap();
+    for needle in [
+        "mlx-lm-lora",
+        "apple-silicon",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "llama3",
+        "MLX.md",
+        "adapters.safetensors",
+        "adapter_model.safetensors",
+        "mlx_lm.fuse",
+        "--export-gguf",
+        "ggml-model-f16.gguf",
+        "fused_model",
+        "status: optional",
+        "refuse:host",
+        "refuse:train-base",
+        "refuse:adapter",
+        "refuse:seat",
+        "refuse:official-scale",
+        "refuse:dataset",
+        "local-seat --adapter",
+        "adapter_config.json",
+        "SKIP live train",
+        "SKIP live convert",
+        "SKIP live seat",
+        "READY_FOR_LIVE_TEST: no",
+        "CELL_SEAT_LIVE",
+        "CELL_TRAIN_LIVE",
+        "examples/estate.yaml",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "MLX_LM_LORA_PHASE",
+        "does not call mlx-lm",
+    ] {
+        assert!(script.contains(needle), "mlx-lm-lora-journey missing {needle}");
+    }
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    let shape = script
+        .find("-- PEFT adapter_model.safetensors is the wrong shape --")
+        .expect("missing wrong-shape step");
+    let fused = script
+        .find("-- fused MLX directory is refuse:adapter and refuse:seat --")
+        .expect("missing fused refuse");
+    let seat = script
+        .find("-- local-seat prints ollama create for the GGUF stub --")
+        .expect("missing seat print");
+    assert!(
+        shape < fused && fused < seat,
+        "wrong-shape and fused refuses must run before the seat print"
+    );
+    let shells_out = script.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("echo")
+            || trimmed.starts_with("grep")
+            || trimmed.starts_with("if grep")
+            || trimmed.starts_with("if ! grep")
+            || trimmed.starts_with("require ")
+            || trimmed.contains("[[ -e")
+        {
+            return false;
+        }
+        trimmed.contains("mlx_lm ")
+            || trimmed.contains("mlx_lm.lora")
+            || trimmed.contains("mlx_lm.fuse ")
+            || trimmed.contains("convert_hf_to_gguf.py")
+            || trimmed.contains("ollama ")
+    });
+    assert!(
+        !shells_out,
+        "mlx-lm-lora-journey must not shell out to mlx-lm, llama.cpp, or ollama"
+    );
+
+    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-mlx.sh")).unwrap();
+    assert!(chain.contains("MLX_LM_LORA_PHASE=prepare"));
+    assert!(chain.contains("MLX_LM_LORA_PHASE=seat"));
+    assert!(chain.contains("make mlx-lm-lora-journey"));
+    assert!(chain.contains("set -euo pipefail"));
+    assert!(chain.contains("SKIP live train"));
+    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        chain.find("MLX_LM_LORA_PHASE=prepare") < chain.find("MLX_LM_LORA_PHASE=seat"),
+        "uniqueness-mlx must run prepare-assert before the seat print"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("## 16. mlx-lm LoRA — optional Apple Silicon print journey"));
+    assert!(journey.contains("make mlx-lm-lora-journey"));
+    assert!(journey.contains("make uniqueness-mlx"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("`make mlx-lm-lora-journey`"));
+    assert!(train.contains("`make uniqueness-mlx`"));
+    assert!(train.contains("mlx_lm.fuse"));
+    assert!(train.contains("--export-gguf"));
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains("make mlx-lm-lora-journey"));
+    assert!(help.contains("make uniqueness-mlx"));
+    assert!(help.contains("section 16"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let checklist = std::fs::read_to_string(root.join("scripts/purpose-build-checklist.sh")).unwrap();
+    assert!(checklist.contains("make mlx-lm-lora-journey"));
+    assert!(checklist.contains("This checklist does not run it."));
+    assert!(checklist.contains("Not native MLX."));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #173");
+    let slice = changelog
+        .split("## This slice — print-only mlx-lm LoRA uniqueness and seat journey")
+        .nth(1)
+        .expect("CHANGELOG missing the mlx journey slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make mlx-lm-lora-journey",
+        "scripts/mlx-lm-lora-journey.sh",
+        "make uniqueness-mlx",
+        "MLX.md",
+        "adapters.safetensors",
+        "--export-gguf",
+        "ggml-model-f16.gguf",
+        "refuse:host",
+        "refuse:adapter",
+        "refuse:seat",
+        "local-seat --adapter",
+        "SKIP live train",
+        "does not add Kimi",
+        "optional",
+        "43770130 3391",
+        "READY_FOR_LIVE_TEST",
+        "through PR #173",
+        "1002abcdaf648277e15750a44a16e53b324a251d",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("mlx-lm-lora-journey") && !body.contains("uniqueness-mlx"),
+            "{rel} must not run the mlx journey"
+        );
+    }
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(
+        sum.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {sum}"
+    );
+}

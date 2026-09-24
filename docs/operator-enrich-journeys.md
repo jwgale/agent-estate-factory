@@ -251,7 +251,7 @@ The train saves the adapter under `outputs/` (`adapter_config.json` inside it). 
 
 On Nvidia only, Unsloth QLoRA is a faster single-GPU alternate. The optional card is `unsloth-qlora`. It writes `UNSLOTH.md`, an operator-owned handoff, and does not write a script. `NEXT.md` points at the Unsloth install page and the fine-tuning guide. After that train, `estate enrich merge-adapt` prints `save_pretrained_merged` with `save_method` `merged_16bit`. `gguf-convert` and `local-seat` print the next lines. `local-seat --adapter` is `refuse:adapter`. This factory does not call Unsloth.
 
-On Apple Silicon, mlx-lm already documents LoRA and fuse. The optional card is `mlx-lm-lora`. It writes `MLX.md` when `host_class_affinity` is `apple-silicon`. Another affinity is `refuse:host` and writes nothing. `NEXT.md` points at https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md and the fuse command that page publishes (`mlx_lm.fuse --model <path_to_model>`). After `mlx_lm.lora`, `estate enrich merge-adapt` prints `mlx_lm.fuse` with `--adapter-path` and `--save-path`, plus `--export-gguf`. That writes `fused_model/ggml-model-f16.gguf`. `local-seat` prints the Ollama line for that file. `import-trained` records the adapter directory or that GGUF file. A fused MLX directory is `refuse:adapter`. This factory does not call mlx-lm. The `mlx` runtime card stays a stub.
+On Apple Silicon, mlx-lm already documents LoRA and fuse. The optional card is `mlx-lm-lora`. The print-only check is section 16. It writes `MLX.md` when `host_class_affinity` is `apple-silicon`. Another affinity is `refuse:host` and writes nothing. `NEXT.md` points at https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md and the fuse command that page publishes (`mlx_lm.fuse --model <path_to_model>`). After `mlx_lm.lora`, `estate enrich merge-adapt` prints `mlx_lm.fuse` with `--adapter-path` and `--save-path`, plus `--export-gguf`. That writes `fused_model/ggml-model-f16.gguf`. `local-seat` prints the Ollama line for that file. `import-trained` records the adapter directory or that GGUF file. A fused MLX directory is `refuse:adapter`. This factory does not call mlx-lm. The `mlx` runtime card stays a stub.
 
 ```bash
 estate enrich prepare \
@@ -774,7 +774,7 @@ That opt-in script chains the prepare-assert phase, then the seat-print phase. I
 
 `make purpose-build-checklist` is the print-only card for purpose-building an SLM when one fits, including mid-software-build. It prints the prepare → train → merge → seat → import loop in operator order and points at the print-only journeys already on tip. It does not run those journeys. It does not train, convert, shell out to ollama, promote, or apply the estate. It does not invent a live PASS. The recorded 5090-class Target C uniqueness PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) stays the only live uniqueness prove. The re-prove card stays `make uniqueness-prove-checklist`. `CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. It is not native MLX. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked (`43770130 3391`).
 
-1. Choose and prepare a train card. A beachhead row is `make lf-beachhead-prepare` (`SKIP live train`). The QLoRA path is `make qlora-journey`. The LoRA path is `make lora-journey`. Optional paths are `make axolotl-qlora-journey`, `make axolotl-lora-journey`, `make unsloth-qlora-journey`, and `make unsloth-lora-journey`. Prepare against a throwaway copy.
+1. Choose and prepare a train card. A beachhead row is `make lf-beachhead-prepare` (`SKIP live train`). The QLoRA path is `make qlora-journey`. The LoRA path is `make lora-journey`. Optional paths are `make axolotl-qlora-journey`, `make axolotl-lora-journey`, `make unsloth-qlora-journey`, and `make unsloth-lora-journey`. The Apple Silicon print pointer is `make mlx-lm-lora-journey` (section 16). This checklist does not run it. Not native MLX. Prepare against a throwaway copy.
 2. Train handoff, train-next style. Print the `NEXT.md` recipe. `SKIP live train`. Print checks: `make train-next` or `make train-next-lora`.
 3. Merge and export print honesty: `estate enrich merge-adapt`. The checklist does not merge and does not export.
 4. `estate enrich gguf-convert`. The checklist does not convert.
@@ -785,3 +785,45 @@ That opt-in script chains the prepare-assert phase, then the seat-print phase. I
 ```bash
 make purpose-build-checklist
 ```
+
+## 16. mlx-lm LoRA — optional Apple Silicon print journey
+
+This is the print-only check for the optional Apple Silicon LoRA handoff. The card is `mlx-lm-lora`. It writes `MLX.md` when `host_class_affinity` is `apple-silicon`. Another affinity is `refuse:host` and writes nothing. It does not write a script, a recipe, or `dataset.jsonl`. It does not call mlx-lm, does not fuse, does not run `convert_hf_to_gguf.py`, does not run `ollama create`, and does not promote. Status stays `optional`. The `mlx` runtime card stays a stub. This journey is not native MLX. `--official-scale` on this card alone is `refuse:official-scale`. `--from-feed` on this card alone is `refuse:dataset`.
+
+The prepare uses a throwaway copy of the overnight pack `examples/fixtures/specialist-overnight.pack.json` with `host_class_affinity` set to `apple-silicon`, on a throwaway copy of `examples/estate.yaml`. The stock pack stays `any` and is `refuse:host`. The seat tag is `llama3`. The train base is `Qwen/Qwen2.5-0.5B-Instruct`. `MLX.md` records both. `prepare.json` keeps them split and records `host_class_affinity` `apple-silicon`. `examples/estate.yaml` stays hash-locked.
+
+A seat tag with no train base is `refuse:train-base` and writes nothing. Before the stubs exist, `merge-adapt` on a missing `adapters` directory is `refuse:adapter`. An adapter directory that holds `adapter_config.json` and a checkpoint `*_adapters.safetensors`, and no `adapters.safetensors`, is `refuse:adapter`. `adapter_model.safetensors` is the same refuse. `gguf-convert` on a missing `fused_model` directory is `refuse:seat`. `local-seat` on a missing `fused_model/ggml-model-f16.gguf` is `refuse:seat`. Those refuses write no fused directory and no GGUF. `gguf-convert` stays `refuse:seat` on this card. The documented GGUF path is `mlx_lm.fuse --export-gguf`.
+
+After the adapter stub exists (`adapter_config.json` plus `adapters.safetensors`), `local-seat --adapter` stays `refuse:adapter`. Passing that directory to `--weights` is `refuse:seat`. `merge-adapt` then prints `mlx_lm.fuse` with `--model` set to the train base, `--adapter-path`, `--save-path` `fused_model` beside the prepare, and `--export-gguf`. The GGUF name is `ggml-model-f16.gguf` inside that directory. A fused MLX directory (`config.json` plus `model.safetensors`) passed to `merge-adapt`, `local-seat`, `gguf-convert`, or `import-trained` refuses. It does not record `trained_shape` `merged`. An empty GGUF is `refuse:seat`. A GGUF file passed to `gguf-convert` is `refuse:seat`. A GGUF file passed as `--adapter` is `refuse:adapter`.
+
+The good stubs under the prepared directory are:
+
+| Stub | What the printer needs |
+| --- | --- |
+| `adapters/adapter_config.json` and `adapters/adapters.safetensors` | `merge-adapt` on `mlx-lm-lora` reads both. `adapter_model.safetensors` is the wrong shape. |
+| `fused_model/ggml-model-f16.gguf` | The first four bytes are `GGUF`. `local-seat` refuses a file that does not start with that magic. The directory must not also hold fused MLX weights when you pass the file. `import-trained` records the file. |
+
+The printed lines for the overnight pack (`cell-enrich-overnight-traces`) are:
+
+```bash
+mlx_lm.fuse --model Qwen/Qwen2.5-0.5B-Instruct --adapter-path <prepared>/adapters --save-path <prepared>/fused_model
+mlx_lm.fuse --model Qwen/Qwen2.5-0.5B-Instruct --adapter-path <prepared>/adapters --save-path <prepared>/fused_model --export-gguf
+ollama create cell-enrich-overnight-traces -f <prepared>/fused_model/Modelfile
+estate enrich import-trained --estate <your-estate.yaml> --prepared <prepared> --tag cell-enrich-overnight-traces --adapter <prepared>/fused_model/ggml-model-f16.gguf
+```
+
+`local-seat` is print-only. It prints the Modelfile and does not write `<prepared>/fused_model/Modelfile`. Write that file from the printed contents before `ollama create`. The report says this factory did not run `ollama create`. The proposal stays `auto_apply=false`. `import-trained` records `trained_shape` `gguf`. It does not apply the estate.
+
+The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` and `CELL_TRAIN_LIVE=1` do not start a fuse or an `ollama create`. `READY_FOR_LIVE_TEST`: no. This path does not invent a live PASS.
+
+```bash
+make mlx-lm-lora-journey
+```
+
+That opt-in script runs the prepare asserts and the seat prints in one process. `MLX_LM_LORA_PHASE=prepare` stops after the handoff check and the missing-path and wrong-shape refuses. `MLX_LM_LORA_PHASE=seat` prints the fixture ladder.
+
+```bash
+make uniqueness-mlx
+```
+
+That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make unsloth-qlora-journey`, `make uniqueness-unsloth`, `make qlora-journey`, `make seat-journey`, `make train-next`, or `make axolotl-qlora-journey`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
