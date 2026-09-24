@@ -257,6 +257,8 @@ dependencies = [
  "floor-supervisor",
  "model-estate",
  "serde_json",
+ "tiny_http",
+ "ureq",
 ]
 
 [[package]]

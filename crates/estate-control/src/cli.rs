@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(
     name = "estate",
     about = "Cell One estate-control: validate, plan, apply, drift. Specialist complete is a thin HttpLocal delegate, not a gateway.",
-    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter | enrich\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
+    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter | enrich | classify\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
     disable_help_subcommand = true
 )]
 pub(crate) struct Cli {
@@ -216,6 +216,11 @@ pub(crate) enum Command {
     Enrich {
         #[command(subcommand)]
         command: EnrichCommand,
+    },
+    /// tev1-style one-letter classify loop. Prepare does not train. Eval does not record a live PASS.
+    Classify {
+        #[command(subcommand)]
+        command: ClassifyCommand,
     },
     /// List expired placement leases. Apply/resume refuse them.
     Expire {
@@ -459,6 +464,63 @@ pub(crate) enum PacksCommand {
         accepted_dir: PathBuf,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum ClassifyCommand {
+    /// Validate tev1-style JSONL, split it, and write a one-letter LLaMA-Factory dataset plus held-out JSONL.
+    /// Offline. Does not train.
+    Prepare {
+        /// JSONL of `{state, question, options, answer}` records. Option labels are consecutive letters from A.
+        #[arg(long)]
+        input: PathBuf,
+        /// Directory for `dataset.jsonl`, `dataset_info.json`, `heldout.jsonl`, and `prepare.json`.
+        #[arg(long, default_value = ".cell/classify")]
+        out: PathBuf,
+        /// Seed for the Fisher–Yates split. Same seed and file split the same way.
+        #[arg(long, default_value_t = 20_260_920)]
+        seed: u64,
+        /// Fraction of valid rows held out for eval. Greater than 0 and less than 1.
+        #[arg(long, default_value_t = 0.2)]
+        held_out_ratio: f64,
+        /// LLaMA-Factory dataset shape. The assistant target is exactly one letter.
+        #[arg(long, value_enum, default_value_t = crate::classify::DatasetFormat::Sharegpt)]
+        format: crate::classify::DatasetFormat,
+        /// Key written into `dataset_info.json`.
+        #[arg(long, default_value = "tev1_decisions")]
+        dataset_name: String,
+        /// Fail on any bad row and write nothing. Omit to skip bad rows and print the count plus the first line numbers.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// Score held-out JSONL against an OpenAI-compatible chat endpoint (Ollama `/v1` or a hosted endpoint).
+    /// Temperature 0, small max_tokens, thinking off where the body supports it. Does not record a live PASS.
+    Eval {
+        /// Held-out JSONL from `classify prepare` (state, question, options, answer letter).
+        #[arg(long)]
+        records: PathBuf,
+        /// Base URL. `http://127.0.0.1:11434` and `https://api.together.ai` both gain `/v1/chat/completions` when needed.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Model id sent in the chat body. An Ollama tag or a hosted model name.
+        #[arg(long)]
+        model: String,
+        /// Environment variable that holds the bearer token. The value is never printed. Omit for a local endpoint with no key.
+        #[arg(long)]
+        api_key_env: Option<String>,
+        /// JSON report path. Default: `classify-report.json` beside the records file.
+        #[arg(long)]
+        report: Option<PathBuf>,
+        /// Validate and write a sample request. Does not call the network.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        /// Score with a built-in letter script. Does not call the network. Not a model score.
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        /// Per-request timeout in seconds.
+        #[arg(long, default_value_t = 30)]
+        timeout_secs: u64,
     },
 }
 

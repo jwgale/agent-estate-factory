@@ -8,6 +8,27 @@ The LLaMA-Factory LoRA and QLoRA reproduce targets are one table: [`lf-beachhead
 
 When an SLM fits mid-software-build, or on demand, `make purpose-build-journey` is the print-only purpose-build on-demand entry. It runs `make purpose-build-pick`, then `make purpose-build-checklist`. Those two targets are the parts. Walk: [`operator-enrich-journeys.md`](operator-enrich-journeys.md) section 18. The journey runs the pick (section 17), then the checklist (section 15). DeepSeek-R1-Distill (section 19) and GLM-4 Chat (section 20) are sibling print-only journeys reachable from the pick and the checklist. They are not steps of this journey. The re-prove card stays `make uniqueness-prove-checklist`. The recorded Target C PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) stays the only live uniqueness prove. It does not train, convert, seat, promote, or apply. It does not invent a live PASS. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
 
+## tev1-style classify loop
+
+[togethercomputer/tev1](https://github.com/togethercomputer/tev1) fine-tuned Qwen3.5 4B into a classifier. The record is JSON `{state, question, options}` with letters `A` onward. The model returns one letter. That single letter is the first measurable pass/fail for a purpose-built SLM on this factory. The committed fixture is `examples/fixtures/tev1-decisions.jsonl` (hand-written rows, not copied public datasets).
+
+`estate classify prepare` reads that JSONL offline. It checks consecutive letters, non-empty options, and an answer letter. `--strict` stops on bad rows and writes nothing. Without it, bad rows are skipped and the error names the count and the first line numbers. A seeded shuffle writes a train set and a held-out file. The train set is LLaMA-Factory sharegpt by default (system line, user JSON, assistant letter) plus `dataset_info.json`. `--format alpaca` writes `instruction` / `input` / `output` with the same one-letter target. Prepare does not train.
+
+Operator loop on a 5090-class host:
+
+1. `estate classify prepare --input examples/fixtures/tev1-decisions.jsonl --out .cell/classify`
+2. LLaMA-Factory LoRA or QLoRA on `dataset.jsonl` (primary). Point the recipe at that directory the same way `llamafactory-qlora` already points at a dataset.
+3. Merge the adapter.
+4. Convert the merge to GGUF.
+5. Seat the GGUF in Ollama.
+6. `estate classify eval --records .cell/classify/heldout.jsonl --endpoint http://127.0.0.1:11434 --model <seat-tag> --report .cell/classify/report.json`
+
+Eval uses an OpenAI-compatible chat completion, temperature 0, `max_tokens` 8, and thinking off (`chat_template_kwargs.enable_thinking` false and `think` false). It parses the first standalone option letter and writes accuracy, per-label confusion, invalid-output count, and latency p50/p95. `--api-key-env` names the variable that holds a bearer token. The value is never printed. `--dry-run` and `--mock` do not call the network. Mock is a letter script, not a model score.
+
+Together hosted fine-tune is an optional hosted driver for the same letter target. tev1's own `examples/train_together.py` is that path. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
+
+Opt-in only: `make classify-prepare` and `make classify-eval`. They are not in `make smoke`, `make gate-90`, or GitHub Actions. `estate help classify` prints the same loop.
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.

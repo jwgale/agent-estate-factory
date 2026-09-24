@@ -1,4 +1,5 @@
 mod accept;
+mod classify;
 mod cli;
 mod dispatch;
 mod enrich;
