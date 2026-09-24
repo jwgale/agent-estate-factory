@@ -246,7 +246,8 @@ pub struct JourneyPaths {
     pub export_yaml: PathBuf,
     pub adapter_dir: PathBuf,
     pub export_dir: PathBuf,
-    pub base_hf: PathBuf,
+    /// Root for Hub snapshots. A Hub id downloads to `{base_cache}/{safe-id}/`.
+    pub base_cache: PathBuf,
     pub base_f16: PathBuf,
     pub specialist_f16: PathBuf,
     pub base_modelfile: PathBuf,
@@ -267,7 +268,7 @@ impl JourneyPaths {
             export_yaml: out.join("export.yaml"),
             adapter_dir: out.join("outputs"),
             export_dir: out.join("export"),
-            base_hf: out.join("base-hf"),
+            base_cache: PathBuf::from(DEFAULT_BASE_CACHE),
             base_f16: out.join("base.f16.gguf"),
             specialist_f16: out.join("specialist.f16.gguf"),
             base_modelfile: out.join("base.Modelfile"),
@@ -641,12 +642,36 @@ pub fn base_is_local_dir(base: &str) -> bool {
     Path::new(base).is_dir()
 }
 
-/// Directory `convert_hf_to_gguf.py` reads. A hub id downloads into `base-hf`.
+pub const DEFAULT_BASE_CACHE: &str = ".cell/classify-base-cache";
+
+/// Path-safe directory name for a Hub id. `Qwen/Qwen3.5-4B` becomes `Qwen--Qwen3.5-4B`.
+pub fn sanitize_hub_id(hub_id: &str) -> String {
+    let mut out = String::with_capacity(hub_id.len());
+    for c in hub_id.chars() {
+        match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' => out.push(c),
+            '/' | '\\' => out.push_str("--"),
+            _ => out.push('_'),
+        }
+    }
+    if out.is_empty() || out.chars().all(|c| c == '.') {
+        "hub".into()
+    } else {
+        out
+    }
+}
+
+pub fn hub_cache_dir(cache_root: &Path, hub_id: &str) -> PathBuf {
+    cache_root.join(sanitize_hub_id(hub_id))
+}
+
+/// Directory `convert_hf_to_gguf.py` reads.
+/// A local directory is that path. A Hub id is `{base_cache}/{safe-id}/`.
 pub fn resolved_base_dir(base: &str, paths: &JourneyPaths) -> PathBuf {
     if base_is_local_dir(base) {
         PathBuf::from(base)
     } else {
-        paths.base_hf.clone()
+        hub_cache_dir(&paths.base_cache, base)
     }
 }
 
@@ -780,8 +805,14 @@ fn prepare_inputs(input: &Path, seed: u64, held_out_ratio: f64) -> Result<String
     )))
 }
 
-fn fetch_inputs(base: &str) -> String {
-    sha256_text(base)
+/// Hub manifests name the Hub id and the shared snapshot path.
+/// A local directory keeps the path-only key.
+fn fetch_inputs(base: &str, resolved: &Path) -> String {
+    if base_is_local_dir(base) {
+        sha256_text(base)
+    } else {
+        sha256_text(&format!("hub\n{base}\n{}", resolved.display()))
+    }
 }
 
 fn pipeline_inputs(
@@ -893,7 +924,9 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
         preset.train_split,
         preset.test_split,
     );
-    Ok(crate::classify_import::import_fingerprint(
+    let stored = read_manifest(&paths.manifest_path("prepare")).map(|manifest| manifest.inputs);
+    let cached = crate::classify_import::cached_native_source_fp(preset.alias);
+    Ok(crate::classify_import::journey_prepare_fingerprint(
         preset.hf_id,
         req.train_size,
         req.heldout_size,
@@ -901,6 +934,8 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
         &train_hash,
         &held_hash,
         &source,
+        stored.as_deref(),
+        cached.as_deref(),
     ))
 }
 
@@ -910,7 +945,8 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
     } else {
         prepare_inputs(req.input, req.seed, req.held_out_ratio)?
     };
-    let resolved = resolved_base_dir(req.base, paths).display().to_string();
+    let resolved_dir = resolved_base_dir(req.base, paths);
+    let resolved = resolved_dir.display().to_string();
     let pipeline = pipeline_inputs(
         &resolved,
         &paths.dataset_jsonl,
@@ -973,7 +1009,7 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
     });
     Ok(Inputs {
         prepare,
-        fetch: fetch_inputs(req.base),
+        fetch: fetch_inputs(req.base, &resolved_dir),
         pipeline,
         repair,
         recipe,
@@ -1147,6 +1183,37 @@ fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
     }
 }
 
+fn fetch_decision(base: &str, base_dir: &Path, paths: &JourneyPaths, expected: &str) -> Decision {
+    let marker = base_dir.join("config.json");
+    if !marker.is_file() {
+        return Decision {
+            action: StepAction::Run,
+            redo: None,
+        };
+    }
+    let manifest = paths.manifest_path("fetch-base");
+    match read_manifest(&manifest) {
+        Some(found) if found.inputs == expected => Decision {
+            action: StepAction::Skip,
+            redo: None,
+        },
+        Some(_) => Decision {
+            action: StepAction::Run,
+            redo: Some("inputs changed".into()),
+        },
+        // A later `--out` has no fetch manifest yet. The shared snapshot is enough to skip
+        // the download. `execute` still calls `validate_snapshot` on that skip.
+        None if !base_is_local_dir(base) => Decision {
+            action: StepAction::Skip,
+            redo: None,
+        },
+        None => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+    }
+}
+
 fn convert_line(ctx: &PlanCtx<'_>, src: &str, outfile: &Path) -> String {
     match ctx.llama {
         Some(llama) => argv_line(&llama.convert_argv(src, outfile)),
@@ -1199,19 +1266,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
 
     let base_dir = resolved_base_dir(ctx.base, paths);
     let base_dir_s = base_dir.display().to_string();
-    let fetch_marker = base_dir.join("config.json");
-    let fetch = if fetch_marker.is_file() {
-        decide_file(
-            &fetch_marker,
-            &paths.manifest_path("fetch-base"),
-            &ctx.inputs.fetch,
-        )
-    } else {
-        Decision {
-            action: StepAction::Run,
-            redo: None,
-        }
-    };
+    let fetch = fetch_decision(ctx.base, &base_dir, paths, &ctx.inputs.fetch);
     let fetch_cmd = if base_is_local_dir(ctx.base) {
         format!("local base {base_dir_s}")
     } else {
@@ -1528,29 +1583,29 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         .eval
         .as_deref()
         .map(|key| with_repair(key, ctx.inputs.repair.as_deref()));
-    let eval_spec = if paths.specialist_report.is_file() && !report_is_complete(&paths.specialist_report)
-    {
-        Decision {
-            action: StepAction::Run,
-            redo: Some("partial eval report".into()),
-        }
-    } else {
-        match eval_spec_key.as_deref() {
-            Some(key) if paths.specialist_report.is_file() => decide_file(
-                &paths.specialist_report,
-                &paths.manifest_path("eval-specialist"),
-                key,
-            ),
-            _ if paths.specialist_report.is_file() => Decision {
+    let eval_spec =
+        if paths.specialist_report.is_file() && !report_is_complete(&paths.specialist_report) {
+            Decision {
                 action: StepAction::Run,
-                redo: Some("missing manifest".into()),
-            },
-            _ => Decision {
-                action: StepAction::Run,
-                redo: None,
-            },
-        }
-    };
+                redo: Some("partial eval report".into()),
+            }
+        } else {
+            match eval_spec_key.as_deref() {
+                Some(key) if paths.specialist_report.is_file() => decide_file(
+                    &paths.specialist_report,
+                    &paths.manifest_path("eval-specialist"),
+                    key,
+                ),
+                _ if paths.specialist_report.is_file() => Decision {
+                    action: StepAction::Run,
+                    redo: Some("missing manifest".into()),
+                },
+                _ => Decision {
+                    action: StepAction::Run,
+                    redo: None,
+                },
+            }
+        };
     steps.push(step_detail(
         "eval-specialist",
         &eval_spec,
@@ -1616,9 +1671,10 @@ pub fn side_score(report: &Value) -> Result<SideScore> {
         .get("thinking_leak")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let correct = report.get("correct").and_then(Value::as_u64).unwrap_or_else(|| {
-        (accuracy * records as f64).round() as u64
-    });
+    let correct = report
+        .get("correct")
+        .and_then(Value::as_u64)
+        .unwrap_or_else(|| (accuracy * records as f64).round() as u64);
     Ok(SideScore {
         accuracy,
         correct,
@@ -1732,6 +1788,8 @@ pub struct JourneyRequest<'a> {
     pub import_fetch: crate::classify_import::ImportFetch,
     /// Python for pyarrow when the dataset is read from parquet.
     pub python: Option<&'a str>,
+    /// Shared Hub snapshot root. Ignored when `--base` is a local directory.
+    pub base_cache: &'a Path,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -1795,7 +1853,8 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     {
         bail!("refuse:classify-journey: --quant is empty or not a llama-quantize type");
     }
-    let paths = JourneyPaths::new(req.out);
+    let mut paths = JourneyPaths::new(req.out);
+    paths.base_cache = req.base_cache.to_path_buf();
     let template = train_template(req.base);
     let inputs = load_inputs(req, &paths)?;
     let llama = match req.llama_cpp_dir {
@@ -1916,6 +1975,8 @@ fn print_plan(
         }
     );
     if !base_is_local_dir(req.base) {
+        let cache = resolved_base_dir(req.base, paths);
+        println!("base_cache: {}", cache.display());
         println!("downloader: {}", hf_bin_label());
     }
     println!("out: {}", paths.out.display());
@@ -1946,6 +2007,12 @@ fn print_plan(
 
 fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> Result<()> {
     let library = library_tag(req.base_tag);
+    if !base_is_local_dir(req.base) {
+        println!(
+            "base_cache: {}",
+            resolved_base_dir(req.base, paths).display()
+        );
+    }
     // Re-read inputs around each step so a rewritten dataset or YAML changes the fingerprint.
     let mut ran_prepare = false;
     for name in STEP_ORDER {
@@ -1970,11 +2037,11 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
         let steps = plan_with(&ctx);
         let step = steps.iter().find(|step| step.name == *name).expect("step");
         if step.action == StepAction::Skip {
+            println!("skip {}", step.name);
             if *name == "fetch-base" {
                 let dir = resolved_base_dir(req.base, paths);
                 validate_snapshot(&dir)?;
             }
-            println!("skip {}", step.name);
             continue;
         }
         if let Some(reason) = redo_reason(&step.detail) {
@@ -2051,7 +2118,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                 validate_snapshot(&dir)?;
                 write_manifest(
                     &paths.manifest_path("fetch-base"),
-                    &fetch_inputs(req.base),
+                    &fetch_inputs(req.base, &dir),
                     None,
                 )?;
             }
@@ -3243,7 +3310,7 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let inputs = Inputs {
             prepare: "prep".into(),
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: None,
             repair: None,
             recipe: None,
@@ -3278,7 +3345,11 @@ mod tests {
             "{base:?}"
         );
         assert!(base.detail.contains("--outtype f16"), "{base:?}");
-        assert!(base.detail.contains("base-hf"), "{base:?}");
+        assert!(base.detail.contains(DEFAULT_BASE_CACHE), "{base:?}");
+        assert!(
+            base.detail.contains(&sanitize_hub_id(DEFAULT_BASE)),
+            "{base:?}"
+        );
         assert!(!base.detail.contains(DEFAULT_BASE), "{base:?}");
         let fetch = fresh.iter().find(|s| s.name == "fetch-base").unwrap();
         assert!(
@@ -3309,9 +3380,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("journey-manifest-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let paths = JourneyPaths::new(&dir);
-        fs::create_dir_all(&paths.base_hf).unwrap();
-        fs::write(paths.base_hf.join("config.json"), "{}\n").unwrap();
+        let mut paths = JourneyPaths::new(&dir);
+        paths.base_cache = dir.join("base-cache");
+        let shared = resolved_base_dir(DEFAULT_BASE, &paths);
+        fs::create_dir_all(&shared).unwrap();
+        fs::write(shared.join("config.json"), "{}\n").unwrap();
         fs::create_dir_all(&paths.adapter_dir).unwrap();
         fs::create_dir_all(&paths.export_dir).unwrap();
         fs::write(&paths.dataset_jsonl, "row\n").unwrap();
@@ -3400,7 +3473,7 @@ mod tests {
             "eval-base",
             "eval-specialist",
         ] {
-            let fetch_key = fetch_inputs(DEFAULT_BASE);
+            let fetch_key = fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths));
             let key = match step {
                 "prepare" => prepare.as_str(),
                 "fetch-base" => fetch_key.as_str(),
@@ -3428,7 +3501,7 @@ mod tests {
         .unwrap();
         let inputs = Inputs {
             prepare: prepare.clone(),
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: Some(pipeline.clone()),
             repair: Some(repair),
             recipe: Some(recipe_key.clone()),
@@ -3582,7 +3655,7 @@ mod tests {
         assert_ne!(changed, pipeline);
         let inputs = Inputs {
             prepare,
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: Some(changed.clone()),
             repair: None,
             recipe: Some(recipe_key),
@@ -3689,7 +3762,7 @@ mod tests {
         .unwrap();
         let inputs = Inputs {
             prepare: "prepare-key".into(),
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: Some(pipeline.into()),
             repair: None,
             recipe: None,
@@ -3729,7 +3802,10 @@ mod tests {
         fs::write(&paths.base_report, "{\"complete\": false}\n").unwrap();
         fs::write(&paths.specialist_report, "{\"complete\": false}\n").unwrap();
         for name in ["eval-base", "eval-specialist"] {
-            let step = plan_with(&ctx).into_iter().find(|s| s.name == name).unwrap();
+            let step = plan_with(&ctx)
+                .into_iter()
+                .find(|s| s.name == name)
+                .unwrap();
             assert_eq!(step.action, StepAction::Run, "{step:?}");
             assert!(
                 step.detail.contains("partial eval report"),
@@ -3791,7 +3867,7 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let inputs = Inputs {
             prepare: "p".into(),
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: None,
             repair: None,
             recipe: None,
@@ -3961,7 +4037,7 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let inputs = Inputs {
             prepare: "p".into(),
-            fetch: fetch_inputs(DEFAULT_BASE),
+            fetch: fetch_inputs(DEFAULT_BASE, &resolved_base_dir(DEFAULT_BASE, &paths)),
             pipeline: None,
             repair: None,
             recipe: None,
@@ -3985,18 +4061,17 @@ mod tests {
         };
         let hub = plan_with(&ctx);
         let fetch = hub.iter().find(|s| s.name == "fetch-base").unwrap();
-        let expected = argv_line(&hf_download_argv(
-            "huggingface-cli",
-            DEFAULT_BASE,
-            &paths.base_hf,
-        ));
+        let shared = resolved_base_dir(DEFAULT_BASE, &paths);
+        let expected = argv_line(&hf_download_argv("huggingface-cli", DEFAULT_BASE, &shared));
         assert_eq!(fetch.detail, expected);
         let convert = hub.iter().find(|s| s.name == "gguf-convert-base").unwrap();
         assert!(
-            convert
-                .detail
-                .contains(&paths.base_hf.display().to_string()),
+            convert.detail.contains(&shared.display().to_string()),
             "{convert:?}"
+        );
+        assert!(
+            !shared.starts_with(&dir),
+            "hub snapshot is not under the journey out"
         );
         assert!(
             !convert.detail.contains("Qwen/Qwen3.5-4B --outfile"),
@@ -4008,7 +4083,7 @@ mod tests {
         let local_s = local.display().to_string();
         let inputs = Inputs {
             prepare: "p".into(),
-            fetch: fetch_inputs(&local_s),
+            fetch: fetch_inputs(&local_s, &resolved_base_dir(&local_s, &paths)),
             pipeline: None,
             repair: None,
             recipe: None,

@@ -190,7 +190,9 @@ pub fn parse_split_size(raw: &str) -> Result<SplitSize> {
         return Ok(SplitSize::All);
     }
     let n: usize = raw.parse().map_err(|_| {
-        anyhow::anyhow!("refuse:classify-import: size must be a positive integer or all, found {raw}")
+        anyhow::anyhow!(
+            "refuse:classify-import: size must be a positive integer or all, found {raw}"
+        )
     })?;
     if n == 0 {
         bail!("refuse:classify-import: size must be a positive integer or all");
@@ -229,6 +231,54 @@ pub fn tag_suffix(preset: &DatasetPreset, train_size: &SplitSize) -> String {
     format!("-{}-{}", preset.slug, train_size.token())
 }
 
+fn fingerprint_body(
+    dataset_id: &str,
+    train_size: &str,
+    heldout_size: &str,
+    seed: u64,
+    train_hash: &str,
+    held_hash: &str,
+) -> String {
+    format!(
+        "classify-import\n{dataset_id}\ntrain={train_size}\nheldout={heldout_size}\nseed={seed}\n{train_hash}\n{held_hash}"
+    )
+}
+
+fn hash_text(text: &str) -> String {
+    let mut hasher = sha2::Sha256::new();
+    use sha2::Digest;
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Drop `mtime=` so a retouched parquet file does not change the journey key.
+pub fn stable_source(source: &str) -> String {
+    source
+        .lines()
+        .map(|line| line.split(" mtime=").next().unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Pre-#205 digest. No `source=` suffix.
+pub fn legacy_import_fingerprint(
+    dataset_id: &str,
+    train_size: &str,
+    heldout_size: &str,
+    seed: u64,
+    train_hash: &str,
+    held_hash: &str,
+) -> String {
+    hash_text(&fingerprint_body(
+        dataset_id,
+        train_size,
+        heldout_size,
+        seed,
+        train_hash,
+        held_hash,
+    ))
+}
+
 pub fn import_fingerprint(
     dataset_id: &str,
     train_size: &str,
@@ -238,15 +288,80 @@ pub fn import_fingerprint(
     held_hash: &str,
     source: &str,
 ) -> String {
-    let mut hasher = sha2::Sha256::new();
-    use sha2::Digest;
-    hasher.update(
-        format!(
-            "classify-import\n{dataset_id}\ntrain={train_size}\nheldout={heldout_size}\nseed={seed}\n{train_hash}\n{held_hash}\nsource={source}"
-        )
-        .as_bytes(),
+    let body = fingerprint_body(
+        dataset_id,
+        train_size,
+        heldout_size,
+        seed,
+        train_hash,
+        held_hash,
     );
-    format!("{:x}", hasher.finalize())
+    let stable = stable_source(source);
+    // Rows-api is the source those older manifests already describe.
+    if stable.is_empty() || stable == "rows-api" {
+        return hash_text(&body);
+    }
+    hash_text(&format!("{body}\nsource={stable}"))
+}
+
+/// Journey prepare key. When the native cache was built from this same source,
+/// keep a stored pre-`source=` digest so an unchanged snapshot does not redo prepare.
+pub fn journey_prepare_fingerprint(
+    dataset_id: &str,
+    train_size: &str,
+    heldout_size: &str,
+    seed: u64,
+    train_hash: &str,
+    held_hash: &str,
+    source: &str,
+    stored_inputs: Option<&str>,
+    cached_source_fp: Option<&str>,
+) -> String {
+    let legacy = legacy_import_fingerprint(
+        dataset_id,
+        train_size,
+        heldout_size,
+        seed,
+        train_hash,
+        held_hash,
+    );
+    let stable = import_fingerprint(
+        dataset_id,
+        train_size,
+        heldout_size,
+        seed,
+        train_hash,
+        held_hash,
+        source,
+    );
+    let exact = {
+        let body = fingerprint_body(
+            dataset_id,
+            train_size,
+            heldout_size,
+            seed,
+            train_hash,
+            held_hash,
+        );
+        if source.is_empty() || source == "rows-api" {
+            hash_text(&body)
+        } else {
+            hash_text(&format!("{body}\nsource={source}"))
+        }
+    };
+    let bound = match cached_source_fp {
+        Some(fp) => stable_source(fp) == stable_source(source),
+        None => source == "rows-api" || source.is_empty(),
+    };
+    if bound {
+        if let Some(stored) = stored_inputs {
+            if stored == legacy || stored == stable || stored == exact {
+                return stored.to_string();
+            }
+        }
+        return legacy;
+    }
+    stable
 }
 
 /// How a full split is obtained when native JSONL was not passed in.
@@ -284,7 +399,12 @@ pub fn sample_records(
     seed: u64,
 ) -> Result<Sampled> {
     let train_idx = balanced_indices(train_rows, train_size, seed, "train")?;
-    let held_idx = balanced_indices(test_rows, heldout_size, seed.wrapping_add(0xA5A5_5A5A), "test")?;
+    let held_idx = balanced_indices(
+        test_rows,
+        heldout_size,
+        seed.wrapping_add(0xA5A5_5A5A),
+        "test",
+    )?;
     let train = materialize(preset, preset.train_split, train_rows, &train_idx, seed)?;
     let heldout = materialize(
         preset,
@@ -470,9 +590,13 @@ fn distractor_options(
     if classes.get(label).is_none() {
         bail!("refuse:classify-import: label {label} is outside the class table");
     }
-    if distractors == 0 || distractors + 1 > classes.len() || distractors + 1 > LABELS.chars().count()
+    if distractors == 0
+        || distractors + 1 > classes.len()
+        || distractors + 1 > LABELS.chars().count()
     {
-        bail!("refuse:classify-import: distractor count {distractors} does not fit the class table");
+        bail!(
+            "refuse:classify-import: distractor count {distractors} does not fit the class table"
+        );
     }
     let others: Vec<usize> = (0..classes.len()).filter(|i| *i != label).collect();
     let (keep, _) = split_indices(
@@ -710,7 +834,8 @@ fn acquire_native(
             |delay| io.pause(delay),
         ),
         ImportFetch::Bulk => {
-            if !req.force && cache_verified(preset, &native)? {
+            let snapshot = hf_snapshot_dir(req, preset.alias);
+            if !req.force && bulk_cache_reusable(preset, &native, &snapshot)? {
                 let train_final = native.join(format!("{}.jsonl", preset.train_split));
                 let test_final = native.join(format!("{}.jsonl", preset.test_split));
                 return Ok((read_native(&train_final)?, read_native(&test_final)?));
@@ -850,6 +975,25 @@ fn read_one_parquet_split(
     Ok(rows)
 }
 
+/// A verified native cache is reusable for Bulk only when its `source_fp` is this snapshot.
+/// A rows-api cache has no `source_fp` and is not reused.
+fn bulk_cache_reusable(preset: &DatasetPreset, native: &Path, snapshot: &Path) -> Result<bool> {
+    if !cache_verified(preset, native)? {
+        return Ok(false);
+    }
+    let Some(stored) = manifest_source_fp(native)? else {
+        return Ok(false);
+    };
+    let Ok(source) = inspect_parquet_source(snapshot, preset.train_split, preset.test_split) else {
+        return Ok(false);
+    };
+    Ok(stored == source.token)
+}
+
+pub fn cached_native_source_fp(alias: &str) -> Option<String> {
+    manifest_source_fp(&native_cache_dir(alias)).ok().flatten()
+}
+
 fn manifest_source_fp(native: &Path) -> Result<Option<String>> {
     let marker = native.join("manifest.json");
     if !marker.is_file() {
@@ -906,7 +1050,11 @@ fn file_mtime_nanos(meta: &fs::Metadata) -> u128 {
         .unwrap_or(0)
 }
 
-fn inspect_parquet_source(dir: &Path, train_split: &str, test_split: &str) -> Result<ParquetSource> {
+fn inspect_parquet_source(
+    dir: &Path,
+    train_split: &str,
+    test_split: &str,
+) -> Result<ParquetSource> {
     let canon = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let mut paths = split_parquet_files(&canon, train_split)?;
     paths.extend(split_parquet_files(&canon, test_split)?);
@@ -916,7 +1064,7 @@ fn inspect_parquet_source(dir: &Path, train_split: &str, test_split: &str) -> Re
     let mut cheap_lines = vec![format!("dir={}", canon.display())];
     let mut stats = Vec::new();
     for path in &paths {
-        let meta = fs::symlink_metadata(path).map_err(|err| {
+        let meta = fs::metadata(path).map_err(|err| {
             anyhow::anyhow!(
                 "refuse:classify-import: cannot stat {}: {err}",
                 path.display()
@@ -929,10 +1077,7 @@ fn inspect_parquet_source(dir: &Path, train_split: &str, test_split: &str) -> Re
             .unwrap_or(path)
             .display()
             .to_string();
-        cheap_lines.push(format!(
-            "{rel} bytes={} mtime_ns={mtime_ns}",
-            meta.len()
-        ));
+        cheap_lines.push(format!("{rel} bytes={} mtime_ns={mtime_ns}", meta.len()));
         stats.push((path.clone(), rel, meta.len(), mtime));
     }
     let cheap = cheap_lines.join("\n");
@@ -965,7 +1110,8 @@ struct RememberedSource {
     source: ParquetSource,
 }
 
-fn source_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, RememberedSource>> {
+fn source_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, RememberedSource>>
+{
     static CACHE: std::sync::OnceLock<
         std::sync::Mutex<std::collections::HashMap<String, RememberedSource>>,
     > = std::sync::OnceLock::new();
@@ -1049,12 +1195,21 @@ fn collect_parquet(
             )
         })?;
         if meta.file_type().is_symlink() {
-            let target_dir = fs::metadata(&path).map(|target| target.is_dir()).unwrap_or(false);
-            if target_dir {
+            let followed = fs::metadata(&path).map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-import: cannot stat {}: {err}",
+                    path.display()
+                )
+            })?;
+            if followed.is_dir() {
                 bail!(
                     "refuse:classify-import: directory symlink {} is refused",
                     path.display()
                 );
+            }
+            if followed.is_file() && is_split_parquet(&path, split) {
+                out.push(path);
+                continue;
             }
             eprintln!("classify-import: skip symlink {}", path.display());
             continue;
@@ -1448,7 +1603,10 @@ fn fetch_split(
             .append(true)
             .open(&partial)?;
         for item in page {
-            let row_idx = item.get("row_idx").and_then(Value::as_u64).unwrap_or(offset);
+            let row_idx = item
+                .get("row_idx")
+                .and_then(Value::as_u64)
+                .unwrap_or(offset);
             let native = item.get("row").cloned().unwrap_or(Value::Null);
             let parsed = parse_server_row(preset, row_idx, &native)?;
             writeln!(file, "{}", serde_json::to_string(&native_json(&parsed))?)?;
@@ -1468,9 +1626,7 @@ fn fetch_split(
 
 fn verify_split_count(split: &str, got: u64, reported: u64, official: u64) -> Result<()> {
     if got != reported {
-        bail!(
-            "refuse:classify-import: {split} has {got} rows but num_rows_total is {reported}"
-        );
+        bail!("refuse:classify-import: {split} has {got} rows but num_rows_total is {reported}");
     }
     if got != official {
         bail!(
@@ -1488,7 +1644,8 @@ fn get_with_retry(
     let mut last = String::from("no response");
     for attempt in 1..=MAX_FETCH_ATTEMPTS {
         let page = get(url);
-        let retryable = page.transport.is_some() || page.status == 429 || (500..600).contains(&page.status);
+        let retryable =
+            page.transport.is_some() || page.status == 429 || (500..600).contains(&page.status);
         if !retryable && page.status == 200 {
             return Ok(page.body);
         }
@@ -1563,10 +1720,7 @@ fn parse_retry_after(header: &str) -> Option<Duration> {
 /// Honor `Retry-After`, but never wait longer than 60s or less than this attempt's backoff.
 fn retry_wait(attempt: u32, retry_after: Option<Duration>) -> Duration {
     let floor = backoff_delay(attempt);
-    retry_after
-        .unwrap_or(floor)
-        .min(MAX_RETRY_AFTER)
-        .max(floor)
+    retry_after.unwrap_or(floor).min(MAX_RETRY_AFTER).max(floor)
 }
 
 /// Exclusive `native/.lock` for the whole download, verify, and publish.
@@ -1665,7 +1819,11 @@ fn parse_server_row(preset: &DatasetPreset, index: u64, row: &Value) -> Result<N
     let label = row
         .get(preset.label_field)
         .and_then(Value::as_u64)
-        .or_else(|| row.get(preset.label_field).and_then(Value::as_i64).map(|n| n as u64))
+        .or_else(|| {
+            row.get(preset.label_field)
+                .and_then(Value::as_i64)
+                .map(|n| n as u64)
+        })
         .ok_or_else(|| anyhow::anyhow!("refuse:classify-import: row {index} has no label"))?;
     let text = row
         .get(preset.text_field)
@@ -1701,9 +1859,8 @@ pub fn read_native(path: &Path) -> Result<Vec<NativeRow>> {
     })?;
     let mut rows = Vec::new();
     for (line_no, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.map_err(|err| {
-            anyhow::anyhow!("refuse:classify-import: {}: {err}", path.display())
-        })?;
+        let line = line
+            .map_err(|err| anyhow::anyhow!("refuse:classify-import: {}: {err}", path.display()))?;
         if line.trim().is_empty() {
             continue;
         }
@@ -1944,7 +2101,10 @@ mod tests {
             assert_eq!(letters, ["A", "B", "C"]);
             let answer = row["answer"].as_str().unwrap();
             let pos = letters.iter().position(|l| *l == answer).unwrap();
-            assert_eq!(opts[pos]["key"].as_str().unwrap(), row["answer_key"].as_str().unwrap());
+            assert_eq!(
+                opts[pos]["key"].as_str().unwrap(),
+                row["answer_key"].as_str().unwrap()
+            );
         }
         let train_ids: Vec<_> = sampled
             .train
@@ -1981,7 +2141,10 @@ mod tests {
         assert_eq!(nli.train[0]["answer"], "B");
         assert_eq!(nli.train[0]["answer_key"], "neutral");
         assert_eq!(nli.heldout[0]["answer"], "C");
-        assert!(nli.train[0]["state"]["premise"].as_str().unwrap().contains("dog"));
+        assert!(nli.train[0]["state"]["premise"]
+            .as_str()
+            .unwrap()
+            .contains("dog"));
         assert_ne!(nli.train[0]["id"], nli.heldout[0]["id"]);
     }
 
@@ -1994,6 +2157,63 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(a, c);
         assert_ne!(a, d);
+        let rows = import_fingerprint("fancyzhx/ag_news", "3000", "all", 42, "t", "h", "rows-api");
+        let legacy = legacy_import_fingerprint("fancyzhx/ag_news", "3000", "all", 42, "t", "h");
+        assert_eq!(rows, legacy);
+        let touched = import_fingerprint(
+            "fancyzhx/ag_news",
+            "3000",
+            "all",
+            42,
+            "t",
+            "h",
+            "dir=/nas\nfile sha256=abc bytes=4 mtime=10",
+        );
+        let retouched = import_fingerprint(
+            "fancyzhx/ag_news",
+            "3000",
+            "all",
+            42,
+            "t",
+            "h",
+            "dir=/nas\nfile sha256=abc bytes=4 mtime=99",
+        );
+        assert_eq!(touched, retouched);
+        let changed = import_fingerprint(
+            "fancyzhx/ag_news",
+            "3000",
+            "all",
+            42,
+            "t",
+            "h",
+            "dir=/nas\nfile sha256=def bytes=4 mtime=10",
+        );
+        assert_ne!(touched, changed);
+        let stored = legacy_import_fingerprint("fancyzhx/ag_news", "3000", "all", 42, "t", "h");
+        let kept = journey_prepare_fingerprint(
+            "fancyzhx/ag_news",
+            "3000",
+            "all",
+            42,
+            "t",
+            "h",
+            "dir=/nas\nfile sha256=abc bytes=4 mtime=99",
+            Some(&stored),
+            Some("dir=/nas\nfile sha256=abc bytes=4 mtime=10"),
+        );
+        assert_eq!(kept, stored);
+        let redo = journey_prepare_fingerprint(
+            "fancyzhx/ag_news",
+            "10000",
+            "all",
+            42,
+            "t",
+            "h",
+            "dir=/nas\nfile sha256=abc bytes=4 mtime=10",
+            Some(&stored),
+            Some("dir=/nas\nfile sha256=abc bytes=4 mtime=10"),
+        );
+        assert_ne!(redo, stored);
     }
 
     #[test]
@@ -2150,7 +2370,10 @@ mod tests {
         assert_eq!(calls, 2);
         assert_eq!(rows.len(), 2);
         assert!(waits.iter().any(|wait| *wait >= Duration::from_secs(3)));
-        assert!(!dest.is_file(), "partial stays unpublished until both splits verify");
+        assert!(
+            !dest.is_file(),
+            "partial stays unpublished until both splits verify"
+        );
         assert_eq!(count_complete_lines(&partial_path(&dest)).unwrap(), 2);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2238,7 +2461,10 @@ mod tests {
         assert!(err.contains("another import is running"), "{err}");
         assert!(err.contains(&std::process::id().to_string()), "{err}");
         assert!(err.contains("if stale"), "{err}");
-        assert!(err.contains(&dir.join(".lock").display().to_string()), "{err}");
+        assert!(
+            err.contains(&dir.join(".lock").display().to_string()),
+            "{err}"
+        );
         assert!(dir.join(".lock").is_file());
         drop(held);
         assert!(!dir.join(".lock").is_file());
@@ -2460,7 +2686,10 @@ mod tests {
         let train_n = count_complete_lines(&native.join("train.jsonl")).unwrap();
         assert_eq!(train_n, 120_000);
         assert!(!source.join(".lock").exists());
-        assert!(!native.join(".lock").exists(), "lock is dropped after the import");
+        assert!(
+            !native.join(".lock").exists(),
+            "lock is dropped after the import"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2621,7 +2850,10 @@ mod tests {
             "{manifest}"
         );
         let train = fs::read_to_string(native.join("train.jsonl")).unwrap();
-        assert!(train.contains("\"text\":\"row-0\""), "snapshot was not read");
+        assert!(
+            train.contains("\"text\":\"row-0\""),
+            "snapshot was not read"
+        );
         assert!(!train.contains("stale"));
         let _ = fs::remove_dir_all(&root);
     }
@@ -2641,13 +2873,17 @@ mod tests {
         let outside = root.join("outside");
         fs::create_dir_all(&outside).unwrap();
         std::os::unix::fs::symlink(&outside, source.join("escape")).unwrap();
-        let err = split_parquet_files(&source, "train").unwrap_err().to_string();
+        let err = split_parquet_files(&source, "train")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("directory symlink"), "{err}");
         let cycle = root.join("cycle");
         fs::create_dir_all(&cycle).unwrap();
         fs::write(cycle.join("train-0.parquet"), b"t").unwrap();
         std::os::unix::fs::symlink(&cycle, cycle.join("again")).unwrap();
-        let err = split_parquet_files(&cycle, "train").unwrap_err().to_string();
+        let err = split_parquet_files(&cycle, "train")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("directory symlink"), "{err}");
         let bool_at = PARQUET_SCRIPT.find("isinstance(label, bool)").unwrap();
         let integral_at = PARQUET_SCRIPT.find("numbers.Integral").unwrap();
@@ -2696,7 +2932,8 @@ mod tests {
         )
         .unwrap();
         let manifest: Value = serde_json::from_str(
-            &fs::read_to_string(cache.join("ag_news").join("native").join("manifest.json")).unwrap(),
+            &fs::read_to_string(cache.join("ag_news").join("native").join("manifest.json"))
+                .unwrap(),
         )
         .unwrap();
         let source_dir = manifest["source_dir"].as_str().unwrap();
@@ -2809,6 +3046,29 @@ mod tests {
         .unwrap();
         assert_eq!(io.hf_calls.get(), 1);
         assert_eq!(io.http_calls.get(), 0);
+        classify_import_with(
+            &ImportRequest {
+                dataset: "ag_news",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: None,
+                fetch: ImportFetch::Bulk,
+                python: None,
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        assert_eq!(
+            io.hf_calls.get(),
+            1,
+            "a matching bulk snapshot is not downloaded again"
+        );
         let snapshot = cache.join("ag_news").join("hf-dataset");
         assert!(snapshot
             .join("data")
@@ -2842,6 +3102,113 @@ mod tests {
             native_dir(&bare, "ag_news"),
             PathBuf::from(".cell/classify-import/ag_news/native")
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bulk_does_not_reuse_a_verified_cache_from_another_source() {
+        let root = std::env::temp_dir().join(format!(
+            "import-bulk-source-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let cache = root.join("cache");
+        let native = cache.join("ag_news").join("native");
+        fs::create_dir_all(&native).unwrap();
+        let preset = preset_by_name("ag_news").unwrap();
+        let row = "{\"index\":0,\"text\":\"a\",\"label\":0}\n";
+        fs::write(
+            native.join("train.jsonl"),
+            row.repeat(preset.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("test.jsonl"),
+            row.repeat(preset.official_test as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("manifest.json"),
+            format!(
+                "{{\"hf_id\":{},\"source\":\"datasets-server rows API\",\"complete\":true,\"train_rows\":{},\"test_rows\":{}}}\n",
+                serde_json::to_string(preset.hf_id).unwrap(),
+                preset.official_train,
+                preset.official_test
+            ),
+        )
+        .unwrap();
+        assert!(cache_verified(preset, &native).unwrap());
+        let out = root.join("sampled");
+        let io = FakeIo {
+            hf_calls: std::cell::Cell::new(0),
+            http_calls: std::cell::Cell::new(0),
+            pyarrow_missing: false,
+            touch_source: false,
+        };
+        classify_import_with(
+            &ImportRequest {
+                dataset: "ag_news",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: None,
+                fetch: ImportFetch::Bulk,
+                python: None,
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        assert_eq!(io.hf_calls.get(), 1);
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(native.join("manifest.json")).unwrap())
+                .unwrap();
+        assert!(manifest["source_fp"].as_str().unwrap().contains("sha256="));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn file_symlink_to_parquet_is_followed() {
+        let root = std::env::temp_dir().join(format!(
+            "import-file-link-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let real = root.join("payload");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("train-bytes.parquet"), b"train-payload").unwrap();
+        fs::write(real.join("test-bytes.parquet"), b"test-payload").unwrap();
+        let source = root.join("snap").join("data");
+        fs::create_dir_all(&source).unwrap();
+        std::os::unix::fs::symlink(
+            real.join("train-bytes.parquet"),
+            source.join("train-00000-of-00001.parquet"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            real.join("test-bytes.parquet"),
+            source.join("test-00000-of-00001.parquet"),
+        )
+        .unwrap();
+        let snap = root.join("snap");
+        let files = split_parquet_files(&snap, "train").unwrap();
+        assert_eq!(files.len(), 1);
+        let token = dataset_source_token(Some(&snap), ImportFetch::Bulk, "train", "test");
+        assert!(token.contains("sha256="), "{token}");
+        let again = dataset_source_token(Some(&snap), ImportFetch::Bulk, "train", "test");
+        assert_eq!(token, again);
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -211,6 +211,10 @@ fn journey_print_lists_steps_without_tools() {
     }
     assert!(stdout.contains("qwen3_5"), "{stdout}");
     assert!(
+        stdout.contains("base_cache: .cell/classify-base-cache/Qwen--Qwen3.5-4B"),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"),
         "{stdout}"
     );
@@ -328,6 +332,8 @@ fn journey_prefers_hf_when_both_downloaders_are_on_path() {
             fixture().to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
@@ -347,7 +353,10 @@ fn journey_prefers_hf_when_both_downloaders_are_on_path() {
         "deprecated stub must not run\n{tool_log}"
     );
     assert!(stdout.contains("hf download Qwen/Qwen3.5-4B"), "{stdout}");
-    assert!(work.join("base-hf/config.json").is_file());
+    assert!(stdout.contains("base_cache:"), "{stdout}");
+    let shared = root.join("base-cache").join("Qwen--Qwen3.5-4B");
+    assert!(shared.join("config.json").is_file(), "{}", shared.display());
+    assert!(!work.join("base-hf").exists());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -382,6 +391,8 @@ fn journey_falls_back_to_huggingface_cli_when_hf_is_absent() {
             fixture().to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
@@ -400,7 +411,12 @@ fn journey_falls_back_to_huggingface_cli_when_hf_is_absent() {
         stdout.contains("huggingface-cli download Qwen/Qwen3.5-4B"),
         "{stdout}"
     );
-    assert!(work.join("base-hf/config.json").is_file());
+    assert!(root
+        .join("base-cache")
+        .join("Qwen--Qwen3.5-4B")
+        .join("config.json")
+        .is_file());
+    assert!(!work.join("base-hf").exists());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -424,6 +440,8 @@ fn journey_deprecated_huggingface_cli_names_the_hf_install() {
             fixture().to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--llama-cpp-dir",
             llama.to_str().unwrap(),
@@ -441,7 +459,116 @@ fn journey_deprecated_huggingface_cli_names_the_hf_install() {
         "{err}"
     );
     assert!(err.contains("pip install -U huggingface_hub"), "{err}");
-    assert!(!work.join("base-hf/config.json").exists());
+    assert!(!work.join("base-hf").exists());
+    assert!(!root
+        .join("base-cache")
+        .join("Qwen--Qwen3.5-4B")
+        .join("config.json")
+        .exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn hub_base_is_downloaded_once_and_reused_across_outs() {
+    let root = std::env::temp_dir().join(format!("journey-shared-base-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let cache = root.join("base-cache");
+    let shared = cache.join("Qwen--Qwen3.5-4B");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for req in server.incoming_requests() {
+            let payload = serde_json::json!({"message":{"role":"assistant","content":"B"}});
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
+            let _ = req
+                .respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
+        }
+    });
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let run_out = |out: &std::path::Path| {
+        bin()
+            .args([
+                "classify",
+                "journey",
+                "--input",
+                input.to_str().unwrap(),
+                "--out",
+                out.to_str().unwrap(),
+                "--base-cache",
+                cache.to_str().unwrap(),
+                "--run",
+                "--max-steps",
+                "1",
+                "--llama-cpp-dir",
+                llama.to_str().unwrap(),
+                "--endpoint",
+                &endpoint,
+                "--timeout-secs",
+                "5",
+            ])
+            .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+            .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+            .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+            .output()
+            .unwrap()
+    };
+    let first = run_out(&root.join("out-3k"));
+    let first_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(first.status.success(), "{first_text}");
+    assert!(first_text.contains(&format!("base_cache: {}", shared.display())));
+    assert!(shared.join("config.json").is_file());
+    assert!(!root.join("out-3k").join("base-hf").exists());
+    let downloads = |text: &str| text.matches("download Qwen/Qwen3.5-4B").count();
+    let after_first = fs::read_to_string(&log).unwrap();
+    assert_eq!(downloads(&after_first), 1, "{after_first}");
+
+    let second = run_out(&root.join("out-10k"));
+    let second_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(second.status.success(), "{second_text}");
+    assert!(second_text.contains("skip fetch-base"), "{second_text}");
+    assert!(!second_text.contains("run fetch-base"), "{second_text}");
+    let after_second = fs::read_to_string(&log).unwrap();
+    assert_eq!(downloads(&after_second), 1, "{after_second}");
+    assert!(!root.join("out-10k").join("base-hf").exists());
+
+    fs::remove_file(shared.join("model.safetensors")).unwrap();
+    let third = run_out(&root.join("out-10k"));
+    let third_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&third.stdout),
+        String::from_utf8_lossy(&third.stderr)
+    );
+    assert!(!third.status.success(), "{third_text}");
+    assert!(third_text.contains("skip fetch-base"), "{third_text}");
+    assert!(third_text.contains("base snapshot"), "{third_text}");
+    assert!(third_text.contains("non-empty weights"), "{third_text}");
+    let after_third = fs::read_to_string(&log).unwrap();
+    assert_eq!(downloads(&after_third), 1, "{after_third}");
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -531,6 +658,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -573,7 +702,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!(modelfile.contains("PARAMETER num_predict 8"), "{modelfile}");
     assert!(modelfile.contains("<think>"), "{modelfile}");
     let tool_log = fs::read_to_string(&log).unwrap();
-    let base_hf = work.join("base-hf");
+    let base_hf = root.join("base-cache").join("Qwen--Qwen3.5-4B");
     let convert = format!(
         "python3 {} {} --outfile {} --outtype f16",
         llama.join("convert_hf_to_gguf.py").display(),
@@ -630,6 +759,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -670,6 +801,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -708,6 +841,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -743,6 +878,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -802,6 +939,8 @@ fn journey_run_stops_before_compare_when_ollama_is_down() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -1266,6 +1405,8 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--train-driver",
             "together",
@@ -1336,6 +1477,8 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
             input.to_str().unwrap(),
             "--out",
             root.join("missing-key").to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--train-driver",
             "together",
@@ -1672,6 +1815,8 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -1829,9 +1974,16 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
     );
     assert!(printed_out.contains("dataset: ag_news"), "{printed_out}");
     assert!(printed_out.contains("no-second-split"), "{printed_out}");
-    assert!(printed_out.contains("READY_FOR_LIVE_TEST: no"), "{printed_out}");
+    assert!(
+        printed_out.contains("READY_FOR_LIVE_TEST: no"),
+        "{printed_out}"
+    );
     assert!(!printed_out.contains("live PASS recorded"), "{printed_out}");
-    assert!(!journey.exists(), "print must not write {}", journey.display());
+    assert!(
+        !journey.exists(),
+        "print must not write {}",
+        journey.display()
+    );
     let _ = fs::remove_dir_all(&root);
 }
 

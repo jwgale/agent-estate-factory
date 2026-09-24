@@ -383,6 +383,7 @@ pub(crate) fn run() -> Result<()> {
                 out,
                 preset,
                 base,
+                base_cache,
                 base_tag,
                 tag,
                 endpoint,
@@ -468,6 +469,7 @@ pub(crate) fn run() -> Result<()> {
                         from_local: from_local.as_deref(),
                         import_fetch: fetch,
                         python: python.as_deref(),
+                        base_cache: &base_cache,
                     },
                 )
             }

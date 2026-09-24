@@ -573,7 +573,7 @@ pub(crate) enum ClassifyCommand {
     /// Letter journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
     /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train. `--preset glm4-chat` is GLM-4-9B-Chat with template `glm4` and local `llamafactory-cli` train.
     /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek and GLM-4 Chat presets, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
-    /// `--run` downloads the base with `hf`, falling back to `huggingface-cli` only when `hf` is absent, unless `--base` is a local directory. It then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
+    /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     Journey {
         /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
@@ -586,9 +586,12 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value = ".cell/classify-journey")]
         out: PathBuf,
         /// Hugging Face train base. Default `Qwen/Qwen3.5-4B` (LLaMA-Factory template `qwen3_5`).
-        /// A Hub id is downloaded into `base-hf` and converted from that directory. A local weights directory is used as-is.
+        /// A Hub id is downloaded once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) and converted from that directory. Later journeys with other `--out` directories reuse that snapshot. A local weights directory is used as-is and is not copied into the cache.
         #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE)]
         base: String,
+        /// Shared directory for Hub base snapshots. Default `.cell/classify-base-cache`. Each Hub id gets one subdirectory. Ignored when `--base` is a local directory.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE_CACHE)]
+        base_cache: PathBuf,
         /// Opt-in Ollama library tag for the base eval. Omit to build the base with the same convert, quant, and Modelfile as the specialist. A set tag can differ in precision.
         #[arg(long)]
         base_tag: Option<String>,
