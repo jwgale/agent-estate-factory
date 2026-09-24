@@ -119,6 +119,7 @@ LoRA seat:  make seat-journey-lora
 LoRA full:  make uniqueness-full-lora
 Prove list: make uniqueness-prove-checklist
 Purpose:    make purpose-build-checklist
+            print-only operator path for purpose-building an SLM on demand (operator section 15)
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -369,6 +370,13 @@ template, and the row knobs, then prints SKIP live train. Phi-3-small
 stays QLoRA-only and is not a row. It does not train, merge, convert,
 seat, or promote. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
+make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points at
+the print-only cards already on tip and does not run them. It does not
+train, convert, shell out to ollama, promote, or apply the estate. It
+does not invent a live PASS. The recorded PASS stays the only live
+uniqueness prove. The re-prove card stays make uniqueness-prove-checklist.
+Walk: docs/operator-enrich-journeys.md (section 15). Not in make smoke,
+make gate-90, or Actions.
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\
@@ -999,7 +1007,7 @@ The factory does not apply the estate without an explicit operator
 --require-plan path. No promote and no auto-promote. The coda names
 plan, apply --require-plan, and reconcile and does not execute them.
 The re-prove card is make uniqueness-prove-checklist.
-make purpose-build-checklist prints purpose-build on demand. It points
+make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points
 at the print-only cards already on tip and does not run them. After
 import-trained (trained_shape gguf, auto_apply=false) it prints
 Standing next (estate). The coda names apply-proposal, plan,

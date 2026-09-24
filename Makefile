@@ -332,7 +332,7 @@ unsloth-lora-journey:
 uniqueness-unsloth-lora:
 	bash scripts/uniqueness-unsloth-lora.sh
 
-# Opt-in print-only purpose-build operator checklist.
+# Opt-in print-only operator path for purpose-building an SLM on demand (operator section 15).
 # Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth),
 # the train-next SKIP, merge-adapt, gguf-convert, local-seat, and import-trained.
 # After import-trained it prints Standing next (estate): auto_apply=false, no promote,
