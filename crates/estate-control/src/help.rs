@@ -124,6 +124,8 @@ LoRA full:  make uniqueness-full-lora
 Prove list: make uniqueness-prove-checklist
 Purpose:    make purpose-build-checklist
             print-only operator path for purpose-building an SLM on demand (operator section 15)
+Pick:       make purpose-build-pick
+            print-only host and stack picker for purpose-build journeys (operator section 17)
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -381,6 +383,13 @@ does not invent a live PASS. The recorded PASS stays the only live
 uniqueness prove. The re-prove card stays make uniqueness-prove-checklist.
 Walk: docs/operator-enrich-journeys.md (section 15). Not in make smoke,
 make gate-90, or Actions.
+make purpose-build-pick is the print-only host and stack picker for purpose-build journeys (operator section 17).
+It names Nvidia / CUDA (lf-beachhead-prepare, qlora-journey, uniqueness-full primary; Unsloth optional; Axolotl integration),
+Apple Silicon (mlx-lm-lora-journey and uniqueness-mlx, optional; refuse:host on stock any-affinity packs),
+and the Target A LoRA twins that already exist. It does not run those targets.
+It does not invent a live PASS. Not native MLX. Not in make smoke,
+make gate-90, or Actions. READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 17).
 make mlx-lm-lora-journey is the print-only Apple Silicon mlx-lm LoRA journey (operator section 16).
 make uniqueness-mlx is the print-only chain of that journey. Both stay
 print-only. They do not train, fuse, convert, shell out to ollama, or
@@ -439,6 +448,7 @@ Walk: docs/operator-enrich-journeys.md (section 16).
   make uniqueness-full-lora
   make uniqueness-prove-checklist
   make purpose-build-checklist
+  make purpose-build-pick
   make lf-beachhead-prepare
   make enrich-live-prove
 
@@ -1026,6 +1036,13 @@ Standing next (estate). The coda names apply-proposal, plan,
 apply --require-plan, and reconcile and does not execute them.
 It does not invent a live PASS. The recorded PASS stays the only
 live uniqueness prove. Walk: docs/operator-enrich-journeys.md (section 15).
+make purpose-build-pick is the print-only host and stack picker for purpose-build journeys (operator section 17).
+It names the same cards by host and does not run them. Nvidia / CUDA primary is
+lf-beachhead-prepare, qlora-journey, and uniqueness-full. Unsloth stays optional.
+Axolotl stays integration. Apple Silicon is mlx-lm-lora-journey and uniqueness-mlx.
+A stock any-affinity pack is refuse:host for mlx-lm-lora. Target A LoRA twins
+are the LLaMA-Factory, Unsloth, and Axolotl pairs that already exist.
+Walk: docs/operator-enrich-journeys.md (section 17).
 CELL_TRAIN_LIVE=1 stays print-only. CELL_SEAT_LIVE=1 stays print-only.
 Not native MLX. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.

@@ -774,7 +774,7 @@ That opt-in script chains the prepare-assert phase, then the seat-print phase. I
 
 `make purpose-build-checklist` is the print-only card for purpose-building an SLM when one fits, including mid-software-build. It prints the prepare → train → merge → seat → import loop in operator order and points at the print-only journeys already on tip. It does not run those journeys. It does not train, convert, shell out to ollama, promote, or apply the estate. It does not invent a live PASS. The recorded 5090-class Target C uniqueness PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) stays the only live uniqueness prove. The re-prove card stays `make uniqueness-prove-checklist`. `CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. It is not native MLX. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked (`43770130 3391`).
 
-1. Choose and prepare a train card. A beachhead row is `make lf-beachhead-prepare` (`SKIP live train`). The QLoRA path is `make qlora-journey`. The LoRA path is `make lora-journey`. Optional paths are `make axolotl-qlora-journey`, `make axolotl-lora-journey`, `make unsloth-qlora-journey`, and `make unsloth-lora-journey`. The Apple Silicon print pointer is `make mlx-lm-lora-journey` (section 16). This checklist does not run it. Not native MLX. Prepare against a throwaway copy.
+1. Choose and prepare a train card. The host and stack picker is `make purpose-build-pick` (section 17). This checklist does not run it. A beachhead row is `make lf-beachhead-prepare` (`SKIP live train`). The QLoRA path is `make qlora-journey`. The LoRA path is `make lora-journey`. Optional paths are `make axolotl-qlora-journey`, `make axolotl-lora-journey`, `make unsloth-qlora-journey`, and `make unsloth-lora-journey`. The Apple Silicon print pointer is `make mlx-lm-lora-journey` (section 16). This checklist does not run it. Not native MLX. Prepare against a throwaway copy.
 2. Train handoff, train-next style. Print the `NEXT.md` recipe. `SKIP live train`. Print checks: `make train-next` or `make train-next-lora`.
 3. Merge and export print honesty: `estate enrich merge-adapt`. The checklist does not merge and does not export.
 4. `estate enrich gguf-convert`. The checklist does not convert.
@@ -827,3 +827,26 @@ make uniqueness-mlx
 ```
 
 That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make unsloth-qlora-journey`, `make uniqueness-unsloth`, `make qlora-journey`, `make seat-journey`, `make train-next`, or `make axolotl-qlora-journey`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
+## 17. Purpose-build pick — host and stack table
+
+`make purpose-build-pick` prints which journey to take for which host. It names make targets already on tip and does not run them. It does not resolve or execute estate. It does not train, fuse, convert, shell out to ollama, promote, or apply the estate. It does not invent a live PASS. The recorded 5090-class Target C uniqueness PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) stays the only live uniqueness prove. The ordered steps after the pick stay `make purpose-build-checklist` (section 15). The re-prove card stays `make uniqueness-prove-checklist`. `CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. It is not native MLX. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked (`43770130 3391`).
+
+| Host / stack | Role | Make target (not executed) |
+| --- | --- | --- |
+| Nvidia / CUDA | primary | `make lf-beachhead-prepare` |
+| Nvidia / CUDA | primary | `make qlora-journey` |
+| Nvidia / CUDA | primary | `make uniqueness-full` |
+| Nvidia / CUDA | optional | `make unsloth-qlora-journey` and `make uniqueness-unsloth` |
+| Nvidia / CUDA | integration | `make axolotl-qlora-journey` and `make uniqueness-axolotl` |
+| Apple Silicon | optional | `make mlx-lm-lora-journey` and `make uniqueness-mlx` (section 16) |
+| Apple Silicon | refuse:host | stock any-affinity packs. `mlx-lm-lora` writes nothing |
+| Target A LoRA twin | primary | `make lora-journey` and `make uniqueness-full-lora` |
+| Target A LoRA twin | optional | `make unsloth-lora-journey` and `make uniqueness-unsloth-lora` |
+| Target A LoRA twin | integration | `make axolotl-lora-journey` and `make uniqueness-axolotl-lora` |
+
+Unsloth stays optional. Axolotl stays integration. The Apple Silicon card stays optional. A stock pack whose `host_class_affinity` is `any` is `refuse:host` for `mlx-lm-lora`.
+
+```bash
+make purpose-build-pick
+```

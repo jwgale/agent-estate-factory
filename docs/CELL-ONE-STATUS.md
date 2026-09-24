@@ -549,6 +549,7 @@ make uniqueness-ladder # opt-in: print-only Target C chain; qlora-journey then s
 make uniqueness-full   # opt-in: print-only Target C full chain; qlora-journey, then train-next, then seat-journey (not in smoke)
 make uniqueness-prove-checklist # opt-in: print-only operator steps for the recorded Target C live uniqueness ladder, then Standing next (estate) (not in smoke)
 make purpose-build-checklist # opt-in: print-only purpose-build on demand; points at existing print journeys, then Standing next (estate) (not in smoke)
+make purpose-build-pick # opt-in: print-only host and stack picker; names existing journeys; does not run them (not in smoke)
 make mlx-lm-lora-journey # opt-in: Apple Silicon mlx-lm LoRA handoff; prints fuse and seat; does not train (not in smoke)
 make uniqueness-mlx   # opt-in: print-only chain of that journey; prepare-assert then seat-print (not in smoke)
 make lf-beachhead-prepare # opt-in: prepare every LLaMA-Factory beachhead matrix row; checks knobs; does not train (not in smoke)
