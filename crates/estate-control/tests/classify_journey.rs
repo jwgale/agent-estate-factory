@@ -1834,3 +1834,283 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
     assert!(!journey.exists(), "print must not write {}", journey.display());
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn glm4_classify_make_wrapper_is_opt_in() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let makefile = fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("glm4-classify-journey:"));
+    assert!(makefile.contains("bash scripts/glm4-classify-journey.sh"));
+    assert!(makefile.contains("GLM_CLASSIFY_RUN=1"));
+    let script = fs::read_to_string(root.join("scripts/glm4-classify-journey.sh")).unwrap();
+    assert!(script.contains("--preset glm4-chat"));
+    assert!(script.contains("examples/fixtures/tev1-decisions.jsonl"));
+    assert!(script.contains("zai-org/glm-4-9b-chat"));
+    assert!(script.contains("glm4-chat-specialist"));
+    assert!(script.contains("GLM_CLASSIFY_RUN"));
+    assert!(script.contains("READY_FOR_LIVE_TEST: no"));
+    let smoke = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("smoke:"))
+        .take_while(|line| !line.is_empty() && !line.starts_with("live-specialist:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!smoke.contains("glm4-classify-journey"), "{smoke}");
+    let gate = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("gate-90:"))
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!gate.contains("glm4-classify-journey"), "{gate}");
+}
+
+#[test]
+fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() {
+    let dir = std::env::temp_dir().join(format!("journey-glm4-print-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "glm4-chat",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    for name in [
+        "prepare",
+        "fetch-base",
+        "recipe",
+        "train",
+        "merge-export",
+        "export-repair",
+        "gguf-convert-base",
+        "gguf-convert-specialist",
+        "quantize-base",
+        "quantize-specialist",
+        "ollama-create-base",
+        "ollama-create-specialist",
+        "eval-base",
+        "eval-specialist",
+        "compare",
+    ] {
+        assert!(stdout.contains(name), "{stdout}");
+    }
+    assert!(stdout.contains("zai-org/glm-4-9b-chat"), "{stdout}");
+    assert!(stdout.contains("template: glm4"), "{stdout}");
+    assert!(stdout.contains("glm4-chat-specialist"), "{stdout}");
+    assert!(stdout.contains("glm4-chat-base"), "{stdout}");
+    assert!(stdout.contains("llamafactory-cli train"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(stdout.contains("export-repair"), "{stdout}");
+    assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
+    let printed_steps: Vec<&str> = stdout
+        .lines()
+        .filter_map(|line| {
+            let rest = line
+                .strip_prefix("run ")
+                .or_else(|| line.strip_prefix("skip "))?;
+            rest.split_whitespace().next()
+        })
+        .collect();
+    let merge = printed_steps
+        .iter()
+        .position(|step| *step == "merge-export")
+        .expect("printed step list includes merge-export");
+    assert_eq!(
+        printed_steps.get(merge + 1).copied(),
+        Some("export-repair"),
+        "export-repair follows merge-export\n{printed_steps:?}"
+    );
+    assert!(
+        !stdout.contains("Qwen/Qwen3.5-4B"),
+        "tev1 default base leaked\n{stdout}"
+    );
+    assert!(!dir.exists(), "print must not write {}", dir.display());
+
+    let refused = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "glm4-chat",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--train-driver",
+            "together",
+        ])
+        .output()
+        .unwrap();
+    let refused_err = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "{refused_err}");
+    assert!(refused_err.contains("GLM-4 Chat"), "{refused_err}");
+    assert!(
+        refused_err.contains("local llamafactory-cli"),
+        "{refused_err}"
+    );
+
+    let hosted = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "glm4-chat",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--train-driver",
+            "together",
+            "--together-model",
+            "zai-org/glm-4-9b-chat",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let hosted_out = String::from_utf8_lossy(&hosted.stdout);
+    assert!(hosted.status.success(), "{hosted_out}");
+    assert!(
+        hosted_out.contains("model zai-org/glm-4-9b-chat"),
+        "{hosted_out}"
+    );
+    assert!(hosted_out.contains("dry-run no network"), "{hosted_out}");
+
+    let root = std::env::temp_dir().join(format!("journey-glm4-run-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let work = root.join("work");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for mut req in server.incoming_requests() {
+            let mut body = String::new();
+            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+            let content = if body.contains("glm4-chat-specialist") {
+                "B"
+            } else {
+                "A"
+            };
+            let payload = serde_json::json!({
+                "message": {"role": "assistant", "content": content}
+            });
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
+            let resp = tiny_http::Response::from_string(payload.to_string()).with_header(header);
+            let _ = req.respond(resp);
+        }
+    });
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "glm4-chat",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--max-steps",
+            "1",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let ran_out = String::from_utf8_lossy(&ran.stdout);
+    let ran_err = String::from_utf8_lossy(&ran.stderr);
+    assert!(ran.status.success(), "{ran_out}\n{ran_err}");
+    assert!(
+        ran_out.contains("export-repair:"),
+        "glm4 run must execute export-repair\n{ran_out}"
+    );
+    let repair_manifest = fs::read_to_string(work.join("manifests/export-repair.json")).unwrap();
+    assert!(
+        repair_manifest.contains("\"repaired_tensor_count\": 0"),
+        "{repair_manifest}"
+    );
+    let recipe = fs::read_to_string(work.join("recipe.yaml")).unwrap();
+    assert!(recipe.contains("template: glm4"), "{recipe}");
+    assert!(recipe.contains("enable_thinking: false"), "{recipe}");
+    let modelfile = fs::read_to_string(work.join("specialist.Modelfile")).unwrap();
+    assert!(
+        modelfile.contains("[gMASK]<sop>{{ if .System }}<|system|>\n{{ .System }}"),
+        "{modelfile}"
+    );
+    assert!(
+        modelfile.contains("<|user|>\n{{ .Content }}<|assistant|>"),
+        "{modelfile}"
+    );
+    assert!(modelfile.contains("PARAMETER stop <|user|>"), "{modelfile}");
+    assert!(
+        modelfile.contains("PARAMETER stop <|endoftext|>"),
+        "{modelfile}"
+    );
+    let base_modelfile = fs::read_to_string(work.join("base.Modelfile")).unwrap();
+    assert!(
+        base_modelfile.contains("<|user|>\n{{ .Content }}<|assistant|>"),
+        "{base_modelfile}"
+    );
+    assert!(
+        !modelfile.contains("<|im_end|>"),
+        "qwen stop leaked\n{modelfile}"
+    );
+    assert!(!modelfile.contains("<think>"), "{modelfile}");
+    let tool_log = fs::read_to_string(&log).unwrap();
+    assert!(tool_log.contains("train "), "{tool_log}");
+    assert!(
+        tool_log.contains("download zai-org/glm-4-9b-chat"),
+        "{tool_log}"
+    );
+    assert!(tool_log.contains("create glm4-chat-base"), "{tool_log}");
+    assert!(
+        tool_log.contains("create glm4-chat-specialist"),
+        "{tool_log}"
+    );
+    let comparison: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(work.join("comparison.json")).unwrap()).unwrap();
+    assert_eq!(comparison["live_pass_recorded"], false);
+    assert_eq!(comparison["template"], "glm4");
+    assert_eq!(comparison["preset"], "glm4-chat");
+    assert_eq!(comparison["specialist_tag"], "glm4-chat-specialist");
+    assert_eq!(comparison["base_tag"], "glm4-chat-base");
+    assert_eq!(comparison["base"], "zai-org/glm-4-9b-chat");
+    let _ = fs::remove_dir_all(&root);
+}

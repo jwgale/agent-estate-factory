@@ -571,12 +571,12 @@ pub(crate) enum ClassifyCommand {
         api: crate::classify::EvalApi,
     },
     /// Letter journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
-    /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train.
-    /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek preset, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
+    /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train. `--preset glm4-chat` is GLM-4-9B-Chat with template `glm4` and local `llamafactory-cli` train.
+    /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek and GLM-4 Chat presets, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
     /// `--run` downloads the base with `hf`, falling back to `huggingface-cli` only when `hf` is absent, unless `--base` is a local directory. It then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     Journey {
-        /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else.
+        /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Tev1)]
         preset: crate::classify_journey::JourneyPreset,
         /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.
@@ -640,7 +640,7 @@ pub(crate) enum ClassifyCommand {
         /// `--print` never calls the network. `--run` reads the key from `--api-key-env` (default `TOGETHER_API_KEY`) and never prints the value.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::TrainDriver::Local)]
         train_driver: crate::classify_journey::TrainDriver,
-        /// Together base model id. Default `Qwen/Qwen3.5-4B` on `--preset tev1`. The DeepSeek preset refuses Together unless this is set.
+        /// Together base model id. Default `Qwen/Qwen3.5-4B` on `--preset tev1`. The DeepSeek and GLM-4 Chat presets refuse Together unless this is set.
         #[arg(long)]
         together_model: Option<String>,
         /// Together API root. Used only with `--train-driver together` and `--run`.
