@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora purpose-build-checklist
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -332,8 +332,25 @@ unsloth-lora-journey:
 uniqueness-unsloth-lora:
 	bash scripts/uniqueness-unsloth-lora.sh
 
+# Opt-in print-only mlx-lm LoRA journey. Apple Silicon affinity only.
+# Prepares the optional NEXT card mlx-lm-lora (MLX.md handoff), then prints
+# fuse, seat, and import against fixture stubs. gguf-convert stays refuse:seat.
+# Does not call mlx-lm, fuse, convert, ollama, or promote.
+# MLX_LM_LORA_PHASE=prepare stops after the handoff asserts and the refuses.
+# MLX_LM_LORA_PHASE=seat prints the fixture ladder.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+mlx-lm-lora-journey:
+	bash scripts/mlx-lm-lora-journey.sh
+
+# Opt-in print-only chain: prepare-assert, then seat-print, of mlx-lm-lora-journey.
+# Does not run the Unsloth, Axolotl, or LLaMA-Factory journeys.
+# Does not train, fuse, convert, seat, or promote.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-mlx:
+	bash scripts/uniqueness-mlx.sh
+
 # Opt-in print-only operator path for purpose-building an SLM on demand (operator section 15).
-# Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth),
+# Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth, mlx-lm-lora),
 # the train-next SKIP, merge-adapt, gguf-convert, local-seat, and import-trained.
 # After import-trained it prints Standing next (estate): auto_apply=false, no promote,
 # and the existing apply-proposal / plan / apply --require-plan / reconcile entrypoints.

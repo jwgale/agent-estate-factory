@@ -4308,6 +4308,8 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         "make axolotl-lora-journey",
         "make unsloth-qlora-journey",
         "make unsloth-lora-journey",
+        "make mlx-lm-lora-journey",
+        "This checklist does not run it.",
         "enrich merge-adapt",
         "enrich gguf-convert",
         "enrich local-seat",

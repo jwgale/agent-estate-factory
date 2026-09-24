@@ -110,6 +110,8 @@ Unsloth:    make unsloth-qlora-journey
 Us chain:   make uniqueness-unsloth
 Unsloth LoRA: make unsloth-lora-journey
 Us LoRA chain: make uniqueness-unsloth-lora
+mlx-lm:     make mlx-lm-lora-journey
+mlx chain:  make uniqueness-mlx
 Ax LoRA:    make axolotl-lora-journey
 Ax LoRA chain: make uniqueness-axolotl-lora
 Train next: make train-next
@@ -371,7 +373,7 @@ stays QLoRA-only and is not a row. It does not train, merge, convert,
 seat, or promote. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points at
-the print-only cards already on tip and does not run them. It does not
+the print-only cards already on tip, including the Apple Silicon print pointer make mlx-lm-lora-journey, and does not run them. It does not
 train, convert, shell out to ollama, promote, or apply the estate. It
 does not invent a live PASS. The recorded PASS stays the only live
 uniqueness prove. The re-prove card stays make uniqueness-prove-checklist.
@@ -418,6 +420,8 @@ make gate-90, or Actions.
   make uniqueness-unsloth
   make unsloth-lora-journey
   make uniqueness-unsloth-lora
+  make mlx-lm-lora-journey
+  make uniqueness-mlx
   make axolotl-lora-journey
   make uniqueness-axolotl-lora
   make uniqueness-ladder
@@ -1008,7 +1012,7 @@ The factory does not apply the estate without an explicit operator
 plan, apply --require-plan, and reconcile and does not execute them.
 The re-prove card is make uniqueness-prove-checklist.
 make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points
-at the print-only cards already on tip and does not run them. After
+at the print-only cards already on tip, including make mlx-lm-lora-journey, and does not run them. After
 import-trained (trained_shape gguf, auto_apply=false) it prints
 Standing next (estate). The coda names apply-proposal, plan,
 apply --require-plan, and reconcile and does not execute them.
@@ -1267,6 +1271,37 @@ then the seat-print phase. It does not run make unsloth-qlora-journey or
 make uniqueness-unsloth. Both stay print-only. Not in make smoke,
 make gate-90, or Actions. READY_FOR_LIVE_TEST stays no. This is not a live PASS.
 Walk: docs/operator-enrich-journeys.md (section 14).
+
+mlx-lm LoRA journey
+-------------------
+Print-only optional NEXT path for mlx-lm-lora. Status stays optional.
+Apple Silicon affinity only. Another host is refuse:host and writes nothing.
+make mlx-lm-lora-journey prepares that card on a throwaway copy of
+examples/estate.yaml. Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.
+The throwaway pack sets host_class_affinity to apple-silicon. The stock
+overnight pack stays any and is refuse:host.
+The card writes MLX.md, PREPARE.md, NEXT.md, and prepare.json.
+It does not write a script, a recipe, or dataset.jsonl.
+A seat tag with no train base is refuse:train-base.
+--official-scale on this card alone is refuse:official-scale.
+--from-feed on this card alone is refuse:dataset.
+A missing adapter, a checkpoint without adapters.safetensors, or
+adapter_model.safetensors is refuse:adapter. A fused MLX directory or a
+GGUF passed as --adapter is refuse:adapter. local-seat --adapter on this
+card is refuse:adapter. A missing GGUF is refuse:seat. gguf-convert stays
+refuse:seat. The adapter stub is adapter_config.json plus adapters.safetensors.
+The GGUF stub is fused_model/ggml-model-f16.gguf and starts with GGUF magic.
+The script prints mlx_lm.fuse with --adapter-path, --save-path, and
+--export-gguf, then local-seat and import-trained. import-trained records
+trained_shape gguf. A fused MLX directory does not record trained_shape merged.
+The proposal stays auto_apply=false. It prints SKIP live train, SKIP live
+convert, and SKIP live seat. It does not call mlx-lm, does not fuse, does
+not convert, does not run ollama, and does not promote.
+make uniqueness-mlx runs the prepare-assert phase, then the seat-print phase.
+It does not run make unsloth-qlora-journey or make uniqueness-unsloth.
+Both stay print-only. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no. This is not a live PASS. Not native MLX.
+Walk: docs/operator-enrich-journeys.md (section 16).
 
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
