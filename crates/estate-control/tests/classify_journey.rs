@@ -28,16 +28,13 @@ fn write_exe(dir: &std::path::Path, name: &str, body: &str) {
 }
 
 fn fake_tools(dir: &std::path::Path) {
-    write_exe(
-        dir,
-        "nvidia-smi",
-        "#!/bin/sh\nexit 0\n",
-    );
+    write_exe(dir, "nvidia-smi", "#!/bin/sh\nexit 0\n");
     write_exe(
         dir,
         "llamafactory-cli",
         r#"#!/bin/sh
 set -e
+printf '%s\n' "$*" >> "${JOURNEY_TOOL_LOG:?}"
 mode=$1
 yaml=$2
 if [ "$mode" = "train" ]; then
@@ -58,35 +55,58 @@ exit 1
     );
     write_exe(
         dir,
-        "convert_hf_to_gguf.py",
-        r#"#!/bin/sh
-set -e
-prev=
-outfile=
-for arg in "$@"; do
-  if [ "$prev" = "--outfile" ]; then
-    outfile=$arg
-  fi
-  prev=$arg
-done
-mkdir -p "$(dirname "$outfile")"
-printf 'gguf\n' > "$outfile"
-"#,
-    );
-    write_exe(
-        dir,
         "ollama",
         r#"#!/bin/sh
 stamp=${OLLAMA_STAMP:?}
+printf '%s\n' "$*" >> "${JOURNEY_TOOL_LOG:?}"
 if [ "$1" = "show" ]; then
   grep -qx "$2" "$stamp" && exit 0
   exit 1
+fi
+if [ "$1" = "rm" ]; then
+  grep -vx "$2" "$stamp" > "$stamp.tmp" || true
+  mv "$stamp.tmp" "$stamp"
+  exit 0
 fi
 if [ "$1" = "create" ]; then
   printf '%s\n' "$2" >> "$stamp"
   exit 0
 fi
 exit 1
+"#,
+    );
+}
+
+fn fake_llama(dir: &std::path::Path) {
+    fs::create_dir_all(dir.join("build/bin")).unwrap();
+    fs::write(
+        dir.join("convert_hf_to_gguf.py"),
+        r#"import os, sys
+log = os.environ["JOURNEY_TOOL_LOG"]
+with open(log, "a", encoding="utf-8") as fh:
+    fh.write("python3 " + " ".join(sys.argv) + "\n")
+outfile = None
+args = sys.argv[1:]
+for i, arg in enumerate(args):
+    if arg == "--outfile" and i + 1 < len(args):
+        outfile = args[i + 1]
+if outfile is None:
+    sys.stderr.write("missing --outfile\n")
+    sys.exit(1)
+os.makedirs(os.path.dirname(outfile) or ".", exist_ok=True)
+with open(outfile, "w", encoding="utf-8") as fh:
+    fh.write("f16-gguf\n")
+"#,
+    )
+    .unwrap();
+    write_exe(
+        dir.join("build/bin").as_path(),
+        "llama-quantize",
+        r#"#!/bin/sh
+set -e
+printf '%s\n' "$0 $*" >> "${JOURNEY_TOOL_LOG:?}"
+mkdir -p "$(dirname "$2")"
+printf 'quant %s\n' "$3" > "$2"
 "#,
     );
 }
@@ -134,8 +154,12 @@ fn journey_print_lists_steps_without_tools() {
         "recipe",
         "train",
         "merge-export",
-        "gguf-convert",
-        "ollama-create",
+        "gguf-convert-base",
+        "gguf-convert-specialist",
+        "quantize-base",
+        "quantize-specialist",
+        "ollama-create-base",
+        "ollama-create-specialist",
         "eval-base",
         "eval-specialist",
         "compare",
@@ -143,9 +167,34 @@ fn journey_print_lists_steps_without_tools() {
         assert!(stdout.contains(name), "{stdout}");
     }
     assert!(stdout.contains("qwen3_5"), "{stdout}");
-    assert!(stdout.contains("convert_hf_to_gguf.py"), "{stdout}");
-    assert!(stdout.contains("ollama create"), "{stdout}");
+    assert!(stdout.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{stdout}");
+    assert!(stdout.contains("--outtype f16"), "{stdout}");
+    assert!(stdout.contains("Q4_K_M"), "{stdout}");
+    assert!(stdout.contains("ollama-native"), "{stdout}");
+    assert!(stdout.contains("Qwen3.5 needs a recent llama.cpp checkout"), "{stdout}");
     assert!(!dir.exists(), "print must not write {}", dir.display());
+    let warned = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--base-tag",
+            "qwen3.5:4b",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let warned_out = String::from_utf8_lossy(&warned.stdout);
+    assert!(warned.status.success(), "{warned_out}");
+    assert!(
+        warned_out.contains("Precision may differ"),
+        "{warned_out}"
+    );
+    assert!(warned_out.contains("skip gguf-convert-base"), "{warned_out}");
 }
 
 #[test]
@@ -169,7 +218,8 @@ fn journey_run_refuses_missing_tools() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("refuse:classify-journey"), "{err}");
     assert!(err.contains("llamafactory-cli is not on PATH"), "{err}");
-    assert!(err.contains("convert_hf_to_gguf.py is not on PATH"), "{err}");
+    assert!(err.contains("LLAMA_CPP_DIR is unset"), "{err}");
+    assert!(err.contains("Qwen3.5 needs a recent llama.cpp checkout"), "{err}");
     assert!(err.contains("ollama is not on PATH"), "{err}");
     assert!(err.contains("no GPU"), "{err}");
 }
@@ -182,8 +232,12 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     let tools = root.join("bin");
     fs::create_dir_all(&tools).unwrap();
     fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
     let stamp = root.join("ollama-models");
-    fs::write(&stamp, "qwen3.5:4b\n").unwrap();
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
     let input = root.join("rows.jsonl");
     fs::write(&input, tiny_jsonl()).unwrap();
     let work = root.join("work");
@@ -199,11 +253,13 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
             let content = if body.contains("tev1-specialist") {
                 "B"
+            } else if body.contains("<think>") {
+                "<think>hidden</think>\nA"
             } else {
                 "nope"
             };
             let payload = serde_json::json!({
-                "choices": [{"message": {"content": content}}]
+                "message": {"role": "assistant", "content": content}
             });
             let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
             let resp = tiny_http::Response::from_string(payload.to_string()).with_header(header);
@@ -223,6 +279,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             "--run",
             "--max-steps",
             "1",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
             "--endpoint",
             &endpoint,
             "--min-delta",
@@ -234,6 +292,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         ])
         .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
         .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&first.stdout);
@@ -246,10 +305,28 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!(recipe.contains("dataset: tev1_decisions"), "{recipe}");
     assert!(recipe.contains("dataset_dir:"), "{recipe}");
     assert!(recipe.contains("template: qwen3_5"), "{recipe}");
+    assert!(recipe.contains("enable_thinking: false"), "{recipe}");
     assert!(work.join("outputs/adapter_config.json").is_file());
     assert!(work.join("export/config.json").is_file());
-    assert!(work.join("export.gguf").is_file());
-    assert!(work.join("Modelfile").is_file());
+    assert!(work.join("base.f16.gguf").is_file());
+    assert!(work.join("specialist.f16.gguf").is_file());
+    assert!(work.join("base.Q4_K_M.gguf").is_file());
+    assert!(work.join("specialist.Q4_K_M.gguf").is_file());
+    let modelfile = fs::read_to_string(work.join("specialist.Modelfile")).unwrap();
+    assert!(modelfile.contains("PARAMETER temperature 0"), "{modelfile}");
+    assert!(modelfile.contains("PARAMETER num_predict 8"), "{modelfile}");
+    assert!(modelfile.contains("<think>"), "{modelfile}");
+    let tool_log = fs::read_to_string(&log).unwrap();
+    let convert = format!(
+        "python3 {} {} --outfile {} --outtype f16",
+        llama.join("convert_hf_to_gguf.py").display(),
+        "Qwen/Qwen3.5-4B",
+        work.join("base.f16.gguf").display()
+    );
+    assert!(stdout.contains(&convert), "print/run diverged\n{stdout}\n{tool_log}");
+    assert!(tool_log.contains(&convert), "{tool_log}");
+    assert!(tool_log.contains("create tev1-base"), "{tool_log}");
+    assert!(tool_log.contains("create tev1-specialist"), "{tool_log}");
     let comparison: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(work.join("comparison.json")).unwrap()).unwrap();
     assert_eq!(comparison["live_pass_recorded"], false);
@@ -257,7 +334,24 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!((comparison["base_accuracy"].as_f64().unwrap() - 0.0).abs() < 1e-9);
     assert!((comparison["delta"].as_f64().unwrap() - 1.0).abs() < 1e-9);
     assert_eq!(comparison["threshold"], "met");
+    assert_eq!(comparison["api"], "ollama-native");
+    assert_eq!(comparison["base_seat"], "pipeline");
+    assert_eq!(comparison["quant"], "Q4_K_M");
+    assert_eq!(comparison["thinking_leak"]["base"], 0);
     assert!(stdout.contains("threshold met"), "{stdout}");
+    let heavy = |log: &str| {
+        log.lines()
+            .filter(|line| {
+                line.starts_with("train ")
+                    || line.starts_with("export ")
+                    || line.starts_with("python3 ")
+                    || line.contains("llama-quantize")
+                    || line.starts_with("create ")
+                    || line.starts_with("rm ")
+            })
+            .count()
+    };
+    let heavy_after_first = heavy(&tool_log);
 
     let second = bin()
         .args([
@@ -268,6 +362,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             "--out",
             work.to_str().unwrap(),
             "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
             "--endpoint",
             &endpoint,
             "--min-accuracy",
@@ -277,6 +373,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         ])
         .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
         .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
         .output()
         .unwrap();
     let again = format!(
@@ -287,9 +384,110 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!(!second.status.success(), "{again}");
     assert!(again.contains("skip train"), "{again}");
     assert!(again.contains("skip merge-export"), "{again}");
-    assert!(again.contains("skip gguf-convert"), "{again}");
-    assert!(again.contains("skip ollama-create"), "{again}");
+    assert!(again.contains("skip gguf-convert-specialist"), "{again}");
+    assert!(again.contains("skip ollama-create-specialist"), "{again}");
     assert!(again.contains("threshold missed"), "{again}");
+    let skipped_log = fs::read_to_string(&log).unwrap();
+    assert_eq!(heavy(&skipped_log), heavy_after_first, "{skipped_log}");
+
+    fs::remove_file(work.join("manifests/train.json")).unwrap();
+    let stale = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let stale_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&stale.stdout),
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    assert!(stale.status.success(), "{stale_out}");
+    assert!(stale_out.contains("redo train: missing manifest"), "{stale_out}");
+
+    let dataset = work.join("dataset.jsonl");
+    let mut rows = fs::read_to_string(&dataset).unwrap();
+    rows.push_str("{}\n");
+    fs::write(&dataset, rows).unwrap();
+    let changed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let changed_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&changed.stdout),
+        String::from_utf8_lossy(&changed.stderr)
+    );
+    assert!(changed.status.success(), "{changed_out}");
+    assert!(changed_out.contains("redo train: inputs changed"), "{changed_out}");
+
+    fs::write(work.join("specialist.Q4_K_M.gguf"), "mutated-gguf\n").unwrap();
+    let reseat = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let reseat_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&reseat.stdout),
+        String::from_utf8_lossy(&reseat.stderr)
+    );
+    assert!(reseat.status.success(), "{reseat_out}");
+    assert!(
+        reseat_out.contains("redo ollama-create-specialist: GGUF hash changed"),
+        "{reseat_out}"
+    );
+    let reseat_log = fs::read_to_string(&log).unwrap();
+    assert!(reseat_log.contains("rm tev1-specialist"), "{reseat_log}");
+    assert!(reseat_log.contains("create tev1-specialist"), "{reseat_log}");
     let _ = fs::remove_dir_all(&root);
 }
 

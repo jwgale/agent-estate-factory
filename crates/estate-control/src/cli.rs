@@ -524,6 +524,9 @@ pub(crate) enum ClassifyCommand {
         /// Per-request timeout in seconds.
         #[arg(long, default_value_t = 30)]
         timeout_secs: u64,
+        /// Request shape. `openai` sets enable_thinking false. `ollama` sets reasoning_effort none on `/v1`. `ollama-native` posts `/api/chat` with think false.
+        #[arg(long, value_enum, default_value_t = crate::classify::EvalApi::Openai)]
+        api: crate::classify::EvalApi,
     },
     /// tev1 journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
     /// `--print` is the default and does not run tools. `--run` executes and refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
@@ -538,9 +541,9 @@ pub(crate) enum ClassifyCommand {
         /// Hugging Face train base. Default `Qwen/Qwen3.5-4B` (LLaMA-Factory template `qwen3_5`).
         #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE)]
         base: String,
-        /// Ollama tag for the base eval. Seat this tag before `--run`.
-        #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE_TAG)]
-        base_tag: String,
+        /// Opt-in Ollama library tag for the base eval. Omit to build the base with the same convert, quant, and Modelfile as the specialist. A set tag can differ in precision.
+        #[arg(long)]
+        base_tag: Option<String>,
         /// Ollama tag created from the specialist GGUF.
         #[arg(long, default_value = crate::classify_journey::DEFAULT_TAG)]
         tag: String,
@@ -557,10 +560,16 @@ pub(crate) enum ClassifyCommand {
         /// Optional LLaMA-Factory `max_steps`. Omit for one epoch.
         #[arg(long)]
         max_steps: Option<u32>,
+        /// GGUF quant applied to the base and the specialist. `f16` skips llama-quantize.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_QUANT)]
+        quant: String,
+        /// llama.cpp checkout. `$dir/convert_hf_to_gguf.py` and llama-quantize must exist. Env `LLAMA_CPP_DIR` is the fallback.
+        #[arg(long)]
+        llama_cpp_dir: Option<PathBuf>,
         /// Print the step plan. This is the default. Does not train.
         #[arg(long, default_value_t = false)]
         print: bool,
-        /// Run the steps. Skips a step whose output is already on disk.
+        /// Run the steps. Skips a step only when its manifest matches the current inputs.
         #[arg(long, default_value_t = false)]
         run: bool,
         /// Replace a file `--out` and a non-empty prepare directory.

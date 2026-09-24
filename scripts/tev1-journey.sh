@@ -11,8 +11,8 @@ cd "$ROOT"
 INPUT="${INPUT:-$ROOT/examples/fixtures/tev1-decisions.jsonl}"
 OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-tev1-journey}"
 BASE="${BASE:-Qwen/Qwen3.5-4B}"
-BASE_TAG="${BASE_TAG:-qwen3.5:4b}"
 TAG="${TAG:-tev1-specialist}"
+QUANT="${QUANT:-Q4_K_M}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:11434}"
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 BIN="${ESTATE_BIN:-}"
@@ -40,10 +40,16 @@ ARGS=(
   --input "$INPUT"
   --out "$OUT"
   --base "$BASE"
-  --base-tag "$BASE_TAG"
   --tag "$TAG"
+  --quant "$QUANT"
   --endpoint "$ENDPOINT"
 )
+if [[ -n "${LLAMA_CPP_DIR:-}" ]]; then
+  ARGS+=(--llama-cpp-dir "$LLAMA_CPP_DIR")
+fi
+if [[ -n "${BASE_TAG:-}" ]]; then
+  ARGS+=(--base-tag "$BASE_TAG")
+fi
 if [[ "${TEV1_RUN:-}" == "1" ]]; then
   echo "run requested; this still does not invent a live PASS"
   ARGS+=(--run)

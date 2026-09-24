@@ -1,13 +1,14 @@
-//! tev1 reproduce journey: prepare, LoRA recipe, train, merge, GGUF, Ollama seat, scored eval.
+//! tev1 reproduce journey: prepare, LoRA recipe, train, merge, GGUF, quant, Ollama seat, scored eval.
 //! `--print` is the default. `--run` executes. A comparison file is local output only.
+//!
+//! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
+//! `--base-tag` is an opt-in library tag and skips that base build.
 
-use crate::classify::{cmd_classify_eval, cmd_classify_prepare, DatasetFormat};
+use crate::classify::{cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi};
 use anyhow::{bail, Result};
-use model_estate::{
-    convert_hf_to_gguf_line, convert_hf_to_gguf_outfile, gguf_modelfile, llamafactory_template_name,
-    ollama_create_line,
-};
+use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,17 +17,44 @@ use std::process::Command;
 pub const DEFAULT_BASE: &str = "Qwen/Qwen3.5-4B";
 /// Template name in LLaMA-Factory `constants.py` for that registration (`template="qwen3_5"`).
 pub const QWEN35_TEMPLATE: &str = "qwen3_5";
-pub const DEFAULT_BASE_TAG: &str = "qwen3.5:4b";
+/// Ollama tag created from the built base GGUF. Not a library tag.
+pub const DEFAULT_BUILT_BASE_TAG: &str = "tev1-base";
 pub const DEFAULT_TAG: &str = "tev1-specialist";
 pub const DEFAULT_DATASET: &str = "tev1_decisions";
+/// Default quant for both seats. `f16` skips `llama-quantize`.
+pub const DEFAULT_QUANT: &str = "Q4_K_M";
+
+const QWEN35_RECENT: &str = "Qwen3.5 needs a recent llama.cpp checkout";
+
+/// Non-thinking Qwen3.5 generation prompt.
+/// Official `enable_thinking=False` ends the prompt at
+/// `<|im_start|>assistant\n<think>\n\n</think>\n\n` so the target is the letter only.
+/// GGUF chat templates default thinking on, so the journey does not rely on the embedded template.
+const QWEN35_NOTHINK_TEMPLATE: &str = "\
+{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role \"assistant\" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ end }}{{ end }}<|im_start|>assistant
+<think>
+
+</think>
+
+";
 
 const STEP_ORDER: &[&str] = &[
     "prepare",
     "recipe",
     "train",
     "merge-export",
-    "gguf-convert",
-    "ollama-create",
+    "gguf-convert-base",
+    "gguf-convert-specialist",
+    "quantize-base",
+    "quantize-specialist",
+    "ollama-create-base",
+    "ollama-create-specialist",
     "eval-base",
     "eval-specialist",
     "compare",
@@ -39,32 +67,51 @@ pub struct JourneyPaths {
     pub export_yaml: PathBuf,
     pub adapter_dir: PathBuf,
     pub export_dir: PathBuf,
-    pub gguf: PathBuf,
-    pub modelfile: PathBuf,
+    pub base_f16: PathBuf,
+    pub specialist_f16: PathBuf,
+    pub base_modelfile: PathBuf,
+    pub specialist_modelfile: PathBuf,
     pub heldout: PathBuf,
+    pub dataset_jsonl: PathBuf,
     pub dataset_info: PathBuf,
     pub base_report: PathBuf,
     pub specialist_report: PathBuf,
     pub comparison: PathBuf,
+    pub manifests: PathBuf,
 }
 
 impl JourneyPaths {
     pub fn new(out: &Path) -> Self {
-        let export_dir = out.join("export");
         Self {
             recipe: out.join("recipe.yaml"),
             export_yaml: out.join("export.yaml"),
             adapter_dir: out.join("outputs"),
-            gguf: convert_hf_to_gguf_outfile(&export_dir),
-            modelfile: out.join("Modelfile"),
+            export_dir: out.join("export"),
+            base_f16: out.join("base.f16.gguf"),
+            specialist_f16: out.join("specialist.f16.gguf"),
+            base_modelfile: out.join("base.Modelfile"),
+            specialist_modelfile: out.join("specialist.Modelfile"),
             heldout: out.join("heldout.jsonl"),
+            dataset_jsonl: out.join("dataset.jsonl"),
             dataset_info: out.join("dataset_info.json"),
             base_report: out.join("base-report.json"),
             specialist_report: out.join("specialist-report.json"),
             comparison: out.join("comparison.json"),
-            export_dir,
+            manifests: out.join("manifests"),
             out: out.to_path_buf(),
         }
+    }
+
+    pub fn seated_gguf(&self, which: &str, quant: &str) -> PathBuf {
+        if quant_is_f16(quant) {
+            self.out.join(format!("{which}.f16.gguf"))
+        } else {
+            self.out.join(format!("{which}.{quant}.gguf"))
+        }
+    }
+
+    fn manifest_path(&self, step: &str) -> PathBuf {
+        self.manifests.join(format!("{step}.json"))
     }
 }
 
@@ -110,6 +157,8 @@ pub fn lora_recipe_yaml(
 # schema: cell-one.classify-journey.v0
 # LoRA recipe for the tev1 one-letter target. Cell One does not train unless classify journey --run.
 # template {template} is the LLaMA-Factory name for this base.
+# enable_thinking false keeps assistant targets free of think tokens.
+# qwen3_5_nothink is for Instruct-only variants and is not this checkpoint.
 model_name_or_path: {base}
 trust_remote_code: true
 stage: sft
@@ -121,6 +170,7 @@ lora_target: all
 dataset: {dataset_name}
 dataset_dir: {dataset_dir}
 template: {template}
+enable_thinking: false
 cutoff_len: 512
 packing: false
 output_dir: {output_dir}
@@ -153,6 +203,7 @@ pub fn export_yaml(base: &str, adapter_dir: &Path, export_dir: &Path) -> String 
 model_name_or_path: {base}
 adapter_name_or_path: {adapter}
 template: {template}
+enable_thinking: false
 trust_remote_code: true
 finetuning_type: lora
 export_dir: {export_dir}
@@ -164,6 +215,21 @@ export_legacy_format: false
         adapter = yaml_scalar(&adapter_dir.display().to_string()),
         template = template,
         export_dir = yaml_scalar(&export_dir.display().to_string()),
+    )
+}
+
+/// Journey Modelfile. Same shape for the base and the specialist. `FROM` is the only difference.
+/// Not `local_seat`'s `gguf_modelfile`.
+pub fn journey_modelfile(gguf: &Path) -> String {
+    format!(
+        "\
+FROM {gguf}
+PARAMETER temperature 0
+PARAMETER num_predict 8
+PARAMETER stop <|im_end|>
+TEMPLATE \"\"\"{QWEN35_NOTHINK_TEMPLATE}\"\"\"
+",
+        gguf = gguf.display(),
     )
 }
 
@@ -197,6 +263,117 @@ pub fn recipe_dataset_name(yaml: &str) -> Option<String> {
     })
 }
 
+pub fn quant_is_f16(quant: &str) -> bool {
+    quant.eq_ignore_ascii_case("f16")
+}
+
+#[derive(Clone, Debug)]
+pub struct LlamaCpp {
+    #[allow(dead_code)]
+    pub dir: PathBuf,
+    pub convert: PathBuf,
+    pub quantize: PathBuf,
+}
+
+impl LlamaCpp {
+    pub fn convert_argv(&self, src: &str, outfile: &Path) -> Vec<String> {
+        vec![
+            "python3".into(),
+            self.convert.display().to_string(),
+            src.to_string(),
+            "--outfile".into(),
+            outfile.display().to_string(),
+            "--outtype".into(),
+            "f16".into(),
+        ]
+    }
+
+    pub fn quantize_argv(&self, f16: &Path, outfile: &Path, quant: &str) -> Vec<String> {
+        vec![
+            self.quantize.display().to_string(),
+            f16.display().to_string(),
+            outfile.display().to_string(),
+            quant.to_string(),
+        ]
+    }
+}
+
+pub fn argv_line(argv: &[String]) -> String {
+    argv.iter()
+        .map(|arg| {
+            if arg.is_empty() || arg.chars().any(|c| c.is_whitespace()) {
+                format!("'{}'", arg.replace('\'', "'\\''"))
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Placeholder printed when `--llama-cpp-dir` and `LLAMA_CPP_DIR` are unset.
+pub fn placeholder_convert_line(src: &str, outfile: &Path) -> String {
+    argv_line(&[
+        "python3".into(),
+        "$LLAMA_CPP_DIR/convert_hf_to_gguf.py".into(),
+        src.to_string(),
+        "--outfile".into(),
+        outfile.display().to_string(),
+        "--outtype".into(),
+        "f16".into(),
+    ])
+}
+
+pub fn placeholder_quantize_line(f16: &Path, outfile: &Path, quant: &str) -> String {
+    argv_line(&[
+        "$LLAMA_CPP_DIR/llama-quantize".into(),
+        f16.display().to_string(),
+        outfile.display().to_string(),
+        quant.to_string(),
+    ])
+}
+
+pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
+    let convert = dir.join("convert_hf_to_gguf.py");
+    let quantize = llama_quantize_bin(dir);
+    let mut missing = Vec::new();
+    if !convert.is_file() {
+        missing.push(format!(
+            "llama.cpp convert_hf_to_gguf.py is missing at {}",
+            convert.display()
+        ));
+    }
+    if quantize.is_none() {
+        missing.push(format!(
+            "llama-quantize is missing under {} (expected llama-quantize or build/bin/llama-quantize)",
+            dir.display()
+        ));
+    }
+    if !missing.is_empty() {
+        bail!(
+            "refuse:classify-journey: {}; {QWEN35_RECENT}",
+            missing.join("; ")
+        );
+    }
+    Ok(LlamaCpp {
+        dir: dir.to_path_buf(),
+        convert,
+        quantize: quantize.unwrap(),
+    })
+}
+
+fn llama_quantize_bin(dir: &Path) -> Option<PathBuf> {
+    let root = dir.join("llama-quantize");
+    if root.is_file() {
+        return Some(root);
+    }
+    let nested = dir.join("build").join("bin").join("llama-quantize");
+    if nested.is_file() {
+        return Some(nested);
+    }
+    None
+}
+
 #[derive(Clone, Debug)]
 pub struct ToolGaps {
     pub missing: Vec<String>,
@@ -204,20 +381,28 @@ pub struct ToolGaps {
 
 impl ToolGaps {
     pub fn message(&self) -> String {
-        format!(
-            "refuse:classify-journey: {}",
-            self.missing.join("; ")
-        )
+        format!("refuse:classify-journey: {}", self.missing.join("; "))
     }
 }
 
-pub fn tool_gaps(has: impl Fn(&str) -> bool, gpu_ok: bool) -> ToolGaps {
+pub fn tool_gaps(has: impl Fn(&str) -> bool, llama_dir: Option<&Path>, gpu_ok: bool) -> ToolGaps {
     let mut missing = Vec::new();
     if !has("llamafactory-cli") {
         missing.push("llamafactory-cli is not on PATH".into());
     }
-    if !has("convert_hf_to_gguf.py") {
-        missing.push("llama.cpp convert_hf_to_gguf.py is not on PATH".into());
+    match llama_dir {
+        None => missing.push(format!(
+            "LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {QWEN35_RECENT}"
+        )),
+        Some(dir) => {
+            if let Err(err) = resolve_llama_cpp(dir) {
+                let text = err.to_string();
+                let text = text
+                    .strip_prefix("refuse:classify-journey: ")
+                    .unwrap_or(&text);
+                missing.push(text.to_string());
+            }
+        }
     }
     if !has("ollama") {
         missing.push("ollama is not on PATH".into());
@@ -228,78 +413,517 @@ pub fn tool_gaps(has: impl Fn(&str) -> bool, gpu_ok: bool) -> ToolGaps {
     ToolGaps { missing }
 }
 
-pub fn plan_steps(paths: &JourneyPaths, base_tag: &str, tag: &str) -> Vec<StepPlan> {
-    let mut steps = Vec::new();
-    let prepare_ready = paths.heldout.is_file()
-        && paths.out.join("dataset.jsonl").is_file()
-        && paths.dataset_info.is_file();
-    steps.push(StepPlan {
-        name: "prepare",
-        action: if prepare_ready { StepAction::Skip } else { StepAction::Run },
-        detail: format!("classify prepare -> {}", paths.out.display()),
+#[derive(Clone, Debug)]
+struct Inputs {
+    prepare: String,
+    pipeline: Option<String>,
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn sha256_text(text: &str) -> String {
+    sha256_bytes(text.as_bytes())
+}
+
+fn prepare_inputs(input: &Path, seed: u64, held_out_ratio: f64) -> Result<String> {
+    let bytes = fs::read(input).map_err(|e| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot read {}: {e}",
+            input.display()
+        )
+    })?;
+    Ok(sha256_text(&format!(
+        "{}\n{seed}\n{held_out_ratio}",
+        sha256_bytes(&bytes)
+    )))
+}
+
+fn pipeline_inputs(base: &str, dataset: &Path, recipe: &Path, quant: &str) -> Option<String> {
+    let dataset_bytes = fs::read(dataset).ok()?;
+    let recipe_bytes = fs::read(recipe).ok()?;
+    Some(sha256_text(&format!(
+        "{base}\n{}\n{}\n{quant}",
+        sha256_bytes(&dataset_bytes),
+        sha256_bytes(&recipe_bytes)
+    )))
+}
+
+#[derive(Clone, Debug)]
+struct Manifest {
+    inputs: String,
+    gguf_sha256: Option<String>,
+}
+
+fn read_manifest(path: &Path) -> Option<Manifest> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let inputs = value.get("inputs")?.as_str()?.to_string();
+    let gguf_sha256 = value
+        .get("gguf_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Some(Manifest { inputs, gguf_sha256 })
+}
+
+fn write_manifest(path: &Path, inputs: &str, gguf_sha256: Option<&str>) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let report = json!({
+        "schema": "cell-one.classify-journey-manifest.v0",
+        "inputs": inputs,
+        "gguf_sha256": gguf_sha256,
     });
-    let recipe_ready = paths.recipe.is_file() && paths.export_yaml.is_file();
-    steps.push(StepPlan {
-        name: "recipe",
-        action: if recipe_ready { StepAction::Skip } else { StepAction::Run },
-        detail: format!("write {}", paths.recipe.display()),
-    });
-    let trained = paths.adapter_dir.join("adapter_config.json").is_file();
-    steps.push(StepPlan {
-        name: "train",
-        action: if trained { StepAction::Skip } else { StepAction::Run },
-        detail: format!("llamafactory-cli train {}", paths.recipe.display()),
-    });
-    let merged = paths.export_dir.join("config.json").is_file();
-    steps.push(StepPlan {
-        name: "merge-export",
-        action: if merged { StepAction::Skip } else { StepAction::Run },
-        detail: format!("llamafactory-cli export {}", paths.export_yaml.display()),
-    });
-    let converted = paths.gguf.is_file();
-    steps.push(StepPlan {
-        name: "gguf-convert",
-        action: if converted { StepAction::Skip } else { StepAction::Run },
-        detail: convert_hf_to_gguf_line(&paths.export_dir),
-    });
-    steps.push(StepPlan {
-        name: "ollama-create",
-        action: StepAction::Run,
-        detail: ollama_create_line(tag, &paths.modelfile),
-    });
-    steps.push(StepPlan {
-        name: "eval-base",
-        action: if paths.base_report.is_file() { StepAction::Skip } else { StepAction::Run },
-        detail: format!("classify eval model {base_tag}"),
-    });
-    steps.push(StepPlan {
-        name: "eval-specialist",
-        action: if paths.specialist_report.is_file() {
-            StepAction::Skip
-        } else {
-            StepAction::Run
+    fs::write(path, format!("{}\n", serde_json::to_string_pretty(&report)?))?;
+    Ok(())
+}
+
+fn file_sha(path: &Path) -> Option<String> {
+    fs::read(path).ok().map(|bytes| sha256_bytes(&bytes))
+}
+
+struct Decision {
+    action: StepAction,
+    /// Printed as `redo {step}: {reason}` when the output is stale.
+    redo: Option<String>,
+}
+
+fn decide_file(output: &Path, manifest_path: &Path, expected: &str) -> Decision {
+    if !output.is_file() {
+        return Decision {
+            action: StepAction::Run,
+            redo: None,
+        };
+    }
+    match read_manifest(manifest_path) {
+        Some(manifest) if manifest.inputs == expected => Decision {
+            action: StepAction::Skip,
+            redo: None,
         },
-        detail: format!("classify eval model {tag}"),
-    });
+        Some(_) => Decision {
+            action: StepAction::Run,
+            redo: Some("inputs changed".into()),
+        },
+        None => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+    }
+}
+
+fn decide_ollama(
+    gguf: &Path,
+    manifest_path: &Path,
+    expected: &str,
+    check_show: bool,
+    tag: &str,
+) -> Decision {
+    let Some(gguf_sha) = file_sha(gguf) else {
+        return Decision {
+            action: StepAction::Run,
+            redo: None,
+        };
+    };
+    match read_manifest(manifest_path) {
+        Some(manifest) if manifest.inputs == expected && manifest.gguf_sha256.as_deref() == Some(gguf_sha.as_str()) => {
+            if check_show && !ollama_has_model(tag) {
+                Decision {
+                    action: StepAction::Run,
+                    redo: Some("tag missing".into()),
+                }
+            } else {
+                Decision {
+                    action: StepAction::Skip,
+                    redo: None,
+                }
+            }
+        }
+        Some(manifest) if manifest.gguf_sha256.is_some() && manifest.gguf_sha256.as_deref() != Some(gguf_sha.as_str()) => {
+            Decision {
+                action: StepAction::Run,
+                redo: Some("GGUF hash changed".into()),
+            }
+        }
+        Some(_) => Decision {
+            action: StepAction::Run,
+            redo: Some("inputs changed".into()),
+        },
+        None => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+    }
+}
+
+struct PlanCtx<'a> {
+    paths: &'a JourneyPaths,
+    base: &'a str,
+    quant: &'a str,
+    library_tag: Option<&'a str>,
+    built_base_tag: &'a str,
+    specialist_tag: &'a str,
+    llama: Option<&'a LlamaCpp>,
+    inputs: &'a Inputs,
+    check_ollama: bool,
+}
+
+fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
+    let detail = match &decision.redo {
+        Some(reason) => format!("redo {name}: {reason}; {command}"),
+        None => command,
+    };
+    StepPlan {
+        name: match name {
+            "prepare" => "prepare",
+            "recipe" => "recipe",
+            "train" => "train",
+            "merge-export" => "merge-export",
+            "gguf-convert-base" => "gguf-convert-base",
+            "gguf-convert-specialist" => "gguf-convert-specialist",
+            "quantize-base" => "quantize-base",
+            "quantize-specialist" => "quantize-specialist",
+            "ollama-create-base" => "ollama-create-base",
+            "ollama-create-specialist" => "ollama-create-specialist",
+            "eval-base" => "eval-base",
+            "eval-specialist" => "eval-specialist",
+            "compare" => "compare",
+            other => panic!("unknown step {other}"),
+        },
+        action: decision.action,
+        detail,
+    }
+}
+
+fn convert_line(ctx: &PlanCtx<'_>, src: &str, outfile: &Path) -> String {
+    match ctx.llama {
+        Some(llama) => argv_line(&llama.convert_argv(src, outfile)),
+        None => placeholder_convert_line(src, outfile),
+    }
+}
+
+fn quantize_line(ctx: &PlanCtx<'_>, f16: &Path, outfile: &Path) -> String {
+    match ctx.llama {
+        Some(llama) => argv_line(&llama.quantize_argv(f16, outfile, ctx.quant)),
+        None => placeholder_quantize_line(f16, outfile, ctx.quant),
+    }
+}
+
+fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
+    let paths = ctx.paths;
+    let mut steps = Vec::new();
+
+    let prepare_ready = paths.heldout.is_file() && paths.dataset_jsonl.is_file() && paths.dataset_info.is_file();
+    let prepare = if prepare_ready {
+        decide_file(&paths.dataset_jsonl, &paths.manifest_path("prepare"), &ctx.inputs.prepare)
+    } else {
+        Decision {
+            action: StepAction::Run,
+            redo: None,
+        }
+    };
+    steps.push(step_detail(
+        "prepare",
+        &prepare,
+        format!("classify prepare -> {}", paths.out.display()),
+    ));
+
+    let recipe = if paths.recipe.is_file() && paths.export_yaml.is_file() {
+        if let Some(pipeline) = ctx.inputs.pipeline.as_deref() {
+            decide_file(&paths.recipe, &paths.manifest_path("recipe"), pipeline)
+        } else {
+            Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            }
+        }
+    } else {
+        Decision {
+            action: StepAction::Run,
+            redo: None,
+        }
+    };
+    steps.push(step_detail(
+        "recipe",
+        &recipe,
+        format!("write {}", paths.recipe.display()),
+    ));
+
+    let trained = paths.adapter_dir.join("adapter_config.json");
+    let train = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) if trained.is_file() => {
+            decide_file(&trained, &paths.manifest_path("train"), pipeline)
+        }
+        _ if trained.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "train",
+        &train,
+        format!("llamafactory-cli train {}", paths.recipe.display()),
+    ));
+
+    let merged = paths.export_dir.join("config.json");
+    let merge = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) if merged.is_file() => {
+            decide_file(&merged, &paths.manifest_path("merge-export"), pipeline)
+        }
+        _ if merged.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "merge-export",
+        &merge,
+        format!("llamafactory-cli export {}", paths.export_yaml.display()),
+    ));
+
+    let base_convert_cmd = convert_line(ctx, ctx.base, &paths.base_f16);
+    let base_convert = if ctx.library_tag.is_some() {
+        Decision {
+            action: StepAction::Skip,
+            redo: None,
+        }
+    } else {
+        match ctx.inputs.pipeline.as_deref() {
+            Some(pipeline) => decide_file(&paths.base_f16, &paths.manifest_path("gguf-convert-base"), pipeline),
+            None if paths.base_f16.is_file() => Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            },
+            None => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
+    };
+    let base_convert_detail = if ctx.library_tag.is_some() {
+        "library tag; precision may differ".to_string()
+    } else {
+        base_convert_cmd
+    };
+    steps.push(step_detail(
+        "gguf-convert-base",
+        &base_convert,
+        base_convert_detail,
+    ));
+
+    let export_src = paths.export_dir.display().to_string();
+    let specialist_convert_cmd = convert_line(ctx, &export_src, &paths.specialist_f16);
+    let specialist_convert = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) => decide_file(
+            &paths.specialist_f16,
+            &paths.manifest_path("gguf-convert-specialist"),
+            pipeline,
+        ),
+        None if paths.specialist_f16.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        None => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "gguf-convert-specialist",
+        &specialist_convert,
+        specialist_convert_cmd,
+    ));
+
+    let base_seated = paths.seated_gguf("base", ctx.quant);
+    let specialist_seated = paths.seated_gguf("specialist", ctx.quant);
+    let f16_skip = quant_is_f16(ctx.quant);
+
+    let quant_base = if ctx.library_tag.is_some() || f16_skip {
+        Decision {
+            action: StepAction::Skip,
+            redo: None,
+        }
+    } else {
+        match ctx.inputs.pipeline.as_deref() {
+            Some(pipeline) => decide_file(&base_seated, &paths.manifest_path("quantize-base"), pipeline),
+            None if base_seated.is_file() => Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            },
+            None => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
+    };
+    let quant_base_detail = if ctx.library_tag.is_some() {
+        "library tag; precision may differ".to_string()
+    } else if f16_skip {
+        "f16 skips llama-quantize".to_string()
+    } else {
+        quantize_line(ctx, &paths.base_f16, &base_seated)
+    };
+    steps.push(step_detail("quantize-base", &quant_base, quant_base_detail));
+
+    let quant_specialist = if f16_skip {
+        Decision {
+            action: StepAction::Skip,
+            redo: None,
+        }
+    } else {
+        match ctx.inputs.pipeline.as_deref() {
+            Some(pipeline) => decide_file(
+                &specialist_seated,
+                &paths.manifest_path("quantize-specialist"),
+                pipeline,
+            ),
+            None if specialist_seated.is_file() => Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            },
+            None => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
+    };
+    let quant_specialist_detail = if f16_skip {
+        "f16 skips llama-quantize".to_string()
+    } else {
+        quantize_line(ctx, &paths.specialist_f16, &specialist_seated)
+    };
+    steps.push(step_detail(
+        "quantize-specialist",
+        &quant_specialist,
+        quant_specialist_detail,
+    ));
+
+    let create_base_cmd = format!(
+        "ollama create {} -f {}",
+        ctx.built_base_tag,
+        paths.base_modelfile.display()
+    );
+    let create_base = if ctx.library_tag.is_some() {
+        Decision {
+            action: StepAction::Skip,
+            redo: None,
+        }
+    } else {
+        match ctx.inputs.pipeline.as_deref() {
+            Some(pipeline) => decide_ollama(
+                &base_seated,
+                &paths.manifest_path("ollama-create-base"),
+                pipeline,
+                ctx.check_ollama,
+                ctx.built_base_tag,
+            ),
+            None => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
+    };
+    let create_base_detail = if ctx.library_tag.is_some() {
+        "library tag; precision may differ".to_string()
+    } else {
+        create_base_cmd
+    };
+    steps.push(step_detail(
+        "ollama-create-base",
+        &create_base,
+        create_base_detail,
+    ));
+
+    let create_spec_cmd = format!(
+        "ollama create {} -f {}",
+        ctx.specialist_tag,
+        paths.specialist_modelfile.display()
+    );
+    let create_spec = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) => decide_ollama(
+            &specialist_seated,
+            &paths.manifest_path("ollama-create-specialist"),
+            pipeline,
+            ctx.check_ollama,
+            ctx.specialist_tag,
+        ),
+        None => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "ollama-create-specialist",
+        &create_spec,
+        create_spec_cmd,
+    ));
+
+    let eval_base_model = ctx.library_tag.unwrap_or(ctx.built_base_tag);
+    let eval_base = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) if paths.base_report.is_file() => {
+            decide_file(&paths.base_report, &paths.manifest_path("eval-base"), pipeline)
+        }
+        _ if paths.base_report.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "eval-base",
+        &eval_base,
+        format!("classify eval --api ollama-native model {eval_base_model}"),
+    ));
+
+    let eval_spec = match ctx.inputs.pipeline.as_deref() {
+        Some(pipeline) if paths.specialist_report.is_file() => decide_file(
+            &paths.specialist_report,
+            &paths.manifest_path("eval-specialist"),
+            pipeline,
+        ),
+        _ if paths.specialist_report.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    steps.push(step_detail(
+        "eval-specialist",
+        &eval_spec,
+        format!(
+            "classify eval --api ollama-native model {}",
+            ctx.specialist_tag
+        ),
+    ));
+
     steps.push(StepPlan {
         name: "compare",
         action: StepAction::Run,
         detail: format!("write {}", paths.comparison.display()),
     });
+
     debug_assert_eq!(
         steps.iter().map(|s| s.name).collect::<Vec<_>>(),
         STEP_ORDER
     );
     steps
-}
-
-/// `ollama-create` is skippable when `ollama show` already succeeds. The plan
-/// marks it run until that check, so print mode lists the create line.
-pub fn mark_ollama_skip(steps: &mut [StepPlan]) {
-    if let Some(step) = steps.iter_mut().find(|s| s.name == "ollama-create") {
-        step.action = StepAction::Skip;
-        step.detail = format!("skip; {}", step.detail);
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -309,6 +933,7 @@ pub struct SideScore {
     pub records: u64,
     pub p50: f64,
     pub p95: f64,
+    pub thinking_leak: u64,
 }
 
 pub fn side_score(report: &Value) -> Result<SideScore> {
@@ -329,12 +954,14 @@ pub fn side_score(report: &Value) -> Result<SideScore> {
         .pointer("/latency_ms/p95")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
+    let thinking_leak = report.get("thinking_leak").and_then(Value::as_u64).unwrap_or(0);
     Ok(SideScore {
         accuracy,
         invalid,
         records,
         p50,
         p95,
+        thinking_leak,
     })
 }
 
@@ -349,6 +976,8 @@ pub struct Comparison {
     pub specialist_p50: f64,
     pub base_p95: f64,
     pub specialist_p95: f64,
+    pub base_thinking_leak: u64,
+    pub specialist_thinking_leak: u64,
 }
 
 pub fn compare_sides(base: &SideScore, specialist: &SideScore) -> Comparison {
@@ -362,6 +991,8 @@ pub fn compare_sides(base: &SideScore, specialist: &SideScore) -> Comparison {
         specialist_p50: specialist.p50,
         base_p95: base.p95,
         specialist_p95: specialist.p95,
+        base_thinking_leak: base.thinking_leak,
+        specialist_thinking_leak: specialist.thinking_leak,
     }
 }
 
@@ -395,19 +1026,25 @@ pub struct JourneyRequest<'a> {
     pub input: &'a Path,
     pub out: &'a Path,
     pub base: &'a str,
-    pub base_tag: &'a str,
+    pub base_tag: Option<&'a str>,
     pub tag: &'a str,
     pub endpoint: &'a str,
     pub dataset_name: &'a str,
     pub seed: u64,
     pub held_out_ratio: f64,
     pub max_steps: Option<u32>,
+    pub quant: &'a str,
+    pub llama_cpp_dir: Option<&'a Path>,
     pub force: bool,
     pub print: bool,
     pub run: bool,
     pub min_delta: Option<f64>,
     pub min_accuracy: Option<f64>,
     pub timeout_secs: u64,
+}
+
+fn library_tag(base_tag: Option<&str>) -> Option<&str> {
+    base_tag.map(str::trim).filter(|tag| !tag.is_empty())
 }
 
 pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
@@ -417,35 +1054,55 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     if req.base.trim().is_empty() {
         bail!("refuse:classify-journey: --base is empty");
     }
-    if req.tag.trim().is_empty() || req.base_tag.trim().is_empty() {
+    if req.tag.trim().is_empty() {
         bail!("refuse:classify-journey: model tag is empty");
+    }
+    if req.quant.trim().is_empty() || req.quant.chars().any(|c| c.is_whitespace() || c == '/' || c == '\\')
+    {
+        bail!("refuse:classify-journey: --quant is empty or not a llama-quantize type");
     }
     let paths = JourneyPaths::new(req.out);
     let template = train_template(req.base);
-    let mut steps = plan_steps(&paths, req.base_tag, req.tag);
+    let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant);
+    let inputs = Inputs { prepare, pipeline };
+    let llama = match req.llama_cpp_dir {
+        Some(dir) if req.run => Some(resolve_llama_cpp(dir)?),
+        Some(dir) => resolve_llama_cpp(dir).ok(),
+        None => None,
+    };
+    let library = library_tag(req.base_tag);
+    let ctx = PlanCtx {
+        paths: &paths,
+        base: req.base,
+        quant: req.quant,
+        library_tag: library,
+        built_base_tag: DEFAULT_BUILT_BASE_TAG,
+        specialist_tag: req.tag,
+        llama: llama.as_ref(),
+        inputs: &inputs,
+        check_ollama: false,
+    };
     if !req.run {
-        print_plan(req, &paths, template, &steps);
+        let steps = plan_with(&ctx);
+        print_plan(req, &paths, template, library, &steps);
         return Ok(());
     }
-    let gaps = tool_gaps(tool_on_path, gpu_present());
+    let gaps = tool_gaps(tool_on_path, req.llama_cpp_dir, gpu_present());
     if !gaps.missing.is_empty() {
         bail!(gaps.message());
     }
-    if ollama_has_model(req.tag) {
-        mark_ollama_skip(&mut steps);
-    }
-    if !ollama_has_model(req.base_tag) {
-        bail!(
-            "refuse:classify-journey: base tag {} is not seated in Ollama. Seat it, then re-run.",
-            req.base_tag
-        );
-    }
-    execute(req, &paths, &steps)?;
+    let llama = llama.ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {QWEN35_RECENT}"
+        )
+    })?;
+    execute(req, &paths, &llama)?;
     let base_report = read_json(&paths.base_report)?;
     let specialist_report = read_json(&paths.specialist_report)?;
     let comparison = compare_sides(&side_score(&base_report)?, &side_score(&specialist_report)?);
     let verdict = threshold_met(&comparison, req.min_delta, req.min_accuracy);
-    write_comparison(req, &paths, template, &comparison, verdict)?;
+    write_comparison(req, &paths, template, library, &comparison, verdict)?;
     match verdict {
         Some(false) => bail!(
             "classify-journey: threshold missed; specialist accuracy {:.4} delta {:.4}",
@@ -457,17 +1114,31 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     Ok(())
 }
 
-fn print_plan(req: &JourneyRequest<'_>, paths: &JourneyPaths, template: &str, steps: &[StepPlan]) {
+fn print_plan(
+    req: &JourneyRequest<'_>,
+    paths: &JourneyPaths,
+    template: &str,
+    library: Option<&str>,
+    steps: &[StepPlan],
+) {
     println!("classify journey: print");
     println!("base: {} template: {template}", req.base);
+    let base_seat = library.unwrap_or(DEFAULT_BUILT_BASE_TAG);
+    let seat_kind = if library.is_some() { "library-tag" } else { "pipeline" };
     println!(
-        "base_tag: {} specialist_tag: {} endpoint: {}",
-        req.base_tag, req.tag, req.endpoint
+        "base_tag: {base_seat} base_seat: {seat_kind} specialist_tag: {} quant: {} endpoint: {} api: ollama-native",
+        req.tag, req.quant, req.endpoint
     );
+    if library.is_some() {
+        println!("warning: --base-tag skips the shared convert and quant. Precision may differ from the specialist.");
+    }
     if req.base == DEFAULT_BASE {
         println!(
-            "default base {DEFAULT_BASE} is registered in LLaMA-Factory constants.py as Qwen3.5-4B-Thinking with template {QWEN35_TEMPLATE}"
+            "default base {DEFAULT_BASE} is registered in LLaMA-Factory constants.py as Qwen3.5-4B-Thinking with template {QWEN35_TEMPLATE} and enable_thinking false"
         );
+    }
+    if req.llama_cpp_dir.is_none() {
+        println!("{QWEN35_RECENT}. Set --llama-cpp-dir or LLAMA_CPP_DIR before --run.");
     }
     println!("out: {}", paths.out.display());
     for step in steps {
@@ -475,25 +1146,50 @@ fn print_plan(req: &JourneyRequest<'_>, paths: &JourneyPaths, template: &str, st
             StepAction::Run => "run",
             StepAction::Skip => "skip",
         };
-        println!("{word} {:<16} {}", step.name, step.detail);
+        println!("{word} {:<24} {}", step.name, step.detail);
     }
     println!("compare writes {}", paths.comparison.display());
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
 }
 
-fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, steps: &[StepPlan]) -> Result<()> {
-    for step in steps {
-        if step.action == StepAction::Skip && step.name != "compare" && step.name != "ollama-create"
-        {
+fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> Result<()> {
+    let library = library_tag(req.base_tag);
+    // Re-read inputs around each step so a rewritten dataset or YAML changes the fingerprint.
+    let mut ran_prepare = false;
+    for name in STEP_ORDER {
+        if *name == "compare" {
+            continue;
+        }
+        let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+        let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant);
+        let inputs = Inputs { prepare, pipeline };
+        let ctx = PlanCtx {
+            paths,
+            base: req.base,
+            quant: req.quant,
+            library_tag: library,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: req.tag,
+            llama: Some(llama),
+            inputs: &inputs,
+            check_ollama: name.starts_with("ollama-create"),
+        };
+        let steps = plan_with(&ctx);
+        let step = steps
+            .iter()
+            .find(|step| step.name == *name)
+            .expect("step");
+        if step.action == StepAction::Skip {
             println!("skip {}", step.name);
             continue;
         }
+        if let Some(reason) = redo_reason(&step.detail) {
+            println!("redo {}: {reason}", step.name);
+        } else {
+            println!("run {}", step.name);
+        }
         match step.name {
             "prepare" => {
-                if step.action == StepAction::Skip {
-                    println!("skip prepare");
-                    continue;
-                }
                 cmd_classify_prepare(
                     req.input,
                     &paths.out,
@@ -502,89 +1198,95 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, steps: &[StepPlan]) -
                     DatasetFormat::Sharegpt,
                     req.dataset_name,
                     false,
-                    req.force,
+                    req.force || ran_prepare || paths.dataset_jsonl.is_file(),
                 )?;
+                let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+                write_manifest(&paths.manifest_path("prepare"), &prepare, None)?;
+                ran_prepare = true;
             }
             "recipe" => {
-                if step.action == StepAction::Skip {
-                    println!("skip recipe");
-                    continue;
-                }
                 write_recipe(req, paths)?;
+                let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("refuse:classify-journey: recipe inputs are missing")
+                    })?;
+                write_manifest(&paths.manifest_path("recipe"), &pipeline, None)?;
             }
             "train" => {
-                if step.action == StepAction::Skip {
-                    println!("skip train");
-                    continue;
-                }
-                run_tool(
-                    "llamafactory-cli",
-                    &["train", &paths.recipe.display().to_string()],
-                )?;
+                run_argv(&[
+                    "llamafactory-cli".into(),
+                    "train".into(),
+                    paths.recipe.display().to_string(),
+                ])?;
+                write_pipeline_manifest(req, paths, "train")?;
             }
             "merge-export" => {
-                if step.action == StepAction::Skip {
-                    println!("skip merge-export");
-                    continue;
-                }
-                run_tool(
-                    "llamafactory-cli",
-                    &["export", &paths.export_yaml.display().to_string()],
+                run_argv(&[
+                    "llamafactory-cli".into(),
+                    "export".into(),
+                    paths.export_yaml.display().to_string(),
+                ])?;
+                write_pipeline_manifest(req, paths, "merge-export")?;
+            }
+            "gguf-convert-base" => {
+                let argv = llama.convert_argv(req.base, &paths.base_f16);
+                run_argv(&argv)?;
+                write_pipeline_manifest(req, paths, "gguf-convert-base")?;
+            }
+            "gguf-convert-specialist" => {
+                let src = paths.export_dir.display().to_string();
+                let argv = llama.convert_argv(&src, &paths.specialist_f16);
+                run_argv(&argv)?;
+                write_pipeline_manifest(req, paths, "gguf-convert-specialist")?;
+            }
+            "quantize-base" => {
+                let seated = paths.seated_gguf("base", req.quant);
+                let argv = llama.quantize_argv(&paths.base_f16, &seated, req.quant);
+                run_argv(&argv)?;
+                write_pipeline_manifest(req, paths, "quantize-base")?;
+            }
+            "quantize-specialist" => {
+                let seated = paths.seated_gguf("specialist", req.quant);
+                let argv = llama.quantize_argv(&paths.specialist_f16, &seated, req.quant);
+                run_argv(&argv)?;
+                write_pipeline_manifest(req, paths, "quantize-specialist")?;
+            }
+            "ollama-create-base" => {
+                seat_gguf(
+                    req,
+                    paths,
+                    "base",
+                    DEFAULT_BUILT_BASE_TAG,
+                    &paths.base_modelfile,
+                    "ollama-create-base",
                 )?;
             }
-            "gguf-convert" => {
-                if step.action == StepAction::Skip {
-                    println!("skip gguf-convert");
-                    continue;
-                }
-                let script = which("convert_hf_to_gguf.py").ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "refuse:classify-journey: llama.cpp convert_hf_to_gguf.py is not on PATH"
-                    )
-                })?;
-                let export = paths.export_dir.display().to_string();
-                let outfile = paths.gguf.display().to_string();
-                run_path(
-                    &script,
-                    &[&export, "--outfile", &outfile, "--outtype", "auto"],
+            "ollama-create-specialist" => {
+                seat_gguf(
+                    req,
+                    paths,
+                    "specialist",
+                    req.tag,
+                    &paths.specialist_modelfile,
+                    "ollama-create-specialist",
                 )?;
-            }
-            "ollama-create" => {
-                if step.action == StepAction::Skip || ollama_has_model(req.tag) {
-                    println!("skip ollama-create");
-                    continue;
-                }
-                if !paths.gguf.is_file() {
-                    bail!(
-                        "refuse:classify-journey: GGUF missing at {}",
-                        paths.gguf.display()
-                    );
-                }
-                fs::write(&paths.modelfile, gguf_modelfile(&paths.gguf))?;
-                let file = paths.modelfile.display().to_string();
-                run_tool("ollama", &["create", req.tag, "-f", &file])?;
             }
             "eval-base" => {
-                if step.action == StepAction::Skip {
-                    println!("skip eval-base");
-                    continue;
-                }
+                let model = library.unwrap_or(DEFAULT_BUILT_BASE_TAG);
                 cmd_classify_eval(
                     &paths.heldout,
                     Some(req.endpoint),
-                    req.base_tag,
+                    model,
                     None,
                     &paths.base_report,
                     false,
                     false,
                     req.timeout_secs,
+                    EvalApi::OllamaNative,
                 )?;
+                write_pipeline_manifest(req, paths, "eval-base")?;
             }
             "eval-specialist" => {
-                if step.action == StepAction::Skip {
-                    println!("skip eval-specialist");
-                    continue;
-                }
                 cmd_classify_eval(
                     &paths.heldout,
                     Some(req.endpoint),
@@ -594,12 +1296,63 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, steps: &[StepPlan]) -
                     false,
                     false,
                     req.timeout_secs,
+                    EvalApi::OllamaNative,
                 )?;
+                write_pipeline_manifest(req, paths, "eval-specialist")?;
             }
-            "compare" => {}
             other => bail!("refuse:classify-journey: unknown step {other}"),
         }
     }
+    Ok(())
+}
+
+fn redo_reason(detail: &str) -> Option<&str> {
+    let rest = detail.strip_prefix("redo ")?;
+    let (_, reason) = rest.split_once(": ")?;
+    Some(reason.split(';').next().unwrap_or(reason).trim())
+}
+
+fn write_pipeline_manifest(req: &JourneyRequest<'_>, paths: &JourneyPaths, step: &str) -> Result<()> {
+    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))?;
+    write_manifest(&paths.manifest_path(step), &pipeline, None)
+}
+
+fn seat_gguf(
+    req: &JourneyRequest<'_>,
+    paths: &JourneyPaths,
+    which: &str,
+    tag: &str,
+    modelfile: &Path,
+    step: &str,
+) -> Result<()> {
+    let gguf = paths.seated_gguf(which, req.quant);
+    if !gguf.is_file() {
+        bail!("refuse:classify-journey: GGUF missing at {}", gguf.display());
+    }
+    let gguf_sha = file_sha(&gguf).ok_or_else(|| {
+        anyhow::anyhow!("refuse:classify-journey: cannot hash {}", gguf.display())
+    })?;
+    let prior = read_manifest(&paths.manifest_path(step));
+    if prior
+        .as_ref()
+        .and_then(|manifest| manifest.gguf_sha256.as_deref())
+        != Some(gguf_sha.as_str())
+        && ollama_has_model(tag)
+    {
+        run_argv(&["ollama".into(), "rm".into(), tag.into()])?;
+    }
+    fs::write(modelfile, journey_modelfile(&gguf))?;
+    run_argv(&[
+        "ollama".into(),
+        "create".into(),
+        tag.into(),
+        "-f".into(),
+        modelfile.display().to_string(),
+    ])?;
+    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))?;
+    write_manifest(&paths.manifest_path(step), &pipeline, Some(&gguf_sha))?;
     Ok(())
 }
 
@@ -640,6 +1393,7 @@ fn write_comparison(
     req: &JourneyRequest<'_>,
     paths: &JourneyPaths,
     template: &str,
+    library: Option<&str>,
     comparison: &Comparison,
     verdict: Option<bool>,
 ) -> Result<()> {
@@ -648,18 +1402,30 @@ fn write_comparison(
         Some(false) => "missed",
         None => "unset",
     };
+    let base_seat = if library.is_some() { "library-tag" } else { "pipeline" };
+    let precision_warning = library.map(|_| {
+        "base-tag is a library tag. Its precision may differ from the specialist quant."
+    });
     let report = json!({
         "schema": "cell-one.classify-journey.v0",
         "base": req.base,
         "template": template,
-        "base_tag": req.base_tag,
+        "base_tag": library.unwrap_or(DEFAULT_BUILT_BASE_TAG),
+        "base_seat": base_seat,
         "specialist_tag": req.tag,
+        "quant": req.quant,
         "endpoint": req.endpoint,
+        "api": EvalApi::OllamaNative.as_str(),
+        "precision_warning": precision_warning,
         "base_accuracy": comparison.base_accuracy,
         "specialist_accuracy": comparison.specialist_accuracy,
         "delta": comparison.delta,
         "base_invalid_rate": comparison.base_invalid_rate,
         "specialist_invalid_rate": comparison.specialist_invalid_rate,
+        "thinking_leak": {
+            "base": comparison.base_thinking_leak,
+            "specialist": comparison.specialist_thinking_leak
+        },
         "latency_ms": {
             "base_p50": comparison.base_p50,
             "base_p95": comparison.base_p95,
@@ -727,26 +1493,32 @@ fn ollama_has_model(tag: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn run_tool(name: &str, args: &[&str]) -> Result<()> {
-    let bin = which(name).ok_or_else(|| {
-        anyhow::anyhow!("refuse:classify-journey: {name} is not on PATH")
+fn run_argv(argv: &[String]) -> Result<()> {
+    let line = argv_line(argv);
+    println!("{line}");
+    let (bin, args) = argv.split_first().ok_or_else(|| {
+        anyhow::anyhow!("refuse:classify-journey: empty command")
     })?;
-    run_path(&bin, args)
-}
-
-fn run_path(bin: &Path, args: &[&str]) -> Result<()> {
-    let status = Command::new(bin).args(args).status().map_err(|e| {
+    let bin_path = if bin.contains('/') || bin.contains('\\') {
+        PathBuf::from(bin)
+    } else {
+        which(bin).ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: {bin} is not on PATH")
+        })?
+    };
+    let status = Command::new(&bin_path).args(args).status().map_err(|e| {
         anyhow::anyhow!(
             "refuse:classify-journey: cannot run {}: {e}",
-            bin.display()
+            bin_path.display()
         )
     })?;
     if !status.success() {
         bail!(
             "refuse:classify-journey: {} exited {status}",
-            bin.display()
+            bin_path.display()
         );
     }
+    let _ = line;
     Ok(())
 }
 
@@ -764,7 +1536,7 @@ mod tests {
     }
 
     #[test]
-    fn recipe_dataset_matches_prepare_dataset_info() {
+    fn recipe_disables_thinking_and_modelfile_is_nonthinking() {
         let dir = std::env::temp_dir().join(format!("journey-yaml-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -777,6 +1549,8 @@ mod tests {
             Some(2),
         );
         assert!(recipe.contains("template: qwen3_5"), "{recipe}");
+        assert!(recipe.contains("enable_thinking: false"), "{recipe}");
+        assert!(!recipe.contains("qwen3_5_nothink:"), "{recipe}");
         assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
         assert!(recipe.contains("max_steps: 2"), "{recipe}");
         assert_eq!(recipe_dataset_name(&recipe).as_deref(), Some(DEFAULT_DATASET));
@@ -788,58 +1562,223 @@ mod tests {
         });
         assert_eq!(dataset_name_in_info(&info).as_deref(), Some(DEFAULT_DATASET));
         let export = export_yaml(DEFAULT_BASE, &paths.adapter_dir, &paths.export_dir);
-        assert!(export.contains("finetuning_type: lora"), "{export}");
+        assert!(export.contains("enable_thinking: false"), "{export}");
         assert!(export.contains("template: qwen3_5"), "{export}");
-        assert!(paths.gguf.ends_with("export.gguf"));
+        let model = journey_modelfile(&paths.seated_gguf("specialist", DEFAULT_QUANT));
+        assert!(model.contains("PARAMETER temperature 0"), "{model}");
+        assert!(model.contains("PARAMETER num_predict 8"), "{model}");
+        assert!(model.contains("<think>\n\n</think>"), "{model}");
+        assert!(model.starts_with("FROM "), "{model}");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn step_order_and_skip_when_outputs_exist() {
+    fn fresh_plan_converts_and_quants_both_seats() {
         let dir = std::env::temp_dir().join(format!("journey-plan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let paths = JourneyPaths::new(&dir);
-        let fresh = plan_steps(&paths, DEFAULT_BASE_TAG, DEFAULT_TAG);
+        let inputs = Inputs {
+            prepare: "prep".into(),
+            pipeline: None,
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+        };
+        let fresh = plan_with(&ctx);
         let names: Vec<_> = fresh.iter().map(|s| s.name).collect();
         assert_eq!(names, STEP_ORDER);
-        assert!(fresh.iter().any(|s| s.name == "gguf-convert" && s.detail.contains("convert_hf_to_gguf.py")));
-        assert!(fresh.iter().any(|s| s.name == "ollama-create" && s.detail.contains("ollama create")));
+        let base = fresh.iter().find(|s| s.name == "gguf-convert-base").unwrap();
+        assert!(base.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{base:?}");
+        assert!(base.detail.contains("--outtype f16"), "{base:?}");
+        assert!(base.detail.contains(DEFAULT_BASE), "{base:?}");
+        let spec = fresh.iter().find(|s| s.name == "gguf-convert-specialist").unwrap();
+        assert!(spec.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{spec:?}");
+        let quant = fresh.iter().find(|s| s.name == "quantize-specialist").unwrap();
+        assert!(quant.detail.contains("Q4_K_M"), "{quant:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn matching_manifest_skips_and_stale_or_changed_inputs_redo() {
+        let dir = std::env::temp_dir().join(format!("journey-manifest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let paths = JourneyPaths::new(&dir);
         fs::create_dir_all(&paths.adapter_dir).unwrap();
         fs::create_dir_all(&paths.export_dir).unwrap();
-        fs::write(paths.out.join("dataset.jsonl"), "{}\n").unwrap();
+        fs::write(&paths.dataset_jsonl, "row\n").unwrap();
         fs::write(&paths.heldout, "{}\n").unwrap();
         fs::write(&paths.dataset_info, "{}\n").unwrap();
         fs::write(&paths.recipe, "dataset: tev1_decisions\n").unwrap();
         fs::write(&paths.export_yaml, "export_dir: x\n").unwrap();
         fs::write(paths.adapter_dir.join("adapter_config.json"), "{}\n").unwrap();
         fs::write(paths.export_dir.join("config.json"), "{}\n").unwrap();
-        fs::write(&paths.gguf, "gguf").unwrap();
+        fs::write(&paths.base_f16, "base-f16").unwrap();
+        fs::write(&paths.specialist_f16, "spec-f16").unwrap();
+        let seated_b = paths.seated_gguf("base", DEFAULT_QUANT);
+        let seated_s = paths.seated_gguf("specialist", DEFAULT_QUANT);
+        fs::write(&seated_b, "base-q").unwrap();
+        fs::write(&seated_s, "spec-q").unwrap();
         fs::write(&paths.base_report, "{}\n").unwrap();
         fs::write(&paths.specialist_report, "{}\n").unwrap();
-        let again = plan_steps(&paths, DEFAULT_BASE_TAG, DEFAULT_TAG);
+        let prepare = String::from("prepare-key");
+        let pipeline = pipeline_inputs(DEFAULT_BASE, &paths.dataset_jsonl, &paths.recipe, DEFAULT_QUANT).unwrap();
+        for step in [
+            "prepare",
+            "recipe",
+            "train",
+            "merge-export",
+            "gguf-convert-base",
+            "gguf-convert-specialist",
+            "quantize-base",
+            "quantize-specialist",
+            "eval-base",
+            "eval-specialist",
+        ] {
+            let key = if step == "prepare" { prepare.as_str() } else { pipeline.as_str() };
+            write_manifest(&paths.manifest_path(step), key, None).unwrap();
+        }
+        let spec_sha = file_sha(&seated_s).unwrap();
+        write_manifest(
+            &paths.manifest_path("ollama-create-specialist"),
+            &pipeline,
+            Some(&spec_sha),
+        )
+        .unwrap();
+        write_manifest(
+            &paths.manifest_path("ollama-create-base"),
+            &pipeline,
+            Some(&file_sha(&seated_b).unwrap()),
+        )
+        .unwrap();
+        let inputs = Inputs {
+            prepare: prepare.clone(),
+            pipeline: Some(pipeline.clone()),
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+        };
+        let again = plan_with(&ctx);
         for step in &again {
-            if matches!(step.name, "ollama-create" | "compare") {
-                assert_eq!(step.action, StepAction::Run, "{}", step.name);
+            if step.name == "compare" {
+                assert_eq!(step.action, StepAction::Run);
             } else {
-                assert_eq!(step.action, StepAction::Skip, "{}", step.name);
+                assert_eq!(step.action, StepAction::Skip, "{} {}", step.name, step.detail);
             }
         }
+
+        fs::remove_file(paths.manifest_path("train")).unwrap();
+        let stale = plan_with(&ctx);
+        let train = stale.iter().find(|s| s.name == "train").unwrap();
+        assert_eq!(train.action, StepAction::Run);
+        assert!(train.detail.contains("redo train: missing manifest"), "{train:?}");
+
+        write_manifest(&paths.manifest_path("train"), &pipeline, None).unwrap();
+        fs::write(&paths.dataset_jsonl, "row-changed\n").unwrap();
+        let changed = pipeline_inputs(DEFAULT_BASE, &paths.dataset_jsonl, &paths.recipe, DEFAULT_QUANT).unwrap();
+        assert_ne!(changed, pipeline);
+        let inputs = Inputs {
+            prepare,
+            pipeline: Some(changed),
+        };
+        let ctx = PlanCtx {
+            inputs: &inputs,
+            ..ctx
+        };
+        let redone = plan_with(&ctx);
+        let train = redone.iter().find(|s| s.name == "train").unwrap();
+        assert!(train.detail.contains("redo train: inputs changed"), "{train:?}");
+        fs::write(&seated_s, "spec-q-mutated").unwrap();
+        let gguf_changed = plan_with(&ctx);
+        let seat = gguf_changed
+            .iter()
+            .find(|s| s.name == "ollama-create-specialist")
+            .unwrap();
+        assert!(
+            seat.detail.contains("redo ollama-create-specialist: GGUF hash changed"),
+            "{seat:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
+    fn library_tag_skips_base_build_and_f16_skips_quantize() {
+        let dir = std::env::temp_dir().join(format!("journey-lib-{}", std::process::id()));
+        let paths = JourneyPaths::new(&dir);
+        let inputs = Inputs {
+            prepare: "p".into(),
+            pipeline: None,
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            quant: "f16",
+            library_tag: Some("qwen3.5:4b"),
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+        };
+        let steps = plan_with(&ctx);
+        for name in ["gguf-convert-base", "quantize-base", "ollama-create-base"] {
+            let step = steps.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(step.action, StepAction::Skip, "{step:?}");
+            assert!(step.detail.contains("precision may differ"), "{step:?}");
+        }
+        let quant = steps.iter().find(|s| s.name == "quantize-specialist").unwrap();
+        assert_eq!(quant.action, StepAction::Skip);
+        assert!(quant.detail.contains("f16 skips llama-quantize"), "{quant:?}");
+    }
+
+    #[test]
     fn missing_tool_messages_name_each_gap() {
-        let gaps = tool_gaps(|_| false, false);
+        let gaps = tool_gaps(|_| false, None, false);
         let text = gaps.message();
         assert!(text.contains("llamafactory-cli is not on PATH"), "{text}");
-        assert!(text.contains("convert_hf_to_gguf.py is not on PATH"), "{text}");
+        assert!(text.contains("LLAMA_CPP_DIR is unset"), "{text}");
+        assert!(text.contains(QWEN35_RECENT), "{text}");
         assert!(text.contains("ollama is not on PATH"), "{text}");
         assert!(text.contains("no GPU"), "{text}");
-        let partial = tool_gaps(|name| name == "ollama", true);
+        let partial = tool_gaps(|name| name == "ollama", None, true);
         let text = partial.message();
         assert!(text.contains("llamafactory-cli"));
         assert!(!text.contains("ollama is not"));
         assert!(!text.contains("no GPU"));
+    }
+
+    #[test]
+    fn convert_print_matches_argv() {
+        let dir = std::env::temp_dir().join(format!("journey-llama-{}", std::process::id()));
+        fs::create_dir_all(dir.join("build/bin")).unwrap();
+        fs::write(dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
+        fs::write(dir.join("build/bin/llama-quantize"), "").unwrap();
+        let llama = resolve_llama_cpp(&dir).unwrap();
+        let outfile = dir.join("base.f16.gguf");
+        let argv = llama.convert_argv(DEFAULT_BASE, &outfile);
+        let line = argv_line(&argv);
+        assert_eq!(line, format!("python3 {} {} --outfile {} --outtype f16", llama.convert.display(), DEFAULT_BASE, outfile.display()));
+        let missing = dir.join("nope");
+        let err = resolve_llama_cpp(&missing).unwrap_err().to_string();
+        assert!(err.contains(QWEN35_RECENT), "{err}");
+        assert!(err.contains("convert_hf_to_gguf.py"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -850,6 +1789,7 @@ mod tests {
             records: 8,
             p50: 10.0,
             p95: 40.0,
+            thinking_leak: 3,
         };
         let specialist = SideScore {
             accuracy: 0.75,
@@ -857,11 +1797,14 @@ mod tests {
             records: 8,
             p50: 12.0,
             p95: 30.0,
+            thinking_leak: 0,
         };
         let comparison = compare_sides(&base, &specialist);
         assert!((comparison.delta - 0.5).abs() < 1e-9);
         assert!((comparison.base_invalid_rate - 0.25).abs() < 1e-9);
         assert!((comparison.specialist_invalid_rate - 0.125).abs() < 1e-9);
+        assert_eq!(comparison.base_thinking_leak, 3);
+        assert_eq!(comparison.specialist_thinking_leak, 0);
         assert_eq!(threshold_met(&comparison, None, None), None);
         assert_eq!(threshold_met(&comparison, Some(0.4), Some(0.7)), Some(true));
         assert_eq!(threshold_met(&comparison, Some(0.6), None), Some(false));

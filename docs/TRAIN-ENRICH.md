@@ -23,17 +23,18 @@ Operator loop on a 5090-class host:
 5. Seat the GGUF in Ollama.
 6. `estate classify eval --records .cell/classify/heldout.jsonl --endpoint http://127.0.0.1:11434 --model <seat-tag> --report .cell/classify/report.json`
 
-Eval uses an OpenAI-compatible chat completion, temperature 0, `max_tokens` 8, and thinking off (`chat_template_kwargs.enable_thinking` false and `think` false). It parses the first standalone option letter and writes accuracy, per-label confusion, invalid-output count, and latency p50/p95. `--api-key-env` names the variable that holds a bearer token. The value is never printed. `--dry-run` and `--mock` do not call the network. Mock is a letter script, not a model score.
+Eval scores one letter at temperature 0 with a short completion. `--api openai` (the default) sends `chat_template_kwargs.enable_thinking` false. `--api ollama` sends `reasoning_effort` `none` on `/v1/chat/completions`. `--api ollama-native` posts `/api/chat` with `think` false. A leading `<think>` block is stripped and counted as `thinking_leak`. It writes accuracy, per-label confusion, invalid-output count, and latency p50/p95. `--api-key-env` names the variable that holds a bearer token. The value is never printed. `--dry-run` and `--mock` do not call the network. Mock is a letter script, not a model score.
 
 Together hosted fine-tune is an optional hosted driver for the same letter target. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
 
 Opt-in only: `make classify-prepare`, `make classify-eval`, and `make tev1-journey`. They are not in `make smoke`, `make gate-90`, or GitHub Actions.
 
-`estate classify journey` runs that loop as one command. The default base is `Qwen/Qwen3.5-4B` with LLaMA-Factory template `qwen3_5` (`constants.py` registers that id as Qwen3.5-4B-Thinking). `--base` selects another id. `--print` (the default, and `make tev1-journey`) writes nothing. `--run` trains, merges, converts, seats, and evals the Ollama base tag against the specialist. It skips a step whose output is already on disk. It refuses when `llamafactory-cli`, `convert_hf_to_gguf.py`, `ollama`, or a GPU is missing. `--min-delta` and `--min-accuracy` set a local exit code. The comparison file is local output. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
+`estate classify journey` runs that loop as one command. The default base is `Qwen/Qwen3.5-4B` with LLaMA-Factory template `qwen3_5` and `enable_thinking: false` (`constants.py` registers that id as Qwen3.5-4B-Thinking). The base and the specialist share `convert_hf_to_gguf.py`, the same `--quant` (default `Q4_K_M`), and one non-thinking Modelfile. `--base-tag` is an opt-in library tag and the report warns that precision may differ. `--print` (the default, and `make tev1-journey`) writes nothing. `--run` needs `LLAMA_CPP_DIR` (or `--llama-cpp-dir`) with `convert_hf_to_gguf.py` and `llama-quantize`. Qwen3.5 needs a recent llama.cpp checkout. It also refuses when `llamafactory-cli`, `ollama`, or a GPU is missing. A step reruns unless its manifest matches. Eval uses `ollama-native`. `--min-delta` and `--min-accuracy` set a local exit code. The comparison file is local output. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
 
 ```bash
-estate classify journey --print
-estate classify journey --run --base Qwen/Qwen3.5-4B --base-tag qwen3.5:4b --tag tev1-specialist
+export LLAMA_CPP_DIR=/path/to/llama.cpp
+estate classify journey --print --llama-cpp-dir "$LLAMA_CPP_DIR"
+estate classify journey --run --llama-cpp-dir "$LLAMA_CPP_DIR" --base Qwen/Qwen3.5-4B --quant Q4_K_M --tag tev1-specialist
 ```
 
 Command details are `estate classify prepare --help`, `estate classify eval --help`, and `estate classify journey --help`.

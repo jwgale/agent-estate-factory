@@ -601,27 +601,94 @@ fn chat_completions_url(endpoint: &str) -> String {
     }
 }
 
-fn request_body(model: &str, row: &Decision) -> Value {
-    serde_json::json!({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": row.user_json}
-        ],
-        "temperature": 0,
-        "max_tokens": 8,
-        "chat_template_kwargs": {"enable_thinking": false},
-        "think": false
-    })
+/// How a score request turns thinking off.
+///
+/// `openai` is a vLLM or Together-style body: `chat_template_kwargs.enable_thinking` false.
+/// `ollama` is Ollama's OpenAI-compatible `/v1/chat/completions`. That route ignores
+/// `think` and `chat_template_kwargs`. Ollama documents `reasoning_effort: "none"`
+/// (docs.ollama.com OpenAI compatibility; `openai/openai.go` maps `"none"` to thinking off).
+/// `ollama-native` is `POST /api/chat` with `think: false`. Ollama's native API accepts
+/// boolean `think`; `/v1` rejects it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum EvalApi {
+    Openai,
+    Ollama,
+    #[value(name = "ollama-native")]
+    OllamaNative,
 }
 
-fn extract_message_text(body: &Value) -> Option<String> {
-    let content = body
-        .get("choices")?
-        .as_array()?
-        .first()?
-        .get("message")?
-        .get("content")?;
+impl EvalApi {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Openai => "openai",
+            Self::Ollama => "ollama",
+            Self::OllamaNative => "ollama-native",
+        }
+    }
+}
+
+fn messages_for(row: &Decision) -> Value {
+    serde_json::json!([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": row.user_json}
+    ])
+}
+
+fn request_body(model: &str, row: &Decision, api: EvalApi) -> Value {
+    match api {
+        EvalApi::Openai => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "temperature": 0,
+            "max_tokens": 8,
+            "chat_template_kwargs": {"enable_thinking": false}
+        }),
+        EvalApi::Ollama => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "temperature": 0,
+            "max_tokens": 8,
+            "reasoning_effort": "none"
+        }),
+        EvalApi::OllamaNative => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "stream": false,
+            "think": false,
+            "options": {"temperature": 0, "num_predict": 8}
+        }),
+    }
+}
+
+pub(crate) fn eval_url(endpoint: &str, api: EvalApi) -> String {
+    let base = endpoint.trim().trim_end_matches('/');
+    match api {
+        EvalApi::OllamaNative => {
+            if base.ends_with("/api/chat") {
+                base.to_string()
+            } else {
+                format!("{base}/api/chat")
+            }
+        }
+        EvalApi::Openai | EvalApi::Ollama => chat_completions_url(base),
+    }
+}
+
+/// Drop one leading `<think>...</think>` block. The flag is a thinking leak.
+pub(crate) fn strip_leading_think(text: &str) -> (String, bool) {
+    let trimmed = text.trim_start();
+    let Some(rest) = trimmed.strip_prefix("<think>") else {
+        return (text.to_string(), false);
+    };
+    if let Some(idx) = rest.find("</think>") {
+        let after = rest[idx + "</think>".len()..].trim_start();
+        (after.to_string(), true)
+    } else {
+        (String::new(), true)
+    }
+}
+
+fn content_string(content: &Value) -> Option<String> {
     match content {
         Value::String(s) => Some(s.clone()),
         Value::Array(parts) => {
@@ -639,6 +706,33 @@ fn extract_message_text(body: &Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn fold_thinking(content: String, thinking: Option<&str>) -> String {
+    match thinking.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(thinking) => format!("<think>\n{thinking}\n</think>\n{content}"),
+        None => content,
+    }
+}
+
+fn extract_message_text(body: &Value) -> Option<String> {
+    if let Some(content) = body
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| {
+            let text = message.get("content").and_then(content_string)?;
+            let thinking = message.get("reasoning").and_then(Value::as_str);
+            Some(fold_thinking(text, thinking))
+        })
+    {
+        return Some(content);
+    }
+    let message = body.get("message")?;
+    let text = message.get("content").and_then(content_string)?;
+    let thinking = message.get("thinking").and_then(Value::as_str);
+    Some(fold_thinking(text, thinking))
 }
 
 struct HttpFailure {
@@ -874,6 +968,7 @@ pub(crate) fn cmd_classify_eval(
     dry_run: bool,
     mock: bool,
     timeout_secs: u64,
+    api: EvalApi,
 ) -> Result<()> {
     if dry_run && mock {
         bail!("refuse:classify-eval: pass only one of --dry-run and --mock");
@@ -908,12 +1003,14 @@ pub(crate) fn cmd_classify_eval(
     };
 
     if dry_run {
-        let sample = request_body(model, &parsed.decisions[0]);
+        let sample = request_body(model, &parsed.decisions[0], api);
         let report = serde_json::json!({
             "schema": "cell-one.classify-eval.v0",
             "mode": mode,
+            "api": api.as_str(),
             "model": model,
-            "endpoint": endpoint.map(chat_completions_url),
+            "endpoint": endpoint.map(|endpoint| eval_url(endpoint, api)),
+            "thinking_leak": Value::Null,
             "records": parsed.decisions.len(),
             "correct": Value::Null,
             "accuracy": Value::Null,
@@ -948,18 +1045,19 @@ pub(crate) fn cmd_classify_eval(
                 bail!("refuse:classify-eval: endpoint must not contain the API key");
             }
         }
-        Some(chat_completions_url(endpoint))
+        Some(eval_url(endpoint, api))
     };
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
     let mut scored = Vec::with_capacity(parsed.decisions.len());
     let mut errors: Vec<Value> = Vec::new();
+    let mut thinking_leak = 0u64;
     for (index, row) in parsed.decisions.iter().enumerate() {
         let started = Instant::now();
         let (text, http_error) = if mock {
             (mock_completion(index, row.answer, &row.labels), false)
         } else {
-            let body = request_body(model, row);
+            let body = request_body(model, row, api);
             match post_chat(url.as_deref().unwrap(), &body, api_key.as_deref(), timeout) {
                 HttpOutcome::Ok(text) => (text, false),
                 HttpOutcome::Fail(fail) => {
@@ -976,6 +1074,10 @@ pub(crate) fn cmd_classify_eval(
         let (predicted, valid, correct) = if http_error {
             (None, false, false)
         } else {
+            let (text, leaked) = strip_leading_think(&text);
+            if leaked {
+                thinking_leak += 1;
+            }
             score_text(row.answer, &row.labels, &text)
         };
         scored.push(ScoredRow {
@@ -997,7 +1099,9 @@ pub(crate) fn cmd_classify_eval(
     let report = serde_json::json!({
         "schema": "cell-one.classify-eval.v0",
         "mode": mode,
+        "api": api.as_str(),
         "model": model,
+        "thinking_leak": thinking_leak,
         "endpoint": url,
         "records": scored.len(),
         "correct": correct,
@@ -1175,6 +1279,15 @@ mod tests {
         assert_eq!(parse_choice_letter("answer is: B", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("Answer is: B", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("B).", &allowed), Some('B'));
+        let (letter, leaked) = strip_leading_think("<think>\nsecret\n</think>\nB");
+        assert!(leaked);
+        assert_eq!(parse_choice_letter(&letter, &allowed), Some('B'));
+        let (open, leaked) = strip_leading_think("<think>still thinking");
+        assert!(leaked);
+        assert!(open.is_empty());
+        let (plain, leaked) = strip_leading_think("B");
+        assert!(!leaked);
+        assert_eq!(plain, "B");
         assert_eq!(parse_choice_letter("\"B\"", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("(B)", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("B)", &allowed), Some('B'));
@@ -1258,6 +1371,30 @@ mod tests {
             "answer_key": "yes"
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn request_bodies_turn_thinking_off_per_api() {
+        let row = parse_jsonl(&sample_line("B")).decisions.remove(0);
+        let openai = request_body("m", &row, EvalApi::Openai);
+        assert_eq!(openai["chat_template_kwargs"]["enable_thinking"], false);
+        assert!(openai.get("think").is_none());
+        assert!(openai.get("reasoning_effort").is_none());
+        let ollama = request_body("m", &row, EvalApi::Ollama);
+        assert_eq!(ollama["reasoning_effort"], "none");
+        assert!(ollama.get("think").is_none());
+        let native = request_body("m", &row, EvalApi::OllamaNative);
+        assert_eq!(native["think"], false);
+        assert_eq!(native["options"]["temperature"], 0);
+        assert_eq!(native["options"]["num_predict"], 8);
+        assert_eq!(
+            eval_url("http://127.0.0.1:11434", EvalApi::OllamaNative),
+            "http://127.0.0.1:11434/api/chat"
+        );
+        assert_eq!(
+            eval_url("http://127.0.0.1:11434", EvalApi::Ollama),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
     }
 
     #[test]
