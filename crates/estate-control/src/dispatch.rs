@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use estate_schema::{describe, load_estate_unvalidated, validate};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::cli::{AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
 use crate::ops::*;
@@ -323,6 +323,7 @@ pub(crate) fn run() -> Result<()> {
                 dry_run,
                 mock,
                 timeout_secs,
+                api,
             } => {
                 let report = report.unwrap_or_else(|| crate::classify::default_report_path(&records));
                 crate::classify::cmd_classify_eval(
@@ -334,6 +335,57 @@ pub(crate) fn run() -> Result<()> {
                     dry_run,
                     mock,
                     timeout_secs,
+                    api,
+                    crate::classify::EvalGate::Standalone,
+                )
+            }
+            ClassifyCommand::Journey {
+                input,
+                out,
+                base,
+                base_tag,
+                tag,
+                endpoint,
+                dataset_name,
+                seed,
+                held_out_ratio,
+                max_steps,
+                quant,
+                llama_cpp_dir,
+                print,
+                run,
+                force,
+                min_delta,
+                min_accuracy,
+                timeout_secs,
+            } => {
+                let input = input.unwrap_or_else(|| {
+                    PathBuf::from("examples/fixtures/tev1-decisions.jsonl")
+                });
+                let llama_cpp_dir = llama_cpp_dir.or_else(|| {
+                    std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from)
+                });
+                crate::classify_journey::cmd_classify_journey(
+                    &crate::classify_journey::JourneyRequest {
+                        input: &input,
+                        out: &out,
+                        base: &base,
+                        base_tag: base_tag.as_deref(),
+                        tag: &tag,
+                        endpoint: &endpoint,
+                        dataset_name: &dataset_name,
+                        seed,
+                        held_out_ratio,
+                        max_steps,
+                        quant: &quant,
+                        llama_cpp_dir: llama_cpp_dir.as_deref(),
+                        force,
+                        print,
+                        run,
+                        min_delta,
+                        min_accuracy,
+                        timeout_secs,
+                    },
                 )
             }
         },

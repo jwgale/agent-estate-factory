@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora glm4-chat-journey uniqueness-glm glm4-chat-lora-journey uniqueness-glm-lora classify-prepare classify-eval
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora glm4-chat-journey uniqueness-glm glm4-chat-lora-journey uniqueness-glm-lora classify-prepare classify-eval tev1-journey
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -464,6 +464,13 @@ classify-prepare:
 # Does not record a live PASS. Local only. Do not add to smoke, gate-90, or GitHub Actions.
 classify-eval:
 	bash scripts/classify-eval.sh
+
+# Opt-in tev1 reproduce journey. Default is --print.
+# TEV1_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+# Does not record a live PASS.
+tev1-journey:
+	bash scripts/tev1-journey.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups

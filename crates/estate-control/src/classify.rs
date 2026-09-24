@@ -499,18 +499,22 @@ fn strip_answer_lead(input: &str) -> String {
                 c.is_whitespace() || matches!(c, ':' | '"' | '\'' | '`' | '(')
             });
         if boundary {
-            return after.trim().to_string();
+            let rest = after.trim_start_matches(|c: char| c.is_whitespace() || c == ':');
+            return rest.trim().to_string();
         }
     }
     input.to_string()
 }
 
 fn strip_one_trailer(input: &str) -> String {
-    let s = input.trim();
-    if let Some(stripped) = s.strip_suffix('.').or_else(|| s.strip_suffix(')')) {
-        stripped.trim().to_string()
-    } else {
-        s.to_string()
+    let mut s = input.trim().to_string();
+    loop {
+        let trimmed = s.trim();
+        if let Some(stripped) = trimmed.strip_suffix('.').or_else(|| trimmed.strip_suffix(')')) {
+            s = stripped.trim().to_string();
+        } else {
+            return trimmed.to_string();
+        }
     }
 }
 
@@ -597,27 +601,94 @@ fn chat_completions_url(endpoint: &str) -> String {
     }
 }
 
-fn request_body(model: &str, row: &Decision) -> Value {
-    serde_json::json!({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": row.user_json}
-        ],
-        "temperature": 0,
-        "max_tokens": 8,
-        "chat_template_kwargs": {"enable_thinking": false},
-        "think": false
-    })
+/// How a score request turns thinking off.
+///
+/// `openai` is a vLLM or Together-style body: `chat_template_kwargs.enable_thinking` false.
+/// `ollama` is Ollama's OpenAI-compatible `/v1/chat/completions`. That route ignores
+/// `think` and `chat_template_kwargs`. Ollama documents `reasoning_effort: "none"`
+/// (docs.ollama.com OpenAI compatibility; `openai/openai.go` maps `"none"` to thinking off).
+/// `ollama-native` is `POST /api/chat` with `think: false`. Ollama's native API accepts
+/// boolean `think`; `/v1` rejects it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum EvalApi {
+    Openai,
+    Ollama,
+    #[value(name = "ollama-native")]
+    OllamaNative,
 }
 
-fn extract_message_text(body: &Value) -> Option<String> {
-    let content = body
-        .get("choices")?
-        .as_array()?
-        .first()?
-        .get("message")?
-        .get("content")?;
+impl EvalApi {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Openai => "openai",
+            Self::Ollama => "ollama",
+            Self::OllamaNative => "ollama-native",
+        }
+    }
+}
+
+fn messages_for(row: &Decision) -> Value {
+    serde_json::json!([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": row.user_json}
+    ])
+}
+
+fn request_body(model: &str, row: &Decision, api: EvalApi) -> Value {
+    match api {
+        EvalApi::Openai => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "temperature": 0,
+            "max_tokens": 8,
+            "chat_template_kwargs": {"enable_thinking": false}
+        }),
+        EvalApi::Ollama => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "temperature": 0,
+            "max_tokens": 8,
+            "reasoning_effort": "none"
+        }),
+        EvalApi::OllamaNative => serde_json::json!({
+            "model": model,
+            "messages": messages_for(row),
+            "stream": false,
+            "think": false,
+            "options": {"temperature": 0, "num_predict": 8}
+        }),
+    }
+}
+
+pub(crate) fn eval_url(endpoint: &str, api: EvalApi) -> String {
+    let base = endpoint.trim().trim_end_matches('/');
+    match api {
+        EvalApi::OllamaNative => {
+            if base.ends_with("/api/chat") {
+                base.to_string()
+            } else {
+                format!("{base}/api/chat")
+            }
+        }
+        EvalApi::Openai | EvalApi::Ollama => chat_completions_url(base),
+    }
+}
+
+/// Drop one leading `<think>...</think>` block. The flag is a thinking leak.
+pub(crate) fn strip_leading_think(text: &str) -> (String, bool) {
+    let trimmed = text.trim_start();
+    let Some(rest) = trimmed.strip_prefix("<think>") else {
+        return (text.to_string(), false);
+    };
+    if let Some(idx) = rest.find("</think>") {
+        let after = rest[idx + "</think>".len()..].trim_start();
+        (after.to_string(), true)
+    } else {
+        (String::new(), true)
+    }
+}
+
+fn content_string(content: &Value) -> Option<String> {
     match content {
         Value::String(s) => Some(s.clone()),
         Value::Array(parts) => {
@@ -635,6 +706,33 @@ fn extract_message_text(body: &Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn fold_thinking(content: String, thinking: Option<&str>) -> String {
+    match thinking.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(thinking) => format!("<think>\n{thinking}\n</think>\n{content}"),
+        None => content,
+    }
+}
+
+fn extract_message_text(body: &Value) -> Option<String> {
+    if let Some(content) = body
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| {
+            let text = message.get("content").and_then(content_string)?;
+            let thinking = message.get("reasoning").and_then(Value::as_str);
+            Some(fold_thinking(text, thinking))
+        })
+    {
+        return Some(content);
+    }
+    let message = body.get("message")?;
+    let text = message.get("content").and_then(content_string)?;
+    let thinking = message.get("thinking").and_then(Value::as_str);
+    Some(fold_thinking(text, thinking))
 }
 
 struct HttpFailure {
@@ -690,9 +788,15 @@ fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) 
             match serde_json::from_str::<Value>(&raw) {
                 Ok(v) => match extract_message_text(&v) {
                     Some(text) => HttpOutcome::Ok(text),
-                    None => HttpOutcome::Ok(String::new()),
+                    None => HttpOutcome::Fail(HttpFailure {
+                        status,
+                        body: scrub_snippet(&raw, api_key),
+                    }),
                 },
-                Err(_) => HttpOutcome::Ok(String::new()),
+                Err(_) => HttpOutcome::Fail(HttpFailure {
+                    status,
+                    body: scrub_snippet(&raw, api_key),
+                }),
             }
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -789,7 +893,20 @@ pub(crate) fn cmd_classify_prepare(
     }
     let (train_idx, held_idx) = split_by_group(&parsed.decisions, seed, held_out_ratio)
         .map_err(|e| anyhow::anyhow!("refuse:classify: {e}"))?;
-    if !force && output_occupied(out)? {
+    if out.is_file() {
+        if !force {
+            bail!(
+                "refuse:classify: --out {} is a file; pass --force to replace it",
+                out.display()
+            );
+        }
+        fs::remove_file(out).map_err(|e| {
+            anyhow::anyhow!(
+                "refuse:classify: cannot replace {}: {e}",
+                out.display()
+            )
+        })?;
+    } else if !force && output_occupied(out)? {
         bail!("refuse:classify: output exists and is non-empty; pass --force");
     }
     fs::create_dir_all(out)?;
@@ -841,6 +958,35 @@ pub(crate) fn cmd_classify_prepare(
     Ok(())
 }
 
+/// When a score is too broken to trust.
+/// Standalone eval fails only when every row failed at HTTP.
+/// The journey also fails when no row yields a letter, or when HTTP errors are more than 10%.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EvalGate {
+    Standalone,
+    Journey,
+}
+
+pub(crate) fn eval_gate_error(
+    gate: EvalGate,
+    records: u64,
+    http_errors: u64,
+    invalid: u64,
+) -> Option<String> {
+    if records == 0 {
+        return Some("refuse:classify-eval: no scored rows".into());
+    }
+    match gate {
+        EvalGate::Standalone if http_errors == records => Some(format!(
+            "refuse:classify-eval: every row failed at the HTTP level ({http_errors}/{records})"
+        )),
+        EvalGate::Journey if invalid == records || http_errors * 10 > records => Some(format!(
+            "refuse:classify-eval: unusable score; records={records} http_errors={http_errors} invalid={invalid}"
+        )),
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_classify_eval(
     records: &Path,
@@ -851,6 +997,8 @@ pub(crate) fn cmd_classify_eval(
     dry_run: bool,
     mock: bool,
     timeout_secs: u64,
+    api: EvalApi,
+    gate: EvalGate,
 ) -> Result<()> {
     if dry_run && mock {
         bail!("refuse:classify-eval: pass only one of --dry-run and --mock");
@@ -885,12 +1033,14 @@ pub(crate) fn cmd_classify_eval(
     };
 
     if dry_run {
-        let sample = request_body(model, &parsed.decisions[0]);
+        let sample = request_body(model, &parsed.decisions[0], api);
         let report = serde_json::json!({
             "schema": "cell-one.classify-eval.v0",
             "mode": mode,
+            "api": api.as_str(),
             "model": model,
-            "endpoint": endpoint.map(chat_completions_url),
+            "endpoint": endpoint.map(|endpoint| eval_url(endpoint, api)),
+            "thinking_leak": Value::Null,
             "records": parsed.decisions.len(),
             "correct": Value::Null,
             "accuracy": Value::Null,
@@ -925,18 +1075,19 @@ pub(crate) fn cmd_classify_eval(
                 bail!("refuse:classify-eval: endpoint must not contain the API key");
             }
         }
-        Some(chat_completions_url(endpoint))
+        Some(eval_url(endpoint, api))
     };
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
     let mut scored = Vec::with_capacity(parsed.decisions.len());
     let mut errors: Vec<Value> = Vec::new();
+    let mut thinking_leak = 0u64;
     for (index, row) in parsed.decisions.iter().enumerate() {
         let started = Instant::now();
         let (text, http_error) = if mock {
             (mock_completion(index, row.answer, &row.labels), false)
         } else {
-            let body = request_body(model, row);
+            let body = request_body(model, row, api);
             match post_chat(url.as_deref().unwrap(), &body, api_key.as_deref(), timeout) {
                 HttpOutcome::Ok(text) => (text, false),
                 HttpOutcome::Fail(fail) => {
@@ -953,6 +1104,10 @@ pub(crate) fn cmd_classify_eval(
         let (predicted, valid, correct) = if http_error {
             (None, false, false)
         } else {
+            let (text, leaked) = strip_leading_think(&text);
+            if leaked {
+                thinking_leak += 1;
+            }
             score_text(row.answer, &row.labels, &text)
         };
         scored.push(ScoredRow {
@@ -974,7 +1129,9 @@ pub(crate) fn cmd_classify_eval(
     let report = serde_json::json!({
         "schema": "cell-one.classify-eval.v0",
         "mode": mode,
+        "api": api.as_str(),
         "model": model,
+        "thinking_leak": thinking_leak,
         "endpoint": url,
         "records": scored.len(),
         "correct": correct,
@@ -993,6 +1150,9 @@ pub(crate) fn cmd_classify_eval(
         "note": "This score is not a factory live PASS. READY_FOR_LIVE_TEST stays no. The recorded Target C PASS is the only live uniqueness prove."
     });
     write_report(report_path, &report)?;
+    if let Some(err) = eval_gate_error(gate, scored.len() as u64, http_errors as u64, invalid as u64) {
+        bail!(err);
+    }
     Ok(())
 }
 
@@ -1106,6 +1266,18 @@ mod tests {
     }
 
     #[test]
+    fn single_group_refuses_and_tiny_n_clamps() {
+        let err = held_out_len(1, 0.2).unwrap_err();
+        assert!(err.contains("at least 2"), "{err}");
+        assert_eq!(held_out_len(5, 0.01).unwrap(), 1);
+        assert_eq!(held_out_len(5, 0.99).unwrap(), 4);
+        let one = parse_jsonl(&format!("{}\n{}", sample_line("A"), sample_line("B")));
+        assert_eq!(one.decisions.len(), 2);
+        let split = split_by_group(&one.decisions, 1, 0.2).unwrap_err();
+        assert!(split.contains("at least 2 groups"), "{split}");
+    }
+
+    #[test]
     fn sharegpt_and_alpaca_targets_are_one_letter() {
         let parsed = parse_jsonl(&sample_line("B")).decisions;
         let share = train_row(DatasetFormat::Sharegpt, &parsed[0]);
@@ -1137,6 +1309,18 @@ mod tests {
         assert_eq!(parse_choice_letter(" b.", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("Answer: C", &allowed), Some('C'));
         assert_eq!(parse_choice_letter("answer is B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("answer is: B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("Answer is: B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("B).", &allowed), Some('B'));
+        let (letter, leaked) = strip_leading_think("<think>\nsecret\n</think>\nB");
+        assert!(leaked);
+        assert_eq!(parse_choice_letter(&letter, &allowed), Some('B'));
+        let (open, leaked) = strip_leading_think("<think>still thinking");
+        assert!(leaked);
+        assert!(open.is_empty());
+        let (plain, leaked) = strip_leading_think("B");
+        assert!(!leaked);
+        assert_eq!(plain, "B");
         assert_eq!(parse_choice_letter("\"B\"", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("(B)", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("B)", &allowed), Some('B'));
@@ -1220,6 +1404,43 @@ mod tests {
             "answer_key": "yes"
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn request_bodies_turn_thinking_off_per_api() {
+        let row = parse_jsonl(&sample_line("B")).decisions.remove(0);
+        let openai = request_body("m", &row, EvalApi::Openai);
+        assert_eq!(openai["chat_template_kwargs"]["enable_thinking"], false);
+        assert!(openai.get("think").is_none());
+        assert!(openai.get("reasoning_effort").is_none());
+        let ollama = request_body("m", &row, EvalApi::Ollama);
+        assert_eq!(ollama["reasoning_effort"], "none");
+        assert!(ollama.get("think").is_none());
+        let native = request_body("m", &row, EvalApi::OllamaNative);
+        assert_eq!(native["think"], false);
+        assert_eq!(native["options"]["temperature"], 0);
+        assert_eq!(native["options"]["num_predict"], 8);
+        assert_eq!(
+            eval_url("http://127.0.0.1:11434", EvalApi::OllamaNative),
+            "http://127.0.0.1:11434/api/chat"
+        );
+        assert_eq!(
+            eval_url("http://127.0.0.1:11434", EvalApi::Ollama),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn eval_gate_fails_closed_for_dead_endpoints_and_unusable_journeys() {
+        assert!(eval_gate_error(EvalGate::Standalone, 4, 1, 1).is_none());
+        let all_http = eval_gate_error(EvalGate::Standalone, 2, 2, 2).unwrap();
+        assert!(all_http.contains("every row failed at the HTTP level"), "{all_http}");
+        let journey_http = eval_gate_error(EvalGate::Journey, 4, 1, 1).unwrap();
+        assert!(journey_http.contains("unusable"), "{journey_http}");
+        assert!(eval_gate_error(EvalGate::Journey, 10, 1, 1).is_none());
+        let all_invalid = eval_gate_error(EvalGate::Journey, 3, 0, 3).unwrap();
+        assert!(all_invalid.contains("unusable"), "{all_invalid}");
+        assert!(eval_gate_error(EvalGate::Standalone, 3, 0, 3).is_none());
     }
 
     #[test]

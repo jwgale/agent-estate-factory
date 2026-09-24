@@ -254,15 +254,32 @@ fn line_denies_live_pass(lower: &str) -> bool {
         || lower.contains("not a pass")
 }
 
-fn line_claims_live_pass(line: &str) -> bool {
-    if line.contains("**PASS**") || line.contains("**PASS.**") {
-        return true;
+fn contains_live_pass_token(lower: &str) -> bool {
+    let bytes = lower.as_bytes();
+    let needle = b"live pass";
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            let end = i + needle.len();
+            if end == bytes.len() || !is_token_char(bytes[end]) {
+                return true;
+            }
+        }
+        i += 1;
     }
+    false
+}
+
+fn line_claims_live_pass(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     if line_denies_live_pass(&lower) {
         return false;
     }
-    if lower.contains("live pass") {
+    let bold = line.contains("**PASS**") || line.contains("**PASS.**");
+    if bold {
+        return mentions_live_topic(&lower);
+    }
+    if contains_live_pass_token(&lower) {
         return true;
     }
     has_standalone_pass(line) && mentions_live_topic(&lower)
@@ -341,13 +358,15 @@ fn safety_matchers_catch_each_spelling() {
         assert!(!sets_ready_yes(benign), "false ready hit: {benign}");
     }
     for spelling in [
-        "**PASS**",
-        "see **PASS.** here",
+        "**PASS** on the 5090",
+        "see **PASS.** on the specialist row",
+        "uniqueness **PASS** stays recorded",
         "the live PASS is written down",
         "5090-class PASS on that host",
         "uniqueness PASS stays recorded",
         "specialist PASS on the Mac",
         "this is a live pass",
+        "this is a live pass.",
     ] {
         assert!(
             line_claims_live_pass(spelling),
@@ -359,6 +378,10 @@ fn safety_matchers_catch_each_spelling() {
         "does not invent a new live PASS",
         "not a live PASS",
         "unit PASS with no topic",
+        "**PASS**",
+        "see **PASS.** here",
+        "live password",
+        "live password reset",
         "READY_FOR_LIVE_TEST: no",
         "PASSWORD=1",
     ] {

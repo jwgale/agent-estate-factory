@@ -83,6 +83,16 @@ pub(crate) fn sibling_gguf_outfile(export_dir: &Path) -> PathBuf {
     }
 }
 
+/// Outfile and command the classify journey runs. Same line `gguf-convert` prints.
+pub fn convert_hf_to_gguf_outfile(export_dir: &Path) -> PathBuf {
+    sibling_gguf_outfile(export_dir)
+}
+
+/// Exact `convert_hf_to_gguf.py` line. `--outtype auto` is the script default.
+pub fn convert_hf_to_gguf_line(export_dir: &Path) -> String {
+    printed_convert_line(export_dir)
+}
+
 /// Exact `convert_hf_to_gguf.py` line. `--outtype auto` is the script default.
 pub(crate) fn printed_convert_line(export_dir: &Path) -> String {
     let outfile = sibling_gguf_outfile(export_dir);

@@ -4680,6 +4680,12 @@ fn segment_is_glm4_chat(segment: &str) -> bool {
 /// walks toward the root until a segment names one. Unknown paths stay `default`.
 /// A DeepSeek segment is classified before a Qwen or Llama substring in that same segment.
 /// A GLM segment uses its own stems. `glm-4` does not take GLM-4.5, GLM-4.1V, or GLM-Z1.
+/// Beachhead chat-template scan. Qwen3.5 is still the `qwen3` stem here.
+/// The classify journey selects `qwen3_5` for that family from LLaMA-Factory's list.
+pub fn llamafactory_template_name(train_base: &str) -> &'static str {
+    llamafactory_template(train_base)
+}
+
 fn llamafactory_template(train_base: &str) -> &'static str {
     for segment in train_base_segments(train_base).into_iter().rev() {
         if let Some(template) = template_for_segment(segment) {

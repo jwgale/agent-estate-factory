@@ -524,6 +524,67 @@ pub(crate) enum ClassifyCommand {
         /// Per-request timeout in seconds.
         #[arg(long, default_value_t = 30)]
         timeout_secs: u64,
+        /// Request shape. `openai` sets enable_thinking false. `ollama` sets reasoning_effort none on `/v1`. `ollama-native` posts `/api/chat` with think false.
+        #[arg(long, value_enum, default_value_t = crate::classify::EvalApi::Openai)]
+        api: crate::classify::EvalApi,
+    },
+    /// tev1 journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
+    /// `--print` is the default and does not run tools. `--run` downloads the base with `huggingface-cli` or `hf` unless `--base` is a local directory, then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
+    /// The comparison file is local output. It does not record a live PASS.
+    Journey {
+        /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.
+        #[arg(long)]
+        input: Option<PathBuf>,
+        /// Journey directory. Prepare output, recipe, adapter, export, GGUF, and reports live here.
+        #[arg(long, default_value = ".cell/classify-journey")]
+        out: PathBuf,
+        /// Hugging Face train base. Default `Qwen/Qwen3.5-4B` (LLaMA-Factory template `qwen3_5`).
+        /// A Hub id is downloaded into `base-hf` and converted from that directory. A local weights directory is used as-is.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_BASE)]
+        base: String,
+        /// Opt-in Ollama library tag for the base eval. Omit to build the base with the same convert, quant, and Modelfile as the specialist. A set tag can differ in precision.
+        #[arg(long)]
+        base_tag: Option<String>,
+        /// Ollama tag created from the specialist GGUF.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_TAG)]
+        tag: String,
+        /// OpenAI-compatible base URL. Ollama is `http://127.0.0.1:11434`.
+        #[arg(long, default_value = "http://127.0.0.1:11434")]
+        endpoint: String,
+        /// Dataset key. Must match `dataset_info.json` from classify prepare.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_DATASET)]
+        dataset_name: String,
+        #[arg(long, default_value_t = 20_260_920)]
+        seed: u64,
+        #[arg(long, default_value_t = 0.2)]
+        held_out_ratio: f64,
+        /// Optional LLaMA-Factory `max_steps`. Omit for one epoch.
+        #[arg(long)]
+        max_steps: Option<u32>,
+        /// GGUF quant applied to the base and the specialist. `f16` skips llama-quantize.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_QUANT)]
+        quant: String,
+        /// llama.cpp checkout. `$dir/convert_hf_to_gguf.py` and llama-quantize must exist. Env `LLAMA_CPP_DIR` is the fallback.
+        #[arg(long)]
+        llama_cpp_dir: Option<PathBuf>,
+        /// Print the step plan. This is the default. Does not train.
+        #[arg(long, default_value_t = false)]
+        print: bool,
+        /// Run the steps. Skips a step only when its manifest matches the current inputs.
+        /// Eval and Ollama skips also include the specialist tag, endpoint, and base tag. The recipe skip includes `max_steps`, the dataset name, and the template.
+        #[arg(long, default_value_t = false)]
+        run: bool,
+        /// Replace a file `--out` and a non-empty prepare directory.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        /// Specialist accuracy minus base accuracy must reach this value. Local exit code only.
+        #[arg(long)]
+        min_delta: Option<f64>,
+        /// Specialist accuracy must reach this value. Local exit code only.
+        #[arg(long)]
+        min_accuracy: Option<f64>,
+        #[arg(long, default_value_t = 120)]
+        timeout_secs: u64,
     },
 }
 
