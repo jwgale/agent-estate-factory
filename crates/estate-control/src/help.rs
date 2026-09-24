@@ -15,7 +15,6 @@ const TOPICS: &[&str] = &[
     "north-star",
     "charter",
     "enrich",
-    "classify",
 ];
 
 pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
@@ -60,10 +59,6 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             print!("{NORTH_STAR}");
             Ok(())
         }
-        Some("classify") => {
-            print!("{CLASSIFY}");
-            Ok(())
-        }
         Some("enrich") | Some("train") => {
             let (head, tail) = ENRICH.split_once(ENRICH_MATRIX_ANCHOR).expect(
                 "enrich help keeps the prepare-does-not-train anchor for the beachhead matrix",
@@ -96,7 +91,6 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
   estate help north-star
   estate help charter
   estate help enrich
-  estate help classify
 
 Entrypoint: make gate-90
 Loop:       make day90
@@ -148,69 +142,6 @@ GLM-4 LoRA: make glm4-chat-lora-journey
 GLM LoRA chain: make uniqueness-glm-lora
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
-Classify:   make classify-prepare
-            offline tev1-style JSONL to a one-letter LLaMA-Factory set plus held-out JSONL
-Eval:       make classify-eval
-            mock score of that held-out file; a live endpoint is a separate opt-in
-";
-
-const CLASSIFY: &str = "\
-classify — tev1-style one-letter loop
-======================================
-Reads the decision record shape from togethercomputer/tev1
-(https://github.com/togethercomputer/tev1): JSONL objects with state,
-question, options lettered A onward, and an answer letter. Option labels
-are consecutive. Each option has a non-empty key and description.
-2–24 options. The train target is exactly that one letter.
-
-estate classify prepare is offline. It validates rows, splits them with a
-seeded shuffle, and writes dataset.jsonl, dataset_info.json, and
-heldout.jsonl. Default format is sharegpt (system, user JSON, assistant
-letter). --format alpaca writes instruction, input, and output. --strict
-refuses the file when any row is bad and writes nothing. Without --strict,
-bad rows are skipped. The error names the count and the first line numbers.
-Prepare does not train, merge, convert, or seat.
-
-The operator loop on a 5090-class host is: classify prepare, then
-LLaMA-Factory LoRA or QLoRA on that dataset (Qwen3.5 4B is the tev1 base),
-then merge, then GGUF, then an Ollama seat, then classify eval against the
-held-out JSONL. This factory does not run that train. Together hosted
-fine-tune is an optional hosted driver for the same letter target. Credit
-tev1 for the record shape and the one-letter decision task. No live
-classify run has been done. This command does not record a live PASS.
-The recorded Target C PASS stays the only live uniqueness prove.
-READY_FOR_LIVE_TEST stays no.
-
-estate classify eval scores the held-out file through an OpenAI-compatible
-chat endpoint. Ollama's /v1 and a hosted endpoint such as Together both
-fit. Temperature is 0. max_tokens is 8. The body sets thinking off
-(chat_template_kwargs.enable_thinking false, and think false). The first
-standalone option letter is the prediction. The JSON report has accuracy,
-per-label confusion, invalid-output count, and latency p50/p95.
---endpoint, --model, and --api-key-env are the live flags. The key is read
-from the named environment variable and is never printed.
---dry-run writes a sample request and does not call the network.
---mock scores a built-in letter script and does not call the network.
-Mock is not a model score.
-
-Not in make smoke, make gate-90, or Actions.
-
-  estate classify prepare \\
-    --input examples/fixtures/tev1-decisions.jsonl \\
-    --out .cell/classify
-  estate classify eval \\
-    --records .cell/classify/heldout.jsonl \\
-    --mock --model mock \\
-    --report .cell/classify/report.json
-  estate classify eval \\
-    --records .cell/classify/heldout.jsonl \\
-    --endpoint http://127.0.0.1:11434 \\
-    --model cell-classify \\
-    --report .cell/classify/report.json
-  make classify-prepare
-  make classify-eval
-
-Walk: docs/TRAIN-ENRICH.md
 ";
 
 const STATUS: &str = "\

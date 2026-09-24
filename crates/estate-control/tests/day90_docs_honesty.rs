@@ -3530,7 +3530,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3894,7 +3894,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4408,7 +4408,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4786,7 +4786,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5505,7 +5505,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let named_journeys = changelog
         .split("## This slice — checklist names DeepSeek and GLM print journeys")
         .nth(1)
@@ -5991,7 +5991,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -6310,7 +6310,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -6594,7 +6594,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
@@ -6869,7 +6869,7 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — print-only GLM-4 Chat journey")
         .nth(1)
@@ -7040,7 +7040,7 @@ fn purpose_build_operator_surfaces_name_the_journey() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — operator surfaces name purpose-build on demand")
         .nth(1)
@@ -7204,7 +7204,7 @@ fn purpose_build_surfaces_name_mid_software_build_entry() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — operator surfaces name mid-software-build purpose-build")
         .nth(1)
@@ -7305,7 +7305,7 @@ fn help_names_mid_software_build_purpose_build_entry() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — help names mid-software-build purpose-build")
         .nth(1)
@@ -7464,7 +7464,7 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " tev1-style classify prepare and held-out eval");
+    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
     let slice = changelog
         .split("## This slice — TRAIN-ENRICH names the purpose-build mid-software-build entry")
         .nth(1)

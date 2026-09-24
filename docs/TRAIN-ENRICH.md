@@ -25,9 +25,9 @@ Operator loop on a 5090-class host:
 
 Eval uses an OpenAI-compatible chat completion, temperature 0, `max_tokens` 8, and thinking off (`chat_template_kwargs.enable_thinking` false and `think` false). It parses the first standalone option letter and writes accuracy, per-label confusion, invalid-output count, and latency p50/p95. `--api-key-env` names the variable that holds a bearer token. The value is never printed. `--dry-run` and `--mock` do not call the network. Mock is a letter script, not a model score.
 
-Together hosted fine-tune is an optional hosted driver for the same letter target. tev1's own `examples/train_together.py` is that path. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
+Together hosted fine-tune is an optional hosted driver for the same letter target. This factory does not launch it. No live classify run has been done. A report file is not a live PASS. The recorded Target C PASS stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: no.
 
-Opt-in only: `make classify-prepare` and `make classify-eval`. They are not in `make smoke`, `make gate-90`, or GitHub Actions. `estate help classify` prints the same loop.
+Opt-in only: `make classify-prepare` and `make classify-eval`. They are not in `make smoke`, `make gate-90`, or GitHub Actions. Command details are `estate classify prepare --help` and `estate classify eval --help`.
 
 ## Target C — Qwen QLoRA operator journey
 
