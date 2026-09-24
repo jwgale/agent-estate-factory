@@ -31,8 +31,105 @@ pub const DEFAULT_TOGETHER_API: &str = "https://api.together.ai/v1";
 pub const DEFAULT_TOGETHER_KEY_ENV: &str = "TOGETHER_API_KEY";
 /// Wall-clock cap for Together job polling. Separate from the per-request HTTP timeout.
 pub const DEFAULT_TOGETHER_POLL_SECS: u64 = 10_800;
+/// DeepSeek-R1-Distill chat checkpoint. LLaMA-Factory template `deepseekr1`.
+pub const DEEPSEEK_R1_DISTILL_BASE: &str = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B";
+/// Ollama tag for the DeepSeek specialist GGUF.
+pub const DEEPSEEK_R1_DISTILL_TAG: &str = "deepseek-r1-distill-specialist";
+/// Ollama tag created from the built DeepSeek base GGUF. Not a library tag.
+pub const DEEPSEEK_R1_DISTILL_BUILT_BASE_TAG: &str = "deepseek-r1-distill-base";
+/// Compressed Together adapter archive cap. Larger downloads are refused.
+pub const MAX_TOGETHER_ADAPTER_COMPRESSED: usize = 512 * 1024 * 1024;
+/// Decompressed Together adapter tar cap. Larger unpacks are refused.
+pub const MAX_TOGETHER_ADAPTER_DECOMPRESSED: usize = 2 * 1024 * 1024 * 1024;
 
 const QWEN35_RECENT: &str = "Qwen3.5 needs a recent llama.cpp checkout";
+const DEEPSEEK_LLAMA_NOTE: &str =
+    "DeepSeek-R1-Distill needs a llama.cpp checkout that converts that architecture";
+
+/// Which letter-journey defaults `classify journey` fills in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum JourneyPreset {
+    /// `Qwen/Qwen3.5-4B`, template `qwen3_5`, tag `tev1-specialist`. This is the default.
+    Tev1,
+    /// `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`, template `deepseekr1`, tag `deepseek-r1-distill-specialist`.
+    /// Train stays `llamafactory-cli` unless `--together-model` is set with `--train-driver together`.
+    DeepseekR1Distill,
+}
+
+/// Modelfile chat shape. The base and the specialist share one shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeatChat {
+    Qwen35,
+    DeepseekR1,
+}
+
+/// Defaults after `--preset` replaces an untouched tev1 base or tag.
+#[derive(Debug)]
+pub struct AppliedJourney {
+    pub base: String,
+    pub tag: String,
+    pub built_base_tag: &'static str,
+    pub seat: SeatChat,
+    pub llama_note: &'static str,
+    pub together_model: String,
+}
+
+/// `--base` and `--tag` left at the tev1 defaults take the preset. An explicit value wins.
+/// Together on the DeepSeek preset needs `--together-model`. The Qwen default stays the tev1 path.
+pub fn apply_preset(
+    preset: JourneyPreset,
+    base: &str,
+    tag: &str,
+    train_driver: TrainDriver,
+    together_model: Option<&str>,
+) -> Result<AppliedJourney> {
+    let (base, tag, built_base_tag, seat, llama_note) = match preset {
+        JourneyPreset::Tev1 => (
+            base.to_string(),
+            tag.to_string(),
+            DEFAULT_BUILT_BASE_TAG,
+            SeatChat::Qwen35,
+            QWEN35_RECENT,
+        ),
+        JourneyPreset::DeepseekR1Distill => {
+            let base = if base == DEFAULT_BASE {
+                DEEPSEEK_R1_DISTILL_BASE.to_string()
+            } else {
+                base.to_string()
+            };
+            let tag = if tag == DEFAULT_TAG {
+                DEEPSEEK_R1_DISTILL_TAG.to_string()
+            } else {
+                tag.to_string()
+            };
+            (
+                base,
+                tag,
+                DEEPSEEK_R1_DISTILL_BUILT_BASE_TAG,
+                SeatChat::DeepseekR1,
+                DEEPSEEK_LLAMA_NOTE,
+            )
+        }
+    };
+    let together_model = match (preset, train_driver, together_model.map(str::trim)) {
+        (JourneyPreset::DeepseekR1Distill, TrainDriver::Together, None | Some("")) => {
+            bail!(
+                "refuse:classify-journey: DeepSeek-R1-Distill journey uses local llamafactory-cli train. Together stays on the tev1 Qwen path unless --together-model is set"
+            );
+        }
+        (_, TrainDriver::Together, Some(model)) if !model.is_empty() => model.to_string(),
+        (_, _, Some(model)) if !model.is_empty() => model.to_string(),
+        _ => DEFAULT_TOGETHER_MODEL.to_string(),
+    };
+    Ok(AppliedJourney {
+        base,
+        tag,
+        built_base_tag,
+        seat,
+        llama_note,
+        together_model,
+    })
+}
 
 /// Non-thinking Qwen3.5 generation prompt.
 /// Official `enable_thinking=False` ends the prompt at
@@ -50,6 +147,14 @@ const QWEN35_NOTHINK_TEMPLATE: &str = "\
 
 </think>
 
+";
+
+/// Non-thinking DeepSeek-R1-Distill prompt. Official chat tokens, generation ends at Assistant.
+/// `enable_thinking: false` on the recipe keeps the one-letter target free of think tokens.
+const DEEPSEEK_R1_TEMPLATE: &str = "\
+{{ if .System }}<｜begin▁of▁sentence｜>{{ .System }}{{ else }}<｜begin▁of▁sentence｜>{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<｜User｜>
+{{ .Content }}{{ else if eq .Role \"assistant\" }}<｜Assistant｜>
+{{ .Content }}<｜end▁of▁sentence｜>{{ end }}{{ end }}<｜Assistant｜>
 ";
 
 const STEP_ORDER: &[&str] = &[
@@ -261,15 +366,19 @@ export_legacy_format: false
 
 /// Journey Modelfile. Same shape for the base and the specialist. `FROM` is the only difference.
 /// Not `local_seat`'s `gguf_modelfile`. `FROM` uses the same token rules as `modelfile_token`.
-pub fn journey_modelfile(gguf: &Path) -> String {
+pub fn journey_modelfile(gguf: &Path, seat: SeatChat) -> String {
     let gguf = absolute_gguf(gguf);
+    let (stop, template) = match seat {
+        SeatChat::Qwen35 => ("<|im_end|>", QWEN35_NOTHINK_TEMPLATE),
+        SeatChat::DeepseekR1 => ("<｜end▁of▁sentence｜>", DEEPSEEK_R1_TEMPLATE),
+    };
     format!(
         "\
 FROM {gguf}
 PARAMETER temperature 0
 PARAMETER num_predict 8
-PARAMETER stop <|im_end|>
-TEMPLATE \"\"\"{QWEN35_NOTHINK_TEMPLATE}\"\"\"
+PARAMETER stop {stop}
+TEMPLATE \"\"\"{template}\"\"\"
 ",
         gguf = modelfile_from_token(&gguf),
     )
@@ -408,7 +517,7 @@ pub fn placeholder_quantize_line(f16: &Path, outfile: &Path, quant: &str) -> Str
     ])
 }
 
-pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
+pub fn resolve_llama_cpp_note(dir: &Path, note: &str) -> Result<LlamaCpp> {
     let convert = dir.join("convert_hf_to_gguf.py");
     let quantize = llama_quantize_bin(dir);
     let mut missing = Vec::new();
@@ -425,10 +534,7 @@ pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
         ));
     }
     if !missing.is_empty() {
-        bail!(
-            "refuse:classify-journey: {}; {QWEN35_RECENT}",
-            missing.join("; ")
-        );
+        bail!("refuse:classify-journey: {}; {note}", missing.join("; "));
     }
     Ok(LlamaCpp {
         dir: dir.to_path_buf(),
@@ -495,6 +601,7 @@ pub fn tool_gaps(
     llama_dir: Option<&Path>,
     gpu_ok: bool,
     need_hf: bool,
+    llama_note: &str,
 ) -> ToolGaps {
     let mut missing = Vec::new();
     if !has("llamafactory-cli") {
@@ -507,10 +614,10 @@ pub fn tool_gaps(
     }
     match llama_dir {
         None => missing.push(format!(
-            "LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {QWEN35_RECENT}"
+            "LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {llama_note}"
         )),
         Some(dir) => {
-            if let Err(err) = resolve_llama_cpp(dir) {
+            if let Err(err) = resolve_llama_cpp_note(dir, llama_note) {
                 let text = err.to_string();
                 let text = text
                     .strip_prefix("refuse:classify-journey: ")
@@ -675,23 +782,17 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
         req.max_steps,
     );
     let library = library_tag(req.base_tag);
-    let eval = pipeline.as_ref().map(|pipeline| {
-        eval_inputs(
-            pipeline,
-            req.tag,
-            req.endpoint,
-            library,
-            DEFAULT_BUILT_BASE_TAG,
-        )
-    });
+    let eval = pipeline
+        .as_ref()
+        .map(|pipeline| eval_inputs(pipeline, req.tag, req.endpoint, library, req.built_base_tag));
     let ollama_base = pipeline.as_ref().map(|pipeline| {
         ollama_inputs(
             pipeline,
-            DEFAULT_BUILT_BASE_TAG,
+            req.built_base_tag,
             req.tag,
             req.endpoint,
             library,
-            DEFAULT_BUILT_BASE_TAG,
+            req.built_base_tag,
         )
     });
     let ollama_spec = pipeline.as_ref().map(|pipeline| {
@@ -701,7 +802,7 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
             req.tag,
             req.endpoint,
             library,
-            DEFAULT_BUILT_BASE_TAG,
+            req.built_base_tag,
         )
     });
     Ok(Inputs {
@@ -1369,6 +1470,10 @@ pub struct JourneyRequest<'a> {
     pub together_model: &'a str,
     pub together_base_url: &'a str,
     pub api_key_env: Option<&'a str>,
+    pub built_base_tag: &'a str,
+    pub seat: SeatChat,
+    pub llama_note: &'a str,
+    pub preset: JourneyPreset,
 }
 
 fn library_tag(base_tag: Option<&str>) -> Option<&str> {
@@ -1403,8 +1508,8 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     let template = train_template(req.base);
     let inputs = load_inputs(req, &paths)?;
     let llama = match req.llama_cpp_dir {
-        Some(dir) if req.run => Some(resolve_llama_cpp(dir)?),
-        Some(dir) => resolve_llama_cpp(dir).ok(),
+        Some(dir) if req.run => Some(resolve_llama_cpp_note(dir, req.llama_note)?),
+        Some(dir) => resolve_llama_cpp_note(dir, req.llama_note).ok(),
         None => None,
     };
     let library = library_tag(req.base_tag);
@@ -1414,7 +1519,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
         quant: req.quant,
         library_tag: library,
-        built_base_tag: DEFAULT_BUILT_BASE_TAG,
+        built_base_tag: req.built_base_tag,
         specialist_tag: req.tag,
         llama: llama.as_ref(),
         inputs: &inputs,
@@ -1432,13 +1537,15 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         req.llama_cpp_dir,
         gpu_present(),
         !base_is_local_dir(req.base),
+        req.llama_note,
     );
     if !gaps.missing.is_empty() {
         bail!(gaps.message());
     }
     let llama = llama.ok_or_else(|| {
         anyhow::anyhow!(
-            "refuse:classify-journey: LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {QWEN35_RECENT}"
+            "refuse:classify-journey: LLAMA_CPP_DIR is unset; pass --llama-cpp-dir. {}",
+            req.llama_note
         )
     })?;
     execute(req, &paths, &llama)?;
@@ -1468,7 +1575,7 @@ fn print_plan(
 ) {
     println!("classify journey: print");
     println!("base: {} template: {template}", req.base);
-    let base_seat = library.unwrap_or(DEFAULT_BUILT_BASE_TAG);
+    let base_seat = library.unwrap_or(req.built_base_tag);
     let seat_kind = if library.is_some() {
         "library-tag"
     } else {
@@ -1481,13 +1588,22 @@ fn print_plan(
     if library.is_some() {
         println!("warning: --base-tag skips the shared convert and quant. Precision may differ from the specialist.");
     }
-    if req.base == DEFAULT_BASE {
+    if req.preset == JourneyPreset::Tev1 && req.base == DEFAULT_BASE {
         println!(
             "default base {DEFAULT_BASE} is registered in LLaMA-Factory constants.py as Qwen3.5-4B-Thinking with template {QWEN35_TEMPLATE} and enable_thinking false"
         );
     }
+    if req.preset == JourneyPreset::DeepseekR1Distill {
+        println!(
+            "preset deepseek-r1-distill base {DEEPSEEK_R1_DISTILL_BASE} template {template} tag {} local llamafactory-cli train",
+            req.tag
+        );
+    }
     if req.llama_cpp_dir.is_none() {
-        println!("{QWEN35_RECENT}. Set --llama-cpp-dir or LLAMA_CPP_DIR before --run.");
+        println!(
+            "{}. Set --llama-cpp-dir or LLAMA_CPP_DIR before --run.",
+            req.llama_note
+        );
     }
     println!(
         "train_driver: {} {}",
@@ -1529,7 +1645,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
             hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
             quant: req.quant,
             library_tag: library,
-            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            built_base_tag: req.built_base_tag,
             specialist_tag: req.tag,
             llama: Some(llama),
             inputs: &inputs,
@@ -1647,7 +1763,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     req,
                     paths,
                     "base",
-                    DEFAULT_BUILT_BASE_TAG,
+                    req.built_base_tag,
                     &paths.base_modelfile,
                     "ollama-create-base",
                 )?;
@@ -1663,7 +1779,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                 )?;
             }
             "eval-base" => {
-                let model = library.unwrap_or(DEFAULT_BUILT_BASE_TAG);
+                let model = library.unwrap_or(req.built_base_tag);
                 cmd_classify_eval(
                     &paths.heldout,
                     Some(req.endpoint),
@@ -1769,7 +1885,7 @@ fn seat_gguf(
             gguf.display()
         )
     })?;
-    fs::write(modelfile, journey_modelfile(&gguf_abs))?;
+    fs::write(modelfile, journey_modelfile(&gguf_abs, req.seat))?;
     run_argv(&[
         "ollama".into(),
         "create".into(),
@@ -1936,7 +2052,11 @@ fn write_comparison(
         "schema": "cell-one.classify-journey.v0",
         "base": req.base,
         "template": template,
-        "base_tag": library.unwrap_or(DEFAULT_BUILT_BASE_TAG),
+        "base_tag": library.unwrap_or(req.built_base_tag),
+        "preset": match req.preset {
+            JourneyPreset::Tev1 => "tev1",
+            JourneyPreset::DeepseekR1Distill => "deepseek-r1-distill",
+        },
         "base_seat": base_seat,
         "specialist_tag": req.tag,
         "quant": req.quant,
@@ -2066,9 +2186,9 @@ fn run_together_train(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<
         paths.dataset_jsonl.display(),
         req.together_model
     );
-    let file_id = together_upload(&root, &key, &dataset)?;
+    let file_id = together_upload(&root, &key, &dataset, req.timeout_secs)?;
     together_wait_file(&root, &key, &file_id, req.timeout_secs)?;
-    let job_id = together_create_job(&root, &key, &file_id, req.together_model)?;
+    let job_id = together_create_job(&root, &key, &file_id, req.together_model, req.timeout_secs)?;
     println!("together job {job_id}");
     let status = together_poll_job(
         &root,
@@ -2149,7 +2269,7 @@ fn together_http_err(url: &str, key: &str, err: ureq::Error) -> anyhow::Error {
     )
 }
 
-fn together_upload(root: &str, key: &str, dataset: &[u8]) -> Result<String> {
+fn together_upload(root: &str, key: &str, dataset: &[u8], timeout_secs: u64) -> Result<String> {
     let boundary = "----cell-one-together";
     let mut body = Vec::new();
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
@@ -2164,7 +2284,7 @@ fn together_upload(root: &str, key: &str, dataset: &[u8]) -> Result<String> {
     body.extend_from_slice(dataset);
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     let url = format!("{root}/files");
-    let agent = together_agent(120);
+    let agent = together_agent(timeout_secs);
     let resp = agent
         .post(&url)
         .set("Authorization", &format!("Bearer {key}"))
@@ -2207,7 +2327,13 @@ fn together_wait_file(root: &str, key: &str, file_id: &str, timeout_secs: u64) -
     bail!("refuse:classify-journey: together file {file_id} did not finish processing")
 }
 
-fn together_create_job(root: &str, key: &str, file_id: &str, model: &str) -> Result<String> {
+fn together_create_job(
+    root: &str,
+    key: &str,
+    file_id: &str,
+    model: &str,
+    timeout_secs: u64,
+) -> Result<String> {
     let url = format!("{root}/fine-tunes");
     let body = json!({
         "training_file": file_id,
@@ -2218,7 +2344,7 @@ fn together_create_job(root: &str, key: &str, file_id: &str, model: &str) -> Res
         "learning_rate": 0.0001,
         "suffix": "tev1"
     });
-    let value = together_json("POST", &url, key, Some(&body), 120)?;
+    let value = together_json("POST", &url, key, Some(&body), timeout_secs)?;
     value
         .get("id")
         .and_then(Value::as_str)
@@ -2280,29 +2406,59 @@ fn together_download_adapter(
         .set("Authorization", &format!("Bearer {key}"))
         .call()
         .map_err(|err| together_http_err(&url, key, err))?;
+    read_limited(
+        resp.into_reader(),
+        MAX_TOGETHER_ADAPTER_COMPRESSED,
+        "download",
+    )
+}
+
+fn read_limited(mut reader: impl Read, cap: usize, what: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    resp.into_reader().read_to_end(&mut bytes).map_err(|err| {
-        anyhow::anyhow!("refuse:classify-journey: together download read failed: {err}")
-    })?;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf).map_err(|err| {
+            anyhow::anyhow!("refuse:classify-journey: together adapter {what} read failed: {err}")
+        })?;
+        if n == 0 {
+            break;
+        }
+        if bytes.len().saturating_add(n) > cap {
+            bail!("refuse:classify-journey: together adapter {what} exceeds {cap} bytes");
+        }
+        bytes.extend_from_slice(&buf[..n]);
+    }
     Ok(bytes)
 }
 
 fn decompress_adapter_archive(bytes: &[u8]) -> Result<Vec<u8>> {
+    decompress_adapter_archive_capped(
+        bytes,
+        MAX_TOGETHER_ADAPTER_COMPRESSED,
+        MAX_TOGETHER_ADAPTER_DECOMPRESSED,
+    )
+}
+
+fn decompress_adapter_archive_capped(
+    bytes: &[u8],
+    compressed_cap: usize,
+    decompressed_cap: usize,
+) -> Result<Vec<u8>> {
+    if bytes.len() > compressed_cap {
+        bail!("refuse:classify-journey: together adapter download exceeds {compressed_cap} bytes");
+    }
     if is_zstd(bytes) {
-        return zstd::stream::decode_all(bytes).map_err(|err| {
+        let decoder = zstd::stream::Decoder::new(bytes).map_err(|err| {
             anyhow::anyhow!("refuse:classify-journey: together download zstd decode failed: {err}")
-        });
+        })?;
+        return read_limited(decoder, decompressed_cap, "decompressed");
     }
     if is_gzip(bytes) {
-        let mut decoded = Vec::new();
-        flate2::read::GzDecoder::new(bytes)
-            .read_to_end(&mut decoded)
-            .map_err(|err| {
-                anyhow::anyhow!(
-                    "refuse:classify-journey: together download gzip decode failed: {err}"
-                )
-            })?;
-        return Ok(decoded);
+        return read_limited(
+            flate2::read::GzDecoder::new(bytes),
+            decompressed_cap,
+            "decompressed",
+        );
     }
     if is_unknown_codec(bytes) {
         bail!("refuse:classify-journey: together download uses an unknown compression codec");
@@ -2495,13 +2651,16 @@ mod tests {
         );
         assert!(export.contains("enable_thinking: false"), "{export}");
         assert!(export.contains("template: qwen3_5"), "{export}");
-        let model = journey_modelfile(&paths.seated_gguf("specialist", DEFAULT_QUANT));
+        let model = journey_modelfile(
+            &paths.seated_gguf("specialist", DEFAULT_QUANT),
+            SeatChat::Qwen35,
+        );
         assert!(model.contains("PARAMETER temperature 0"), "{model}");
         assert!(model.contains("PARAMETER num_predict 8"), "{model}");
         assert!(model.contains("<think>\n\n</think>"), "{model}");
         assert!(model.starts_with("FROM "), "{model}");
         let spaced = dir.join("seat dir").join("specialist Q4.gguf");
-        let quoted = journey_modelfile(&spaced);
+        let quoted = journey_modelfile(&spaced, SeatChat::Qwen35);
         let shared = model_estate::gguf_modelfile(&spaced);
         assert!(quoted.contains("FROM \""), "{quoted}");
         assert!(shared.starts_with("FROM \""), "{shared}");
@@ -2526,7 +2685,7 @@ mod tests {
             let gguf = paths.seated_gguf(which, DEFAULT_QUANT);
             fs::write(&gguf, b"GGUF").unwrap();
             assert!(gguf.is_relative(), "{}", gguf.display());
-            let text = journey_modelfile(&gguf);
+            let text = journey_modelfile(&gguf, SeatChat::Qwen35);
             let from = text
                 .lines()
                 .next()
@@ -2957,7 +3116,7 @@ mod tests {
 
     #[test]
     fn missing_tool_messages_name_each_gap() {
-        let gaps = tool_gaps(|_| false, None, false, true);
+        let gaps = tool_gaps(|_| false, None, false, true, QWEN35_RECENT);
         let text = gaps.message();
         assert!(text.contains("llamafactory-cli is not on PATH"), "{text}");
         assert!(text.contains("LLAMA_CPP_DIR is unset"), "{text}");
@@ -2969,7 +3128,7 @@ mod tests {
         assert!(text.contains("HF_TOKEN"), "{text}");
         assert!(text.contains("ollama is not on PATH"), "{text}");
         assert!(text.contains("no GPU"), "{text}");
-        let partial = tool_gaps(|name| name == "ollama", None, true, false);
+        let partial = tool_gaps(|name| name == "ollama", None, true, false, QWEN35_RECENT);
         let text = partial.message();
         assert!(text.contains("llamafactory-cli"));
         assert!(!text.contains("ollama is not"));
@@ -2982,7 +3141,7 @@ mod tests {
         fs::create_dir_all(dir.join("build/bin")).unwrap();
         fs::write(dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
         fs::write(dir.join("build/bin/llama-quantize"), "").unwrap();
-        assert!(resolve_llama_cpp(&dir)
+        assert!(resolve_llama_cpp_note(&dir, QWEN35_RECENT)
             .unwrap()
             .quantize
             .ends_with("build/bin/llama-quantize"));
@@ -2990,11 +3149,11 @@ mod tests {
         fs::create_dir_all(bin_dir.join("bin")).unwrap();
         fs::write(bin_dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
         fs::write(bin_dir.join("bin/llama-quantize"), "").unwrap();
-        assert!(resolve_llama_cpp(&bin_dir)
+        assert!(resolve_llama_cpp_note(&bin_dir, QWEN35_RECENT)
             .unwrap()
             .quantize
             .ends_with("bin/llama-quantize"));
-        let llama = resolve_llama_cpp(&dir).unwrap();
+        let llama = resolve_llama_cpp_note(&dir, QWEN35_RECENT).unwrap();
         let outfile = dir.join("base.f16.gguf");
         let export = dir.join("export");
         fs::create_dir_all(&export).unwrap();
@@ -3011,7 +3170,9 @@ mod tests {
         );
         assert!(!argv.iter().any(|arg| arg == DEFAULT_BASE));
         let missing = dir.join("nope");
-        let err = resolve_llama_cpp(&missing).unwrap_err().to_string();
+        let err = resolve_llama_cpp_note(&missing, QWEN35_RECENT)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains(QWEN35_RECENT), "{err}");
         assert!(err.contains("convert_hf_to_gguf.py"), "{err}");
         let _ = fs::remove_dir_all(&dir);
@@ -3233,5 +3394,108 @@ mod tests {
             .to_string();
         assert!(err.contains("unknown compression codec"), "{err}");
         assert_eq!(decompress_adapter_archive(&raw).unwrap(), raw);
+    }
+
+    #[test]
+    fn deepseek_preset_fills_base_tag_and_template_and_refuses_default_together() {
+        let applied = apply_preset(
+            JourneyPreset::DeepseekR1Distill,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Local,
+            None,
+        )
+        .unwrap();
+        assert_eq!(applied.base, DEEPSEEK_R1_DISTILL_BASE);
+        assert_eq!(applied.tag, DEEPSEEK_R1_DISTILL_TAG);
+        assert_eq!(applied.built_base_tag, DEEPSEEK_R1_DISTILL_BUILT_BASE_TAG);
+        assert_eq!(applied.seat, SeatChat::DeepseekR1);
+        assert_eq!(train_template(&applied.base), "deepseekr1");
+        let kept = apply_preset(
+            JourneyPreset::DeepseekR1Distill,
+            "lab/other",
+            "custom-tag",
+            TrainDriver::Local,
+            None,
+        )
+        .unwrap();
+        assert_eq!(kept.base, "lab/other");
+        assert_eq!(kept.tag, "custom-tag");
+        assert_eq!(kept.seat, SeatChat::DeepseekR1);
+        let tev1 = apply_preset(
+            JourneyPreset::Tev1,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Together,
+            None,
+        )
+        .unwrap();
+        assert_eq!(tev1.base, DEFAULT_BASE);
+        assert_eq!(tev1.tag, DEFAULT_TAG);
+        assert_eq!(tev1.together_model, DEFAULT_TOGETHER_MODEL);
+        assert_eq!(tev1.seat, SeatChat::Qwen35);
+        let err = apply_preset(
+            JourneyPreset::DeepseekR1Distill,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Together,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("local llamafactory-cli"), "{err}");
+        let hosted = apply_preset(
+            JourneyPreset::DeepseekR1Distill,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Together,
+            Some("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        )
+        .unwrap();
+        assert_eq!(
+            hosted.together_model,
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+        );
+        let dir = std::env::temp_dir().join(format!("journey-deepseek-{}", std::process::id()));
+        let paths = JourneyPaths::new(&dir);
+        let recipe = lora_recipe_yaml(
+            DEEPSEEK_R1_DISTILL_BASE,
+            DEEPSEEK_R1_DISTILL_BASE,
+            DEFAULT_DATASET,
+            &dir,
+            &paths.adapter_dir,
+            None,
+        );
+        assert!(recipe.contains("template: deepseekr1"), "{recipe}");
+        assert!(recipe.contains("enable_thinking: false"), "{recipe}");
+        let model = journey_modelfile(&paths.specialist_f16, SeatChat::DeepseekR1);
+        assert!(model.contains("<｜User｜>"), "{model}");
+        assert!(model.contains("<｜Assistant｜>"), "{model}");
+        assert!(
+            model.contains("PARAMETER stop <｜end▁of▁sentence｜>"),
+            "{model}"
+        );
+        assert!(!model.contains("<|im_end|>"), "{model}");
+    }
+
+    #[test]
+    fn together_adapter_refuses_oversized_compressed_and_decompressed() {
+        let raw = b"adapter-bytes-that-are-longer-than-the-test-cap";
+        let err = decompress_adapter_archive_capped(raw, 8, 64)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("download exceeds 8 bytes"), "{err}");
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gzip, raw).unwrap();
+        let gz = gzip.finish().unwrap();
+        assert!(gz.len() < raw.len() || gz.len() < 64);
+        let err = decompress_adapter_archive_capped(&gz, gz.len(), 8)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("decompressed exceeds 8 bytes"), "{err}");
+        let err = read_limited(std::io::Cursor::new(&raw[..]), 8, "download")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("download exceeds 8 bytes"), "{err}");
     }
 }

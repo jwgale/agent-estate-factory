@@ -3,7 +3,10 @@ use clap::Parser;
 use estate_schema::{describe, load_estate_unvalidated, validate};
 use std::path::{Path, PathBuf};
 
-use crate::cli::{AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
+use crate::cli::{
+    AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand,
+    PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
+};
 use crate::ops::*;
 use crate::plan_apply::*;
 use crate::watch::*;
@@ -166,7 +169,15 @@ pub(crate) fn run() -> Result<()> {
                 wired,
                 ttl_secs,
                 state_dir,
-            } => cmd_convey_hop(&id, &kind, &capability, &host_class, wired, ttl_secs, &state_dir),
+            } => cmd_convey_hop(
+                &id,
+                &kind,
+                &capability,
+                &host_class,
+                wired,
+                ttl_secs,
+                &state_dir,
+            ),
             ConveyCommand::Call {
                 id,
                 capability,
@@ -238,13 +249,9 @@ pub(crate) fn run() -> Result<()> {
                 tag,
                 path,
                 curator,
-            } => crate::enrich::cmd_enrich_import_prepared(
-                &estate,
-                &prepared,
-                &tag,
-                &path,
-                &curator,
-            ),
+            } => {
+                crate::enrich::cmd_enrich_import_prepared(&estate, &prepared, &tag, &path, &curator)
+            }
             EnrichCommand::ImportTrained {
                 estate,
                 prepared,
@@ -252,11 +259,7 @@ pub(crate) fn run() -> Result<()> {
                 adapter,
                 curator,
             } => crate::enrich::cmd_enrich_import_trained(
-                &estate,
-                &prepared,
-                &tag,
-                &adapter,
-                &curator,
+                &estate, &prepared, &tag, &adapter, &curator,
             ),
             EnrichCommand::ApplyProposal {
                 estate,
@@ -325,7 +328,8 @@ pub(crate) fn run() -> Result<()> {
                 timeout_secs,
                 api,
             } => {
-                let report = report.unwrap_or_else(|| crate::classify::default_report_path(&records));
+                let report =
+                    report.unwrap_or_else(|| crate::classify::default_report_path(&records));
                 crate::classify::cmd_classify_eval(
                     &records,
                     endpoint.as_deref(),
@@ -342,6 +346,7 @@ pub(crate) fn run() -> Result<()> {
             ClassifyCommand::Journey {
                 input,
                 out,
+                preset,
                 base,
                 base_tag,
                 tag,
@@ -364,19 +369,24 @@ pub(crate) fn run() -> Result<()> {
                 together_base_url,
                 api_key_env,
             } => {
-                let input = input.unwrap_or_else(|| {
-                    PathBuf::from("examples/fixtures/tev1-decisions.jsonl")
-                });
-                let llama_cpp_dir = llama_cpp_dir.or_else(|| {
-                    std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from)
-                });
+                let input = input
+                    .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
+                let llama_cpp_dir =
+                    llama_cpp_dir.or_else(|| std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from));
+                let applied = crate::classify_journey::apply_preset(
+                    preset,
+                    &base,
+                    &tag,
+                    train_driver,
+                    together_model.as_deref(),
+                )?;
                 crate::classify_journey::cmd_classify_journey(
                     &crate::classify_journey::JourneyRequest {
                         input: &input,
                         out: &out,
-                        base: &base,
+                        base: &applied.base,
                         base_tag: base_tag.as_deref(),
-                        tag: &tag,
+                        tag: &applied.tag,
                         endpoint: &endpoint,
                         dataset_name: &dataset_name,
                         seed,
@@ -392,9 +402,13 @@ pub(crate) fn run() -> Result<()> {
                         timeout_secs,
                         together_poll_secs,
                         train_driver,
-                        together_model: &together_model,
+                        together_model: &applied.together_model,
                         together_base_url: &together_base_url,
                         api_key_env: api_key_env.as_deref(),
+                        built_base_tag: applied.built_base_tag,
+                        seat: applied.seat,
+                        llama_note: applied.llama_note,
+                        preset,
                     },
                 )
             }
@@ -423,7 +437,9 @@ pub(crate) fn run() -> Result<()> {
                 proposed_dir,
                 accepted_dir,
                 estate,
-            } => crate::heal::cmd_packs_accept(&id, &proposed_dir, &accepted_dir, &estate, &curator),
+            } => {
+                crate::heal::cmd_packs_accept(&id, &proposed_dir, &accepted_dir, &estate, &curator)
+            }
         },
         Command::Expire { state_dir, forget } => cmd_expire(&state_dir, forget),
         Command::Doctor {
