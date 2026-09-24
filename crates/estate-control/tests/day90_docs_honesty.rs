@@ -320,6 +320,30 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
         "GATE-90 header must not freeze tip at PR #185: {head}"
     );
     assert!(
+        head.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "GATE-90 header must name the PR #189 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("through PR #189"),
+        "GATE-90 header must name tip through PR #189: {head}"
+    );
+    assert!(
+        !head.contains("through PR #187 (`4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`)"),
+        "GATE-90 header must not freeze tip at PR #187: {head}"
+    );
+    assert!(
+        head.contains("tip honesty through PR #187 is PR #188")
+            && head.contains("eb5ff41865d62db85355dbea7747ef4571941d43"),
+        "GATE-90 header must name PR #188 tip honesty through PR #187: {head}"
+    );
+    assert!(
+        head.contains("make purpose-build-journey")
+            && head.contains("docs/OPERATOR-DAY.md")
+            && head.contains("docs/NORTH-STAR.md")
+            && head.contains("PR #189"),
+        "GATE-90 header must name the operator-surface purpose-build entry: {head}"
+    );
+    assert!(
         head.contains("tip honesty through PR #185 is PR #186")
             && head.contains("ef839830b9de29caa963cece687e35c83dd77af6"),
         "GATE-90 header must name PR #186 tip honesty through PR #185: {head}"
@@ -1384,6 +1408,59 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
     assert!(
         !tip187.contains("through PR #185 (`54c28b968879fccbc157dd7d9fdf7c10e9d0d58c`)"),
         "tip slice must not freeze at the PR #185 tip SHA: {tip187}"
+    );
+
+    let tip189 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #189")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #189 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip189.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "{tip189}"
+    );
+    assert!(
+        tip189.contains("eb5ff41865d62db85355dbea7747ef4571941d43"),
+        "{tip189}"
+    );
+    assert!(
+        tip189.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
+        "{tip189}"
+    );
+    assert!(tip189.contains("PR #188"), "{tip189}");
+    assert!(tip189.contains("PR #189"), "{tip189}");
+    assert!(tip189.contains("make purpose-build-journey"), "{tip189}");
+    assert!(tip189.contains("make purpose-build-pick"), "{tip189}");
+    assert!(tip189.contains("make purpose-build-checklist"), "{tip189}");
+    assert!(tip189.contains("docs/OPERATOR-DAY.md"), "{tip189}");
+    assert!(tip189.contains("docs/NORTH-STAR.md"), "{tip189}");
+    assert!(tip189.contains("DeepSeek-R1-Distill chat print-only"), "{tip189}");
+    assert!(tip189.contains("GLM-4 Chat print-only"), "{tip189}");
+    assert!(tip189.contains("The picker does not run them."), "{tip189}");
+    assert!(tip189.contains("only live uniqueness prove"), "{tip189}");
+    assert!(tip189.contains("make lf-beachhead-prepare"), "{tip189}");
+    assert!(tip189.contains("via PR #143"), "{tip189}");
+    assert!(
+        tip189.contains("does not invent a new live PASS"),
+        "{tip189}"
+    );
+    assert!(tip189.contains("43770130 3391"), "{tip189}");
+    assert!(tip189.contains("does not add Kimi"), "{tip189}");
+    assert!(
+        tip189.contains("READY_FOR_LIVE_TEST`: no") || tip189.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip189}"
+    );
+    assert!(
+        !tip189.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip189.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip189}"
+    );
+    assert!(!tip189.to_ascii_lowercase().contains("kimi/"), "{tip189}");
+    assert!(
+        !tip189.contains("through PR #187 (`4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`)"),
+        "tip slice must not freeze at the PR #187 tip SHA: {tip189}"
     );
 }
 
@@ -3295,7 +3372,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3659,7 +3736,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3816,7 +3893,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         "PR #149",
         "PR #150",
         "PR #151",
-        "Tip framing\nthrough PR #187",
+        "Tip framing\nthrough PR #189",
         "6a43ff12a91295739c5a9c8a8f1dc9cc9c084466",
         "Tip honesty through PR #155 is PR #156",
         "87072dbf79b302dc2dce42e49937abbbdd6ac689",
@@ -3890,6 +3967,22 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     assert!(
         !section.contains("Tip framing\nthrough PR #185"),
         "the uniqueness section must not freeze tip framing at PR #185"
+    );
+    assert!(
+        !section.contains("Tip framing\nthrough PR #187"),
+        "the uniqueness section must not freeze tip framing at PR #187"
+    );
+    assert!(
+        section.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "the uniqueness section must name the PR #189 tip SHA"
+    );
+    assert!(
+        section.contains("Tip honesty through PR #187 is PR #188"),
+        "the uniqueness section must name PR #188"
+    );
+    assert!(
+        section.contains("eb5ff41865d62db85355dbea7747ef4571941d43"),
+        "the uniqueness section must name the PR #188 SHA"
     );
     assert!(
         section.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
@@ -4125,7 +4218,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4503,7 +4596,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5222,7 +5315,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let named_journeys = changelog
         .split("## This slice — checklist names DeepSeek and GLM print journeys")
         .nth(1)
@@ -5708,7 +5801,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -6026,7 +6119,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -6310,7 +6403,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
@@ -6468,9 +6561,11 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #187"),
-        "GATE-90 header names tip through PR #187"
+        gate_head.contains("through PR #189"),
+        "GATE-90 header names tip through PR #189"
     );
+    assert!(gate_head.contains("tip honesty through PR #187 is PR #188"));
+    assert!(gate_head.contains("eb5ff41865d62db85355dbea7747ef4571941d43"));
     assert!(gate_head.contains("tip honesty through PR #185 is PR #186"));
     assert!(gate_head.contains("ef839830b9de29caa963cece687e35c83dd77af6"));
     assert!(gate_head.contains("make purpose-build-checklist"));
@@ -6530,8 +6625,10 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #187"));
+    assert!(status_head.contains("through PR #189"));
     assert!(status_head.contains("glm4-chat-journey"));
+    assert!(status_head.contains("Tip honesty through PR #187 is PR #188"));
+    assert!(status_head.contains("eb5ff41865d62db85355dbea7747ef4571941d43"));
     assert!(status_head.contains("Tip honesty through PR #185 is PR #186"));
     assert!(status_head.contains("Tip honesty through PR #183 is PR #184"));
     assert!(status.contains("make glm4-chat-journey # opt-in:"));
@@ -6544,7 +6641,11 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
     assert!(status.contains("| checklist names DeepSeek and GLM |"));
     assert!(status.contains("PR #187 (`4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`)"));
     assert!(status.contains("| tip honesty through #187 |"));
+    assert!(status.contains("| tip honesty through #189 |"));
+    assert!(status.contains("PR #188 (`eb5ff41865d62db85355dbea7747ef4571941d43`)"));
+    assert!(status.contains("PR #189 (`a857f05a256b214a2069de42e6918130eb080d66`)"));
     assert!(!status.contains("The tip header stays through PR #185"));
+    assert!(!status.contains("The tip header stays through PR #187"));
     assert!(!status.contains("The tip header stays through PR #183"));
 
     let live = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
@@ -6561,7 +6662,7 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let slice = changelog
         .split("## This slice — print-only GLM-4 Chat journey")
         .nth(1)
@@ -6654,9 +6755,18 @@ fn purpose_build_operator_surfaces_name_the_journey() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #187")
-            && gate_head.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
-        "GATE-90 tip header stays through PR #187: {gate_head}"
+        gate_head.contains("through PR #189")
+            && gate_head.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "GATE-90 tip header names through PR #189: {gate_head}"
+    );
+    assert!(
+        gate_head.contains("tip honesty through PR #187 is PR #188")
+            && gate_head.contains("eb5ff41865d62db85355dbea7747ef4571941d43"),
+        "GATE-90 header must name PR #188: {gate_head}"
+    );
+    assert!(
+        !gate_head.contains("through PR #187 (`4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`)"),
+        "GATE-90 tip header must not freeze at PR #187: {gate_head}"
     );
     let row = gate
         .lines()
@@ -6679,9 +6789,13 @@ fn purpose_build_operator_surfaces_name_the_journey() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(6).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #187")
-            && status_head.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
-        "Cell One tip header stays through PR #187"
+        status_head.contains("through PR #189")
+            && status_head.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "Cell One tip header names through PR #189"
+    );
+    assert!(
+        !status_head.contains("what is on `main` through PR #187"),
+        "Cell One snapshot must not freeze at PR #187"
     );
     assert!(status.contains("| operator surfaces name purpose-build |"));
 
@@ -6693,7 +6807,7 @@ fn purpose_build_operator_surfaces_name_the_journey() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
     let slice = changelog
         .split("## This slice — operator surfaces name purpose-build on demand")
         .nth(1)
