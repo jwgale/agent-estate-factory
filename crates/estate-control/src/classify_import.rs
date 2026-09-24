@@ -598,6 +598,26 @@ fn download_native(
 ) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
     let native = native_cache_dir(preset.alias);
     fs::create_dir_all(&native)?;
+    let _lock = NativeLock::acquire(&native)?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(120))
+        .build();
+    load_or_fetch_native(
+        preset,
+        &native,
+        force,
+        |url| live_get(&agent, url),
+        std::thread::sleep,
+    )
+}
+
+fn load_or_fetch_native(
+    preset: &DatasetPreset,
+    native: &Path,
+    force: bool,
+    mut get: impl FnMut(&str) -> PageGet,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
     let train_final = native.join(format!("{}.jsonl", preset.train_split));
     let test_final = native.join(format!("{}.jsonl", preset.test_split));
     let marker = native.join("manifest.json");
@@ -607,20 +627,17 @@ fn download_native(
         let _ = fs::remove_file(&marker);
         let _ = fs::remove_file(partial_path(&train_final));
         let _ = fs::remove_file(partial_path(&test_final));
-    } else if cache_verified(preset, &native)? {
+    } else if cache_verified(preset, native)? {
         return Ok((read_native(&train_final)?, read_native(&test_final)?));
     }
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(120))
-        .build();
     let train_rows = fetch_split(
         preset,
         preset.train_split,
         &train_final,
         ROWS_PAGE,
         preset.official_train,
-        |url| live_get(&agent, url),
-        std::thread::sleep,
+        &mut get,
+        &mut sleep,
     )?;
     let test_rows = fetch_split(
         preset,
@@ -628,8 +645,8 @@ fn download_native(
         &test_final,
         ROWS_PAGE,
         preset.official_test,
-        |url| live_get(&agent, url),
-        std::thread::sleep,
+        &mut get,
+        &mut sleep,
     )?;
     publish_native(&train_final)?;
     publish_native(&test_final)?;
@@ -809,10 +826,7 @@ fn get_with_retry(
         if attempt == MAX_FETCH_ATTEMPTS {
             break;
         }
-        let wait = page
-            .retry_after
-            .unwrap_or_else(|| backoff_delay(attempt));
-        sleep(wait);
+        sleep(retry_wait(attempt, page.retry_after));
     }
     bail!(
         "refuse:classify-import: datasets-server {url} failed after {MAX_FETCH_ATTEMPTS} attempts: {last}"
@@ -849,8 +863,61 @@ fn live_get(agent: &ureq::Agent, url: &str) -> PageGet {
     }
 }
 
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+
 fn parse_retry_after(header: &str) -> Option<Duration> {
-    header.trim().parse::<u64>().ok().map(Duration::from_secs)
+    let secs = header.trim().parse::<u64>().ok()?;
+    Some(Duration::from_secs(secs.min(MAX_RETRY_AFTER.as_secs())))
+}
+
+/// Honor `Retry-After`, but never wait longer than 60s or less than this attempt's backoff.
+fn retry_wait(attempt: u32, retry_after: Option<Duration>) -> Duration {
+    let floor = backoff_delay(attempt);
+    retry_after
+        .unwrap_or(floor)
+        .min(MAX_RETRY_AFTER)
+        .max(floor)
+}
+
+/// Exclusive `native/.lock` for the whole download, verify, and publish.
+/// Rust 1.88 has no `File::lock`, so this is a `create_new` pid file.
+struct NativeLock {
+    path: PathBuf,
+}
+
+impl NativeLock {
+    fn acquire(native: &Path) -> Result<Self> {
+        fs::create_dir_all(native)?;
+        let path = native.join(".lock");
+        match File::options().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                writeln!(file, "{}", std::process::id())?;
+                file.sync_all()?;
+                Ok(Self { path })
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                let pid = fs::read_to_string(&path)
+                    .ok()
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
+                bail!(
+                    "refuse:classify-import: another import is running (pid {pid}); remove {} if stale",
+                    path.display()
+                );
+            }
+            Err(err) => bail!(
+                "refuse:classify-import: cannot lock {}: {err}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl Drop for NativeLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 fn rewind_to_complete_pages(path: &Path, page: u64) -> Result<u64> {
@@ -1441,6 +1508,78 @@ mod tests {
         .to_string();
         assert!(err.contains("official count"), "{err}");
         assert!(!mismatch.is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn retry_after_clamps_huge_values_and_rejects_garbage() {
+        assert_eq!(parse_retry_after("86400"), Some(Duration::from_secs(60)));
+        assert_eq!(parse_retry_after("  120  "), Some(Duration::from_secs(60)));
+        assert_eq!(parse_retry_after("3"), Some(Duration::from_secs(3)));
+        assert!(parse_retry_after("soon").is_none());
+        assert!(parse_retry_after("").is_none());
+        assert!(parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT").is_none());
+        assert_eq!(
+            retry_wait(1, Some(Duration::from_secs(86_400))),
+            Duration::from_secs(60)
+        );
+        let floor = backoff_delay(1);
+        assert_eq!(retry_wait(1, Some(Duration::ZERO)), floor);
+        assert_eq!(retry_wait(1, None), floor);
+        assert!(floor < Duration::from_secs(60));
+    }
+
+    #[test]
+    fn native_lock_blocks_a_second_import_and_a_verified_cache_skips_download() {
+        let dir = std::env::temp_dir().join(format!("import-lock-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let held = NativeLock::acquire(&dir).unwrap();
+        let err = match NativeLock::acquire(&dir) {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("second native lock acquired"),
+        };
+        assert!(err.contains("another import is running"), "{err}");
+        assert!(err.contains(&std::process::id().to_string()), "{err}");
+        assert!(err.contains("if stale"), "{err}");
+        assert!(err.contains(&dir.join(".lock").display().to_string()), "{err}");
+        assert!(dir.join(".lock").is_file());
+        drop(held);
+        assert!(!dir.join(".lock").is_file());
+        let again = NativeLock::acquire(&dir).unwrap();
+        drop(again);
+
+        let preset = preset_by_name("ag_news").unwrap();
+        let train = dir.join("train.jsonl");
+        let test = dir.join("test.jsonl");
+        let row = "{\"index\":0,\"text\":\"a\",\"premise\":null,\"hypothesis\":null,\"label\":0}\n";
+        fs::write(&train, row.repeat(preset.official_train as usize)).unwrap();
+        fs::write(&test, row.repeat(preset.official_test as usize)).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            format!(
+                "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}}}\n",
+                serde_json::to_string(preset.hf_id).unwrap(),
+                preset.official_train,
+                preset.official_test
+            ),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let (train_rows, test_rows) = load_or_fetch_native(
+            preset,
+            &dir,
+            false,
+            |_| {
+                calls += 1;
+                ok_page(page_body(1, &[]))
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(calls, 0);
+        assert_eq!(train_rows.len() as u64, preset.official_train);
+        assert_eq!(test_rows.len() as u64, preset.official_test);
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -498,7 +498,7 @@ pub(crate) enum ClassifyCommand {
         force: bool,
     },
     /// Download a public Hugging Face classification set and write tev1 JSONL.
-    /// Pages the datasets-server rows API over HTTPS into `.cell/classify-import/<dataset>/`.
+    /// Sampled rows land in `.cell/classify-import/<alias>-<train-size>-s<seed>/`.
     /// ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech).
     /// The license is unspecified on the Hub card. Output is for local training only. Do not redistribute.
     Import {
