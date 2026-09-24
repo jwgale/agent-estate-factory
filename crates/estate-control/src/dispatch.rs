@@ -362,9 +362,29 @@ pub(crate) fn run() -> Result<()> {
                 mock,
                 timeout_secs,
                 api,
+                few_shot,
+                exemplars,
+                seed,
             } => {
                 let report =
                     report.unwrap_or_else(|| crate::classify::default_report_path(&records));
+                let shot = match few_shot {
+                    Some(0) => anyhow::bail!(
+                        "refuse:classify-eval: --few-shot must be at least 1; omit the flag for zero-shot"
+                    ),
+                    Some(_) if exemplars.is_none() => anyhow::bail!(
+                        "refuse:classify-eval: --few-shot requires --exemplars"
+                    ),
+                    None if exemplars.is_some() => anyhow::bail!(
+                        "refuse:classify-eval: --exemplars requires --few-shot"
+                    ),
+                    Some(n) => Some(crate::classify::FewShot {
+                        n,
+                        exemplars: exemplars.as_deref().unwrap(),
+                        seed,
+                    }),
+                    None => None,
+                };
                 crate::classify::cmd_classify_eval(
                     &records,
                     endpoint.as_deref(),
@@ -376,6 +396,7 @@ pub(crate) fn run() -> Result<()> {
                     timeout_secs,
                     api,
                     crate::classify::EvalGate::Standalone,
+                    shot.as_ref(),
                 )
             }
             ClassifyCommand::Journey {
@@ -410,6 +431,7 @@ pub(crate) fn run() -> Result<()> {
                 from_local,
                 fetch,
                 python,
+                few_shot,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -470,6 +492,7 @@ pub(crate) fn run() -> Result<()> {
                         import_fetch: fetch,
                         python: python.as_deref(),
                         base_cache: &base_cache,
+                        few_shot,
                     },
                 )
             }

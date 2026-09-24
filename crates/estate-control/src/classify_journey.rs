@@ -236,6 +236,7 @@ const STEP_ORDER: &[&str] = &[
     "ollama-create-base",
     "ollama-create-specialist",
     "eval-base",
+    "eval-base-few-shot",
     "eval-specialist",
     "compare",
 ];
@@ -257,6 +258,10 @@ pub struct JourneyPaths {
     pub dataset_jsonl: PathBuf,
     pub dataset_info: PathBuf,
     pub base_report: PathBuf,
+    pub few_shot_report: PathBuf,
+    /// `0` keeps the base eval zero-shot and skips `eval-base-few-shot`.
+    pub few_shot: u32,
+    pub few_shot_seed: u64,
     pub specialist_report: PathBuf,
     pub comparison: PathBuf,
     pub manifests: PathBuf,
@@ -278,6 +283,9 @@ impl JourneyPaths {
             dataset_jsonl: out.join("dataset.jsonl"),
             dataset_info: out.join("dataset_info.json"),
             base_report: out.join("base-report.json"),
+            few_shot_report: out.join("base-few-shot-report.json"),
+            few_shot: 0,
+            few_shot_seed: 0,
             specialist_report: out.join("specialist-report.json"),
             comparison: out.join("comparison.json"),
             manifests: out.join("manifests"),
@@ -1175,6 +1183,7 @@ fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
             "ollama-create-base" => "ollama-create-base",
             "ollama-create-specialist" => "ollama-create-specialist",
             "eval-base" => "eval-base",
+            "eval-base-few-shot" => "eval-base-few-shot",
             "eval-specialist" => "eval-specialist",
             "compare" => "compare",
             other => panic!("unknown step {other}"),
@@ -1816,6 +1825,19 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         format!("classify eval --api ollama-native model {eval_base_model}"),
     ));
 
+    let eval_few = few_shot_decision(paths, ctx.inputs.eval.as_deref());
+    let few_detail = if paths.few_shot == 0 {
+        "few-shot off".to_string()
+    } else {
+        format!(
+            "classify eval --few-shot {} --exemplars {} --seed {} --api ollama-native model {eval_base_model}",
+            paths.few_shot,
+            paths.dataset_jsonl.display(),
+            paths.few_shot_seed
+        )
+    };
+    steps.push(step_detail("eval-base-few-shot", &eval_few, few_detail));
+
     let eval_spec_key = ctx
         .inputs
         .eval
@@ -1872,6 +1894,55 @@ pub struct SideScore {
     pub p50: f64,
     pub p95: f64,
     pub thinking_leak: u64,
+}
+
+fn few_shot_manifest_key(
+    eval: Option<&str>,
+    n: u32,
+    seed: u64,
+    exemplars: &Path,
+) -> Option<String> {
+    let eval = eval?;
+    let bytes = fs::read(exemplars).ok()?;
+    Some(sha256_text(&format!(
+        "few-shot-base\n{eval}\n{n}\n{seed}\n{}",
+        sha256_bytes(&bytes)
+    )))
+}
+
+fn few_shot_decision(paths: &JourneyPaths, eval: Option<&str>) -> Decision {
+    if paths.few_shot == 0 {
+        return Decision {
+            action: StepAction::Skip,
+            redo: None,
+        };
+    }
+    if paths.few_shot_report.is_file() && !report_is_complete(&paths.few_shot_report) {
+        return Decision {
+            action: StepAction::Run,
+            redo: Some("partial eval report".into()),
+        };
+    }
+    match few_shot_manifest_key(
+        eval,
+        paths.few_shot,
+        paths.few_shot_seed,
+        &paths.dataset_jsonl,
+    ) {
+        Some(key) if paths.few_shot_report.is_file() => decide_file(
+            &paths.few_shot_report,
+            &paths.manifest_path("eval-base-few-shot"),
+            &key,
+        ),
+        _ if paths.few_shot_report.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    }
 }
 
 fn report_is_complete(path: &Path) -> bool {
@@ -2028,6 +2099,8 @@ pub struct JourneyRequest<'a> {
     pub python: Option<&'a str>,
     /// Shared Hub snapshot root. Ignored when `--base` is a local directory.
     pub base_cache: &'a Path,
+    /// `0` scores only the zero-shot base. `N >= 1` also writes `base-few-shot-report.json`.
+    pub few_shot: u32,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -2093,6 +2166,8 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     }
     let mut paths = JourneyPaths::new(req.out);
     paths.base_cache = req.base_cache.to_path_buf();
+    paths.few_shot = req.few_shot;
+    paths.few_shot_seed = req.seed;
     let template = train_template(req.base);
     let inputs = load_inputs(req, &paths)?;
     let llama = match req.llama_cpp_dir {
@@ -2139,9 +2214,22 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     execute(req, &paths, &llama)?;
     let base_report = read_json(&paths.base_report)?;
     let specialist_report = read_json(&paths.specialist_report)?;
+    let few_score = if paths.few_shot > 0 {
+        Some(side_score(&read_json(&paths.few_shot_report)?)?)
+    } else {
+        None
+    };
     let comparison = compare_sides(&side_score(&base_report)?, &side_score(&specialist_report)?);
     let verdict = threshold_met(&comparison, req.min_delta, req.min_accuracy);
-    write_comparison(req, &paths, template, library, &comparison, verdict)?;
+    write_comparison(
+        req,
+        &paths,
+        template,
+        library,
+        &comparison,
+        few_score.as_ref(),
+        verdict,
+    )?;
     match verdict {
         Some(false) => bail!(
             "classify-journey: threshold missed; specialist accuracy {:.4} delta {:.4}",
@@ -2218,6 +2306,16 @@ fn print_plan(
         println!("downloader: {}", hf_bin_label());
     }
     println!("out: {}", paths.out.display());
+    if paths.few_shot == 0 {
+        println!("few_shot: off");
+    } else {
+        println!(
+            "few_shot: {} exemplars from {} seed {}",
+            paths.few_shot,
+            paths.dataset_jsonl.display(),
+            paths.few_shot_seed
+        );
+    }
     if let Some(dataset) = req.import_dataset {
         println!(
             "dataset: {dataset} train_size: {} heldout_size: {} seed: {} option_order: fixed no-second-split",
@@ -2476,8 +2574,31 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     req.timeout_secs,
                     EvalApi::OllamaNative,
                     EvalGate::Journey,
+                    None,
                 )?;
                 write_pipeline_manifest(req, paths, "eval-base")?;
+            }
+            "eval-base-few-shot" => {
+                let model = library.unwrap_or(req.built_base_tag);
+                let shot = crate::classify::FewShot {
+                    n: paths.few_shot,
+                    exemplars: &paths.dataset_jsonl,
+                    seed: paths.few_shot_seed,
+                };
+                cmd_classify_eval(
+                    &paths.heldout,
+                    Some(req.endpoint),
+                    model,
+                    None,
+                    &paths.few_shot_report,
+                    false,
+                    false,
+                    req.timeout_secs,
+                    EvalApi::OllamaNative,
+                    EvalGate::Journey,
+                    Some(&shot),
+                )?;
+                write_pipeline_manifest(req, paths, "eval-base-few-shot")?;
             }
             "eval-specialist" => {
                 cmd_classify_eval(
@@ -2491,6 +2612,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     req.timeout_secs,
                     EvalApi::OllamaNative,
                     EvalGate::Journey,
+                    None,
                 )?;
                 write_pipeline_manifest(req, paths, "eval-specialist")?;
             }
@@ -2543,7 +2665,18 @@ fn write_step_manifest(
     gguf_sha256: Option<&str>,
 ) -> Result<()> {
     let inputs = load_inputs(req, paths)?;
-    let key = step_manifest_key(&inputs, step)?;
+    let key = if step == "eval-base-few-shot" {
+        few_shot_manifest_key(
+            inputs.eval.as_deref(),
+            paths.few_shot,
+            paths.few_shot_seed,
+            &paths.dataset_jsonl,
+        )
+    } else {
+        step_manifest_key(&inputs, step).ok()
+    };
+    let key =
+        key.ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))?;
     write_manifest(&paths.manifest_path(step), &key, gguf_sha256)
 }
 
@@ -2812,6 +2945,7 @@ fn write_comparison(
     template: &str,
     library: Option<&str>,
     comparison: &Comparison,
+    few_shot: Option<&SideScore>,
     verdict: Option<bool>,
 ) -> Result<()> {
     let verdict_text = match verdict {
@@ -2845,6 +2979,18 @@ fn write_comparison(
         "base_accuracy": comparison.base_accuracy,
         "specialist_accuracy": comparison.specialist_accuracy,
         "delta": comparison.delta,
+        "few_shot_base_accuracy": few_shot.map(|score| score.accuracy),
+        "delta_vs_few_shot_base": few_shot.map(|score| comparison.specialist_accuracy - score.accuracy),
+        "few_shot": if paths.few_shot == 0 {
+            Value::Null
+        } else {
+            json!({
+                "n": paths.few_shot,
+                "exemplar_source": paths.dataset_jsonl.display().to_string(),
+                "seed": paths.few_shot_seed,
+                "report": paths.few_shot_report.display().to_string(),
+            })
+        },
         "base_accuracy_ci95": ci_field(wilson_ci95(comparison.base_correct, comparison.base_records)),
         "specialist_accuracy_ci95": ci_field(wilson_ci95(comparison.specialist_correct, comparison.specialist_records)),
         "delta_ci95": delta_ci_field(comparison),

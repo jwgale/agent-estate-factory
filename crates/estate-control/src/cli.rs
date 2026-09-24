@@ -569,6 +569,15 @@ pub(crate) enum ClassifyCommand {
         /// Request shape. `openai` sets enable_thinking false. `ollama` sets reasoning_effort none on `/v1`. `ollama-native` posts `/api/chat` with think false.
         #[arg(long, value_enum, default_value_t = crate::classify::EvalApi::Openai)]
         api: crate::classify::EvalApi,
+        /// Prepend this many labeled train exemplars to each held-out prompt. Omit for zero-shot. `0` is refused.
+        #[arg(long)]
+        few_shot: Option<u32>,
+        /// Exemplar JSONL for `--few-shot`. tev1 records (`train.jsonl`) or the prepared train file (`dataset.jsonl`, sharegpt or alpaca).
+        #[arg(long)]
+        exemplars: Option<PathBuf>,
+        /// Seed for the exemplar shuffle. Same seed and file pick the same order. Used only with `--few-shot`.
+        #[arg(long, default_value_t = 20_260_920)]
+        seed: u64,
     },
     /// Letter journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
     /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train. `--preset glm4-chat` is GLM-4-9B-Chat with template `glm4` and local `llamafactory-cli` train.
@@ -672,6 +681,11 @@ pub(crate) enum ClassifyCommand {
         /// Python with pyarrow. Unset uses `ESTATE_PYTHON`, then `python3`.
         #[arg(long)]
         python: Option<String>,
+        /// Score the base a second time with N labeled exemplars from `dataset.jsonl` in `--out`.
+        /// `0` (default) keeps the base eval zero-shot. The shuffle seed is `--seed`.
+        /// The report is `base-few-shot-report.json`. It does not record a live PASS.
+        #[arg(long, default_value_t = 0)]
+        few_shot: u32,
     },
 }
 
