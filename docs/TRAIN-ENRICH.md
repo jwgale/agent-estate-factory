@@ -60,10 +60,11 @@ The built-in fixture is 29 train rows and 7 held-out rows. That is too small for
 
 Scoring 7,600 records is about 15–20 minutes per model at about 130 ms per record. Train time grows with the train size. A 5090-class host can run the sizes below one after another. `--print` does not download.
 
-Keep the Hub snapshot on the NAS and point import at it. `hf download` writes the snapshot once. pyarrow reads it. `ESTATE_PYTHON` or `--python` selects the LLaMA-Factory interpreter when `python3` on PATH has no pyarrow. `HF_TOKEN` is optional and is sent only for `--fetch rows-api`.
+Keep the Hub snapshot on the NAS and point import at it. `hf download` writes the snapshot on local disk first. Copy that directory to the NAS. A GNOME gvfs SMB mount (`/run/user/.../gvfs/smb-share:...`) has no flock or fchmod, so `hf download --local-dir` onto it fails with `OSError: [Errno 95] Operation not supported`. A CIFS mount can take the download directly. `--from-local` only reads the snapshot: no lock file, no chmod, no `.cache` write, and no temp file in that directory. The bulk download always uses `.cell/classify-import/<alias>/hf-dataset/`. The native lock is only under `.cell/classify-import/<alias>/native/`. pyarrow reads the parquet. `ESTATE_PYTHON` or `--python` selects the LLaMA-Factory interpreter when `python3` on PATH has no pyarrow. `HF_TOKEN` is optional and is sent only for `--fetch rows-api`.
 
 ```bash
-hf download fancyzhx/ag_news --repo-type dataset --local-dir "$NAS/datasets/ag_news"
+hf download fancyzhx/ag_news --repo-type dataset --local-dir /tmp/ag_news
+cp -a /tmp/ag_news "$NAS/datasets/ag_news"
 export ESTATE_PYTHON=/path/to/llamafactory-venv/bin/python
 estate classify import --dataset ag_news --from-local "$NAS/datasets/ag_news" --train-size all --heldout-size all --seed 42
 estate classify journey --dataset ag_news --from-local "$NAS/datasets/ag_news" --train-size all --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR"

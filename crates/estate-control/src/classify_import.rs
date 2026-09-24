@@ -696,6 +696,7 @@ fn acquire_native(
 ) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
     let native = native_dir(req, preset.alias);
     fs::create_dir_all(&native)?;
+    // Lock only the local native cache. Never the --from-local snapshot.
     let _lock = NativeLock::acquire(&native)?;
     if let Some(dir) = req.from_local {
         return acquire_local_parquet(preset, &native, dir, req.force, req.python, io);
@@ -968,14 +969,29 @@ fn is_split_parquet(path: &Path, split: &str) -> bool {
 
 fn sha256_file(path: &Path) -> Result<String> {
     use sha2::Digest;
-    let bytes = fs::read(path).map_err(|err| {
+    use std::io::Read;
+    // Read-only stream. A gvfs SMB mount rejects lock and fchmod calls, so this
+    // must not create a sidecar, a temp file, or a lock next to the parquet.
+    let mut file = File::open(path).map_err(|err| {
         anyhow::anyhow!(
             "refuse:classify-import: cannot read {}: {err}",
             path.display()
         )
     })?;
     let mut hasher = sha2::Sha256::new();
-    hasher.update(&bytes);
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-import: cannot read {}: {err}",
+                path.display()
+            )
+        })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(format!("{:x}", hasher.finalize()))
 }
 
@@ -1008,7 +1024,9 @@ hypothesis_field = spec.get("hypothesis_field") or ""
 index = 0
 with open(spec["out"], "w", encoding="utf-8") as out:
     for path in spec["files"]:
-        table = pq.read_table(path)
+        # Read-only. Do not lock, chmod, or write next to the parquet (gvfs has no fchmod).
+        with open(path, "rb") as handle:
+            table = pq.read_table(handle)
         names = table.column_names
         cols = {name: table.column(name).to_pylist() for name in names}
         n = table.num_rows
@@ -2226,10 +2244,19 @@ mod tests {
         root.join(name)
     }
 
-    fn list_tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    fn list_tree(dir: &Path) -> Vec<(String, Vec<u8>, u32)> {
+        use std::os::unix::fs::PermissionsExt;
         let mut out = Vec::new();
         let mut stack = vec![dir.to_path_buf()];
         while let Some(current) = stack.pop() {
+            let mode = fs::metadata(&current).unwrap().permissions().mode();
+            let rel = current.strip_prefix(dir).unwrap().display().to_string();
+            let label = if current == dir {
+                "dir:.".to_string()
+            } else {
+                format!("dir:{rel}")
+            };
+            out.push((label, Vec::new(), mode));
             let mut entries: Vec<_> = fs::read_dir(&current)
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
@@ -2240,7 +2267,8 @@ mod tests {
                     stack.push(path);
                 } else {
                     let rel = path.strip_prefix(dir).unwrap().display().to_string();
-                    out.push((rel, fs::read(&path).unwrap()));
+                    let mode = fs::metadata(&path).unwrap().permissions().mode();
+                    out.push((rel, fs::read(&path).unwrap(), mode));
                 }
             }
         }
@@ -2262,9 +2290,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let source = snapshot_dir(&root, "nas", b"train-bytes", b"test-bytes");
         let before = list_tree(&source);
-        let mut perms = fs::metadata(&source).unwrap().permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(&source, perms).unwrap();
+        let before_names: Vec<_> = before.iter().map(|(name, _, _)| name.clone()).collect();
         let out = root.join("sampled");
         let cache = root.join("cache");
         let io = FakeIo {
@@ -2293,7 +2319,19 @@ mod tests {
         .unwrap();
         assert_eq!(io.hf_calls.get(), 0);
         assert_eq!(io.http_calls.get(), 0);
-        assert_eq!(list_tree(&source), before);
+        let after = list_tree(&source);
+        let after_names: Vec<_> = after.iter().map(|(name, _, _)| name.clone()).collect();
+        assert_eq!(
+            after_names, before_names,
+            "a file was created in --from-local"
+        );
+        assert_eq!(after, before, "source bytes or mode changed");
+        assert!(
+            after_names.iter().all(|name| {
+                !name.contains(".lock") && !name.contains(".cache") && !name.contains(".partial")
+            }),
+            "{after_names:?}"
+        );
         let native = cache.join("ag_news").join("native");
         let manifest: Value =
             serde_json::from_str(&fs::read_to_string(native.join("manifest.json")).unwrap())
@@ -2312,9 +2350,8 @@ mod tests {
         assert!(!native.join("train.jsonl.partial").exists());
         let train_n = count_complete_lines(&native.join("train.jsonl")).unwrap();
         assert_eq!(train_n, 120_000);
-        let mut perms = fs::metadata(&source).unwrap().permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(&source, perms).unwrap();
+        assert!(!source.join(".lock").exists());
+        assert!(!native.join(".lock").exists(), "lock is dropped after the import");
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2490,17 +2527,39 @@ mod tests {
         .unwrap();
         assert_eq!(io.hf_calls.get(), 1);
         assert_eq!(io.http_calls.get(), 0);
-        assert!(cache
-            .join("ag_news")
-            .join("hf-dataset")
+        let snapshot = cache.join("ag_news").join("hf-dataset");
+        assert!(snapshot
             .join("data")
             .join("train-00000-of-00001.parquet")
             .is_file());
+        assert!(snapshot.starts_with(&cache));
         assert!(cache
             .join("ag_news")
             .join("native")
             .join("manifest.json")
             .is_file());
+        let bare = ImportRequest {
+            dataset: "ag_news",
+            train_size: "all",
+            heldout_size: "all",
+            seed: 42,
+            out: &out,
+            force: false,
+            native_train: None,
+            native_test: None,
+            from_local: None,
+            fetch: ImportFetch::Bulk,
+            python: None,
+            cache_root: None,
+        };
+        assert_eq!(
+            hf_snapshot_dir(&bare, "ag_news"),
+            PathBuf::from(".cell/classify-import/ag_news/hf-dataset")
+        );
+        assert_eq!(
+            native_dir(&bare, "ag_news"),
+            PathBuf::from(".cell/classify-import/ag_news/native")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }
