@@ -351,7 +351,8 @@ uniqueness-mlx:
 	bash scripts/uniqueness-mlx.sh
 
 # Opt-in print-only operator path for purpose-building an SLM on demand (operator section 15).
-# Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth, mlx-lm-lora),
+# Points at existing print journeys (beachhead prepare, qlora, lora, Axolotl, Unsloth, mlx-lm-lora,
+# DeepSeek-R1-Distill, GLM-4 Chat),
 # the train-next SKIP, merge-adapt, gguf-convert, local-seat, and import-trained.
 # After import-trained it prints Standing next (estate): auto_apply=false, no promote,
 # and the existing apply-proposal / plan / apply --require-plan / reconcile entrypoints.

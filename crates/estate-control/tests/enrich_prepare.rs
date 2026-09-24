@@ -5154,7 +5154,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5375,7 +5375,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5595,7 +5595,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5995,7 +5995,7 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
         "CHANGELOG must keep the PR #175 tip-honesty slice"
@@ -6140,7 +6140,7 @@ fn deepseek_r1_distill_journey_help_and_locks_stay_print_only() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(changelog.contains("## This slice — print-only DeepSeek-R1-Distill journey"));
     assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
 
@@ -6202,7 +6202,7 @@ fn glm4_chat_journey_help_and_locks_stay_print_only() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(changelog.contains("## This slice — print-only GLM-4 Chat journey"));
     assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
 

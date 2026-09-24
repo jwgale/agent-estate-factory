@@ -3219,7 +3219,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3583,7 +3583,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4033,7 +4033,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4411,7 +4411,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4865,6 +4865,15 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         "make unsloth-qlora-journey",
         "make unsloth-lora-journey",
         "make mlx-lm-lora-journey",
+        "make deepseek-r1-distill-journey",
+        "make uniqueness-deepseek",
+        "make deepseek-r1-distill-lora-journey",
+        "make uniqueness-deepseek-lora",
+        "make glm4-chat-journey",
+        "make uniqueness-glm",
+        "make glm4-chat-lora-journey",
+        "make uniqueness-glm-lora",
+        "This checklist does not run them.",
         "make purpose-build-pick",
         "This checklist does not run it.",
         "enrich merge-adapt",
@@ -5000,6 +5009,11 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     assert!(row.contains("does not execute them"), "{row}");
     assert!(row.contains("reconcile"), "{row}");
     assert!(row.contains("operator section 15"), "{row}");
+    assert!(row.contains("make deepseek-r1-distill-journey"), "{row}");
+    assert!(row.contains("make uniqueness-deepseek"), "{row}");
+    assert!(row.contains("make glm4-chat-journey"), "{row}");
+    assert!(row.contains("make uniqueness-glm"), "{row}");
+    assert!(row.contains("the checklist does not run them"), "{row}");
     assert!(row.contains("only live uniqueness prove"), "{row}");
     assert!(
         row.contains("make uniqueness-prove-checklist"),
@@ -5060,6 +5074,9 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         "uniqueness section must keep READY_FOR_LIVE_TEST no"
     );
     assert!(status.contains("make purpose-build-checklist # opt-in:"));
+    assert!(status.contains("| checklist names DeepSeek and GLM |"));
+    assert!(uniq.contains("make deepseek-r1-distill-journey"), "{uniq}");
+    assert!(uniq.contains("make glm4-chat-journey"), "{uniq}");
 
     let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     let section = journey
@@ -5081,6 +5098,11 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     assert!(section.contains("does not invent a live PASS"));
     assert!(section.contains("only live uniqueness prove"));
     assert!(section.contains("make uniqueness-prove-checklist"));
+    assert!(section.contains("make deepseek-r1-distill-journey"));
+    assert!(section.contains("make uniqueness-deepseek"));
+    assert!(section.contains("make glm4-chat-journey"));
+    assert!(section.contains("make uniqueness-glm"));
+    assert!(section.contains("This checklist does not run them."));
     assert!(section.contains("43770130 3391"));
     assert!(
         !journey.contains("READY_FOR_LIVE_TEST: yes")
@@ -5094,6 +5116,10 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     assert!(help.contains("Standing next (estate)"));
     assert!(help.contains("does not execute them"));
     assert!(help.contains("section 15"));
+    assert!(help.contains("make deepseek-r1-distill-journey"));
+    assert!(help.contains("make uniqueness-deepseek"));
+    assert!(help.contains("make glm4-chat-journey"));
+    assert!(help.contains("make uniqueness-glm"));
     assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
@@ -5104,7 +5130,51 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
+    let named_journeys = changelog
+        .split("## This slice — checklist names DeepSeek and GLM print journeys")
+        .nth(1)
+        .expect("CHANGELOG missing the checklist-names slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make deepseek-r1-distill-journey",
+        "make uniqueness-deepseek",
+        "make deepseek-r1-distill-lora-journey",
+        "make uniqueness-deepseek-lora",
+        "make glm4-chat-journey",
+        "make uniqueness-glm",
+        "make glm4-chat-lora-journey",
+        "make uniqueness-glm-lora",
+        "does not run them",
+        "operator section 15",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #185",
+        "54c28b968879fccbc157dd7d9fdf7c10e9d0d58c",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "does not add Kimi",
+    ] {
+        assert!(
+            named_journeys.contains(needle),
+            "checklist-names CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(
+        named_journeys.contains("READY_FOR_LIVE_TEST`: no")
+            || named_journeys.contains("READY_FOR_LIVE_TEST: no"),
+        "{named_journeys}"
+    );
+    assert!(
+        !named_journeys.contains("READY_FOR_LIVE_TEST: yes")
+            && !named_journeys.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{named_journeys}"
+    );
+    assert!(
+        !named_journeys.to_ascii_lowercase().contains("kimi/"),
+        "{named_journeys}"
+    );
     let named = changelog
         .split("## This slice — help names the purpose-build checklist")
         .nth(1)
@@ -5154,7 +5224,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     assert!(
         makefile.contains(
             "print-only operator path for purpose-building an SLM on demand (operator section 15)"
-        ),
+        ) && makefile.contains("DeepSeek-R1-Distill, GLM-4 Chat"),
         "Makefile comment must name the purpose-build path"
     );
     let slice = changelog
@@ -5275,6 +5345,9 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
             "This checklist does not invent a new live PASS.",
             "1. Choose and prepare a train card.",
             "make lf-beachhead-prepare",
+            "DeepSeek-R1-Distill chat print pointer: make deepseek-r1-distill-journey and make uniqueness-deepseek",
+            "GLM-4 Chat print pointer: make glm4-chat-journey and make uniqueness-glm",
+            "This checklist does not run them.",
             "Host and stack picker: make purpose-build-pick (operator section 17).",
             "2. Train handoff, train-next style. Print the NEXT.md recipe. SKIP live train.",
             "3. Merge and export print honesty.",
@@ -5532,7 +5605,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -5850,7 +5923,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -6134,7 +6207,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
@@ -6376,7 +6449,7 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
+    assert_eq!(head, " checklist names DeepSeek and GLM print journeys");
     let slice = changelog
         .split("## This slice — print-only GLM-4 Chat journey")
         .nth(1)

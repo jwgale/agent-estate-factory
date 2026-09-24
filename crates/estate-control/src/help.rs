@@ -391,7 +391,7 @@ stays QLoRA-only and is not a row. It does not train, merge, convert,
 seat, or promote. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points at
-the print-only cards already on tip, including the Apple Silicon print pointer make mlx-lm-lora-journey, and does not run them. It does not
+the print-only cards already on tip, including the Apple Silicon print pointer make mlx-lm-lora-journey, the DeepSeek-R1-Distill print pointer make deepseek-r1-distill-journey and make uniqueness-deepseek plus the LoRA twins, and the GLM-4 Chat print pointer make glm4-chat-journey and make uniqueness-glm plus the LoRA twins, and does not run them. It does not
 train, convert, shell out to ollama, promote, or apply the estate. It
 does not invent a live PASS. The recorded PASS stays the only live
 uniqueness prove. The re-prove card stays make uniqueness-prove-checklist.
@@ -1075,7 +1075,7 @@ The factory does not apply the estate without an explicit operator
 plan, apply --require-plan, and reconcile and does not execute them.
 The re-prove card is make uniqueness-prove-checklist.
 make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15). It points
-at the print-only cards already on tip, including make mlx-lm-lora-journey, and does not run them. After
+at the print-only cards already on tip, including make mlx-lm-lora-journey, make deepseek-r1-distill-journey, make uniqueness-deepseek, make glm4-chat-journey, and make uniqueness-glm, plus the LoRA twins, and does not run them. After
 import-trained (trained_shape gguf, auto_apply=false) it prints
 Standing next (estate). The coda names apply-proposal, plan,
 apply --require-plan, and reconcile and does not execute them.
