@@ -232,6 +232,7 @@ export_legacy_format: false
 /// Journey Modelfile. Same shape for the base and the specialist. `FROM` is the only difference.
 /// Not `local_seat`'s `gguf_modelfile`. `FROM` uses the same token rules as `modelfile_token`.
 pub fn journey_modelfile(gguf: &Path) -> String {
+    let gguf = absolute_gguf(gguf);
     format!(
         "\
 FROM {gguf}
@@ -240,8 +241,23 @@ PARAMETER num_predict 8
 PARAMETER stop <|im_end|>
 TEMPLATE \"\"\"{QWEN35_NOTHINK_TEMPLATE}\"\"\"
 ",
-        gguf = modelfile_from_token(gguf),
+        gguf = modelfile_from_token(&gguf),
     )
+}
+
+/// Absolute path for Modelfile `FROM`. Ollama resolves a relative `FROM` against the Modelfile directory.
+/// Same order as `local_seat::render_gguf`: canonicalize when the file exists.
+fn absolute_gguf(path: &Path) -> PathBuf {
+    if let Ok(abs) = fs::canonicalize(path) {
+        return abs;
+    }
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    }
 }
 
 /// Quote a Modelfile token the same way `local_seat::modelfile_token` does.
@@ -370,7 +386,7 @@ pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
     }
     if quantize.is_none() {
         missing.push(format!(
-            "llama-quantize is missing under {} (expected llama-quantize or build/bin/llama-quantize)",
+            "llama-quantize is missing under {} (expected llama-quantize, build/bin/llama-quantize, bin/llama-quantize, or llama-quantize on PATH)",
             dir.display()
         ));
     }
@@ -388,15 +404,17 @@ pub fn resolve_llama_cpp(dir: &Path) -> Result<LlamaCpp> {
 }
 
 fn llama_quantize_bin(dir: &Path) -> Option<PathBuf> {
-    let root = dir.join("llama-quantize");
-    if root.is_file() {
-        return Some(root);
+    let candidates = [
+        dir.join("llama-quantize"),
+        dir.join("build").join("bin").join("llama-quantize"),
+        dir.join("bin").join("llama-quantize"),
+    ];
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
     }
-    let nested = dir.join("build").join("bin").join("llama-quantize");
-    if nested.is_file() {
-        return Some(nested);
-    }
-    None
+    which("llama-quantize")
 }
 
 #[derive(Clone, Debug)]
@@ -1626,7 +1644,13 @@ fn seat_gguf(
     {
         run_argv(&["ollama".into(), "rm".into(), tag.into()])?;
     }
-    fs::write(modelfile, journey_modelfile(&gguf))?;
+    let gguf_abs = fs::canonicalize(&gguf).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot canonicalize {}: {err}",
+            gguf.display()
+        )
+    })?;
+    fs::write(modelfile, journey_modelfile(&gguf_abs))?;
     run_argv(&[
         "ollama".into(),
         "create".into(),
@@ -1641,10 +1665,41 @@ fn seat_gguf(
     Ok(())
 }
 
+fn snapshot_tokenizer(dir: &Path) -> bool {
+    ["tokenizer.json", "tokenizer.model", "tokenizer_config.json"]
+        .iter()
+        .any(|name| dir.join(name).is_file())
+}
+
+fn snapshot_has_weights(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    let safetensors = entries.filter_map(|entry| entry.ok()).any(|entry| {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        name.ends_with(".safetensors") && file_nonempty(&entry.path())
+    });
+    if safetensors {
+        return true;
+    }
+    let index = dir.join("model.safetensors.index.json");
+    let Ok(text) = fs::read_to_string(&index) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    let Some(map) = value.get("weight_map").and_then(Value::as_object) else {
+        return false;
+    };
+    let shards: Vec<&str> = map.values().filter_map(Value::as_str).collect();
+    !shards.is_empty() && shards.iter().all(|name| file_nonempty(&dir.join(name)))
+}
+
 fn validate_snapshot(dir: &Path) -> Result<()> {
-    if !dir.join("config.json").is_file() {
+    if !dir.join("config.json").is_file() || !snapshot_tokenizer(dir) || !snapshot_has_weights(dir) {
         bail!(
-            "refuse:classify-journey: base snapshot {} has no config.json",
+            "refuse:classify-journey: base snapshot {} needs config.json, tokenizer files, and non-empty weights",
             dir.display()
         );
     }
@@ -1920,10 +1975,35 @@ mod tests {
         let spaced = dir.join("seat dir").join("specialist Q4.gguf");
         let quoted = journey_modelfile(&spaced);
         let shared = model_estate::gguf_modelfile(&spaced);
-        assert_eq!(quoted.lines().next(), shared.lines().next(), "{quoted}");
-        assert!(quoted.contains("FROM \""));
+        assert!(quoted.contains("FROM \""), "{quoted}");
+        assert!(shared.starts_with("FROM \""), "{shared}");
         assert!(quoted.contains("specialist Q4.gguf"));
+        let from = quoted.lines().next().unwrap().trim_start_matches("FROM ").trim_matches('"');
+        assert!(Path::new(from).is_absolute(), "{quoted}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relative_out_modelfile_from_is_absolute() {
+        let rel = PathBuf::from(".cell/classify-journey");
+        let _ = fs::remove_dir_all(&rel);
+        let paths = JourneyPaths::new(&rel);
+        fs::create_dir_all(&paths.out).unwrap();
+        for which in ["base", "specialist"] {
+            let gguf = paths.seated_gguf(which, DEFAULT_QUANT);
+            fs::write(&gguf, b"GGUF").unwrap();
+            assert!(gguf.is_relative(), "{}", gguf.display());
+            let text = journey_modelfile(&gguf);
+            let from = text
+                .lines()
+                .next()
+                .unwrap()
+                .trim_start_matches("FROM ")
+                .trim_matches('"');
+            assert!(Path::new(from).is_absolute(), "{text}");
+            assert!(from.contains(&gguf.file_name().unwrap().to_string_lossy().to_string()), "{text}");
+        }
+        let _ = fs::remove_dir_all(&rel);
     }
 
     #[test]
@@ -2312,6 +2392,12 @@ mod tests {
         fs::create_dir_all(dir.join("build/bin")).unwrap();
         fs::write(dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
         fs::write(dir.join("build/bin/llama-quantize"), "").unwrap();
+        assert!(resolve_llama_cpp(&dir).unwrap().quantize.ends_with("build/bin/llama-quantize"));
+        let bin_dir = dir.join("bin-only");
+        fs::create_dir_all(bin_dir.join("bin")).unwrap();
+        fs::write(bin_dir.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
+        fs::write(bin_dir.join("bin/llama-quantize"), "").unwrap();
+        assert!(resolve_llama_cpp(&bin_dir).unwrap().quantize.ends_with("bin/llama-quantize"));
         let llama = resolve_llama_cpp(&dir).unwrap();
         let outfile = dir.join("base.f16.gguf");
         let export = dir.join("export");
@@ -2433,6 +2519,20 @@ mod tests {
         assert!(!fetch.detail.contains("download"), "{fetch:?}");
         let convert = passed.iter().find(|s| s.name == "gguf-convert-base").unwrap();
         assert!(convert.detail.contains(&local_s), "{convert:?}");
+        assert!(validate_snapshot(&local).is_err());
+        fs::write(local.join("config.json"), "{}\n").unwrap();
+        fs::write(local.join("tokenizer.json"), "{}\n").unwrap();
+        fs::write(local.join("model.safetensors"), "w\n").unwrap();
+        assert!(validate_snapshot(&local).is_ok());
+        fs::remove_file(local.join("model.safetensors")).unwrap();
+        fs::write(
+            local.join("model.safetensors.index.json"),
+            "{\"weight_map\":{\"w\":\"model-00001-of-00001.safetensors\"}}\n",
+        )
+        .unwrap();
+        assert!(validate_snapshot(&local).is_err());
+        fs::write(local.join("model-00001-of-00001.safetensors"), "shard\n").unwrap();
+        assert!(validate_snapshot(&local).is_ok());
         assert!(validate_gguf(&paths.base_f16).is_err());
         fs::write(&paths.base_f16, b"GGUF").unwrap();
         assert!(validate_gguf(&paths.base_f16).is_ok());

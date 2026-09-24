@@ -45,6 +45,8 @@ for arg in "$@"; do
 done
 mkdir -p "$local_dir"
 printf '%s\n' '{}' > "$local_dir/config.json"
+printf '%s\n' '{}' > "$local_dir/tokenizer.json"
+printf 'w\n' > "$local_dir/model.safetensors"
 "#,
     );
     write_exe(
@@ -602,6 +604,8 @@ fn journey_run_local_base_does_not_download() {
     let local = root.join("local-base");
     fs::create_dir_all(&local).unwrap();
     fs::write(local.join("config.json"), "{}\n").unwrap();
+    fs::write(local.join("tokenizer.json"), "{}\n").unwrap();
+    fs::write(local.join("model.safetensors"), "w\n").unwrap();
     let work = root.join("work");
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let port = match server.server_addr() {
