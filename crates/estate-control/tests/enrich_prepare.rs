@@ -961,11 +961,6 @@ fn cell_one_status_tip_names_pr_161() {
         "status header must name the PR #185 tip SHA: {head}"
     );
     assert!(
-        head.contains("what is on `main` through PR #193")
-            && head.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4"),
-        "status header must name tip through PR #193: {head}"
-    );
-    assert!(
         !head.contains("what is on `main` through PR #183"),
         "status header must not freeze the snapshot at PR #183: {head}"
     );

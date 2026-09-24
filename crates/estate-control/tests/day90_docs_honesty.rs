@@ -7377,10 +7377,18 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
     assert!(intro.contains(
         "It runs `make purpose-build-pick`, then `make purpose-build-checklist`. Those two targets are the parts."
     ));
-    assert!(intro.contains("sections 15–20"));
+    assert!(intro.contains("section 18"));
+    assert!(intro.contains("The journey runs the pick (section 17), then the checklist (section 15)."));
+    assert!(intro.contains(
+        "DeepSeek-R1-Distill (section 19) and GLM-4 Chat (section 20) are sibling print-only journeys reachable from the pick and the checklist."
+    ));
+    assert!(intro.contains("They are not steps of this journey."));
+    assert!(!intro.contains("sections 15–20"));
     assert!(intro.contains("The re-prove card stays `make uniqueness-prove-checklist`."));
     assert!(intro.contains("stays the only live uniqueness prove"));
-    assert!(!intro.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        !intro.contains("READY_FOR_LIVE_TEST: yes") && !intro.contains("READY_FOR_LIVE_TEST`: yes")
+    );
 
     let table = train
         .split("## What exists today")
@@ -7396,7 +7404,7 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
         .find("| `make enrich-live-prove` |")
         .expect("enrich-live-prove row");
     let between = &table[mlx..live];
-    for needle in [
+    let row_markers = [
         "| `make purpose-build-checklist` |",
         "| `make purpose-build-pick` |",
         "| `make purpose-build-journey` |",
@@ -7408,14 +7416,27 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
         "| `make uniqueness-glm` |",
         "| `make glm4-chat-lora-journey` |",
         "| `make uniqueness-glm-lora` |",
-        "print-only",
-        "Does not invent a live PASS",
-        "Not in `make smoke`, `make gate-90`, or GitHub Actions",
-    ] {
-        assert!(between.contains(needle), "table gap missing {needle}");
+    ];
+    for marker in row_markers {
+        let row = table
+            .lines()
+            .find(|line| line.contains(marker))
+            .unwrap_or_else(|| panic!("What exists today missing {marker}"));
+        for needle in [
+            "print-only",
+            "Does not train, convert, seat",
+            "promote",
+            "or apply",
+            "Not in `make smoke`, `make gate-90`, or GitHub Actions",
+            "Does not invent a live PASS",
+        ] {
+            assert!(row.contains(needle), "{marker} row missing {needle}: {row}");
+        }
     }
     assert!(!between.to_ascii_lowercase().contains("kimi"));
-    assert!(!train.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        !train.contains("READY_FOR_LIVE_TEST: yes") && !train.contains("READY_FOR_LIVE_TEST`: yes")
+    );
 
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(4).collect::<Vec<_>>().join("\n");
@@ -7428,6 +7449,12 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
     assert!(status.lines().take(4).any(|line| {
         line.contains("through PR #193") && line.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4")
     }));
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    assert!(
+        probes.contains("Tip framing\nthrough PR #193")
+            && probes.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4"),
+        "LIVE-PROBES tip framing stays through PR #193"
+    );
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     let head = changelog
@@ -7451,7 +7478,10 @@ fn train_enrich_names_purpose_build_mid_software_build_entry() {
         "make purpose-build-journey",
         "make purpose-build-pick",
         "make purpose-build-checklist",
-        "sections 15–20",
+        "section 18",
+        "The journey runs the pick (section 17), then the checklist (section 15).",
+        "sibling print-only journeys",
+        "They are not steps of this journey.",
         "operator section 19",
         "operator section 20",
         "do not invent a live PASS",
