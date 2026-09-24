@@ -52,6 +52,8 @@ resolve_estate() {
 
 echo "== purpose-build-checklist (print-only operator steps for purpose-build on demand) =="
 echo "Print-only. READY_FOR_LIVE_TEST: no"
+echo "When an SLM fits mid-software-build, or on demand, the same print-only entry is make purpose-build-journey."
+echo "That entry runs make purpose-build-pick, then make purpose-build-checklist. Those two targets are the parts."
 echo "Purpose-build on demand. This checklist is operator UX."
 echo "It is not a re-prove of the recorded Target C live PASS."
 echo "The factory does not train, convert, shell out to ollama, or promote."

@@ -19,6 +19,8 @@ unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOIN
 
 echo "== purpose-build-pick (print-only host and stack picker) =="
 echo "Print-only. READY_FOR_LIVE_TEST: no"
+echo "When an SLM fits mid-software-build, or on demand, the same print-only entry is make purpose-build-journey."
+echo "That entry runs make purpose-build-pick, then make purpose-build-checklist. Those two targets are the parts."
 echo "Purpose-build on demand. This picker is operator UX."
 echo "It names make targets already on tip. It does not run them."
 echo "It does not resolve or execute estate."
