@@ -751,13 +751,8 @@ fn acquire_local_parquet(
     python: Option<&str>,
     io: &dyn ImportIo,
 ) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
-    if !source_dir.is_dir() {
-        bail!(
-            "refuse:classify-import: --from-local {} is not a directory",
-            source_dir.display()
-        );
-    }
-    let source = inspect_parquet_source(source_dir, preset.train_split, preset.test_split)?;
+    let source_dir = canonical_snapshot(source_dir)?;
+    let source = inspect_parquet_source(&source_dir, preset.train_split, preset.test_split)?;
     let train_final = native.join(format!("{}.jsonl", preset.train_split));
     let test_final = native.join(format!("{}.jsonl", preset.test_split));
     if !force && cache_verified(preset, native)? {
@@ -766,8 +761,8 @@ fn acquire_local_parquet(
         }
     }
     let (premise_field, hypothesis_field) = nli_fields(preset);
-    let train_files = split_parquet_files(source_dir, preset.train_split)?;
-    let test_files = split_parquet_files(source_dir, preset.test_split)?;
+    let train_files = split_parquet_files(&source_dir, preset.train_split)?;
+    let test_files = split_parquet_files(&source_dir, preset.test_split)?;
     let train_rows = read_one_parquet_split(
         preset,
         preset.train_split,
@@ -885,11 +880,29 @@ pub fn dataset_source_token(
     }
 }
 
+fn canonical_snapshot(dir: &Path) -> Result<PathBuf> {
+    if !dir.is_dir() {
+        bail!(
+            "refuse:classify-import: --from-local {} is not a directory",
+            dir.display()
+        );
+    }
+    Ok(fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
+}
+
 fn file_mtime_secs(meta: &fs::Metadata) -> u64 {
     meta.modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+}
+
+fn file_mtime_nanos(meta: &fs::Metadata) -> u128 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_nanos())
         .unwrap_or(0)
 }
 
@@ -910,12 +923,16 @@ fn inspect_parquet_source(dir: &Path, train_split: &str, test_split: &str) -> Re
             )
         })?;
         let mtime = file_mtime_secs(&meta);
+        let mtime_ns = file_mtime_nanos(&meta);
         let rel = path
             .strip_prefix(&canon)
             .unwrap_or(path)
             .display()
             .to_string();
-        cheap_lines.push(format!("{rel} bytes={} mtime={mtime}", meta.len()));
+        cheap_lines.push(format!(
+            "{rel} bytes={} mtime_ns={mtime_ns}",
+            meta.len()
+        ));
         stats.push((path.clone(), rel, meta.len(), mtime));
     }
     let cheap = cheap_lines.join("\n");
@@ -2635,6 +2652,66 @@ mod tests {
         let bool_at = PARQUET_SCRIPT.find("isinstance(label, bool)").unwrap();
         let integral_at = PARQUET_SCRIPT.find("numbers.Integral").unwrap();
         assert!(bool_at < integral_at);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn from_local_symlink_to_a_snapshot_succeeds() {
+        let root = std::env::temp_dir().join(format!(
+            "import-link-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let real = snapshot_dir(&root, "nas", b"train-bytes", b"test-bytes");
+        let link = root.join("ag_news");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let out = root.join("sampled");
+        let cache = root.join("cache");
+        let io = FakeIo {
+            hf_calls: std::cell::Cell::new(0),
+            http_calls: std::cell::Cell::new(0),
+            pyarrow_missing: false,
+            touch_source: false,
+        };
+        classify_import_with(
+            &ImportRequest {
+                dataset: "ag_news",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&link),
+                fetch: ImportFetch::Bulk,
+                python: None,
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        let manifest: Value = serde_json::from_str(
+            &fs::read_to_string(cache.join("ag_news").join("native").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let source_dir = manifest["source_dir"].as_str().unwrap();
+        assert!(source_dir.contains("nas"), "{source_dir}");
+        assert!(!source_dir.ends_with("ag_news"), "{source_dir}");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, real.join("escape")).unwrap();
+        let err = split_parquet_files(&real, "train").unwrap_err().to_string();
+        assert!(err.contains("directory symlink"), "{err}");
+        let err = match inspect_parquet_source(&link, "train", "test") {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("nested directory symlink was accepted"),
+        };
+        assert!(err.contains("directory symlink"), "{err}");
         let _ = fs::remove_dir_all(&root);
     }
 
