@@ -736,6 +736,7 @@ fn hf_dataset_argv(bin: &str, repo: &str, local_dir: &Path) -> Vec<String> {
     ]
 }
 
+#[derive(Clone)]
 struct ParquetSource {
     dir_display: String,
     token: String,
@@ -756,16 +757,12 @@ fn acquire_local_parquet(
             source_dir.display()
         );
     }
-    let source = inspect_parquet_source(source_dir)?;
+    let source = inspect_parquet_source(source_dir, preset.train_split, preset.test_split)?;
     let train_final = native.join(format!("{}.jsonl", preset.train_split));
     let test_final = native.join(format!("{}.jsonl", preset.test_split));
     if !force && cache_verified(preset, native)? {
-        match manifest_source_fp(native)? {
-            Some(have) if have == source.token => {
-                return Ok((read_native(&train_final)?, read_native(&test_final)?));
-            }
-            None => return Ok((read_native(&train_final)?, read_native(&test_final)?)),
-            Some(_) => {}
+        if manifest_source_fp(native)?.as_deref() == Some(source.token.as_str()) {
+            return Ok((read_native(&train_final)?, read_native(&test_final)?));
         }
     }
     let (premise_field, hypothesis_field) = nli_fields(preset);
@@ -871,9 +868,14 @@ fn manifest_source_fp(native: &Path) -> Result<Option<String>> {
 }
 
 /// Identity of a local snapshot. A changed file changes the import fingerprint.
-pub fn dataset_source_token(from_local: Option<&Path>, fetch: ImportFetch) -> String {
+pub fn dataset_source_token(
+    from_local: Option<&Path>,
+    fetch: ImportFetch,
+    train_split: &str,
+    test_split: &str,
+) -> String {
     if let Some(dir) = from_local {
-        return inspect_parquet_source(dir)
+        return inspect_parquet_source(dir, train_split, test_split)
             .map(|source| source.token)
             .unwrap_or_else(|_| format!("local-unreadable:{}", dir.display()));
     }
@@ -883,53 +885,102 @@ pub fn dataset_source_token(from_local: Option<&Path>, fetch: ImportFetch) -> St
     }
 }
 
-fn inspect_parquet_source(dir: &Path) -> Result<ParquetSource> {
+fn file_mtime_secs(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+}
+
+fn inspect_parquet_source(dir: &Path, train_split: &str, test_split: &str) -> Result<ParquetSource> {
     let canon = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    let mut paths = split_parquet_files(&canon, "train")?;
-    paths.extend(split_parquet_files(&canon, "test")?);
+    let mut paths = split_parquet_files(&canon, train_split)?;
+    paths.extend(split_parquet_files(&canon, test_split)?);
     paths.sort();
-    let mut lines = vec![format!("dir={}", canon.display())];
-    let mut files = Vec::new();
+    paths.dedup();
+    let cache_key = format!("{}\n{train_split}\n{test_split}", canon.display());
+    let mut cheap_lines = vec![format!("dir={}", canon.display())];
+    let mut stats = Vec::new();
     for path in &paths {
-        let meta = fs::metadata(path).map_err(|err| {
+        let meta = fs::symlink_metadata(path).map_err(|err| {
             anyhow::anyhow!(
                 "refuse:classify-import: cannot stat {}: {err}",
                 path.display()
             )
         })?;
-        let hash = sha256_file(path)?;
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|elapsed| elapsed.as_secs())
-            .unwrap_or(0);
+        let mtime = file_mtime_secs(&meta);
         let rel = path
             .strip_prefix(&canon)
             .unwrap_or(path)
             .display()
             .to_string();
-        lines.push(format!(
-            "{rel} sha256={hash} bytes={} mtime={mtime}",
-            meta.len()
-        ));
+        cheap_lines.push(format!("{rel} bytes={} mtime={mtime}", meta.len()));
+        stats.push((path.clone(), rel, meta.len(), mtime));
+    }
+    let cheap = cheap_lines.join("\n");
+    if let Some(hit) = remembered_source(&cache_key, &cheap) {
+        return Ok(hit);
+    }
+    let mut lines = vec![format!("dir={}", canon.display())];
+    let mut files = Vec::new();
+    for (path, rel, bytes, mtime) in &stats {
+        let hash = sha256_file(path)?;
+        lines.push(format!("{rel} sha256={hash} bytes={bytes} mtime={mtime}"));
         files.push(json!({
             "path": rel,
             "sha256": hash,
-            "bytes": meta.len(),
+            "bytes": bytes,
             "mtime": mtime,
         }));
     }
-    Ok(ParquetSource {
+    let source = ParquetSource {
         dir_display: canon.display().to_string(),
         token: lines.join("\n"),
         files,
-    })
+    };
+    remember_source(&cache_key, &cheap, &source);
+    Ok(source)
+}
+
+struct RememberedSource {
+    cheap: String,
+    source: ParquetSource,
+}
+
+fn source_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, RememberedSource>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, RememberedSource>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn remembered_source(cache_key: &str, cheap: &str) -> Option<ParquetSource> {
+    let guard = source_cache().lock().ok()?;
+    let hit = guard.get(cache_key)?;
+    if hit.cheap == cheap {
+        Some(hit.source.clone())
+    } else {
+        None
+    }
+}
+
+fn remember_source(cache_key: &str, cheap: &str, source: &ParquetSource) {
+    if let Ok(mut guard) = source_cache().lock() {
+        guard.insert(
+            cache_key.to_string(),
+            RememberedSource {
+                cheap: cheap.to_string(),
+                source: source.clone(),
+            },
+        );
+    }
 }
 
 fn split_parquet_files(dir: &Path, split: &str) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
-    collect_parquet(dir, split, &mut found)?;
+    let mut seen = std::collections::BTreeSet::new();
+    collect_parquet(dir, split, &mut seen, &mut found)?;
     found.sort();
     if found.is_empty() {
         bail!(
@@ -940,7 +991,31 @@ fn split_parquet_files(dir: &Path, split: &str) -> Result<Vec<PathBuf>> {
     Ok(found)
 }
 
-fn collect_parquet(dir: &Path, split: &str, out: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_parquet(
+    dir: &Path,
+    split: &str,
+    seen: &mut std::collections::BTreeSet<(u64, u64)>,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let dir_meta = fs::symlink_metadata(dir).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-import: cannot stat {}: {err}",
+            dir.display()
+        )
+    })?;
+    if dir_meta.file_type().is_symlink() {
+        bail!(
+            "refuse:classify-import: directory symlink {} is refused",
+            dir.display()
+        );
+    }
+    if !seen.insert((dir_meta.dev(), dir_meta.ino())) {
+        bail!(
+            "refuse:classify-import: directory cycle at {}",
+            dir.display()
+        );
+    }
     let entries = fs::read_dir(dir).map_err(|err| {
         anyhow::anyhow!(
             "refuse:classify-import: cannot read {}: {err}",
@@ -950,9 +1025,26 @@ fn collect_parquet(dir: &Path, split: &str, out: &mut Vec<PathBuf>) -> Result<()
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
-            collect_parquet(&path, split, out)?;
-        } else if is_split_parquet(&path, split) {
+        let meta = fs::symlink_metadata(&path).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-import: cannot stat {}: {err}",
+                path.display()
+            )
+        })?;
+        if meta.file_type().is_symlink() {
+            let target_dir = fs::metadata(&path).map(|target| target.is_dir()).unwrap_or(false);
+            if target_dir {
+                bail!(
+                    "refuse:classify-import: directory symlink {} is refused",
+                    path.display()
+                );
+            }
+            eprintln!("classify-import: skip symlink {}", path.display());
+            continue;
+        }
+        if meta.is_dir() {
+            collect_parquet(&path, split, seen, out)?;
+        } else if meta.is_file() && is_split_parquet(&path, split) {
             out.push(path);
         }
     }
@@ -1010,7 +1102,7 @@ fn python_failure(python: &str, code: i32, stderr: &str) -> String {
 }
 
 const PARQUET_SCRIPT: &str = r#"
-import json, sys
+import json, numbers, sys
 try:
     import pyarrow.parquet as pq
 except Exception:
@@ -1035,7 +1127,7 @@ with open(spec["out"], "w", encoding="utf-8") as out:
             sys.exit(3)
         for i in range(n):
             label = cols[label_field][i]
-            if isinstance(label, bool) or not isinstance(label, int):
+            if isinstance(label, bool) or not isinstance(label, numbers.Integral):
                 sys.stderr.write("label is not an int\n")
                 sys.exit(3)
             text = cols[text_field][i]
@@ -2422,8 +2514,10 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let first = snapshot_dir(&root, "a", b"one", b"test");
         let second = snapshot_dir(&root, "b", b"two", b"test");
-        let token_a = dataset_source_token(Some(&first), ImportFetch::Bulk);
-        let token_b = dataset_source_token(Some(&second), ImportFetch::Bulk);
+        let token_a = dataset_source_token(Some(&first), ImportFetch::Bulk, "train", "test");
+        let again = dataset_source_token(Some(&first), ImportFetch::Bulk, "train", "test");
+        assert_eq!(token_a, again, "unchanged snapshot reuses the hashed token");
+        let token_b = dataset_source_token(Some(&second), ImportFetch::Bulk, "train", "test");
         assert_ne!(token_a, token_b);
         assert!(token_a.contains("sha256="), "{token_a}");
         let fp_a = import_fingerprint("fancyzhx/ag_news", "all", "all", 42, "t", "h", &token_a);
@@ -2434,8 +2528,113 @@ mod tests {
             b"changed",
         )
         .unwrap();
-        let token_c = dataset_source_token(Some(&first), ImportFetch::Bulk);
+        let token_c = dataset_source_token(Some(&first), ImportFetch::Bulk, "train", "test");
         assert_ne!(token_a, token_c);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn from_local_rereads_when_verified_cache_has_no_source_fp() {
+        let root = std::env::temp_dir().join(format!(
+            "import-migrate-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let source = snapshot_dir(&root, "nas", b"train-bytes", b"test-bytes");
+        let cache = root.join("cache");
+        let native = cache.join("ag_news").join("native");
+        fs::create_dir_all(&native).unwrap();
+        let preset = preset_by_name("ag_news").unwrap();
+        let stale = "{\"index\":0,\"text\":\"stale\",\"label\":0}\n";
+        fs::write(
+            native.join("train.jsonl"),
+            stale.repeat(preset.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("test.jsonl"),
+            stale.repeat(preset.official_test as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("manifest.json"),
+            format!(
+                "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}}}\n",
+                serde_json::to_string(preset.hf_id).unwrap(),
+                preset.official_train,
+                preset.official_test
+            ),
+        )
+        .unwrap();
+        assert!(cache_verified(preset, &native).unwrap());
+        let out = root.join("sampled");
+        let io = FakeIo {
+            hf_calls: std::cell::Cell::new(0),
+            http_calls: std::cell::Cell::new(0),
+            pyarrow_missing: false,
+            touch_source: false,
+        };
+        classify_import_with(
+            &ImportRequest {
+                dataset: "ag_news",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&source),
+                fetch: ImportFetch::RowsApi,
+                python: None,
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(native.join("manifest.json")).unwrap())
+                .unwrap();
+        assert!(
+            manifest["source_fp"].as_str().unwrap().contains("sha256="),
+            "{manifest}"
+        );
+        let train = fs::read_to_string(native.join("train.jsonl")).unwrap();
+        assert!(train.contains("\"text\":\"row-0\""), "snapshot was not read");
+        assert!(!train.contains("stale"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn directory_symlink_under_from_local_is_refused() {
+        let root = std::env::temp_dir().join(format!(
+            "import-symlink-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let source = snapshot_dir(&root, "nas", b"t", b"e");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("escape")).unwrap();
+        let err = split_parquet_files(&source, "train").unwrap_err().to_string();
+        assert!(err.contains("directory symlink"), "{err}");
+        let cycle = root.join("cycle");
+        fs::create_dir_all(&cycle).unwrap();
+        fs::write(cycle.join("train-0.parquet"), b"t").unwrap();
+        std::os::unix::fs::symlink(&cycle, cycle.join("again")).unwrap();
+        let err = split_parquet_files(&cycle, "train").unwrap_err().to_string();
+        assert!(err.contains("directory symlink"), "{err}");
+        let bool_at = PARQUET_SCRIPT.find("isinstance(label, bool)").unwrap();
+        let integral_at = PARQUET_SCRIPT.find("numbers.Integral").unwrap();
+        assert!(bool_at < integral_at);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2480,8 +2679,14 @@ mod tests {
         assert!(err.contains("official count"), "{err}");
         assert_eq!(io.http_calls.get(), 1);
         assert_eq!(io.hf_calls.get(), 0);
-        assert_eq!(dataset_source_token(None, ImportFetch::RowsApi), "rows-api");
-        assert_eq!(dataset_source_token(None, ImportFetch::Bulk), "hf-download");
+        assert_eq!(
+            dataset_source_token(None, ImportFetch::RowsApi, "train", "test"),
+            "rows-api"
+        );
+        assert_eq!(
+            dataset_source_token(None, ImportFetch::Bulk, "train", "test"),
+            "hf-download"
+        );
         assert!(hf_auth_header(Some("secret")).unwrap() == "Bearer secret");
         assert!(hf_auth_header(Some("  ")).is_none());
         assert!(hf_auth_header(None).is_none());

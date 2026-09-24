@@ -808,7 +808,12 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
-    let source = crate::classify_import::dataset_source_token(req.from_local, req.import_fetch);
+    let source = crate::classify_import::dataset_source_token(
+        req.from_local,
+        req.import_fetch,
+        preset.train_split,
+        preset.test_split,
+    );
     Ok(crate::classify_import::import_fingerprint(
         preset.hf_id,
         req.train_size,
