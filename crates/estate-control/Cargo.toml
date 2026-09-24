@@ -14,12 +14,14 @@ feed-collector.workspace = true
 floor-supervisor.workspace = true
 model-estate.workspace = true
 serde_json.workspace = true
+ureq.workspace = true
 
 [[bin]]
 name = "estate"
 path = "src/main.rs"
 
 [dev-dependencies]
+tiny_http.workspace = true
 conveyor-proxy.workspace = true
 estate-schema.workspace = true
 feed-collector.workspace = true

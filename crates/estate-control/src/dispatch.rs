@@ -3,7 +3,7 @@ use clap::Parser;
 use estate_schema::{describe, load_estate_unvalidated, validate};
 use std::path::Path;
 
-use crate::cli::{AuditCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
+use crate::cli::{AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand};
 use crate::ops::*;
 use crate::plan_apply::*;
 use crate::watch::*;
@@ -293,6 +293,49 @@ pub(crate) fn run() -> Result<()> {
                 &runtime,
             ),
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
+        },
+        Command::Classify { command } => match command {
+            ClassifyCommand::Prepare {
+                input,
+                out,
+                seed,
+                held_out_ratio,
+                format,
+                dataset_name,
+                strict,
+                force,
+            } => crate::classify::cmd_classify_prepare(
+                &input,
+                &out,
+                seed,
+                held_out_ratio,
+                format,
+                &dataset_name,
+                strict,
+                force,
+            ),
+            ClassifyCommand::Eval {
+                records,
+                endpoint,
+                model,
+                api_key_env,
+                report,
+                dry_run,
+                mock,
+                timeout_secs,
+            } => {
+                let report = report.unwrap_or_else(|| crate::classify::default_report_path(&records));
+                crate::classify::cmd_classify_eval(
+                    &records,
+                    endpoint.as_deref(),
+                    &model,
+                    api_key_env.as_deref(),
+                    &report,
+                    dry_run,
+                    mock,
+                    timeout_secs,
+                )
+            }
         },
         Command::Packs { command } => match command {
             PacksCommand::List { drop_dir } => cmd_feed_list(&drop_dir),
