@@ -927,7 +927,8 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
-    let source = crate::classify_import::preset_source_token(preset, req.from_local, req.import_fetch);
+    let source =
+        crate::classify_import::preset_source_token(preset, req.from_local, req.import_fetch);
     let stored = read_manifest(&paths.manifest_path("prepare")).map(|manifest| manifest.inputs);
     let cached = crate::classify_import::cached_native_source_fp(preset.alias);
     Ok(crate::classify_import::journey_prepare_fingerprint(
@@ -2037,13 +2038,32 @@ fn rate(invalid: u64, records: u64) -> f64 {
     }
 }
 
+/// Newcombe 95% interval for specialist accuracy minus base accuracy.
+/// `None` when either side has no records.
+pub fn delta_ci95(comparison: &Comparison) -> Option<(f64, f64, f64)> {
+    newcombe_delta_ci95(
+        comparison.base_correct,
+        comparison.base_records,
+        comparison.specialist_correct,
+        comparison.specialist_records,
+    )
+}
+
+/// True only when the Newcombe 95% lower bound is strictly greater than 0.
+/// A missing interval is not a lift.
+pub fn significant_lift(comparison: &Comparison) -> bool {
+    delta_ci95(comparison).is_some_and(|(_, low, _)| low > 0.0)
+}
+
 /// `None` when no threshold is set. `Some(true)` when every set threshold holds.
+/// `--require-significant-lift` holds only when [`significant_lift`] is true.
 pub fn threshold_met(
     comparison: &Comparison,
     min_delta: Option<f64>,
     min_accuracy: Option<f64>,
+    require_significant_lift: bool,
 ) -> Option<bool> {
-    if min_delta.is_none() && min_accuracy.is_none() {
+    if min_delta.is_none() && min_accuracy.is_none() && !require_significant_lift {
         return None;
     }
     let delta_ok = min_delta
@@ -2052,7 +2072,41 @@ pub fn threshold_met(
     let acc_ok = min_accuracy
         .map(|min| comparison.specialist_accuracy + f64::EPSILON >= min)
         .unwrap_or(true);
-    Some(delta_ok && acc_ok)
+    let lift_ok = !require_significant_lift || significant_lift(comparison);
+    Some(delta_ok && acc_ok && lift_ok)
+}
+
+fn format_ci(comparison: &Comparison) -> String {
+    match delta_ci95(comparison) {
+        Some((_, low, high)) => format!("[{low:.4}, {high:.4}]"),
+        None => "unavailable".to_string(),
+    }
+}
+
+/// Fail-closed text for a missed significant-lift gate. Prints both accuracies, the delta, and the CI.
+pub fn significant_lift_refusal(
+    comparison: &Comparison,
+    min_delta: Option<f64>,
+    min_accuracy: Option<f64>,
+) -> String {
+    let mut message = format!(
+        "refuse:classify-journey: significant lift missed; base accuracy {:.4} specialist accuracy {:.4} delta {:.4} ci95 {}",
+        comparison.base_accuracy,
+        comparison.specialist_accuracy,
+        comparison.delta,
+        format_ci(comparison)
+    );
+    if let Some(min) = min_delta {
+        if comparison.delta + f64::EPSILON < min {
+            message.push_str(&format!("; min-delta {min:.4} missed"));
+        }
+    }
+    if let Some(min) = min_accuracy {
+        if comparison.specialist_accuracy + f64::EPSILON < min {
+            message.push_str(&format!("; min-accuracy {min:.4} missed"));
+        }
+    }
+    message
 }
 
 pub struct JourneyRequest<'a> {
@@ -2073,6 +2127,8 @@ pub struct JourneyRequest<'a> {
     pub run: bool,
     pub min_delta: Option<f64>,
     pub min_accuracy: Option<f64>,
+    /// Fail unless the Newcombe 95% CI lower bound for the accuracy delta is strictly greater than 0.
+    pub require_significant_lift: bool,
     pub timeout_secs: u64,
     pub together_poll_secs: u64,
     pub train_driver: TrainDriver,
@@ -2215,7 +2271,12 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         None
     };
     let comparison = compare_sides(&side_score(&base_report)?, &side_score(&specialist_report)?);
-    let verdict = threshold_met(&comparison, req.min_delta, req.min_accuracy);
+    let verdict = threshold_met(
+        &comparison,
+        req.min_delta,
+        req.min_accuracy,
+        req.require_significant_lift,
+    );
     write_comparison(
         req,
         &paths,
@@ -2226,6 +2287,13 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         verdict,
     )?;
     match verdict {
+        Some(false) if req.require_significant_lift && !significant_lift(&comparison) => {
+            bail!(significant_lift_refusal(
+                &comparison,
+                req.min_delta,
+                req.min_accuracy
+            ))
+        }
         Some(false) => bail!(
             "classify-journey: threshold missed; specialist accuracy {:.4} delta {:.4}",
             comparison.specialist_accuracy,
@@ -2330,6 +2398,11 @@ fn print_plan(
             StepAction::Skip => "skip",
         };
         println!("{word} {:<24} {}", step.name, step.detail);
+    }
+    if req.require_significant_lift {
+        println!(
+            "significant_lift: required; Newcombe 95% CI lower bound for specialist minus base must be > 0"
+        );
     }
     println!("compare writes {}", paths.comparison.display());
     println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
@@ -2923,15 +2996,32 @@ fn ci_field(interval: Option<(f64, f64)>) -> Value {
 }
 
 fn delta_ci_field(comparison: &Comparison) -> Value {
-    match newcombe_delta_ci95(
-        comparison.base_correct,
-        comparison.base_records,
-        comparison.specialist_correct,
-        comparison.specialist_records,
-    ) {
+    match delta_ci95(comparison) {
         Some((_, low, high)) => json!({"low": low, "high": high, "method": "newcombe-wilson"}),
         None => Value::Null,
     }
+}
+
+/// Why the significant-lift gate passed, failed, or was left off.
+pub fn lift_gate_field(comparison: &Comparison, required: bool) -> Value {
+    let ci = delta_ci95(comparison);
+    let significant = ci.as_ref().is_some_and(|(_, low, _)| *low > 0.0);
+    let verdict = if !required {
+        "unset"
+    } else if significant {
+        "pass"
+    } else {
+        "fail"
+    };
+    json!({
+        "required": required,
+        "rule": "newcombe_ci95_lower_gt_0",
+        "significant": significant,
+        "verdict": verdict,
+        "delta": ci.as_ref().map(|(delta, _, _)| *delta),
+        "low": ci.as_ref().map(|(_, low, _)| *low),
+        "high": ci.as_ref().map(|(_, _, high)| *high),
+    })
 }
 
 fn write_comparison(
@@ -3007,6 +3097,8 @@ fn write_comparison(
         "import_seed": if req.import_dataset.is_some() { json!(req.seed) } else { Value::Null },
         "min_delta": req.min_delta,
         "min_accuracy": req.min_accuracy,
+        "require_significant_lift": req.require_significant_lift,
+        "lift_gate": lift_gate_field(comparison, req.require_significant_lift),
         "threshold": verdict_text,
         "live_pass_recorded": false,
         "note": "Local comparison only. This file does not record a live PASS. READY_FOR_LIVE_TEST stays no."
@@ -4408,10 +4500,19 @@ mod tests {
         assert!((comparison.specialist_invalid_rate - 0.125).abs() < 1e-9);
         assert_eq!(comparison.base_thinking_leak, 3);
         assert_eq!(comparison.specialist_thinking_leak, 0);
-        assert_eq!(threshold_met(&comparison, None, None), None);
-        assert_eq!(threshold_met(&comparison, Some(0.4), Some(0.7)), Some(true));
-        assert_eq!(threshold_met(&comparison, Some(0.6), None), Some(false));
-        assert_eq!(threshold_met(&comparison, None, Some(0.9)), Some(false));
+        assert_eq!(threshold_met(&comparison, None, None, false), None);
+        assert_eq!(
+            threshold_met(&comparison, Some(0.4), Some(0.7), false),
+            Some(true)
+        );
+        assert_eq!(
+            threshold_met(&comparison, Some(0.6), None, false),
+            Some(false)
+        );
+        assert_eq!(
+            threshold_met(&comparison, None, Some(0.9), false),
+            Some(false)
+        );
         let partial = serde_json::json!({
             "complete": false,
             "records": 8,
@@ -4422,6 +4523,79 @@ mod tests {
         assert!(err.contains("partial"), "{err}");
         let missing = serde_json::json!({"records": 8, "accuracy": 0.5, "correct": 4});
         assert!(side_score(&missing).is_err());
+    }
+
+    fn score(accuracy: f64, correct: u64, records: u64) -> SideScore {
+        SideScore {
+            accuracy,
+            correct,
+            invalid: 0,
+            records,
+            p50: 1.0,
+            p95: 2.0,
+            thinking_leak: 0,
+        }
+    }
+
+    #[test]
+    fn significant_lift_gate_uses_newcombe_lower_bound() {
+        let lifted = compare_sides(&score(0.5, 50, 100), &score(0.8, 80, 100));
+        assert!(significant_lift(&lifted));
+        assert_eq!(threshold_met(&lifted, None, None, true), Some(true));
+        let gate = lift_gate_field(&lifted, true);
+        assert_eq!(gate["verdict"], "pass");
+        assert_eq!(gate["significant"], true);
+        assert_eq!(gate["rule"], "newcombe_ci95_lower_gt_0");
+        assert!(gate["low"].as_f64().unwrap() > 0.0);
+        assert_eq!(gate["delta"].as_f64().unwrap(), lifted.delta);
+
+        let crosses = compare_sides(&score(0.45, 45, 100), &score(0.55, 55, 100));
+        assert!(crosses.delta > 0.0);
+        assert!(!significant_lift(&crosses));
+        assert_eq!(threshold_met(&crosses, None, None, true), Some(false));
+        let missed = lift_gate_field(&crosses, true);
+        assert_eq!(missed["verdict"], "fail");
+        assert!(missed["low"].as_f64().unwrap() < 0.0);
+        assert!(missed["high"].as_f64().unwrap() > 0.0);
+        let refusal = significant_lift_refusal(&crosses, None, None);
+        assert!(refusal.starts_with("refuse:classify-journey:"), "{refusal}");
+        assert!(refusal.contains("base accuracy 0.4500"), "{refusal}");
+        assert!(refusal.contains("specialist accuracy 0.5500"), "{refusal}");
+        assert!(refusal.contains("delta 0.1000"), "{refusal}");
+        assert!(refusal.contains("ci95 ["), "{refusal}");
+
+        let worse = compare_sides(&score(0.8, 80, 100), &score(0.5, 50, 100));
+        assert!(worse.delta < 0.0);
+        assert!(!significant_lift(&worse));
+        assert_eq!(threshold_met(&worse, None, None, true), Some(false));
+        assert_eq!(lift_gate_field(&worse, true)["verdict"], "fail");
+        let worse_msg = significant_lift_refusal(&worse, None, None);
+        assert!(worse_msg.contains("delta -0.3000"), "{worse_msg}");
+
+        assert_eq!(threshold_met(&worse, None, None, false), None);
+        assert_eq!(lift_gate_field(&worse, false)["verdict"], "unset");
+        assert_eq!(lift_gate_field(&worse, false)["required"], false);
+        assert_eq!(threshold_met(&crosses, Some(0.05), None, false), Some(true));
+
+        assert_eq!(
+            threshold_met(&lifted, Some(0.2), Some(0.75), true),
+            Some(true)
+        );
+        assert_eq!(threshold_met(&lifted, Some(0.4), None, true), Some(false));
+        assert_eq!(
+            threshold_met(&crosses, Some(0.05), Some(0.5), true),
+            Some(false)
+        );
+        let both = significant_lift_refusal(&crosses, Some(0.2), Some(0.9));
+        assert!(both.contains("min-delta 0.2000 missed"), "{both}");
+        assert!(both.contains("min-accuracy 0.9000 missed"), "{both}");
+
+        let empty = compare_sides(&score(0.0, 0, 0), &score(1.0, 0, 0));
+        assert!(!significant_lift(&empty));
+        assert_eq!(threshold_met(&empty, None, None, true), Some(false));
+        let unavailable = significant_lift_refusal(&empty, None, None);
+        assert!(unavailable.contains("ci95 unavailable"), "{unavailable}");
+        assert!(lift_gate_field(&empty, true)["low"].is_null());
     }
 
     #[test]

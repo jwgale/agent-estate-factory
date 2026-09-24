@@ -645,6 +645,10 @@ pub(crate) enum ClassifyCommand {
         /// Specialist accuracy must reach this value. Local exit code only.
         #[arg(long)]
         min_accuracy: Option<f64>,
+        /// Fail unless the Newcombe 95% CI for (specialist accuracy − base accuracy) has a lower bound strictly greater than 0.
+        /// Combines with `--min-delta` and `--min-accuracy`: every set threshold must hold. Default off. Local exit code only. Does not record a live PASS.
+        #[arg(long, default_value_t = false)]
+        require_significant_lift: bool,
         /// Per-request HTTP timeout in seconds. Together job polling uses `--together-poll-secs` instead.
         #[arg(long, default_value_t = 120)]
         timeout_secs: u64,
