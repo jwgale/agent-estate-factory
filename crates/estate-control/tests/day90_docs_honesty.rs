@@ -6086,3 +6086,242 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         "examples/estate.yaml cksum drifted: {sum}"
     );
 }
+
+#[test]
+fn glm4_chat_journey_stays_print_only_and_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in [
+        "glm4-chat-journey:",
+        "uniqueness-glm:",
+        "glm4-chat-lora-journey:",
+        "uniqueness-glm-lora:",
+    ] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/glm4-chat-journey.sh"));
+    assert!(makefile.contains("scripts/uniqueness-glm.sh"));
+    assert!(makefile.contains("scripts/uniqueness-glm-lora.sh"));
+    assert!(makefile.contains("GLM_CARD=llamafactory-qlora bash scripts/glm4-chat-journey.sh"));
+    assert!(makefile.contains("GLM_CARD=llamafactory-lora bash scripts/glm4-chat-journey.sh"));
+    assert!(makefile.contains("operator section 20"));
+    let phony = makefile.lines().next().unwrap_or("");
+    for name in [
+        "glm4-chat-journey",
+        "uniqueness-glm",
+        "glm4-chat-lora-journey",
+        "uniqueness-glm-lora",
+    ] {
+        assert!(phony.contains(name), "{name} must be a phony target");
+    }
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("glm4-chat"),
+        "gate-90 must not run the glm4 journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("glm4-chat"),
+        "smoke must not run the glm4 journey: {smoke}"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/glm4-chat-journey.sh")).unwrap();
+    for needle in [
+        "zai-org/glm-4-9b-chat",
+        "examples/fixtures/glm4-chat.pack.json",
+        "examples/fixtures/glm4-chat-lora.pack.json",
+        "TEMPLATE=\"glm4\"",
+        "GLM4_CHAT_PHASE",
+        "READY_FOR_LIVE_TEST: no",
+        "SKIP live train",
+        "CELL_TRAIN_LIVE or CELL_SEAT_LIVE is set. This journey stays print-only.",
+        "glm4:9b",
+        "llamafactory-qlora",
+        "llamafactory-lora",
+        "This print is not a live PASS.",
+        "only live uniqueness prove",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA.",
+        "Reproduce target on the unquantized LoRA card, the non-quant twin of the GLM-4 Chat QLoRA prepare.",
+    ] {
+        assert!(script.contains(needle), "journey missing {needle}");
+    }
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!script.to_ascii_lowercase().contains("kimi"));
+
+    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-glm.sh")).unwrap();
+    let prepare_at = chain
+        .find("GLM4_CHAT_PHASE=prepare make -C \"$ROOT\" glm4-chat-journey")
+        .expect("prepare phase");
+    let seat_at = chain
+        .find("GLM4_CHAT_PHASE=seat make -C \"$ROOT\" glm4-chat-journey")
+        .expect("seat phase");
+    assert!(prepare_at < seat_at, "prepare-assert must run before seat-print");
+    assert!(chain.contains("Does not run make glm4-chat-lora-journey"));
+    assert!(chain.contains("READY_FOR_LIVE_TEST: no"));
+    assert!(!chain.to_ascii_lowercase().contains("kimi"));
+
+    let lora_chain = std::fs::read_to_string(root.join("scripts/uniqueness-glm-lora.sh")).unwrap();
+    assert!(lora_chain.contains("make -C \"$ROOT\" glm4-chat-lora-journey"));
+    assert!(lora_chain.contains("Does not run make glm4-chat-journey or make uniqueness-glm."));
+
+    let pick = std::fs::read_to_string(root.join("scripts/purpose-build-pick.sh")).unwrap();
+    for needle in [
+        "make glm4-chat-journey",
+        "make uniqueness-glm",
+        "make glm4-chat-lora-journey",
+        "make uniqueness-glm-lora",
+        "GLM-4 Chat is print-only",
+        "This picker does not run them.",
+    ] {
+        assert!(pick.contains(needle), "purpose-build-pick missing {needle}");
+    }
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #183"),
+        "GATE-90 header stays through PR #183"
+    );
+    assert!(!gate_head.contains("glm4-chat-journey"));
+    assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
+    for row_name in [
+        "`make glm4-chat-journey`",
+        "`make uniqueness-glm`",
+        "`make glm4-chat-lora-journey`",
+        "`make uniqueness-glm-lora`",
+    ] {
+        let row = gate
+            .lines()
+            .find(|line| line.contains(&format!("| {row_name} |")))
+            .unwrap_or_else(|| panic!("missing remaining row {row_name}"));
+        assert!(row.contains("operator section 20"), "{row}");
+        assert!(row.contains("Not a live train"), "{row}");
+    }
+    let ds = gate
+        .lines()
+        .position(|line| line.contains("| `make uniqueness-deepseek-lora` |"))
+        .expect("deepseek lora row");
+    let glm = gate
+        .lines()
+        .position(|line| line.contains("| `make glm4-chat-journey` |"))
+        .expect("glm journey row");
+    assert!(ds < glm, "section 19 rows must sit above section 20 rows");
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section = journey
+        .split("## 20. GLM-4 Chat — LLaMA-Factory print journey")
+        .nth(1)
+        .expect("operator section 20");
+    assert!(section.contains("make glm4-chat-journey"));
+    assert!(section.contains("make uniqueness-glm"));
+    assert!(section.contains("glm4"));
+    assert!(section.contains("zai-org/glm-4-9b-chat"));
+    assert!(section.contains("43770130 3391"));
+    assert!(section.contains("only live uniqueness prove"));
+    assert!(!journey.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make glm4-chat-journey is the print-only GLM-4 Chat QLoRA journey (operator section 20)"
+    ));
+    assert!(help.contains("make uniqueness-glm is the print-only chain of that journey"));
+    assert!(help.contains("make glm4-chat-lora-journey"));
+    assert!(help.contains("make uniqueness-glm-lora"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!help.to_ascii_lowercase().contains("kimi"));
+
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("`make glm4-chat-journey`"));
+    assert!(readme.contains("`make uniqueness-glm`"));
+    assert!(readme.contains("print-only GLM-4 Chat QLoRA ladder (operator section 20)"));
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #183"));
+    assert!(
+        !status_head.contains("glm4-chat-journey"),
+        "tip header stays through PR #183"
+    );
+    assert!(status.contains("make glm4-chat-journey # opt-in:"));
+    assert!(status.contains("| glm4 chat journey |"));
+    assert!(status.contains("PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"));
+
+    let live = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    assert!(live.contains("make glm4-chat-journey"));
+    assert!(live.contains("operator section 20"));
+    assert!(live.contains("only live uniqueness prove"));
+    assert!(!live.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    let slice = changelog
+        .split("## This slice — print-only GLM-4 Chat journey")
+        .nth(1)
+        .expect("CHANGELOG missing the glm slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make glm4-chat-journey",
+        "scripts/glm4-chat-journey.sh",
+        "make uniqueness-glm",
+        "operator section 20",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #183",
+        "b93e89f1983027a13008cc4be23f44756af0f22e",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "does not add Kimi",
+        "glm4",
+        "zai-org/glm-4-9b-chat",
+    ] {
+        assert!(slice.contains(needle), "glm CHANGELOG slice missing {needle}");
+    }
+    assert!(slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"));
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("glm4-chat-journey"),
+            "{rel} must not run the glm4 journey"
+        );
+    }
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(
+        sum.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {sum}"
+    );
+}

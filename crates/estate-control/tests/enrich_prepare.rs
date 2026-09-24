@@ -6078,3 +6078,65 @@ fn deepseek_r1_distill_journey_help_and_locks_stay_print_only() {
     let sum = String::from_utf8_lossy(&cksum.stdout);
     assert!(sum.starts_with("43770130 3391"), "{sum}");
 }
+
+#[test]
+fn glm4_chat_journey_help_and_locks_stay_print_only() {
+    let root = repo_root();
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make glm4-chat-journey is the print-only GLM-4 Chat QLoRA journey (operator section 20)"
+    ));
+    assert!(help.contains("make uniqueness-glm is the print-only chain of that journey"));
+    assert!(help.contains("make glm4-chat-lora-journey"));
+    assert!(help.contains("make uniqueness-glm-lora"));
+    assert!(help.contains("zai-org/glm-4-9b-chat"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!help.to_ascii_lowercase().contains("kimi"));
+
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("GLM_CARD=llamafactory-qlora bash scripts/glm4-chat-journey.sh"));
+    assert!(makefile.contains("GLM_CARD=llamafactory-lora bash scripts/glm4-chat-journey.sh"));
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(!gate90.contains("glm4-chat-journey"));
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(!smoke.contains("glm4-chat-journey"));
+
+    let script = std::fs::read_to_string(root.join("scripts/glm4-chat-journey.sh")).unwrap();
+    assert!(script.contains("^template: ${TEMPLATE}$"));
+    assert!(script.contains("zai-org/glm-4-9b-chat"));
+    assert!(script.contains("examples/fixtures/glm4-chat.pack.json"));
+    assert!(script.contains("examples/fixtures/glm4-chat-lora.pack.json"));
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!script.to_ascii_lowercase().contains("kimi"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .unwrap()
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert!(changelog.contains("## This slice — print-only GLM-4 Chat journey"));
+    assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(sum.starts_with("43770130 3391"), "{sum}");
+}

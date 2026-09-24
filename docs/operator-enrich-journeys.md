@@ -22,6 +22,8 @@ Print path once a merged export and a GGUF exist (Target C seat ladder): the sam
 
 `make deepseek-r1-distill-journey` is the print-only DeepSeek-R1-Distill chat QLoRA ladder on `llamafactory-qlora` (section 19). Seat tag `llama3`. Train base `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`. Template `deepseekr1`. Fixture `examples/fixtures/deepseek-r1-distill.pack.json`. `make uniqueness-deepseek` runs the prepare-assert phase, then the seat-print phase. `make deepseek-r1-distill-lora-journey` and `make uniqueness-deepseek-lora` are the non-quant twin on `llamafactory-lora`. Print-only. They do not train, merge, convert, or promote. They do not invent a live PASS. They are not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
 
+`make glm4-chat-journey` is the print-only GLM-4 Chat QLoRA ladder on `llamafactory-qlora` (section 20). Seat tag `llama3`. Train base `zai-org/glm-4-9b-chat`. Template `glm4`. Fixture `examples/fixtures/glm4-chat.pack.json`. `make uniqueness-glm` runs the prepare-assert phase, then the seat-print phase. `make glm4-chat-lora-journey` and `make uniqueness-glm-lora` are the non-quant twin on `llamafactory-lora`. Print-only. They do not train, merge, convert, or promote. They do not invent a live PASS. They are not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
 `make purpose-build-journey` is the print-only purpose-build on-demand entry (section 18). It runs `make purpose-build-pick` (section 17), then `make purpose-build-checklist` (section 15). It calls those targets through make and does not inline their bodies. It does not train, fuse, convert, shell out to ollama, promote, or apply the estate, and it does not invent a live PASS. The recorded PASS stays the only live uniqueness prove. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
 
 `make purpose-build-checklist` prints the ordered operator steps for purpose-build on demand (section 15). It points at the print-only cards already on tip: a beachhead prepare row or `make qlora-journey` / `make lora-journey` / the Axolotl and Unsloth journeys, then a train-next style `SKIP live train`, merge-adapt and export print honesty, `gguf-convert`, the local-seat print, `import-trained` (`trained_shape` `gguf`, `auto_apply=false`), and Standing next (estate). Print-only. It does not run those cards. It does not train, convert, shell out to ollama, promote, or apply the estate, and it does not invent a live PASS. The recorded PASS stays the only live uniqueness prove. The re-prove card stays `make uniqueness-prove-checklist`. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
@@ -880,4 +882,21 @@ make deepseek-r1-distill-journey
 make uniqueness-deepseek
 make deepseek-r1-distill-lora-journey
 make uniqueness-deepseek-lora
+```
+
+## 20. GLM-4 Chat — LLaMA-Factory print journey
+
+`make glm4-chat-journey` is the print-only GLM-4 Chat QLoRA ladder on the card that already exists, `llamafactory-qlora`. It uses `examples/fixtures/glm4-chat.pack.json` on a throwaway copy of `examples/estate.yaml`. The seat tag is `llama3`. The train base is `zai-org/glm-4-9b-chat`. `template` is `glm4`. That id is the DEFAULT DownloadSource for GLM-4-9B-Chat in the LLaMA-Factory template `glm4` group. An Ollama tag `glm4:9b` stays a seat tag. The recipe keeps `quantization_method: bnb`, `quantization_bit: 4`, `lora_rank` 16, and `packing` true. A seat tag with no train base is `refuse:train-base`. A missing adapter is `refuse:adapter`. A missing merged export or GGUF is `refuse:seat`. Before the good stub, a 5090-shaped export is `refuse:tokenizer`. `merge-adapt` prints `llamafactory-cli export`. `gguf-convert` prints `convert_hf_to_gguf.py`. `local-seat` prints `ollama create` and does not write a Modelfile. `import-trained` records `trained_shape` `gguf` and the proposal stays `auto_apply=false`. It does not train, merge, convert, shell out to ollama, or promote.
+
+`make uniqueness-glm` runs the prepare-assert phase, then the seat-print phase, of that QLoRA journey. It does not run `make qlora-journey`, `make uniqueness-full`, `make lf-beachhead-prepare`, `make deepseek-r1-distill-journey`, or `make uniqueness-deepseek`.
+
+`make glm4-chat-lora-journey` is the non-quant twin on `llamafactory-lora` and `examples/fixtures/glm4-chat-lora.pack.json`. The same seat tag and the same train base. `template` stays `glm4`. The recipe omits `quantization_bit` and `quantization_method`, keeps `lora_rank` 8 and `packing` false, and names the LoRA reproduce line. It does not run `make glm4-chat-journey`. `make uniqueness-glm-lora` runs the prepare-assert phase, then the seat-print phase, of that LoRA journey. It does not run `make uniqueness-glm`.
+
+`CELL_TRAIN_LIVE=1` and `CELL_SEAT_LIVE=1` stay print-only. This path does not invent a live PASS. The recorded 5090-class Target C uniqueness PASS in [`LIVE-PROBES.md`](LIVE-PROBES.md) stays the only live uniqueness prove. These targets are not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no. `examples/estate.yaml` stays hash-locked (`43770130 3391`).
+
+```bash
+make glm4-chat-journey
+make uniqueness-glm
+make glm4-chat-lora-journey
+make uniqueness-glm-lora
 ```

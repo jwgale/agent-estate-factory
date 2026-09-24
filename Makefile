@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora glm4-chat-journey uniqueness-glm glm4-chat-lora-journey uniqueness-glm-lora
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -419,6 +419,39 @@ deepseek-r1-distill-lora-journey:
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 uniqueness-deepseek-lora:
 	bash scripts/uniqueness-deepseek-lora.sh
+
+# Opt-in print-only GLM-4 Chat QLoRA journey (operator section 20).
+# Uses llamafactory-qlora and examples/fixtures/glm4-chat.pack.json.
+# Seat tag llama3. Train base zai-org/glm-4-9b-chat.
+# Template glm4. Does not train, merge, convert, seat, or promote.
+# GLM4_CHAT_PHASE=prepare stops after the card asserts.
+# GLM4_CHAT_PHASE=seat prints the fixture ladder.
+# CELL_TRAIN_LIVE=1 and CELL_SEAT_LIVE=1 stay print-only.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+glm4-chat-journey:
+	GLM_CARD=llamafactory-qlora bash scripts/glm4-chat-journey.sh
+
+# Opt-in print-only chain of that GLM-4 Chat QLoRA journey (operator section 20).
+# prepare-assert, then seat-print. Does not run the LoRA twin or the Qwen uniqueness chain.
+# Does not train, merge, convert, seat, or promote.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-glm:
+	bash scripts/uniqueness-glm.sh
+
+# Opt-in print-only GLM-4 Chat LoRA journey (operator section 20).
+# Non-quant twin of the QLoRA card. Uses llamafactory-lora and
+# examples/fixtures/glm4-chat-lora.pack.json. Template glm4.
+# Does not run make glm4-chat-journey.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+glm4-chat-lora-journey:
+	GLM_CARD=llamafactory-lora bash scripts/glm4-chat-journey.sh
+
+# Opt-in print-only chain of that GLM-4 Chat LoRA journey (operator section 20).
+# prepare-assert, then seat-print. Does not run make glm4-chat-journey
+# or make uniqueness-glm.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-glm-lora:
+	bash scripts/uniqueness-glm-lora.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups
