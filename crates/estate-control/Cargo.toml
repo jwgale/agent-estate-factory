@@ -16,6 +16,8 @@ model-estate.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 ureq.workspace = true
+flate2.workspace = true
+zstd.workspace = true
 
 [[bin]]
 name = "estate"
@@ -23,6 +25,7 @@ path = "src/main.rs"
 
 [dev-dependencies]
 tiny_http.workspace = true
+zstd.workspace = true
 conveyor-proxy.workspace = true
 estate-schema.workspace = true
 feed-collector.workspace = true

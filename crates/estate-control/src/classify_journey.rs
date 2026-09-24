@@ -29,6 +29,8 @@ pub const DEFAULT_TOGETHER_MODEL: &str = "Qwen/Qwen3.5-4B";
 /// Together REST root. Fine-tune calls use this only when `--train-driver together` and `--run`.
 pub const DEFAULT_TOGETHER_API: &str = "https://api.together.ai/v1";
 pub const DEFAULT_TOGETHER_KEY_ENV: &str = "TOGETHER_API_KEY";
+/// Wall-clock cap for Together job polling. Separate from the per-request HTTP timeout.
+pub const DEFAULT_TOGETHER_POLL_SECS: u64 = 10_800;
 
 const QWEN35_RECENT: &str = "Qwen3.5 needs a recent llama.cpp checkout";
 
@@ -1362,6 +1364,7 @@ pub struct JourneyRequest<'a> {
     pub min_delta: Option<f64>,
     pub min_accuracy: Option<f64>,
     pub timeout_secs: u64,
+    pub together_poll_secs: u64,
     pub train_driver: TrainDriver,
     pub together_model: &'a str,
     pub together_base_url: &'a str,
@@ -1492,9 +1495,10 @@ fn print_plan(
         match req.train_driver {
             TrainDriver::Local => "llamafactory-cli train".to_string(),
             TrainDriver::Together => format!(
-                "model {} api-key-env {} dry-run no network",
+                "model {} api-key-env {} poll {}s dry-run no network",
                 req.together_model,
-                req.api_key_env.unwrap_or(DEFAULT_TOGETHER_KEY_ENV)
+                req.api_key_env.unwrap_or(DEFAULT_TOGETHER_KEY_ENV),
+                req.together_poll_secs
             ),
         }
     );
@@ -2066,12 +2070,19 @@ fn run_together_train(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<
     together_wait_file(&root, &key, &file_id, req.timeout_secs)?;
     let job_id = together_create_job(&root, &key, &file_id, req.together_model)?;
     println!("together job {job_id}");
-    let status = together_poll_job(&root, &key, &job_id, req.timeout_secs)?;
+    let status = together_poll_job(
+        &root,
+        &key,
+        &job_id,
+        req.timeout_secs,
+        req.together_poll_secs,
+    )?;
     if status != "completed" {
         bail!("refuse:classify-journey: together job {job_id} ended {status}");
     }
     let bytes = together_download_adapter(&root, &key, &job_id, req.timeout_secs)?;
-    unpack_adapter_tar(&bytes, &paths.adapter_dir)?;
+    let tar = decompress_adapter_archive(&bytes)?;
+    unpack_adapter_tar(&tar, &paths.adapter_dir)?;
     let note = json!({
         "schema": "cell-one.classify-journey-together.v0",
         "job_id": job_id,
@@ -2201,14 +2212,11 @@ fn together_create_job(root: &str, key: &str, file_id: &str, model: &str) -> Res
     let body = json!({
         "training_file": file_id,
         "model": model,
-        "lora": true,
-        "lora_r": 8,
-        "lora_alpha": 16,
+        "training_type": {"type": "Lora", "lora_r": 8, "lora_alpha": 16},
         "n_epochs": 1,
         "n_checkpoints": 1,
         "learning_rate": 0.0001,
-        "suffix": "tev1",
-        "training_type": {"type": "Lora", "lora_r": 8, "lora_alpha": 16}
+        "suffix": "tev1"
     });
     let value = together_json("POST", &url, key, Some(&body), 120)?;
     value
@@ -2221,9 +2229,21 @@ fn together_create_job(root: &str, key: &str, file_id: &str, model: &str) -> Res
         })
 }
 
-fn together_poll_job(root: &str, key: &str, job_id: &str, timeout_secs: u64) -> Result<String> {
+fn together_poll_job(
+    root: &str,
+    key: &str,
+    job_id: &str,
+    timeout_secs: u64,
+    poll_secs: u64,
+) -> Result<String> {
     let url = format!("{root}/fine-tunes/{job_id}");
-    for _ in 0..54_000 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(poll_secs);
+    loop {
+        if std::time::Instant::now() >= deadline {
+            bail!(
+                "refuse:classify-journey: together job {job_id} exceeded poll deadline of {poll_secs}s"
+            );
+        }
         let value = together_json("GET", &url, key, None, timeout_secs)?;
         let status = value
             .get("status")
@@ -2233,13 +2253,18 @@ fn together_poll_job(root: &str, key: &str, job_id: &str, timeout_secs: u64) -> 
         match status.as_str() {
             "completed" | "error" | "cancelled" | "user_error" => return Ok(status),
             "pending" | "queued" | "running" | "compressing" | "uploading" | "cancel_requested" => {
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                if left.is_zero() {
+                    bail!(
+                        "refuse:classify-journey: together job {job_id} exceeded poll deadline of {poll_secs}s"
+                    );
+                }
+                std::thread::sleep(left.min(std::time::Duration::from_millis(200)));
             }
             "" => bail!("refuse:classify-journey: together job {job_id} has no status"),
             other => bail!("refuse:classify-journey: together job {job_id} status {other}"),
         }
     }
-    bail!("refuse:classify-journey: together job {job_id} did not finish")
 }
 
 fn together_download_adapter(
@@ -2259,17 +2284,46 @@ fn together_download_adapter(
     resp.into_reader().read_to_end(&mut bytes).map_err(|err| {
         anyhow::anyhow!("refuse:classify-journey: together download read failed: {err}")
     })?;
-    if bytes.len() >= 4
-        && bytes[0] == 0x28
-        && bytes[1] == 0xB5
-        && bytes[2] == 0x2F
-        && bytes[3] == 0xFD
-    {
-        bail!(
-            "refuse:classify-journey: together download is zstd-compressed. This driver unpacks an uncompressed tar of the adapter checkpoint"
-        );
-    }
     Ok(bytes)
+}
+
+fn decompress_adapter_archive(bytes: &[u8]) -> Result<Vec<u8>> {
+    if is_zstd(bytes) {
+        return zstd::stream::decode_all(bytes).map_err(|err| {
+            anyhow::anyhow!("refuse:classify-journey: together download zstd decode failed: {err}")
+        });
+    }
+    if is_gzip(bytes) {
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(bytes)
+            .read_to_end(&mut decoded)
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-journey: together download gzip decode failed: {err}"
+                )
+            })?;
+        return Ok(decoded);
+    }
+    if is_unknown_codec(bytes) {
+        bail!("refuse:classify-journey: together download uses an unknown compression codec");
+    }
+    Ok(bytes.to_vec())
+}
+
+fn is_zstd(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[0] == 0x28 && bytes[1] == 0xB5 && bytes[2] == 0x2F && bytes[3] == 0xFD
+}
+
+fn is_gzip(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
+}
+
+fn is_unknown_codec(bytes: &[u8]) -> bool {
+    let xz = bytes.len() >= 6 && bytes.starts_with(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]);
+    let bzip2 = bytes.len() >= 3 && bytes.starts_with(b"BZh");
+    let zip = bytes.len() >= 4 && bytes.starts_with(&[0x50, 0x4B, 0x03, 0x04]);
+    let lz4 = bytes.len() >= 4 && bytes.starts_with(&[0x04, 0x22, 0x4D, 0x18]);
+    xz || bzip2 || zip || lz4
 }
 
 fn unpack_adapter_tar(bytes: &[u8], dir: &Path) -> Result<()> {
@@ -2298,13 +2352,19 @@ fn unpack_adapter_tar(bytes: &[u8], dir: &Path) -> Result<()> {
         }
         let data = &bytes[offset..data_end];
         offset = data_end + ((512 - (size % 512)) % 512);
-        if name.is_empty()
-            || typeflag == b'5'
-            || typeflag == b'L'
-            || typeflag == b'g'
-            || typeflag == b'x'
-        {
+        if name.is_empty() || tar_type_skipped(typeflag) {
             continue;
+        }
+        if typeflag == b'1' || typeflag == b'2' {
+            bail!(
+                "refuse:classify-journey: together adapter tar refuses hardlink or symlink entries"
+            );
+        }
+        if typeflag != b'0' && typeflag != 0 {
+            bail!(
+                "refuse:classify-journey: together adapter tar type {} is not a regular file",
+                typeflag as char
+            );
         }
         if name.contains("..") || name.starts_with('/') || name.contains('\\') {
             bail!("refuse:classify-journey: together adapter tar path is refused");
@@ -2319,6 +2379,10 @@ fn unpack_adapter_tar(bytes: &[u8], dir: &Path) -> Result<()> {
         bail!("refuse:classify-journey: together adapter tar has no files");
     }
     Ok(())
+}
+
+fn tar_type_skipped(typeflag: u8) -> bool {
+    matches!(typeflag, b'5' | b'L' | b'K' | b'g' | b'x' | b'X')
 }
 
 fn tar_name(header: &[u8]) -> Result<String> {
@@ -3101,5 +3165,73 @@ mod tests {
         fs::write(&paths.base_f16, b"GGUF").unwrap();
         assert!(validate_gguf(&paths.base_f16).is_ok());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn ustar_entry(name: &str, typeflag: u8, data: &[u8]) -> Vec<u8> {
+        let mut header = [0u8; 512];
+        let bytes = name.as_bytes();
+        header[..bytes.len()].copy_from_slice(bytes);
+        let size = format!("{:<7o}", data.len());
+        header[124..124 + size.len()].copy_from_slice(size.as_bytes());
+        header[156] = typeflag;
+        header[257..262].copy_from_slice(b"ustar");
+        let mut out = header.to_vec();
+        out.extend_from_slice(data);
+        let pad = (512 - (data.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0).take(pad));
+        out
+    }
+
+    fn ustar(entries: &[(&str, u8, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (name, typeflag, data) in entries {
+            out.extend(ustar_entry(name, *typeflag, data));
+        }
+        out.extend(std::iter::repeat(0).take(1024));
+        out
+    }
+
+    #[test]
+    fn adapter_tar_skips_directories_and_refuses_links_and_other_types() {
+        let dir = std::env::temp_dir().join(format!("journey-tar-ok-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let archive = ustar(&[
+            ("weights", b'5', b""),
+            ("weights/adapter_config.json", b'0', b"{}\n"),
+            ("./pax", b'x', b"path=weights/adapter_config.json\n"),
+        ]);
+        unpack_adapter_tar(&archive, &dir).unwrap();
+        assert_eq!(fs::read(dir.join("adapter_config.json")).unwrap(), b"{}\n");
+
+        let link = ustar(&[("adapter_model.safetensors", b'2', b"elsewhere")]);
+        let err = unpack_adapter_tar(&link, &dir).unwrap_err().to_string();
+        assert!(err.contains("hardlink or symlink"), "{err}");
+
+        let hard = ustar(&[("adapter_model.safetensors", b'1', b"adapter_config.json")]);
+        let err = unpack_adapter_tar(&hard, &dir).unwrap_err().to_string();
+        assert!(err.contains("hardlink or symlink"), "{err}");
+
+        let fifo = ustar(&[("adapter_model.safetensors", b'6', b"")]);
+        let err = unpack_adapter_tar(&fifo, &dir).unwrap_err().to_string();
+        assert!(err.contains("not a regular file"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn adapter_archive_decompresses_zstd_and_gzip_and_refuses_unknown_codecs() {
+        let raw = ustar(&[("adapter_config.json", b'0', b"{}\n")]);
+        let zst = zstd::stream::encode_all(std::io::Cursor::new(&raw), 0).unwrap();
+        assert!(is_zstd(&zst));
+        assert_eq!(decompress_adapter_archive(&zst).unwrap(), raw);
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gzip, &raw).unwrap();
+        let gz = gzip.finish().unwrap();
+        assert!(is_gzip(&gz));
+        assert_eq!(decompress_adapter_archive(&gz).unwrap(), raw);
+        let err = decompress_adapter_archive(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown compression codec"), "{err}");
+        assert_eq!(decompress_adapter_archive(&raw).unwrap(), raw);
     }
 }

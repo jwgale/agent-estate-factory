@@ -863,6 +863,7 @@ fn journey_print_together_does_not_use_the_network_or_print_the_key() {
     assert!(out.status.success(), "{stdout}\n{stderr}");
     assert!(stdout.contains("train_driver: together"), "{stdout}");
     assert!(stdout.contains("TOGETHER_API_KEY"), "{stdout}");
+    assert!(stdout.contains("poll 10800s"), "{stdout}");
     assert!(stdout.contains("dry-run no network"), "{stdout}");
     assert!(stdout.contains("Qwen/Qwen3.5-4B"), "{stdout}");
     assert!(stdout.contains("finetune/download"), "{stdout}");
@@ -879,6 +880,8 @@ fn journey_print_together_does_not_use_the_network_or_print_the_key() {
     assert!(help_text.contains("--train-driver"), "{help_text}");
     assert!(help_text.contains("TOGETHER_API_KEY"), "{help_text}");
     assert!(help_text.contains("--api-key-env"), "{help_text}");
+    assert!(help_text.contains("--together-poll-secs"), "{help_text}");
+    assert!(help_text.contains("10800"), "{help_text}");
 }
 
 #[test]
@@ -913,10 +916,18 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
         other => panic!("expected ip listen addr, got {other:?}"),
     };
     let hits_server = hits.clone();
-    let archive = ustar(&[
-        ("adapter_config.json", b"{}\n"),
-        ("adapter_model.safetensors", b"from-together\n"),
-    ]);
+    let archive = {
+        let raw = ustar(&[
+            ("adapter_config.json", b"{}\n"),
+            ("adapter_model.safetensors", b"from-together\n"),
+        ]);
+        let compressed = zstd::stream::encode_all(std::io::Cursor::new(raw), 0).unwrap();
+        assert!(
+            compressed.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]),
+            "mock must serve a real tar.zst"
+        );
+        compressed
+    };
     thread::spawn(move || {
         let mut polls = 0u32;
         for mut req in server.incoming_requests() {
@@ -954,13 +965,33 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
                     None,
                 )
             } else if url == "/fine-tunes" && method == "POST" {
-                let text = String::from_utf8_lossy(&body);
-                assert!(text.contains("Qwen/Qwen3.5-4B"), "{text}");
-                assert!(
-                    text.contains("\"lora\":true") || text.contains("\"lora\": true"),
-                    "{text}"
+                let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(value["training_file"], "file-tev1");
+                assert_eq!(value["model"], "Qwen/Qwen3.5-4B");
+                assert_eq!(value["training_type"]["type"], "Lora");
+                assert_eq!(value["training_type"]["lora_r"], 8);
+                assert_eq!(value["training_type"]["lora_alpha"], 16);
+                assert_eq!(value["n_epochs"], 1);
+                assert_eq!(value["n_checkpoints"], 1);
+                assert!((value["learning_rate"].as_f64().unwrap() - 0.0001).abs() < 1e-9);
+                assert_eq!(value["suffix"], "tev1");
+                assert!(value.get("lora").is_none(), "{value}");
+                assert!(value.get("lora_r").is_none(), "{value}");
+                assert!(value.get("lora_alpha").is_none(), "{value}");
+                let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+                keys.sort();
+                assert_eq!(
+                    keys,
+                    [
+                        "learning_rate",
+                        "model",
+                        "n_checkpoints",
+                        "n_epochs",
+                        "suffix",
+                        "training_file",
+                        "training_type"
+                    ]
                 );
-                assert!(text.contains("file-tev1"), "{text}");
                 (
                     200,
                     serde_json::json!({"id":"ft-tev1","status":"pending"}).to_string(),

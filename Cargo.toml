@@ -28,6 +28,8 @@ sha2 = "0.10"
 thiserror = "1.0"
 tiny_http = "0.12"
 ureq = { version = "2.12", default-features = false, features = ["json", "tls"] }
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+zstd = "0.13"
 
 estate-schema = { path = "crates/estate-schema" }
 isolation-driver = { path = "crates/isolation-driver" }

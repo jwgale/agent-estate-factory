@@ -584,8 +584,12 @@ pub(crate) enum ClassifyCommand {
         /// Specialist accuracy must reach this value. Local exit code only.
         #[arg(long)]
         min_accuracy: Option<f64>,
+        /// Per-request HTTP timeout in seconds. Together job polling uses `--together-poll-secs` instead.
         #[arg(long, default_value_t = 120)]
         timeout_secs: u64,
+        /// Wall-clock deadline in seconds for Together job polling. Default 10800. Separate from `--timeout-secs`.
+        #[arg(long, default_value_t = crate::classify_journey::DEFAULT_TOGETHER_POLL_SECS)]
+        together_poll_secs: u64,
         /// Train path. `local` (default) runs `llamafactory-cli train`. `together` uploads the prepared dataset and launches a LoRA job on Together.
         /// `--print` never calls the network. `--run` reads the key from `--api-key-env` (default `TOGETHER_API_KEY`) and never prints the value.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::TrainDriver::Local)]
