@@ -5658,6 +5658,17 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
     assert!(row.contains("Does not invent a live PASS"), "{row}");
     assert!(row.contains("Not native MLX"), "{row}");
     assert!(row.contains("Not a live train"), "{row}");
+    assert!(row.contains("DeepSeek-R1-Distill chat print-only"), "{row}");
+    assert!(row.contains("make deepseek-r1-distill-journey"), "{row}");
+    assert!(row.contains("make uniqueness-deepseek"), "{row}");
+    assert!(row.contains("make deepseek-r1-distill-lora-journey"), "{row}");
+    assert!(row.contains("make uniqueness-deepseek-lora"), "{row}");
+    assert!(row.contains("GLM-4 Chat print-only"), "{row}");
+    assert!(row.contains("make glm4-chat-journey"), "{row}");
+    assert!(row.contains("make uniqueness-glm"), "{row}");
+    assert!(row.contains("make glm4-chat-lora-journey"), "{row}");
+    assert!(row.contains("make uniqueness-glm-lora"), "{row}");
+    assert!(row.contains("this picker does not run them"), "{row}");
 
     let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     let section = journey
@@ -6598,4 +6609,120 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         sum.starts_with("43770130 3391"),
         "examples/estate.yaml cksum drifted: {sum}"
     );
+}
+
+#[test]
+fn purpose_build_operator_surfaces_name_the_journey() {
+    let root = repo_root();
+    let day = std::fs::read_to_string(root.join("docs/OPERATOR-DAY.md")).unwrap();
+    for needle in [
+        "make purpose-build-journey",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "Print-only purpose-build on demand",
+        "Those two targets are the parts.",
+        "does not train, convert, seat, promote, or apply",
+        "not in `make smoke`, `make gate-90`, or GitHub Actions",
+        "READY_FOR_LIVE_TEST`: no",
+        "make uniqueness-prove-checklist",
+        "only live uniqueness prove",
+        "sections 15–20",
+    ] {
+        assert!(day.contains(needle), "OPERATOR-DAY missing {needle}");
+    }
+    assert!(!day.contains("READY_FOR_LIVE_TEST`: yes"));
+    assert!(!day.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let north = std::fs::read_to_string(root.join("docs/NORTH-STAR.md")).unwrap();
+    for needle in [
+        "make purpose-build-journey",
+        "print-only purpose-build on-demand entry",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "Those two targets are the parts.",
+        "does not train, convert, seat, promote, or apply",
+        "make uniqueness-prove-checklist",
+        "only live uniqueness prove",
+        "READY_FOR_LIVE_TEST` stays no",
+        "sections 15–20",
+    ] {
+        assert!(north.contains(needle), "NORTH-STAR missing {needle}");
+    }
+    assert!(!north.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!north.contains("READY_FOR_LIVE_TEST`: yes"));
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #187")
+            && gate_head.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
+        "GATE-90 tip header stays through PR #187: {gate_head}"
+    );
+    let row = gate
+        .lines()
+        .find(|line| line.contains("| `make purpose-build-pick` |"))
+        .expect("remaining row for purpose-build-pick");
+    for needle in [
+        "DeepSeek-R1-Distill chat print-only",
+        "`make deepseek-r1-distill-journey` and `make uniqueness-deepseek`",
+        "LoRA twin `make deepseek-r1-distill-lora-journey` and `make uniqueness-deepseek-lora`",
+        "GLM-4 Chat print-only",
+        "`make glm4-chat-journey` and `make uniqueness-glm`",
+        "LoRA twin `make glm4-chat-lora-journey` and `make uniqueness-glm-lora`",
+        "this picker does not run them",
+        "Does not execute them",
+    ] {
+        assert!(row.contains(needle), "purpose-build-pick row missing {needle}");
+    }
+    assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(6).collect::<Vec<_>>().join("\n");
+    assert!(
+        status_head.contains("through PR #187")
+            && status_head.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
+        "Cell One tip header stays through PR #187"
+    );
+    assert!(status.contains("| operator surfaces name purpose-build |"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #187");
+    let slice = changelog
+        .split("## This slice — operator surfaces name purpose-build on demand")
+        .nth(1)
+        .expect("CHANGELOG missing the operator-surfaces slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "docs/OPERATOR-DAY.md",
+        "docs/NORTH-STAR.md",
+        "make purpose-build-journey",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "DeepSeek-R1-Distill chat print-only",
+        "GLM-4 Chat print-only",
+        "The picker does not run them.",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #187",
+        "4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a",
+        "make uniqueness-prove-checklist",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "does not add Kimi",
+        "READY_FOR_LIVE_TEST`: no",
+    ] {
+        assert!(
+            slice.contains(needle),
+            "operator-surfaces CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
 }
