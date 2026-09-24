@@ -622,7 +622,7 @@ pub fn hf_downloader_deprecated(output: &str) -> bool {
     output.to_ascii_lowercase().contains("deprecated")
 }
 
-const HF_DEPRECATION_HINT: &str = "Install or use `hf` (`pipx install \"huggingface_hub[cli]\"` or `pip install -U huggingface_hub` in the venv)";
+pub(crate) const HF_DEPRECATION_HINT: &str = "Install or use `hf` (`pipx install \"huggingface_hub[cli]\"` or `pip install -U huggingface_hub` in the venv)";
 
 pub fn tool_gaps(
     has: impl Fn(&str) -> bool,
@@ -808,6 +808,12 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
+    let source = crate::classify_import::dataset_source_token(
+        req.from_local,
+        req.import_fetch,
+        preset.train_split,
+        preset.test_split,
+    );
     Ok(crate::classify_import::import_fingerprint(
         preset.hf_id,
         req.train_size,
@@ -815,6 +821,7 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
         req.seed,
         &train_hash,
         &held_hash,
+        &source,
     ))
 }
 
@@ -1641,6 +1648,11 @@ pub struct JourneyRequest<'a> {
     pub import_dataset: Option<&'a str>,
     pub train_size: &'a str,
     pub heldout_size: &'a str,
+    /// Local dataset snapshot. Read-only. Unset uses `hf download` unless `import_fetch` is rows-api.
+    pub from_local: Option<&'a Path>,
+    pub import_fetch: crate::classify_import::ImportFetch,
+    /// Python for pyarrow when the dataset is read from parquet.
+    pub python: Option<&'a str>,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -1827,6 +1839,13 @@ fn print_plan(
             "dataset: {dataset} train_size: {} heldout_size: {} seed: {} option_order: fixed no-second-split",
             req.train_size, req.heldout_size, req.seed
         );
+        if let Some(dir) = req.from_local {
+            println!("dataset_source: local {}", dir.display());
+        } else if req.import_fetch == crate::classify_import::ImportFetch::RowsApi {
+            println!("dataset_source: rows-api");
+        } else {
+            println!("dataset_source: hf-download");
+        }
     }
     for step in steps {
         let word = match step.action {
@@ -1898,6 +1917,10 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                             force: req.force,
                             native_train: None,
                             native_test: None,
+                            from_local: req.from_local,
+                            fetch: req.import_fetch,
+                            python: req.python,
+                            cache_root: None,
                         },
                     )?;
                     cmd_classify_prepare_presplit(

@@ -528,6 +528,16 @@ pub(crate) enum ClassifyCommand {
         /// Offline native JSONL for the official test split.
         #[arg(long)]
         native_test: Option<PathBuf>,
+        /// Local HF dataset snapshot (`**/train-*.parquet` and `**/test-*.parquet`). Not modified.
+        #[arg(long)]
+        from_local: Option<PathBuf>,
+        /// `bulk` (default) runs `hf download --repo-type dataset`, then reads parquet.
+        /// `rows-api` pages the datasets-server rows API.
+        #[arg(long, value_enum, default_value_t = crate::classify_import::ImportFetch::Bulk)]
+        fetch: crate::classify_import::ImportFetch,
+        /// Python with pyarrow. Unset uses `ESTATE_PYTHON`, then `python3`.
+        #[arg(long)]
+        python: Option<String>,
     },
     /// Score held-out JSONL against an OpenAI-compatible chat endpoint (Ollama `/v1` or a hosted endpoint).
     /// Temperature 0, small max_tokens, thinking off where the body supports it. Does not record a live PASS.
@@ -650,6 +660,15 @@ pub(crate) enum ClassifyCommand {
         /// Held-out rows for `--dataset`, drawn only from the official test split.
         #[arg(long, default_value = "all")]
         heldout_size: String,
+        /// Local HF dataset snapshot. Same as `classify import --from-local`. Not modified.
+        #[arg(long)]
+        from_local: Option<PathBuf>,
+        /// `bulk` (default) or `rows-api`. Same as `classify import --fetch`.
+        #[arg(long, value_enum, default_value_t = crate::classify_import::ImportFetch::Bulk)]
+        fetch: crate::classify_import::ImportFetch,
+        /// Python with pyarrow. Unset uses `ESTATE_PYTHON`, then `python3`.
+        #[arg(long)]
+        python: Option<String>,
     },
 }
 
