@@ -957,6 +957,37 @@ fn cell_one_status_tip_names_pr_161() {
         "status header must name the print-only DeepSeek-R1-Distill journeys: {head}"
     );
     assert!(
+        head.contains("54c28b968879fccbc157dd7d9fdf7c10e9d0d58c"),
+        "status header must name the PR #185 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("what is on `main` through PR #185"),
+        "status header must name tip through PR #185: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #183"),
+        "status header must not freeze the snapshot at PR #183: {head}"
+    );
+    assert!(
+        !head.contains("through PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"),
+        "status header must not freeze tip at PR #183: {head}"
+    );
+    assert!(
+        head.contains("Tip honesty through PR #183 is PR #184")
+            && head.contains("87482dbc847c364056df778fa6170a22efad4c8b"),
+        "status header must name PR #184 tip honesty through PR #183: {head}"
+    );
+    assert!(
+        head.contains("make glm4-chat-journey")
+            && head.contains("make uniqueness-glm")
+            && head.contains("make glm4-chat-lora-journey")
+            && head.contains("make uniqueness-glm-lora")
+            && head.contains("operator section 20")
+            && head.contains("They do not train")
+            && head.contains("PR #185"),
+        "status header must name the print-only GLM-4 Chat journeys: {head}"
+    );
+    assert!(
         !head.contains("what is on `main` through PR #161"),
         "status header must not freeze the snapshot at PR #161: {head}"
     );
@@ -1910,6 +1941,48 @@ fn cell_one_status_tip_names_pr_161() {
     assert!(
         !tip183.contains("through PR #181 (`c4a6d255a08146613c9c6cba262959d913f5cac0`)"),
         "tip slice must not freeze at the PR #181 tip SHA: {tip183}"
+    );
+
+    let tip185 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #185")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #185 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip185.contains("54c28b968879fccbc157dd7d9fdf7c10e9d0d58c"),
+        "{tip185}"
+    );
+    assert!(
+        tip185.contains("87482dbc847c364056df778fa6170a22efad4c8b"),
+        "{tip185}"
+    );
+    assert!(tip185.contains("PR #184"), "{tip185}");
+    assert!(tip185.contains("PR #185"), "{tip185}");
+    assert!(tip185.contains("make glm4-chat-journey"), "{tip185}");
+    assert!(tip185.contains("make uniqueness-glm-lora"), "{tip185}");
+    assert!(tip185.contains("operator section 20"), "{tip185}");
+    assert!(tip185.contains("only live uniqueness prove"), "{tip185}");
+    assert!(tip185.contains("via PR #143"), "{tip185}");
+    assert!(tip185.contains("43770130 3391"), "{tip185}");
+    assert!(tip185.contains("does not add Kimi"), "{tip185}");
+    assert!(
+        !tip185.contains("does not add GLM"),
+        "tip slice must not claim GLM is absent: {tip185}"
+    );
+    assert!(
+        tip185.contains("READY_FOR_LIVE_TEST`: no") || tip185.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip185}"
+    );
+    assert!(
+        !tip185.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip185.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip185}"
+    );
+    assert!(
+        !tip185.contains("through PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"),
+        "tip slice must not freeze at the PR #183 tip SHA: {tip185}"
     );
 }
 
@@ -5081,7 +5154,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5302,7 +5375,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5522,7 +5595,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5922,7 +5995,7 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(
         changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
         "CHANGELOG must keep the PR #175 tip-honesty slice"
@@ -6067,7 +6140,7 @@ fn deepseek_r1_distill_journey_help_and_locks_stay_print_only() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(changelog.contains("## This slice — print-only DeepSeek-R1-Distill journey"));
     assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
 
@@ -6129,7 +6202,7 @@ fn glm4_chat_journey_help_and_locks_stay_print_only() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #185");
     assert!(changelog.contains("## This slice — print-only GLM-4 Chat journey"));
     assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
 
