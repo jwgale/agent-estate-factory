@@ -1286,3 +1286,225 @@ fn skipped_fetch_validates_snapshot_and_quantize_stays_under_llama_cpp_dir() {
     assert!(second_text.contains("non-empty weights"), "{second_text}");
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() {
+    let dir = std::env::temp_dir().join(format!("journey-deepseek-print-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "deepseek-r1-distill",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    for name in [
+        "prepare",
+        "fetch-base",
+        "recipe",
+        "train",
+        "merge-export",
+        "gguf-convert-base",
+        "gguf-convert-specialist",
+        "quantize-base",
+        "quantize-specialist",
+        "ollama-create-base",
+        "ollama-create-specialist",
+        "eval-base",
+        "eval-specialist",
+        "compare",
+    ] {
+        assert!(stdout.contains(name), "{stdout}");
+    }
+    assert!(
+        stdout.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("template: deepseekr1"), "{stdout}");
+    assert!(
+        stdout.contains("deepseek-r1-distill-specialist"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("deepseek-r1-distill-base"), "{stdout}");
+    assert!(stdout.contains("llamafactory-cli train"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(
+        !stdout.contains("Qwen/Qwen3.5-4B"),
+        "tev1 default base leaked\n{stdout}"
+    );
+    assert!(!dir.exists(), "print must not write {}", dir.display());
+
+    let refused = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "deepseek-r1-distill",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--train-driver",
+            "together",
+        ])
+        .output()
+        .unwrap();
+    let refused_err = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "{refused_err}");
+    assert!(
+        refused_err.contains("local llamafactory-cli"),
+        "{refused_err}"
+    );
+
+    let hosted = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "deepseek-r1-distill",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--train-driver",
+            "together",
+            "--together-model",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let hosted_out = String::from_utf8_lossy(&hosted.stdout);
+    assert!(hosted.status.success(), "{hosted_out}");
+    assert!(
+        hosted_out.contains("model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        "{hosted_out}"
+    );
+    assert!(hosted_out.contains("dry-run no network"), "{hosted_out}");
+
+    let root = std::env::temp_dir().join(format!("journey-deepseek-run-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let work = root.join("work");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for mut req in server.incoming_requests() {
+            let mut body = String::new();
+            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+            let content = if body.contains("deepseek-r1-distill-specialist") {
+                "B"
+            } else {
+                "A"
+            };
+            let payload = serde_json::json!({
+                "message": {"role": "assistant", "content": content}
+            });
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
+            let resp = tiny_http::Response::from_string(payload.to_string()).with_header(header);
+            let _ = req.respond(resp);
+        }
+    });
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--preset",
+            "deepseek-r1-distill",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--max-steps",
+            "1",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let ran_out = String::from_utf8_lossy(&ran.stdout);
+    let ran_err = String::from_utf8_lossy(&ran.stderr);
+    assert!(ran.status.success(), "{ran_out}\n{ran_err}");
+    let recipe = fs::read_to_string(work.join("recipe.yaml")).unwrap();
+    assert!(recipe.contains("template: deepseekr1"), "{recipe}");
+    assert!(recipe.contains("enable_thinking: false"), "{recipe}");
+    let modelfile = fs::read_to_string(work.join("specialist.Modelfile")).unwrap();
+    assert!(modelfile.contains("<｜User｜>"), "{modelfile}");
+    assert!(modelfile.contains("<｜Assistant｜>"), "{modelfile}");
+    assert!(
+        modelfile.contains("<｜Assistant｜><think>\n\n</think>\n\n"),
+        "empty think prefill missing\n{modelfile}"
+    );
+    let base_modelfile = fs::read_to_string(work.join("base.Modelfile")).unwrap();
+    assert!(
+        base_modelfile.contains("<｜Assistant｜><think>\n\n</think>\n\n"),
+        "empty think prefill missing\n{base_modelfile}"
+    );
+    assert!(
+        !modelfile.contains("<|im_end|>"),
+        "qwen stop leaked\n{modelfile}"
+    );
+    let tool_log = fs::read_to_string(&log).unwrap();
+    assert!(tool_log.contains("train "), "{tool_log}");
+    assert!(
+        tool_log.contains("download deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        "{tool_log}"
+    );
+    assert!(
+        tool_log.contains("create deepseek-r1-distill-base"),
+        "{tool_log}"
+    );
+    assert!(
+        tool_log.contains("create deepseek-r1-distill-specialist"),
+        "{tool_log}"
+    );
+    let comparison: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(work.join("comparison.json")).unwrap()).unwrap();
+    assert_eq!(comparison["live_pass_recorded"], false);
+    assert_eq!(comparison["template"], "deepseekr1");
+    assert_eq!(comparison["preset"], "deepseek-r1-distill");
+    assert_eq!(
+        comparison["specialist_tag"],
+        "deepseek-r1-distill-specialist"
+    );
+    assert_eq!(comparison["base_tag"], "deepseek-r1-distill-base");
+    let _ = fs::remove_dir_all(&root);
+}

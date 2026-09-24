@@ -44,6 +44,14 @@ estate classify journey --print --train-driver together --together-model Qwen/Qw
 
 Command details are `estate classify prepare --help`, `estate classify eval --help`, and `estate classify journey --help`.
 
+`estate classify journey --preset deepseek-r1-distill` is the same prepare, recipe, local train, merge, GGUF, quantize, Ollama, eval, and compare order for `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`. The recipe template is `deepseekr1`. The specialist tag is `deepseek-r1-distill-specialist`. The built base tag is `deepseek-r1-distill-base`. It reuses `examples/fixtures/tev1-decisions.jsonl`. `--print` is the default (`make deepseek-classify-journey`). `DEEPSEEK_CLASSIFY_RUN=1` passes `--run`. Train stays `llamafactory-cli`. Together stays on the tev1 Qwen path unless `--together-model` is set. This journey is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make deepseek-classify-journey
+DEEPSEEK_CLASSIFY_RUN=1 make deepseek-classify-journey
+estate classify journey --preset deepseek-r1-distill --print
+```
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.

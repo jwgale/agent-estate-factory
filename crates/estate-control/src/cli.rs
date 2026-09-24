@@ -528,11 +528,15 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, value_enum, default_value_t = crate::classify::EvalApi::Openai)]
         api: crate::classify::EvalApi,
     },
-    /// tev1 journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
-    /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
+    /// Letter journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
+    /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train.
+    /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek preset, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
     /// `--run` downloads the base with `huggingface-cli` or `hf` unless `--base` is a local directory, then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
-    /// The comparison file is local output. It does not record a live PASS.
+    /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     Journey {
+        /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else.
+        #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Tev1)]
+        preset: crate::classify_journey::JourneyPreset,
         /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.
         #[arg(long)]
         input: Option<PathBuf>,
@@ -594,9 +598,9 @@ pub(crate) enum ClassifyCommand {
         /// `--print` never calls the network. `--run` reads the key from `--api-key-env` (default `TOGETHER_API_KEY`) and never prints the value.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::TrainDriver::Local)]
         train_driver: crate::classify_journey::TrainDriver,
-        /// Together base model id. Default `Qwen/Qwen3.5-4B` (same Hub-style id as the local journey base). Override when the Together catalog name differs.
-        #[arg(long, default_value = crate::classify_journey::DEFAULT_TOGETHER_MODEL)]
-        together_model: String,
+        /// Together base model id. Default `Qwen/Qwen3.5-4B` on `--preset tev1`. The DeepSeek preset refuses Together unless this is set.
+        #[arg(long)]
+        together_model: Option<String>,
         /// Together API root. Used only with `--train-driver together` and `--run`.
         #[arg(long, default_value = crate::classify_journey::DEFAULT_TOGETHER_API)]
         together_base_url: String,
