@@ -497,6 +497,38 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+    /// Download a public Hugging Face classification set and write tev1 JSONL.
+    /// Sampled rows land in `.cell/classify-import/<alias>-<train-size>-s<seed>/`.
+    /// ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech).
+    /// The license is unspecified on the Hub card. Output is for local training only. Do not redistribute.
+    Import {
+        /// `ag_news` or `fancyzhx/ag_news`. banking77 and multi_nli are catalog rows for a later slice.
+        #[arg(long)]
+        dataset: String,
+        /// Class-balanced train rows. `all` keeps the official train split. No upper cap.
+        #[arg(long, default_value = "all")]
+        train_size: String,
+        /// Held-out rows drawn only from the official test split. `all` is 7600 for ag_news.
+        #[arg(long, default_value = "all")]
+        heldout_size: String,
+        /// Sample seed. Default 42.
+        #[arg(long, default_value_t = crate::classify_import::DEFAULT_IMPORT_SEED)]
+        seed: u64,
+        /// Directory for sampled `train.jsonl`, `heldout.jsonl`, and `import.json`.
+        /// Default: `.cell/classify-import/<dataset>-<train-size>-s<seed>/`.
+        /// The full native download stays in `.cell/classify-import/<dataset>/native/`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Download again even when `native/` is already present.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        /// Offline native JSONL (`index`, `text`, `label`). Skips the network. Pair with `--native-test`.
+        #[arg(long)]
+        native_train: Option<PathBuf>,
+        /// Offline native JSONL for the official test split.
+        #[arg(long)]
+        native_test: Option<PathBuf>,
+    },
     /// Score held-out JSONL against an OpenAI-compatible chat endpoint (Ollama `/v1` or a hosted endpoint).
     /// Temperature 0, small max_tokens, thinking off where the body supports it. Does not record a live PASS.
     Eval {
@@ -607,6 +639,17 @@ pub(crate) enum ClassifyCommand {
         /// Environment variable that holds the Together API key. Default `TOGETHER_API_KEY`. The value is never printed.
         #[arg(long)]
         api_key_env: Option<String>,
+        /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news.
+        /// Import already holds out the official test split. Prepare does not split again.
+        /// The default tag and `--out` gain a suffix such as `-agnews-3000` so sizes can coexist.
+        #[arg(long)]
+        dataset: Option<String>,
+        /// Class-balanced train rows for `--dataset`. `all` keeps the official train split.
+        #[arg(long, default_value = "all")]
+        train_size: String,
+        /// Held-out rows for `--dataset`, drawn only from the official test split.
+        #[arg(long, default_value = "all")]
+        heldout_size: String,
     },
 }
 

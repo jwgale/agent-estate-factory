@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 
 pub const REPAIR_SHARD: &str = "model-export-repair.safetensors";
 const INDEX_NAME: &str = "model.safetensors.index.json";
+/// One tensor larger than this is refused before the buffer is allocated.
+const MAX_TENSOR_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepairReport {
@@ -77,6 +79,7 @@ pub fn repair_export(base: &Path, merged: &Path) -> Result<RepairReport> {
         );
     }
     let report = preview_repair(base, merged)?;
+    refuse_tied_lm_head(merged, &report.tensors)?;
     let base_count = read_catalog(base)?.len();
     refuse_implausible(&report.tensors, base_count)?;
     if report.tensors.is_empty() && report.files.is_empty() {
@@ -196,13 +199,36 @@ fn read_catalog(dir: &Path) -> Result<BTreeMap<String, LocatedTensor>> {
                 );
             }
             let (data_start, data_end) = info.data_offsets;
+            let data_start = data_start as u64;
+            let data_end = data_end as u64;
+            if data_start > data_end {
+                bail!(
+                    "refuse:classify-journey: export-repair tensor {name} in {} has inverted data_offsets",
+                    path.display()
+                );
+            }
+            let file_len = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+            let end_pos = 8u64
+                .checked_add(header_len)
+                .and_then(|value| value.checked_add(data_end))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "refuse:classify-journey: export-repair tensor {name} offset overflow"
+                    )
+                })?;
+            if end_pos > file_len {
+                bail!(
+                    "refuse:classify-journey: export-repair tensor {name} in {} extends past the file",
+                    path.display()
+                );
+            }
             out.insert(
                 name,
                 LocatedTensor {
                     dtype: info.dtype,
                     shape: info.shape,
-                    data_start: data_start as u64,
-                    data_end: data_end as u64,
+                    data_start,
+                    data_end,
                     header_len,
                     shard: path.clone(),
                 },
@@ -286,7 +312,12 @@ fn sum_nbytes(dir: &Path, weight_map: &BTreeMap<String, Value>) -> Result<u64> {
                 )
             })?;
         let (start, end) = info.data_offsets;
-        total += (end.saturating_sub(start)) as u64;
+        if start > end {
+            bail!(
+                "refuse:classify-journey: export-repair tensor {name} has inverted data_offsets"
+            );
+        }
+        total += (end - start) as u64;
     }
     Ok(total)
 }
@@ -298,8 +329,19 @@ fn read_tensor_bytes(tensor: &LocatedTensor) -> Result<Vec<u8>> {
         .ok_or_else(|| {
             anyhow::anyhow!("refuse:classify-journey: export-repair bad data_offsets")
         })?;
+    if len > MAX_TENSOR_BYTES {
+        bail!(
+            "refuse:classify-journey: export-repair tensor in {} claims {len} bytes",
+            tensor.shard.display()
+        );
+    }
     let mut file = File::open(&tensor.shard)?;
-    let offset = 8 + tensor.header_len + tensor.data_start;
+    let offset = 8u64
+        .checked_add(tensor.header_len)
+        .and_then(|value| value.checked_add(tensor.data_start))
+        .ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-journey: export-repair seek offset overflow")
+        })?;
     file.seek(SeekFrom::Start(offset))?;
     let mut buf = vec![0u8; len as usize];
     file.read_exact(&mut buf).map_err(|err| {
@@ -483,6 +525,28 @@ fn verify_config_matches_tensors(merged: &Path) -> Result<()> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn is_lm_head(name: &str) -> bool {
+    name.split('.').any(|part| part.starts_with("lm_head"))
+}
+
+fn refuse_tied_lm_head(merged: &Path, names: &[String]) -> Result<()> {
+    let tied = names.iter().any(|name| is_lm_head(name));
+    if !tied {
+        return Ok(());
+    }
+    let config_path = merged.join("config.json");
+    let text = fs::read_to_string(&config_path).unwrap_or_default();
+    let config: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    let flag = |value: &Value| value.get("tie_word_embeddings").and_then(Value::as_bool) == Some(true);
+    if flag(&config) || config.get("text_config").map(flag).unwrap_or(false) {
+        bail!(
+            "refuse:classify-journey: export-repair refuses to copy lm_head tensors because {} has tie_word_embeddings true",
+            config_path.display()
+        );
     }
     Ok(())
 }
@@ -928,6 +992,60 @@ mod tests {
         let err = repair_export(&base, &merged).unwrap_err().to_string();
         assert!(err.contains("mtp_num_hidden_layers"), "{err}");
         assert!(err.contains("mtp.layers.0"), "{err}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refuses_a_header_larger_than_100mb() {
+        let dir = std::env::temp_dir().join(format!("repair-huge-header-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.safetensors");
+        let mut file = File::create(&path).unwrap();
+        std::io::Write::write_all(&mut file, &100_000_001u64.to_le_bytes()).unwrap();
+        let err = read_header(&path).unwrap_err().to_string();
+        assert!(err.contains("header is too large"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuses_inverted_offsets_and_a_tied_lm_head() {
+        let root = std::env::temp_dir().join(format!("repair-offsets-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let base = root.join("base");
+        let merged = root.join("merged");
+        let weight = [0u8; 8];
+        write_shard(&base, "model.safetensors", &[("lm_head.weight", &weight)]);
+        write_shard(&merged, "model.safetensors", &[("model.embed_tokens.weight", &weight)]);
+        fs::write(
+            merged.join("config.json"),
+            serde_json::json!({"tie_word_embeddings": true}).to_string(),
+        )
+        .unwrap();
+        let err = repair_export(&base, &merged).unwrap_err().to_string();
+        assert!(err.contains("tie_word_embeddings"), "{err}");
+        assert!(err.contains("lm_head"), "{err}");
+        assert!(!merged.join(REPAIR_SHARD).exists());
+
+        let bytes = fs::read(base.join("model.safetensors")).unwrap();
+        let header_len = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+        let header = std::str::from_utf8(&bytes[8..8 + header_len]).unwrap();
+        let flipped = header.replace("\"data_offsets\":[0,8]", "\"data_offsets\":[8,0]");
+        assert_ne!(flipped, header);
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&(flipped.len() as u64).to_le_bytes());
+        bad.extend_from_slice(flipped.as_bytes());
+        bad.extend_from_slice(&bytes[8 + header_len..]);
+        let bad_path = root.join("bad.safetensors");
+        fs::write(&bad_path, bad).unwrap();
+        let err = match read_catalog(&root) {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("inverted offsets should be refused"),
+        };
+        assert!(
+            err.contains("inverted") || err.contains("extends past"),
+            "{err}"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }

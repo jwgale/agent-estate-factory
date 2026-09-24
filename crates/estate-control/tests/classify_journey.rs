@@ -1735,3 +1735,102 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
     assert_eq!(comparison["base_tag"], "deepseek-r1-distill-base");
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
+    let root = std::env::temp_dir().join(format!("agnews-import-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let train = root.join("native-train.jsonl");
+    let test = root.join("native-test.jsonl");
+    fs::write(
+        &train,
+        concat!(
+            "{\"index\":1,\"text\":\"world cup\",\"label\":0}\n",
+            "{\"index\":2,\"text\":\"match day\",\"label\":1}\n",
+            "{\"index\":3,\"text\":\"shares fell\",\"label\":2}\n",
+            "{\"index\":4,\"text\":\"new chip\",\"label\":3}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &test,
+        concat!(
+            "{\"index\":11,\"text\":\"held world\",\"label\":0}\n",
+            "{\"index\":12,\"text\":\"held sport\",\"label\":1}\n",
+            "{\"index\":13,\"text\":\"held biz\",\"label\":2}\n",
+            "{\"index\":14,\"text\":\"held tech\",\"label\":3}\n",
+        ),
+    )
+    .unwrap();
+    let out = root.join("import");
+    let imported = bin()
+        .args([
+            "classify",
+            "import",
+            "--dataset",
+            "ag_news",
+            "--train-size",
+            "4",
+            "--heldout-size",
+            "all",
+            "--seed",
+            "42",
+            "--native-train",
+            train.to_str().unwrap(),
+            "--native-test",
+            test.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    let stderr = String::from_utf8_lossy(&imported.stderr);
+    assert!(imported.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("do not redistribute"), "{stdout}");
+    assert!(stdout.contains("option_order=fixed"), "{stdout}");
+    let train_body = fs::read_to_string(out.join("train.jsonl")).unwrap();
+    let held_body = fs::read_to_string(out.join("heldout.jsonl")).unwrap();
+    for line in held_body.lines().filter(|line| !line.trim().is_empty()) {
+        let id = serde_json::from_str::<serde_json::Value>(line).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(!train_body.contains(&id), "{id}");
+    }
+
+    let journey = root.join("journey");
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dataset",
+            "ag_news",
+            "--train-size",
+            "3000",
+            "--heldout-size",
+            "all",
+            "--seed",
+            "42",
+            "--out",
+            journey.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let printed_out = String::from_utf8_lossy(&printed.stdout);
+    let printed_err = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{printed_out}\n{printed_err}");
+    assert!(
+        printed_out.contains("tev1-specialist-agnews-3000"),
+        "{printed_out}"
+    );
+    assert!(printed_out.contains("dataset: ag_news"), "{printed_out}");
+    assert!(printed_out.contains("no-second-split"), "{printed_out}");
+    assert!(printed_out.contains("READY_FOR_LIVE_TEST: no"), "{printed_out}");
+    assert!(!printed_out.contains("live PASS recorded"), "{printed_out}");
+    assert!(!journey.exists(), "print must not write {}", journey.display());
+    let _ = fs::remove_dir_all(&root);
+}

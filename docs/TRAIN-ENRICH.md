@@ -52,6 +52,26 @@ DEEPSEEK_CLASSIFY_RUN=1 make deepseek-classify-journey
 estate classify journey --preset deepseek-r1-distill --print
 ```
 
+## ag_news letter runs
+
+The built-in fixture is 29 train rows and 7 held-out rows. That is too small for a base-versus-specialist comparison. `estate classify import` pages the Hugging Face datasets-server rows API (plain HTTPS) for `fancyzhx/ag_news`. The full splits stay in `.cell/classify-import/ag_news/native/` and are kept only when both counts match the official totals. Sampled tev1 rows go to `.cell/classify-import/ag_news-<train-size>-s<seed>/`, so 3,000 / 10,000 / all do not share `train.jsonl`. Options stay in class-table order and are not shuffled: A=World, B=Sports, C=Business, D=Sci/Tech. The answer letter is that class letter. `--train-size` is class-balanced with `--seed` (default 42). There is no upper cap. `all` keeps the official train split (120,000). `--heldout-size` is drawn only from the official test split. `all` is 7,600. Train and held-out ids do not overlap. The Hub card does not name a license. The files are for local training only. Do not redistribute them. Nothing from the dataset is committed.
+
+`estate classify journey --dataset ag_news` imports that set and feeds `classify prepare` with no second split. Changing `--train-size`, `--heldout-size`, or `--seed` redoes prepare, train, and eval. It does not redo fetch-base. The default tag and the default `--out` gain a suffix such as `-agnews-3000`, so 3,000 / 10,000 / 30,000 / all can sit side by side. Eval prints a progress line about every 500 records and writes the report as it goes. The report adds per-class accuracy and a 95% Wilson interval. The comparison adds Wilson intervals for each accuracy and a Newcombe interval for the specialist-minus-base delta. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
+Scoring 7,600 records is about 15–20 minutes per model at about 130 ms per record. Train time grows with the train size. A 5090-class host can run the sizes below one after another. `--print` does not download.
+
+```bash
+export LLAMA_CPP_DIR=/path/to/llama.cpp
+estate classify import --dataset ag_news --train-size 3000 --heldout-size all --seed 42
+estate classify journey --dataset ag_news --train-size 3000 --heldout-size all --seed 42 --print --llama-cpp-dir "$LLAMA_CPP_DIR"
+estate classify journey --dataset ag_news --train-size 3000 --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR" --quant Q4_K_M
+estate classify journey --dataset ag_news --train-size 10000 --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR" --quant Q4_K_M
+estate classify journey --dataset ag_news --train-size 30000 --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR" --quant Q4_K_M
+estate classify journey --dataset ag_news --train-size all --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR" --quant Q4_K_M
+```
+
+The 3,000-row specialist tag is `tev1-specialist-agnews-3000` and the journey directory is `.cell/classify-journey-agnews-3000`. The 10,000, 30,000, and all runs use `-agnews-10000`, `-agnews-30000`, and `-agnews-all`.
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.
