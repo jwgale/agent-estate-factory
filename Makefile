@@ -332,7 +332,7 @@ unsloth-lora-journey:
 uniqueness-unsloth-lora:
 	bash scripts/uniqueness-unsloth-lora.sh
 
-# Opt-in print-only mlx-lm LoRA journey. Apple Silicon affinity only.
+# Opt-in print-only Apple Silicon mlx-lm LoRA journey (operator section 16).
 # Prepares the optional NEXT card mlx-lm-lora (MLX.md handoff), then prints
 # fuse, seat, and import against fixture stubs. gguf-convert stays refuse:seat.
 # Does not call mlx-lm, fuse, convert, ollama, or promote.
@@ -342,7 +342,8 @@ uniqueness-unsloth-lora:
 mlx-lm-lora-journey:
 	bash scripts/mlx-lm-lora-journey.sh
 
-# Opt-in print-only chain: prepare-assert, then seat-print, of mlx-lm-lora-journey.
+# Opt-in print-only chain of that Apple Silicon mlx-lm LoRA journey (operator section 16).
+# prepare-assert, then seat-print, of mlx-lm-lora-journey.
 # Does not run the Unsloth, Axolotl, or LLaMA-Factory journeys.
 # Does not train, fuse, convert, seat, or promote.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.

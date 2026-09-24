@@ -168,6 +168,16 @@ fn help_enrich_and_train_name_the_seam() {
             ),
             "{body}"
         );
+        assert!(
+            body.contains(
+                "make mlx-lm-lora-journey is the print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+            ),
+            "{body}"
+        );
+        assert!(
+            body.contains("make uniqueness-mlx is the print-only chain of that journey"),
+            "{body}"
+        );
         assert!(body.contains("make uniqueness-prove-checklist"), "{body}");
         assert!(body.contains("make lf-beachhead-prepare"), "{body}");
         assert!(body.contains("docs/lf-beachhead-matrix.md"), "{body}");
@@ -198,6 +208,14 @@ fn help_enrich_and_train_name_the_seam() {
         index_text.contains("make purpose-build-checklist")
             && index_text.contains(
                 "print-only operator path for purpose-building an SLM on demand (operator section 15)"
+            )
+            && index_text.contains("make mlx-lm-lora-journey")
+            && index_text.contains(
+                "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+            )
+            && index_text.contains("make uniqueness-mlx")
+            && index_text.contains(
+                "print-only chain of that Apple Silicon journey (operator section 16)"
             ),
         "{index_text}"
     );
@@ -665,7 +683,7 @@ fn cell_one_status_tip_names_pr_161() {
         !status.contains("on tip through PR #142"),
         "prepare walk stays PR #142; tip is PR #165"
     );
-    let head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         head.contains("through PR #175"),
         "status header must name tip through PR #175: {head}"
@@ -4754,7 +4772,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4975,7 +4993,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5195,7 +5213,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5556,7 +5574,28 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
     let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
     assert!(help.contains("make mlx-lm-lora-journey"));
     assert!(help.contains("make uniqueness-mlx"));
+    assert!(help.contains(
+        "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+    ));
     assert!(help.contains("section 16"));
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(
+        readme.contains("`make mlx-lm-lora-journey`")
+            && readme.contains("`make uniqueness-mlx`")
+            && readme.contains(
+                "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+            ),
+        "{readme}"
+    );
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.contains(
+            "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+        ) && makefile.contains(
+            "print-only chain of that Apple Silicon mlx-lm LoRA journey (operator section 16)"
+        ),
+        "Makefile comments must name the mlx journey"
+    );
     assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
     let checklist = std::fs::read_to_string(root.join("scripts/purpose-build-checklist.sh")).unwrap();
@@ -5572,7 +5611,46 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
+    assert!(
+        changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
+        "CHANGELOG must keep the PR #175 tip-honesty slice"
+    );
+    let named = changelog
+        .split("## This slice — help names the mlx-lm LoRA journey")
+        .nth(1)
+        .expect("CHANGELOG missing the mlx help-names slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "estate help enrich",
+        "estate help train",
+        "make mlx-lm-lora-journey",
+        "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)",
+        "make uniqueness-mlx",
+        "print-only chain of that journey",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #175",
+        "7cc330801c3b7f87f2b9ecd23a21d823d5b87b12",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "Not native MLX",
+    ] {
+        assert!(
+            named.contains(needle),
+            "mlx help-names CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(
+        named.contains("READY_FOR_LIVE_TEST`: no") || named.contains("READY_FOR_LIVE_TEST: no"),
+        "{named}"
+    );
+    assert!(
+        !named.contains("READY_FOR_LIVE_TEST: yes")
+            && !named.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{named}"
+    );
     let slice = changelog
         .split("## This slice — print-only mlx-lm LoRA uniqueness and seat journey")
         .nth(1)

@@ -111,7 +111,9 @@ Us chain:   make uniqueness-unsloth
 Unsloth LoRA: make unsloth-lora-journey
 Us LoRA chain: make uniqueness-unsloth-lora
 mlx-lm:     make mlx-lm-lora-journey
+            print-only Apple Silicon mlx-lm LoRA journey (operator section 16)
 mlx chain:  make uniqueness-mlx
+            print-only chain of that Apple Silicon journey (operator section 16)
 Ax LoRA:    make axolotl-lora-journey
 Ax LoRA chain: make uniqueness-axolotl-lora
 Train next: make train-next
@@ -379,6 +381,12 @@ does not invent a live PASS. The recorded PASS stays the only live
 uniqueness prove. The re-prove card stays make uniqueness-prove-checklist.
 Walk: docs/operator-enrich-journeys.md (section 15). Not in make smoke,
 make gate-90, or Actions.
+make mlx-lm-lora-journey is the print-only Apple Silicon mlx-lm LoRA journey (operator section 16).
+make uniqueness-mlx is the print-only chain of that journey. Both stay
+print-only. They do not train, fuse, convert, shell out to ollama, or
+promote. They do not invent a live PASS. Not native MLX. Not in make
+smoke, make gate-90, or Actions. READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 16).
 
   estate enrich drivers
   estate enrich from-pack --estate <your-estate.yaml> \\
@@ -1274,6 +1282,8 @@ Walk: docs/operator-enrich-journeys.md (section 14).
 
 mlx-lm LoRA journey
 -------------------
+make mlx-lm-lora-journey is the print-only Apple Silicon mlx-lm LoRA journey (operator section 16).
+make uniqueness-mlx is the print-only chain of that journey.
 Print-only optional NEXT path for mlx-lm-lora. Status stays optional.
 Apple Silicon affinity only. Another host is refuse:host and writes nothing.
 make mlx-lm-lora-journey prepares that card on a throwaway copy of
