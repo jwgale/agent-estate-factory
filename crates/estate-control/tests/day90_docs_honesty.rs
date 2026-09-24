@@ -53,8 +53,8 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
         "GATE-90 header must point at the live tip snapshot: {head}"
     );
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header must name tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header must name tip through PR #183: {head}"
     );
     assert!(
         !head.contains("through PR #167 (`c244e721d7275651ecfa1c8f4578ba008a668aa9`)"),
@@ -256,6 +256,29 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
             && head.contains("does not inline their bodies")
             && head.contains("PR #181"),
         "GATE-90 header must name the print-only purpose-build journey: {head}"
+    );
+    assert!(
+        head.contains("b93e89f1983027a13008cc4be23f44756af0f22e"),
+        "GATE-90 header must name the PR #183 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("through PR #181 (`c4a6d255a08146613c9c6cba262959d913f5cac0`)"),
+        "GATE-90 header must not freeze tip at PR #181: {head}"
+    );
+    assert!(
+        head.contains("tip honesty through PR #181 is PR #182")
+            && head.contains("7e098a9b0ec360c952b2b1c2273654e44de6776c"),
+        "GATE-90 header must name PR #182 tip honesty through PR #181: {head}"
+    );
+    assert!(
+        head.contains("make deepseek-r1-distill-journey")
+            && head.contains("make uniqueness-deepseek")
+            && head.contains("make deepseek-r1-distill-lora-journey")
+            && head.contains("make uniqueness-deepseek-lora")
+            && head.contains("operator section 19")
+            && head.contains("do not train")
+            && head.contains("PR #183"),
+        "GATE-90 header must name the print-only DeepSeek-R1-Distill journeys: {head}"
     );
     assert!(
         !head.contains("through PR #161 (`0cc8b9e5bf2423d90f54f222a182804b3b337d94`)"),
@@ -1154,6 +1177,57 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
         !tip181.contains("through PR #179 (`4772e0f001a9422cefa8e6f2a9378836285068c7`)"),
         "tip slice must not freeze at the PR #179 tip SHA: {tip181}"
     );
+
+    let tip183 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #183")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #183 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip183.contains("b93e89f1983027a13008cc4be23f44756af0f22e"),
+        "{tip183}"
+    );
+    assert!(
+        tip183.contains("7e098a9b0ec360c952b2b1c2273654e44de6776c"),
+        "{tip183}"
+    );
+    assert!(
+        tip183.contains("c4a6d255a08146613c9c6cba262959d913f5cac0"),
+        "{tip183}"
+    );
+    assert!(tip183.contains("PR #182"), "{tip183}");
+    assert!(tip183.contains("PR #183"), "{tip183}");
+    assert!(tip183.contains("make deepseek-r1-distill-journey"), "{tip183}");
+    assert!(tip183.contains("make uniqueness-deepseek"), "{tip183}");
+    assert!(tip183.contains("make deepseek-r1-distill-lora-journey"), "{tip183}");
+    assert!(tip183.contains("make uniqueness-deepseek-lora"), "{tip183}");
+    assert!(tip183.contains("operator section 19"), "{tip183}");
+    assert!(tip183.contains("only live uniqueness prove"), "{tip183}");
+    assert!(tip183.contains("make lf-beachhead-prepare"), "{tip183}");
+    assert!(tip183.contains("via PR #143"), "{tip183}");
+    assert!(
+        tip183.contains("does not invent a new live PASS"),
+        "{tip183}"
+    );
+    assert!(tip183.contains("43770130 3391"), "{tip183}");
+    assert!(tip183.contains("does not add Kimi"), "{tip183}");
+    assert!(tip183.contains("does not add GLM"), "{tip183}");
+    assert!(
+        tip183.contains("READY_FOR_LIVE_TEST`: no") || tip183.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip183}"
+    );
+    assert!(
+        !tip183.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip183.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip183}"
+    );
+    assert!(!tip183.to_ascii_lowercase().contains("kimi/"), "{tip183}");
+    assert!(
+        !tip183.contains("through PR #181 (`c4a6d255a08146613c9c6cba262959d913f5cac0`)"),
+        "tip slice must not freeze at the PR #181 tip SHA: {tip183}"
+    );
 }
 
 #[test]
@@ -1214,8 +1288,8 @@ fn unsloth_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header names tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header names tip through PR #183: {head}"
     );
     assert!(
         !head.contains("through PR #165 (`7a1b3d54d37b38977c5570679d7f3922b9404d4a`)"),
@@ -1229,7 +1303,7 @@ fn unsloth_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #181"), "{status_head}");
+    assert!(status_head.contains("through PR #183"), "{status_head}");
     assert!(
         !status_head.contains("what is on `main` through PR #165"),
         "{status_head}"
@@ -1301,8 +1375,8 @@ fn mlx_lm_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header names tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header names tip through PR #183: {head}"
     );
     assert!(
         !head.contains("through PR #171 (`651f31a4dd3a84dad270d40dbdd3892081b9380e`)"),
@@ -1341,7 +1415,7 @@ fn mlx_lm_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #181"), "{status_head}");
+    assert!(status_head.contains("through PR #183"), "{status_head}");
     assert!(
         !status_head.contains("what is on `main` through PR #171"),
         "{status_head}"
@@ -1674,8 +1748,8 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
     );
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {head}"
     );
     assert!(
         head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -1721,8 +1795,8 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -2003,8 +2077,8 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     );
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {head}"
     );
     assert!(
         head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -2060,8 +2134,8 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -2396,8 +2470,8 @@ fn uniqueness_full_lora_chains_prepare_train_seat_and_leaves_qlora_chain() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {head}"
+        head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {head}"
     );
     assert!(
         head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -2997,8 +3071,8 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {gate_head}"
     );
     assert!(
         gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3028,8 +3102,8 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3064,7 +3138,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3374,8 +3448,8 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {gate_head}"
     );
     assert!(
         gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3396,8 +3470,8 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3428,7 +3502,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3585,7 +3659,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         "PR #149",
         "PR #150",
         "PR #151",
-        "Tip framing\nthrough PR #181",
+        "Tip framing\nthrough PR #183",
         "6a43ff12a91295739c5a9c8a8f1dc9cc9c084466",
         "Tip honesty through PR #155 is PR #156",
         "87072dbf79b302dc2dce42e49937abbbdd6ac689",
@@ -3649,8 +3723,20 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         "the uniqueness section must not freeze tip framing at PR #179"
     );
     assert!(
-        section.contains("c4a6d255a08146613c9c6cba262959d913f5cac0"),
-        "the uniqueness section must name the PR #181 tip SHA"
+        !section.contains("Tip framing\nthrough PR #181"),
+        "the uniqueness section must not freeze tip framing at PR #181"
+    );
+    assert!(
+        section.contains("b93e89f1983027a13008cc4be23f44756af0f22e"),
+        "the uniqueness section must name the PR #183 tip SHA"
+    );
+    assert!(
+        section.contains("Tip honesty through PR #181 is PR #182"),
+        "the uniqueness section must name PR #182"
+    );
+    assert!(
+        section.contains("7e098a9b0ec360c952b2b1c2273654e44de6776c"),
+        "the uniqueness section must name the PR #182 SHA"
     );
     assert!(
         section.contains("Tip honesty through PR #179 is PR #180"),
@@ -3747,8 +3833,8 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3814,8 +3900,8 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header must stay through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header must stay through PR #183: {gate_head}"
     );
     assert!(
         gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -3850,7 +3936,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4079,8 +4165,8 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {gate_head}"
     );
     assert!(
         gate_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -4133,8 +4219,8 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         status_head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -4228,7 +4314,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4763,8 +4849,8 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header must keep tip through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header must keep tip through PR #183: {gate_head}"
     );
     assert!(
         !gate_head.contains("through PR #167 (`c244e721d7275651ecfa1c8f4578ba008a668aa9`)"),
@@ -4826,8 +4912,8 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
     assert!(
-        status_head.contains("through PR #181"),
-        "status header must keep tip through PR #181"
+        status_head.contains("through PR #183"),
+        "status header must keep tip through PR #183"
     );
     assert!(
         !status_head.contains("what is on `main` through PR #167"),
@@ -4921,7 +5007,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     let named = changelog
         .split("## This slice — help names the purpose-build checklist")
         .nth(1)
@@ -5246,6 +5332,12 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         "make uniqueness-unsloth-lora",
         "make axolotl-lora-journey",
         "make uniqueness-axolotl-lora",
+        "make deepseek-r1-distill-journey",
+        "make uniqueness-deepseek",
+        "make deepseek-r1-distill-lora-journey",
+        "make uniqueness-deepseek-lora",
+        "DeepSeek-R1-Distill chat is print-only",
+        "This picker does not run them.",
         "make purpose-build-checklist",
         "make uniqueness-prove-checklist",
         "43770130 3391",
@@ -5291,8 +5383,8 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header stays through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header stays through PR #183: {gate_head}"
     );
     assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
     let row = gate
@@ -5332,7 +5424,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #181"));
+    assert!(status_head.contains("through PR #183"));
     assert!(status.contains("make purpose-build-pick # opt-in:"));
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
@@ -5343,7 +5435,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -5588,8 +5680,8 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header stays through PR #181: {gate_head}"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header stays through PR #183: {gate_head}"
     );
     assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
     let row = gate
@@ -5635,7 +5727,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #181"));
+    assert!(status_head.contains("through PR #183"));
     assert!(status.contains("make purpose-build-journey # opt-in:"));
     assert!(status.contains("make purpose-build-checklist # opt-in:"));
     assert!(status.contains("make purpose-build-pick # opt-in:"));
@@ -5651,7 +5743,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
     assert!(recorded.contains("`make purpose-build-journey`"));
     assert!(recorded.contains("does not invent a new live PASS"));
     assert!(recorded.contains("only live uniqueness prove"));
-    assert!(recorded.contains("through PR #181"));
+    assert!(recorded.contains("through PR #183"));
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     let head = changelog
@@ -5661,7 +5753,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -5870,8 +5962,8 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
     let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
     let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(
-        gate_head.contains("through PR #181"),
-        "GATE-90 header stays through PR #181"
+        gate_head.contains("through PR #183"),
+        "GATE-90 header stays through PR #183"
     );
     assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
     for row_name in [
@@ -5887,6 +5979,18 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         assert!(row.contains("operator section 19"), "{row}");
         assert!(row.contains("Not a live train"), "{row}");
     }
+    let pbj = gate
+        .lines()
+        .position(|line| line.contains("| `make purpose-build-journey` |"))
+        .expect("purpose-build-journey row");
+    let ds = gate
+        .lines()
+        .position(|line| line.contains("| `make deepseek-r1-distill-journey` |"))
+        .expect("deepseek journey row");
+    assert!(
+        pbj < ds,
+        "operator section 18 row must sit above section 19 rows: {pbj} {ds}"
+    );
 
     let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
     let section = journey
@@ -5917,9 +6021,13 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(status_head.contains("through PR #181"));
+    assert!(status_head.contains("through PR #183"));
     assert!(status.contains("make deepseek-r1-distill-journey # opt-in:"));
     assert!(status.contains("| deepseek r1 distill journey |"));
+    assert!(status.contains("PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"));
+    assert!(status.contains("| tip honesty through #181 |"));
+    assert!(status.contains("PR #182 (`7e098a9b0ec360c952b2b1c2273654e44de6776c`)"));
+    assert!(status.contains("| tip honesty through #183 |"));
 
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     let head = changelog
@@ -5929,7 +6037,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #183");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
