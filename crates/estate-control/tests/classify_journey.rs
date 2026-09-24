@@ -221,6 +221,8 @@ fn journey_print_lists_steps_without_tools() {
     assert!(stdout.contains("--outtype f16"), "{stdout}");
     assert!(stdout.contains("Q4_K_M"), "{stdout}");
     assert!(stdout.contains("ollama-native"), "{stdout}");
+    assert!(stdout.contains("few_shot: off"), "{stdout}");
+    assert!(stdout.contains("skip eval-base-few-shot"), "{stdout}");
     assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
     assert!(stdout.contains("mtp.*"), "{stdout}");
     assert!(
@@ -228,6 +230,30 @@ fn journey_print_lists_steps_without_tools() {
         "{stdout}"
     );
     assert!(!dir.exists(), "print must not write {}", dir.display());
+    let shot = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--few-shot",
+            "3",
+            "--seed",
+            "11",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let shot_out = String::from_utf8_lossy(&shot.stdout);
+    assert!(shot.status.success(), "{shot_out}");
+    assert!(shot_out.contains("few_shot: 3 exemplars"), "{shot_out}");
+    assert!(shot_out.contains("seed 11"), "{shot_out}");
+    assert!(shot_out.contains("run eval-base-few-shot"), "{shot_out}");
+    assert!(shot_out.contains("--few-shot 3"), "{shot_out}");
+    assert!(!dir.exists(), "few-shot print must not write");
     let warned = bin()
         .args([
             "classify",
@@ -674,6 +700,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             "0.5",
             "--min-accuracy",
             "0.9",
+            "--few-shot",
+            "2",
             "--timeout-secs",
             "5",
         ])
@@ -739,6 +767,23 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert_eq!(comparison["base_seat"], "pipeline");
     assert_eq!(comparison["quant"], "Q4_K_M");
     assert_eq!(comparison["thinking_leak"]["base"], 1);
+    assert_eq!(comparison["few_shot"]["n"], 2);
+    assert!(comparison["few_shot"]["exemplar_source"]
+        .as_str()
+        .unwrap()
+        .ends_with("dataset.jsonl"));
+    assert!((comparison["few_shot_base_accuracy"].as_f64().unwrap() - 0.0).abs() < 1e-9);
+    assert!((comparison["delta_vs_few_shot_base"].as_f64().unwrap() - 1.0).abs() < 1e-9);
+    let few_report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(work.join("base-few-shot-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(few_report["few_shot"]["n"], 2);
+    assert_eq!(few_report["few_shot"]["seed"], 20260920);
+    assert_eq!(few_report["live_pass_recorded"], false);
+    assert_eq!(few_report["mode"], "http");
+    let base_report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(work.join("base-report.json")).unwrap()).unwrap();
+    assert!(base_report["few_shot"].is_null());
     assert!(stdout.contains("threshold met"), "{stdout}");
     let heavy = |log: &str| {
         log.lines()

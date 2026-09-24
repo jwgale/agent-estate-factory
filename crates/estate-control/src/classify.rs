@@ -427,9 +427,9 @@ fn assistant_letter(row: &Value) -> Option<String> {
     row.get("messages")
         .and_then(Value::as_array)
         .and_then(|msgs| {
-            msgs.iter().rev().find(|m| {
-                m.get("role").and_then(Value::as_str) == Some("assistant")
-            })
+            msgs.iter()
+                .rev()
+                .find(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
         })
         .and_then(|m| m.get("content").and_then(Value::as_str))
         .map(str::to_string)
@@ -510,7 +510,10 @@ fn strip_one_trailer(input: &str) -> String {
     let mut s = input.trim().to_string();
     loop {
         let trimmed = s.trim();
-        if let Some(stripped) = trimmed.strip_suffix('.').or_else(|| trimmed.strip_suffix(')')) {
+        if let Some(stripped) = trimmed
+            .strip_suffix('.')
+            .or_else(|| trimmed.strip_suffix(')'))
+        {
             s = stripped.trim().to_string();
         } else {
             return trimmed.to_string();
@@ -564,7 +567,10 @@ pub(crate) fn wilson_ci95(correct: u64, total: u64) -> Option<(f64, f64)> {
     let denom = 1.0 + z2 / n;
     let center = (phat + z2 / (2.0 * n)) / denom;
     let margin = z * ((phat * (1.0 - phat) / n) + (z2 / (4.0 * n * n))).sqrt() / denom;
-    Some(((center - margin).clamp(0.0, 1.0), (center + margin).clamp(0.0, 1.0)))
+    Some((
+        (center - margin).clamp(0.0, 1.0),
+        (center + margin).clamp(0.0, 1.0),
+    ))
 }
 
 /// Newcombe interval for `specialist - base`, using the Wilson intervals of each side.
@@ -670,37 +676,179 @@ impl EvalApi {
     }
 }
 
-fn messages_for(row: &Decision) -> Value {
-    serde_json::json!([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": row.user_json}
-    ])
+/// Labeled train rows prepended to each held-out prompt.
+pub(crate) struct FewShot<'a> {
+    pub n: u32,
+    pub exemplars: &'a Path,
+    pub seed: u64,
 }
 
-fn request_body(model: &str, row: &Decision, api: EvalApi) -> Value {
+fn messages_for(row: &Decision, exemplars: &[&Decision]) -> Value {
+    let mut messages = Vec::with_capacity(2 + exemplars.len() * 2);
+    messages.push(serde_json::json!({"role": "system", "content": SYSTEM_PROMPT}));
+    for exemplar in exemplars {
+        messages.push(serde_json::json!({"role": "user", "content": exemplar.user_json}));
+        messages
+            .push(serde_json::json!({"role": "assistant", "content": exemplar.answer.to_string()}));
+    }
+    messages.push(serde_json::json!({"role": "user", "content": row.user_json}));
+    Value::Array(messages)
+}
+
+fn request_body(model: &str, row: &Decision, api: EvalApi, exemplars: &[&Decision]) -> Value {
+    let messages = messages_for(row, exemplars);
     match api {
         EvalApi::Openai => serde_json::json!({
             "model": model,
-            "messages": messages_for(row),
+            "messages": messages,
             "temperature": 0,
             "max_tokens": 8,
             "chat_template_kwargs": {"enable_thinking": false}
         }),
         EvalApi::Ollama => serde_json::json!({
             "model": model,
-            "messages": messages_for(row),
+            "messages": messages,
             "temperature": 0,
             "max_tokens": 8,
             "reasoning_effort": "none"
         }),
         EvalApi::OllamaNative => serde_json::json!({
             "model": model,
-            "messages": messages_for(row),
+            "messages": messages,
             "stream": false,
             "think": false,
             "options": {"temperature": 0, "num_predict": 8}
         }),
     }
+}
+
+fn few_shot_field(shot: Option<&FewShot<'_>>) -> Value {
+    match shot {
+        Some(shot) => serde_json::json!({
+            "n": shot.n,
+            "exemplar_source": shot.exemplars.display().to_string(),
+            "seed": shot.seed,
+        }),
+        None => Value::Null,
+    }
+}
+
+/// Same user payload, or the same non-empty `id`, is the held-out row.
+fn exemplar_leaks(exemplar: &Decision, held: &Decision) -> bool {
+    if exemplar.user_json == held.user_json {
+        return true;
+    }
+    let exemplar_id = exemplar.heldout.get("id").and_then(Value::as_str);
+    let held_id = held.heldout.get("id").and_then(Value::as_str);
+    matches!((exemplar_id, held_id), (Some(left), Some(right)) if !left.is_empty() && left == right)
+}
+
+/// Fisher–Yates order of the exemplar pool using `SplitMix(seed)`, the same
+/// generator as `split_indices`. Walk that order and keep the first `n` rows
+/// that are not the held-out row. The same seed and pool always yield the
+/// same order. A held-out row changes the pick only by being skipped.
+pub(crate) fn pick_exemplars<'a>(
+    pool: &'a [Decision],
+    held: &Decision,
+    n: usize,
+    seed: u64,
+) -> Result<Vec<&'a Decision>> {
+    if n == 0 {
+        bail!("refuse:classify-eval: --few-shot must be at least 1");
+    }
+    if n > pool.len() {
+        bail!(
+            "refuse:classify-eval: --few-shot {n} is larger than the {} exemplar rows",
+            pool.len()
+        );
+    }
+    let order = split_indices(pool.len(), seed, 0).0;
+    let mut picked = Vec::with_capacity(n);
+    for index in order {
+        if exemplar_leaks(&pool[index], held) {
+            continue;
+        }
+        picked.push(&pool[index]);
+        if picked.len() == n {
+            return Ok(picked);
+        }
+    }
+    bail!("refuse:classify-eval: --few-shot {n} exceeds exemplars that are not the held-out row");
+}
+
+pub(crate) fn load_exemplars(text: &str) -> Result<Vec<Decision>> {
+    let parsed = parse_jsonl(text);
+    if parsed.errors.is_empty() {
+        if parsed.decisions.is_empty() {
+            bail!("refuse:classify-eval: exemplar file has no records");
+        }
+        return Ok(parsed.decisions);
+    }
+    if parsed.decisions.is_empty() {
+        if let Ok(rows) = parse_prepared_train(text) {
+            if !rows.is_empty() {
+                return Ok(rows);
+            }
+        }
+    }
+    let detail = format_row_errors(&parsed.errors);
+    bail!(
+        "refuse:classify-eval: {} bad exemplar rows; {detail}",
+        parsed.errors.len()
+    );
+}
+
+/// Prepared train file from `classify prepare`: sharegpt messages or alpaca input/output.
+fn parse_prepared_train(text: &str) -> Result<Vec<Decision>, String> {
+    let mut rows = Vec::new();
+    for (idx, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let line_no = idx + 1;
+        let value: Value =
+            serde_json::from_str(line).map_err(|err| format!("line {line_no} not json ({err})"))?;
+        let (user_json, answer) =
+            prepared_user_and_answer(&value).map_err(|err| format!("line {line_no}: {err}"))?;
+        let user: Value = serde_json::from_str(&user_json)
+            .map_err(|err| format!("line {line_no}: user payload is not json ({err})"))?;
+        let mut obj = user
+            .as_object()
+            .cloned()
+            .ok_or_else(|| format!("line {line_no}: user payload is not an object"))?;
+        obj.insert("answer".into(), Value::String(answer));
+        let record = serde_json::to_string(&Value::Object(obj))
+            .map_err(|err| format!("line {line_no}: {err}"))?;
+        rows.push(parse_record_line(&record, line_no)?);
+    }
+    if rows.is_empty() {
+        return Err("no prepared train rows".into());
+    }
+    Ok(rows)
+}
+
+fn prepared_user_and_answer(value: &Value) -> Result<(String, String), String> {
+    if let Some(messages) = value.get("messages").and_then(Value::as_array) {
+        let user = messages
+            .iter()
+            .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+            .and_then(|message| message.get("content").and_then(Value::as_str))
+            .ok_or("sharegpt row has no user content")?;
+        let answer = messages
+            .iter()
+            .rev()
+            .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+            .and_then(|message| message.get("content").and_then(Value::as_str))
+            .ok_or("sharegpt row has no assistant letter")?;
+        return Ok((user.to_string(), answer.to_string()));
+    }
+    if let (Some(input), Some(output)) = (
+        value.get("input").and_then(Value::as_str),
+        value.get("output").and_then(Value::as_str),
+    ) {
+        return Ok((input.to_string(), output.to_string()));
+    }
+    Err("not a tev1 record or a prepared train row".into())
 }
 
 pub(crate) fn eval_url(endpoint: &str, api: EvalApi) -> String {
@@ -872,11 +1020,7 @@ fn mock_completion(index: usize, answer: char, labels: &[char]) -> String {
 }
 
 fn check_dataset_name(name: &str) -> Result<()> {
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         bail!("refuse:classify: dataset name must be ASCII letters, digits, or underscore");
     }
     Ok(())
@@ -895,9 +1039,8 @@ fn output_occupied(out: &Path) -> Result<bool> {
         return Ok(false);
     }
     if out.is_dir() {
-        let mut entries = fs::read_dir(out).map_err(|e| {
-            anyhow::anyhow!("refuse:classify: cannot read {}: {e}", out.display())
-        })?;
+        let mut entries = fs::read_dir(out)
+            .map_err(|e| anyhow::anyhow!("refuse:classify: cannot read {}: {e}", out.display()))?;
         return Ok(entries.next().is_some());
     }
     Ok(fs::metadata(out)?.len() > 0)
@@ -914,9 +1057,8 @@ pub(crate) fn cmd_classify_prepare(
     force: bool,
 ) -> Result<()> {
     check_dataset_name(dataset_name)?;
-    let text = fs::read_to_string(input).map_err(|e| {
-        anyhow::anyhow!("refuse:classify: cannot read {}: {e}", input.display())
-    })?;
+    let text = fs::read_to_string(input)
+        .map_err(|e| anyhow::anyhow!("refuse:classify: cannot read {}: {e}", input.display()))?;
     let parsed = parse_jsonl(&text);
     if !parsed.errors.is_empty() {
         let detail = format_row_errors(&parsed.errors);
@@ -944,10 +1086,7 @@ pub(crate) fn cmd_classify_prepare(
             );
         }
         fs::remove_file(out).map_err(|e| {
-            anyhow::anyhow!(
-                "refuse:classify: cannot replace {}: {e}",
-                out.display()
-            )
+            anyhow::anyhow!("refuse:classify: cannot replace {}: {e}", out.display())
         })?;
     } else if !force && output_occupied(out)? {
         bail!("refuse:classify: output exists and is non-empty; pass --force");
@@ -1037,11 +1176,7 @@ pub(crate) fn cmd_classify_prepare_presplit(
     }
     let mut seen = std::collections::BTreeSet::new();
     for row in train.decisions.iter().chain(held.decisions.iter()) {
-        let id = row
-            .heldout
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let id = row.heldout.get("id").and_then(Value::as_str).unwrap_or("");
         if id.is_empty() || !seen.insert(id.to_string()) {
             bail!("refuse:classify: presplit ids must be present and disjoint, saw {id}");
         }
@@ -1058,8 +1193,16 @@ pub(crate) fn cmd_classify_prepare_presplit(
         bail!("refuse:classify: output exists and is non-empty; pass --force");
     }
     fs::create_dir_all(out)?;
-    let train_rows: Vec<Value> = train.decisions.iter().map(|row| train_row(format, row)).collect();
-    let held_rows: Vec<Value> = held.decisions.iter().map(|row| row.heldout.clone()).collect();
+    let train_rows: Vec<Value> = train
+        .decisions
+        .iter()
+        .map(|row| train_row(format, row))
+        .collect();
+    let held_rows: Vec<Value> = held
+        .decisions
+        .iter()
+        .map(|row| row.heldout.clone())
+        .collect();
     write_jsonl(&out.join("dataset.jsonl"), &train_rows)?;
     write_jsonl(&out.join("heldout.jsonl"), &held_rows)?;
     let info = dataset_info(dataset_name, format);
@@ -1136,6 +1279,7 @@ pub(crate) fn cmd_classify_eval(
     timeout_secs: u64,
     api: EvalApi,
     gate: EvalGate,
+    few_shot: Option<&FewShot<'_>>,
 ) -> Result<()> {
     if dry_run && mock {
         bail!("refuse:classify-eval: pass only one of --dry-run and --mock");
@@ -1160,6 +1304,31 @@ pub(crate) fn cmd_classify_eval(
     if parsed.decisions.is_empty() {
         bail!("refuse:classify-eval: no records");
     }
+    let pool = match few_shot {
+        Some(shot) if shot.n == 0 => {
+            bail!(
+                "refuse:classify-eval: --few-shot must be at least 1; omit the flag for zero-shot"
+            );
+        }
+        Some(shot) => {
+            let text = fs::read_to_string(shot.exemplars).map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-eval: cannot read exemplars {}: {err}",
+                    shot.exemplars.display()
+                )
+            })?;
+            let pool = load_exemplars(&text)?;
+            if shot.n as usize > pool.len() {
+                bail!(
+                    "refuse:classify-eval: --few-shot {} is larger than the {} exemplar rows",
+                    shot.n,
+                    pool.len()
+                );
+            }
+            Some(pool)
+        }
+        None => None,
+    };
 
     let mode = if dry_run {
         "dry_run"
@@ -1170,7 +1339,8 @@ pub(crate) fn cmd_classify_eval(
     };
 
     if dry_run {
-        let sample = request_body(model, &parsed.decisions[0], api);
+        let exemplars = exemplars_for(&pool, few_shot, &parsed.decisions[0])?;
+        let sample = request_body(model, &parsed.decisions[0], api, &exemplars);
         let report = serde_json::json!({
             "schema": "cell-one.classify-eval.v0",
             "mode": mode,
@@ -1190,6 +1360,7 @@ pub(crate) fn cmd_classify_eval(
             "confusion": Value::Null,
             "latency_ms": Value::Null,
             "latency_measured": false,
+            "few_shot": few_shot_field(few_shot),
             "sample_request": sample,
             "live_pass_recorded": false,
             "note": "Dry run does not call the endpoint and does not record a live PASS. READY_FOR_LIVE_TEST stays no."
@@ -1207,7 +1378,9 @@ pub(crate) fn cmd_classify_eval(
         None
     } else {
         let endpoint = endpoint.ok_or_else(|| {
-            anyhow::anyhow!("refuse:classify-eval: --endpoint is required unless --dry-run or --mock")
+            anyhow::anyhow!(
+                "refuse:classify-eval: --endpoint is required unless --dry-run or --mock"
+            )
         })?;
         if let Some(key) = api_key.as_deref() {
             if endpoint.contains(key) {
@@ -1227,7 +1400,8 @@ pub(crate) fn cmd_classify_eval(
         let (text, http_error) = if mock {
             (mock_completion(index, row.answer, &row.labels), false)
         } else {
-            let body = request_body(model, row, api);
+            let exemplars = exemplars_for(&pool, few_shot, row)?;
+            let body = request_body(model, row, api, &exemplars);
             match post_chat(url.as_deref().unwrap(), &body, api_key.as_deref(), timeout) {
                 HttpOutcome::Ok(text) => (text, false),
                 HttpOutcome::Fail(fail) => {
@@ -1277,6 +1451,7 @@ pub(crate) fn cmd_classify_eval(
                 &errors,
                 !mock,
                 false,
+                few_shot,
             );
             write_report_file(report_path, &partial, false)?;
         }
@@ -1302,11 +1477,17 @@ pub(crate) fn cmd_classify_eval(
         &errors,
         !mock,
         true,
+        few_shot,
     );
     write_report(report_path, &report)?;
     let invalid = scored.iter().filter(|r| !r.valid).count();
     let http_errors = scored.iter().filter(|r| r.http_error).count();
-    if let Some(err) = eval_gate_error(gate, scored.len() as u64, http_errors as u64, invalid as u64) {
+    if let Some(err) = eval_gate_error(
+        gate,
+        scored.len() as u64,
+        http_errors as u64,
+        invalid as u64,
+    ) {
         bail!(err);
     }
     Ok(())
@@ -1316,16 +1497,24 @@ fn read_api_key(name: Option<&str>) -> Result<Option<String>> {
     let Some(name) = name.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         bail!("refuse:classify-eval: api-key-env must be an environment variable name");
     }
     match std::env::var(name) {
         Ok(value) if !value.is_empty() => Ok(Some(value)),
         _ => bail!("refuse:classify-eval: set {name}"),
     }
+}
+
+fn exemplars_for<'a>(
+    pool: &'a Option<Vec<Decision>>,
+    shot: Option<&FewShot<'_>>,
+    held: &Decision,
+) -> Result<Vec<&'a Decision>> {
+    let (Some(pool), Some(shot)) = (pool, shot) else {
+        return Ok(Vec::new());
+    };
+    pick_exemplars(pool, held, shot.n as usize, shot.seed)
 }
 
 fn eval_report(
@@ -1339,6 +1528,7 @@ fn eval_report(
     errors: &[Value],
     measured: bool,
     complete: bool,
+    few_shot: Option<&FewShot<'_>>,
 ) -> Value {
     let correct = scored.iter().filter(|r| r.correct).count();
     let invalid = scored.iter().filter(|r| !r.valid).count();
@@ -1368,6 +1558,7 @@ fn eval_report(
         },
         "latency_measured": measured,
         "complete": complete,
+        "few_shot": few_shot_field(few_shot),
         "live_pass_recorded": false,
         "note": "This score is not a factory live PASS. READY_FOR_LIVE_TEST stays no. The recorded Target C PASS is the only live uniqueness prove."
     })
@@ -1384,7 +1575,10 @@ fn per_class_accuracy(rows: &[ScoredRow]) -> Map<String, Value> {
     let mut out = Map::new();
     for label in labels {
         let total = rows.iter().filter(|r| r.expected == label).count();
-        let correct = rows.iter().filter(|r| r.expected == label && r.correct).count();
+        let correct = rows
+            .iter()
+            .filter(|r| r.expected == label && r.correct)
+            .count();
         out.insert(
             label.to_string(),
             serde_json::json!({
@@ -1463,7 +1657,10 @@ mod tests {
         let bad_answer = row(
             "A customer asked about store hours.",
             "Which intent matches?",
-            &[("A", "hours", "Store hours."), ("B", "none", "None of these.")],
+            &[
+                ("A", "hours", "Store hours."),
+                ("B", "none", "None of these."),
+            ],
             "A",
         )
         .replace("\"answer\":\"A\"", "\"answer\":\"\"");
@@ -1517,14 +1714,14 @@ mod tests {
         let messages = share["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0]["role"], "system");
-        assert!(messages[1]["content"].as_str().unwrap().contains("\"state\""));
+        assert!(messages[1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("\"state\""));
         assert!(messages[1]["content"].as_str().unwrap().contains(": "));
         let info = dataset_info("tev1_decisions", DatasetFormat::Sharegpt);
         assert_eq!(info["tev1_decisions"]["formatting"], "sharegpt");
-        assert_eq!(
-            info["tev1_decisions"]["tags"]["assistant_tag"],
-            "assistant"
-        );
+        assert_eq!(info["tev1_decisions"]["tags"]["assistant_tag"], "assistant");
         let alpaca = train_row(DatasetFormat::Alpaca, &parsed[0]);
         assert_eq!(alpaca["output"], "B");
         let info = dataset_info("tev1_decisions", DatasetFormat::Alpaca);
@@ -1597,10 +1794,38 @@ mod tests {
     #[test]
     fn accuracy_confusion_and_percentiles() {
         let rows = vec![
-            ScoredRow { expected: 'A', predicted: Some('A'), valid: true, correct: true, http_error: false, latency_ms: 10.0 },
-            ScoredRow { expected: 'A', predicted: Some('C'), valid: true, correct: false, http_error: false, latency_ms: 20.0 },
-            ScoredRow { expected: 'B', predicted: None, valid: false, correct: false, http_error: false, latency_ms: 30.0 },
-            ScoredRow { expected: 'B', predicted: Some('B'), valid: true, correct: true, http_error: false, latency_ms: 40.0 },
+            ScoredRow {
+                expected: 'A',
+                predicted: Some('A'),
+                valid: true,
+                correct: true,
+                http_error: false,
+                latency_ms: 10.0,
+            },
+            ScoredRow {
+                expected: 'A',
+                predicted: Some('C'),
+                valid: true,
+                correct: false,
+                http_error: false,
+                latency_ms: 20.0,
+            },
+            ScoredRow {
+                expected: 'B',
+                predicted: None,
+                valid: false,
+                correct: false,
+                http_error: false,
+                latency_ms: 30.0,
+            },
+            ScoredRow {
+                expected: 'B',
+                predicted: Some('B'),
+                valid: true,
+                correct: true,
+                http_error: false,
+                latency_ms: 40.0,
+            },
         ];
         let correct = rows.iter().filter(|r| r.correct).count();
         assert!((accuracy_of(correct, rows.len()) - 0.5).abs() < 1e-9);
@@ -1616,7 +1841,10 @@ mod tests {
             let cell = matrix[gold].as_object().unwrap();
             assert!(cell.contains_key("invalid"));
             let sum: u64 = cell.values().filter_map(Value::as_u64).sum();
-            let count = rows.iter().filter(|r| r.expected.to_string() == gold).count() as u64;
+            let count = rows
+                .iter()
+                .filter(|r| r.expected.to_string() == gold)
+                .count() as u64;
             assert_eq!(sum, count, "{gold}");
         }
         let mut lat = vec![10.0, 20.0, 30.0, 40.0];
@@ -1643,7 +1871,11 @@ mod tests {
         assert_eq!(parsed.decisions.len(), 2);
         let empty = row_with_state(&serde_json::json!("  "), "Which blank?");
         let err = parse_jsonl(&empty);
-        assert!(err.errors[0].reason.contains("empty"), "{}", err.errors[0].reason);
+        assert!(
+            err.errors[0].reason.contains("empty"),
+            "{}",
+            err.errors[0].reason
+        );
         let num = row_with_state(&serde_json::json!(3), "Which number?");
         let err = parse_jsonl(&num);
         assert!(
@@ -1670,14 +1902,14 @@ mod tests {
     #[test]
     fn request_bodies_turn_thinking_off_per_api() {
         let row = parse_jsonl(&sample_line("B")).decisions.remove(0);
-        let openai = request_body("m", &row, EvalApi::Openai);
+        let openai = request_body("m", &row, EvalApi::Openai, &[]);
         assert_eq!(openai["chat_template_kwargs"]["enable_thinking"], false);
         assert!(openai.get("think").is_none());
         assert!(openai.get("reasoning_effort").is_none());
-        let ollama = request_body("m", &row, EvalApi::Ollama);
+        let ollama = request_body("m", &row, EvalApi::Ollama, &[]);
         assert_eq!(ollama["reasoning_effort"], "none");
         assert!(ollama.get("think").is_none());
-        let native = request_body("m", &row, EvalApi::OllamaNative);
+        let native = request_body("m", &row, EvalApi::OllamaNative, &[]);
         assert_eq!(native["think"], false);
         assert_eq!(native["options"]["temperature"], 0);
         assert_eq!(native["options"]["num_predict"], 8);
@@ -1695,7 +1927,10 @@ mod tests {
     fn eval_gate_fails_closed_for_dead_endpoints_and_unusable_journeys() {
         assert!(eval_gate_error(EvalGate::Standalone, 4, 1, 1).is_none());
         let all_http = eval_gate_error(EvalGate::Standalone, 2, 2, 2).unwrap();
-        assert!(all_http.contains("every row failed at the HTTP level"), "{all_http}");
+        assert!(
+            all_http.contains("every row failed at the HTTP level"),
+            "{all_http}"
+        );
         let journey_http = eval_gate_error(EvalGate::Journey, 4, 1, 1).unwrap();
         assert!(journey_http.contains("unusable"), "{journey_http}");
         assert!(eval_gate_error(EvalGate::Journey, 10, 1, 1).is_none());
@@ -1732,8 +1967,10 @@ mod tests {
         let parsed = parse_jsonl(&text);
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
         let mut groups = std::collections::BTreeSet::new();
-        let mut seen_q: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
-        let mut seen_id: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut seen_q: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut seen_id: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
         for row in &parsed.decisions {
             groups.insert(row.group.clone());
             if let Some(id) = row.group.strip_prefix("id:") {
@@ -1763,5 +2000,90 @@ mod tests {
         let again = split_by_group(&parsed.decisions, 20_260_920, 0.2).unwrap();
         assert_eq!(train, again.0);
         assert_eq!(held, again.1);
+    }
+
+    #[test]
+    fn few_shot_messages_use_n_exemplars_and_keep_the_letter_contract() {
+        let mut lines = String::new();
+        for (i, answer) in ['A', 'B', 'C'].iter().enumerate() {
+            let letter = answer.to_string();
+            lines.push_str(&row(
+                &format!("distinct note {i}"),
+                "Which letter?",
+                &[("A", "a", "A."), ("B", "b", "B."), ("C", "c", "C.")],
+                &letter,
+            ));
+            lines.push('\n');
+        }
+        let pool = parse_jsonl(&lines).decisions;
+        let held = pool[2].clone();
+        let picked = pick_exemplars(&pool[..2], &held, 2, 7).unwrap();
+        assert_eq!(picked.len(), 2);
+        let body = request_body("m", &held, EvalApi::Openai, &picked);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[0]["content"], SYSTEM_PROMPT);
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(messages[2]["role"], "assistant");
+        assert_eq!(messages[2]["content"].as_str().unwrap().chars().count(), 1);
+        assert_eq!(messages[5]["role"], "user");
+        assert_eq!(messages[5]["content"], held.user_json);
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(body["max_tokens"], 8);
+        let native = request_body("m", &held, EvalApi::OllamaNative, &picked);
+        assert_eq!(native["messages"].as_array().unwrap().len(), 6);
+        assert_eq!(native["think"], false);
+        let ollama = request_body("m", &held, EvalApi::Ollama, &picked);
+        assert_eq!(ollama["reasoning_effort"], "none");
+    }
+
+    #[test]
+    fn few_shot_pick_is_deterministic_and_skips_the_held_out_row() {
+        let mut lines = String::new();
+        for (i, answer) in ['A', 'B', 'C', 'A', 'B'].iter().enumerate() {
+            let letter = answer.to_string();
+            lines.push_str(&row(
+                &format!("note {i}"),
+                "Which letter?",
+                &[("A", "a", "A."), ("B", "b", "B."), ("C", "c", "C.")],
+                &letter,
+            ));
+            lines.push('\n');
+        }
+        let pool = parse_jsonl(&lines).decisions;
+        let held = pool[1].clone();
+        let first = pick_exemplars(&pool, &held, 3, 42).unwrap();
+        let again = pick_exemplars(&pool, &held, 3, 42).unwrap();
+        let other = pick_exemplars(&pool, &held, 3, 99).unwrap();
+        let ids = |rows: &[&Decision]| -> Vec<usize> { rows.iter().map(|row| row.line).collect() };
+        assert_eq!(ids(&first), ids(&again));
+        assert_ne!(ids(&first), ids(&other));
+        assert!(first.iter().all(|row| row.line != held.line));
+        assert!(first.iter().all(|row| !exemplar_leaks(row, &held)));
+        let leaked = pick_exemplars(&pool, &held, 5, 42).unwrap_err().to_string();
+        assert!(leaked.contains("not the held-out row"), "{leaked}");
+        let too_many = pick_exemplars(&pool[..2], &pool[0], 3, 1)
+            .unwrap_err()
+            .to_string();
+        assert!(too_many.contains("larger than"), "{too_many}");
+        let zero = pick_exemplars(&pool, &held, 0, 1).unwrap_err().to_string();
+        assert!(zero.contains("at least 1"), "{zero}");
+    }
+
+    #[test]
+    fn prepared_train_rows_load_as_exemplars() {
+        let parsed = parse_jsonl(&sample_line("B")).decisions;
+        let share = train_row(DatasetFormat::Sharegpt, &parsed[0]);
+        let alpaca = train_row(DatasetFormat::Alpaca, &parsed[0]);
+        let text = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&share).unwrap(),
+            serde_json::to_string(&alpaca).unwrap()
+        );
+        let loaded = load_exemplars(&text).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].answer, 'B');
+        assert_eq!(loaded[1].answer, 'B');
+        assert_eq!(loaded[0].user_json, parsed[0].user_json);
     }
 }

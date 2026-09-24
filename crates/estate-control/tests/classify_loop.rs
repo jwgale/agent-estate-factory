@@ -14,16 +14,9 @@ fn fixture() -> PathBuf {
 
 #[test]
 fn prepare_is_deterministic_and_llama_factory_shaped() {
-    let dir = std::env::temp_dir().join(format!(
-        "classify-prepare-{}-{}",
-        std::process::id(),
-        "a"
-    ));
-    let dir_b = std::env::temp_dir().join(format!(
-        "classify-prepare-{}-{}",
-        std::process::id(),
-        "b"
-    ));
+    let dir = std::env::temp_dir().join(format!("classify-prepare-{}-{}", std::process::id(), "a"));
+    let dir_b =
+        std::env::temp_dir().join(format!("classify-prepare-{}-{}", std::process::id(), "b"));
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&dir_b);
     for out in [&dir, &dir_b] {
@@ -134,7 +127,11 @@ fn strict_refuses_bad_rows_and_skip_writes() {
         ])
         .output()
         .unwrap();
-    assert!(skip.status.success(), "{}", String::from_utf8_lossy(&skip.stderr));
+    assert!(
+        skip.status.success(),
+        "{}",
+        String::from_utf8_lossy(&skip.stderr)
+    );
     let err = String::from_utf8_lossy(&skip.stderr);
     assert!(err.contains("skipped 1 bad"), "{err}");
     assert!(err.contains("line 2"), "{err}");
@@ -178,7 +175,11 @@ fn eval_dry_run_and_mock_stay_offline() {
         ])
         .output()
         .unwrap();
-    assert!(dry_out.status.success(), "{}", String::from_utf8_lossy(&dry_out.stderr));
+    assert!(
+        dry_out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry_out.stderr)
+    );
     let report: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dry).unwrap()).unwrap();
     let held_n = std::fs::read_to_string(&held)
@@ -190,7 +191,10 @@ fn eval_dry_run_and_mock_stay_offline() {
     assert_eq!(report["records"], held_n);
     assert!(report["accuracy"].is_null());
     assert_eq!(report["live_pass_recorded"], false);
-    assert!(report["sample_request"]["temperature"].as_i64() == Some(0) || report["sample_request"]["temperature"].as_f64() == Some(0.0));
+    assert!(
+        report["sample_request"]["temperature"].as_i64() == Some(0)
+            || report["sample_request"]["temperature"].as_f64() == Some(0.0)
+    );
     let sample = serde_json::to_string(&report["sample_request"]).unwrap();
     assert!(!sample.to_ascii_lowercase().contains("bearer"));
     assert!(sample.contains("enable_thinking"));
@@ -210,7 +214,11 @@ fn eval_dry_run_and_mock_stay_offline() {
         ])
         .output()
         .unwrap();
-    assert!(mock.status.success(), "{}", String::from_utf8_lossy(&mock.stderr));
+    assert!(
+        mock.status.success(),
+        "{}",
+        String::from_utf8_lossy(&mock.stderr)
+    );
     let report: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&mock_path).unwrap()).unwrap();
     assert_eq!(report["mode"], "mock");
@@ -246,11 +254,9 @@ fn eval_scores_in_process_http_server() {
             let payload = serde_json::json!({
                 "choices": [{"message": {"content": content}}]
             });
-            let header = tiny_http::Header::from_bytes(
-                &b"Content-Type"[..],
-                &b"application/json"[..],
-            )
-            .unwrap();
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
             let resp = tiny_http::Response::from_string(payload.to_string()).with_header(header);
             let _ = req.respond(resp);
         }
@@ -307,7 +313,10 @@ fn eval_scores_in_process_http_server() {
     assert_eq!(report["confusion"]["C"]["C"], 1);
     assert_eq!(report["confusion"]["A"]["invalid"], 1);
     assert!(report["latency_ms"]["p50"].as_f64().unwrap() >= 0.0);
-    assert!(report["latency_ms"]["p95"].as_f64().unwrap() >= report["latency_ms"]["p50"].as_f64().unwrap());
+    assert!(
+        report["latency_ms"]["p95"].as_f64().unwrap()
+            >= report["latency_ms"]["p50"].as_f64().unwrap()
+    );
     assert_eq!(report["latency_measured"], true);
     assert_eq!(report["live_pass_recorded"], false);
     let rendered = serde_json::to_string(&report).unwrap();
@@ -337,7 +346,10 @@ fn prepare_refuses_nonempty_out_unless_force() {
     assert!(err.contains("refuse:classify"), "{err}");
     assert!(err.contains("--force") || err.contains("force"), "{err}");
     assert!(!dir.join("dataset.jsonl").exists());
-    assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "keep");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("keep.txt")).unwrap(),
+        "keep"
+    );
 
     let forced = bin()
         .args([
@@ -357,7 +369,10 @@ fn prepare_refuses_nonempty_out_unless_force() {
         String::from_utf8_lossy(&forced.stderr)
     );
     assert!(dir.join("dataset.jsonl").exists());
-    assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "keep");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("keep.txt")).unwrap(),
+        "keep"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -392,7 +407,8 @@ fn eval_records_http_errors_timeout_and_scrubs_bearer() {
                     (200, "{}".into())
                 }
             };
-            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap();
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap();
             let resp = tiny_http::Response::from_string(payload)
                 .with_status_code(status)
                 .with_header(header);
@@ -453,5 +469,171 @@ fn eval_records_http_errors_timeout_and_scrubs_bearer() {
     assert!(errors[0]["body"].as_str().unwrap().contains("[redacted]"));
     assert!(errors[1]["body"].as_str().unwrap().contains("[redacted]"));
     assert!(!errors[0]["body"].as_str().unwrap().contains(secret));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn eval_few_shot_dry_run_report_and_refusals() {
+    let dir = std::env::temp_dir().join(format!("classify-few-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let prep = bin()
+        .args([
+            "classify",
+            "prepare",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(prep.success());
+    let held = dir.join("heldout.jsonl");
+    let train = dir.join("dataset.jsonl");
+    let report_path = dir.join("few.json");
+    let dry = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "mock-model",
+            "--dry-run",
+            "--few-shot",
+            "2",
+            "--exemplars",
+            train.to_str().unwrap(),
+            "--seed",
+            "7",
+            "--report",
+            report_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        dry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&report_path).unwrap()).unwrap();
+    assert_eq!(report["few_shot"]["n"], 2);
+    assert_eq!(report["few_shot"]["seed"], 7);
+    assert_eq!(report["live_pass_recorded"], false);
+    assert!(report["accuracy"].is_null());
+    let messages = report["sample_request"]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 6);
+    assert_eq!(messages[0]["role"], "system");
+    assert_eq!(messages[2]["role"], "assistant");
+    assert_eq!(messages[4]["role"], "assistant");
+    assert_eq!(messages[5]["role"], "user");
+    let again = dir.join("few-again.json");
+    let second = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "mock-model",
+            "--dry-run",
+            "--few-shot",
+            "2",
+            "--exemplars",
+            train.to_str().unwrap(),
+            "--seed",
+            "7",
+            "--report",
+            again.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(second.status.success());
+    let second_report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&again).unwrap()).unwrap();
+    assert_eq!(
+        report["sample_request"]["messages"],
+        second_report["sample_request"]["messages"]
+    );
+
+    let zero = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "m",
+            "--dry-run",
+            "--few-shot",
+            "0",
+            "--exemplars",
+            train.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!zero.status.success());
+    let err = String::from_utf8_lossy(&zero.stderr);
+    assert!(err.contains("at least 1"), "{err}");
+
+    let missing = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "m",
+            "--dry-run",
+            "--few-shot",
+            "2",
+        ])
+        .output()
+        .unwrap();
+    assert!(!missing.status.success());
+    let err = String::from_utf8_lossy(&missing.stderr);
+    assert!(err.contains("requires --exemplars"), "{err}");
+
+    let absent = dir.join("no-such.jsonl");
+    let gone = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "m",
+            "--dry-run",
+            "--few-shot",
+            "2",
+            "--exemplars",
+            absent.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!gone.status.success());
+    let err = String::from_utf8_lossy(&gone.stderr);
+    assert!(err.contains("cannot read exemplars"), "{err}");
+
+    let too_many = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            held.to_str().unwrap(),
+            "--model",
+            "m",
+            "--dry-run",
+            "--few-shot",
+            "100000",
+            "--exemplars",
+            train.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!too_many.status.success());
+    let err = String::from_utf8_lossy(&too_many.stderr);
+    assert!(err.contains("larger than"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
