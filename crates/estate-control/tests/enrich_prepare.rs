@@ -653,7 +653,7 @@ fn cell_one_status_tip_names_pr_161() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #175"
+        "status snapshot must name tip through PR #177"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
@@ -683,10 +683,10 @@ fn cell_one_status_tip_names_pr_161() {
         !status.contains("on tip through PR #142"),
         "prepare walk stays PR #142; tip is PR #165"
     );
-    let head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(41).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #175"),
-        "status header must name tip through PR #175: {head}"
+        head.contains("through PR #177"),
+        "status header must name tip through PR #177: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #167"),
@@ -838,6 +838,28 @@ fn cell_one_status_tip_names_pr_161() {
             && head.contains("operator section 16")
             && head.contains("PR #175"),
         "status header must name the mlx-lm LoRA journey: {head}"
+    );
+    assert!(
+        head.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"),
+        "status header must name the PR #177 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #175"),
+        "status header must not freeze the snapshot at PR #175: {head}"
+    );
+    assert!(
+        !head.contains("through PR #175 (`7cc330801c3b7f87f2b9ecd23a21d823d5b87b12`)"),
+        "status header must not freeze tip at PR #175: {head}"
+    );
+    assert!(
+        head.contains("Tip honesty through PR #175 is PR #176")
+            && head.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"),
+        "status header must name PR #176 tip honesty through PR #175: {head}"
+    );
+    assert!(
+        head.contains("print-only Apple Silicon mlx-lm LoRA journey")
+            && head.contains("PR #177"),
+        "status header must name help for the mlx-lm LoRA journey: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #161"),
@@ -1601,6 +1623,52 @@ fn cell_one_status_tip_names_pr_161() {
     assert!(
         !tip175.contains("through PR #173 (`1002abcdaf648277e15750a44a16e53b324a251d`)"),
         "tip slice must not freeze at the PR #173 tip SHA: {tip175}"
+    );
+
+    let tip177 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #177")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #177 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip177.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"),
+        "{tip177}"
+    );
+    assert!(
+        tip177.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"),
+        "{tip177}"
+    );
+    assert!(
+        tip177.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"),
+        "{tip177}"
+    );
+    assert!(tip177.contains("PR #176"), "{tip177}");
+    assert!(tip177.contains("PR #177"), "{tip177}");
+    assert!(tip177.contains("make mlx-lm-lora-journey"), "{tip177}");
+    assert!(tip177.contains("make uniqueness-mlx"), "{tip177}");
+    assert!(tip177.contains("operator section 16"), "{tip177}");
+    assert!(tip177.contains("only live uniqueness prove"), "{tip177}");
+    assert!(tip177.contains("via PR #143"), "{tip177}");
+    assert!(
+        tip177.contains("does not invent a new live PASS"),
+        "{tip177}"
+    );
+    assert!(tip177.contains("43770130 3391"), "{tip177}");
+    assert!(
+        tip177.contains("READY_FOR_LIVE_TEST`: no") || tip177.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip177}"
+    );
+    assert!(
+        !tip177.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip177.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip177}"
+    );
+    assert!(!tip177.to_ascii_lowercase().contains("kimi/"), "{tip177}");
+    assert!(
+        !tip177.contains("through PR #175 (`7cc330801c3b7f87f2b9ecd23a21d823d5b87b12`)"),
+        "tip slice must not freeze at the PR #175 tip SHA: {tip177}"
     );
 }
 
@@ -4772,7 +4840,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " help names the mlx-lm LoRA journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4993,7 +5061,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " help names the mlx-lm LoRA journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5213,7 +5281,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " help names the mlx-lm LoRA journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5261,7 +5329,9 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     assert!(status.contains("make axolotl-lora-journey"));
     assert!(status.contains("make uniqueness-axolotl-lora"));
     assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #175"));
+    assert!(status.contains("through PR #177"));
+    assert!(status.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"));
+    assert!(status.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"));
     assert!(status.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"));
     assert!(status.contains("2234e95f6aebd219e5e6733f108400782e6a623b"));
     assert!(status.contains("make mlx-lm-lora-journey"));
@@ -5611,7 +5681,7 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " help names the mlx-lm LoRA journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #177");
     assert!(
         changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
         "CHANGELOG must keep the PR #175 tip-honesty slice"
