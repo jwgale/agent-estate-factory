@@ -1835,7 +1835,7 @@ estate enrich prepare \
   >"$WORKDIR/all-drivers.out"
 grep -q "omit driver=mlx-lm-lora" "$WORKDIR/all-drivers.out"
 grep -q "refuse:host" "$WORKDIR/all-drivers.out"
-grep -q "prepared=7" "$WORKDIR/all-drivers.out"
+grep -q "prepared=8" "$WORKDIR/all-drivers.out"
 if [[ -e "$WORKDIR/all-state/enrich/overnight-traces/mlx-lm-lora" ]]; then
   echo "FAIL  all-drivers on host any must omit mlx-lm-lora"
   exit 1
@@ -1869,6 +1869,13 @@ fi
 grep -q 'train_base_model: "Qwen/Qwen2.5-0.5B-Instruct"' "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/UNSLOTH.md"
 grep -q 'seat_tag: "llama3"' "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/UNSLOTH.md"
 grep -q "does not call Unsloth" "$WORKDIR/all-state/enrich/overnight-traces/unsloth-qlora/NEXT.md"
+test -f "$WORKDIR/all-state/enrich/overnight-traces/unsloth-lora/UNSLOTH.md"
+if [[ -e "$WORKDIR/all-state/enrich/overnight-traces/unsloth-lora/train_unsloth.py" || -e "$WORKDIR/all-state/enrich/overnight-traces/unsloth-lora/dataset.jsonl" ]]; then
+  echo "FAIL  all-drivers unsloth-lora must not write a script or dataset.jsonl"
+  exit 1
+fi
+grep -q "Unsloth LoRA handoff" "$WORKDIR/all-state/enrich/overnight-traces/unsloth-lora/UNSLOTH.md"
+grep -q 'driver: unsloth-lora' "$WORKDIR/all-state/enrich/overnight-traces/unsloth-lora/UNSLOTH.md"
 grep -q "FROM llama3" "$WORKDIR/all-state/enrich/overnight-traces/ollama-modelfile/Modelfile"
 test -f "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"
 grep -q "^lora_rank: 8$" "$WORKDIR/all-state/enrich/overnight-traces/llamafactory-lora/recipe.yaml"

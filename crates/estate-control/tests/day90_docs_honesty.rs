@@ -1733,6 +1733,7 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "scripts/train-prepare.sh",
         "scripts/axolotl-qlora-journey.sh",
         "scripts/unsloth-qlora-journey.sh",
+        "scripts/unsloth-lora-journey.sh",
         "scripts/axolotl-lora-journey.sh",
     ];
     let mut bodies = Vec::new();
@@ -2177,7 +2178,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -2541,7 +2542,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -2855,7 +2856,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3233,7 +3234,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"

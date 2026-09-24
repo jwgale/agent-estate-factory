@@ -57,7 +57,7 @@ pub use train_enrich::{
     ImportPreparedRequest, ImportTrainedRequest, PrepareEnrichRequest, PreparedEntry,
     TrainCatalogFact, TrainEnrichCard, TrainEnrichDriver, TrainEnrichProbe, TrainPrepareFact,
     AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, BINDING_PROPOSAL_SCHEMA, BINDING_STAGE_SCHEMA, LLAMAFACTORY_LORA_ID,
-    LLAMAFACTORY_QLORA_ID, MLX_LM_LORA_ID, PREPARE_SCHEMA, UNSLOTH_QLORA_ID,
+    LLAMAFACTORY_QLORA_ID, MLX_LM_LORA_ID, PREPARE_SCHEMA, UNSLOTH_LORA_ID, UNSLOTH_QLORA_ID,
 };
 
 use estate_schema::{Estate, ModelBinding, ModelClass};

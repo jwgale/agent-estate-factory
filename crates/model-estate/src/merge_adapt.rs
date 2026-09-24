@@ -38,11 +38,11 @@ use crate::gguf_convert::{
 };
 use crate::local_seat::{classify_adapter, shell_quote};
 use crate::train_enrich::{
-    is_axolotl_driver, is_llamafactory_driver, is_post_merge_print_driver, load_prepare_doc,
-    local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku,
-    EnrichJobKind, EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID, LLAMAFACTORY_QLORA_ID,
-    MLX_LM_LORA_ID, MLX_LORA_DOC, UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC,
-    UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
+    is_axolotl_driver, is_llamafactory_driver, is_post_merge_print_driver, is_unsloth_driver,
+    load_prepare_doc, local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record,
+    refuse_sacred_and_sku, EnrichJobKind, EnrichPrepareDoc, AXOLOTL_LORA_ID, AXOLOTL_QLORA_ID,
+    LLAMAFACTORY_QLORA_ID, MLX_LM_LORA_ID, MLX_LORA_DOC, UNSLOTH_GGUF_DOC, UNSLOTH_INFERENCE_DOC,
+    UNSLOTH_LORA_ID, UNSLOTH_OLLAMA_DOC, UNSLOTH_QLORA_ID, UNSLOTH_VLLM_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::io::Read;
@@ -131,7 +131,7 @@ pub fn plan_merge_adapt(prepared_dir: &Path, adapter: &Path) -> Result<MergeAdap
     refuse_sacred_and_sku("adapter", &adapter.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
-    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
+    let unsloth = is_unsloth_driver(&doc.driver);
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("merge-adapt", &doc.driver));
     }
@@ -747,7 +747,7 @@ fn plan_unsloth(
          \n\
          {reload}\n\
          \n\
-         Then call the merged_16bit line above on that model. This card does not print PeftModel.merge_and_unload. Unsloth's published 16-bit merge for this QLoRA card is save_method merged_16bit. The vLLM guide also lists save_method merged_4bit and says not to use it unless you know what the 4-bit merge is for. This print does not add merged_4bit. The GGUF page documents maximum_memory_usage on save_pretrained as a crash workaround. This print does not add that argument.\n\
+         Then call the merged_16bit line above on that model. This card does not print PeftModel.merge_and_unload. Unsloth's published 16-bit merge for {which} is save_method merged_16bit. The vLLM guide also lists save_method merged_4bit and says not to use it unless you know what the 4-bit merge is for. This print does not add merged_4bit. The GGUF page documents maximum_memory_usage on save_pretrained as a crash workaround. This print does not add that argument.\n\
          \n\
          The GGUF page's manual tab then runs llama.cpp convert_hf_to_gguf.py. The published lines are --outtype f16, bf16, and q8_0, each with --split-max-size 50G. The page's outfile names are model-F16.gguf, model-BF16.gguf, and model-Q8_0.gguf. This print uses {merged} where the page writes merged_model. It does not print the page's apt-get or cmake build. This factory does not clone llama.cpp and does not run these lines. Unsloth's page does not publish --outtype auto. The python3 line in the next card is the llama.cpp script default.\n\
          \n\
@@ -762,6 +762,11 @@ fn plan_unsloth(
          {next}\
          merge-adapt did not merge and did not write {merged}.\n\
          READY_FOR_LIVE_TEST: no.\n",
+        which = if doc.driver == UNSLOTH_LORA_ID {
+            "this LoRA card"
+        } else {
+            "this QLoRA card"
+        },
         header = header(doc, seat_tag, local_tag, &shape.dir, &merged),
         vllm = UNSLOTH_VLLM_DOC,
         gguf_doc = UNSLOTH_GGUF_DOC,
@@ -1126,7 +1131,7 @@ fn classify_unsloth_adapter(adapter: &Path) -> Result<crate::local_seat::Adapter
 /// `--weights` on the PEFT directory is not the Unsloth Ollama seat.
 pub(crate) fn refuse_unsloth_adapter_weights(dir: &Path) -> ModelError {
     ModelError::Other(format!(
-        "refuse:seat: {} is an adapter directory. On unsloth-qlora, --weights is the merged 16-bit directory (config.json and a .safetensors file whose name does not start with adapter_model) or a GGUF file. --adapter does not print an Ollama adapter Modelfile for this PEFT directory (adapter_config.json and {UNSLOTH_ADAPTER_WEIGHTS}). Unsloth documents Ollama through a GGUF. estate enrich merge-adapt prints save_pretrained_merged with save_method merged_16bit. This factory does not merge.",
+        "refuse:seat: {} is an adapter directory. On unsloth-qlora and unsloth-lora, --weights is the merged 16-bit directory (config.json and a .safetensors file whose name does not start with adapter_model) or a GGUF file. --adapter does not print an Ollama adapter Modelfile for this PEFT directory (adapter_config.json and {UNSLOTH_ADAPTER_WEIGHTS}). Unsloth documents Ollama through a GGUF. estate enrich merge-adapt prints save_pretrained_merged with save_method merged_16bit. This factory does not merge.",
         dir.display()
     ))
 }
@@ -1134,7 +1139,7 @@ pub(crate) fn refuse_unsloth_adapter_weights(dir: &Path) -> ModelError {
 /// Ollama `ADAPTER` is not the path Unsloth publishes for this PEFT directory.
 pub(crate) fn refuse_unsloth_adapter_seat() -> ModelError {
     ModelError::Other(
-        "refuse:adapter: unsloth-qlora adapters are not an Ollama adapter directory. Unsloth's vLLM guide saves the LoRA as adapter_config.json and adapter_model.safetensors (model.save_pretrained, or save_pretrained_merged with save_method \"lora\"). The saving-to-gguf page and the saving-to-ollama page seat a GGUF: model.save_pretrained_gguf, or save_pretrained_merged with save_method \"merged_16bit\" then llama.cpp convert_hf_to_gguf.py. This factory does not print an Ollama adapter Modelfile for the PEFT directory. Seat the merged directory or the GGUF with local-seat --weights. estate enrich merge-adapt prints the merged_16bit line.".into(),
+        "refuse:adapter: unsloth-qlora and unsloth-lora adapters are not an Ollama adapter directory. Unsloth's vLLM guide saves the LoRA as adapter_config.json and adapter_model.safetensors (model.save_pretrained, or save_pretrained_merged with save_method \"lora\"). The saving-to-gguf page and the saving-to-ollama page seat a GGUF: model.save_pretrained_gguf, or save_pretrained_merged with save_method \"merged_16bit\" then llama.cpp convert_hf_to_gguf.py. This factory does not print an Ollama adapter Modelfile for the PEFT directory. Seat the merged directory or the GGUF with local-seat --weights. estate enrich merge-adapt prints the merged_16bit line.".into(),
     )
 }
 

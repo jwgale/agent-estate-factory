@@ -212,11 +212,22 @@ const REGISTRY: &[RegisteredDriver] = &[
             driver_id: UNSLOTH_QLORA_ID,
             status: "optional",
             integrates: "Unsloth QLoRA docs (Nvidia-only NEXT handoff)",
-            notes: "Optional NEXT card. Nvidia-only QLoRA alternate for a faster single-GPU run. Writes UNSLOTH.md, an operator-owned handoff. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call Unsloth. After the operator-owned train, merge-adapt prints Unsloth's save_pretrained_merged merged_16bit line for a PEFT adapter directory. gguf-convert and local-seat then print the Hugging Face convert and the Ollama seat. local-seat --adapter is refuse:adapter. Not the product. LLaMA-Factory QLoRA is llamafactory-qlora. Axolotl QLoRA is axolotl-qlora.",
+            notes: "Optional NEXT card. Nvidia-only QLoRA alternate for a faster single-GPU run. Writes UNSLOTH.md, an operator-owned handoff. Does not write a script, a recipe, or dataset.jsonl. Does not shell out. Does not call Unsloth. After the operator-owned train, merge-adapt prints Unsloth's save_pretrained_merged merged_16bit line for a PEFT adapter directory. gguf-convert and local-seat then print the Hugging Face convert and the Ollama seat. local-seat --adapter is refuse:adapter. Not the product. LLaMA-Factory QLoRA is llamafactory-qlora. Axolotl QLoRA is axolotl-qlora. Non-quant Unsloth LoRA is unsloth-lora.",
             jobs: TRAIN_ONLY,
             default_job: EnrichJobKind::Train,
         },
-        build: || Box::new(UnslothQloraDriver),
+        build: || Box::new(UnslothDriver { method: UnslothMethod::Qlora }),
+    },
+    RegisteredDriver {
+        card: TrainEnrichCard {
+            driver_id: UNSLOTH_LORA_ID,
+            status: "optional",
+            integrates: "Unsloth LoRA docs (Nvidia-only NEXT handoff)",
+            notes: "Optional NEXT card. Nvidia-only non-quant LoRA twin of unsloth-qlora. Writes UNSLOTH.md, an operator-owned handoff. Does not write a script, a recipe, dataset.jsonl, or load_in_4bit. Does not shell out. Does not call Unsloth. After the operator-owned train, merge-adapt prints the same Unsloth save_pretrained_merged merged_16bit line and the documented LoRA save. gguf-convert and local-seat then print the Hugging Face convert and the Ollama seat. local-seat --adapter is refuse:adapter. Not the product. 4-bit Unsloth is unsloth-qlora. LLaMA-Factory LoRA is llamafactory-lora. Axolotl LoRA is axolotl-lora.",
+            jobs: TRAIN_ONLY,
+            default_job: EnrichJobKind::Train,
+        },
+        build: || Box::new(UnslothDriver { method: UnslothMethod::Lora }),
     },
     RegisteredDriver {
         card: TrainEnrichCard {
@@ -243,7 +254,9 @@ struct AxolotlDriver {
     method: AxolotlMethod,
 }
 
-struct UnslothQloraDriver;
+struct UnslothDriver {
+    method: UnslothMethod,
+}
 
 struct MlxLmLoraDriver;
 
@@ -261,6 +274,9 @@ pub const AXOLOTL_QLORA_ID: &str = "axolotl-qlora";
 
 /// Optional NEXT card. Unsloth already documents Nvidia QLoRA. This id writes a handoff, not a script.
 pub const UNSLOTH_QLORA_ID: &str = "unsloth-qlora";
+
+/// Optional NEXT card. Non-quant twin of `unsloth-qlora`. This id writes a handoff, not a script.
+pub const UNSLOTH_LORA_ID: &str = "unsloth-lora";
 
 /// Operator-owned pointer. Not an Unsloth config and not a training script.
 const UNSLOTH_HANDOFF: &str = "UNSLOTH.md";
@@ -455,6 +471,37 @@ pub(crate) fn is_axolotl_driver(id: &str) -> bool {
     axolotl_method(id).is_some()
 }
 
+/// Which Unsloth handoff a card writes. Selection is the driver id.
+/// Neither card writes a script.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnslothMethod {
+    /// Non-quant LoRA handoff. Does not write `load_in_4bit`.
+    Lora,
+    /// 4-bit QLoRA handoff.
+    Qlora,
+}
+
+impl UnslothMethod {
+    fn driver_id(self) -> &'static str {
+        match self {
+            Self::Lora => UNSLOTH_LORA_ID,
+            Self::Qlora => UNSLOTH_QLORA_ID,
+        }
+    }
+}
+
+fn unsloth_method(driver_id: &str) -> Option<UnslothMethod> {
+    match driver_id {
+        UNSLOTH_LORA_ID => Some(UnslothMethod::Lora),
+        UNSLOTH_QLORA_ID => Some(UnslothMethod::Qlora),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_unsloth_driver(id: &str) -> bool {
+    unsloth_method(id).is_some()
+}
+
 /// Print-only Hugging Face merge ladder for `merge-adapt`, `gguf-convert`,
 /// and `local-seat`. LLaMA-Factory merges with `llamafactory-cli export`.
 /// Axolotl merges with `axolotl merge-lora` into `output_dir/merged`.
@@ -463,12 +510,12 @@ pub(crate) fn is_axolotl_driver(id: &str) -> bool {
 /// `mlx-lm-lora` prints `mlx_lm.fuse` on its own path and does not use
 /// `convert_hf_to_gguf.py`.
 pub(crate) fn is_post_merge_print_driver(id: &str) -> bool {
-    is_llamafactory_driver(id) || is_axolotl_driver(id) || id == UNSLOTH_QLORA_ID
+    is_llamafactory_driver(id) || is_axolotl_driver(id) || is_unsloth_driver(id)
 }
 
 pub(crate) fn refuse_post_merge_driver(command: &str, found: &str) -> ModelError {
     ModelError::Other(format!(
-        "refuse:driver: {command} reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora prepare, found '{found}'"
+        "refuse:driver: {command} reads a llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, or unsloth-lora prepare, found '{found}'"
     ))
 }
 
@@ -486,6 +533,7 @@ const IMPORT_TRAINED_DRIVERS: &[&str] = &[
     AXOLOTL_LORA_ID,
     AXOLOTL_QLORA_ID,
     UNSLOTH_QLORA_ID,
+    UNSLOTH_LORA_ID,
     MLX_LM_LORA_ID,
 ];
 
@@ -504,7 +552,7 @@ fn is_train_recipe_driver(id: &str) -> bool {
 
 /// Recipe cards and the optional handoffs record a train base beside the seat tag.
 fn records_train_base(id: &str) -> bool {
-    is_train_recipe_driver(id) || id == UNSLOTH_QLORA_ID || id == MLX_LM_LORA_ID
+    is_train_recipe_driver(id) || is_unsloth_driver(id) || id == MLX_LM_LORA_ID
 }
 
 /// Smoke-scale cutoff. `--official-scale` writes 2048.
@@ -679,9 +727,9 @@ impl TrainEnrichDriver for AxolotlDriver {
     }
 }
 
-impl TrainEnrichDriver for UnslothQloraDriver {
+impl TrainEnrichDriver for UnslothDriver {
     fn id(&self) -> &'static str {
-        UNSLOTH_QLORA_ID
+        self.method.driver_id()
     }
 
     fn status(&self) -> &'static str {
@@ -689,16 +737,17 @@ impl TrainEnrichDriver for UnslothQloraDriver {
     }
 
     fn prepare(&self, job: &EnrichJob) -> Result<DriverPrepare, ModelError> {
+        let driver_id = self.method.driver_id();
         if job.kind != EnrichJobKind::Train {
             return Err(ModelError::Other(format!(
-                "refuse:job: {UNSLOTH_QLORA_ID} prepares train; got {}",
+                "refuse:job: {driver_id} prepares train; got {}",
                 job.kind.as_str()
             )));
         }
         let train_owned = require_train_base(job)?;
         let train_base = train_owned.as_str();
-        let handoff = unsloth_handoff_md(job, train_base);
-        let steps = unsloth_prepare_steps(job, train_base);
+        let handoff = unsloth_handoff_md(self.method, job, train_base);
+        let steps = unsloth_prepare_steps(self.method, job, train_base);
         Ok(DriverPrepare {
             files: vec![(UNSLOTH_HANDOFF.into(), handoff)],
             steps,
@@ -1167,7 +1216,7 @@ fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelE
         if let Some((_, body)) = files.iter_mut().find(|(name, _)| name == "PREPARE.md") {
             body.push_str(&note);
         }
-    } else if driver.id() == UNSLOTH_QLORA_ID {
+    } else if is_unsloth_driver(driver.id()) {
         let note = crate::merge_adapt::unsloth_post_train_ladder(
             &job.out_dir,
             &job.base_model,
@@ -1809,12 +1858,12 @@ fn next_markdown(
             ),
             "The first command points --adapter at the output_dir in axolotl.yml. The second points --adapter at output_dir/merged, the Hugging Face directory Axolotl writes. The third points --adapter at a .gguf file. Axolotl does not write GGUF. merge-adapt prints the axolotl merge-lora line. gguf-convert prints the llama.cpp line for the merged directory. local-seat prints the ollama create line. For a GGUF it also prints llama-cli -m and llama-server -m. After that GGUF local-seat print, run the printed ollama create line yourself. The same step stands when you already ran ollama create outside this factory. This factory did not run ollama create. The standing next step records that GGUF. trained_shape is gguf. The proposal stays auto_apply=false. import-trained records trained_shape and trained_paths. It does not apply the estate and it does not promote.".to_string(),
         )
-    } else if driver_id == UNSLOTH_QLORA_ID {
+    } else if let Some(method) = unsloth_method(driver_id) {
         let train_base = job.train_base_model.as_deref().unwrap_or("");
         let handoff = out_dir.join(UNSLOTH_HANDOFF);
         (
             format!(
-                "Unsloth QLoRA is an optional Nvidia-only alternate for a faster single-GPU run. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat.\n\
+                "{lead}\n\
                  \n\
                  This factory does not call Unsloth, does not shell out, does not install Unsloth, does not download weights, and does not write an executable Unsloth script.\n\
                  \n\
@@ -1834,17 +1883,19 @@ fn next_markdown(
                  \n\
                  {flags}\n\
                  \n\
-                 llamafactory-qlora writes the LLaMA-Factory QLoRA recipe. axolotl-qlora writes the Axolotl 4-bit YAML. This card does not call either trainer.\n\
+                 {siblings}\n\
                  \n\
-                 After you train with Unsloth outside this factory, the section below names the print ladder. merge-adapt prints the documented save_pretrained_merged line (save_method merged_16bit) when the adapter directory holds adapter_config.json and adapter_model.safetensors. gguf-convert and local-seat then print the convert and the seat for that merged Hugging Face directory. A GGUF file seats with local-seat --weights. local-seat --adapter is refuse:adapter. This factory does not choose ranks, does not call Unsloth, and does not write GGUF.\n\
+                 After you train with Unsloth outside this factory, the section below names the print ladder. merge-adapt prints the documented save_pretrained_merged line (save_method merged_16bit) when the adapter directory holds adapter_config.json and adapter_model.safetensors. The same print includes the vLLM-guide LoRA save (save_method lora). gguf-convert and local-seat then print the convert and the seat for that merged Hugging Face directory. A GGUF file seats with local-seat --weights. local-seat --adapter is refuse:adapter. This factory does not choose ranks, does not call Unsloth, and does not write GGUF.\n\
                  \n\
                  READY_FOR_LIVE_TEST: no\n",
+                lead = unsloth_next_lead(method),
+                siblings = unsloth_sibling_note(method),
                 handoff = handoff.display(),
                 install_line = UNSLOTH_README_INSTALL,
                 install_doc = UNSLOTH_INSTALL_DOC,
                 guide = UNSLOTH_GUIDE_DOC,
                 repo = UNSLOTH_REPO,
-                host = unsloth_host_note(&job.host_class_affinity),
+                host = unsloth_host_note(method, &job.host_class_affinity),
                 seat = job.base_model,
                 train = train_base,
                 flags = unsloth_flag_note(job),
@@ -2013,8 +2064,34 @@ fn axolotl_host_note(driver_id: &str, affinity: &str) -> String {
     cuda_train_host_note(driver_id, affinity, "axolotl train")
 }
 
-fn unsloth_host_note(affinity: &str) -> String {
-    cuda_train_host_note(UNSLOTH_QLORA_ID, affinity, "the Unsloth QLoRA guide")
+fn unsloth_host_note(method: UnslothMethod, affinity: &str) -> String {
+    let guide = match method {
+        UnslothMethod::Qlora => "the Unsloth QLoRA guide",
+        UnslothMethod::Lora => "the Unsloth fine-tuning guide",
+    };
+    cuda_train_host_note(method.driver_id(), affinity, guide)
+}
+
+fn unsloth_next_lead(method: UnslothMethod) -> &'static str {
+    match method {
+        UnslothMethod::Qlora => {
+            "Unsloth QLoRA is an optional Nvidia-only alternate for a faster single-GPU run. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat."
+        }
+        UnslothMethod::Lora => {
+            "Unsloth LoRA is an optional Nvidia-only non-quant twin of unsloth-qlora. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. This card does not write load_in_4bit."
+        }
+    }
+}
+
+fn unsloth_sibling_note(method: UnslothMethod) -> &'static str {
+    match method {
+        UnslothMethod::Qlora => {
+            "llamafactory-qlora writes the LLaMA-Factory QLoRA recipe. axolotl-qlora writes the Axolotl 4-bit YAML. unsloth-lora is the non-quant Unsloth handoff. This card does not call either trainer and does not write a script."
+        }
+        UnslothMethod::Lora => {
+            "llamafactory-lora writes the LLaMA-Factory LoRA recipe. axolotl-lora writes the Axolotl bf16 YAML. unsloth-qlora is the 4-bit Unsloth handoff. This card does not call those trainers and does not write load_in_4bit."
+        }
+    }
 }
 
 fn refuse_mlx_host(affinity: &str) -> Result<(), ModelError> {
@@ -2022,7 +2099,7 @@ fn refuse_mlx_host(affinity: &str) -> Result<(), ModelError> {
         return Ok(());
     }
     Err(ModelError::Other(format!(
-        "refuse:host: {MLX_LM_LORA_ID} prepares on apple-silicon. host_class_affinity is '{affinity}'. This card does not write a handoff for that host. Set host_class_affinity to apple-silicon, or prepare llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, or unsloth-qlora. This factory does not call mlx-lm."
+        "refuse:host: {MLX_LM_LORA_ID} prepares on apple-silicon. host_class_affinity is '{affinity}'. This card does not write a handoff for that host. Set host_class_affinity to apple-silicon, or prepare llamafactory-lora, llamafactory-qlora, axolotl-lora, axolotl-qlora, unsloth-qlora, or unsloth-lora. This factory does not call mlx-lm."
     )))
 }
 
@@ -2057,9 +2134,24 @@ fn unsloth_flag_note(job: &EnrichJob) -> String {
     lines.join("\n\n")
 }
 
-fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
+fn unsloth_card_blurb(method: UnslothMethod) -> &'static str {
+    match method {
+        UnslothMethod::Qlora => {
+            "This card is the optional Nvidia-only QLoRA alternate for a faster single-GPU run. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. This factory does not write an MLX trainer. The non-quant twin is unsloth-lora. This card does not write that handoff."
+        }
+        UnslothMethod::Lora => {
+            "This card is the optional Nvidia-only non-quant LoRA twin of unsloth-qlora. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. This factory does not write an MLX trainer. It does not write load_in_4bit, a 4-bit recipe, or a training script. The 4-bit handoff stays on unsloth-qlora. Follow Unsloth's fine-tuning guide for the 16-bit path. This factory does not fill load_in_4bit."
+        }
+    }
+}
+
+fn unsloth_handoff_md(method: UnslothMethod, job: &EnrichJob, train_base: &str) -> String {
+    let title = match method {
+        UnslothMethod::Qlora => "Unsloth QLoRA handoff (operator-owned)",
+        UnslothMethod::Lora => "Unsloth LoRA handoff (operator-owned)",
+    };
     format!(
-        "# Unsloth QLoRA handoff (operator-owned)\n\
+        "# {title}\n\
          \n\
          This file is not an Unsloth config, not a YAML recipe, and not a training script.\n\
          Cell One does not call Unsloth, does not shell out, does not install Unsloth, and does not download weights or datasets.\n\
@@ -2074,7 +2166,7 @@ fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
          \n\
          Seat tag is the Ollama id for Modelfile FROM. Train base is the Hugging Face repo id or local directory of HF weights you pass to Unsloth. This factory does not map the seat tag onto a Hub repo.\n\
          \n\
-         This card is the optional Nvidia-only QLoRA alternate for a faster single-GPU run. It is not the product. Portable local runtimes stay swappable. Ollama stays the seat. This factory does not write an MLX trainer.\n\
+         {card}\n\
          \n\
          Follow Unsloth's public pages. This factory does not choose ranks, sequence length, or save knobs.\n\
          The Unsloth README publishes this Linux install line: `{install_line}`.\n\
@@ -2101,9 +2193,11 @@ fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
          {flags}\n\
          \n\
          READY_FOR_LIVE_TEST: no\n",
-        driver = UNSLOTH_QLORA_ID,
+        title = title,
+        driver = method.driver_id(),
         train = yaml_quote(train_base),
         seat = yaml_quote(&job.base_model),
+        card = unsloth_card_blurb(method),
         install_line = UNSLOTH_README_INSTALL,
         install_doc = UNSLOTH_INSTALL_DOC,
         guide = UNSLOTH_GUIDE_DOC,
@@ -2115,7 +2209,7 @@ fn unsloth_handoff_md(job: &EnrichJob, train_base: &str) -> String {
     )
 }
 
-fn unsloth_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
+fn unsloth_prepare_steps(method: UnslothMethod, job: &EnrichJob, train_base: &str) -> String {
     format!(
         "This step wrote {handoff}. That file is an operator-owned handoff. It is not an Unsloth config and not a training script. This step did not call Unsloth, did not shell out, did not train, did not download weights, and did not rewrite the estate.\n\
          \n\
@@ -2125,17 +2219,20 @@ fn unsloth_prepare_steps(job: &EnrichJob, train_base: &str) -> String {
          \n\
          Train base is {train}. The handoff records that value. A train base is a Hugging Face repo id (namespace/name) or a local directory of HF weights. This factory did not download weights and does not map the seat tag onto a Hub repo.\n\
          \n\
+         {card}\n\
+         \n\
          {flags}\n\
          \n\
          Install and the fine-tuning guide are linked from NEXT.md. The Unsloth README publishes `{install_line}`. This factory does not run that install.\n\
          \n\
-         After you train outside this factory, merge-adapt prints Unsloth's documented merged_16bit save for the adapter directory. gguf-convert and local-seat print the next lines for that merged directory. This factory does not choose the save format and does not run those lines.\n\
+         After you train outside this factory, merge-adapt prints Unsloth's documented merged_16bit save for the adapter directory, and the documented LoRA save (save_method lora). gguf-convert and local-seat print the next lines for that merged directory. This factory does not choose the save format and does not run those lines.\n\
          \n\
          READY_FOR_LIVE_TEST: no\n",
         handoff = UNSLOTH_HANDOFF,
-        host = unsloth_host_note(&job.host_class_affinity),
+        host = unsloth_host_note(method, &job.host_class_affinity),
         seat = job.base_model,
         train = train_base,
+        card = unsloth_card_blurb(method),
         flags = unsloth_flag_note(job),
         install_line = UNSLOTH_README_INSTALL,
     )
@@ -3667,7 +3764,7 @@ pub(crate) fn refuse_recipe_train_record(
         ]
     } else if is_axolotl_driver(&doc.driver) {
         &[("axolotl.yml", "base_model")]
-    } else if doc.driver == UNSLOTH_QLORA_ID {
+    } else if is_unsloth_driver(&doc.driver) {
         &[(UNSLOTH_HANDOFF, "train_base_model")]
     } else if doc.driver == MLX_LM_LORA_ID {
         &[(MLX_HANDOFF, "train_base_model")]
@@ -7546,6 +7643,7 @@ mod tests {
         assert!(ids.contains(&AXOLOTL_LORA_ID));
         assert!(ids.contains(&AXOLOTL_QLORA_ID));
         assert!(ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(ids.contains(&UNSLOTH_LORA_ID));
         assert!(ids.contains(&MLX_LM_LORA_ID));
         let factory = train_enrich_card(LLAMAFACTORY_QLORA_ID).unwrap();
         assert_eq!(factory.default_job, EnrichJobKind::Train);
@@ -7567,6 +7665,12 @@ mod tests {
         assert!(unsloth.jobs.contains(&EnrichJobKind::Train));
         assert!(!unsloth.jobs.contains(&EnrichJobKind::Enrich));
         assert!(!is_train_recipe_driver(UNSLOTH_QLORA_ID));
+        let unsloth_lora = train_enrich_card(UNSLOTH_LORA_ID).unwrap();
+        assert_eq!(unsloth_lora.status, "optional");
+        assert_eq!(unsloth_lora.default_job, EnrichJobKind::Train);
+        assert!(!is_train_recipe_driver(UNSLOTH_LORA_ID));
+        assert!(is_unsloth_driver(UNSLOTH_LORA_ID));
+        assert!(is_unsloth_driver(UNSLOTH_QLORA_ID));
         let mlx = train_enrich_card(MLX_LM_LORA_ID).unwrap();
         assert_eq!(mlx.status, "optional");
         assert_eq!(mlx.default_job, EnrichJobKind::Train);
@@ -7579,6 +7683,7 @@ mod tests {
         assert!(!enrich_ids.contains(&AXOLOTL_LORA_ID));
         assert!(!enrich_ids.contains(&AXOLOTL_QLORA_ID));
         assert!(!enrich_ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(!enrich_ids.contains(&UNSLOTH_LORA_ID));
         assert!(!enrich_ids.contains(&MLX_LM_LORA_ID));
         assert_eq!(enrich_ids.len(), 2);
         let train_ids = train_enrich_drivers_for_job("train").unwrap();
@@ -7587,16 +7692,19 @@ mod tests {
         assert!(train_ids.contains(&AXOLOTL_LORA_ID));
         assert!(train_ids.contains(&AXOLOTL_QLORA_ID));
         assert!(train_ids.contains(&UNSLOTH_QLORA_ID));
+        assert!(train_ids.contains(&UNSLOTH_LORA_ID));
         assert!(train_ids.contains(&MLX_LM_LORA_ID));
-        assert_eq!(train_ids.len(), 8);
+        assert_eq!(train_ids.len(), 9);
         for host in ["any", "consumer-nvidia", "rented-nvidia"] {
             let filtered = train_enrich_drivers_for_prepare("train", host).unwrap();
             assert!(!filtered.contains(&MLX_LM_LORA_ID), "{host}");
-            assert_eq!(filtered.len(), 7, "{host}");
+            assert!(filtered.contains(&UNSLOTH_LORA_ID), "{host}");
+            assert_eq!(filtered.len(), 8, "{host}");
         }
         let apple_ids = train_enrich_drivers_for_prepare("train", "apple-silicon").unwrap();
         assert!(apple_ids.contains(&MLX_LM_LORA_ID));
-        assert_eq!(apple_ids.len(), 8);
+        assert!(apple_ids.contains(&UNSLOTH_LORA_ID));
+        assert_eq!(apple_ids.len(), 9);
         for card in train_enrich_catalog() {
             let driver = resolve_train_enrich_driver(card.driver_id).unwrap();
             assert_eq!(driver.id(), card.driver_id);
@@ -7615,6 +7723,7 @@ mod tests {
         assert!(rendered.contains(LLAMAFACTORY_QLORA_ID), "{rendered}");
         assert!(rendered.contains(LLAMAFACTORY_LORA_ID), "{rendered}");
         assert!(rendered.contains(UNSLOTH_QLORA_ID), "{rendered}");
+        assert!(rendered.contains(UNSLOTH_LORA_ID), "{rendered}");
         assert!(rendered.contains(MLX_LM_LORA_ID), "{rendered}");
         assert!(rendered.contains("status=optional"), "{rendered}");
         assert!(rendered.contains("Nvidia-only"), "{rendered}");
@@ -7894,6 +8003,73 @@ mod tests {
             recorded.contains("\"estate_rewritten\": false"),
             "{recorded}"
         );
+    }
+
+    #[test]
+    fn unsloth_lora_writes_a_handoff_and_refuses_scale_and_dataset() {
+        let root = tmp("unsloth-lora");
+        let pack = fixture_pack();
+        let seated = seated_estate("llama3");
+        let blocked = root.join("seat-only");
+        let err = run(UNSLOTH_LORA_ID, &pack, &seated, &blocked, "train", "jason").unwrap_err();
+        assert!(err.to_string().contains("refuse:train-base"), "{err}");
+        assert!(!blocked.exists());
+
+        let estate = with_train_base(seated, "Qwen/Qwen2.5-0.5B-Instruct");
+        let official = root.join("official");
+        let err = prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: UNSLOTH_LORA_ID,
+            job: "train",
+            out_dir: &official,
+            max_steps: None,
+            official_scale: true,
+            from_feed: false,
+            state_dir: Path::new(".cell"),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:official-scale"), "{err}");
+        assert!(!official.exists());
+
+        let feed_out = root.join("feed");
+        let err = run_feed(UNSLOTH_LORA_ID, &pack, &estate, &feed_out, &root, true).unwrap_err();
+        assert!(err.to_string().contains("refuse:dataset"), "{err}");
+        assert!(!feed_out.exists());
+
+        let out = root.join("handoff");
+        let doc = run(UNSLOTH_LORA_ID, &pack, &estate, &out, "train", "jason").unwrap();
+        assert_eq!(doc.driver, UNSLOTH_LORA_ID);
+        assert_eq!(doc.seat_tag.as_deref(), Some("llama3"));
+        assert_eq!(
+            doc.train_base_model.as_deref(),
+            Some("Qwen/Qwen2.5-0.5B-Instruct")
+        );
+        assert!(doc.dataset_mode.is_none());
+        assert!(!doc.promoted && !doc.auto_apply && !doc.estate_rewritten);
+        assert!(!out.join("dataset.jsonl").exists());
+        assert!(!out.join("train_unsloth.py").exists());
+        assert!(!out.join("recipe.yaml").exists());
+        let handoff = std::fs::read_to_string(out.join("UNSLOTH.md")).unwrap();
+        assert!(handoff.contains("# Unsloth LoRA handoff"), "{handoff}");
+        assert!(handoff.contains("driver: unsloth-lora"), "{handoff}");
+        assert!(handoff.contains("status: optional"), "{handoff}");
+        assert!(handoff.contains("does not write load_in_4bit"), "{handoff}");
+        assert!(handoff.contains("unsloth-qlora"), "{handoff}");
+        assert!(
+            handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
+            "{handoff}"
+        );
+        assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+        assert!(handoff.contains("READY_FOR_LIVE_TEST: no"), "{handoff}");
+        assert!(!handoff.contains("# Unsloth QLoRA handoff"), "{handoff}");
+        let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+        assert!(next.contains("non-quant twin"), "{next}");
+        assert!(next.contains("merged_16bit"), "{next}");
+        assert!(next.contains("save_method lora"), "{next}");
+        assert!(next.contains("refuse:adapter"), "{next}");
+        assert!(!next.contains("train_unsloth.py"), "{next}");
     }
 
     #[test]
@@ -8292,7 +8468,7 @@ mod tests {
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
-        assert_eq!(all_docs.len(), 8);
+        assert_eq!(all_docs.len(), 9);
         assert!(root.join("all-mlx-lm-lora").join("MLX.md").is_file());
         assert!(!root.join("all-mlx-lm-lora").join("dataset.jsonl").exists());
         let all_recipe =
@@ -18675,7 +18851,7 @@ mod tests {
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
-        assert_eq!(all_docs.len(), 7);
+        assert_eq!(all_docs.len(), 8);
         let all_unsloth =
             std::fs::read_to_string(root.join("all-unsloth-qlora").join("UNSLOTH.md")).unwrap();
         assert!(
@@ -19055,7 +19231,7 @@ mod tests {
             })
             .collect();
         let all_docs = prepare_enrich_set(&all_reqs).unwrap();
-        assert_eq!(all_docs.len(), 7);
+        assert_eq!(all_docs.len(), 8);
         assert!(root.join("all-unsloth-qlora").join("UNSLOTH.md").is_file());
         assert!(!root
             .join("all-unsloth-qlora")
