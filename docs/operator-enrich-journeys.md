@@ -24,6 +24,8 @@ Print path once a merged export and a GGUF exist (Target C seat ladder): the sam
 
 Axolotl QLoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on `axolotl-qlora`. Section 11. Opt-in check: `make axolotl-qlora-journey`. It checks `axolotl.yml` (`adapter: qlora`, `load_in_4bit: true`, `sequence_len` 4096, `lora_r` 32, train base in `base_model`) and prints the merge, convert, seat, and import lines against fixture stubs. It does not run Axolotl. `make uniqueness-axolotl` runs the prepare-assert phase, then the seat-print phase. Print-only. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
 
+Unsloth QLoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on the optional NEXT card `unsloth-qlora`. Section 12. Opt-in check: `make unsloth-qlora-journey`. It checks `UNSLOTH.md` (seat tag and train base) and prints `save_pretrained_merged` (`merged_16bit`), the convert, the seat, and the import against fixture stubs. It does not call Unsloth. `make uniqueness-unsloth` runs the prepare-assert phase, then the seat-print phase. Print-only. Status stays `optional`. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions. Opt-in prepare walk: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the matrix knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row.
 
 ## What stays fixed
@@ -657,3 +659,48 @@ make uniqueness-axolotl
 ```
 
 That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make qlora-journey`, `make seat-journey`, or `make train-next`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
+
+## 12. Unsloth QLoRA — optional NEXT print journey
+
+This is the print-only check for the optional Nvidia-only QLoRA handoff. The card writes `UNSLOTH.md`. It does not write a script, a recipe, or `dataset.jsonl`. It does not call Unsloth, does not merge, does not run `convert_hf_to_gguf.py`, does not run `ollama create`, and does not promote. Status stays `optional`.
+
+The prepare uses the overnight pack `examples/fixtures/specialist-overnight.pack.json` on a throwaway copy of `examples/estate.yaml`. The seat tag is `llama3`. The train base is `Qwen/Qwen2.5-0.5B-Instruct`. `UNSLOTH.md` records both. `prepare.json` keeps them split. `examples/estate.yaml` stays hash-locked.
+
+A seat tag with no train base is `refuse:train-base` and writes nothing. Before the stubs exist, `merge-adapt` on a missing adapter directory is `refuse:adapter`. An adapter directory that holds `adapter_config.json` and no `adapter_model.safetensors` is `refuse:adapter`. `adapters.safetensors` is the same refuse. `gguf-convert` on a missing `merged` directory is `refuse:seat`. `local-seat` on a missing `merged.gguf` is `refuse:seat`. Those refuses write no merged directory and no GGUF.
+
+After the adapter stub exists (`adapter_config.json` plus `adapter_model.safetensors`), `local-seat --adapter` stays `refuse:adapter`. Passing that directory to `--weights` is `refuse:seat`. `merge-adapt` then prints `model.save_pretrained_merged` with `save_method` `merged_16bit`. The directory argument is `merged` beside the prepare. The script writes a Qwen-shaped directory there. `config.json` sets `model_type` to `qwen2` and `architectures` to `Qwen2ForCausalLM`. `tokenizer_config.json` sets `extra_special_tokens` to a JSON list. `vocab.json` and `merges.txt` are absent. `gguf-convert` returns `refuse:tokenizer` and does not print `python3 convert_hf_to_gguf.py`. The script then replaces that fixture with `config.json` `{}` plus `model.safetensors`. That safetensors name does not start with `adapter_model`. A merged directory or a GGUF passed as `--adapter` stays `refuse:adapter`.
+
+The good stubs under the prepared directory are:
+
+| Stub | What the printer needs |
+| --- | --- |
+| `adapter/adapter_config.json` and `adapter/adapter_model.safetensors` | `merge-adapt` on `unsloth-qlora` reads both. The operator chooses this directory. This journey uses `adapter` beside the prepare. |
+| `merged/config.json` and `merged/model.safetensors` | A merged Hugging Face directory is `config.json` plus a `.safetensors` file whose name does not start with `adapter_model`. `gguf-convert` prints for that directory. |
+| `merged.gguf` | The first four bytes are `GGUF`. `local-seat` refuses a file that does not start with that magic. `import-trained` records the file. |
+
+`merged.gguf` stays beside `merged/`. A `.gguf` inside the merged directory makes that directory match two shapes.
+
+The printed lines for the overnight pack (`cell-enrich-overnight-traces`) are:
+
+```bash
+model.save_pretrained_merged("<prepared>/merged", tokenizer, save_method = "merged_16bit")
+python3 convert_hf_to_gguf.py <prepared>/merged --outfile <prepared>/merged.gguf --outtype auto
+ollama create cell-enrich-overnight-traces -f <prepared>/Modelfile
+estate enrich import-trained --estate <your-estate.yaml> --prepared <prepared> --tag cell-enrich-overnight-traces --adapter <prepared>/merged.gguf
+```
+
+`gguf-convert` also prints the three manual lines from the saving-to-gguf page (`f16`, `bf16`, `q8_0`). Unsloth's page does not publish `--outtype auto`. `local-seat` is print-only. It prints the Modelfile and does not write `<prepared>/Modelfile`. Write that file from the printed contents before `ollama create`. The report says this factory did not run `ollama create`. The proposal stays `auto_apply=false`. `import-trained` records `trained_shape` `gguf`. It does not apply the estate.
+
+The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` and `CELL_TRAIN_LIVE=1` do not start a convert or an `ollama create`. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make unsloth-qlora-journey
+```
+
+That opt-in script runs the prepare asserts and the seat prints in one process. `UNSLOTH_QLORA_PHASE=prepare` stops after the handoff check and the missing-path and wrong-shape refuses. `UNSLOTH_QLORA_PHASE=seat` prints the fixture ladder.
+
+```bash
+make uniqueness-unsloth
+```
+
+That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make qlora-journey`, `make seat-journey`, `make train-next`, or `make axolotl-qlora-journey`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.

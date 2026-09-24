@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -281,6 +281,22 @@ axolotl-qlora-journey:
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 uniqueness-axolotl:
 	bash scripts/uniqueness-axolotl.sh
+
+# Opt-in print-only Unsloth QLoRA journey. Prepares the optional NEXT card
+# unsloth-qlora (UNSLOTH.md handoff), then prints merge, convert, seat, and
+# import against fixture stubs. Does not call Unsloth, convert, ollama, or promote.
+# UNSLOTH_QLORA_PHASE=prepare stops after the handoff asserts and the missing-path
+# and wrong-shape refuses. UNSLOTH_QLORA_PHASE=seat prints the fixture ladder.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+unsloth-qlora-journey:
+	bash scripts/unsloth-qlora-journey.sh
+
+# Opt-in print-only chain: prepare-assert, then seat-print, of unsloth-qlora-journey.
+# Does not run qlora-journey, seat-journey, train-next, or axolotl-qlora-journey.
+# Does not train, merge, convert, seat, or promote.
+# Local only. Do not add to smoke, gate-90, or GitHub Actions.
+uniqueness-unsloth:
+	bash scripts/uniqueness-unsloth.sh
 
 backup:
 	cargo run -q -p estate-control -- backup --estate $(ESTATE) --state-dir $(STATE) --plans-dir plans --out backups

@@ -106,6 +106,8 @@ LoRA walk:  make lora-journey
 Seat walk:  make seat-journey
 Axolotl:    make axolotl-qlora-journey
 Ax chain:   make uniqueness-axolotl
+Unsloth:    make unsloth-qlora-journey
+Us chain:   make uniqueness-unsloth
 Train next: make train-next
 Full print: make uniqueness-full
 LoRA train: make train-next-lora
@@ -399,6 +401,8 @@ READY_FOR_LIVE_TEST stays no.
   make seat-journey
   make axolotl-qlora-journey
   make uniqueness-axolotl
+  make unsloth-qlora-journey
+  make uniqueness-unsloth
   make uniqueness-ladder
   make uniqueness-full
   make train-next-lora
@@ -1161,6 +1165,32 @@ not promote. make uniqueness-axolotl runs the prepare-assert phase, then
 the seat-print phase. Both stay print-only. Not in make smoke, make gate-90,
 or Actions. READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 11).
+
+Unsloth QLoRA journey
+---------------------
+Print-only optional NEXT path for unsloth-qlora. Status stays optional.
+make unsloth-qlora-journey prepares that card on a throwaway copy of
+examples/estate.yaml. Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.
+The card writes UNSLOTH.md, PREPARE.md, NEXT.md, and prepare.json.
+It does not write a script, a recipe, or dataset.jsonl.
+A seat tag with no train base is refuse:train-base.
+A missing adapter, or an adapter directory without adapter_model.safetensors,
+is refuse:adapter. A merged directory or a GGUF passed as --adapter is
+refuse:adapter. local-seat --adapter on this card is refuse:adapter.
+A missing merged directory or GGUF is refuse:seat.
+Before the good merged stub, a Qwen-shaped merged directory beside the
+prepare is refuse:tokenizer. The adapter stub is adapter_config.json plus
+adapter_model.safetensors. The good merged stub is config.json {} plus
+model.safetensors. The GGUF stub starts with GGUF magic.
+The script prints save_pretrained_merged with save_method merged_16bit,
+then gguf-convert (including the three manual outtypes), local-seat, and
+import-trained. import-trained records trained_shape gguf. The proposal
+stays auto_apply=false. It prints SKIP live train, SKIP live convert, and
+SKIP live seat. It does not call Unsloth, does not convert, does not run
+ollama, and does not promote. make uniqueness-unsloth runs the
+prepare-assert phase, then the seat-print phase. Both stay print-only.
+Not in make smoke, make gate-90, or Actions. READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 12).
 
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.

@@ -1669,6 +1669,7 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "scripts/lf-beachhead-prepare.sh",
         "scripts/train-prepare.sh",
         "scripts/axolotl-qlora-journey.sh",
+        "scripts/unsloth-qlora-journey.sh",
     ];
     let mut bodies = Vec::new();
     for rel in rels {
@@ -1772,6 +1773,7 @@ fn journey_scripts_resolve_local_estate_before_cargo() {
         "scripts/uniqueness-ladder.sh",
         "scripts/uniqueness-full-lora.sh",
         "scripts/uniqueness-axolotl.sh",
+        "scripts/uniqueness-unsloth.sh",
     ] {
         let script = std::fs::read_to_string(root.join(rel)).unwrap();
         assert!(
@@ -2110,7 +2112,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl QLoRA uniqueness and seat journey");
+    assert_eq!(head, " print-only Unsloth QLoRA uniqueness and seat journey");
     let slice = changelog
         .split("## This slice — name dereference when restoring tokenizer files")
         .nth(1)
@@ -2465,7 +2467,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl QLoRA uniqueness and seat journey");
+    assert_eq!(head, " print-only Unsloth QLoRA uniqueness and seat journey");
     let on_disk_slice = changelog
         .split("## This slice — on-disk Modelfile is not a rewrite")
         .nth(1)
@@ -2770,7 +2772,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl QLoRA uniqueness and seat journey");
+    assert_eq!(head, " print-only Unsloth QLoRA uniqueness and seat journey");
     let slice = changelog
         .split("## This slice — Target C live uniqueness prove on a 5090-class host")
         .nth(1)
@@ -3139,7 +3141,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl QLoRA uniqueness and seat journey");
+    assert_eq!(head, " print-only Unsloth QLoRA uniqueness and seat journey");
     let standing = changelog
         .split("## This slice — Standing next (estate) after import-trained")
         .nth(1)
