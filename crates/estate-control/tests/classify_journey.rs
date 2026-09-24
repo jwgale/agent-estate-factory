@@ -31,6 +31,24 @@ fn fake_tools(dir: &std::path::Path) {
     write_exe(dir, "nvidia-smi", "#!/bin/sh\nexit 0\n");
     write_exe(
         dir,
+        "huggingface-cli",
+        r#"#!/bin/sh
+set -e
+printf '%s\n' "$*" >> "${JOURNEY_TOOL_LOG:?}"
+local_dir=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "--local-dir" ]; then
+    local_dir=$arg
+  fi
+  prev=$arg
+done
+mkdir -p "$local_dir"
+printf '%s\n' '{}' > "$local_dir/config.json"
+"#,
+    );
+    write_exe(
+        dir,
         "llamafactory-cli",
         r#"#!/bin/sh
 set -e
@@ -41,12 +59,15 @@ if [ "$mode" = "train" ]; then
   out=$(awk -F': ' '/^output_dir:/ {print $2; exit}' "$yaml" | tr -d '"')
   mkdir -p "$out"
   printf '%s\n' '{}' > "$out/adapter_config.json"
+  printf 'w\n' > "$out/adapter_model.safetensors"
   exit 0
 fi
 if [ "$mode" = "export" ]; then
   out=$(awk -F': ' '/^export_dir:/ {print $2; exit}' "$yaml" | tr -d '"')
   mkdir -p "$out"
   printf '%s\n' '{}' > "$out/config.json"
+  printf '%s\n' '{}' > "$out/tokenizer.json"
+  printf 'w\n' > "$out/model.safetensors"
   exit 0
 fi
 echo "unexpected $mode" >&2
@@ -94,8 +115,8 @@ if outfile is None:
     sys.stderr.write("missing --outfile\n")
     sys.exit(1)
 os.makedirs(os.path.dirname(outfile) or ".", exist_ok=True)
-with open(outfile, "w", encoding="utf-8") as fh:
-    fh.write("f16-gguf\n")
+with open(outfile, "wb") as fh:
+    fh.write(b"GGUF\n")
 "#,
     )
     .unwrap();
@@ -106,7 +127,7 @@ with open(outfile, "w", encoding="utf-8") as fh:
 set -e
 printf '%s\n' "$0 $*" >> "${JOURNEY_TOOL_LOG:?}"
 mkdir -p "$(dirname "$2")"
-printf 'quant %s\n' "$3" > "$2"
+printf 'GGUF quant %s\n' "$3" > "$2"
 "#,
     );
 }
@@ -151,6 +172,7 @@ fn journey_print_lists_steps_without_tools() {
     assert!(out.status.success(), "{stdout}\n{stderr}");
     for name in [
         "prepare",
+        "fetch-base",
         "recipe",
         "train",
         "merge-export",
@@ -218,6 +240,7 @@ fn journey_run_refuses_missing_tools() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("refuse:classify-journey"), "{err}");
     assert!(err.contains("llamafactory-cli is not on PATH"), "{err}");
+    assert!(err.contains("huggingface-cli and hf are not on PATH"), "{err}");
     assert!(err.contains("LLAMA_CPP_DIR is unset"), "{err}");
     assert!(err.contains("Qwen3.5 needs a recent llama.cpp checkout"), "{err}");
     assert!(err.contains("ollama is not on PATH"), "{err}");
@@ -253,10 +276,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
             let content = if body.contains("tev1-specialist") {
                 "B"
-            } else if body.contains("<think>") {
-                "<think>hidden</think>\nA"
             } else {
-                "nope"
+                "<think>\nhidden\n</think>\nA"
             };
             let payload = serde_json::json!({
                 "message": {"role": "assistant", "content": content}
@@ -293,6 +314,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
         .env("OLLAMA_STAMP", stamp.to_str().unwrap())
         .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .env("HF_TOKEN", "super-secret-hf")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&first.stdout);
@@ -317,14 +339,24 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!(modelfile.contains("PARAMETER num_predict 8"), "{modelfile}");
     assert!(modelfile.contains("<think>"), "{modelfile}");
     let tool_log = fs::read_to_string(&log).unwrap();
+    let base_hf = work.join("base-hf");
     let convert = format!(
         "python3 {} {} --outfile {} --outtype f16",
         llama.join("convert_hf_to_gguf.py").display(),
-        "Qwen/Qwen3.5-4B",
+        base_hf.display(),
         work.join("base.f16.gguf").display()
+    );
+    let download = format!(
+        "huggingface-cli download Qwen/Qwen3.5-4B --local-dir {}",
+        base_hf.display()
     );
     assert!(stdout.contains(&convert), "print/run diverged\n{stdout}\n{tool_log}");
     assert!(tool_log.contains(&convert), "{tool_log}");
+    assert!(stdout.contains(&download), "{stdout}");
+    assert!(tool_log.contains("download Qwen/Qwen3.5-4B"), "{tool_log}");
+    assert!(base_hf.join("config.json").is_file());
+    assert!(!stdout.contains("super-secret-hf"), "{stdout}");
+    assert!(!stderr.contains("super-secret-hf"), "{stderr}");
     assert!(tool_log.contains("create tev1-base"), "{tool_log}");
     assert!(tool_log.contains("create tev1-specialist"), "{tool_log}");
     let comparison: serde_json::Value =
@@ -337,7 +369,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert_eq!(comparison["api"], "ollama-native");
     assert_eq!(comparison["base_seat"], "pipeline");
     assert_eq!(comparison["quant"], "Q4_K_M");
-    assert_eq!(comparison["thinking_leak"]["base"], 0);
+    assert_eq!(comparison["thinking_leak"]["base"], 1);
     assert!(stdout.contains("threshold met"), "{stdout}");
     let heavy = |log: &str| {
         log.lines()
@@ -492,6 +524,137 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
 }
 
 #[test]
+fn journey_run_stops_before_compare_when_ollama_is_down() {
+    let root = std::env::temp_dir().join(format!("journey-down-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let work = root.join("work");
+    let out = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--max-steps",
+            "1",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            "http://127.0.0.1:9",
+            "--timeout-secs",
+            "1",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "{text}");
+    assert!(text.contains("unusable score"), "{text}");
+    assert!(!work.join("comparison.json").is_file(), "{text}");
+    assert!(!work.join("manifests/eval-base.json").is_file(), "{text}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn journey_run_local_base_does_not_download() {
+    let root = std::env::temp_dir().join(format!("journey-local-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let local = root.join("local-base");
+    fs::create_dir_all(&local).unwrap();
+    fs::write(local.join("config.json"), "{}\n").unwrap();
+    let work = root.join("work");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for mut req in server.incoming_requests() {
+            let mut body = String::new();
+            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+            let payload = serde_json::json!({"message": {"role": "assistant", "content": "B"}});
+            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+            let _ = req.respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
+        }
+    });
+    let out = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--base",
+            local.to_str().unwrap(),
+            "--run",
+            "--max-steps",
+            "1",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &format!("http://127.0.0.1:{port}"),
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    let tool_log = fs::read_to_string(&log).unwrap();
+    assert!(!tool_log.contains("download"), "{tool_log}");
+    assert!(text.contains(&format!("local base {}", local.display())), "{text}");
+    let convert = format!(
+        "python3 {} {} --outfile {} --outtype f16",
+        llama.join("convert_hf_to_gguf.py").display(),
+        local.display(),
+        work.join("base.f16.gguf").display()
+    );
+    assert!(text.contains(&convert), "{text}");
+    assert!(tool_log.contains(&convert), "{tool_log}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn prepare_refuses_when_out_is_a_file() {
     let dir = std::env::temp_dir().join(format!("classify-file-out-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -588,10 +751,12 @@ fn eval_records_non_json_and_missing_content() {
         .output()
         .unwrap();
     assert!(
-        out.status.success(),
+        !out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("every row failed at the HTTP level"), "{err}");
     let report: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&report_path).unwrap()).unwrap();
     let errors = report["errors"].as_array().unwrap();

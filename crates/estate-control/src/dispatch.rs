@@ -336,6 +336,7 @@ pub(crate) fn run() -> Result<()> {
                     mock,
                     timeout_secs,
                     api,
+                    crate::classify::EvalGate::Standalone,
                 )
             }
             ClassifyCommand::Journey {

@@ -529,7 +529,7 @@ pub(crate) enum ClassifyCommand {
         api: crate::classify::EvalApi,
     },
     /// tev1 journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
-    /// `--print` is the default and does not run tools. `--run` executes and refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
+    /// `--print` is the default and does not run tools. `--run` downloads the base with `huggingface-cli` or `hf` unless `--base` is a local directory, then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS.
     Journey {
         /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.

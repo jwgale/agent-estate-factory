@@ -958,6 +958,35 @@ pub(crate) fn cmd_classify_prepare(
     Ok(())
 }
 
+/// When a score is too broken to trust.
+/// Standalone eval fails only when every row failed at HTTP.
+/// The journey also fails when no row yields a letter, or when HTTP errors are more than 10%.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EvalGate {
+    Standalone,
+    Journey,
+}
+
+pub(crate) fn eval_gate_error(
+    gate: EvalGate,
+    records: u64,
+    http_errors: u64,
+    invalid: u64,
+) -> Option<String> {
+    if records == 0 {
+        return Some("refuse:classify-eval: no scored rows".into());
+    }
+    match gate {
+        EvalGate::Standalone if http_errors == records => Some(format!(
+            "refuse:classify-eval: every row failed at the HTTP level ({http_errors}/{records})"
+        )),
+        EvalGate::Journey if invalid == records || http_errors * 10 > records => Some(format!(
+            "refuse:classify-eval: unusable score; records={records} http_errors={http_errors} invalid={invalid}"
+        )),
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_classify_eval(
     records: &Path,
@@ -969,6 +998,7 @@ pub(crate) fn cmd_classify_eval(
     mock: bool,
     timeout_secs: u64,
     api: EvalApi,
+    gate: EvalGate,
 ) -> Result<()> {
     if dry_run && mock {
         bail!("refuse:classify-eval: pass only one of --dry-run and --mock");
@@ -1120,6 +1150,9 @@ pub(crate) fn cmd_classify_eval(
         "note": "This score is not a factory live PASS. READY_FOR_LIVE_TEST stays no. The recorded Target C PASS is the only live uniqueness prove."
     });
     write_report(report_path, &report)?;
+    if let Some(err) = eval_gate_error(gate, scored.len() as u64, http_errors as u64, invalid as u64) {
+        bail!(err);
+    }
     Ok(())
 }
 
@@ -1395,6 +1428,19 @@ mod tests {
             eval_url("http://127.0.0.1:11434", EvalApi::Ollama),
             "http://127.0.0.1:11434/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn eval_gate_fails_closed_for_dead_endpoints_and_unusable_journeys() {
+        assert!(eval_gate_error(EvalGate::Standalone, 4, 1, 1).is_none());
+        let all_http = eval_gate_error(EvalGate::Standalone, 2, 2, 2).unwrap();
+        assert!(all_http.contains("every row failed at the HTTP level"), "{all_http}");
+        let journey_http = eval_gate_error(EvalGate::Journey, 4, 1, 1).unwrap();
+        assert!(journey_http.contains("unusable"), "{journey_http}");
+        assert!(eval_gate_error(EvalGate::Journey, 10, 1, 1).is_none());
+        let all_invalid = eval_gate_error(EvalGate::Journey, 3, 0, 3).unwrap();
+        assert!(all_invalid.contains("unusable"), "{all_invalid}");
+        assert!(eval_gate_error(EvalGate::Standalone, 3, 0, 3).is_none());
     }
 
     #[test]

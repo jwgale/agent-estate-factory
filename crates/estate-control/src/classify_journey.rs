@@ -4,7 +4,9 @@
 //! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
 //! `--base-tag` is an opt-in library tag and skips that base build.
 
-use crate::classify::{cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi};
+use crate::classify::{
+    cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi, EvalGate,
+};
 use anyhow::{bail, Result};
 use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
@@ -46,6 +48,7 @@ const QWEN35_NOTHINK_TEMPLATE: &str = "\
 
 const STEP_ORDER: &[&str] = &[
     "prepare",
+    "fetch-base",
     "recipe",
     "train",
     "merge-export",
@@ -67,6 +70,7 @@ pub struct JourneyPaths {
     pub export_yaml: PathBuf,
     pub adapter_dir: PathBuf,
     pub export_dir: PathBuf,
+    pub base_hf: PathBuf,
     pub base_f16: PathBuf,
     pub specialist_f16: PathBuf,
     pub base_modelfile: PathBuf,
@@ -87,6 +91,7 @@ impl JourneyPaths {
             export_yaml: out.join("export.yaml"),
             adapter_dir: out.join("outputs"),
             export_dir: out.join("export"),
+            base_hf: out.join("base-hf"),
             base_f16: out.join("base.f16.gguf"),
             specialist_f16: out.join("specialist.f16.gguf"),
             base_modelfile: out.join("base.Modelfile"),
@@ -141,13 +146,14 @@ pub fn train_template(base: &str) -> &'static str {
 }
 
 pub fn lora_recipe_yaml(
-    base: &str,
+    model_name: &str,
+    template_from: &str,
     dataset_name: &str,
     dataset_dir: &Path,
     output_dir: &Path,
     max_steps: Option<u32>,
 ) -> String {
-    let template = train_template(base);
+    let template = train_template(template_from);
     let gauge = match max_steps {
         Some(steps) => format!("max_steps: {steps}\n"),
         None => String::new(),
@@ -159,7 +165,7 @@ pub fn lora_recipe_yaml(
 # template {template} is the LLaMA-Factory name for this base.
 # enable_thinking false keeps assistant targets free of think tokens.
 # qwen3_5_nothink is for Instruct-only variants and is not this checkpoint.
-model_name_or_path: {base}
+model_name_or_path: {model}
 trust_remote_code: true
 stage: sft
 do_train: true
@@ -185,7 +191,7 @@ warmup_ratio: 0.03
 bf16: true
 report_to: none
 ",
-        base = yaml_scalar(base),
+        model = yaml_scalar(model_name),
         dataset_name = dataset_name,
         dataset_dir = yaml_scalar(&dataset_dir.display().to_string()),
         output_dir = yaml_scalar(&output_dir.display().to_string()),
@@ -194,13 +200,18 @@ report_to: none
     )
 }
 
-pub fn export_yaml(base: &str, adapter_dir: &Path, export_dir: &Path) -> String {
-    let template = train_template(base);
+pub fn export_yaml(
+    model_name: &str,
+    template_from: &str,
+    adapter_dir: &Path,
+    export_dir: &Path,
+) -> String {
+    let template = train_template(template_from);
     format!(
         "\
 # schema: cell-one.classify-journey.v0
 # Merge via llamafactory-cli export. Same keys as the LLaMA-Factory merge card.
-model_name_or_path: {base}
+model_name_or_path: {model}
 adapter_name_or_path: {adapter}
 template: {template}
 enable_thinking: false
@@ -211,7 +222,7 @@ export_size: 5
 export_device: cpu
 export_legacy_format: false
 ",
-        base = yaml_scalar(base),
+        model = yaml_scalar(model_name),
         adapter = yaml_scalar(&adapter_dir.display().to_string()),
         template = template,
         export_dir = yaml_scalar(&export_dir.display().to_string()),
@@ -385,10 +396,53 @@ impl ToolGaps {
     }
 }
 
-pub fn tool_gaps(has: impl Fn(&str) -> bool, llama_dir: Option<&Path>, gpu_ok: bool) -> ToolGaps {
+pub fn base_is_local_dir(base: &str) -> bool {
+    Path::new(base).is_dir()
+}
+
+/// Directory `convert_hf_to_gguf.py` reads. A hub id downloads into `base-hf`.
+pub fn resolved_base_dir(base: &str, paths: &JourneyPaths) -> PathBuf {
+    if base_is_local_dir(base) {
+        PathBuf::from(base)
+    } else {
+        paths.base_hf.clone()
+    }
+}
+
+pub fn hf_download_argv(bin: &str, repo: &str, local_dir: &Path) -> Vec<String> {
+    vec![
+        bin.to_string(),
+        "download".into(),
+        repo.to_string(),
+        "--local-dir".into(),
+        local_dir.display().to_string(),
+    ]
+}
+
+fn hf_bin_name() -> Option<&'static str> {
+    if which("huggingface-cli").is_some() {
+        Some("huggingface-cli")
+    } else if which("hf").is_some() {
+        Some("hf")
+    } else {
+        None
+    }
+}
+
+pub fn tool_gaps(
+    has: impl Fn(&str) -> bool,
+    llama_dir: Option<&Path>,
+    gpu_ok: bool,
+    need_hf: bool,
+) -> ToolGaps {
     let mut missing = Vec::new();
     if !has("llamafactory-cli") {
         missing.push("llamafactory-cli is not on PATH".into());
+    }
+    if need_hf && !has("huggingface-cli") && !has("hf") {
+        missing.push(
+            "huggingface-cli and hf are not on PATH; needed to download the base. HF_TOKEN is read from the environment and is not printed".into(),
+        );
     }
     match llama_dir {
         None => missing.push(format!(
@@ -416,6 +470,7 @@ pub fn tool_gaps(has: impl Fn(&str) -> bool, llama_dir: Option<&Path>, gpu_ok: b
 #[derive(Clone, Debug)]
 struct Inputs {
     prepare: String,
+    fetch: String,
     pipeline: Option<String>,
 }
 
@@ -440,6 +495,19 @@ fn prepare_inputs(input: &Path, seed: u64, held_out_ratio: f64) -> Result<String
         "{}\n{seed}\n{held_out_ratio}",
         sha256_bytes(&bytes)
     )))
+}
+
+fn fetch_inputs(base: &str) -> String {
+    sha256_text(base)
+}
+
+fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs> {
+    let resolved = resolved_base_dir(req.base, paths).display().to_string();
+    Ok(Inputs {
+        prepare: prepare_inputs(req.input, req.seed, req.held_out_ratio)?,
+        fetch: fetch_inputs(req.base),
+        pipeline: pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant),
+    })
 }
 
 fn pipeline_inputs(base: &str, dataset: &Path, recipe: &Path, quant: &str) -> Option<String> {
@@ -562,6 +630,7 @@ fn decide_ollama(
 struct PlanCtx<'a> {
     paths: &'a JourneyPaths,
     base: &'a str,
+    hf_bin: &'a str,
     quant: &'a str,
     library_tag: Option<&'a str>,
     built_base_tag: &'a str,
@@ -579,6 +648,7 @@ fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
     StepPlan {
         name: match name {
             "prepare" => "prepare",
+            "fetch-base" => "fetch-base",
             "recipe" => "recipe",
             "train" => "train",
             "merge-export" => "merge-export",
@@ -630,6 +700,24 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         &prepare,
         format!("classify prepare -> {}", paths.out.display()),
     ));
+
+    let base_dir = resolved_base_dir(ctx.base, paths);
+    let base_dir_s = base_dir.display().to_string();
+    let fetch_marker = base_dir.join("config.json");
+    let fetch = if fetch_marker.is_file() {
+        decide_file(&fetch_marker, &paths.manifest_path("fetch-base"), &ctx.inputs.fetch)
+    } else {
+        Decision {
+            action: StepAction::Run,
+            redo: None,
+        }
+    };
+    let fetch_cmd = if base_is_local_dir(ctx.base) {
+        format!("local base {base_dir_s}")
+    } else {
+        argv_line(&hf_download_argv(ctx.hf_bin, ctx.base, &base_dir))
+    };
+    steps.push(step_detail("fetch-base", &fetch, fetch_cmd));
 
     let recipe = if paths.recipe.is_file() && paths.export_yaml.is_file() {
         if let Some(pipeline) = ctx.inputs.pipeline.as_deref() {
@@ -692,7 +780,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         format!("llamafactory-cli export {}", paths.export_yaml.display()),
     ));
 
-    let base_convert_cmd = convert_line(ctx, ctx.base, &paths.base_f16);
+    let base_convert_cmd = convert_line(ctx, &base_dir_s, &paths.base_f16);
     let base_convert = if ctx.library_tag.is_some() {
         Decision {
             action: StepAction::Skip,
@@ -1063,9 +1151,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     }
     let paths = JourneyPaths::new(req.out);
     let template = train_template(req.base);
-    let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
-    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant);
-    let inputs = Inputs { prepare, pipeline };
+    let inputs = load_inputs(req, &paths)?;
     let llama = match req.llama_cpp_dir {
         Some(dir) if req.run => Some(resolve_llama_cpp(dir)?),
         Some(dir) => resolve_llama_cpp(dir).ok(),
@@ -1075,6 +1161,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     let ctx = PlanCtx {
         paths: &paths,
         base: req.base,
+        hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
         quant: req.quant,
         library_tag: library,
         built_base_tag: DEFAULT_BUILT_BASE_TAG,
@@ -1088,7 +1175,12 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         print_plan(req, &paths, template, library, &steps);
         return Ok(());
     }
-    let gaps = tool_gaps(tool_on_path, req.llama_cpp_dir, gpu_present());
+    let gaps = tool_gaps(
+        tool_on_path,
+        req.llama_cpp_dir,
+        gpu_present(),
+        !base_is_local_dir(req.base),
+    );
     if !gaps.missing.is_empty() {
         bail!(gaps.message());
     }
@@ -1160,12 +1252,11 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
         if *name == "compare" {
             continue;
         }
-        let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
-        let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant);
-        let inputs = Inputs { prepare, pipeline };
+        let inputs = load_inputs(req, paths)?;
         let ctx = PlanCtx {
             paths,
             base: req.base,
+            hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
             quant: req.quant,
             library_tag: library,
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
@@ -1204,12 +1295,24 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                 write_manifest(&paths.manifest_path("prepare"), &prepare, None)?;
                 ran_prepare = true;
             }
+            "fetch-base" => {
+                let dir = resolved_base_dir(req.base, paths);
+                if base_is_local_dir(req.base) {
+                    println!("local base {}", dir.display());
+                } else {
+                    let bin = hf_bin_name().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "refuse:classify-journey: huggingface-cli and hf are not on PATH; needed to download the base. HF_TOKEN is read from the environment and is not printed"
+                        )
+                    })?;
+                    run_argv(&hf_download_argv(bin, req.base, &dir))?;
+                }
+                validate_snapshot(&dir)?;
+                write_manifest(&paths.manifest_path("fetch-base"), &fetch_inputs(req.base), None)?;
+            }
             "recipe" => {
                 write_recipe(req, paths)?;
-                let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("refuse:classify-journey: recipe inputs are missing")
-                    })?;
+                let pipeline = pipeline_key(req, paths)?;
                 write_manifest(&paths.manifest_path("recipe"), &pipeline, None)?;
             }
             "train" => {
@@ -1218,6 +1321,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     "train".into(),
                     paths.recipe.display().to_string(),
                 ])?;
+                validate_adapter(&paths.adapter_dir)?;
                 write_pipeline_manifest(req, paths, "train")?;
             }
             "merge-export" => {
@@ -1226,29 +1330,35 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     "export".into(),
                     paths.export_yaml.display().to_string(),
                 ])?;
+                validate_export(&paths.export_dir)?;
                 write_pipeline_manifest(req, paths, "merge-export")?;
             }
             "gguf-convert-base" => {
-                let argv = llama.convert_argv(req.base, &paths.base_f16);
+                let src = resolved_base_dir(req.base, paths).display().to_string();
+                let argv = llama.convert_argv(&src, &paths.base_f16);
                 run_argv(&argv)?;
+                validate_gguf(&paths.base_f16)?;
                 write_pipeline_manifest(req, paths, "gguf-convert-base")?;
             }
             "gguf-convert-specialist" => {
                 let src = paths.export_dir.display().to_string();
                 let argv = llama.convert_argv(&src, &paths.specialist_f16);
                 run_argv(&argv)?;
+                validate_gguf(&paths.specialist_f16)?;
                 write_pipeline_manifest(req, paths, "gguf-convert-specialist")?;
             }
             "quantize-base" => {
                 let seated = paths.seated_gguf("base", req.quant);
                 let argv = llama.quantize_argv(&paths.base_f16, &seated, req.quant);
                 run_argv(&argv)?;
+                validate_gguf(&seated)?;
                 write_pipeline_manifest(req, paths, "quantize-base")?;
             }
             "quantize-specialist" => {
                 let seated = paths.seated_gguf("specialist", req.quant);
                 let argv = llama.quantize_argv(&paths.specialist_f16, &seated, req.quant);
                 run_argv(&argv)?;
+                validate_gguf(&seated)?;
                 write_pipeline_manifest(req, paths, "quantize-specialist")?;
             }
             "ollama-create-base" => {
@@ -1283,6 +1393,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     false,
                     req.timeout_secs,
                     EvalApi::OllamaNative,
+                    EvalGate::Journey,
                 )?;
                 write_pipeline_manifest(req, paths, "eval-base")?;
             }
@@ -1297,6 +1408,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                     false,
                     req.timeout_secs,
                     EvalApi::OllamaNative,
+                    EvalGate::Journey,
                 )?;
                 write_pipeline_manifest(req, paths, "eval-specialist")?;
             }
@@ -1312,10 +1424,14 @@ fn redo_reason(detail: &str) -> Option<&str> {
     Some(reason.split(';').next().unwrap_or(reason).trim())
 }
 
+fn pipeline_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<String> {
+    let resolved = resolved_base_dir(req.base, paths).display().to_string();
+    pipeline_inputs(&resolved, &paths.dataset_jsonl, &paths.recipe, req.quant)
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))
+}
+
 fn write_pipeline_manifest(req: &JourneyRequest<'_>, paths: &JourneyPaths, step: &str) -> Result<()> {
-    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
-        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))?;
-    write_manifest(&paths.manifest_path(step), &pipeline, None)
+    write_manifest(&paths.manifest_path(step), &pipeline_key(req, paths)?, None)
 }
 
 fn seat_gguf(
@@ -1350,9 +1466,69 @@ fn seat_gguf(
         "-f".into(),
         modelfile.display().to_string(),
     ])?;
-    let pipeline = pipeline_inputs(req.base, &paths.dataset_jsonl, &paths.recipe, req.quant)
-        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))?;
+    if !ollama_has_model(tag) {
+        bail!("refuse:classify-journey: ollama show {tag} failed after create");
+    }
+    let pipeline = pipeline_key(req, paths)?;
     write_manifest(&paths.manifest_path(step), &pipeline, Some(&gguf_sha))?;
+    Ok(())
+}
+
+fn validate_snapshot(dir: &Path) -> Result<()> {
+    if !dir.join("config.json").is_file() {
+        bail!(
+            "refuse:classify-journey: base snapshot {} has no config.json",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+fn file_nonempty(path: &Path) -> bool {
+    fs::metadata(path).map(|meta| meta.is_file() && meta.len() > 0).unwrap_or(false)
+}
+
+fn dir_has_weights(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    entries.filter_map(|entry| entry.ok()).any(|entry| {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        (name.ends_with(".safetensors") || name.ends_with(".bin")) && file_nonempty(&entry.path())
+    })
+}
+
+fn validate_adapter(dir: &Path) -> Result<()> {
+    if !dir.join("adapter_config.json").is_file() || !dir_has_weights(dir) {
+        bail!(
+            "refuse:classify-journey: adapter {} needs adapter_config.json and weights",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+fn validate_export(dir: &Path) -> Result<()> {
+    let tokenizer = ["tokenizer.json", "tokenizer.model", "tokenizer_config.json"]
+        .iter()
+        .any(|name| dir.join(name).is_file());
+    if !dir.join("config.json").is_file() || !tokenizer || !dir_has_weights(dir) {
+        bail!(
+            "refuse:classify-journey: export {} needs config.json, tokenizer files, and weights",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+fn validate_gguf(path: &Path) -> Result<()> {
+    let bytes = fs::read(path).unwrap_or_default();
+    if bytes.len() < 4 || &bytes[..4] != b"GGUF" {
+        bail!(
+            "refuse:classify-journey: {} is not a non-empty GGUF",
+            path.display()
+        );
+    }
     Ok(())
 }
 
@@ -1373,14 +1549,16 @@ fn write_recipe(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<()> {
             req.dataset_name
         );
     }
+    let model = resolved_base_dir(req.base, paths).display().to_string();
     let recipe = lora_recipe_yaml(
+        &model,
         req.base,
         req.dataset_name,
         &paths.out,
         &paths.adapter_dir,
         req.max_steps,
     );
-    let export = export_yaml(req.base, &paths.adapter_dir, &paths.export_dir);
+    let export = export_yaml(&model, req.base, &paths.adapter_dir, &paths.export_dir);
     if recipe_dataset_name(&recipe).as_deref() != Some(req.dataset_name) {
         bail!("refuse:classify-journey: recipe dataset field does not match prepare output");
     }
@@ -1543,6 +1721,7 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let recipe = lora_recipe_yaml(
             DEFAULT_BASE,
+            DEFAULT_BASE,
             DEFAULT_DATASET,
             &dir,
             &paths.adapter_dir,
@@ -1561,7 +1740,7 @@ mod tests {
             }
         });
         assert_eq!(dataset_name_in_info(&info).as_deref(), Some(DEFAULT_DATASET));
-        let export = export_yaml(DEFAULT_BASE, &paths.adapter_dir, &paths.export_dir);
+        let export = export_yaml(DEFAULT_BASE, DEFAULT_BASE, &paths.adapter_dir, &paths.export_dir);
         assert!(export.contains("enable_thinking: false"), "{export}");
         assert!(export.contains("template: qwen3_5"), "{export}");
         let model = journey_modelfile(&paths.seated_gguf("specialist", DEFAULT_QUANT));
@@ -1579,11 +1758,13 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let inputs = Inputs {
             prepare: "prep".into(),
+            fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
             base: DEFAULT_BASE,
+            hf_bin: "huggingface-cli",
             quant: DEFAULT_QUANT,
             library_tag: None,
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
@@ -1598,7 +1779,12 @@ mod tests {
         let base = fresh.iter().find(|s| s.name == "gguf-convert-base").unwrap();
         assert!(base.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{base:?}");
         assert!(base.detail.contains("--outtype f16"), "{base:?}");
-        assert!(base.detail.contains(DEFAULT_BASE), "{base:?}");
+        assert!(base.detail.contains("base-hf"), "{base:?}");
+        assert!(!base.detail.contains(DEFAULT_BASE), "{base:?}");
+        let fetch = fresh.iter().find(|s| s.name == "fetch-base").unwrap();
+        assert!(fetch.detail.contains("huggingface-cli download"), "{fetch:?}");
+        assert!(fetch.detail.contains(DEFAULT_BASE), "{fetch:?}");
+        assert!(fetch.detail.contains("--local-dir"), "{fetch:?}");
         let spec = fresh.iter().find(|s| s.name == "gguf-convert-specialist").unwrap();
         assert!(spec.detail.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{spec:?}");
         let quant = fresh.iter().find(|s| s.name == "quantize-specialist").unwrap();
@@ -1612,6 +1798,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let paths = JourneyPaths::new(&dir);
+        fs::create_dir_all(&paths.base_hf).unwrap();
+        fs::write(paths.base_hf.join("config.json"), "{}\n").unwrap();
         fs::create_dir_all(&paths.adapter_dir).unwrap();
         fs::create_dir_all(&paths.export_dir).unwrap();
         fs::write(&paths.dataset_jsonl, "row\n").unwrap();
@@ -1633,6 +1821,7 @@ mod tests {
         let pipeline = pipeline_inputs(DEFAULT_BASE, &paths.dataset_jsonl, &paths.recipe, DEFAULT_QUANT).unwrap();
         for step in [
             "prepare",
+            "fetch-base",
             "recipe",
             "train",
             "merge-export",
@@ -1643,7 +1832,14 @@ mod tests {
             "eval-base",
             "eval-specialist",
         ] {
-            let key = if step == "prepare" { prepare.as_str() } else { pipeline.as_str() };
+            let fetch_key = fetch_inputs(DEFAULT_BASE);
+            let key = if step == "prepare" {
+                prepare.as_str()
+            } else if step == "fetch-base" {
+                fetch_key.as_str()
+            } else {
+                pipeline.as_str()
+            };
             write_manifest(&paths.manifest_path(step), key, None).unwrap();
         }
         let spec_sha = file_sha(&seated_s).unwrap();
@@ -1661,11 +1857,13 @@ mod tests {
         .unwrap();
         let inputs = Inputs {
             prepare: prepare.clone(),
+            fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(pipeline.clone()),
         };
         let ctx = PlanCtx {
             paths: &paths,
             base: DEFAULT_BASE,
+            hf_bin: "huggingface-cli",
             quant: DEFAULT_QUANT,
             library_tag: None,
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
@@ -1695,6 +1893,7 @@ mod tests {
         assert_ne!(changed, pipeline);
         let inputs = Inputs {
             prepare,
+            fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(changed),
         };
         let ctx = PlanCtx {
@@ -1723,11 +1922,13 @@ mod tests {
         let paths = JourneyPaths::new(&dir);
         let inputs = Inputs {
             prepare: "p".into(),
+            fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
         };
         let ctx = PlanCtx {
             paths: &paths,
             base: DEFAULT_BASE,
+            hf_bin: "huggingface-cli",
             quant: "f16",
             library_tag: Some("qwen3.5:4b"),
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
@@ -1749,14 +1950,16 @@ mod tests {
 
     #[test]
     fn missing_tool_messages_name_each_gap() {
-        let gaps = tool_gaps(|_| false, None, false);
+        let gaps = tool_gaps(|_| false, None, false, true);
         let text = gaps.message();
         assert!(text.contains("llamafactory-cli is not on PATH"), "{text}");
         assert!(text.contains("LLAMA_CPP_DIR is unset"), "{text}");
         assert!(text.contains(QWEN35_RECENT), "{text}");
+        assert!(text.contains("huggingface-cli and hf are not on PATH"), "{text}");
+        assert!(text.contains("HF_TOKEN"), "{text}");
         assert!(text.contains("ollama is not on PATH"), "{text}");
         assert!(text.contains("no GPU"), "{text}");
-        let partial = tool_gaps(|name| name == "ollama", None, true);
+        let partial = tool_gaps(|name| name == "ollama", None, true, false);
         let text = partial.message();
         assert!(text.contains("llamafactory-cli"));
         assert!(!text.contains("ollama is not"));
@@ -1809,5 +2012,71 @@ mod tests {
         assert_eq!(threshold_met(&comparison, Some(0.4), Some(0.7)), Some(true));
         assert_eq!(threshold_met(&comparison, Some(0.6), None), Some(false));
         assert_eq!(threshold_met(&comparison, None, Some(0.9)), Some(false));
+    }
+
+    #[test]
+    fn hub_id_fetches_a_local_dir_and_a_local_dir_is_passthrough() {
+        let dir = std::env::temp_dir().join(format!("journey-fetch-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let paths = JourneyPaths::new(&dir);
+        let inputs = Inputs {
+            prepare: "p".into(),
+            fetch: fetch_inputs(DEFAULT_BASE),
+            pipeline: None,
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            hf_bin: "huggingface-cli",
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+        };
+        let hub = plan_with(&ctx);
+        let fetch = hub.iter().find(|s| s.name == "fetch-base").unwrap();
+        let expected = argv_line(&hf_download_argv(
+            "huggingface-cli",
+            DEFAULT_BASE,
+            &paths.base_hf,
+        ));
+        assert_eq!(fetch.detail, expected);
+        let convert = hub.iter().find(|s| s.name == "gguf-convert-base").unwrap();
+        assert!(convert.detail.contains(&paths.base_hf.display().to_string()), "{convert:?}");
+        assert!(!convert.detail.contains("Qwen/Qwen3.5-4B --outfile"), "{convert:?}");
+
+        let local = dir.join("already");
+        fs::create_dir_all(&local).unwrap();
+        let local_s = local.display().to_string();
+        let inputs = Inputs {
+            prepare: "p".into(),
+            fetch: fetch_inputs(&local_s),
+            pipeline: None,
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: &local_s,
+            hf_bin: "hf",
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+        };
+        let passed = plan_with(&ctx);
+        let fetch = passed.iter().find(|s| s.name == "fetch-base").unwrap();
+        assert_eq!(fetch.detail, format!("local base {local_s}"));
+        assert!(!fetch.detail.contains("download"), "{fetch:?}");
+        let convert = passed.iter().find(|s| s.name == "gguf-convert-base").unwrap();
+        assert!(convert.detail.contains(&local_s), "{convert:?}");
+        assert!(validate_gguf(&paths.base_f16).is_err());
+        fs::write(&paths.base_f16, b"GGUF").unwrap();
+        assert!(validate_gguf(&paths.base_f16).is_ok());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
