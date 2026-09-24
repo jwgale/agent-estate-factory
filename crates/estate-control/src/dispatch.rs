@@ -307,22 +307,31 @@ pub(crate) fn run() -> Result<()> {
                 force,
                 native_train,
                 native_test,
+                from_local,
+                fetch,
+                python,
             } => {
                 let preset = crate::classify_import::preset_by_name(&dataset)?;
                 let size = crate::classify_import::parse_split_size(&train_size)?;
                 let out = out.unwrap_or_else(|| {
                     crate::classify_import::sampled_import_dir(preset.alias, &size.token(), seed)
                 });
-                crate::classify_import::cmd_classify_import(&crate::classify_import::ImportRequest {
-                    dataset: preset.alias,
-                    train_size: &train_size,
-                    heldout_size: &heldout_size,
-                    seed,
-                    out: &out,
-                    force,
-                    native_train: native_train.as_deref(),
-                    native_test: native_test.as_deref(),
-                })
+                crate::classify_import::cmd_classify_import(
+                    &crate::classify_import::ImportRequest {
+                        dataset: preset.alias,
+                        train_size: &train_size,
+                        heldout_size: &heldout_size,
+                        seed,
+                        out: &out,
+                        force,
+                        native_train: native_train.as_deref(),
+                        native_test: native_test.as_deref(),
+                        from_local: from_local.as_deref(),
+                        fetch,
+                        python: python.as_deref(),
+                        cache_root: None,
+                    },
+                )
             }
             ClassifyCommand::Prepare {
                 input,
@@ -397,6 +406,9 @@ pub(crate) fn run() -> Result<()> {
                 dataset,
                 train_size,
                 heldout_size,
+                from_local,
+                fetch,
+                python,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -453,6 +465,9 @@ pub(crate) fn run() -> Result<()> {
                         import_dataset: dataset.as_deref(),
                         train_size: &train_size,
                         heldout_size: &heldout_size,
+                        from_local: from_local.as_deref(),
+                        import_fetch: fetch,
+                        python: python.as_deref(),
                     },
                 )
             }

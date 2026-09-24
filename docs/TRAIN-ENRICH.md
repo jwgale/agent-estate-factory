@@ -54,11 +54,22 @@ estate classify journey --preset deepseek-r1-distill --print
 
 ## ag_news letter runs
 
-The built-in fixture is 29 train rows and 7 held-out rows. That is too small for a base-versus-specialist comparison. `estate classify import` pages the Hugging Face datasets-server rows API (plain HTTPS) for `fancyzhx/ag_news`. The full splits stay in `.cell/classify-import/ag_news/native/` and are kept only when both counts match the official totals. Sampled tev1 rows go to `.cell/classify-import/ag_news-<train-size>-s<seed>/`, so 3,000 / 10,000 / all do not share `train.jsonl`. Options stay in class-table order and are not shuffled: A=World, B=Sports, C=Business, D=Sci/Tech. The answer letter is that class letter. `--train-size` is class-balanced with `--seed` (default 42). There is no upper cap. `all` keeps the official train split (120,000). `--heldout-size` is drawn only from the official test split. `all` is 7,600. Train and held-out ids do not overlap. The Hub card does not name a license. The files are for local training only. Do not redistribute them. Nothing from the dataset is committed.
+The built-in fixture is 29 train rows and 7 held-out rows. That is too small for a base-versus-specialist comparison. `estate classify import` reads `fancyzhx/ag_news` from parquet. The default fetch is `hf download --repo-type dataset` into `.cell/classify-import/ag_news/hf-dataset/`, then pyarrow. A NAS snapshot is `--from-local` (that directory is not modified). `--fetch rows-api` is the datasets-server fallback and sends `Authorization: Bearer $HF_TOKEN` when the variable is set. The full splits stay in `.cell/classify-import/ag_news/native/` and are kept only when both counts match the official totals. Sampled tev1 rows go to `.cell/classify-import/ag_news-<train-size>-s<seed>/`, so 3,000 / 10,000 / all do not share `train.jsonl`. Options stay in class-table order and are not shuffled: A=World, B=Sports, C=Business, D=Sci/Tech. The answer letter is that class letter. `--train-size` is class-balanced with `--seed` (default 42). There is no upper cap. `all` keeps the official train split (120,000). `--heldout-size` is drawn only from the official test split. `all` is 7,600. Train and held-out ids do not overlap. The Hub card does not name a license. The files are for local training only. Do not redistribute them. Nothing from the dataset is committed.
 
 `estate classify journey --dataset ag_news` imports that set and feeds `classify prepare` with no second split. Changing `--train-size`, `--heldout-size`, or `--seed` redoes prepare, train, and eval. It does not redo fetch-base. The default tag and the default `--out` gain a suffix such as `-agnews-3000`, so 3,000 / 10,000 / 30,000 / all can sit side by side. Eval prints a progress line about every 500 records and writes the report as it goes. The report adds per-class accuracy and a 95% Wilson interval. The comparison adds Wilson intervals for each accuracy and a Newcombe interval for the specialist-minus-base delta. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
 
 Scoring 7,600 records is about 15–20 minutes per model at about 130 ms per record. Train time grows with the train size. A 5090-class host can run the sizes below one after another. `--print` does not download.
+
+Keep the Hub snapshot on the NAS and point import at it. `hf download` writes the snapshot once. pyarrow reads it. `ESTATE_PYTHON` or `--python` selects the LLaMA-Factory interpreter when `python3` on PATH has no pyarrow. `HF_TOKEN` is optional and is sent only for `--fetch rows-api`.
+
+```bash
+hf download fancyzhx/ag_news --repo-type dataset --local-dir "$NAS/datasets/ag_news"
+export ESTATE_PYTHON=/path/to/llamafactory-venv/bin/python
+estate classify import --dataset ag_news --from-local "$NAS/datasets/ag_news" --train-size all --heldout-size all --seed 42
+estate classify journey --dataset ag_news --from-local "$NAS/datasets/ag_news" --train-size all --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR"
+# Optional fallback. HF_TOKEN is not required for a public set.
+estate classify import --dataset ag_news --fetch rows-api --train-size all --heldout-size all --seed 42
+```
 
 ```bash
 export LLAMA_CPP_DIR=/path/to/llama.cpp
