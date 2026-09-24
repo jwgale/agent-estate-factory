@@ -107,8 +107,9 @@ Seat walk:  make seat-journey
 Axolotl:    make axolotl-qlora-journey
 Ax chain:   make uniqueness-axolotl
 Unsloth:    make unsloth-qlora-journey
-Unsloth LoRA: make unsloth-lora-journey
 Us chain:   make uniqueness-unsloth
+Unsloth LoRA: make unsloth-lora-journey
+Us LoRA chain: make uniqueness-unsloth-lora
 Ax LoRA:    make axolotl-lora-journey
 Ax LoRA chain: make uniqueness-axolotl-lora
 Train next: make train-next
@@ -406,6 +407,8 @@ READY_FOR_LIVE_TEST stays no.
   make uniqueness-axolotl
   make unsloth-qlora-journey
   make uniqueness-unsloth
+  make unsloth-lora-journey
+  make uniqueness-unsloth-lora
   make axolotl-lora-journey
   make uniqueness-axolotl-lora
   make uniqueness-ladder
