@@ -577,6 +577,86 @@ fn gate_90_tip_names_cell_one_through_pr_161() {
 }
 
 #[test]
+fn unsloth_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
+    let root = repo_root();
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — Unsloth doctor and status train honesty")
+        .nth(1)
+        .expect("CHANGELOG missing the Unsloth doctor slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "unsloth-qlora",
+        "unsloth-lora",
+        "status=optional",
+        "live=false",
+        "does not relabel those cards `integration`",
+        "do not claim a train",
+        "Operator section 12",
+        "operator section 14",
+        "make unsloth-qlora-journey",
+        "make uniqueness-unsloth",
+        "make unsloth-lora-journey",
+        "make uniqueness-unsloth-lora",
+        "only live uniqueness prove",
+        "7a1b3d54d37b38977c5570679d7f3922b9404d4a",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #165",
+        "43770130 3391",
+        "does not add Kimi",
+    ] {
+        assert!(slice.contains(needle), "Unsloth doctor slice missing {needle}");
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes")
+            && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("status=integration"),
+        "Unsloth doctor slice must not call the optional cards integration: {slice}"
+    );
+    assert!(
+        slice.contains("A later pack owns a full tip-honesty rewrite."),
+        "{slice}"
+    );
+    assert!(
+        !slice.contains("what is on `main` through PR #166"),
+        "this slice must not move the Cell One snapshot: {slice}"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        head.contains("through PR #165"),
+        "GATE-90 header stays through PR #165: {head}"
+    );
+    assert!(
+        !head.contains("through PR #166"),
+        "GATE-90 header must not move to PR #166 in this slice: {head}"
+    );
+    assert!(gate.contains("status=optional") && gate.contains("live=false"), "{gate}");
+    assert!(gate.contains("unsloth-qlora") && gate.contains("unsloth-lora"));
+    assert!(
+        !gate.contains("READY_FOR_LIVE_TEST: yes") && !gate.contains("READY_FOR_LIVE_TEST`: yes")
+    );
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(29).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #165"), "{status_head}");
+    assert!(!status_head.contains("through PR #166"), "{status_head}");
+    assert!(status.contains("| unsloth doctor status |"));
+    assert!(status.contains("status=optional") && status.contains("live=false"));
+    assert!(status.contains("do not claim a train, a promote, a live PASS, or a prepare count"));
+}
+
+#[test]
 fn uniqueness_ladder_chains_target_c_prints_and_stays_off_smoke() {
     let root = repo_root();
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
@@ -2265,7 +2345,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
+    assert_eq!(head, " Unsloth doctor and status train honesty");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -2629,7 +2709,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
+    assert_eq!(head, " Unsloth doctor and status train honesty");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -2955,7 +3035,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
+    assert_eq!(head, " Unsloth doctor and status train honesty");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3333,7 +3413,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
+    assert_eq!(head, " Unsloth doctor and status train honesty");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"

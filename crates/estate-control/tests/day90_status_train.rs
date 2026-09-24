@@ -139,6 +139,26 @@ fn assert_catalog_is_the_card(text: &str) {
         !text.contains("train_catalog: axolotl-qlora status=optional"),
         "{text}"
     );
+    assert_eq!(
+        text.matches("train_catalog: unsloth-qlora status=optional live=false")
+            .count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(
+        text.matches("train_catalog: unsloth-lora status=optional live=false")
+            .count(),
+        1,
+        "{text}"
+    );
+    assert!(
+        !text.contains("train_catalog: unsloth-qlora status=integration"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("train_catalog: unsloth-lora status=integration"),
+        "{text}"
+    );
     assert!(!text.contains("live=true"), "{text}");
     assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
     assert!(
@@ -389,6 +409,97 @@ fn status_names_axolotl_cards_and_refuses_a_bad_prepare_before_the_page() {
     assert!(text.contains("driver=axolotl-lora"), "{text}");
     assert!(text.contains("driver=axolotl-qlora"), "{text}");
     assert_prepare_is_a_record(&text);
+    assert!(!text.contains("trained_shape="), "{text}");
+    assert!(!text.contains("refuse:prepare"), "{text}");
+}
+
+#[test]
+fn status_names_unsloth_cards_and_refuses_a_bad_prepare_before_the_page() {
+    let root = repo_root();
+    let bin = env!("CARGO_BIN_EXE_estate");
+    let dir = tmp("unsloth");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = root.join("examples/estate.yaml");
+    let args = status_args(&root, &estate, &state);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    let (ok, text) = run(bin, &args);
+    assert!(ok, "{text}");
+    assert!(text.contains("Cell One status"), "{text}");
+    assert_catalog_is_the_card(&text);
+    assert_no_invented_prepare_count(&text);
+    assert!(
+        !text.contains("train_prepare:"),
+        "missing enrich directory must stay silent: {text}"
+    );
+
+    let lora = state.join("enrich/overnight-traces/unsloth-lora/prepare.json");
+    let qlora = state.join("enrich/overnight-traces/unsloth-qlora/prepare.json");
+    std::fs::create_dir_all(lora.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(qlora.parent().unwrap()).unwrap();
+    let lora_body = prepare_for("unsloth-lora", "overnight-traces", None, false);
+    let qlora_body = prepare_for("unsloth-qlora", "overnight-traces", None, false);
+    std::fs::write(&lora, &lora_body).unwrap();
+    std::fs::write(&qlora, &qlora_body).unwrap();
+
+    let (ok, text) = run(bin, &args);
+    assert!(ok, "{text}");
+    assert!(text.contains("Cell One status"), "{text}");
+    assert_catalog_is_the_card(&text);
+    assert_no_invented_prepare_count(&text);
+    assert!(
+        text.contains("train_prepare: pack=overnight-traces driver=unsloth-lora job=train seat_tag=llama3 train_base=Qwen/Qwen2.5-0.5B-Instruct"),
+        "{text}"
+    );
+    assert!(
+        text.contains("train_prepare: pack=overnight-traces driver=unsloth-qlora job=train seat_tag=llama3 train_base=Qwen/Qwen2.5-0.5B-Instruct"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("out={}", lora.parent().unwrap().display())),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("out={}", qlora.parent().unwrap().display())),
+        "{text}"
+    );
+    assert!(!text.contains("trained_shape="), "{text}");
+    assert_prepare_is_a_record(&text);
+    assert_eq!(text.matches("train_prepare: pack=").count(), 2, "{text}");
+
+    std::fs::write(&qlora, "not-json\n").unwrap();
+    let (ok, text) = run(bin, &args);
+    assert!(!ok, "{text}");
+    assert!(text.contains("refuse:prepare-unreadable"), "{text}");
+    assert!(text.contains("prepare.json"), "{text}");
+    assert!(!text.contains("Cell One status"), "{text}");
+    assert!(
+        !text.contains("train_prepare: pack="),
+        "garbage unsloth prepare must not become a clean train line: {text}"
+    );
+    assert_eq!(std::fs::read_to_string(&qlora).unwrap(), "not-json\n");
+    assert_eq!(std::fs::read_to_string(&lora).unwrap(), lora_body);
+
+    std::fs::write(
+        &qlora,
+        prepare_for("unsloth-qlora", "overnight-traces", None, true),
+    )
+    .unwrap();
+    let (ok, text) = run(bin, &args);
+    assert!(!ok, "{text}");
+    assert!(text.contains("refuse:prepared:"), "{text}");
+    assert!(text.contains("promoted"), "{text}");
+    assert!(!text.contains("Cell One status"), "{text}");
+    assert!(!text.contains("train_prepare: pack="), "{text}");
+
+    std::fs::write(&qlora, &qlora_body).unwrap();
+    let (ok, text) = run(bin, &args);
+    assert!(ok, "{text}");
+    assert!(text.contains("driver=unsloth-lora"), "{text}");
+    assert!(text.contains("driver=unsloth-qlora"), "{text}");
+    assert_prepare_is_a_record(&text);
+    assert_no_invented_prepare_count(&text);
     assert!(!text.contains("trained_shape="), "{text}");
     assert!(!text.contains("refuse:prepare"), "{text}");
 }
