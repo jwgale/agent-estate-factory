@@ -529,7 +529,8 @@ pub(crate) enum ClassifyCommand {
         api: crate::classify::EvalApi,
     },
     /// tev1 journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
-    /// `--print` is the default and does not run tools. `--run` downloads the base with `huggingface-cli` or `hf` unless `--base` is a local directory, then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
+    /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
+    /// `--run` downloads the base with `huggingface-cli` or `hf` unless `--base` is a local directory, then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS.
     Journey {
         /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.
@@ -583,8 +584,25 @@ pub(crate) enum ClassifyCommand {
         /// Specialist accuracy must reach this value. Local exit code only.
         #[arg(long)]
         min_accuracy: Option<f64>,
+        /// Per-request HTTP timeout in seconds. Together job polling uses `--together-poll-secs` instead.
         #[arg(long, default_value_t = 120)]
         timeout_secs: u64,
+        /// Wall-clock deadline in seconds for Together job polling. Default 10800. Separate from `--timeout-secs`.
+        #[arg(long, default_value_t = crate::classify_journey::DEFAULT_TOGETHER_POLL_SECS)]
+        together_poll_secs: u64,
+        /// Train path. `local` (default) runs `llamafactory-cli train`. `together` uploads the prepared dataset and launches a LoRA job on Together.
+        /// `--print` never calls the network. `--run` reads the key from `--api-key-env` (default `TOGETHER_API_KEY`) and never prints the value.
+        #[arg(long, value_enum, default_value_t = crate::classify_journey::TrainDriver::Local)]
+        train_driver: crate::classify_journey::TrainDriver,
+        /// Together base model id. Default `Qwen/Qwen3.5-4B` (same Hub-style id as the local journey base). Override when the Together catalog name differs.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_TOGETHER_MODEL)]
+        together_model: String,
+        /// Together API root. Used only with `--train-driver together` and `--run`.
+        #[arg(long, default_value = crate::classify_journey::DEFAULT_TOGETHER_API)]
+        together_base_url: String,
+        /// Environment variable that holds the Together API key. Default `TOGETHER_API_KEY`. The value is never printed.
+        #[arg(long)]
+        api_key_env: Option<String>,
     },
 }
 

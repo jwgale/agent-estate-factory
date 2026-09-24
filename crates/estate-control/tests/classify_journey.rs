@@ -191,11 +191,17 @@ fn journey_print_lists_steps_without_tools() {
         assert!(stdout.contains(name), "{stdout}");
     }
     assert!(stdout.contains("qwen3_5"), "{stdout}");
-    assert!(stdout.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"), "{stdout}");
+    assert!(
+        stdout.contains("python3 $LLAMA_CPP_DIR/convert_hf_to_gguf.py"),
+        "{stdout}"
+    );
     assert!(stdout.contains("--outtype f16"), "{stdout}");
     assert!(stdout.contains("Q4_K_M"), "{stdout}");
     assert!(stdout.contains("ollama-native"), "{stdout}");
-    assert!(stdout.contains("Qwen3.5 needs a recent llama.cpp checkout"), "{stdout}");
+    assert!(
+        stdout.contains("Qwen3.5 needs a recent llama.cpp checkout"),
+        "{stdout}"
+    );
     assert!(!dir.exists(), "print must not write {}", dir.display());
     let warned = bin()
         .args([
@@ -214,11 +220,11 @@ fn journey_print_lists_steps_without_tools() {
         .unwrap();
     let warned_out = String::from_utf8_lossy(&warned.stdout);
     assert!(warned.status.success(), "{warned_out}");
+    assert!(warned_out.contains("Precision may differ"), "{warned_out}");
     assert!(
-        warned_out.contains("Precision may differ"),
+        warned_out.contains("skip gguf-convert-base"),
         "{warned_out}"
     );
-    assert!(warned_out.contains("skip gguf-convert-base"), "{warned_out}");
 }
 
 #[test]
@@ -242,9 +248,15 @@ fn journey_run_refuses_missing_tools() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("refuse:classify-journey"), "{err}");
     assert!(err.contains("llamafactory-cli is not on PATH"), "{err}");
-    assert!(err.contains("huggingface-cli and hf are not on PATH"), "{err}");
+    assert!(
+        err.contains("huggingface-cli and hf are not on PATH"),
+        "{err}"
+    );
     assert!(err.contains("LLAMA_CPP_DIR is unset"), "{err}");
-    assert!(err.contains("Qwen3.5 needs a recent llama.cpp checkout"), "{err}");
+    assert!(
+        err.contains("Qwen3.5 needs a recent llama.cpp checkout"),
+        "{err}"
+    );
     assert!(err.contains("ollama is not on PATH"), "{err}");
     assert!(err.contains("no GPU"), "{err}");
 }
@@ -284,7 +296,9 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             let payload = serde_json::json!({
                 "message": {"role": "assistant", "content": content}
             });
-            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
             let resp = tiny_http::Response::from_string(payload.to_string()).with_header(header);
             let _ = req.respond(resp);
         }
@@ -352,7 +366,10 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         "huggingface-cli download Qwen/Qwen3.5-4B --local-dir {}",
         base_hf.display()
     );
-    assert!(stdout.contains(&convert), "print/run diverged\n{stdout}\n{tool_log}");
+    assert!(
+        stdout.contains(&convert),
+        "print/run diverged\n{stdout}\n{tool_log}"
+    );
     assert!(tool_log.contains(&convert), "{tool_log}");
     assert!(stdout.contains(&download), "{stdout}");
     assert!(tool_log.contains("download Qwen/Qwen3.5-4B"), "{tool_log}");
@@ -456,7 +473,10 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         String::from_utf8_lossy(&stale.stderr)
     );
     assert!(stale.status.success(), "{stale_out}");
-    assert!(stale_out.contains("redo train: missing manifest"), "{stale_out}");
+    assert!(
+        stale_out.contains("redo train: missing manifest"),
+        "{stale_out}"
+    );
 
     let dataset = work.join("dataset.jsonl");
     let mut rows = fs::read_to_string(&dataset).unwrap();
@@ -491,7 +511,10 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         String::from_utf8_lossy(&changed.stderr)
     );
     assert!(changed.status.success(), "{changed_out}");
-    assert!(changed_out.contains("redo train: inputs changed"), "{changed_out}");
+    assert!(
+        changed_out.contains("redo train: inputs changed"),
+        "{changed_out}"
+    );
 
     fs::write(work.join("specialist.Q4_K_M.gguf"), "mutated-gguf\n").unwrap();
     let reseat = bin()
@@ -529,7 +552,10 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     );
     let reseat_log = fs::read_to_string(&log).unwrap();
     assert!(reseat_log.contains("rm tev1-specialist"), "{reseat_log}");
-    assert!(reseat_log.contains("create tev1-specialist"), "{reseat_log}");
+    assert!(
+        reseat_log.contains("create tev1-specialist"),
+        "{reseat_log}"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -617,8 +643,11 @@ fn journey_run_local_base_does_not_download() {
             let mut body = String::new();
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
             let payload = serde_json::json!({"message": {"role": "assistant", "content": "B"}});
-            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-            let _ = req.respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
+            let _ = req
+                .respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
         }
     });
     let out = bin()
@@ -654,7 +683,10 @@ fn journey_run_local_base_does_not_download() {
     assert!(out.status.success(), "{text}");
     let tool_log = fs::read_to_string(&log).unwrap();
     assert!(!tool_log.contains("download"), "{tool_log}");
-    assert!(text.contains(&format!("local base {}", local.display())), "{text}");
+    assert!(
+        text.contains(&format!("local base {}", local.display())),
+        "{text}"
+    );
     let convert = format!(
         "python3 {} {} --outfile {} --outtype f16",
         llama.join("convert_hf_to_gguf.py").display(),
@@ -725,7 +757,8 @@ fn eval_records_non_json_and_missing_content() {
                 0 => "not-json".to_string(),
                 _ => serde_json::json!({"choices": []}).to_string(),
             };
-            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap();
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap();
             let resp = tiny_http::Response::from_string(payload)
                 .with_status_code(200)
                 .with_header(header);
@@ -779,4 +812,477 @@ fn eval_records_non_json_and_missing_content() {
     assert_eq!(report["http_errors"], 2);
     assert_eq!(report["invalid"], 2);
     let _ = fs::remove_dir_all(&dir);
+}
+
+fn ustar(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, data) in files {
+        let mut header = [0u8; 512];
+        let bytes = name.as_bytes();
+        header[..bytes.len()].copy_from_slice(bytes);
+        let size = format!("{:o}", data.len());
+        header[124..124 + size.len()].copy_from_slice(size.as_bytes());
+        header[156] = b'0';
+        header[257..262].copy_from_slice(b"ustar");
+        out.extend_from_slice(&header);
+        out.extend_from_slice(data);
+        let pad = (512 - (data.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0).take(pad));
+    }
+    out.extend(std::iter::repeat(0).take(1024));
+    out
+}
+
+#[test]
+fn journey_print_together_does_not_use_the_network_or_print_the_key() {
+    let dir = std::env::temp_dir().join(format!("journey-together-print-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let secret = "together-secret-not-for-logs-2820";
+    let out = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+            "--train-driver",
+            "together",
+            "--together-base-url",
+            "http://127.0.0.1:9",
+            "--api-key-env",
+            "TOGETHER_API_KEY",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .env("TOGETHER_API_KEY", secret)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("train_driver: together"), "{stdout}");
+    assert!(stdout.contains("TOGETHER_API_KEY"), "{stdout}");
+    assert!(stdout.contains("poll 10800s"), "{stdout}");
+    assert!(stdout.contains("dry-run no network"), "{stdout}");
+    assert!(stdout.contains("Qwen/Qwen3.5-4B"), "{stdout}");
+    assert!(stdout.contains("finetune/download"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains(secret), "{stdout}");
+    assert!(!stderr.contains(secret), "{stderr}");
+    assert!(!dir.exists(), "print must not write {}", dir.display());
+    let help = bin()
+        .args(["classify", "journey", "--help"])
+        .output()
+        .unwrap();
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help.status.success(), "{help_text}");
+    assert!(help_text.contains("--train-driver"), "{help_text}");
+    assert!(help_text.contains("TOGETHER_API_KEY"), "{help_text}");
+    assert!(help_text.contains("--api-key-env"), "{help_text}");
+    assert!(help_text.contains("--together-poll-secs"), "{help_text}");
+    assert!(help_text.contains("10800"), "{help_text}");
+}
+
+#[test]
+fn journey_together_run_uploads_polls_and_downloads_adapter() {
+    let root = std::env::temp_dir().join(format!("journey-together-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    write_exe(
+        &tools,
+        "llama-quantize",
+        "#!/bin/sh\nprintf '%s\\n' PATH-QUANT >> \"${JOURNEY_TOOL_LOG:?}\"\nexit 1\n",
+    );
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let work = root.join("work");
+    let secret = "together-secret-not-for-logs-2820";
+    let hits = root.join("together-hits");
+    fs::write(&hits, "").unwrap();
+
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    let hits_server = hits.clone();
+    let archive = {
+        let raw = ustar(&[
+            ("adapter_config.json", b"{}\n"),
+            ("adapter_model.safetensors", b"from-together\n"),
+        ]);
+        let compressed = zstd::stream::encode_all(std::io::Cursor::new(raw), 0).unwrap();
+        assert!(
+            compressed.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]),
+            "mock must serve a real tar.zst"
+        );
+        compressed
+    };
+    thread::spawn(move || {
+        let mut polls = 0u32;
+        for mut req in server.incoming_requests() {
+            let mut body = Vec::new();
+            let _ = std::io::Read::read_to_end(req.as_reader(), &mut body);
+            let url = req.url().to_string();
+            let auth_ok = req.headers().iter().any(|header| {
+                header.field.equiv("Authorization")
+                    && header.value.as_str() == format!("Bearer {secret}")
+            });
+            let mark = if auth_ok { "auth-ok" } else { "auth-bad" };
+            let mut hit = fs::OpenOptions::new()
+                .append(true)
+                .open(&hits_server)
+                .unwrap();
+            writeln!(hit, "{mark} {url}").unwrap();
+            let method = req.method().as_str().to_string();
+            let (status, payload, raw) = if url.starts_with("/files") && method == "POST" {
+                assert!(
+                    body.windows(9).any(|w| w == b"fine-tune"),
+                    "purpose missing"
+                );
+                assert!(body.windows(8).any(|w| w == b"messages"), "dataset missing");
+                (
+                    200,
+                    serde_json::json!({"id":"file-tev1","processing_status":"COMPLETED"})
+                        .to_string(),
+                    None,
+                )
+            } else if url == "/files/file-tev1" {
+                (
+                    200,
+                    serde_json::json!({"id":"file-tev1","processing_status":"COMPLETED"})
+                        .to_string(),
+                    None,
+                )
+            } else if url == "/fine-tunes" && method == "POST" {
+                let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(value["training_file"], "file-tev1");
+                assert_eq!(value["model"], "Qwen/Qwen3.5-4B");
+                assert_eq!(value["training_type"]["type"], "Lora");
+                assert_eq!(value["training_type"]["lora_r"], 8);
+                assert_eq!(value["training_type"]["lora_alpha"], 16);
+                assert_eq!(value["n_epochs"], 1);
+                assert_eq!(value["n_checkpoints"], 1);
+                assert!((value["learning_rate"].as_f64().unwrap() - 0.0001).abs() < 1e-9);
+                assert_eq!(value["suffix"], "tev1");
+                assert!(value.get("lora").is_none(), "{value}");
+                assert!(value.get("lora_r").is_none(), "{value}");
+                assert!(value.get("lora_alpha").is_none(), "{value}");
+                let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+                keys.sort();
+                assert_eq!(
+                    keys,
+                    [
+                        "learning_rate",
+                        "model",
+                        "n_checkpoints",
+                        "n_epochs",
+                        "suffix",
+                        "training_file",
+                        "training_type"
+                    ]
+                );
+                (
+                    200,
+                    serde_json::json!({"id":"ft-tev1","status":"pending"}).to_string(),
+                    None,
+                )
+            } else if url == "/fine-tunes/ft-tev1" {
+                polls += 1;
+                let status = if polls == 1 { "running" } else { "completed" };
+                (
+                    200,
+                    serde_json::json!({"id":"ft-tev1","status":status}).to_string(),
+                    None,
+                )
+            } else if url.contains("/finetune/download")
+                && url.contains("checkpoint=adapter")
+                && url.contains("ft-tev1")
+            {
+                (200, String::new(), Some(archive.clone()))
+            } else if url.contains("/api/chat") {
+                (
+                    200,
+                    serde_json::json!({"message":{"role":"assistant","content":"B"}}).to_string(),
+                    None,
+                )
+            } else {
+                (404, format!("unexpected {url}"), None)
+            };
+            if let Some(bytes) = raw {
+                let _ = req.respond(tiny_http::Response::from_data(bytes).with_status_code(status));
+            } else {
+                let header =
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                        .unwrap();
+                let resp = tiny_http::Response::from_string(payload)
+                    .with_status_code(status)
+                    .with_header(header);
+                let _ = req.respond(resp);
+            }
+        }
+    });
+
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--train-driver",
+            "together",
+            "--together-base-url",
+            &endpoint,
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &endpoint,
+            "--max-steps",
+            "1",
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .env("TOGETHER_API_KEY", secret)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    let stderr = String::from_utf8_lossy(&ran.stderr);
+    assert!(ran.status.success(), "{stdout}\n{stderr}");
+    assert!(!stdout.contains(secret), "{stdout}");
+    assert!(!stderr.contains(secret), "{stderr}");
+    let hits_text = fs::read_to_string(&hits).unwrap();
+    assert!(hits_text.contains("auth-ok /files"), "{hits_text}");
+    assert!(hits_text.contains("auth-ok /fine-tunes"), "{hits_text}");
+    assert!(hits_text.contains("finetune/download"), "{hits_text}");
+    assert!(
+        hits_text
+            .lines()
+            .filter(|line| !line.contains("/api/chat"))
+            .all(|line| line.starts_with("auth-ok")),
+        "{hits_text}"
+    );
+    assert!(!hits_text.contains(secret), "{hits_text}");
+    let weights = fs::read(work.join("outputs/adapter_model.safetensors")).unwrap();
+    assert_eq!(weights, b"from-together\n");
+    assert!(work.join("outputs/adapter_config.json").is_file());
+    let job: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(work.join("together-job.json")).unwrap()).unwrap();
+    assert_eq!(job["job_id"], "ft-tev1");
+    assert_eq!(job["live_pass_recorded"], false);
+    let tool_log = fs::read_to_string(&log).unwrap();
+    assert!(
+        !tool_log.lines().any(|line| line.starts_with("train ")),
+        "{tool_log}"
+    );
+    assert!(tool_log.contains("export "), "{tool_log}");
+    assert!(
+        tool_log.contains(&llama.join("build/bin/llama-quantize").display().to_string()),
+        "{tool_log}"
+    );
+    assert!(!tool_log.contains("PATH-QUANT"), "{tool_log}");
+    let comparison = fs::read_to_string(work.join("comparison.json")).unwrap();
+    assert!(
+        comparison.contains("\"live_pass_recorded\": false"),
+        "{comparison}"
+    );
+    assert!(!comparison.contains(secret), "{comparison}");
+
+    let missing = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            root.join("missing-key").to_str().unwrap(),
+            "--run",
+            "--train-driver",
+            "together",
+            "--together-base-url",
+            "http://127.0.0.1:9",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--max-steps",
+            "1",
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", stamp.to_str().unwrap())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .env_remove("TOGETHER_API_KEY")
+        .output()
+        .unwrap();
+    let miss = format!(
+        "{}{}",
+        String::from_utf8_lossy(&missing.stdout),
+        String::from_utf8_lossy(&missing.stderr)
+    );
+    assert!(!missing.status.success(), "{miss}");
+    assert!(miss.contains("set TOGETHER_API_KEY"), "{miss}");
+    assert!(!miss.contains(secret), "{miss}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn skipped_fetch_validates_snapshot_and_quantize_stays_under_llama_cpp_dir() {
+    let root = std::env::temp_dir().join(format!("journey-skip-fetch-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    fake_tools(&tools);
+    let llama = root.join("llama.cpp");
+    fs::create_dir_all(llama.join("build/bin")).unwrap();
+    fs::write(llama.join("convert_hf_to_gguf.py"), "print('x')\n").unwrap();
+    write_exe(
+        &tools,
+        "llama-quantize",
+        "#!/bin/sh\nprintf '%s\\n' PATH-QUANT >> \"${JOURNEY_TOOL_LOG:?}\"\nexit 0\n",
+    );
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let input = root.join("rows.jsonl");
+    fs::write(&input, tiny_jsonl()).unwrap();
+    let local = root.join("local-base");
+    fs::create_dir_all(&local).unwrap();
+    fs::write(local.join("config.json"), "{}\n").unwrap();
+    let work = root.join("work");
+    let refused = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--base",
+            local.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--max-steps",
+            "1",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("JOURNEY_TOOL_LOG", &log)
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!refused.status.success(), "{text}");
+    assert!(text.contains("llama-quantize is missing under"), "{text}");
+    assert!(!text.contains("PATH-QUANT"), "{text}");
+    let log_text = fs::read_to_string(&log).unwrap();
+    assert!(!log_text.contains("PATH-QUANT"), "{log_text}");
+
+    fake_llama(&llama);
+    fs::write(local.join("tokenizer.json"), "{}\n").unwrap();
+    let stamp = root.join("ollama-models");
+    fs::write(&stamp, "").unwrap();
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for req in server.incoming_requests() {
+            let payload = serde_json::json!({"message":{"role":"assistant","content":"B"}});
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .unwrap();
+            let _ = req
+                .respond(tiny_http::Response::from_string(payload.to_string()).with_header(header));
+        }
+    });
+    fs::write(local.join("model.safetensors"), "w\n").unwrap();
+    let first = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--base",
+            local.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &format!("http://127.0.0.1:{port}"),
+            "--max-steps",
+            "1",
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", &stamp)
+        .env("JOURNEY_TOOL_LOG", &log)
+        .output()
+        .unwrap();
+    let first_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(first.status.success(), "{first_text}");
+    fs::remove_file(local.join("model.safetensors")).unwrap();
+    let second = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--base",
+            local.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+            "--endpoint",
+            &format!("http://127.0.0.1:{port}"),
+            "--max-steps",
+            "1",
+            "--timeout-secs",
+            "5",
+        ])
+        .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
+        .env("OLLAMA_STAMP", &stamp)
+        .env("JOURNEY_TOOL_LOG", &log)
+        .output()
+        .unwrap();
+    let second_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(!second.status.success(), "{second_text}");
+    assert!(second_text.contains("skip prepare"), "{second_text}");
+    assert!(!second_text.contains("run fetch-base"), "{second_text}");
+    assert!(!second_text.contains("redo fetch-base"), "{second_text}");
+    assert!(second_text.contains("base snapshot"), "{second_text}");
+    assert!(second_text.contains("non-empty weights"), "{second_text}");
+    let _ = fs::remove_dir_all(&root);
 }
