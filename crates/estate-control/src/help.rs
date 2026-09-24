@@ -127,7 +127,7 @@ Purpose:    make purpose-build-checklist
 Pick:       make purpose-build-pick
             print-only host and stack picker for purpose-build journeys (operator section 17)
 Journey:    make purpose-build-journey
-            print-only purpose-build on-demand entry (operator section 18)
+            when an SLM fits mid-software-build, or on demand, the same print-only purpose-build on-demand entry (operator section 18)
 DeepSeek:   make deepseek-r1-distill-journey
             print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19)
 Ds chain:   make uniqueness-deepseek
@@ -420,7 +420,7 @@ They do not train, merge, convert, shell out to ollama, or promote.
 They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 20).
-make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
+When an SLM fits mid-software-build, or on demand, make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not train, fuse, convert, shell out to ollama, promote, or apply the estate.
 It does not invent a live PASS. The recorded PASS stays the only live uniqueness prove.
@@ -1104,7 +1104,7 @@ They do not train, merge, convert, shell out to ollama, or promote.
 They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 20).
-make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
+When an SLM fits mid-software-build, or on demand, make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not invent a live PASS. The recorded PASS stays the only live uniqueness prove.
 Walk: docs/operator-enrich-journeys.md (section 18).
