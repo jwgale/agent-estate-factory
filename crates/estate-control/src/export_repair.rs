@@ -539,6 +539,171 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// Live Qwen3.5-4B export: base-hf weight_map has 738 tensors, 15 of them
+    /// `mtp.*`. The merged export keeps `mtp_num_hidden_layers: 1` and has the
+    /// other 723 tensors, none named `mtp`.
+    const LIVE_MTP: [&str; 15] = [
+        "mtp.fc.weight",
+        "mtp.norm.weight",
+        "mtp.pre_fc_norm_embedding.weight",
+        "mtp.pre_fc_norm_hidden.weight",
+        "mtp.layers.0.input_layernorm.weight",
+        "mtp.layers.0.post_attention_layernorm.weight",
+        "mtp.layers.0.mlp.down_proj.weight",
+        "mtp.layers.0.mlp.gate_proj.weight",
+        "mtp.layers.0.mlp.up_proj.weight",
+        "mtp.layers.0.self_attn.q_proj.weight",
+        "mtp.layers.0.self_attn.k_proj.weight",
+        "mtp.layers.0.self_attn.v_proj.weight",
+        "mtp.layers.0.self_attn.o_proj.weight",
+        "mtp.layers.0.self_attn.q_norm.weight",
+        "mtp.layers.0.self_attn.k_norm.weight",
+    ];
+
+    fn live_config() -> String {
+        serde_json::json!({
+            "architectures": ["Qwen3_5ForConditionalGeneration"],
+            "model_type": "qwen3_5",
+            "text_config": {
+                "model_type": "qwen3_5_text",
+                "num_hidden_layers": 32,
+                "mtp_num_hidden_layers": 1,
+                "mtp_use_dedicated_embeddings": false
+            }
+        })
+        .to_string()
+    }
+
+    fn write_sharded(dir: &Path, names: &[String]) {
+        fs::create_dir_all(dir).unwrap();
+        let data = [9u8, 0, 0, 0];
+        let mid = names.len() / 2;
+        let shards = [
+            (
+                "model.safetensors-00001-of-00002.safetensors",
+                &names[..mid],
+            ),
+            (
+                "model.safetensors-00002-of-00002.safetensors",
+                &names[mid..],
+            ),
+        ];
+        let mut weight_map = serde_json::Map::new();
+        for (file, group) in shards {
+            let views: Vec<_> = group
+                .iter()
+                .map(|name| {
+                    (
+                        name.clone(),
+                        TensorView::new(Dtype::F32, vec![1], &data).unwrap(),
+                    )
+                })
+                .collect();
+            let bytes = safetensors::serialize(views, &None).unwrap();
+            fs::write(dir.join(file), bytes).unwrap();
+            for name in group {
+                weight_map.insert(name.clone(), Value::String(file.to_string()));
+            }
+        }
+        let index = serde_json::json!({
+            "metadata": {"total_size": names.len() * 4},
+            "weight_map": weight_map
+        });
+        fs::write(
+            dir.join(INDEX_NAME),
+            format!("{}\n", serde_json::to_string_pretty(&index).unwrap()),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn copies_the_fifteen_live_mtp_tensors_into_a_sharded_export() {
+        let root =
+            std::env::temp_dir().join(format!("export-repair-live-738-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mut trunk = Vec::new();
+        for layer in 0..32 {
+            for n in 0..22 {
+                trunk.push(format!(
+                    "model.language_model.layers.{layer}.block.{n}.weight"
+                ));
+            }
+        }
+        trunk.push("model.language_model.embed_tokens.weight".into());
+        for n in 0..18 {
+            trunk.push(format!("model.language_model.extra.{n}.weight"));
+        }
+        assert_eq!(trunk.len(), 723, "merged export weight_map");
+        let mut base_names = trunk.clone();
+        base_names.extend(LIVE_MTP.iter().map(|name| (*name).to_string()));
+        assert_eq!(base_names.len(), 738);
+        assert_eq!(
+            base_names
+                .iter()
+                .filter(|name| name.contains("mtp"))
+                .count(),
+            15
+        );
+        let base = root.join("base-hf");
+        let merged = root.join("export");
+        write_sharded(&base, &base_names);
+        write_sharded(&merged, &trunk);
+        fs::write(base.join("config.json"), live_config()).unwrap();
+        fs::write(merged.join("config.json"), live_config()).unwrap();
+        let shard_a =
+            fs::read(merged.join("model.safetensors-00001-of-00002.safetensors")).unwrap();
+        let shard_b =
+            fs::read(merged.join("model.safetensors-00002-of-00002.safetensors")).unwrap();
+        let before: Value =
+            serde_json::from_str(&fs::read_to_string(merged.join(INDEX_NAME)).unwrap()).unwrap();
+        assert_eq!(before["weight_map"].as_object().unwrap().len(), 723);
+        assert!(before["weight_map"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|name| !name.contains("mtp")));
+
+        let report = repair_export(&base, &merged).unwrap();
+        assert_eq!(report.tensors.len(), 15, "{:?}", report.tensors);
+        for name in LIVE_MTP {
+            assert!(
+                report.tensors.iter().any(|copied| copied == name),
+                "missing {name}"
+            );
+        }
+        assert!(report.summary().contains("15 tensor"));
+        let after: Value =
+            serde_json::from_str(&fs::read_to_string(merged.join(INDEX_NAME)).unwrap()).unwrap();
+        let map = after["weight_map"].as_object().unwrap();
+        assert_eq!(map.len(), 738);
+        assert_eq!(map.keys().filter(|name| name.contains("mtp")).count(), 15);
+        for name in LIVE_MTP {
+            assert_eq!(map[name], REPAIR_SHARD, "{name}");
+        }
+        for name in &trunk {
+            assert_eq!(
+                map[name], before["weight_map"][name],
+                "trunk tensor {name} was overwritten"
+            );
+        }
+        assert_eq!(
+            fs::read(merged.join("model.safetensors-00001-of-00002.safetensors")).unwrap(),
+            shard_a
+        );
+        assert_eq!(
+            fs::read(merged.join("model.safetensors-00002-of-00002.safetensors")).unwrap(),
+            shard_b
+        );
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(merged.join("config.json")).unwrap()).unwrap();
+        assert_eq!(config["text_config"]["mtp_num_hidden_layers"], 1);
+        assert_eq!(config["text_config"]["mtp_use_dedicated_embeddings"], false);
+        assert_eq!(config["text_config"]["num_hidden_layers"], 32);
+        let again = repair_export(&base, &merged).unwrap();
+        assert!(again.tensors.is_empty(), "{again:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn refuses_when_declared_mtp_is_absent_from_both() {
         let root = std::env::temp_dir().join(format!("export-repair-gap-{}", std::process::id()));
