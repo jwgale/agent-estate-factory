@@ -94,6 +94,16 @@ estate classify journey --dataset ag_news --train-size all --heldout-size all --
 
 The 3,000-row specialist tag is `tev1-specialist-agnews-3000` and the journey directory is `.cell/classify-journey-agnews-3000`. The 10,000, 30,000, and all runs use `-agnews-10000`, `-agnews-30000`, and `-agnews-all`.
 
+## devign letter runs
+
+`estate classify import --dataset devign` reads `google/code_x_glue_cc_defect_detection` (Devign / CodeXGLUE defect detection) the same way as ag_news. The Hub id is an alias. Fields are `func` and `target`. `target` may be a bool or `0`/`1` (`0` secure, `1` insecure). Options stay in class-table order: A=Secure, B=Insecure. Train is the official train split (21,854). Held-out is the official test split only (2,732), not validation. `--train-size` and `--heldout-size` are class-balanced; `all` keeps that official split. `--from-local` reads a NAS snapshot (`data/train-*.parquet` and `data/test-*.parquet`) and does not write there. `estate classify journey --dataset devign` reuses the tev1 Qwen path: import, prepare with no second split, train, export, seat, eval. The default tag suffix is `-devign-<train-size>`. Output is for local training only. Do not redistribute it. Credit Devign and CodeXGLUE. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify import --dataset devign --from-local "$NAS/datasets/devign" --train-size all --heldout-size all --seed 42
+estate classify journey --dataset devign --from-local "$NAS/datasets/devign" --train-size 3000 --heldout-size all --seed 42 --print --llama-cpp-dir "$LLAMA_CPP_DIR"
+estate classify journey --dataset google/code_x_glue_cc_defect_detection --train-size all --heldout-size all --seed 42 --print
+```
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.

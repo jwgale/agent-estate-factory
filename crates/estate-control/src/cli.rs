@@ -498,17 +498,19 @@ pub(crate) enum ClassifyCommand {
         force: bool,
     },
     /// Download a public Hugging Face classification set and write tev1 JSONL.
+    /// This slice downloads ag_news and devign (CodeXGLUE defect detection).
     /// Sampled rows land in `.cell/classify-import/<alias>-<train-size>-s<seed>/`.
     /// ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech).
-    /// The license is unspecified on the Hub card. Output is for local training only. Do not redistribute.
+    /// devign options stay in class-table order (A=Secure, B=Insecure). Held-out is the official test split.
+    /// Output is for local training only. Do not redistribute.
     Import {
-        /// `ag_news` or `fancyzhx/ag_news`. banking77 and multi_nli are catalog rows for a later slice.
+        /// `ag_news`, `fancyzhx/ag_news`, `devign`, or `google/code_x_glue_cc_defect_detection`. banking77 and multi_nli are catalog rows for a later slice.
         #[arg(long)]
         dataset: String,
         /// Class-balanced train rows. `all` keeps the official train split. No upper cap.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows drawn only from the official test split. `all` is 7600 for ag_news.
+        /// Held-out rows drawn only from the official test split. `all` is 7600 for ag_news and 2732 for devign.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Sample seed. Default 42.
@@ -661,7 +663,7 @@ pub(crate) enum ClassifyCommand {
         /// Environment variable that holds the Together API key. Default `TOGETHER_API_KEY`. The value is never printed.
         #[arg(long)]
         api_key_env: Option<String>,
-        /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news.
+        /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news. `devign` downloads google/code_x_glue_cc_defect_detection.
         /// Import already holds out the official test split. Prepare does not split again.
         /// The default tag and `--out` gain a suffix such as `-agnews-3000` so sizes can coexist.
         #[arg(long)]

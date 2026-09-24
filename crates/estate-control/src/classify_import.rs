@@ -6,10 +6,10 @@
 //! `--fetch rows-api` is the explicit datasets-server fallback. Tests inject the
 //! Python and `hf` runners and never spawn a process or call the network.
 //!
-//! Option order for `fixed_classes` presets (ag_news) is the class table order.
-//! Letters A, B, C, … follow that order and are not shuffled. The answer letter
-//! is the class letter. `sample_distractors` (banking77, later) shuffles the
-//! chosen options with the import seed, and the answer letter follows that shuffle.
+//! Option order for `fixed_classes` presets (ag_news, devign) is the class table
+//! order. Letters A, B, C, … follow that order and are not shuffled. The answer
+//! letter is the class letter. `sample_distractors` (banking77, later) shuffles
+//! the chosen options with the import seed, and the answer letter follows that shuffle.
 
 use crate::classify::split_indices;
 use anyhow::{bail, Result};
@@ -98,6 +98,17 @@ const AG_NEWS_CLASSES: &[ClassSpec] = &[
     },
 ];
 
+const DEVIGN_CLASSES: &[ClassSpec] = &[
+    ClassSpec {
+        key: "secure",
+        description: "Secure",
+    },
+    ClassSpec {
+        key: "insecure",
+        description: "Insecure",
+    },
+];
+
 const MULTI_NLI_CLASSES: &[ClassSpec] = &[
     ClassSpec {
         key: "entailment",
@@ -113,7 +124,7 @@ const MULTI_NLI_CLASSES: &[ClassSpec] = &[
     },
 ];
 
-/// First-class preset plus the two later rows. Only `ag_news` downloads.
+/// Downloadable presets plus the two later rows. `ag_news` and `devign` download.
 const CATALOG: &[DatasetPreset] = &[
     DatasetPreset {
         alias: "ag_news",
@@ -128,6 +139,21 @@ const CATALOG: &[DatasetPreset] = &[
         label_field: "label",
         map: LabelMap::FixedClasses(AG_NEWS_CLASSES),
         license_note: "ag_news license is unspecified on the Hugging Face dataset card; this output is for local training only, do not redistribute.",
+        fetch: Fetch::RowsApi,
+    },
+    DatasetPreset {
+        alias: "devign",
+        hf_id: "google/code_x_glue_cc_defect_detection",
+        slug: "devign",
+        train_split: "train",
+        test_split: "test",
+        official_train: 21_854,
+        official_test: 2_732,
+        question: "Is this function secure or insecure code?",
+        text_field: "func",
+        label_field: "target",
+        map: LabelMap::FixedClasses(DEVIGN_CLASSES),
+        license_note: "Devign / CodeXGLUE defect detection (google/code_x_glue_cc_defect_detection, C-UDA) is for local training only. Do not redistribute. Credit Devign and CodeXGLUE.",
         fetch: Fetch::RowsApi,
     },
     DatasetPreset {
@@ -207,7 +233,7 @@ pub fn preset_by_name(name: &str) -> Result<&'static DatasetPreset> {
         .find(|row| row.alias == name || row.hf_id == name || row.slug == name)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "refuse:classify-import: unknown dataset {name}. This slice downloads ag_news (fancyzhx/ag_news)."
+                "refuse:classify-import: unknown dataset {name}. This slice downloads ag_news (fancyzhx/ag_news) and devign (google/code_x_glue_cc_defect_detection)."
             )
         })
 }
@@ -398,6 +424,8 @@ pub fn sample_records(
     heldout_size: &SplitSize,
     seed: u64,
 ) -> Result<Sampled> {
+    assert_known_labels(preset, train_rows, "train")?;
+    assert_known_labels(preset, test_rows, "test")?;
     let train_idx = balanced_indices(train_rows, train_size, seed, "train")?;
     let held_idx = balanced_indices(
         test_rows,
@@ -432,6 +460,33 @@ pub fn sample_records(
         }
     }
     Ok(Sampled { train, heldout })
+}
+
+fn class_table(preset: &DatasetPreset) -> &'static [ClassSpec] {
+    match preset.map {
+        LabelMap::FixedClasses(classes)
+        | LabelMap::SampleDistractors { classes, .. }
+        | LabelMap::ThreeWay { classes, .. } => classes,
+    }
+}
+
+fn assert_known_labels(preset: &DatasetPreset, rows: &[NativeRow], side: &str) -> Result<()> {
+    let classes = class_table(preset);
+    if classes.is_empty() {
+        return Ok(());
+    }
+    let last = classes.len() - 1;
+    for row in rows {
+        if classes.get(row.label).is_none() {
+            bail!(
+                "refuse:classify-import: {side} row {} label {} is outside the {} class table (0..={last})",
+                row.index,
+                row.label,
+                preset.alias
+            );
+        }
+    }
+    Ok(())
 }
 
 fn balanced_indices(
@@ -558,6 +613,27 @@ fn to_record(preset: &DatasetPreset, split: &str, row: &NativeRow, seed: u64) ->
     }))
 }
 
+fn option_order_note(preset: &DatasetPreset) -> String {
+    match preset.map {
+        LabelMap::FixedClasses(classes) | LabelMap::ThreeWay { classes, .. } => {
+            let letters: Vec<char> = LABELS.chars().take(classes.len()).collect();
+            let pairs: Vec<String> = classes
+                .iter()
+                .enumerate()
+                .map(|(i, class)| format!("{}={}", letters[i], class.description))
+                .collect();
+            format!(
+                "{} options stay in class-table order ({}) and are not shuffled. The answer letter is that class letter.",
+                preset.alias,
+                pairs.join(", ")
+            )
+        }
+        LabelMap::SampleDistractors { .. } => {
+            "sample_distractors shuffles the chosen options with --seed and the answer letter follows the shuffle.".into()
+        }
+    }
+}
+
 fn fixed_options(classes: &[ClassSpec], label: usize) -> Result<(Vec<Value>, char, String)> {
     if classes.is_empty() || classes.len() > LABELS.chars().count() {
         bail!("refuse:classify-import: class table length is invalid");
@@ -659,7 +735,7 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
     let preset = preset_by_name(req.dataset)?;
     if preset.fetch != Fetch::RowsApi && req.native_train.is_none() {
         bail!(
-            "refuse:classify-import: {} is a catalog row for a later slice. This slice downloads ag_news.",
+            "refuse:classify-import: {} is a catalog row for a later slice. This slice downloads ag_news and devign.",
             preset.hf_id
         );
     }
@@ -708,7 +784,7 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
             LabelMap::FixedClasses(_) | LabelMap::ThreeWay { .. } => "fixed",
             LabelMap::SampleDistractors { .. } => "shuffled-with-seed",
         },
-        "option_order_note": "ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech) and are not shuffled. The answer letter is that class letter. A later sample_distractors row shuffles the chosen options with --seed and the answer letter follows the shuffle.",
+        "option_order_note": option_order_note(preset),
         "heldout_split": preset.test_split,
         "official_train": preset.official_train,
         "official_test": preset.official_test,
@@ -1299,8 +1375,16 @@ with open(spec["out"], "w", encoding="utf-8") as out:
             sys.exit(3)
         for i in range(n):
             label = cols[label_field][i]
-            if isinstance(label, bool) or not isinstance(label, numbers.Integral):
-                sys.stderr.write("label is not an int\n")
+            # bool is a subclass of int. Map False/True to 0/1 before the int check.
+            if isinstance(label, bool):
+                label = int(label)
+            elif isinstance(label, numbers.Integral):
+                label = int(label)
+            else:
+                sys.stderr.write("label is not a bool or int\n")
+                sys.exit(3)
+            if label < 0:
+                sys.stderr.write("label is negative\n")
                 sys.exit(3)
             text = cols[text_field][i]
             text = "" if text is None else str(text)
@@ -1815,16 +1899,27 @@ fn native_json(row: &NativeRow) -> Value {
     })
 }
 
+fn parse_label_value(index: u64, value: Option<&Value>) -> Result<usize> {
+    let Some(value) = value else {
+        bail!("refuse:classify-import: row {index} has no label");
+    };
+    if let Some(flag) = value.as_bool() {
+        return Ok(usize::from(flag));
+    }
+    if let Some(n) = value.as_u64() {
+        return Ok(n as usize);
+    }
+    if let Some(n) = value.as_i64() {
+        if n < 0 {
+            bail!("refuse:classify-import: row {index} label {n} is negative");
+        }
+        return Ok(n as usize);
+    }
+    bail!("refuse:classify-import: row {index} label {value} is not a bool or integer")
+}
+
 fn parse_server_row(preset: &DatasetPreset, index: u64, row: &Value) -> Result<NativeRow> {
-    let label = row
-        .get(preset.label_field)
-        .and_then(Value::as_u64)
-        .or_else(|| {
-            row.get(preset.label_field)
-                .and_then(Value::as_i64)
-                .map(|n| n as u64)
-        })
-        .ok_or_else(|| anyhow::anyhow!("refuse:classify-import: row {index} has no label"))?;
+    let label = parse_label_value(index, row.get(preset.label_field))?;
     let text = row
         .get(preset.text_field)
         .and_then(Value::as_str)
@@ -2031,6 +2126,121 @@ mod tests {
             sampled.train[0]["id"], again.train[0]["id"],
             "same seed keeps the train sample"
         );
+    }
+
+    #[test]
+    fn devign_aliases_map_bool_and_int_and_keep_fixed_ab_order() {
+        let preset = preset_by_name("devign").unwrap();
+        let by_hub = preset_by_name("google/code_x_glue_cc_defect_detection").unwrap();
+        assert!(std::ptr::eq(preset, by_hub));
+        assert_eq!(preset.slug, "devign");
+        assert_eq!(preset.text_field, "func");
+        assert_eq!(preset.label_field, "target");
+        assert_eq!(preset.train_split, "train");
+        assert_eq!(preset.test_split, "test");
+        assert_eq!(preset.official_train, 21_854);
+        assert_eq!(preset.official_test, 2_732);
+        assert!(preset.license_note.contains("Do not redistribute"));
+        assert!(preset.license_note.contains("Devign"));
+        assert!(preset.license_note.contains("CodeXGLUE"));
+        assert_eq!(
+            parse_server_row(
+                preset,
+                0,
+                &json!({"func": "int ok(){return 0;}", "target": false})
+            )
+            .unwrap()
+            .label,
+            0
+        );
+        assert_eq!(
+            parse_server_row(preset, 1, &json!({"func": "void bad(){}", "target": true}))
+                .unwrap()
+                .label,
+            1
+        );
+        assert_eq!(
+            parse_server_row(preset, 2, &json!({"func": "void z(){}", "target": 0}))
+                .unwrap()
+                .label,
+            0
+        );
+        assert_eq!(
+            parse_server_row(preset, 3, &json!({"func": "void o(){}", "target": 1}))
+                .unwrap()
+                .label,
+            1
+        );
+        let ag = preset_by_name("ag_news").unwrap();
+        assert_eq!(
+            parse_server_row(ag, 4, &json!({"text": "new chip", "label": 3}))
+                .unwrap()
+                .label,
+            3
+        );
+        let unknown = parse_server_row(preset, 5, &json!({"func": "void x(){}", "target": "vuln"}))
+            .unwrap_err()
+            .to_string();
+        assert!(unknown.contains("not a bool or integer"), "{unknown}");
+        let negative = parse_server_row(preset, 6, &json!({"func": "void x(){}", "target": -1}))
+            .unwrap_err()
+            .to_string();
+        assert!(negative.contains("negative"), "{negative}");
+        let missing = parse_server_row(preset, 7, &json!({"func": "void x(){}"}))
+            .unwrap_err()
+            .to_string();
+        assert!(missing.contains("has no label"), "{missing}");
+        let outside = sample_records(
+            preset,
+            &grid(0, 2, 2),
+            &[native(9, 2, "void weird(){}")],
+            &SplitSize::All,
+            &SplitSize::All,
+            42,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            outside.contains("outside the devign class table"),
+            "{outside}"
+        );
+        let sampled = sample_records(
+            preset,
+            &grid(0, 8, 2),
+            &grid(1_000, 4, 2),
+            &SplitSize::Count(4),
+            &SplitSize::All,
+            42,
+        )
+        .unwrap();
+        assert_eq!(sampled.train.len(), 4);
+        assert_eq!(sampled.heldout.len(), 8);
+        let mut counts = [0, 0];
+        for row in &sampled.train {
+            let opts = row["options"].as_array().unwrap();
+            assert_eq!(opts.len(), 2);
+            assert_eq!(opts[0]["label"], "A");
+            assert_eq!(opts[0]["key"], "secure");
+            assert_eq!(opts[0]["description"], "Secure");
+            assert_eq!(opts[1]["label"], "B");
+            assert_eq!(opts[1]["key"], "insecure");
+            assert_eq!(opts[1]["description"], "Insecure");
+            assert_eq!(row["question"], "Is this function secure or insecure code?");
+            match row["answer"].as_str().unwrap() {
+                "A" => counts[0] += 1,
+                "B" => counts[1] += 1,
+                other => panic!("unexpected letter {other}"),
+            }
+        }
+        assert_eq!(counts, [2, 2]);
+        let err = preset_by_name("not-a-set").unwrap_err().to_string();
+        assert!(err.contains("devign"), "{err}");
+        assert!(err.contains("ag_news"), "{err}");
+        let bool_at = PARQUET_SCRIPT.find("isinstance(label, bool)").unwrap();
+        let integral_at = PARQUET_SCRIPT.find("numbers.Integral").unwrap();
+        assert!(bool_at < integral_at);
+        assert!(PARQUET_SCRIPT.contains("label = int(label)"));
+        assert!(!PARQUET_SCRIPT.contains("label is not an int"));
     }
 
     #[test]
@@ -2514,6 +2724,22 @@ mod tests {
         http_calls: std::cell::Cell<u32>,
         pyarrow_missing: bool,
         touch_source: bool,
+        train_rows: u64,
+        test_rows: u64,
+        label_mod: u64,
+    }
+
+    fn fake_io(pyarrow_missing: bool, touch_source: bool) -> FakeIo {
+        let preset = preset_by_name("ag_news").unwrap();
+        FakeIo {
+            hf_calls: std::cell::Cell::new(0),
+            http_calls: std::cell::Cell::new(0),
+            pyarrow_missing,
+            touch_source,
+            train_rows: preset.official_train,
+            test_rows: preset.official_test,
+            label_mod: 4,
+        }
     }
 
     impl ImportIo for FakeIo {
@@ -2528,11 +2754,10 @@ mod tests {
                     }
                 }
             }
-            let preset = preset_by_name("ag_news").unwrap();
-            let n = if job.split == preset.train_split {
-                preset.official_train
+            let n = if job.split == "train" {
+                self.train_rows
             } else {
-                preset.official_test
+                self.test_rows
             };
             use std::io::Write;
             let mut file = std::fs::File::create(job.out_partial)?;
@@ -2540,7 +2765,7 @@ mod tests {
                 writeln!(
                     file,
                     "{{\"index\":{i},\"text\":\"row-{i}\",\"label\":{}}}",
-                    i % 4
+                    i % self.label_mod
                 )?;
             }
             Ok(())
@@ -2628,12 +2853,7 @@ mod tests {
         let before_names: Vec<_> = before.iter().map(|(name, _, _)| name.clone()).collect();
         let out = root.join("sampled");
         let cache = root.join("cache");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -2707,12 +2927,7 @@ mod tests {
         let source = snapshot_dir(&root, "nas", b"t", b"e");
         let out = root.join("sampled");
         let cache = root.join("cache");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: true,
-            touch_source: false,
-        };
+        let io = fake_io(true, false);
         let err = classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -2818,12 +3033,7 @@ mod tests {
         .unwrap();
         assert!(cache_verified(preset, &native).unwrap());
         let out = root.join("sampled");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -2907,12 +3117,7 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let out = root.join("sampled");
         let cache = root.join("cache");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -2965,12 +3170,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let out = root.join("sampled");
         let cache = root.join("cache");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         let err = classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -3020,12 +3220,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let out = root.join("sampled");
         let cache = root.join("cache");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -3143,12 +3338,7 @@ mod tests {
         .unwrap();
         assert!(cache_verified(preset, &native).unwrap());
         let out = root.join("sampled");
-        let io = FakeIo {
-            hf_calls: std::cell::Cell::new(0),
-            http_calls: std::cell::Cell::new(0),
-            pyarrow_missing: false,
-            touch_source: false,
-        };
+        let io = fake_io(false, false);
         classify_import_with(
             &ImportRequest {
                 dataset: "ag_news",
@@ -3210,5 +3400,193 @@ mod tests {
         let again = dataset_source_token(Some(&snap), ImportFetch::Bulk, "train", "test");
         assert_eq!(token, again);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn devign_from_local_reads_test_parquet_and_skips_validation() {
+        let root = std::env::temp_dir().join(format!(
+            "import-devign-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let source = snapshot_dir(&root, "nas", b"train-bytes", b"test-bytes");
+        fs::write(
+            source
+                .join("data")
+                .join("validation-00000-of-00001.parquet"),
+            b"validation-bytes",
+        )
+        .unwrap();
+        let test_files = split_parquet_files(&source, "test").unwrap();
+        assert_eq!(test_files.len(), 1);
+        assert!(
+            test_files
+                .iter()
+                .all(|path| !path.display().to_string().contains("validation")),
+            "{test_files:?}"
+        );
+        let preset = preset_by_name("devign").unwrap();
+        let mut io = fake_io(false, false);
+        io.train_rows = preset.official_train;
+        io.test_rows = preset.official_test;
+        io.label_mod = 2;
+        let out = root.join("sampled");
+        let cache = root.join("cache");
+        classify_import_with(
+            &ImportRequest {
+                dataset: "google/code_x_glue_cc_defect_detection",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&source),
+                fetch: ImportFetch::Bulk,
+                python: Some("python3"),
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        assert_eq!(io.hf_calls.get(), 0);
+        assert_eq!(io.http_calls.get(), 0);
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(out.join("import.json")).unwrap()).unwrap();
+        assert_eq!(manifest["dataset"], "devign");
+        assert_eq!(manifest["hf_id"], preset.hf_id);
+        assert_eq!(manifest["heldout_split"], "test");
+        assert_eq!(manifest["official_train"], 21_854);
+        assert_eq!(manifest["official_test"], 2_732);
+        assert_eq!(manifest["option_order"], "fixed");
+        let note = manifest["option_order_note"].as_str().unwrap();
+        assert!(note.contains("A=Secure, B=Insecure"), "{note}");
+        let native: Value = serde_json::from_str(
+            &fs::read_to_string(cache.join("devign").join("native").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let parquet = native["parquet"].to_string();
+        assert!(
+            parquet.contains("train-00000-of-00001.parquet"),
+            "{parquet}"
+        );
+        assert!(parquet.contains("test-00000-of-00001.parquet"), "{parquet}");
+        assert!(!parquet.contains("validation"), "{parquet}");
+        let train = fs::read_to_string(out.join("train.jsonl")).unwrap();
+        assert!(train.contains("\"key\":\"secure\""));
+        assert!(train.contains("\"key\":\"insecure\""));
+        let later = classify_import_with(
+            &ImportRequest {
+                dataset: "banking77",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &root.join("later"),
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: None,
+                fetch: ImportFetch::Bulk,
+                python: None,
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(later.contains("later slice"), "{later}");
+        assert!(later.contains("devign"), "{later}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn devign_native_jsonl_accepts_bool_and_int_labels() {
+        let dir = std::env::temp_dir().join(format!(
+            "import-devign-native-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let train = dir.join("native-train.jsonl");
+        let test = dir.join("native-test.jsonl");
+        fs::write(
+            &train,
+            concat!(
+                "{\"index\":1,\"text\":\"void secure(){}\",\"label\":false}\n",
+                "{\"index\":2,\"text\":\"void insecure(){}\",\"label\":true}\n",
+                "{\"index\":3,\"text\":\"void also_secure(){}\",\"label\":0}\n",
+                "{\"index\":4,\"text\":\"void also_insecure(){}\",\"label\":1}\n",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &test,
+            concat!(
+                "{\"index\":11,\"text\":\"void held_secure(){}\",\"label\":false}\n",
+                "{\"index\":12,\"text\":\"void held_insecure(){}\",\"label\":1}\n",
+            ),
+        )
+        .unwrap();
+        let out = dir.join("out");
+        cmd_classify_import(&ImportRequest {
+            dataset: "devign",
+            train_size: "all",
+            heldout_size: "all",
+            seed: 42,
+            out: &out,
+            force: false,
+            native_train: Some(&train),
+            native_test: Some(&test),
+            from_local: None,
+            fetch: ImportFetch::Bulk,
+            python: None,
+            cache_root: None,
+        })
+        .unwrap();
+        let body = fs::read_to_string(out.join("train.jsonl")).unwrap();
+        let mut answers = BTreeMap::new();
+        for line in body.lines() {
+            let row: Value = serde_json::from_str(line).unwrap();
+            let state = row["state"].as_str().unwrap().to_string();
+            let answer = row["answer"].as_str().unwrap().to_string();
+            answers.insert(state, answer);
+        }
+        assert_eq!(answers["void secure(){}"], "A");
+        assert_eq!(answers["void also_secure(){}"], "A");
+        assert_eq!(answers["void insecure(){}"], "B");
+        assert_eq!(answers["void also_insecure(){}"], "B");
+        let bad = dir.join("bad.jsonl");
+        fs::write(
+            &bad,
+            "{\"index\":1,\"text\":\"void x(){}\",\"label\":\"nope\"}\n",
+        )
+        .unwrap();
+        let err = cmd_classify_import(&ImportRequest {
+            dataset: "devign",
+            train_size: "all",
+            heldout_size: "all",
+            seed: 42,
+            out: &dir.join("bad-out"),
+            force: false,
+            native_train: Some(&bad),
+            native_test: Some(&test),
+            from_local: None,
+            fetch: ImportFetch::Bulk,
+            python: None,
+            cache_root: None,
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("not a bool or integer"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
