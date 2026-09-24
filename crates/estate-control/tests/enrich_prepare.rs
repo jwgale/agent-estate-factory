@@ -619,7 +619,7 @@ fn cell_one_status_tip_names_pr_161() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #161"
+        "status snapshot must name tip through PR #165"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
@@ -647,12 +647,12 @@ fn cell_one_status_tip_names_pr_161() {
     );
     assert!(
         !status.contains("on tip through PR #142"),
-        "prepare walk stays PR #142; tip is PR #161"
+        "prepare walk stays PR #142; tip is PR #165"
     );
-    let head: String = status.lines().take(26).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(29).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #161"),
-        "status header must name tip through PR #161: {head}"
+        head.contains("through PR #165"),
+        "status header must name tip through PR #165: {head}"
     );
     assert!(
         !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
@@ -689,6 +689,39 @@ fn cell_one_status_tip_names_pr_161() {
     assert!(
         head.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"),
         "status header must name the PR #161 tip SHA: {head}"
+    );
+    assert!(
+        head.contains("7a1b3d54d37b38977c5570679d7f3922b9404d4a"),
+        "status header must name the PR #165 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #161"),
+        "status header must not freeze the snapshot at PR #161: {head}"
+    );
+    assert!(
+        !head.contains("through PR #161 (`0cc8b9e5bf2423d90f54f222a182804b3b337d94`)"),
+        "status header must not freeze tip at PR #161: {head}"
+    );
+    assert!(
+        head.contains("Tip honesty through PR #161 is PR #163")
+            && head.contains("7a08b76b7f9f95922758c260351b310de66a74e4"),
+        "status header must name PR #163 tip honesty through PR #161: {head}"
+    );
+    assert!(
+        head.contains("PR #164")
+            && head.contains("bd5a515901852b95d1415bb55eb557e5ed424d8d")
+            && head.contains("status=integration")
+            && head.contains("live=false"),
+        "status header must name the Axolotl doctor and status lock: {head}"
+    );
+    assert!(
+        head.contains("make unsloth-lora-journey")
+            && head.contains("operator section 14"),
+        "status header must name the Unsloth LoRA journey: {head}"
+    );
+    assert!(
+        head.contains("only live uniqueness prove"),
+        "status header must keep the recorded PASS as the only live uniqueness prove: {head}"
     );
     assert!(
         head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
@@ -1146,6 +1179,57 @@ fn cell_one_status_tip_names_pr_161() {
         "{tip161}"
     );
     assert!(!tip161.to_ascii_lowercase().contains("kimi/"), "{tip161}");
+
+    let tip165 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #165")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #165 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip165.contains("7a1b3d54d37b38977c5570679d7f3922b9404d4a"),
+        "{tip165}"
+    );
+    assert!(
+        tip165.contains("7a08b76b7f9f95922758c260351b310de66a74e4"),
+        "{tip165}"
+    );
+    assert!(
+        tip165.contains("bd5a515901852b95d1415bb55eb557e5ed424d8d"),
+        "{tip165}"
+    );
+    assert!(tip165.contains("PR #163"), "{tip165}");
+    assert!(tip165.contains("PR #164"), "{tip165}");
+    assert!(tip165.contains("PR #165"), "{tip165}");
+    assert!(tip165.contains("operator section 14"), "{tip165}");
+    assert!(tip165.contains("make unsloth-lora-journey"), "{tip165}");
+    assert!(tip165.contains("status=integration"), "{tip165}");
+    assert!(tip165.contains("live=false"), "{tip165}");
+    assert!(tip165.contains("only live uniqueness prove"), "{tip165}");
+    assert!(tip165.contains("via PR #143"), "{tip165}");
+    assert!(
+        tip165.contains("does not invent a new live PASS"),
+        "{tip165}"
+    );
+    assert!(
+        tip165.contains("43770130 3391"),
+        "{tip165}"
+    );
+    assert!(
+        tip165.contains("READY_FOR_LIVE_TEST`: no") || tip165.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip165}"
+    );
+    assert!(
+        !tip165.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip165.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip165}"
+    );
+    assert!(!tip165.to_ascii_lowercase().contains("kimi/"), "{tip165}");
+    assert!(
+        !tip165.contains("through PR #161 (`0cc8b9e5bf2423d90f54f222a182804b3b337d94`)"),
+        "tip slice must not freeze at the PR #161 tip SHA: {tip165}"
+    );
 }
 
 fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
@@ -4316,7 +4400,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4537,7 +4621,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4757,7 +4841,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #165");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4805,7 +4889,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     assert!(status.contains("make axolotl-lora-journey"));
     assert!(status.contains("make uniqueness-axolotl-lora"));
     assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #161"));
+    assert!(status.contains("through PR #165"));
     assert!(status.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"));
     assert!(!status.contains("READY_FOR_LIVE_TEST: yes"));
 
