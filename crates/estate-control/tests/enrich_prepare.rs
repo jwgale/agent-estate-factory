@@ -175,6 +175,12 @@ fn help_enrich_and_train_name_the_seam() {
             "{body}"
         );
         assert!(
+            body.contains(
+                "make purpose-build-pick is the print-only host and stack picker for purpose-build journeys (operator section 17)"
+            ),
+            "{body}"
+        );
+        assert!(
             body.contains("make uniqueness-mlx is the print-only chain of that journey"),
             "{body}"
         );
@@ -212,6 +218,10 @@ fn help_enrich_and_train_name_the_seam() {
             && index_text.contains("make mlx-lm-lora-journey")
             && index_text.contains(
                 "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
+            )
+            && index_text.contains("make purpose-build-pick")
+            && index_text.contains(
+                "print-only host and stack picker for purpose-build journeys (operator section 17)"
             )
             && index_text.contains("make uniqueness-mlx")
             && index_text.contains(
