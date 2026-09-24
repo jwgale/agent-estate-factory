@@ -635,7 +635,7 @@ fn cell_one_status_tip_names_pr_161() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #171"
+        "status snapshot must name tip through PR #173"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
@@ -665,10 +665,10 @@ fn cell_one_status_tip_names_pr_161() {
         !status.contains("on tip through PR #142"),
         "prepare walk stays PR #142; tip is PR #165"
     );
-    let head: String = status.lines().take(35).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(37).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #171"),
-        "status header must name tip through PR #171: {head}"
+        head.contains("through PR #173"),
+        "status header must name tip through PR #173: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #167"),
@@ -774,6 +774,28 @@ fn cell_one_status_tip_names_pr_161() {
             && head.contains("print-only operator path for purpose-building an SLM on demand")
             && head.contains("PR #171"),
         "status header must name the help path for purpose-build: {head}"
+    );
+    assert!(
+        head.contains("1002abcdaf648277e15750a44a16e53b324a251d"),
+        "status header must name the PR #173 tip SHA: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #171"),
+        "status header must not freeze the snapshot at PR #171: {head}"
+    );
+    assert!(
+        head.contains("Tip honesty through PR #171 is PR #172")
+            && head.contains("0839d6372160ba46763e50cc47e336b2daf6345f"),
+        "status header must name PR #172 tip honesty through PR #171: {head}"
+    );
+    assert!(
+        head.contains("mlx-lm-lora")
+            && head.contains("status=optional")
+            && head.contains("live=false")
+            && head.contains("once each")
+            && head.contains("PR #173")
+            && head.contains("does not relabel that card integration"),
+        "status header must name the mlx-lm doctor and status lock: {head}"
     );
     assert!(
         !head.contains("what is on `main` through PR #161"),
@@ -1443,6 +1465,53 @@ fn cell_one_status_tip_names_pr_161() {
     assert!(
         !tip171.contains("through PR #169 (`aa374875f221be908ff473c8096eeea1c0f32846`)"),
         "tip slice must not freeze at the PR #169 tip SHA: {tip171}"
+    );
+
+    let tip173 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #173")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #173 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip173.contains("1002abcdaf648277e15750a44a16e53b324a251d"),
+        "{tip173}"
+    );
+    assert!(
+        tip173.contains("0839d6372160ba46763e50cc47e336b2daf6345f"),
+        "{tip173}"
+    );
+    assert!(tip173.contains("PR #172"), "{tip173}");
+    assert!(tip173.contains("PR #173"), "{tip173}");
+    assert!(tip173.contains("estate doctor"), "{tip173}");
+    assert!(tip173.contains("mlx-lm-lora"), "{tip173}");
+    assert!(
+        tip173.contains("status=optional") && tip173.contains("live=false"),
+        "{tip173}"
+    );
+    assert!(tip173.contains("once each"), "{tip173}");
+    assert!(tip173.contains("does not call mlx-lm"), "{tip173}");
+    assert!(tip173.contains("only live uniqueness prove"), "{tip173}");
+    assert!(tip173.contains("via PR #143"), "{tip173}");
+    assert!(
+        tip173.contains("does not invent a new live PASS"),
+        "{tip173}"
+    );
+    assert!(tip173.contains("43770130 3391"), "{tip173}");
+    assert!(
+        tip173.contains("READY_FOR_LIVE_TEST`: no") || tip173.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip173}"
+    );
+    assert!(
+        !tip173.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip173.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip173}"
+    );
+    assert!(!tip173.to_ascii_lowercase().contains("kimi/"), "{tip173}");
+    assert!(
+        !tip173.contains("through PR #171 (`651f31a4dd3a84dad270d40dbdd3892081b9380e`)"),
+        "tip slice must not freeze at the PR #171 tip SHA: {tip173}"
     );
 }
 
@@ -4614,7 +4683,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " mlx-lm doctor and status train honesty");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #173");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4835,7 +4904,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " mlx-lm doctor and status train honesty");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #173");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5055,7 +5124,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " mlx-lm doctor and status train honesty");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #173");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5103,7 +5172,8 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     assert!(status.contains("make axolotl-lora-journey"));
     assert!(status.contains("make uniqueness-axolotl-lora"));
     assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #171"));
+    assert!(status.contains("through PR #173"));
+    assert!(status.contains("1002abcdaf648277e15750a44a16e53b324a251d"));
     assert!(status.contains("651f31a4dd3a84dad270d40dbdd3892081b9380e"));
     assert!(status.contains("aa374875f221be908ff473c8096eeea1c0f32846"));
     assert!(status.contains("c244e721d7275651ecfa1c8f4578ba008a668aa9"));
