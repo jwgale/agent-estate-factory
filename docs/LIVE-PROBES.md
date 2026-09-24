@@ -98,6 +98,8 @@ invent a new live PASS.
 
 Opt-in print of this ladder in operator order: `make uniqueness-prove-checklist`. That command does not train, convert, shell out to ollama, or promote. It does not invent a new live PASS. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
+Opt-in print of the DeepSeek-R1-Distill chat ladder: `make deepseek-r1-distill-journey` and `make uniqueness-deepseek` (operator section 19), plus the LoRA twin `make deepseek-r1-distill-lora-journey` and `make uniqueness-deepseek-lora`. Those commands do not train, merge, convert, shell out to ollama, or promote. They do not invent a new live PASS. The recorded PASS above stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: **no**. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+
 Opt-in print of the purpose-build pick then checklist: `make purpose-build-journey` (operator section 18). That command runs those two print targets through make and does not train, fuse, convert, shell out to ollama, promote, or apply the estate. It does not invent a new live PASS. The recorded PASS above stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 Walk: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Seat: [`local-seat.md`](local-seat.md).
