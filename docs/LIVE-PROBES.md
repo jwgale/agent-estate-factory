@@ -79,8 +79,10 @@ it.
 
 The tokenizer restore, the unwritten Modelfile, and the GGUF write line
 are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
-through PR #189 (`a857f05a256b214a2069de42e6918130eb080d66`) names this
-recorded PASS. Tip honesty through PR #187 is PR #188
+through PR #191 (`0e4223ea28a73c3931c7545f3040fd14ea8ae273`) names this
+recorded PASS. Tip honesty through PR #189 is PR #190
+(`ccf23829c8a62c070f98eff558d2f8fe2c1ccaaf`), naming tip
+`a857f05a256b214a2069de42e6918130eb080d66`. Tip honesty through PR #187 is PR #188
 (`eb5ff41865d62db85355dbea7747ef4571941d43`), naming tip
 `4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`. Tip honesty through PR #185 is PR #186
 (`ef839830b9de29caa963cece687e35c83dd77af6`), naming tip
