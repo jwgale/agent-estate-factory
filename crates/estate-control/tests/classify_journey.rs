@@ -1893,6 +1893,7 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
         "recipe",
         "train",
         "merge-export",
+        "export-repair",
         "gguf-convert-base",
         "gguf-convert-specialist",
         "quantize-base",
@@ -1911,6 +1912,26 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
     assert!(stdout.contains("glm4-chat-base"), "{stdout}");
     assert!(stdout.contains("llamafactory-cli train"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(stdout.contains("export-repair"), "{stdout}");
+    assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
+    let printed_steps: Vec<&str> = stdout
+        .lines()
+        .filter_map(|line| {
+            let rest = line
+                .strip_prefix("run ")
+                .or_else(|| line.strip_prefix("skip "))?;
+            rest.split_whitespace().next()
+        })
+        .collect();
+    let merge = printed_steps
+        .iter()
+        .position(|step| *step == "merge-export")
+        .expect("printed step list includes merge-export");
+    assert_eq!(
+        printed_steps.get(merge + 1).copied(),
+        Some("export-repair"),
+        "export-repair follows merge-export\n{printed_steps:?}"
+    );
     assert!(
         !stdout.contains("Qwen/Qwen3.5-4B"),
         "tev1 default base leaked\n{stdout}"
@@ -2036,6 +2057,15 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
     let ran_out = String::from_utf8_lossy(&ran.stdout);
     let ran_err = String::from_utf8_lossy(&ran.stderr);
     assert!(ran.status.success(), "{ran_out}\n{ran_err}");
+    assert!(
+        ran_out.contains("export-repair:"),
+        "glm4 run must execute export-repair\n{ran_out}"
+    );
+    let repair_manifest = fs::read_to_string(work.join("manifests/export-repair.json")).unwrap();
+    assert!(
+        repair_manifest.contains("\"repaired_tensor_count\": 0"),
+        "{repair_manifest}"
+    );
     let recipe = fs::read_to_string(work.join("recipe.yaml")).unwrap();
     assert!(recipe.contains("template: glm4"), "{recipe}");
     assert!(recipe.contains("enable_thinking: false"), "{recipe}");
