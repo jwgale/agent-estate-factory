@@ -557,18 +557,21 @@ fn hub_base_is_downloaded_once_and_reused_across_outs() {
     assert!(!root.join("out-10k").join("base-hf").exists());
 
     fs::remove_file(shared.join("model.safetensors")).unwrap();
-    let third = run_out(&root.join("out-10k"));
+    let third = run_out(&root.join("out-30k"));
     let third_text = format!(
         "{}{}",
         String::from_utf8_lossy(&third.stdout),
         String::from_utf8_lossy(&third.stderr)
     );
-    assert!(!third.status.success(), "{third_text}");
-    assert!(third_text.contains("skip fetch-base"), "{third_text}");
-    assert!(third_text.contains("base snapshot"), "{third_text}");
-    assert!(third_text.contains("non-empty weights"), "{third_text}");
+    assert!(third.status.success(), "{third_text}");
+    assert!(
+        third_text.contains("redo fetch-base: shared snapshot failed validation"),
+        "{third_text}"
+    );
+    assert!(shared.join("model.safetensors").is_file());
+    assert!(shared.join(".complete").is_file());
     let after_third = fs::read_to_string(&log).unwrap();
-    assert_eq!(downloads(&after_third), 1, "{after_third}");
+    assert_eq!(downloads(&after_third), 2, "{after_third}");
     let _ = fs::remove_dir_all(&root);
 }
 

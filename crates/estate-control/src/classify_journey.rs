@@ -12,8 +12,9 @@ use anyhow::{bail, Result};
 use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -1183,9 +1184,17 @@ fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
     }
 }
 
+/// Written inside a Hub snapshot only after staging validation and before the atomic publish.
+pub const HUB_COMPLETE_MARKER: &str = ".complete";
+
 fn fetch_decision(base: &str, base_dir: &Path, paths: &JourneyPaths, expected: &str) -> Decision {
-    let marker = base_dir.join("config.json");
-    if !marker.is_file() {
+    let ready = if base_is_local_dir(base) {
+        base_dir.join("config.json").is_file()
+    } else {
+        // A partial tree can contain config.json and a non-empty weight. Skip only after publish.
+        base_dir.join(HUB_COMPLETE_MARKER).is_file()
+    };
+    if !ready {
         return Decision {
             action: StepAction::Run,
             redo: None,
@@ -1201,8 +1210,8 @@ fn fetch_decision(base: &str, base_dir: &Path, paths: &JourneyPaths, expected: &
             action: StepAction::Run,
             redo: Some("inputs changed".into()),
         },
-        // A later `--out` has no fetch manifest yet. The shared snapshot is enough to skip
-        // the download. `execute` still calls `validate_snapshot` on that skip.
+        // A later `--out` has no fetch manifest yet. The published marker is enough to plan a skip.
+        // `execute` re-checks the marker under the download lock and re-downloads when it fails.
         None if !base_is_local_dir(base) => Decision {
             action: StepAction::Skip,
             redo: None,
@@ -1212,6 +1221,235 @@ fn fetch_decision(base: &str, base_dir: &Path, paths: &JourneyPaths, expected: &
             redo: Some("missing manifest".into()),
         },
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HubFetch {
+    Reused,
+    Downloaded,
+}
+
+extern "C" {
+    fn flock(fd: i32, op: i32) -> i32;
+}
+
+const LOCK_EX: i32 = 2;
+const LOCK_UN: i32 = 8;
+
+struct HubDownloadLock {
+    file: fs::File,
+}
+
+impl HubDownloadLock {
+    fn acquire(cache_root: &Path, hub_id: &str) -> Result<Self> {
+        let locks = cache_root.join(".locks");
+        fs::create_dir_all(&locks)?;
+        let path = locks.join(format!("{}.lock", sanitize_hub_id(hub_id)));
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-journey: cannot open {}: {err}",
+                    path.display()
+                )
+            })?;
+        let rc = unsafe { flock(file.as_raw_fd(), LOCK_EX) };
+        if rc != 0 {
+            bail!("refuse:classify-journey: cannot lock {}", path.display());
+        }
+        Ok(Self { file })
+    }
+}
+
+impl Drop for HubDownloadLock {
+    fn drop(&mut self) {
+        unsafe {
+            flock(self.file.as_raw_fd(), LOCK_UN);
+        }
+    }
+}
+
+fn snapshot_manifest_files(dir: &Path) -> Result<Vec<Value>> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(&current).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-journey: cannot read {}: {err}",
+                current.display()
+            )
+        })?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            let rel = path.strip_prefix(dir).unwrap_or(&path);
+            let rel_s = rel.to_string_lossy().replace('\\', "/");
+            if rel_s == HUB_COMPLETE_MARKER {
+                continue;
+            }
+            let meta = fs::symlink_metadata(&path).map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-journey: cannot stat {}: {err}",
+                    path.display()
+                )
+            })?;
+            if meta.file_type().is_symlink() {
+                let followed = fs::metadata(&path).map_err(|err| {
+                    anyhow::anyhow!(
+                        "refuse:classify-journey: cannot follow {}: {err}",
+                        path.display()
+                    )
+                })?;
+                if followed.is_dir() {
+                    bail!(
+                        "refuse:classify-journey: directory symlink {} is refused",
+                        path.display()
+                    );
+                }
+                if followed.is_file() {
+                    files.push(json!({"path": rel_s, "bytes": followed.len()}));
+                }
+                continue;
+            }
+            if meta.is_dir() {
+                stack.push(path);
+            } else if meta.is_file() {
+                files.push(json!({"path": rel_s, "bytes": meta.len()}));
+            }
+        }
+    }
+    files.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+    Ok(files)
+}
+
+fn write_complete_marker(dir: &Path) -> Result<()> {
+    let files = snapshot_manifest_files(dir)?;
+    if files.is_empty() {
+        bail!(
+            "refuse:classify-journey: base snapshot {} has no files to publish",
+            dir.display()
+        );
+    }
+    let body = format!("{}\n", serde_json::to_string(&json!({"files": files}))?);
+    let tmp = dir.join(".complete.tmp");
+    fs::write(&tmp, body)?;
+    fs::rename(tmp, dir.join(HUB_COMPLETE_MARKER))?;
+    Ok(())
+}
+
+/// True when the published marker lists every file at the size captured at publish time,
+/// and `validate_snapshot` still accepts the tree.
+fn hub_snapshot_ready(dir: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(dir.join(HUB_COMPLETE_MARKER)) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    let Some(files) = value.get("files").and_then(Value::as_array) else {
+        return false;
+    };
+    if files.is_empty() {
+        return false;
+    }
+    for file in files {
+        let Some(rel) = file.get("path").and_then(Value::as_str) else {
+            return false;
+        };
+        if rel.is_empty() || rel.contains("..") || rel.starts_with('/') || rel.contains('\\') {
+            return false;
+        }
+        let Some(bytes) = file.get("bytes").and_then(Value::as_u64) else {
+            return false;
+        };
+        let path = dir.join(rel);
+        let Ok(meta) = fs::metadata(&path) else {
+            return false;
+        };
+        if !meta.is_file() || meta.len() != bytes {
+            return false;
+        }
+    }
+    validate_snapshot(dir).is_ok()
+}
+
+fn publish_snapshot(staging: &Path, dest: &Path) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if dest.exists() {
+        let name = dest
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("snapshot");
+        let trash = dest.with_file_name(format!(".{name}.replacing"));
+        if trash.exists() {
+            fs::remove_dir_all(&trash)?;
+        }
+        fs::rename(dest, &trash).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-journey: cannot move {} aside: {err}",
+                dest.display()
+            )
+        })?;
+        if let Err(err) = fs::rename(staging, dest) {
+            let _ = fs::rename(&trash, dest);
+            bail!(
+                "refuse:classify-journey: cannot publish {}: {err}",
+                dest.display()
+            );
+        }
+        fs::remove_dir_all(&trash)?;
+    } else if let Err(err) = fs::rename(staging, dest) {
+        bail!(
+            "refuse:classify-journey: cannot publish {}: {err}",
+            dest.display()
+        );
+    }
+    Ok(())
+}
+
+/// Download into a sibling staging directory, validate, write `.complete`, then rename into `dest`.
+/// The exclusive lock covers that whole sequence. A ready published tree is reused unless `force`.
+fn ensure_shared_hub_snapshot(repo: &str, dest: &Path, force: bool) -> Result<HubFetch> {
+    let cache_root = dest.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: hub cache {} has no parent",
+            dest.display()
+        )
+    })?;
+    let _lock = HubDownloadLock::acquire(cache_root, repo)?;
+    if !force && hub_snapshot_ready(dest) {
+        return Ok(HubFetch::Reused);
+    }
+    let staging = cache_root.join(".staging").join(sanitize_hub_id(repo));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    let bin = hf_bin_name().ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: huggingface-cli and hf are not on PATH; needed to download the base. HF_TOKEN is read from the environment and is not printed"
+        )
+    })?;
+    println!("{}", argv_line(&hf_download_argv(bin, repo, dest)));
+    let staged = hf_download_argv(bin, repo, &staging);
+    if let Err(err) = run_hf_download_quiet(&staged) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(err);
+    }
+    if let Err(err) = validate_snapshot(&staging).and_then(|_| write_complete_marker(&staging)) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(err);
+    }
+    if let Err(err) = publish_snapshot(&staging, dest) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(err);
+    }
+    Ok(HubFetch::Downloaded)
 }
 
 fn convert_line(ctx: &PlanCtx<'_>, src: &str, outfile: &Path) -> String {
@@ -2036,6 +2274,28 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
         };
         let steps = plan_with(&ctx);
         let step = steps.iter().find(|step| step.name == *name).expect("step");
+        if *name == "fetch-base" && !base_is_local_dir(req.base) {
+            let dir = resolved_base_dir(req.base, paths);
+            let force = step.action == StepAction::Run && redo_reason(&step.detail).is_some();
+            match ensure_shared_hub_snapshot(req.base, &dir, force)? {
+                HubFetch::Reused => println!("skip fetch-base"),
+                HubFetch::Downloaded => {
+                    if step.action == StepAction::Skip {
+                        println!("redo fetch-base: shared snapshot failed validation");
+                    } else if let Some(reason) = redo_reason(&step.detail) {
+                        println!("redo fetch-base: {reason}");
+                    } else {
+                        println!("run fetch-base");
+                    }
+                    write_manifest(
+                        &paths.manifest_path("fetch-base"),
+                        &fetch_inputs(req.base, &dir),
+                        None,
+                    )?;
+                }
+            }
+            continue;
+        }
         if step.action == StepAction::Skip {
             println!("skip {}", step.name);
             if *name == "fetch-base" {
@@ -2105,16 +2365,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
             }
             "fetch-base" => {
                 let dir = resolved_base_dir(req.base, paths);
-                if base_is_local_dir(req.base) {
-                    println!("local base {}", dir.display());
-                } else {
-                    let bin = hf_bin_name().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "refuse:classify-journey: huggingface-cli and hf are not on PATH; needed to download the base. HF_TOKEN is read from the environment and is not printed"
-                        )
-                    })?;
-                    run_hf_download(&hf_download_argv(bin, req.base, &dir))?;
-                }
+                println!("local base {}", dir.display());
                 validate_snapshot(&dir)?;
                 write_manifest(
                     &paths.manifest_path("fetch-base"),
@@ -3101,9 +3352,7 @@ fn tar_size(bytes: &[u8]) -> Result<usize> {
     })
 }
 
-fn run_hf_download(argv: &[String]) -> Result<()> {
-    let line = argv_line(argv);
-    println!("{line}");
+fn run_hf_download_quiet(argv: &[String]) -> Result<()> {
     let (bin, args) = argv
         .split_first()
         .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: empty command"))?;
@@ -3164,7 +3413,6 @@ fn run_hf_download(argv: &[String]) -> Result<()> {
             bin_path.display()
         );
     }
-    let _ = line;
     Ok(())
 }
 
@@ -4119,6 +4367,30 @@ mod tests {
         fs::write(local.join("tokenizer.json"), "{}\n").unwrap();
         fs::write(local.join("model.safetensors"), "w\n").unwrap();
         assert!(validate_snapshot(&local).is_ok());
+        let partial = dir.join("partial-hub");
+        fs::create_dir_all(&partial).unwrap();
+        fs::write(partial.join("config.json"), "{}\n").unwrap();
+        fs::write(partial.join("tokenizer.json"), "{}\n").unwrap();
+        fs::write(partial.join("model.safetensors"), "w\n").unwrap();
+        let mut partial_paths = JourneyPaths::new(&dir);
+        partial_paths.base_cache = dir.clone();
+        let partial_key = fetch_inputs(DEFAULT_BASE, &partial);
+        let partial_decision = fetch_decision(DEFAULT_BASE, &partial, &partial_paths, &partial_key);
+        assert_eq!(
+            partial_decision.action,
+            StepAction::Run,
+            "config.json without .complete must not skip"
+        );
+        assert!(!hub_snapshot_ready(&partial));
+        write_complete_marker(&partial).unwrap();
+        assert!(hub_snapshot_ready(&partial));
+        let ready = fetch_decision(DEFAULT_BASE, &partial, &partial_paths, &partial_key);
+        assert_eq!(ready.action, StepAction::Skip);
+        fs::write(partial.join("model.safetensors"), "x").unwrap();
+        assert!(
+            !hub_snapshot_ready(&partial),
+            "a truncated weight must not stay ready"
+        );
         fs::remove_file(local.join("model.safetensors")).unwrap();
         fs::write(
             local.join("model.safetensors.index.json"),
