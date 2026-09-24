@@ -52,7 +52,7 @@ DEEPSEEK_CLASSIFY_RUN=1 make deepseek-classify-journey
 estate classify journey --preset deepseek-r1-distill --print
 ```
 
-`estate classify journey --preset glm4-chat` is the same prepare, recipe, local train, merge, GGUF, quantize, Ollama, eval, and compare order for `zai-org/glm-4-9b-chat`. The recipe template is `glm4`. The specialist tag is `glm4-chat-specialist`. The built base tag is `glm4-chat-base`. It reuses `examples/fixtures/tev1-decisions.jsonl`. `--print` is the default (`make glm4-classify-journey`). `GLM_CLASSIFY_RUN=1` passes `--run`. Train stays `llamafactory-cli`. Together stays on the tev1 Qwen path unless `--together-model` is set. This journey is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
+`estate classify journey --preset glm4-chat` is the same prepare, recipe, local train, merge, GGUF, quantize, Ollama, eval, and compare order for `zai-org/glm-4-9b-chat`. The recipe template is `glm4`. The specialist tag is `glm4-chat-specialist`. The built base tag is `glm4-chat-base`. It reuses `examples/fixtures/tev1-decisions.jsonl`. `--print` is the default (`make glm4-classify-journey`). `GLM_CLASSIFY_RUN=1` passes `--run`. Train stays `llamafactory-cli`. Together stays on the tev1 Qwen path unless `--together-model` is set. This journey is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no. The model uses the custom glm-4 license (local training only, don't redistribute) and `trust_remote_code: true` is required for its custom code.
 
 ```bash
 make glm4-classify-journey

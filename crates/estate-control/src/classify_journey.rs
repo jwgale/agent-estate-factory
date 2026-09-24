@@ -209,14 +209,14 @@ const DEEPSEEK_R1_TEMPLATE: &str = "\
 ";
 
 /// GLM-4 Chat prompt from LLaMA-Factory `glm4` (`template.py`).
-/// `format_prefix` is `[gMASK] ` (trailing space). `format_system` is
+/// `format_prefix` is `[gMASK]<sop>` (no space). `format_system` is
 /// `<|system|>\n{{content}}`. `format_user` is `<|user|>\n{{content}}<|assistant|>`.
 /// `format_assistant` is `\n{{content}}` (`efficient_eos` appends the eos token
 /// outside the slot). `stop_words` are `<|user|>` and `<|observation|>`.
 /// The GLM-4-9B-Chat eos token is `<|endoftext|>`. This is not a reasoning
 /// template, so `enable_thinking: false` does not insert a think block.
 const GLM4_TEMPLATE: &str = "\
-[gMASK] {{ if .System }}<|system|>
+[gMASK]<sop>{{ if .System }}<|system|>
 {{ .System }}{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<|user|>
 {{ .Content }}<|assistant|>{{ else if eq .Role \"assistant\" }}
 {{ .Content }}{{ end }}{{ end }}";
@@ -4328,7 +4328,7 @@ mod tests {
         assert!(recipe.contains("template: glm4"), "{recipe}");
         assert!(recipe.contains("enable_thinking: false"), "{recipe}");
         let model = journey_modelfile(&paths.specialist_f16, SeatChat::Glm4);
-        assert!(model.contains("[gMASK] "), "{model}");
+        assert!(model.contains("[gMASK]<sop>"), "{model}");
         assert!(model.contains("<|system|>"), "{model}");
         assert!(model.contains("<|user|>"), "{model}");
         assert!(model.contains("<|assistant|>"), "{model}");
@@ -4340,25 +4340,21 @@ mod tests {
 
     #[test]
     fn glm4_system_user_prompt_matches_llamafactory() {
-        let system = "Classify the row.";
-        let user = "choose one letter";
-        let rendered = render_ollama_template(GLM4_TEMPLATE, system, &[("user", user)]);
-        let expected = format!("[gMASK] <|system|>\n{system}<|user|>\n{user}<|assistant|>");
-        assert_eq!(rendered, expected);
+        let rendered = render_ollama_template(
+            GLM4_TEMPLATE,
+            "Classify the row.",
+            &[("user", "choose one letter")],
+        );
+        // LLaMA-Factory glm4 and zai-org/glm-4-9b-chat: [gMASK]<sop>, then
+        // <|system|>\n{{content}}, <|user|>\n{{content}}<|assistant|>, and
+        // assistant \n{{content}}. efficient_eos keeps <|endoftext|> off the slot.
+        assert_eq!(
+            rendered,
+            "[gMASK]<sop><|system|>\nClassify the row.<|user|>\nchoose one letter<|assistant|>"
+        );
         let history = render_ollama_template(GLM4_TEMPLATE, "", &[("assistant", "A")]);
-        assert!(
-            history.starts_with("[gMASK] \nA"),
-            "format_assistant is a leading newline then content\n{history}"
-        );
+        assert_eq!(history, "[gMASK]<sop>\nA");
         assert!(!history.contains("<|endoftext|>"), "{history}");
-        assert!(
-            GLM4_TEMPLATE.contains("<|user|>\n{{ .Content }}<|assistant|>"),
-            "{GLM4_TEMPLATE}"
-        );
-        assert!(
-            GLM4_TEMPLATE.contains("<|system|>\n{{ .System }}"),
-            "{GLM4_TEMPLATE}"
-        );
     }
 
     /// Subset of Ollama's Go text/template used by the journey Modelfiles.

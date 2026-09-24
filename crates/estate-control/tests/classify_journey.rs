@@ -2071,7 +2071,7 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
     assert!(recipe.contains("enable_thinking: false"), "{recipe}");
     let modelfile = fs::read_to_string(work.join("specialist.Modelfile")).unwrap();
     assert!(
-        modelfile.contains("[gMASK] {{ if .System }}<|system|>\n{{ .System }}"),
+        modelfile.contains("[gMASK]<sop>{{ if .System }}<|system|>\n{{ .System }}"),
         "{modelfile}"
     );
     assert!(
