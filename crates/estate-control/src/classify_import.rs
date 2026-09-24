@@ -211,6 +211,16 @@ pub fn default_import_dir(alias: &str) -> PathBuf {
     PathBuf::from(DEFAULT_IMPORT_ROOT).join(alias)
 }
 
+/// Sampled tev1 rows for one train size and seed. Concurrent sizes do not share this directory.
+pub fn sampled_import_dir(alias: &str, train_size: &str, seed: u64) -> PathBuf {
+    PathBuf::from(DEFAULT_IMPORT_ROOT).join(format!("{alias}-{train_size}-s{seed}"))
+}
+
+/// Full official splits. Shared across train sizes. A manifest exists only after both splits match.
+pub fn native_cache_dir(alias: &str) -> PathBuf {
+    default_import_dir(alias).join("native")
+}
+
 /// `-agnews-3000` so 3k / 10k / 30k journeys can sit side by side.
 pub fn tag_suffix(preset: &DatasetPreset, train_size: &SplitSize) -> String {
     format!("-{}-{}", preset.slug, train_size.token())
@@ -570,30 +580,65 @@ pub fn cmd_classify_import(req: &ImportRequest<'_>) -> Result<()> {
     Ok(())
 }
 
+const MAX_FETCH_ATTEMPTS: u32 = 8;
+const PAGE_POLITENESS: Duration = Duration::from_millis(200);
+
+struct PageGet {
+    /// HTTP status. `0` is a transport failure.
+    status: u16,
+    retry_after: Option<Duration>,
+    body: String,
+    transport: Option<String>,
+}
+
 fn download_native(
     preset: &DatasetPreset,
-    out: &Path,
+    _out: &Path,
     force: bool,
 ) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
-    let native = out.join("native");
-    let train_path = native.join(format!("{}.jsonl", preset.train_split));
-    let test_path = native.join(format!("{}.jsonl", preset.test_split));
-    let marker = native.join("manifest.json");
-    let cached = marker.is_file() && train_path.is_file() && test_path.is_file();
-    if cached && !force {
-        let text = fs::read_to_string(&marker).unwrap_or_default();
-        if text.contains(preset.hf_id) {
-            return Ok((read_native(&train_path)?, read_native(&test_path)?));
-        }
-    }
+    let native = native_cache_dir(preset.alias);
     fs::create_dir_all(&native)?;
-    let train_rows = fetch_split(preset, preset.train_split, &train_path)?;
-    let test_rows = fetch_split(preset, preset.test_split, &test_path)?;
+    let train_final = native.join(format!("{}.jsonl", preset.train_split));
+    let test_final = native.join(format!("{}.jsonl", preset.test_split));
+    let marker = native.join("manifest.json");
+    if force {
+        let _ = fs::remove_file(&train_final);
+        let _ = fs::remove_file(&test_final);
+        let _ = fs::remove_file(&marker);
+        let _ = fs::remove_file(partial_path(&train_final));
+        let _ = fs::remove_file(partial_path(&test_final));
+    } else if cache_verified(preset, &native)? {
+        return Ok((read_native(&train_final)?, read_native(&test_final)?));
+    }
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(120))
+        .build();
+    let train_rows = fetch_split(
+        preset,
+        preset.train_split,
+        &train_final,
+        ROWS_PAGE,
+        preset.official_train,
+        |url| live_get(&agent, url),
+        std::thread::sleep,
+    )?;
+    let test_rows = fetch_split(
+        preset,
+        preset.test_split,
+        &test_final,
+        ROWS_PAGE,
+        preset.official_test,
+        |url| live_get(&agent, url),
+        std::thread::sleep,
+    )?;
+    publish_native(&train_final)?;
+    publish_native(&test_final)?;
     let manifest = json!({
         "hf_id": preset.hf_id,
         "source": "datasets-server rows API",
         "train_rows": train_rows.len(),
         "test_rows": test_rows.len(),
+        "complete": true,
     });
     fs::write(
         &marker,
@@ -602,14 +647,77 @@ fn download_native(
     Ok((train_rows, test_rows))
 }
 
-fn fetch_split(preset: &DatasetPreset, split: &str, dest: &Path) -> Result<Vec<NativeRow>> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(120))
-        .build();
-    let mut offset = 0u64;
+fn partial_path(final_path: &Path) -> PathBuf {
+    let mut name = final_path.file_name().unwrap_or_default().to_os_string();
+    name.push(".partial");
+    final_path.with_file_name(name)
+}
+
+fn cache_verified(preset: &DatasetPreset, native: &Path) -> Result<bool> {
+    let marker = native.join("manifest.json");
+    let train_path = native.join(format!("{}.jsonl", preset.train_split));
+    let test_path = native.join(format!("{}.jsonl", preset.test_split));
+    if !marker.is_file() || !train_path.is_file() || !test_path.is_file() {
+        return Ok(false);
+    }
+    let value: Value = serde_json::from_str(&fs::read_to_string(&marker)?)?;
+    if value.get("hf_id").and_then(Value::as_str) != Some(preset.hf_id) {
+        return Ok(false);
+    }
+    if value.get("complete").and_then(Value::as_bool) != Some(true) {
+        return Ok(false);
+    }
+    let train_rows = value.get("train_rows").and_then(Value::as_u64);
+    let test_rows = value.get("test_rows").and_then(Value::as_u64);
+    Ok(train_rows == Some(preset.official_train)
+        && test_rows == Some(preset.official_test)
+        && count_complete_lines(&train_path)? == preset.official_train
+        && count_complete_lines(&test_path)? == preset.official_test)
+}
+
+fn publish_native(final_path: &Path) -> Result<()> {
+    let partial = partial_path(final_path);
+    if !partial.is_file() {
+        bail!(
+            "refuse:classify-import: missing partial {}",
+            partial.display()
+        );
+    }
+    fs::rename(&partial, final_path).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-import: cannot publish {}: {err}",
+            final_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn fetch_split(
+    preset: &DatasetPreset,
+    split: &str,
+    final_path: &Path,
+    page_len: u64,
+    official: u64,
+    mut get: impl FnMut(&str) -> PageGet,
+    mut sleep: impl FnMut(Duration),
+) -> Result<Vec<NativeRow>> {
+    let partial = partial_path(final_path);
+    if let Some(parent) = partial.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut offset = rewind_to_complete_pages(&partial, page_len)?;
+    let mut rows = if offset == 0 {
+        Vec::new()
+    } else {
+        read_native(&partial)?
+    };
+    if rows.len() as u64 != offset {
+        bail!(
+            "refuse:classify-import: {split} partial line count {} does not match resume offset {offset}",
+            rows.len()
+        );
+    }
     let mut total = None;
-    let mut file = File::create(dest)?;
-    let mut rows = Vec::new();
     loop {
         if let Some(total) = total {
             if offset >= total {
@@ -617,29 +725,34 @@ fn fetch_split(preset: &DatasetPreset, split: &str, dest: &Path) -> Result<Vec<N
             }
         }
         let url = format!(
-            "{DATASETS_SERVER}/rows?dataset={}&config=default&split={split}&offset={offset}&length={ROWS_PAGE}",
+            "{DATASETS_SERVER}/rows?dataset={}&config=default&split={split}&offset={offset}&length={page_len}",
             urlencoding_dataset(preset.hf_id)
         );
-        let response = agent
-            .get(&url)
-            .call()
-            .map_err(|err| anyhow::anyhow!("refuse:classify-import: datasets-server {url} failed: {err}"))?;
-        let body = response.into_string().map_err(|err| {
-            anyhow::anyhow!("refuse:classify-import: datasets-server body failed: {err}")
-        })?;
+        let body = get_with_retry(&url, &mut get, &mut sleep)?;
         let value: Value = serde_json::from_str(&body).map_err(|err| {
             anyhow::anyhow!("refuse:classify-import: datasets-server JSON failed: {err}")
         })?;
         if total.is_none() {
             total = value.get("num_rows_total").and_then(Value::as_u64);
         }
-        let page = value
-            .get("rows")
-            .and_then(Value::as_array)
-            .ok_or_else(|| anyhow::anyhow!("refuse:classify-import: datasets-server page has no rows"))?;
+        let reported = total.ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-import: {split} page has no num_rows_total")
+        })?;
+        let page = value.get("rows").and_then(Value::as_array).ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-import: datasets-server page has no rows")
+        })?;
         if page.is_empty() {
-            break;
+            if offset >= reported {
+                break;
+            }
+            bail!(
+                "refuse:classify-import: {split} returned an empty page at offset {offset} before num_rows_total {reported}"
+            );
         }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&partial)?;
         for item in page {
             let row_idx = item.get("row_idx").and_then(Value::as_u64).unwrap_or(offset);
             let native = item.get("row").cloned().unwrap_or(Value::Null);
@@ -648,16 +761,133 @@ fn fetch_split(preset: &DatasetPreset, split: &str, dest: &Path) -> Result<Vec<N
             rows.push(parsed);
             offset = offset.saturating_add(1);
         }
-        eprintln!(
-            "classify-import: {split} {}{}",
-            rows.len(),
-            total.map(|n| format!("/{n}")).unwrap_or_default()
+        file.flush()?;
+        eprintln!("classify-import: {split} {offset}/{reported}");
+        if offset < reported {
+            sleep(PAGE_POLITENESS);
+        }
+    }
+    let reported = total.unwrap_or(0);
+    verify_split_count(split, rows.len() as u64, reported, official)?;
+    Ok(rows)
+}
+
+fn verify_split_count(split: &str, got: u64, reported: u64, official: u64) -> Result<()> {
+    if got != reported {
+        bail!(
+            "refuse:classify-import: {split} has {got} rows but num_rows_total is {reported}"
         );
     }
-    if rows.is_empty() {
-        bail!("refuse:classify-import: {split} download returned no rows");
+    if got != official {
+        bail!(
+            "refuse:classify-import: {split} has {got} rows but the official count is {official}"
+        );
     }
-    Ok(rows)
+    Ok(())
+}
+
+fn get_with_retry(
+    url: &str,
+    get: &mut impl FnMut(&str) -> PageGet,
+    sleep: &mut impl FnMut(Duration),
+) -> Result<String> {
+    let mut last = String::from("no response");
+    for attempt in 1..=MAX_FETCH_ATTEMPTS {
+        let page = get(url);
+        let retryable = page.transport.is_some() || page.status == 429 || (500..600).contains(&page.status);
+        if !retryable && page.status == 200 {
+            return Ok(page.body);
+        }
+        last = if let Some(err) = page.transport {
+            format!("transport error: {err}")
+        } else {
+            format!("HTTP {}", page.status)
+        };
+        if !retryable {
+            bail!("refuse:classify-import: datasets-server {url} failed: {last}");
+        }
+        if attempt == MAX_FETCH_ATTEMPTS {
+            break;
+        }
+        let wait = page
+            .retry_after
+            .unwrap_or_else(|| backoff_delay(attempt));
+        sleep(wait);
+    }
+    bail!(
+        "refuse:classify-import: datasets-server {url} failed after {MAX_FETCH_ATTEMPTS} attempts: {last}"
+    );
+}
+
+fn backoff_delay(attempt: u32) -> Duration {
+    let shift = attempt.saturating_sub(1).min(6);
+    let base = 200u64.saturating_mul(1u64 << shift);
+    let jitter = u64::from(attempt) * 53 % 100;
+    Duration::from_millis(base + jitter)
+}
+
+fn live_get(agent: &ureq::Agent, url: &str) -> PageGet {
+    match agent.get(url).call() {
+        Ok(resp) => PageGet {
+            status: resp.status(),
+            retry_after: resp.header("retry-after").and_then(parse_retry_after),
+            body: resp.into_string().unwrap_or_default(),
+            transport: None,
+        },
+        Err(ureq::Error::Status(code, resp)) => PageGet {
+            status: code,
+            retry_after: resp.header("retry-after").and_then(parse_retry_after),
+            body: resp.into_string().unwrap_or_default(),
+            transport: None,
+        },
+        Err(err) => PageGet {
+            status: 0,
+            retry_after: None,
+            body: String::new(),
+            transport: Some(err.to_string()),
+        },
+    }
+}
+
+fn parse_retry_after(header: &str) -> Option<Duration> {
+    header.trim().parse::<u64>().ok().map(Duration::from_secs)
+}
+
+fn rewind_to_complete_pages(path: &Path, page: u64) -> Result<u64> {
+    if !path.is_file() {
+        return Ok(0);
+    }
+    let bytes = fs::read(path)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let complete: Vec<&str> = text
+        .split_inclusive('\n')
+        .filter(|line| line.ends_with('\n') && !line.trim().is_empty())
+        .collect();
+    let n = complete.len() as u64;
+    let keep = if page == 0 { n } else { n - (n % page) };
+    let torn = !bytes.ends_with(b"\n");
+    if keep != n || torn {
+        let mut file = File::create(path)?;
+        for line in complete.iter().take(keep as usize) {
+            file.write_all(line.as_bytes())?;
+        }
+    }
+    Ok(keep)
+}
+
+fn count_complete_lines(path: &Path) -> Result<u64> {
+    if !path.is_file() {
+        return Ok(0);
+    }
+    let file = File::open(path)?;
+    let mut n = 0u64;
+    for line in BufReader::new(file).lines() {
+        let line = line?;
+        if !line.trim().is_empty() {
+            n += 1;
+        }
+    }
+    Ok(n)
 }
 
 fn urlencoding_dataset(id: &str) -> String {
@@ -1064,6 +1294,153 @@ mod tests {
                 .to_string();
             assert!(!train_ids.contains(&id), "{id}");
         }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn page_body(total: u64, rows: &[(u64, &str, u64)]) -> String {
+        let rows: Vec<Value> = rows
+            .iter()
+            .map(|(idx, text, label)| {
+                json!({
+                    "row_idx": idx,
+                    "row": {"text": text, "label": label}
+                })
+            })
+            .collect();
+        json!({"num_rows_total": total, "rows": rows}).to_string()
+    }
+
+    fn ok_page(body: String) -> PageGet {
+        PageGet {
+            status: 200,
+            retry_after: None,
+            body,
+            transport: None,
+        }
+    }
+
+    #[test]
+    fn empty_page_before_total_refuses_and_leaves_the_partial() {
+        let dir = std::env::temp_dir().join(format!("import-empty-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("train.jsonl");
+        let preset = preset_by_name("ag_news").unwrap();
+        let mut calls = 0;
+        let err = fetch_split(
+            preset,
+            "train",
+            &dest,
+            2,
+            4,
+            |_| {
+                calls += 1;
+                if calls == 1 {
+                    ok_page(page_body(4, &[(0, "a", 0), (1, "b", 1)]))
+                } else {
+                    ok_page(page_body(4, &[]))
+                }
+            },
+            |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("empty page"), "{err}");
+        assert!(err.contains("offset 2"), "{err}");
+        assert!(partial_path(&dest).is_file());
+        assert!(!dest.is_file());
+        assert!(!dir.join("manifest.json").is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn http_429_retries_then_succeeds() {
+        let dir = std::env::temp_dir().join(format!("import-retry-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("train.jsonl");
+        let preset = preset_by_name("ag_news").unwrap();
+        let mut calls = 0;
+        let mut waits = Vec::new();
+        let rows = fetch_split(
+            preset,
+            "train",
+            &dest,
+            2,
+            2,
+            |_| {
+                calls += 1;
+                if calls == 1 {
+                    PageGet {
+                        status: 429,
+                        retry_after: Some(Duration::from_secs(3)),
+                        body: String::new(),
+                        transport: None,
+                    }
+                } else {
+                    ok_page(page_body(2, &[(0, "a", 0), (1, "b", 1)]))
+                }
+            },
+            |wait| waits.push(wait),
+        )
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert_eq!(rows.len(), 2);
+        assert!(waits.iter().any(|wait| *wait >= Duration::from_secs(3)));
+        assert!(!dest.is_file(), "partial stays unpublished until both splits verify");
+        assert_eq!(count_complete_lines(&partial_path(&dest)).unwrap(), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_reads_the_last_complete_page_and_count_mismatch_refuses() {
+        let dir = std::env::temp_dir().join(format!("import-resume-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("train.jsonl");
+        let partial = partial_path(&dest);
+        fs::write(
+            &partial,
+            concat!(
+                "{\"index\":0,\"text\":\"a\",\"premise\":null,\"hypothesis\":null,\"label\":0}\n",
+                "{\"index\":1,\"text\":\"b\",\"premise\":null,\"hypothesis\":null,\"label\":1}\n",
+                "{\"index\":2,\"text\":\"torn"
+            ),
+        )
+        .unwrap();
+        let preset = preset_by_name("ag_news").unwrap();
+        let mut urls = Vec::new();
+        let rows = fetch_split(
+            preset,
+            "train",
+            &dest,
+            2,
+            4,
+            |url| {
+                urls.push(url.to_string());
+                ok_page(page_body(4, &[(2, "c", 2), (3, "d", 3)]))
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 4);
+        assert!(urls[0].contains("offset=2"), "{}", urls[0]);
+        assert!(!dest.is_file());
+
+        let mismatch = dir.join("test.jsonl");
+        let err = fetch_split(
+            preset,
+            "test",
+            &mismatch,
+            2,
+            7_600,
+            |_| ok_page(page_body(2, &[(0, "a", 0), (1, "b", 1)])),
+            |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("official count"), "{err}");
+        assert!(!mismatch.is_file());
         let _ = fs::remove_dir_all(&dir);
     }
 }

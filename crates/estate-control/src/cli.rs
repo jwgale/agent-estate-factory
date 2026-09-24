@@ -514,8 +514,9 @@ pub(crate) enum ClassifyCommand {
         /// Sample seed. Default 42.
         #[arg(long, default_value_t = crate::classify_import::DEFAULT_IMPORT_SEED)]
         seed: u64,
-        /// Directory for `train.jsonl`, `heldout.jsonl`, and `import.json`.
-        /// Default: `.cell/classify-import/<dataset>/`.
+        /// Directory for sampled `train.jsonl`, `heldout.jsonl`, and `import.json`.
+        /// Default: `.cell/classify-import/<dataset>-<train-size>-s<seed>/`.
+        /// The full native download stays in `.cell/classify-import/<dataset>/native/`.
         #[arg(long)]
         out: Option<PathBuf>,
         /// Download again even when `native/` is already present.

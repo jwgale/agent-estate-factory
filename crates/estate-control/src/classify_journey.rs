@@ -802,7 +802,9 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
         .import_dataset
         .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: dataset is unset"))?;
     let preset = crate::classify_import::preset_by_name(dataset)?;
-    let import_dir = crate::classify_import::default_import_dir(preset.alias);
+    let size = crate::classify_import::parse_split_size(req.train_size)?;
+    let import_dir =
+        crate::classify_import::sampled_import_dir(preset.alias, &size.token(), req.seed);
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
@@ -1409,18 +1411,25 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     ));
 
     let eval_base_model = ctx.library_tag.unwrap_or(ctx.built_base_tag);
-    let eval_base = match ctx.inputs.eval.as_deref() {
-        Some(key) if paths.base_report.is_file() => {
-            decide_file(&paths.base_report, &paths.manifest_path("eval-base"), key)
+    let eval_base = if paths.base_report.is_file() && !report_is_complete(&paths.base_report) {
+        Decision {
+            action: StepAction::Run,
+            redo: Some("partial eval report".into()),
         }
-        _ if paths.base_report.is_file() => Decision {
-            action: StepAction::Run,
-            redo: Some("missing manifest".into()),
-        },
-        _ => Decision {
-            action: StepAction::Run,
-            redo: None,
-        },
+    } else {
+        match ctx.inputs.eval.as_deref() {
+            Some(key) if paths.base_report.is_file() => {
+                decide_file(&paths.base_report, &paths.manifest_path("eval-base"), key)
+            }
+            _ if paths.base_report.is_file() => Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            },
+            _ => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
     };
     steps.push(step_detail(
         "eval-base",
@@ -1433,20 +1442,28 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         .eval
         .as_deref()
         .map(|key| with_repair(key, ctx.inputs.repair.as_deref()));
-    let eval_spec = match eval_spec_key.as_deref() {
-        Some(key) if paths.specialist_report.is_file() => decide_file(
-            &paths.specialist_report,
-            &paths.manifest_path("eval-specialist"),
-            key,
-        ),
-        _ if paths.specialist_report.is_file() => Decision {
+    let eval_spec = if paths.specialist_report.is_file() && !report_is_complete(&paths.specialist_report)
+    {
+        Decision {
             action: StepAction::Run,
-            redo: Some("missing manifest".into()),
-        },
-        _ => Decision {
-            action: StepAction::Run,
-            redo: None,
-        },
+            redo: Some("partial eval report".into()),
+        }
+    } else {
+        match eval_spec_key.as_deref() {
+            Some(key) if paths.specialist_report.is_file() => decide_file(
+                &paths.specialist_report,
+                &paths.manifest_path("eval-specialist"),
+                key,
+            ),
+            _ if paths.specialist_report.is_file() => Decision {
+                action: StepAction::Run,
+                redo: Some("missing manifest".into()),
+            },
+            _ => Decision {
+                action: StepAction::Run,
+                redo: None,
+            },
+        }
     };
     steps.push(step_detail(
         "eval-specialist",
@@ -1478,7 +1495,20 @@ pub struct SideScore {
     pub thinking_leak: u64,
 }
 
+fn report_is_complete(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    value.get("complete").and_then(Value::as_bool) == Some(true)
+}
+
 pub fn side_score(report: &Value) -> Result<SideScore> {
+    if report.get("complete").and_then(Value::as_bool) != Some(true) {
+        bail!("refuse:classify-journey: eval report is partial; redo eval");
+    }
     let records = report
         .get("records")
         .and_then(Value::as_u64)
@@ -1852,7 +1882,12 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
             "prepare" => {
                 if let Some(dataset) = req.import_dataset {
                     let preset = crate::classify_import::preset_by_name(dataset)?;
-                    let import_dir = crate::classify_import::default_import_dir(preset.alias);
+                    let size = crate::classify_import::parse_split_size(req.train_size)?;
+                    let import_dir = crate::classify_import::sampled_import_dir(
+                        preset.alias,
+                        &size.token(),
+                        req.seed,
+                    );
                     crate::classify_import::cmd_classify_import(
                         &crate::classify_import::ImportRequest {
                             dataset: preset.alias,
@@ -3183,8 +3218,8 @@ mod tests {
         let seated_s = paths.seated_gguf("specialist", DEFAULT_QUANT);
         fs::write(&seated_b, "base-q").unwrap();
         fs::write(&seated_s, "spec-q").unwrap();
-        fs::write(&paths.base_report, "{}\n").unwrap();
-        fs::write(&paths.specialist_report, "{}\n").unwrap();
+        fs::write(&paths.base_report, "{\"complete\": true}\n").unwrap();
+        fs::write(&paths.specialist_report, "{\"complete\": true}\n").unwrap();
         let prepare = String::from("prepare-key");
         let pipeline = pipeline_inputs(
             DEFAULT_BASE,
@@ -3492,8 +3527,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let paths = JourneyPaths::new(&dir);
-        fs::write(&paths.base_report, "{}\n").unwrap();
-        fs::write(&paths.specialist_report, "{}\n").unwrap();
+        fs::write(&paths.base_report, "{\"complete\": true}\n").unwrap();
+        fs::write(&paths.specialist_report, "{\"complete\": true}\n").unwrap();
         let seated_b = paths.seated_gguf("base", DEFAULT_QUANT);
         let seated_s = paths.seated_gguf("specialist", DEFAULT_QUANT);
         fs::write(&seated_b, "base-q").unwrap();
@@ -3581,6 +3616,20 @@ mod tests {
                 );
             }
         }
+
+        fs::write(&paths.base_report, "{\"complete\": false}\n").unwrap();
+        fs::write(&paths.specialist_report, "{\"complete\": false}\n").unwrap();
+        for name in ["eval-base", "eval-specialist"] {
+            let step = plan_with(&ctx).into_iter().find(|s| s.name == name).unwrap();
+            assert_eq!(step.action, StepAction::Run, "{step:?}");
+            assert!(
+                step.detail.contains("partial eval report"),
+                "{name} {}",
+                step.detail
+            );
+        }
+        fs::write(&paths.base_report, "{\"complete\": true}\n").unwrap();
+        fs::write(&paths.specialist_report, "{\"complete\": true}\n").unwrap();
 
         let changed_spec =
             spec_model.replace("PARAMETER num_predict 8", "PARAMETER num_predict 64");
@@ -3774,6 +3823,16 @@ mod tests {
         assert_eq!(threshold_met(&comparison, Some(0.4), Some(0.7)), Some(true));
         assert_eq!(threshold_met(&comparison, Some(0.6), None), Some(false));
         assert_eq!(threshold_met(&comparison, None, Some(0.9)), Some(false));
+        let partial = serde_json::json!({
+            "complete": false,
+            "records": 8,
+            "accuracy": 0.5,
+            "correct": 4
+        });
+        let err = side_score(&partial).unwrap_err().to_string();
+        assert!(err.contains("partial"), "{err}");
+        let missing = serde_json::json!({"records": 8, "accuracy": 0.5, "correct": 4});
+        assert!(side_score(&missing).is_err());
     }
 
     #[test]
@@ -4284,7 +4343,7 @@ mod tests {
         fs::write(&paths.specialist_f16, "spec-f16").unwrap();
         let seated = paths.seated_gguf("specialist", DEFAULT_QUANT);
         fs::write(&seated, "spec-q").unwrap();
-        fs::write(&paths.specialist_report, "{}\n").unwrap();
+        fs::write(&paths.specialist_report, "{\"complete\": true}\n").unwrap();
         fs::write(&paths.base_f16, "base-f16").unwrap();
         fs::create_dir_all(&paths.adapter_dir).unwrap();
         fs::write(paths.adapter_dir.join("adapter_config.json"), "{}\n").unwrap();

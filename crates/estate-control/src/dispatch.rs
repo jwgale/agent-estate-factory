@@ -309,7 +309,10 @@ pub(crate) fn run() -> Result<()> {
                 native_test,
             } => {
                 let preset = crate::classify_import::preset_by_name(&dataset)?;
-                let out = out.unwrap_or_else(|| crate::classify_import::default_import_dir(preset.alias));
+                let size = crate::classify_import::parse_split_size(&train_size)?;
+                let out = out.unwrap_or_else(|| {
+                    crate::classify_import::sampled_import_dir(preset.alias, &size.token(), seed)
+                });
                 crate::classify_import::cmd_classify_import(&crate::classify_import::ImportRequest {
                     dataset: preset.alias,
                     train_size: &train_size,

@@ -1574,6 +1574,24 @@ mod tests {
         assert!((delta - 0.2).abs() < 1e-9);
         assert!(dlow < delta && dhigh > delta, "{dlow} {delta} {dhigh}");
         assert!(wilson_ci95(0, 0).is_none());
+        let (zero_low, zero_high) = wilson_ci95(0, 20).unwrap();
+        assert!(zero_low.abs() < 1e-12, "{zero_low}");
+        assert!(zero_high > 0.0 && zero_high < 1.0, "{zero_high}");
+        let (full_low, full_high) = wilson_ci95(20, 20).unwrap();
+        assert!((full_high - 1.0).abs() < 1e-12, "{full_high}");
+        assert!(full_low > 0.0 && full_low < 1.0, "{full_low}");
+        let (edge, edge_low, edge_high) = newcombe_delta_ci95(0, 20, 20, 20).unwrap();
+        assert!((edge - 1.0).abs() < 1e-12);
+        // 0/n and n/n clamp a Wilson bound onto the point estimate, so one
+        // Newcombe side collapses onto the delta instead of sitting strictly inside.
+        assert!(
+            edge_low <= edge && edge_high + 1e-12 >= edge,
+            "{edge_low} {edge} {edge_high}"
+        );
+        assert!(edge_high > edge, "{edge_high}");
+        let (same, same_low, same_high) = newcombe_delta_ci95(20, 20, 20, 20).unwrap();
+        assert!(same.abs() < 1e-12);
+        assert!(same_low < 0.0 && same_high > 0.0, "{same_low} {same_high}");
     }
 
     #[test]
