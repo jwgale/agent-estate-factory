@@ -171,6 +171,7 @@ const STEP_ORDER: &[&str] = &[
     "recipe",
     "train",
     "merge-export",
+    "export-repair",
     "gguf-convert-base",
     "gguf-convert-specialist",
     "quantize-base",
@@ -664,6 +665,8 @@ struct Inputs {
     prepare: String,
     fetch: String,
     pipeline: Option<String>,
+    /// Hash of tensors and tokenizer files `export-repair` would copy. Specialist steps include it.
+    repair: Option<String>,
     /// Desired recipe from the CLI. Independent of the recipe file on disk.
     recipe: Option<String>,
     /// Eval skip key: pipeline, tags, and the rendered base and specialist Modelfiles.
@@ -847,10 +850,18 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
             &spec_modelfile,
         )
     });
+    let repair = pipeline.as_ref().map(|pipeline| {
+        let base_dir = resolved_base_dir(req.base, paths);
+        match crate::export_repair::preview_repair(&base_dir, &paths.export_dir) {
+            Ok(report) => crate::export_repair::repair_fingerprint(pipeline, &report),
+            Err(err) => sha256_text(&format!("export-repair-error\n{pipeline}\n{err}")),
+        }
+    });
     Ok(Inputs {
         prepare,
         fetch: fetch_inputs(req.base),
         pipeline,
+        repair,
         recipe,
         eval,
         ollama_base,
@@ -1005,6 +1016,7 @@ fn step_detail(name: &str, decision: &Decision, command: String) -> StepPlan {
             "recipe" => "recipe",
             "train" => "train",
             "merge-export" => "merge-export",
+            "export-repair" => "export-repair",
             "gguf-convert-base" => "gguf-convert-base",
             "gguf-convert-specialist" => "gguf-convert-specialist",
             "quantize-base" => "quantize-base",
@@ -1150,6 +1162,31 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         format!("llamafactory-cli export {}", paths.export_yaml.display()),
     ));
 
+    let repair_key = ctx.inputs.repair.clone();
+    let repair = match repair_key.as_deref() {
+        Some(key) if merged.is_file() => {
+            decide_file(&merged, &paths.manifest_path("export-repair"), key)
+        }
+        _ if merged.is_file() => Decision {
+            action: StepAction::Run,
+            redo: Some("missing manifest".into()),
+        },
+        _ => Decision {
+            action: StepAction::Run,
+            redo: None,
+        },
+    };
+    let base_for_repair = resolved_base_dir(ctx.base, paths);
+    steps.push(step_detail(
+        "export-repair",
+        &repair,
+        format!(
+            "copy tensors and tokenizer files missing from {} that are present in {}",
+            paths.export_dir.display(),
+            base_for_repair.display()
+        ),
+    ));
+
     let base_convert_cmd = convert_line(ctx, &base_dir_s, &paths.base_f16);
     let base_convert = if ctx.library_tag.is_some() {
         Decision {
@@ -1186,7 +1223,12 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
 
     let export_src = paths.export_dir.display().to_string();
     let specialist_convert_cmd = convert_line(ctx, &export_src, &paths.specialist_f16);
-    let specialist_convert = match ctx.inputs.pipeline.as_deref() {
+    let specialist_pipeline = ctx
+        .inputs
+        .pipeline
+        .as_deref()
+        .map(|pipeline| with_repair(pipeline, ctx.inputs.repair.as_deref()));
+    let specialist_convert = match specialist_pipeline.as_deref() {
         Some(pipeline) => decide_file(
             &paths.specialist_f16,
             &paths.manifest_path("gguf-convert-specialist"),
@@ -1248,7 +1290,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
             redo: None,
         }
     } else {
-        match ctx.inputs.pipeline.as_deref() {
+        match specialist_pipeline.as_deref() {
             Some(pipeline) => decide_file(
                 &specialist_seated,
                 &paths.manifest_path("quantize-specialist"),
@@ -1276,7 +1318,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     ));
 
     let create_base_cmd = format!(
-        "ollama create {} -f {}",
+        "ollama create {} -f {}; load probe POST /api/chat think false num_predict 1",
         ctx.built_base_tag,
         paths.base_modelfile.display()
     );
@@ -1312,11 +1354,16 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
     ));
 
     let create_spec_cmd = format!(
-        "ollama create {} -f {}",
+        "ollama create {} -f {}; load probe POST /api/chat think false num_predict 1",
         ctx.specialist_tag,
         paths.specialist_modelfile.display()
     );
-    let create_spec = match ctx.inputs.ollama_spec.as_deref() {
+    let create_spec_key = ctx
+        .inputs
+        .ollama_spec
+        .as_deref()
+        .map(|key| with_repair(key, ctx.inputs.repair.as_deref()));
+    let create_spec = match create_spec_key.as_deref() {
         Some(key) => decide_ollama(
             &specialist_seated,
             &paths.manifest_path("ollama-create-specialist"),
@@ -1355,7 +1402,12 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
         format!("classify eval --api ollama-native model {eval_base_model}"),
     ));
 
-    let eval_spec = match ctx.inputs.eval.as_deref() {
+    let eval_spec_key = ctx
+        .inputs
+        .eval
+        .as_deref()
+        .map(|key| with_repair(key, ctx.inputs.repair.as_deref()));
+    let eval_spec = match eval_spec_key.as_deref() {
         Some(key) if paths.specialist_report.is_file() => decide_file(
             &paths.specialist_report,
             &paths.manifest_path("eval-specialist"),
@@ -1672,6 +1724,7 @@ fn print_plan(
         println!("{word} {:<24} {}", step.name, step.detail);
     }
     println!("compare writes {}", paths.comparison.display());
+    println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
 }
 
@@ -1775,6 +1828,21 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                 validate_export(&paths.export_dir)?;
                 write_pipeline_manifest(req, paths, "merge-export")?;
             }
+            "export-repair" => {
+                let base_dir = resolved_base_dir(req.base, paths);
+                let report = crate::export_repair::repair_export(&base_dir, &paths.export_dir)?;
+                println!("{}", report.summary());
+                write_step_manifest(req, paths, "export-repair", None)?;
+                let manifest = fs::read_to_string(paths.manifest_path("export-repair"))?;
+                let mut value: Value = serde_json::from_str(&manifest)?;
+                value["repaired_tensors"] = json!(report.tensors);
+                value["repaired_tensor_count"] = json!(report.tensors.len());
+                value["copied_files"] = json!(report.files);
+                fs::write(
+                    paths.manifest_path("export-repair"),
+                    format!("{}\n", serde_json::to_string_pretty(&value)?),
+                )?;
+            }
             "gguf-convert-base" => {
                 let src = resolved_base_dir(req.base, paths).display().to_string();
                 let argv = llama.convert_argv(&src, &paths.base_f16);
@@ -1866,16 +1934,34 @@ fn redo_reason(detail: &str) -> Option<&str> {
     Some(reason.split(';').next().unwrap_or(reason).trim())
 }
 
+fn with_repair(base: &str, repair: Option<&str>) -> String {
+    match repair {
+        Some(repair) => sha256_text(&format!("depends-export-repair\n{base}\n{repair}")),
+        None => base.to_string(),
+    }
+}
+
 fn step_manifest_key(inputs: &Inputs, step: &str) -> Result<String> {
     let key = match step {
-        "recipe" => inputs.recipe.as_deref(),
-        "eval-base" | "eval-specialist" => inputs.eval.as_deref(),
-        "ollama-create-base" => inputs.ollama_base.as_deref(),
-        "ollama-create-specialist" => inputs.ollama_spec.as_deref(),
-        _ => inputs.pipeline.as_deref(),
+        "recipe" => inputs.recipe.clone(),
+        "export-repair" => inputs.repair.clone(),
+        "eval-base" => inputs.eval.clone(),
+        "eval-specialist" => inputs
+            .eval
+            .as_deref()
+            .map(|key| with_repair(key, inputs.repair.as_deref())),
+        "ollama-create-base" => inputs.ollama_base.clone(),
+        "ollama-create-specialist" => inputs
+            .ollama_spec
+            .as_deref()
+            .map(|key| with_repair(key, inputs.repair.as_deref())),
+        "gguf-convert-specialist" | "quantize-specialist" => inputs
+            .pipeline
+            .as_deref()
+            .map(|key| with_repair(key, inputs.repair.as_deref())),
+        _ => inputs.pipeline.clone(),
     };
-    key.map(str::to_string)
-        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))
+    key.ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: cannot hash journey inputs"))
 }
 
 fn write_step_manifest(
@@ -1895,6 +1981,60 @@ fn write_pipeline_manifest(
     step: &str,
 ) -> Result<()> {
     write_step_manifest(req, paths, step, None)
+}
+
+fn probe_ollama_load(endpoint: &str, tag: &str, gguf: &Path, timeout_secs: u64) -> Result<()> {
+    let base = endpoint.trim().trim_end_matches('/');
+    let url = if base.ends_with("/api/chat") {
+        base.to_string()
+    } else {
+        format!("{base}/api/chat")
+    };
+    let body = json!({
+        "model": tag,
+        "messages": [{"role": "user", "content": "."}],
+        "stream": false,
+        "think": false,
+        "options": {"num_predict": 1}
+    });
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(timeout_secs.max(1)))
+        .build();
+    let failure = match agent.post(&url).send_json(body) {
+        Ok(resp) => {
+            let text = resp.into_string().unwrap_or_default();
+            match serde_json::from_str::<Value>(&text) {
+                Ok(value) => value
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                Err(_) => None,
+            }
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let text = resp.into_string().unwrap_or_default();
+            let detail = serde_json::from_str::<Value>(&text)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .filter(|detail| !detail.is_empty())
+                .unwrap_or(text);
+            Some(format!("HTTP {code} {detail}"))
+        }
+        Err(err) => Some(err.to_string()),
+    };
+    if let Some(detail) = failure {
+        let detail = detail.trim();
+        bail!(
+            "refuse:classify-journey: ollama load probe failed for {tag} GGUF {}: {detail}",
+            gguf.display()
+        );
+    }
+    Ok(())
 }
 
 fn seat_gguf(
@@ -1941,6 +2081,7 @@ fn seat_gguf(
     if !ollama_has_model(tag) {
         bail!("refuse:classify-journey: ollama show {tag} failed after create");
     }
+    probe_ollama_load(req.endpoint, tag, &gguf_abs, req.timeout_secs)?;
     write_step_manifest(req, paths, step, Some(&gguf_sha))?;
     Ok(())
 }
@@ -2822,6 +2963,7 @@ mod tests {
             prepare: "prep".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            repair: None,
             recipe: None,
             eval: None,
             ollama_base: None,
@@ -2958,12 +3100,17 @@ mod tests {
             DEFAULT_BUILT_BASE_TAG,
             &spec_model,
         );
+        let repair = "repair-key".to_string();
+        let spec_convert = with_repair(&pipeline, Some(&repair));
+        let spec_eval = with_repair(&eval_key, Some(&repair));
+        let spec_ollama = with_repair(&ollama_spec, Some(&repair));
         for step in [
             "prepare",
             "fetch-base",
             "recipe",
             "train",
             "merge-export",
+            "export-repair",
             "gguf-convert-base",
             "gguf-convert-specialist",
             "quantize-base",
@@ -2976,7 +3123,10 @@ mod tests {
                 "prepare" => prepare.as_str(),
                 "fetch-base" => fetch_key.as_str(),
                 "recipe" => recipe_key.as_str(),
-                "eval-base" | "eval-specialist" => eval_key.as_str(),
+                "export-repair" => repair.as_str(),
+                "eval-base" => eval_key.as_str(),
+                "eval-specialist" => spec_eval.as_str(),
+                "gguf-convert-specialist" | "quantize-specialist" => spec_convert.as_str(),
                 _ => pipeline.as_str(),
             };
             write_manifest(&paths.manifest_path(step), key, None).unwrap();
@@ -2984,7 +3134,7 @@ mod tests {
         let spec_sha = file_sha(&seated_s).unwrap();
         write_manifest(
             &paths.manifest_path("ollama-create-specialist"),
-            &ollama_spec,
+            &spec_ollama,
             Some(&spec_sha),
         )
         .unwrap();
@@ -2998,6 +3148,7 @@ mod tests {
             prepare: prepare.clone(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(pipeline.clone()),
+            repair: Some(repair),
             recipe: Some(recipe_key.clone()),
             eval: Some(eval_key.clone()),
             ollama_base: Some(ollama_base),
@@ -3151,6 +3302,7 @@ mod tests {
             prepare,
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(changed.clone()),
+            repair: None,
             recipe: Some(recipe_key),
             eval: Some(eval_inputs(
                 &changed,
@@ -3257,6 +3409,7 @@ mod tests {
             prepare: "prepare-key".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: Some(pipeline.into()),
+            repair: None,
             recipe: None,
             eval: Some(eval_key.clone()),
             ollama_base: Some(ollama_base),
@@ -3344,6 +3497,7 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            repair: None,
             recipe: None,
             eval: None,
             ollama_base: None,
@@ -3491,6 +3645,7 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(DEFAULT_BASE),
             pipeline: None,
+            repair: None,
             recipe: None,
             eval: None,
             ollama_base: None,
@@ -3537,6 +3692,7 @@ mod tests {
             prepare: "p".into(),
             fetch: fetch_inputs(&local_s),
             pipeline: None,
+            repair: None,
             recipe: None,
             eval: None,
             ollama_base: None,
@@ -3972,5 +4128,128 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("download exceeds 8 bytes"), "{err}");
+    }
+
+    #[test]
+    fn manifests_from_before_export_repair_redo_specialist_steps() {
+        let dir =
+            std::env::temp_dir().join(format!("journey-repair-invalidate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let paths = JourneyPaths::new(&dir);
+        fs::create_dir_all(&paths.export_dir).unwrap();
+        fs::write(paths.export_dir.join("config.json"), "{}\n").unwrap();
+        fs::write(&paths.dataset_jsonl, "row\n").unwrap();
+        fs::write(&paths.recipe, "dataset: tev1_decisions\n").unwrap();
+        fs::write(&paths.specialist_f16, "spec-f16").unwrap();
+        let seated = paths.seated_gguf("specialist", DEFAULT_QUANT);
+        fs::write(&seated, "spec-q").unwrap();
+        fs::write(&paths.specialist_report, "{}\n").unwrap();
+        fs::write(&paths.base_f16, "base-f16").unwrap();
+        fs::create_dir_all(&paths.adapter_dir).unwrap();
+        fs::write(paths.adapter_dir.join("adapter_config.json"), "{}\n").unwrap();
+        let pipeline = "old-pipeline".to_string();
+        let repair = "repair-fp".to_string();
+        let eval_key = "old-eval".to_string();
+        let ollama_spec = "old-ollama".to_string();
+        write_manifest(&paths.manifest_path("merge-export"), &pipeline, None).unwrap();
+        write_manifest(&paths.manifest_path("gguf-convert-base"), &pipeline, None).unwrap();
+        write_manifest(
+            &paths.manifest_path("gguf-convert-specialist"),
+            &pipeline,
+            None,
+        )
+        .unwrap();
+        write_manifest(&paths.manifest_path("quantize-specialist"), &pipeline, None).unwrap();
+        write_manifest(&paths.manifest_path("eval-specialist"), &eval_key, None).unwrap();
+        write_manifest(
+            &paths.manifest_path("ollama-create-specialist"),
+            &ollama_spec,
+            Some(&file_sha(&seated).unwrap()),
+        )
+        .unwrap();
+        let inputs = Inputs {
+            prepare: "prep".into(),
+            fetch: "fetch".into(),
+            pipeline: Some(pipeline),
+            repair: Some(repair),
+            recipe: None,
+            eval: Some(eval_key),
+            ollama_base: None,
+            ollama_spec: Some(ollama_spec),
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            hf_bin: "hf",
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+        };
+        let steps = plan_with(&ctx);
+        for name in [
+            "gguf-convert-specialist",
+            "quantize-specialist",
+            "ollama-create-specialist",
+            "eval-specialist",
+        ] {
+            let step = steps.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(step.action, StepAction::Run, "{step:?}");
+            assert!(
+                step.detail.contains("inputs changed"),
+                "{name} {}",
+                step.detail
+            );
+        }
+        for name in ["merge-export", "gguf-convert-base"] {
+            let step = steps.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(step.action, StepAction::Skip, "{step:?}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_probe_refuses_with_the_ollama_error_and_gguf_name() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = match server.server_addr() {
+            tiny_http::ListenAddr::IP(addr) => addr.port(),
+            other => panic!("expected ip listen addr, got {other:?}"),
+        };
+        std::thread::spawn(move || {
+            for mut req in server.incoming_requests() {
+                let mut body = String::new();
+                let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+                assert!(
+                    body.contains("\"think\":false") || body.contains("\"think\": false"),
+                    "{body}"
+                );
+                assert!(
+                    body.contains("\"num_predict\":1") || body.contains("\"num_predict\": 1"),
+                    "{body}"
+                );
+                let payload = "{\"error\":\"error loading model: check_tensor_dims: tensor 'blk.32.attn_norm.weight' not found\"}";
+                let resp = tiny_http::Response::from_string(payload).with_status_code(500);
+                let _ = req.respond(resp);
+            }
+        });
+        let gguf = std::env::temp_dir().join(format!("probe-{}.gguf", std::process::id()));
+        let err = probe_ollama_load(
+            &format!("http://127.0.0.1:{port}"),
+            "tev1-specialist",
+            &gguf,
+            5,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("refuse:classify-journey"), "{err}");
+        assert!(err.contains("tev1-specialist"), "{err}");
+        assert!(err.contains("blk.32.attn_norm.weight"), "{err}");
+        assert!(err.contains(&gguf.display().to_string()), "{err}");
     }
 }
