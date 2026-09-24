@@ -3381,7 +3381,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn deprecation_notice_is_the_stub_text() {
         assert!(hf_downloader_deprecated(
             "`huggingface-cli` is deprecated and no longer works. Use `hf` instead."
