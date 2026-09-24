@@ -40,6 +40,12 @@ pub const DEEPSEEK_R1_DISTILL_BASE: &str = "deepseek-ai/DeepSeek-R1-Distill-Qwen
 pub const DEEPSEEK_R1_DISTILL_TAG: &str = "deepseek-r1-distill-specialist";
 /// Ollama tag created from the built DeepSeek base GGUF. Not a library tag.
 pub const DEEPSEEK_R1_DISTILL_BUILT_BASE_TAG: &str = "deepseek-r1-distill-base";
+/// GLM-4-9B-Chat. LLaMA-Factory DEFAULT DownloadSource and template `glm4`.
+pub const GLM4_CHAT_BASE: &str = "zai-org/glm-4-9b-chat";
+/// Ollama tag for the GLM-4 Chat specialist GGUF.
+pub const GLM4_CHAT_TAG: &str = "glm4-chat-specialist";
+/// Ollama tag created from the built GLM-4 Chat base GGUF. Not a library tag.
+pub const GLM4_CHAT_BUILT_BASE_TAG: &str = "glm4-chat-base";
 /// Compressed Together adapter archive cap. Larger downloads are refused.
 pub const MAX_TOGETHER_ADAPTER_COMPRESSED: usize = 512 * 1024 * 1024;
 /// Decompressed Together adapter tar cap. Larger unpacks are refused.
@@ -48,6 +54,8 @@ pub const MAX_TOGETHER_ADAPTER_DECOMPRESSED: usize = 2 * 1024 * 1024 * 1024;
 const QWEN35_RECENT: &str = "Qwen3.5 needs a recent llama.cpp checkout";
 const DEEPSEEK_LLAMA_NOTE: &str =
     "DeepSeek-R1-Distill needs a llama.cpp checkout that converts that architecture";
+const GLM4_LLAMA_NOTE: &str =
+    "GLM-4 Chat needs a llama.cpp checkout that converts that architecture";
 
 /// Which letter-journey defaults `classify journey` fills in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -57,6 +65,9 @@ pub enum JourneyPreset {
     /// `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`, template `deepseekr1`, tag `deepseek-r1-distill-specialist`.
     /// Train stays `llamafactory-cli` unless `--together-model` is set with `--train-driver together`.
     DeepseekR1Distill,
+    /// `zai-org/glm-4-9b-chat`, template `glm4`, tag `glm4-chat-specialist`.
+    /// Train stays `llamafactory-cli` unless `--together-model` is set with `--train-driver together`.
+    Glm4Chat,
 }
 
 /// Modelfile chat shape. The base and the specialist share one shape.
@@ -64,6 +75,7 @@ pub enum JourneyPreset {
 pub enum SeatChat {
     Qwen35,
     DeepseekR1,
+    Glm4,
 }
 
 /// Defaults after `--preset` replaces an untouched tev1 base or tag.
@@ -78,7 +90,7 @@ pub struct AppliedJourney {
 }
 
 /// `--base` and `--tag` left at the tev1 defaults take the preset. An explicit value wins.
-/// Together on the DeepSeek preset needs `--together-model`. The Qwen default stays the tev1 path.
+/// Together on the DeepSeek and GLM-4 Chat presets needs `--together-model`. The Qwen default stays the tev1 path.
 pub fn apply_preset(
     preset: JourneyPreset,
     base: &str,
@@ -113,11 +125,39 @@ pub fn apply_preset(
                 DEEPSEEK_LLAMA_NOTE,
             )
         }
+        JourneyPreset::Glm4Chat => {
+            let base = if base == DEFAULT_BASE {
+                GLM4_CHAT_BASE.to_string()
+            } else {
+                base.to_string()
+            };
+            let tag = if tag == DEFAULT_TAG {
+                GLM4_CHAT_TAG.to_string()
+            } else {
+                tag.to_string()
+            };
+            (
+                base,
+                tag,
+                GLM4_CHAT_BUILT_BASE_TAG,
+                SeatChat::Glm4,
+                GLM4_LLAMA_NOTE,
+            )
+        }
     };
     let together_model = match (preset, train_driver, together_model.map(str::trim)) {
-        (JourneyPreset::DeepseekR1Distill, TrainDriver::Together, None | Some("")) => {
+        (
+            JourneyPreset::DeepseekR1Distill | JourneyPreset::Glm4Chat,
+            TrainDriver::Together,
+            None | Some(""),
+        ) => {
+            let which = match preset {
+                JourneyPreset::Glm4Chat => "GLM-4 Chat",
+                JourneyPreset::DeepseekR1Distill => "DeepSeek-R1-Distill",
+                JourneyPreset::Tev1 => "tev1",
+            };
             bail!(
-                "refuse:classify-journey: DeepSeek-R1-Distill journey uses local llamafactory-cli train. Together stays on the tev1 Qwen path unless --together-model is set"
+                "refuse:classify-journey: {which} journey uses local llamafactory-cli train. Together stays on the tev1 Qwen path unless --together-model is set"
             );
         }
         (_, TrainDriver::Together, Some(model)) if !model.is_empty() => model.to_string(),
@@ -167,6 +207,19 @@ const DEEPSEEK_R1_TEMPLATE: &str = "\
 </think>
 
 ";
+
+/// GLM-4 Chat prompt from LLaMA-Factory `glm4` (`template.py`).
+/// `format_prefix` is `[gMASK] ` (trailing space). `format_system` is
+/// `<|system|>\n{{content}}`. `format_user` is `<|user|>\n{{content}}<|assistant|>`.
+/// `format_assistant` is `\n{{content}}` (`efficient_eos` appends the eos token
+/// outside the slot). `stop_words` are `<|user|>` and `<|observation|>`.
+/// The GLM-4-9B-Chat eos token is `<|endoftext|>`. This is not a reasoning
+/// template, so `enable_thinking: false` does not insert a think block.
+const GLM4_TEMPLATE: &str = "\
+[gMASK] {{ if .System }}<|system|>
+{{ .System }}{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<|user|>
+{{ .Content }}<|assistant|>{{ else if eq .Role \"assistant\" }}
+{{ .Content }}{{ end }}{{ end }}";
 
 const STEP_ORDER: &[&str] = &[
     "prepare",
@@ -380,16 +433,25 @@ export_legacy_format: false
 /// Not `local_seat`'s `gguf_modelfile`. `FROM` uses the same token rules as `modelfile_token`.
 pub fn journey_modelfile(gguf: &Path, seat: SeatChat) -> String {
     let gguf = absolute_gguf(gguf);
-    let (stop, template) = match seat {
-        SeatChat::Qwen35 => ("<|im_end|>", QWEN35_NOTHINK_TEMPLATE),
-        SeatChat::DeepseekR1 => ("<｜end▁of▁sentence｜>", DEEPSEEK_R1_TEMPLATE),
+    let (stops, template): (&[&str], &str) = match seat {
+        SeatChat::Qwen35 => (&["<|im_end|>"], QWEN35_NOTHINK_TEMPLATE),
+        SeatChat::DeepseekR1 => (&["<｜end▁of▁sentence｜>"], DEEPSEEK_R1_TEMPLATE),
+        SeatChat::Glm4 => (
+            &["<|endoftext|>", "<|user|>", "<|observation|>"],
+            GLM4_TEMPLATE,
+        ),
     };
+    let stop_lines = stops
+        .iter()
+        .map(|stop| format!("PARAMETER stop {stop}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
         "\
 FROM {gguf}
 PARAMETER temperature 0
 PARAMETER num_predict 8
-PARAMETER stop {stop}
+{stop_lines}
 TEMPLATE \"\"\"{template}\"\"\"
 ",
         gguf = modelfile_from_token(&gguf),
@@ -618,8 +680,25 @@ fn hf_bin_label() -> String {
 }
 
 /// True when a failed downloader printed the huggingface_hub 1.x stub notice.
+/// Requires `deprecated` and either `huggingface-cli` as the subject or a hint to use `hf`.
+/// An unrelated failure that only says "deprecated" is not that notice.
 pub fn hf_downloader_deprecated(output: &str) -> bool {
-    output.to_ascii_lowercase().contains("deprecated")
+    let lower = output.to_ascii_lowercase();
+    if !lower.contains("deprecated") {
+        return false;
+    }
+    let names_cli = lower.contains("huggingface-cli");
+    let points_at_hf = lower.contains("use `hf`")
+        || lower.contains("use \"hf\"")
+        || lower.contains("use 'hf'")
+        || lower.match_indices("use hf").any(|(index, _)| {
+            let after = index + "use hf".len();
+            lower
+                .as_bytes()
+                .get(after)
+                .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'-')
+        });
+    names_cli || points_at_hf
 }
 
 pub(crate) const HF_DEPRECATION_HINT: &str = "Install or use `hf` (`pipx install \"huggingface_hub[cli]\"` or `pip install -U huggingface_hub` in the venv)";
@@ -1811,6 +1890,12 @@ fn print_plan(
             req.tag
         );
     }
+    if req.preset == JourneyPreset::Glm4Chat {
+        println!(
+            "preset glm4-chat base {GLM4_CHAT_BASE} template {template} tag {} local llamafactory-cli train",
+            req.tag
+        );
+    }
     if req.llama_cpp_dir.is_none() {
         println!(
             "{}. Set --llama-cpp-dir or LLAMA_CPP_DIR before --run.",
@@ -2431,6 +2516,7 @@ fn write_comparison(
         "preset": match req.preset {
             JourneyPreset::Tev1 => "tev1",
             JourneyPreset::DeepseekR1Distill => "deepseek-r1-distill",
+            JourneyPreset::Glm4Chat => "glm4-chat",
         },
         "base_seat": base_seat,
         "specialist_tag": req.tag,
@@ -3749,7 +3835,17 @@ mod tests {
         assert!(hf_downloader_deprecated(
             "`huggingface-cli` is deprecated and no longer works. Use `hf` instead."
         ));
+        assert!(hf_downloader_deprecated(
+            "huggingface-cli is deprecated and no longer works"
+        ));
         assert!(!hf_downloader_deprecated("connection reset by peer"));
+        assert!(!hf_downloader_deprecated(
+            "this endpoint is deprecated; retry later"
+        ));
+        assert!(!hf_downloader_deprecated("deprecated config key ignored"));
+        assert!(!hf_downloader_deprecated(
+            "deprecated; use huggingface_hub.login instead"
+        ));
     }
 
     #[test]
@@ -4159,6 +4255,109 @@ mod tests {
         assert!(
             !DEEPSEEK_R1_TEMPLATE.contains("<｜Assistant｜>\n"),
             "{DEEPSEEK_R1_TEMPLATE}"
+        );
+    }
+
+    #[test]
+    fn glm4_preset_fills_base_tag_and_template_and_refuses_default_together() {
+        let applied = apply_preset(
+            JourneyPreset::Glm4Chat,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Local,
+            None,
+        )
+        .unwrap();
+        assert_eq!(applied.base, GLM4_CHAT_BASE);
+        assert_eq!(applied.tag, GLM4_CHAT_TAG);
+        assert_eq!(applied.built_base_tag, GLM4_CHAT_BUILT_BASE_TAG);
+        assert_eq!(applied.seat, SeatChat::Glm4);
+        assert_eq!(train_template(&applied.base), "glm4");
+        let kept = apply_preset(
+            JourneyPreset::Glm4Chat,
+            "lab/other",
+            "custom-tag",
+            TrainDriver::Local,
+            None,
+        )
+        .unwrap();
+        assert_eq!(kept.base, "lab/other");
+        assert_eq!(kept.tag, "custom-tag");
+        assert_eq!(kept.seat, SeatChat::Glm4);
+        let tev1 = apply_preset(
+            JourneyPreset::Tev1,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Local,
+            None,
+        )
+        .unwrap();
+        assert_eq!(tev1.base, DEFAULT_BASE);
+        assert_eq!(tev1.tag, DEFAULT_TAG);
+        assert_eq!(tev1.seat, SeatChat::Qwen35);
+        let err = apply_preset(
+            JourneyPreset::Glm4Chat,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Together,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("GLM-4 Chat"), "{err}");
+        assert!(err.contains("local llamafactory-cli"), "{err}");
+        let hosted = apply_preset(
+            JourneyPreset::Glm4Chat,
+            DEFAULT_BASE,
+            DEFAULT_TAG,
+            TrainDriver::Together,
+            Some("zai-org/glm-4-9b-chat"),
+        )
+        .unwrap();
+        assert_eq!(hosted.together_model, "zai-org/glm-4-9b-chat");
+        let dir = std::env::temp_dir().join(format!("journey-glm4-{}", std::process::id()));
+        let paths = JourneyPaths::new(&dir);
+        let recipe = lora_recipe_yaml(
+            GLM4_CHAT_BASE,
+            GLM4_CHAT_BASE,
+            DEFAULT_DATASET,
+            &dir,
+            &paths.adapter_dir,
+            None,
+        );
+        assert!(recipe.contains("template: glm4"), "{recipe}");
+        assert!(recipe.contains("enable_thinking: false"), "{recipe}");
+        let model = journey_modelfile(&paths.specialist_f16, SeatChat::Glm4);
+        assert!(model.contains("[gMASK] "), "{model}");
+        assert!(model.contains("<|system|>"), "{model}");
+        assert!(model.contains("<|user|>"), "{model}");
+        assert!(model.contains("<|assistant|>"), "{model}");
+        assert!(model.contains("PARAMETER stop <|endoftext|>"), "{model}");
+        assert!(model.contains("PARAMETER stop <|user|>"), "{model}");
+        assert!(!model.contains("<|im_end|>"), "{model}");
+        assert!(!model.contains("<think>"), "{model}");
+    }
+
+    #[test]
+    fn glm4_system_user_prompt_matches_llamafactory() {
+        let system = "Classify the row.";
+        let user = "choose one letter";
+        let rendered = render_ollama_template(GLM4_TEMPLATE, system, &[("user", user)]);
+        let expected = format!("[gMASK] <|system|>\n{system}<|user|>\n{user}<|assistant|>");
+        assert_eq!(rendered, expected);
+        let history = render_ollama_template(GLM4_TEMPLATE, "", &[("assistant", "A")]);
+        assert!(
+            history.starts_with("[gMASK] \nA"),
+            "format_assistant is a leading newline then content\n{history}"
+        );
+        assert!(!history.contains("<|endoftext|>"), "{history}");
+        assert!(
+            GLM4_TEMPLATE.contains("<|user|>\n{{ .Content }}<|assistant|>"),
+            "{GLM4_TEMPLATE}"
+        );
+        assert!(
+            GLM4_TEMPLATE.contains("<|system|>\n{{ .System }}"),
+            "{GLM4_TEMPLATE}"
         );
     }
 
