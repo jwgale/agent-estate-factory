@@ -97,6 +97,7 @@ estate doctor --strict
 | Two dry-runs identical `.cell` | green | after apply, two `--dry-run` leave path+bytes unchanged |
 | Dual-layer backup → restore | green | matching sacred writes leases back; dry-run restore writes nothing |
 | Makefile contract | green | `gate-90` / `smoke` / `day90` / `feed-loop` / `fixtures-check` / `doctor-strict`; no `gh` |
+| Unsloth doctor and status | green | `estate doctor` and `estate status` print `unsloth-qlora` and `unsloth-lora` as `status=optional` and `live=false`. Prepare records only. No train, no promote, no live PASS, no invented prepare count. Journeys stay off smoke, `make gate-90`, and Actions |
 
 ## Remaining Day-90+ (honest)
 
