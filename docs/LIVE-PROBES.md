@@ -77,35 +77,7 @@ That check is not the recorded `estate probes --live` row and not
 the Mac `Pong` row. This page does not record a completion JSON blob for
 it.
 
-The tokenizer restore, the unwritten Modelfile, and the GGUF write line
-are the later tip locks in PR #149, PR #150, and PR #151. Tip framing
-through PR #193 (`86b1ad5d344006e7489b24fe14fef7b8b16215f4`) names this
-recorded PASS. Tip honesty through PR #191 is PR #192
-(`d260cb7145df00bec613bb0b34c52272cb97cd49`), naming tip
-`0e4223ea28a73c3931c7545f3040fd14ea8ae273`. Tip honesty through PR #189 is PR #190
-(`ccf23829c8a62c070f98eff558d2f8fe2c1ccaaf`), naming tip
-`a857f05a256b214a2069de42e6918130eb080d66`. Tip honesty through PR #187 is PR #188
-(`eb5ff41865d62db85355dbea7747ef4571941d43`), naming tip
-`4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a`. Tip honesty through PR #185 is PR #186
-(`ef839830b9de29caa963cece687e35c83dd77af6`), naming tip
-`54c28b968879fccbc157dd7d9fdf7c10e9d0d58c`. Tip honesty through PR #183 is PR #184
-(`87482dbc847c364056df778fa6170a22efad4c8b`), naming tip
-`b93e89f1983027a13008cc4be23f44756af0f22e`. Tip honesty through PR #181 is PR #182
-(`7e098a9b0ec360c952b2b1c2273654e44de6776c`). Tip honesty through PR #179 is PR #180
-(`3fae4d53821966acfa69f688ba8de5405b20513e`). Tip honesty through PR #177 is PR #178
-(`215933daa8a0c6789ab449ffd80fa9c786e5905e`). Tip honesty through PR #175 is PR #176
-(`b31461e3cbe910dbbcd146a58d3335f37adced39`). Tip honesty through PR #173 is PR #174
-(`2234e95f6aebd219e5e6733f108400782e6a623b`). Tip honesty through PR #171 is PR #172
-(`0839d6372160ba46763e50cc47e336b2daf6345f`). Tip honesty through PR #169 is PR #170
-(`54a049cc9983ffe1d8b3f25827367d4058f47b68`). Tip honesty through PR #167 is PR #168
-(`45f8808dbb9d8c837619ae5015aa26777f46f0a6`). Tip honesty through PR #165 is PR #166
-(`f5be4c896babc8be60e6bbcad46196acfa533fdc`). Tip honesty through PR #161 is PR #163
-(`7a08b76b7f9f95922758c260351b310de66a74e4`). Tip honesty through PR #155 is PR #156
-(`87072dbf79b302dc2dce42e49937abbbdd6ac689`). Tip honesty through PR #153 is PR #154
-(`4f0a2096dcf768ce988f320706ad7319aa7d489e`). The Standing next (estate)
-coda on `make uniqueness-prove-checklist` is PR #157
-(`6a43ff12a91295739c5a9c8a8f1dc9cc9c084466`). This page does not
-invent a new live PASS.
+See git log for the current tip. This page does not invent a new live PASS.
 
 Opt-in print of this ladder in operator order: `make uniqueness-prove-checklist`. That command does not train, convert, shell out to ollama, or promote. It does not invent a new live PASS. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 

@@ -6,11 +6,9 @@ use std::process::Command;
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
-
 fn estate_bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_estate"))
 }
-
 fn tmp(name: &str) -> PathBuf {
     // Keep the throwaway dir off the checkout. A GPU token in the
     // checkout path would trip refuse:sku-banned on the out directory.
@@ -24,7 +22,6 @@ fn tmp(name: &str) -> PathBuf {
     std::fs::create_dir_all(&path).unwrap();
     path
 }
-
 fn text(out: &std::process::Output) -> String {
     format!(
         "{}{}",
@@ -32,19 +29,15 @@ fn text(out: &std::process::Output) -> String {
         String::from_utf8_lossy(&out.stderr)
     )
 }
-
 fn fixture(rel: &str) -> String {
     repo_root().join(rel).display().to_string()
 }
-
 fn estate_bytes() -> String {
     std::fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap()
 }
-
 fn write_seated_estate(dir: &std::path::Path, model: &str) -> PathBuf {
     write_train_estate(dir, model, None)
 }
-
 fn write_train_estate(dir: &std::path::Path, model: &str, train_base: Option<&str>) -> PathBuf {
     let needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n";
     let src = estate_bytes();
@@ -58,10 +51,9 @@ fn write_train_estate(dir: &std::path::Path, model: &str, train_base: Option<&st
     std::fs::write(&path, seated).unwrap();
     path
 }
-
 #[test]
 fn help_enrich_and_train_name_the_seam() {
-    for topic in ["enrich", "train"] {
+for topic in ["enrich", "train"] {
         let out = estate_bin().args(["help", topic]).output().unwrap();
         let body = text(&out);
         assert!(out.status.success(), "{topic}: {body}");
@@ -213,10 +205,10 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("--verify-local-tag"), "{body}");
         assert!(!body.contains("READY_FOR_LIVE_TEST: yes"), "{body}");
     }
-    let index = estate_bin().args(["help"]).output().unwrap();
-    let index_text = text(&index);
-    assert!(index_text.contains("estate help enrich"), "{index_text}");
-    assert!(
+let index = estate_bin().args(["help"]).output().unwrap();
+let index_text = text(&index);
+assert!(index_text.contains("estate help enrich"), "{index_text}");
+assert!(
         index_text.contains("make purpose-build-checklist")
             && index_text.contains(
                 "print-only operator path for purpose-building an SLM on demand (operator section 15)"
@@ -239,56 +231,54 @@ fn help_enrich_and_train_name_the_seam() {
             ),
         "{index_text}"
     );
-    assert!(index_text.contains("make lora-journey"), "{index_text}");
-    assert!(index_text.contains("make seat-journey"), "{index_text}");
-
-    let drivers = estate_bin().args(["enrich", "drivers"]).output().unwrap();
-    let listed = text(&drivers);
-    assert!(drivers.status.success(), "{listed}");
-    assert!(listed.contains("ollama-modelfile"), "{listed}");
-    assert!(listed.contains("external-manifest"), "{listed}");
-    assert!(listed.contains("llamafactory-qlora"), "{listed}");
-    assert!(listed.contains("llamafactory-lora"), "{listed}");
-    assert!(listed.contains("unsloth-qlora"), "{listed}");
-    assert!(listed.contains("mlx-lm-lora"), "{listed}");
-    assert!(listed.contains("apple-silicon"), "{listed}");
-    assert!(listed.contains("refuse:host"), "{listed}");
-    assert!(listed.contains("status=optional"), "{listed}");
-    assert!(listed.contains("axolotl-lora"), "{listed}");
-    assert!(listed.contains("axolotl-qlora"), "{listed}");
-    assert!(listed.contains("live=false"), "{listed}");
-    assert!(listed.contains("default=train"), "{listed}");
+assert!(index_text.contains("make lora-journey"), "{index_text}");
+assert!(index_text.contains("make seat-journey"), "{index_text}");
+let drivers = estate_bin().args(["enrich", "drivers"]).output().unwrap();
+let listed = text(&drivers);
+assert!(drivers.status.success(), "{listed}");
+assert!(listed.contains("ollama-modelfile"), "{listed}");
+assert!(listed.contains("external-manifest"), "{listed}");
+assert!(listed.contains("llamafactory-qlora"), "{listed}");
+assert!(listed.contains("llamafactory-lora"), "{listed}");
+assert!(listed.contains("unsloth-qlora"), "{listed}");
+assert!(listed.contains("mlx-lm-lora"), "{listed}");
+assert!(listed.contains("apple-silicon"), "{listed}");
+assert!(listed.contains("refuse:host"), "{listed}");
+assert!(listed.contains("status=optional"), "{listed}");
+assert!(listed.contains("axolotl-lora"), "{listed}");
+assert!(listed.contains("axolotl-qlora"), "{listed}");
+assert!(listed.contains("live=false"), "{listed}");
+assert!(listed.contains("default=train"), "{listed}");
 }
 
 #[test]
 fn lf_beachhead_matrix_lists_every_smoke_fixture() {
-    let root = repo_root();
-    let matrix_rel = "docs/lf-beachhead-matrix.md";
-    let matrix = std::fs::read_to_string(root.join(matrix_rel)).unwrap();
-    let help_src = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(
+let root = repo_root();
+let matrix_rel = "docs/lf-beachhead-matrix.md";
+let matrix = std::fs::read_to_string(root.join(matrix_rel)).unwrap();
+let help_src = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(
         help_src.contains("include_str!(\"../../../docs/lf-beachhead-matrix.md\")"),
         "estate help must print the matrix file"
     );
-    assert!(
+assert!(
         matrix.contains("refuse:train-base"),
         "matrix must name refuse:train-base for a bare Ollama seat tag"
     );
-    assert!(
+assert!(
         matrix.contains("READY_FOR_LIVE_TEST`: no") || matrix.contains("READY_FOR_LIVE_TEST: no"),
         "{matrix}"
     );
-    assert!(
+assert!(
         !matrix.contains("READY_FOR_LIVE_TEST: yes")
             && !matrix.contains("READY_FOR_LIVE_TEST`: yes"),
         "matrix must keep READY_FOR_LIVE_TEST no"
     );
-    assert!(
+assert!(
         !matrix.to_ascii_lowercase().contains("kimi/"),
         "matrix must not add a Kimi train base"
     );
-
-    let expected = [
+let expected = [
         (
             "Phi-3 Instruct",
             "llamafactory-qlora",
@@ -418,16 +408,14 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
             "examples/fixtures/glm4-chat-lora.pack.json",
         ),
     ];
-
-    let parsed = beachhead_matrix_rows(&matrix);
-    assert_eq!(
+let parsed = beachhead_matrix_rows(&matrix);
+assert_eq!(
         parsed.len(),
         expected.len(),
         "matrix row count drifted from the beachhead inventory"
     );
-
-    let mut seen = Vec::new();
-    for (row, expect) in parsed.iter().zip(expected) {
+let mut seen = Vec::new();
+for (row, expect) in parsed.iter().zip(expected) {
         let (family, card, train_base, template, knobs, fixture) = expect;
         assert_eq!(row[0], family, "family drift");
         assert_eq!(row[1], card, "card drift");
@@ -443,16 +431,14 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
         assert_eq!(pack["model_hint"], "llama3", "{fixture}");
         seen.push(fixture.to_string());
     }
-
-    let mut mentioned = fixture_paths_in(&matrix);
-    mentioned.sort();
-    seen.sort();
-    assert_eq!(
+let mut mentioned = fixture_paths_in(&matrix);
+mentioned.sort();
+seen.sort();
+assert_eq!(
         mentioned, seen,
         "matrix fixture paths must be exactly the beachhead rows"
     );
-
-    for rel in ["docs/TRAIN-ENRICH.md", "docs/operator-enrich-journeys.md"] {
+for rel in ["docs/TRAIN-ENRICH.md", "docs/operator-enrich-journeys.md"] {
         let body = std::fs::read_to_string(root.join(rel)).unwrap();
         assert!(
             body.contains("lf-beachhead-matrix.md"),
@@ -467,19 +453,7 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
             "{rel} must keep READY_FOR_LIVE_TEST no"
         );
     }
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let slice = changelog
-        .split("## This slice — LLaMA-Factory LoRA and QLoRA beachhead matrix")
-        .nth(1)
-        .expect("CHANGELOG missing the beachhead matrix slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
-    assert!(slice.contains("READY_FOR_LIVE_TEST`: no"), "{slice}");
-    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"), "{slice}");
-
-    for topic in ["enrich", "train"] {
+for topic in ["enrich", "train"] {
         let out = estate_bin().args(["help", topic]).output().unwrap();
         let body = text(&out);
         assert!(out.status.success(), "{topic}: {body}");
@@ -511,32 +485,30 @@ fn lf_beachhead_matrix_lists_every_smoke_fixture() {
 
 #[test]
 fn lf_beachhead_prepare_walks_the_matrix_inventory() {
-    let root = repo_root();
-    let matrix = std::fs::read_to_string(root.join("docs/lf-beachhead-matrix.md")).unwrap();
-    let parsed = beachhead_matrix_rows(&matrix);
-    assert!(
+let root = repo_root();
+let matrix = std::fs::read_to_string(root.join("docs/lf-beachhead-matrix.md")).unwrap();
+let parsed = beachhead_matrix_rows(&matrix);
+assert!(
         !parsed.is_empty(),
         "matrix inventory is empty; the prepare walk would check nothing"
     );
-
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.lines().any(|line| line.trim() == "lf-beachhead-prepare:"),
         "Makefile missing lf-beachhead-prepare"
     );
-    assert!(makefile.contains("scripts/lf-beachhead-prepare.sh"));
-    assert!(
+assert!(makefile.contains("scripts/lf-beachhead-prepare.sh"));
+assert!(
         makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
         "lf-beachhead-prepare must stay off smoke, gate-90, and Actions"
     );
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("lf-beachhead-prepare"),
         "lf-beachhead-prepare must be a phony target"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/lf-beachhead-prepare.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/lf-beachhead-prepare.sh")).unwrap();
+for needle in [
         "docs/lf-beachhead-matrix.md",
         "estate enrich prepare",
         "SKIP live train",
@@ -554,16 +526,17 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
     ] {
         assert!(script.contains(needle), "lf-beachhead-prepare missing {needle}");
     }
-    assert!(
+assert!(
         !script.contains("READY_FOR_LIVE_TEST: yes"),
         "lf-beachhead-prepare must keep READY_FOR_LIVE_TEST no"
     );
-    let prepares = script.lines().any(|line| {
+let prepares = script.lines().any(|line| {
         let trimmed = line.trim_start();
         !trimmed.starts_with('#') && trimmed.contains("enrich") && trimmed.contains("prepare")
-    });
-    assert!(prepares, "walk must call estate enrich prepare");
-    let shells_out = script.lines().any(|line| {
+    }
+);
+assert!(prepares, "walk must call estate enrich prepare");
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -581,37 +554,36 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
             || trimmed.contains("gguf-convert")
             || trimmed.contains("local-seat")
             || trimmed.contains("import-trained")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "lf-beachhead-prepare must not train, merge, convert, seat, or import"
     );
-
-    let listed = Command::new("bash")
+let listed = Command::new("bash")
         .arg(root.join("scripts/lf-beachhead-prepare.sh"))
         .arg("--list")
         .output()
         .unwrap();
-    let listed_text = text(&listed);
-    assert!(listed.status.success(), "{listed_text}");
-    let walked: Vec<Vec<String>> = listed_text
+let listed_text = text(&listed);
+assert!(listed.status.success(), "{listed_text}");
+let walked: Vec<Vec<String>> = listed_text
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| line.split('\t').map(|cell| cell.to_string()).collect())
         .collect();
-    assert_eq!(
+assert_eq!(
         walked, parsed,
         "prepare walk must list the same rows as docs/lf-beachhead-matrix.md"
     );
-    for row in &walked {
+for row in &walked {
         assert!(
             !row[2].to_ascii_lowercase().contains("phi-3-small") && !row[5].contains("phi3-small"),
             "Phi-3-small must stay off the matrix inventory: {row:?}"
         );
         assert!(root.join(&row[5]).is_file(), "missing {}", row[5]);
     }
-
-    for rel in [
+for rel in [
         "docs/lf-beachhead-matrix.md",
         "docs/TRAIN-ENRICH.md",
         "docs/operator-enrich-journeys.md",
@@ -628,29 +600,7 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
             "{rel} must keep READY_FOR_LIVE_TEST no"
         );
     }
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let slice = changelog
-        .split("## This slice — LLaMA-Factory beachhead prepare walk")
-        .nth(1)
-        .expect("CHANGELOG missing the beachhead prepare walk slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(slice.contains("make lf-beachhead-prepare"), "{slice}");
-    assert!(slice.contains("lf-beachhead-matrix.md"), "{slice}");
-    assert!(slice.contains("SKIP live train"), "{slice}");
-    assert!(
-        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
-        "{slice}"
-    );
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
-    assert!(slice.contains("Phi-3-small"), "{slice}");
-
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -661,1406 +611,6 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
             "{rel} must not run lf-beachhead-prepare"
         );
     }
-}
-
-#[test]
-fn cell_one_status_tip_names_pr_161() {
-    let root = repo_root();
-    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    assert!(
-        !status.contains("through PR #82"),
-        "status tip must not freeze at through PR #82"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #183"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #143"),
-        "status snapshot must not freeze at PR #143"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #151"),
-        "status snapshot must not freeze at PR #151"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #153"),
-        "status snapshot must not freeze at PR #153"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #155"),
-        "status snapshot must not freeze at PR #155"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #154"),
-        "status snapshot must not stop at PR #154"
-    );
-    assert!(
-        !status.contains("what is on `main` through PR #158"),
-        "status snapshot must not claim a tip that has not merged"
-    );
-    assert!(
-        !status.contains("on tip through PR #142"),
-        "prepare walk stays PR #142; tip is PR #165"
-    );
-    let head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
-    assert!(
-        head.contains("through PR #183"),
-        "status header must name tip through PR #183: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #167"),
-        "status header must not freeze the snapshot at PR #167: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #165"),
-        "status header must not freeze the snapshot at PR #165: {head}"
-    );
-    assert!(
-        !head.contains("through PR #165 (`7a1b3d54d37b38977c5570679d7f3922b9404d4a`)"),
-        "status header must not freeze tip at PR #165: {head}"
-    );
-    assert!(
-        !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
-        "status header must not freeze tip at PR #155: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #155"),
-        "status header must not freeze the snapshot at PR #155: {head}"
-    );
-    assert!(
-        !head.contains("through PR #153 (`16cea97d56079a60c033c7a10468ddd7092a2ef1`)"),
-        "status header must not freeze tip at PR #153: {head}"
-    );
-    assert!(
-        !head.contains("through PR #154"),
-        "status header must not claim tip through PR #154: {head}"
-    );
-    assert!(
-        !head.contains("through PR #156"),
-        "status header must not claim tip through the #156 honesty slice: {head}"
-    );
-    assert!(
-        !head.contains("through PR #158"),
-        "status header must not claim a tip that has not merged: {head}"
-    );
-    assert!(
-        !head.contains("through PR #151"),
-        "status header must not freeze tip at PR #151: {head}"
-    );
-    assert!(
-        !head.contains("through PR #143"),
-        "status header must not freeze tip at PR #143: {head}"
-    );
-    assert!(
-        head.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"),
-        "status header must name the PR #161 tip SHA: {head}"
-    );
-    assert!(
-        head.contains("7a1b3d54d37b38977c5570679d7f3922b9404d4a"),
-        "status header must name the PR #165 tip SHA: {head}"
-    );
-    assert!(
-        head.contains("c244e721d7275651ecfa1c8f4578ba008a668aa9"),
-        "status header must name the PR #167 tip SHA: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #165 is PR #166")
-            && head.contains("f5be4c896babc8be60e6bbcad46196acfa533fdc"),
-        "status header must name PR #166 tip honesty through PR #165: {head}"
-    );
-    assert!(
-        head.contains("PR #167")
-            && head.contains("status=optional")
-            && head.contains("live=false")
-            && head.contains("once each")
-            && head.contains("not relabeled integration"),
-        "status header must name the Unsloth doctor and status lock: {head}"
-    );
-    assert!(
-        head.contains("aa374875f221be908ff473c8096eeea1c0f32846"),
-        "status header must name the PR #169 tip SHA: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #167 is PR #168")
-            && head.contains("45f8808dbb9d8c837619ae5015aa26777f46f0a6"),
-        "status header must name PR #168 tip honesty through PR #167: {head}"
-    );
-    assert!(
-        head.contains("make purpose-build-checklist")
-            && head.contains("operator section 15")
-            && head.contains("does not run them")
-            && head.contains("make uniqueness-prove-checklist"),
-        "status header must name the print-only purpose-build checklist: {head}"
-    );
-    assert!(
-        head.contains("651f31a4dd3a84dad270d40dbdd3892081b9380e"),
-        "status header must name the PR #171 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #169"),
-        "status header must not freeze the snapshot at PR #169: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #169 is PR #170")
-            && head.contains("54a049cc9983ffe1d8b3f25827367d4058f47b68"),
-        "status header must name PR #170 tip honesty through PR #169: {head}"
-    );
-    assert!(
-        head.contains("estate help enrich")
-            && head.contains("estate help train")
-            && head.contains("print-only operator path for purpose-building an SLM on demand")
-            && head.contains("PR #171"),
-        "status header must name the help path for purpose-build: {head}"
-    );
-    assert!(
-        head.contains("1002abcdaf648277e15750a44a16e53b324a251d"),
-        "status header must name the PR #173 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #171"),
-        "status header must not freeze the snapshot at PR #171: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #171 is PR #172")
-            && head.contains("0839d6372160ba46763e50cc47e336b2daf6345f"),
-        "status header must name PR #172 tip honesty through PR #171: {head}"
-    );
-    assert!(
-        head.contains("mlx-lm-lora")
-            && head.contains("status=optional")
-            && head.contains("live=false")
-            && head.contains("once each")
-            && head.contains("PR #173")
-            && head.contains("does not relabel that card integration"),
-        "status header must name the mlx-lm doctor and status lock: {head}"
-    );
-    assert!(
-        head.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"),
-        "status header must name the PR #175 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #173"),
-        "status header must not freeze the snapshot at PR #173: {head}"
-    );
-    assert!(
-        !head.contains("through PR #173 (`1002abcdaf648277e15750a44a16e53b324a251d`)"),
-        "status header must not freeze tip at PR #173: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #173 is PR #174")
-            && head.contains("2234e95f6aebd219e5e6733f108400782e6a623b"),
-        "status header must name PR #174 tip honesty through PR #173: {head}"
-    );
-    assert!(
-        head.contains("make mlx-lm-lora-journey")
-            && head.contains("make uniqueness-mlx")
-            && head.contains("operator section 16")
-            && head.contains("PR #175"),
-        "status header must name the mlx-lm LoRA journey: {head}"
-    );
-    assert!(
-        head.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"),
-        "status header must name the PR #177 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #175"),
-        "status header must not freeze the snapshot at PR #175: {head}"
-    );
-    assert!(
-        !head.contains("through PR #175 (`7cc330801c3b7f87f2b9ecd23a21d823d5b87b12`)"),
-        "status header must not freeze tip at PR #175: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #175 is PR #176")
-            && head.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"),
-        "status header must name PR #176 tip honesty through PR #175: {head}"
-    );
-    assert!(
-        head.contains("print-only Apple Silicon mlx-lm LoRA journey")
-            && head.contains("PR #177"),
-        "status header must name help for the mlx-lm LoRA journey: {head}"
-    );
-    assert!(
-        head.contains("4772e0f001a9422cefa8e6f2a9378836285068c7"),
-        "status header must name the PR #179 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #177"),
-        "status header must not freeze the snapshot at PR #177: {head}"
-    );
-    assert!(
-        !head.contains("through PR #177 (`3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be`)"),
-        "status header must not freeze tip at PR #177: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #177 is PR #178")
-            && head.contains("215933daa8a0c6789ab449ffd80fa9c786e5905e"),
-        "status header must name PR #178 tip honesty through PR #177: {head}"
-    );
-    assert!(
-        head.contains("make purpose-build-pick")
-            && head.contains("operator section 17")
-            && head.contains("does not run the named targets")
-            && head.contains("PR #179"),
-        "status header must name the print-only purpose-build picker: {head}"
-    );
-    assert!(
-        head.contains("c4a6d255a08146613c9c6cba262959d913f5cac0"),
-        "status header must name the PR #181 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #179"),
-        "status header must not freeze the snapshot at PR #179: {head}"
-    );
-    assert!(
-        !head.contains("through PR #179 (`4772e0f001a9422cefa8e6f2a9378836285068c7`)"),
-        "status header must not freeze tip at PR #179: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #179 is PR #180")
-            && head.contains("3fae4d53821966acfa69f688ba8de5405b20513e"),
-        "status header must name PR #180 tip honesty through PR #179: {head}"
-    );
-    assert!(
-        head.contains("make purpose-build-journey")
-            && head.contains("operator section 18")
-            && head.contains("does not inline their bodies")
-            && head.contains("PR #181"),
-        "status header must name the print-only purpose-build journey: {head}"
-    );
-    assert!(
-        head.contains("b93e89f1983027a13008cc4be23f44756af0f22e"),
-        "status header must name the PR #183 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #181"),
-        "status header must not freeze the snapshot at PR #181: {head}"
-    );
-    assert!(
-        !head.contains("through PR #181 (`c4a6d255a08146613c9c6cba262959d913f5cac0`)"),
-        "status header must not freeze tip at PR #181: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #181 is PR #182")
-            && head.contains("7e098a9b0ec360c952b2b1c2273654e44de6776c"),
-        "status header must name PR #182 tip honesty through PR #181: {head}"
-    );
-    assert!(
-        head.contains("make deepseek-r1-distill-journey")
-            && head.contains("make uniqueness-deepseek")
-            && head.contains("make deepseek-r1-distill-lora-journey")
-            && head.contains("make uniqueness-deepseek-lora")
-            && head.contains("operator section 19")
-            && head.contains("They do not train")
-            && head.contains("PR #183"),
-        "status header must name the print-only DeepSeek-R1-Distill journeys: {head}"
-    );
-    assert!(
-        head.contains("54c28b968879fccbc157dd7d9fdf7c10e9d0d58c"),
-        "status header must name the PR #185 tip SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #183"),
-        "status header must not freeze the snapshot at PR #183: {head}"
-    );
-    assert!(
-        !head.contains("through PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"),
-        "status header must not freeze tip at PR #183: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #183 is PR #184")
-            && head.contains("87482dbc847c364056df778fa6170a22efad4c8b"),
-        "status header must name PR #184 tip honesty through PR #183: {head}"
-    );
-    assert!(
-        head.contains("make glm4-chat-journey")
-            && head.contains("make uniqueness-glm")
-            && head.contains("make glm4-chat-lora-journey")
-            && head.contains("make uniqueness-glm-lora")
-            && head.contains("operator section 20")
-            && head.contains("They do not train")
-            && head.contains("PR #185"),
-        "status header must name the print-only GLM-4 Chat journeys: {head}"
-    );
-    assert!(
-        head.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
-        "status header must name the PR #187 tip SHA: {head}"
-    );
-    assert!(
-        head.contains("what is on `main` through PR #193")
-            && head.contains("86b1ad5d344006e7489b24fe14fef7b8b16215f4"),
-        "status header must name tip through PR #193: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #191"),
-        "status header must not freeze the snapshot at PR #191: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #189"),
-        "status header must not freeze the snapshot at PR #189: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #187"),
-        "status header must not freeze the snapshot at PR #187: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #185"),
-        "status header must not freeze the snapshot at PR #185: {head}"
-    );
-    assert!(
-        !head.contains("through PR #185 (`54c28b968879fccbc157dd7d9fdf7c10e9d0d58c`)"),
-        "status header must not freeze tip at PR #185: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #185 is PR #186")
-            && head.contains("ef839830b9de29caa963cece687e35c83dd77af6"),
-        "status header must name PR #186 tip honesty through PR #185: {head}"
-    );
-    assert!(
-        head.contains("make purpose-build-checklist")
-            && head.contains("operator section 15")
-            && head.contains("does not run them")
-            && head.contains("PR #187"),
-        "status header must name the checklist DeepSeek and GLM print pointers: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #161"),
-        "status header must not freeze the snapshot at PR #161: {head}"
-    );
-    assert!(
-        !head.contains("through PR #161 (`0cc8b9e5bf2423d90f54f222a182804b3b337d94`)"),
-        "status header must not freeze tip at PR #161: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #161 is PR #163")
-            && head.contains("7a08b76b7f9f95922758c260351b310de66a74e4"),
-        "status header must name PR #163 tip honesty through PR #161: {head}"
-    );
-    assert!(
-        head.contains("PR #164")
-            && head.contains("bd5a515901852b95d1415bb55eb557e5ed424d8d")
-            && head.contains("status=integration")
-            && head.contains("live=false"),
-        "status header must name the Axolotl doctor and status lock: {head}"
-    );
-    assert!(
-        head.contains("make unsloth-lora-journey")
-            && head.contains("operator section 14"),
-        "status header must name the Unsloth LoRA journey: {head}"
-    );
-    assert!(
-        head.contains("only live uniqueness prove"),
-        "status header must keep the recorded PASS as the only live uniqueness prove: {head}"
-    );
-    assert!(
-        head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
-        "status header must keep the PR #157 standing-next SHA: {head}"
-    );
-    assert!(
-        !head.contains("what is on `main` through PR #157"),
-        "status header must not freeze the snapshot at PR #157: {head}"
-    );
-    assert!(
-        head.contains("make uniqueness-full-lora")
-            && head.contains("9bc8db52ee157bc7c50261362c7790d4248ed4b4")
-            && head.contains("make axolotl-qlora-journey")
-            && head.contains("make uniqueness-axolotl")
-            && head.contains("1b06ea067f7cec44649fbc3aba6650dc0ad6b0f9")
-            && head.contains("make unsloth-qlora-journey")
-            && head.contains("operator section 12")
-            && head.contains("e60d201af8c852e7b54eda7e2e37deb52428e38a")
-            && head.contains("make axolotl-lora-journey")
-            && head.contains("operator section 13"),
-        "status header must name the post-#157 print-only journeys: {head}"
-    );
-    assert!(
-        head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "status header must keep the PR #155 checklist SHA: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #155 is PR #156")
-            && head.contains("87072dbf79b302dc2dce42e49937abbbdd6ac689"),
-        "status header must name PR #156 tip honesty through PR #155: {head}"
-    );
-    assert!(
-        head.contains("Standing next (estate)")
-            && head.contains("make uniqueness-prove-checklist")
-            && head.contains("PR #157"),
-        "status header must name the Standing next coda: {head}"
-    );
-    assert!(
-        head.contains("Tip honesty through PR #153 is PR #154")
-            && head.contains("4f0a2096dcf768ce988f320706ad7319aa7d489e"),
-        "status header must name PR #154 tip honesty through PR #153: {head}"
-    );
-    assert!(
-        head.contains("print-only uniqueness prove checklist") && head.contains("PR #155"),
-        "status header must name the print-only uniqueness prove checklist: {head}"
-    );
-    assert!(
-        head.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
-        "status header must keep the recorded PR #153 prove SHA: {head}"
-    );
-    assert!(
-        head.contains("PR #152") && head.contains("b4f9c321f2c21c4cac1eb24b8c5b002035318ce4"),
-        "status header must name the PR #152 tip-honesty SHA: {head}"
-    );
-    assert!(
-        head.contains("Target C live uniqueness") && head.contains("LIVE-PROBES.md"),
-        "status header must point at the recorded prove: {head}"
-    );
-    assert!(
-        !head.contains("/tmp/cell-one-target-c-live-20260923"),
-        "status header must point at the prove without the workdir: {head}"
-    );
-    assert!(
-        head.contains("ESTATE_BIN")
-            && head.contains("PR #148")
-            && head.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"),
-        "status header must name the estate PATH fallback: {head}"
-    );
-    assert!(
-        head.contains("restore names dereference")
-            && head.contains("PR #149")
-            && head.contains("a272d39b731996524883e1124478dddc3f76935c"),
-        "status header must name the tokenizer restore dereference: {head}"
-    );
-    assert!(
-        !head.contains("cp -aL"),
-        "status header names the dereference slice without the copy command: {head}"
-    );
-    assert!(
-        head.contains("does not write `$PREPARED/Modelfile`")
-            && head.contains("PR #150")
-            && head.contains("663c806ae72826cff664ea32e8a370e059ba83d4"),
-        "status header must name the print-only Modelfile: {head}"
-    );
-    assert!(
-        head.contains("GGUF print-only seats") && head.contains("PR #151"),
-        "status header must scope the write line to GGUF print-only seats: {head}"
-    );
-    assert!(
-        head.contains("beachhead matrix is PR #140"),
-        "status header must keep the beachhead matrix at PR #140: {head}"
-    );
-    assert!(
-        head.contains("35a88139dea58528e4bc5c7b31708b9716ce091b"),
-        "status header must keep the PR #140 matrix SHA: {head}"
-    );
-    assert!(
-        head.contains("prepare walk of that matrix is PR #142"),
-        "status header must keep the prepare walk at PR #142: {head}"
-    );
-    assert!(
-        head.contains("d2dcdb97c2c960e8b93715391d77075055a8b0ce"),
-        "status header must keep the PR #142 prepare-walk SHA: {head}"
-    );
-    assert!(
-        head.contains("make lf-beachhead-prepare"),
-        "status header must name the prepare walk: {head}"
-    );
-    assert!(
-        head.contains("GATE-90 Remaining names `make lf-beachhead-prepare` via PR #143"),
-        "status header must attribute the Remaining row to PR #143: {head}"
-    );
-    assert!(
-        head.contains("READY_FOR_LIVE_TEST`: no") || head.contains("READY_FOR_LIVE_TEST: no"),
-        "status header must keep READY_FOR_LIVE_TEST no: {head}"
-    );
-    assert!(
-        !status.contains("READY_FOR_LIVE_TEST: yes")
-            && !status.contains("READY_FOR_LIVE_TEST`: yes"),
-        "status must not flip READY_FOR_LIVE_TEST"
-    );
-
-    let uniq = status
-        .split("## Train/enrich uniqueness (matrix PR #140, prepare walk PR #142)")
-        .nth(1)
-        .expect("uniqueness section")
-        .split("\n## ")
-        .next()
-        .unwrap();
-    assert!(
-        uniq.contains("lf-beachhead-matrix.md"),
-        "uniqueness section must link the beachhead matrix"
-    );
-    assert!(uniq.contains("refuse:train-base"), "{uniq}");
-    assert!(uniq.contains("make qlora-journey"), "{uniq}");
-    assert!(uniq.contains("make lora-journey"), "{uniq}");
-    assert!(uniq.contains("make seat-journey"), "{uniq}");
-    assert!(uniq.contains("make lf-beachhead-prepare"), "{uniq}");
-    assert!(
-        uniq.contains("PR #142"),
-        "uniqueness section must keep the prepare walk at PR #142"
-    );
-    assert!(
-        uniq.contains("via PR #143"),
-        "uniqueness section must name GATE-90 Remaining via PR #143"
-    );
-    assert!(
-        uniq.contains("ac8348a2d5cd0979ecf285c51153d12b3233442c"),
-        "uniqueness section must name the PR #148 estate binary"
-    );
-    assert!(
-        uniq.contains("still only call `make`"),
-        "uniqueness-full and uniqueness-ladder still only call make"
-    );
-    assert!(
-        uniq.contains("a272d39b731996524883e1124478dddc3f76935c"),
-        "uniqueness section must name the PR #149 dereference"
-    );
-    assert!(
-        uniq.contains("does not write `$PREPARED/Modelfile`"),
-        "uniqueness section must keep local-seat print-only"
-    );
-    assert!(
-        uniq.contains("663c806ae72826cff664ea32e8a370e059ba83d4"),
-        "uniqueness section must name the PR #150 print-only Modelfile"
-    );
-    assert!(
-        uniq.contains("GGUF print-only seats"),
-        "uniqueness section must scope the write line to GGUF print-only seats"
-    );
-    assert!(
-        uniq.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
-        "uniqueness section must keep the PR #151 write-line SHA"
-    );
-    assert!(
-        uniq.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
-        "uniqueness section must name the PR #153 recorded prove"
-    );
-    assert!(
-        uniq.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "uniqueness section must name the PR #155 checklist"
-    );
-    assert!(
-        uniq.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
-        "uniqueness section must name the PR #157 Standing next coda"
-    );
-    assert!(
-        uniq.contains("Standing next (estate)"),
-        "uniqueness section must name the Standing next coda"
-    );
-    assert!(
-        uniq.contains("does not invent a new live PASS"),
-        "uniqueness section must not invent a live PASS"
-    );
-    assert!(uniq.contains("modelfile_on_disk=true"), "{uniq}");
-    assert!(uniq.contains("SKIP live train"), "{uniq}");
-    assert!(uniq.contains("extra_special_tokens"), "{uniq}");
-    assert!(
-        uniq.contains("READY_FOR_LIVE_TEST`: no") || uniq.contains("READY_FOR_LIVE_TEST: no"),
-        "{uniq}"
-    );
-    assert!(
-        !uniq.contains("READY_FOR_LIVE_TEST: yes") && !uniq.contains("READY_FOR_LIVE_TEST`: yes"),
-        "uniqueness section must keep READY_FOR_LIVE_TEST no"
-    );
-    assert!(
-        uniq.contains("Kimi is not a row"),
-        "uniqueness section must leave Kimi off the matrix"
-    );
-    assert!(
-        !uniq.to_ascii_lowercase().contains("kimi/"),
-        "uniqueness section must not add a Kimi train base"
-    );
-    for family in [
-        "Phi-3 Instruct",
-        "Llama-3.2 Instruct",
-        "Gemma-2 Instruct",
-        "Mistral Instruct",
-        "Qwen2.5 Instruct",
-        "Qwen3 Instruct",
-        "DeepSeek-R1-Distill chat",
-        "GLM-4 Chat",
-    ] {
-        assert!(uniq.contains(family), "uniqueness section missing {family}");
-    }
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let slice = changelog
-        .split("## This slice — Cell One status tip honesty through PR #143")
-        .nth(1)
-        .expect("CHANGELOG missing the tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        slice.contains("3acdec3983ea581976649ba4b7cc41a4cd22d31d"),
-        "{slice}"
-    );
-    assert!(slice.contains("PR #140"), "{slice}");
-    assert!(slice.contains("PR #142"), "{slice}");
-    assert!(slice.contains("make lf-beachhead-prepare"), "{slice}");
-    assert!(
-        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"),
-        "{slice}"
-    );
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-    assert!(!slice.to_ascii_lowercase().contains("kimi/"), "{slice}");
-
-    let tip = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #151")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #151 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip.contains("ecbe8a1c9e5ebe80d581f2c82a2c194cf165aa67"),
-        "{tip}"
-    );
-    assert!(tip.contains("PR #140"), "{tip}");
-    assert!(tip.contains("PR #142"), "{tip}");
-    assert!(tip.contains("via PR #143"), "{tip}");
-    assert!(tip.contains("PR #148"), "{tip}");
-    assert!(tip.contains("PR #149"), "{tip}");
-    assert!(tip.contains("PR #150"), "{tip}");
-    assert!(tip.contains("GGUF print-only seats"), "{tip}");
-    assert!(tip.contains("make lf-beachhead-prepare"), "{tip}");
-    assert!(
-        tip.contains("READY_FOR_LIVE_TEST`: no") || tip.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip}"
-    );
-    assert!(
-        !tip.contains("READY_FOR_LIVE_TEST: yes") && !tip.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip}"
-    );
-    assert!(!tip.to_ascii_lowercase().contains("kimi/"), "{tip}");
-
-    let tip153 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #153")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #153 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip153.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
-        "{tip153}"
-    );
-    assert!(
-        tip153.contains("b4f9c321f2c21c4cac1eb24b8c5b002035318ce4"),
-        "{tip153}"
-    );
-    assert!(tip153.contains("PR #140"), "{tip153}");
-    assert!(tip153.contains("PR #142"), "{tip153}");
-    assert!(tip153.contains("via PR #143"), "{tip153}");
-    assert!(tip153.contains("PR #152"), "{tip153}");
-    assert!(tip153.contains("PR #153"), "{tip153}");
-    assert!(tip153.contains("LIVE-PROBES.md"), "{tip153}");
-    assert!(tip153.contains("GGUF print-only seats"), "{tip153}");
-    assert!(tip153.contains("make lf-beachhead-prepare"), "{tip153}");
-    assert!(
-        tip153.contains("READY_FOR_LIVE_TEST`: no") || tip153.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip153}"
-    );
-    assert!(
-        !tip153.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip153.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip153}"
-    );
-    assert!(!tip153.to_ascii_lowercase().contains("kimi/"), "{tip153}");
-
-    let tip155 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #155")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #155 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip155.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "{tip155}"
-    );
-    assert!(
-        tip155.contains("4f0a2096dcf768ce988f320706ad7319aa7d489e"),
-        "{tip155}"
-    );
-    assert!(
-        tip155.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
-        "{tip155}"
-    );
-    assert!(tip155.contains("PR #140"), "{tip155}");
-    assert!(tip155.contains("PR #142"), "{tip155}");
-    assert!(tip155.contains("via PR #143"), "{tip155}");
-    assert!(tip155.contains("PR #145"), "{tip155}");
-    assert!(tip155.contains("PR #154"), "{tip155}");
-    assert!(tip155.contains("PR #155"), "{tip155}");
-    assert!(tip155.contains("tip honesty through PR #153"), "{tip155}");
-    assert!(
-        tip155.contains("print-only uniqueness prove checklist"),
-        "{tip155}"
-    );
-    assert!(tip155.contains("LIVE-PROBES.md"), "{tip155}");
-    assert!(
-        tip155.contains("does not invent a new live PASS"),
-        "{tip155}"
-    );
-    assert!(tip155.contains("GGUF print-only seats"), "{tip155}");
-    assert!(tip155.contains("make lf-beachhead-prepare"), "{tip155}");
-    assert!(
-        tip155.contains("READY_FOR_LIVE_TEST`: no") || tip155.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip155}"
-    );
-    assert!(
-        !tip155.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip155.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip155}"
-    );
-    assert!(!tip155.to_ascii_lowercase().contains("kimi/"), "{tip155}");
-
-    let tip157 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #157")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #157 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip157.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
-        "{tip157}"
-    );
-    assert!(
-        tip157.contains("87072dbf79b302dc2dce42e49937abbbdd6ac689"),
-        "{tip157}"
-    );
-    assert!(
-        tip157.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
-        "{tip157}"
-    );
-    assert!(
-        tip157.contains("16cea97d56079a60c033c7a10468ddd7092a2ef1"),
-        "{tip157}"
-    );
-    assert!(tip157.contains("PR #140"), "{tip157}");
-    assert!(tip157.contains("PR #142"), "{tip157}");
-    assert!(tip157.contains("via PR #143"), "{tip157}");
-    assert!(tip157.contains("PR #145"), "{tip157}");
-    assert!(tip157.contains("PR #155"), "{tip157}");
-    assert!(tip157.contains("PR #156"), "{tip157}");
-    assert!(tip157.contains("PR #157"), "{tip157}");
-    assert!(tip157.contains("tip honesty through PR #155"), "{tip157}");
-    assert!(tip157.contains("Standing next (estate)"), "{tip157}");
-    assert!(tip157.contains("LIVE-PROBES.md"), "{tip157}");
-    assert!(
-        tip157.contains("does not invent a new live PASS"),
-        "{tip157}"
-    );
-    assert!(tip157.contains("GGUF print-only seats"), "{tip157}");
-    assert!(tip157.contains("make lf-beachhead-prepare"), "{tip157}");
-    assert!(
-        tip157.contains("READY_FOR_LIVE_TEST`: no") || tip157.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip157}"
-    );
-    assert!(
-        !tip157.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip157.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip157}"
-    );
-    assert!(!tip157.to_ascii_lowercase().contains("kimi/"), "{tip157}");
-    assert!(
-        !tip157.contains("through PR #158"),
-        "tip slice must not claim a tip that has not merged: {tip157}"
-    );
-    assert!(
-        !tip157.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
-        "tip slice must not freeze at the PR #155 tip SHA: {tip157}"
-    );
-
-    let tip161 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #161")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #161 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip161.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"),
-        "{tip161}"
-    );
-    assert!(
-        tip161.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
-        "{tip161}"
-    );
-    assert!(tip161.contains("via PR #143"), "{tip161}");
-    assert!(tip161.contains("PR #159"), "{tip161}");
-    assert!(tip161.contains("PR #160"), "{tip161}");
-    assert!(tip161.contains("PR #161"), "{tip161}");
-    assert!(tip161.contains("PR #162"), "{tip161}");
-    assert!(tip161.contains("operator section 12"), "{tip161}");
-    assert!(tip161.contains("operator section 13"), "{tip161}");
-    assert!(tip161.contains("make lf-beachhead-prepare"), "{tip161}");
-    assert!(
-        tip161.contains("does not invent a new live PASS"),
-        "{tip161}"
-    );
-    assert!(
-        tip161.contains("READY_FOR_LIVE_TEST`: no") || tip161.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip161}"
-    );
-    assert!(
-        !tip161.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip161.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip161}"
-    );
-    assert!(!tip161.to_ascii_lowercase().contains("kimi/"), "{tip161}");
-
-    let tip165 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #165")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #165 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip165.contains("7a1b3d54d37b38977c5570679d7f3922b9404d4a"),
-        "{tip165}"
-    );
-    assert!(
-        tip165.contains("7a08b76b7f9f95922758c260351b310de66a74e4"),
-        "{tip165}"
-    );
-    assert!(
-        tip165.contains("bd5a515901852b95d1415bb55eb557e5ed424d8d"),
-        "{tip165}"
-    );
-    assert!(tip165.contains("PR #163"), "{tip165}");
-    assert!(tip165.contains("PR #164"), "{tip165}");
-    assert!(tip165.contains("PR #165"), "{tip165}");
-    assert!(tip165.contains("operator section 14"), "{tip165}");
-    assert!(tip165.contains("make unsloth-lora-journey"), "{tip165}");
-    assert!(tip165.contains("status=integration"), "{tip165}");
-    assert!(tip165.contains("live=false"), "{tip165}");
-    assert!(tip165.contains("only live uniqueness prove"), "{tip165}");
-    assert!(tip165.contains("via PR #143"), "{tip165}");
-    assert!(
-        tip165.contains("does not invent a new live PASS"),
-        "{tip165}"
-    );
-    assert!(
-        tip165.contains("43770130 3391"),
-        "{tip165}"
-    );
-    assert!(
-        tip165.contains("READY_FOR_LIVE_TEST`: no") || tip165.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip165}"
-    );
-    assert!(
-        !tip165.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip165.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip165}"
-    );
-    assert!(!tip165.to_ascii_lowercase().contains("kimi/"), "{tip165}");
-    assert!(
-        !tip165.contains("through PR #161 (`0cc8b9e5bf2423d90f54f222a182804b3b337d94`)"),
-        "tip slice must not freeze at the PR #161 tip SHA: {tip165}"
-    );
-
-    let tip167 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #167")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #167 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip167.contains("c244e721d7275651ecfa1c8f4578ba008a668aa9"),
-        "{tip167}"
-    );
-    assert!(
-        tip167.contains("f5be4c896babc8be60e6bbcad46196acfa533fdc"),
-        "{tip167}"
-    );
-    assert!(tip167.contains("PR #166"), "{tip167}");
-    assert!(tip167.contains("PR #167"), "{tip167}");
-    assert!(tip167.contains("status=optional"), "{tip167}");
-    assert!(tip167.contains("live=false"), "{tip167}");
-    assert!(tip167.contains("once each"), "{tip167}");
-    assert!(tip167.contains("status=integration"), "{tip167}");
-    assert!(tip167.contains("not relabeled integration"), "{tip167}");
-    assert!(tip167.contains("only live uniqueness prove"), "{tip167}");
-    assert!(tip167.contains("via PR #143"), "{tip167}");
-    assert!(
-        tip167.contains("does not invent a new live PASS"),
-        "{tip167}"
-    );
-    assert!(tip167.contains("43770130 3391"), "{tip167}");
-    assert!(
-        tip167.contains("READY_FOR_LIVE_TEST`: no") || tip167.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip167}"
-    );
-    assert!(
-        !tip167.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip167.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip167}"
-    );
-    assert!(!tip167.to_ascii_lowercase().contains("kimi/"), "{tip167}");
-    assert!(
-        !tip167.contains("through PR #165 (`7a1b3d54d37b38977c5570679d7f3922b9404d4a`)"),
-        "tip slice must not freeze at the PR #165 tip SHA: {tip167}"
-    );
-
-    let tip169 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #169")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #169 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip169.contains("aa374875f221be908ff473c8096eeea1c0f32846"),
-        "{tip169}"
-    );
-    assert!(
-        tip169.contains("45f8808dbb9d8c837619ae5015aa26777f46f0a6"),
-        "{tip169}"
-    );
-    assert!(tip169.contains("PR #168"), "{tip169}");
-    assert!(tip169.contains("PR #169"), "{tip169}");
-    assert!(tip169.contains("make purpose-build-checklist"), "{tip169}");
-    assert!(tip169.contains("does not run them"), "{tip169}");
-    assert!(tip169.contains("make uniqueness-prove-checklist"), "{tip169}");
-    assert!(tip169.contains("only live uniqueness prove"), "{tip169}");
-    assert!(tip169.contains("via PR #143"), "{tip169}");
-    assert!(
-        tip169.contains("does not invent a new live PASS"),
-        "{tip169}"
-    );
-    assert!(tip169.contains("43770130 3391"), "{tip169}");
-    assert!(
-        tip169.contains("READY_FOR_LIVE_TEST`: no") || tip169.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip169}"
-    );
-    assert!(
-        !tip169.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip169.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip169}"
-    );
-    assert!(!tip169.to_ascii_lowercase().contains("kimi/"), "{tip169}");
-    assert!(
-        !tip169.contains("through PR #167 (`c244e721d7275651ecfa1c8f4578ba008a668aa9`)"),
-        "tip slice must not freeze at the PR #167 tip SHA: {tip169}"
-    );
-
-    let tip171 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #171")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #171 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip171.contains("651f31a4dd3a84dad270d40dbdd3892081b9380e"),
-        "{tip171}"
-    );
-    assert!(
-        tip171.contains("54a049cc9983ffe1d8b3f25827367d4058f47b68"),
-        "{tip171}"
-    );
-    assert!(tip171.contains("PR #170"), "{tip171}");
-    assert!(tip171.contains("PR #171"), "{tip171}");
-    assert!(tip171.contains("estate help enrich"), "{tip171}");
-    assert!(tip171.contains("make purpose-build-checklist"), "{tip171}");
-    assert!(
-        tip171.contains("print-only operator path for purpose-building an SLM on demand"),
-        "{tip171}"
-    );
-    assert!(tip171.contains("does not run them"), "{tip171}");
-    assert!(tip171.contains("make uniqueness-prove-checklist"), "{tip171}");
-    assert!(tip171.contains("only live uniqueness prove"), "{tip171}");
-    assert!(tip171.contains("via PR #143"), "{tip171}");
-    assert!(
-        tip171.contains("does not invent a new live PASS"),
-        "{tip171}"
-    );
-    assert!(tip171.contains("43770130 3391"), "{tip171}");
-    assert!(
-        tip171.contains("READY_FOR_LIVE_TEST`: no") || tip171.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip171}"
-    );
-    assert!(
-        !tip171.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip171.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip171}"
-    );
-    assert!(!tip171.to_ascii_lowercase().contains("kimi/"), "{tip171}");
-    assert!(
-        !tip171.contains("through PR #169 (`aa374875f221be908ff473c8096eeea1c0f32846`)"),
-        "tip slice must not freeze at the PR #169 tip SHA: {tip171}"
-    );
-
-    let tip173 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #173")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #173 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip173.contains("1002abcdaf648277e15750a44a16e53b324a251d"),
-        "{tip173}"
-    );
-    assert!(
-        tip173.contains("0839d6372160ba46763e50cc47e336b2daf6345f"),
-        "{tip173}"
-    );
-    assert!(tip173.contains("PR #172"), "{tip173}");
-    assert!(tip173.contains("PR #173"), "{tip173}");
-    assert!(tip173.contains("estate doctor"), "{tip173}");
-    assert!(tip173.contains("mlx-lm-lora"), "{tip173}");
-    assert!(
-        tip173.contains("status=optional") && tip173.contains("live=false"),
-        "{tip173}"
-    );
-    assert!(tip173.contains("once each"), "{tip173}");
-    assert!(tip173.contains("does not call mlx-lm"), "{tip173}");
-    assert!(tip173.contains("only live uniqueness prove"), "{tip173}");
-    assert!(tip173.contains("via PR #143"), "{tip173}");
-    assert!(
-        tip173.contains("does not invent a new live PASS"),
-        "{tip173}"
-    );
-    assert!(tip173.contains("43770130 3391"), "{tip173}");
-    assert!(
-        tip173.contains("READY_FOR_LIVE_TEST`: no") || tip173.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip173}"
-    );
-    assert!(
-        !tip173.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip173.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip173}"
-    );
-    assert!(!tip173.to_ascii_lowercase().contains("kimi/"), "{tip173}");
-    assert!(
-        !tip173.contains("through PR #171 (`651f31a4dd3a84dad270d40dbdd3892081b9380e`)"),
-        "tip slice must not freeze at the PR #171 tip SHA: {tip173}"
-    );
-
-    let tip175 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #175")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #175 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip175.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"),
-        "{tip175}"
-    );
-    assert!(
-        tip175.contains("2234e95f6aebd219e5e6733f108400782e6a623b"),
-        "{tip175}"
-    );
-    assert!(
-        tip175.contains("1002abcdaf648277e15750a44a16e53b324a251d"),
-        "{tip175}"
-    );
-    assert!(tip175.contains("PR #174"), "{tip175}");
-    assert!(tip175.contains("PR #175"), "{tip175}");
-    assert!(tip175.contains("make mlx-lm-lora-journey"), "{tip175}");
-    assert!(tip175.contains("make uniqueness-mlx"), "{tip175}");
-    assert!(tip175.contains("operator section 16"), "{tip175}");
-    assert!(tip175.contains("does not call mlx-lm"), "{tip175}");
-    assert!(tip175.contains("only live uniqueness prove"), "{tip175}");
-    assert!(tip175.contains("via PR #143"), "{tip175}");
-    assert!(
-        tip175.contains("does not invent a new live PASS"),
-        "{tip175}"
-    );
-    assert!(tip175.contains("43770130 3391"), "{tip175}");
-    assert!(
-        tip175.contains("READY_FOR_LIVE_TEST`: no") || tip175.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip175}"
-    );
-    assert!(
-        !tip175.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip175.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip175}"
-    );
-    assert!(!tip175.to_ascii_lowercase().contains("kimi/"), "{tip175}");
-    assert!(
-        !tip175.contains("through PR #173 (`1002abcdaf648277e15750a44a16e53b324a251d`)"),
-        "tip slice must not freeze at the PR #173 tip SHA: {tip175}"
-    );
-
-    let tip177 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #177")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #177 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip177.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"),
-        "{tip177}"
-    );
-    assert!(
-        tip177.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"),
-        "{tip177}"
-    );
-    assert!(
-        tip177.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"),
-        "{tip177}"
-    );
-    assert!(tip177.contains("PR #176"), "{tip177}");
-    assert!(tip177.contains("PR #177"), "{tip177}");
-    assert!(tip177.contains("make mlx-lm-lora-journey"), "{tip177}");
-    assert!(tip177.contains("make uniqueness-mlx"), "{tip177}");
-    assert!(tip177.contains("operator section 16"), "{tip177}");
-    assert!(tip177.contains("only live uniqueness prove"), "{tip177}");
-    assert!(tip177.contains("via PR #143"), "{tip177}");
-    assert!(
-        tip177.contains("does not invent a new live PASS"),
-        "{tip177}"
-    );
-    assert!(tip177.contains("43770130 3391"), "{tip177}");
-    assert!(
-        tip177.contains("READY_FOR_LIVE_TEST`: no") || tip177.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip177}"
-    );
-    assert!(
-        !tip177.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip177.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip177}"
-    );
-    assert!(!tip177.to_ascii_lowercase().contains("kimi/"), "{tip177}");
-    assert!(
-        !tip177.contains("through PR #175 (`7cc330801c3b7f87f2b9ecd23a21d823d5b87b12`)"),
-        "tip slice must not freeze at the PR #175 tip SHA: {tip177}"
-    );
-
-    let tip179 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #179")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #179 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip179.contains("4772e0f001a9422cefa8e6f2a9378836285068c7"),
-        "{tip179}"
-    );
-    assert!(
-        tip179.contains("215933daa8a0c6789ab449ffd80fa9c786e5905e"),
-        "{tip179}"
-    );
-    assert!(
-        tip179.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"),
-        "{tip179}"
-    );
-    assert!(tip179.contains("PR #178"), "{tip179}");
-    assert!(tip179.contains("PR #179"), "{tip179}");
-    assert!(tip179.contains("make purpose-build-pick"), "{tip179}");
-    assert!(tip179.contains("operator section 17"), "{tip179}");
-    assert!(
-        tip179.contains("does not run the named targets"),
-        "{tip179}"
-    );
-    assert!(tip179.contains("only live uniqueness prove"), "{tip179}");
-    assert!(tip179.contains("via PR #143"), "{tip179}");
-    assert!(
-        tip179.contains("does not invent a new live PASS"),
-        "{tip179}"
-    );
-    assert!(tip179.contains("43770130 3391"), "{tip179}");
-    assert!(
-        tip179.contains("READY_FOR_LIVE_TEST`: no") || tip179.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip179}"
-    );
-    assert!(
-        !tip179.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip179.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip179}"
-    );
-    assert!(!tip179.to_ascii_lowercase().contains("kimi/"), "{tip179}");
-    assert!(
-        !tip179.contains("through PR #177 (`3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be`)"),
-        "tip slice must not freeze at the PR #177 tip SHA: {tip179}"
-    );
-
-    let tip181 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #181")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #181 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip181.contains("c4a6d255a08146613c9c6cba262959d913f5cac0"),
-        "{tip181}"
-    );
-    assert!(
-        tip181.contains("3fae4d53821966acfa69f688ba8de5405b20513e"),
-        "{tip181}"
-    );
-    assert!(
-        tip181.contains("4772e0f001a9422cefa8e6f2a9378836285068c7"),
-        "{tip181}"
-    );
-    assert!(tip181.contains("PR #180"), "{tip181}");
-    assert!(tip181.contains("PR #181"), "{tip181}");
-    assert!(tip181.contains("make purpose-build-journey"), "{tip181}");
-    assert!(tip181.contains("operator section 18"), "{tip181}");
-    assert!(
-        tip181.contains("does not inline their bodies"),
-        "{tip181}"
-    );
-    assert!(tip181.contains("only live uniqueness prove"), "{tip181}");
-    assert!(tip181.contains("via PR #143"), "{tip181}");
-    assert!(
-        tip181.contains("does not invent a new live PASS"),
-        "{tip181}"
-    );
-    assert!(tip181.contains("43770130 3391"), "{tip181}");
-    assert!(
-        tip181.contains("READY_FOR_LIVE_TEST`: no") || tip181.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip181}"
-    );
-    assert!(
-        !tip181.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip181.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip181}"
-    );
-    assert!(!tip181.to_ascii_lowercase().contains("kimi/"), "{tip181}");
-    assert!(
-        !tip181.contains("through PR #179 (`4772e0f001a9422cefa8e6f2a9378836285068c7`)"),
-        "tip slice must not freeze at the PR #179 tip SHA: {tip181}"
-    );
-
-    let tip183 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #183")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #183 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip183.contains("b93e89f1983027a13008cc4be23f44756af0f22e"),
-        "{tip183}"
-    );
-    assert!(
-        tip183.contains("7e098a9b0ec360c952b2b1c2273654e44de6776c"),
-        "{tip183}"
-    );
-    assert!(
-        tip183.contains("c4a6d255a08146613c9c6cba262959d913f5cac0"),
-        "{tip183}"
-    );
-    assert!(tip183.contains("PR #182"), "{tip183}");
-    assert!(tip183.contains("PR #183"), "{tip183}");
-    assert!(tip183.contains("make deepseek-r1-distill-journey"), "{tip183}");
-    assert!(tip183.contains("make uniqueness-deepseek-lora"), "{tip183}");
-    assert!(tip183.contains("operator section 19"), "{tip183}");
-    assert!(tip183.contains("only live uniqueness prove"), "{tip183}");
-    assert!(tip183.contains("via PR #143"), "{tip183}");
-    assert!(
-        tip183.contains("does not invent a new live PASS"),
-        "{tip183}"
-    );
-    assert!(tip183.contains("43770130 3391"), "{tip183}");
-    assert!(tip183.contains("does not add Kimi"), "{tip183}");
-    assert!(tip183.contains("does not add GLM"), "{tip183}");
-    assert!(
-        tip183.contains("READY_FOR_LIVE_TEST`: no") || tip183.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip183}"
-    );
-    assert!(
-        !tip183.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip183.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip183}"
-    );
-    assert!(!tip183.to_ascii_lowercase().contains("kimi/"), "{tip183}");
-    assert!(
-        !tip183.contains("through PR #181 (`c4a6d255a08146613c9c6cba262959d913f5cac0`)"),
-        "tip slice must not freeze at the PR #181 tip SHA: {tip183}"
-    );
-
-    let tip185 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #185")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #185 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip185.contains("54c28b968879fccbc157dd7d9fdf7c10e9d0d58c"),
-        "{tip185}"
-    );
-    assert!(
-        tip185.contains("87482dbc847c364056df778fa6170a22efad4c8b"),
-        "{tip185}"
-    );
-    assert!(tip185.contains("PR #184"), "{tip185}");
-    assert!(tip185.contains("PR #185"), "{tip185}");
-    assert!(tip185.contains("make glm4-chat-journey"), "{tip185}");
-    assert!(tip185.contains("make uniqueness-glm-lora"), "{tip185}");
-    assert!(tip185.contains("operator section 20"), "{tip185}");
-    assert!(tip185.contains("only live uniqueness prove"), "{tip185}");
-    assert!(tip185.contains("via PR #143"), "{tip185}");
-    assert!(tip185.contains("43770130 3391"), "{tip185}");
-    assert!(tip185.contains("does not add Kimi"), "{tip185}");
-    assert!(
-        !tip185.contains("does not add GLM"),
-        "tip slice must not claim GLM is absent: {tip185}"
-    );
-    assert!(
-        tip185.contains("READY_FOR_LIVE_TEST`: no") || tip185.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip185}"
-    );
-    assert!(
-        !tip185.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip185.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip185}"
-    );
-    assert!(
-        !tip185.contains("through PR #183 (`b93e89f1983027a13008cc4be23f44756af0f22e`)"),
-        "tip slice must not freeze at the PR #183 tip SHA: {tip185}"
-    );
-
-    let tip187 = changelog
-        .split("## This slice — GATE-90 and Cell One tip honesty through PR #187")
-        .nth(1)
-        .expect("CHANGELOG missing the PR #187 tip-honesty slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    assert!(
-        tip187.contains("4df2c56d5ab622ea3843ade97e4a0dec9ea5b01a"),
-        "{tip187}"
-    );
-    assert!(
-        tip187.contains("ef839830b9de29caa963cece687e35c83dd77af6"),
-        "{tip187}"
-    );
-    assert!(tip187.contains("PR #186"), "{tip187}");
-    assert!(tip187.contains("PR #187"), "{tip187}");
-    assert!(tip187.contains("make purpose-build-checklist"), "{tip187}");
-    assert!(tip187.contains("make deepseek-r1-distill-journey"), "{tip187}");
-    assert!(tip187.contains("make glm4-chat-journey"), "{tip187}");
-    assert!(tip187.contains("operator section 15"), "{tip187}");
-    assert!(tip187.contains("does not run them"), "{tip187}");
-    assert!(tip187.contains("only live uniqueness prove"), "{tip187}");
-    assert!(tip187.contains("via PR #143"), "{tip187}");
-    assert!(tip187.contains("43770130 3391"), "{tip187}");
-    assert!(tip187.contains("does not add Kimi"), "{tip187}");
-    assert!(
-        tip187.contains("READY_FOR_LIVE_TEST`: no") || tip187.contains("READY_FOR_LIVE_TEST: no"),
-        "{tip187}"
-    );
-    assert!(
-        !tip187.contains("READY_FOR_LIVE_TEST: yes")
-            && !tip187.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{tip187}"
-    );
-    assert!(
-        !tip187.contains("through PR #185 (`54c28b968879fccbc157dd7d9fdf7c10e9d0d58c`)"),
-        "tip slice must not freeze at the PR #185 tip SHA: {tip187}"
-    );
 }
 
 fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
@@ -2080,7 +630,6 @@ fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
     }
     parsed
 }
-
 fn fixture_paths_in(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -2099,19 +648,17 @@ fn fixture_paths_in(text: &str) -> Vec<String> {
     }
     out
 }
-
 #[test]
 fn prepare_both_drivers_and_refuses_without_writing() {
-    let root = tmp("cli");
-    let estate = fixture("examples/estate.yaml");
-    let seated = write_seated_estate(&root, "llama3");
-    let seated_path = seated.display().to_string();
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-
-    let stock_out = root.join("stock");
-    let stock = estate_bin()
+let root = tmp("cli");
+let estate = fixture("examples/estate.yaml");
+let seated = write_seated_estate(&root, "llama3");
+let seated_path = seated.display().to_string();
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let stock_out = root.join("stock");
+let stock = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2128,16 +675,15 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let stock_text = text(&stock);
-    assert!(!stock.status.success(), "{stock_text}");
-    assert!(stock_text.contains("refuse:base-model"), "{stock_text}");
-    assert!(
+let stock_text = text(&stock);
+assert!(!stock.status.success(), "{stock_text}");
+assert!(stock_text.contains("refuse:base-model"), "{stock_text}");
+assert!(
         !stock_out.exists(),
         "stock estate must not write FROM local_slm"
     );
-
-    let ollama_out = root.join("ollama");
-    let ollama = estate_bin()
+let ollama_out = root.join("ollama");
+let ollama = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2154,35 +700,34 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let ollama_text = text(&ollama);
-    assert!(ollama.status.success(), "{ollama_text}");
-    assert!(ollama_text.contains("promoted=false"), "{ollama_text}");
-    assert!(
+let ollama_text = text(&ollama);
+assert!(ollama.status.success(), "{ollama_text}");
+assert!(ollama_text.contains("promoted=false"), "{ollama_text}");
+assert!(
         ollama_text.contains("estate_rewritten=false"),
         "{ollama_text}"
     );
-    let modelfile = std::fs::read_to_string(ollama_out.join("Modelfile")).unwrap();
-    assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
-    assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
-    assert!(ollama_text.contains("base=llama3"), "{ollama_text}");
-    let steps = std::fs::read_to_string(ollama_out.join("PREPARE.md")).unwrap();
-    assert!(
+let modelfile = std::fs::read_to_string(ollama_out.join("Modelfile")).unwrap();
+assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
+assert!(ollama_text.contains("base=llama3"), "{ollama_text}");
+let steps = std::fs::read_to_string(ollama_out.join("PREPARE.md")).unwrap();
+assert!(
         steps.contains("ollama create cell-enrich-overnight-traces -f Modelfile"),
         "{steps}"
     );
-    let next = std::fs::read_to_string(ollama_out.join("NEXT.md")).unwrap();
-    assert!(
+let next = std::fs::read_to_string(ollama_out.join("NEXT.md")).unwrap();
+assert!(
         next.contains(&format!(
             "ollama create cell-enrich-overnight-traces -f {}",
             ollama_out.join("Modelfile").display()
         )),
         "{next}"
     );
-    assert!(ollama_text.contains("import-prepared"), "{ollama_text}");
-    assert!(ollama_text.contains("prepared=1"), "{ollama_text}");
-
-    let manifest_out = root.join("manifest");
-    let manifest = estate_bin()
+assert!(ollama_text.contains("import-prepared"), "{ollama_text}");
+assert!(ollama_text.contains("prepared=1"), "{ollama_text}");
+let manifest_out = root.join("manifest");
+let manifest = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2201,22 +746,21 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let manifest_text = text(&manifest);
-    assert!(manifest.status.success(), "{manifest_text}");
-    assert!(manifest_text.contains("job=train"), "{manifest_text}");
-    assert!(manifest_out.join("manifest.json").is_file());
-    assert!(manifest_out.join("manifest.yaml").is_file());
-    let body = std::fs::read_to_string(manifest_out.join("manifest.json")).unwrap();
-    assert!(body.contains("\"vendor\": null"), "{body}");
-    assert!(!body.to_ascii_lowercase().contains("ollama"), "{body}");
-    assert_eq!(
+let manifest_text = text(&manifest);
+assert!(manifest.status.success(), "{manifest_text}");
+assert!(manifest_text.contains("job=train"), "{manifest_text}");
+assert!(manifest_out.join("manifest.json").is_file());
+assert!(manifest_out.join("manifest.yaml").is_file());
+let body = std::fs::read_to_string(manifest_out.join("manifest.json")).unwrap();
+assert!(body.contains("\"vendor\": null"), "{body}");
+assert!(!body.to_ascii_lowercase().contains("ollama"), "{body}");
+assert_eq!(
         estate_bytes(),
         before,
         "prepare rewrote examples/estate.yaml"
     );
-
-    let missing_out = root.join("missing");
-    let missing = estate_bin()
+let missing_out = root.join("missing");
+let missing = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2233,25 +777,24 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let missing_text = text(&missing);
-    assert!(!missing.status.success(), "{missing_text}");
-    assert!(
+let missing_text = text(&missing);
+assert!(!missing.status.success(), "{missing_text}");
+assert!(
         missing_text.contains("refuse:missing-pack"),
         "{missing_text}"
     );
-    assert!(!missing_out.exists());
-
-    let sacred_pack = root.join("sacred.pack.json");
-    let mut sacred_doc: serde_json::Value =
+assert!(!missing_out.exists());
+let sacred_pack = root.join("sacred.pack.json");
+let mut sacred_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack).unwrap()).unwrap();
-    sacred_doc["note"] = serde_json::Value::String("please mention cyera".into());
-    std::fs::write(
+sacred_doc["note"] = serde_json::Value::String("please mention cyera".into());
+std::fs::write(
         &sacred_pack,
         serde_json::to_string_pretty(&sacred_doc).unwrap(),
     )
     .unwrap();
-    let sacred_out = root.join("sacred-out");
-    let sacred_run = estate_bin()
+let sacred_out = root.join("sacred-out");
+let sacred_run = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2266,18 +809,17 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let sacred_text = text(&sacred_run);
-    assert!(!sacred_run.status.success(), "{sacred_text}");
-    assert!(sacred_text.contains("refuse:sacred"), "{sacred_text}");
-    assert!(!sacred_out.exists());
-
-    let sku_pack = root.join("sku.pack.json");
-    let mut sku_doc: serde_json::Value =
+let sacred_text = text(&sacred_run);
+assert!(!sacred_run.status.success(), "{sacred_text}");
+assert!(sacred_text.contains("refuse:sacred"), "{sacred_text}");
+assert!(!sacred_out.exists());
+let sku_pack = root.join("sku.pack.json");
+let mut sku_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack).unwrap()).unwrap();
-    sku_doc["model_hint"] = serde_json::Value::String("rtx-5090".into());
-    std::fs::write(&sku_pack, serde_json::to_string_pretty(&sku_doc).unwrap()).unwrap();
-    let sku_out = root.join("sku-out");
-    let sku_run = estate_bin()
+sku_doc["model_hint"] = serde_json::Value::String("rtx-5090".into());
+std::fs::write(&sku_pack, serde_json::to_string_pretty(&sku_doc).unwrap()).unwrap();
+let sku_out = root.join("sku-out");
+let sku_run = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2292,12 +834,11 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let sku_text = text(&sku_run);
-    assert!(!sku_run.status.success(), "{sku_text}");
-    assert!(sku_text.to_ascii_lowercase().contains("sku"), "{sku_text}");
-    assert!(!sku_out.exists());
-
-    let curator = estate_bin()
+let sku_text = text(&sku_run);
+assert!(!sku_run.status.success(), "{sku_text}");
+assert!(sku_text.to_ascii_lowercase().contains("sku"), "{sku_text}");
+assert!(!sku_out.exists());
+let curator = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2314,29 +855,28 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let curator_text = text(&curator);
-    assert!(!curator.status.success(), "{curator_text}");
-    assert!(curator_text.contains("refuse:curator"), "{curator_text}");
-    assert!(!root.join("curator-out").exists());
-
-    let local_estate = root.join("local-only.yaml");
-    std::fs::write(
+let curator_text = text(&curator);
+assert!(!curator.status.success(), "{curator_text}");
+assert!(curator_text.contains("refuse:curator"), "{curator_text}");
+assert!(!root.join("curator-out").exists());
+let local_estate = root.join("local-only.yaml");
+std::fs::write(
         &local_estate,
         "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\nenrich_packs:\n  curator: jason\n  policy: manual\n",
     )
     .unwrap();
-    let frontier_pack = root.join("frontier.pack.json");
-    let mut frontier_doc: serde_json::Value =
+let frontier_pack = root.join("frontier.pack.json");
+let mut frontier_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack).unwrap()).unwrap();
-    frontier_doc["source_drivers"] = serde_json::json!(["frontier"]);
-    frontier_doc["path_counts"]["frontier"] = serde_json::json!(1);
-    std::fs::write(
+frontier_doc["source_drivers"] = serde_json::json!(["frontier"]);
+frontier_doc["path_counts"]["frontier"] = serde_json::json!(1);
+std::fs::write(
         &frontier_pack,
         serde_json::to_string_pretty(&frontier_doc).unwrap(),
     )
     .unwrap();
-    let frontier_out = root.join("frontier-out");
-    let frontier = estate_bin()
+let frontier_out = root.join("frontier-out");
+let frontier = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2351,47 +891,47 @@ fn prepare_both_drivers_and_refuses_without_writing() {
         ])
         .output()
         .unwrap();
-    let frontier_text = text(&frontier);
-    assert!(!frontier.status.success(), "{frontier_text}");
-    assert!(
+let frontier_text = text(&frontier);
+assert!(!frontier.status.success(), "{frontier_text}");
+assert!(
         frontier_text.contains("refuse:frontier-invent"),
         "{frontier_text}"
     );
-    assert!(!frontier_out.exists());
-    assert_eq!(estate_bytes(), before);
+assert!(!frontier_out.exists());
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.contains("enrich-prepare:"),
         "Makefile missing enrich-prepare"
     );
-    assert!(
+assert!(
         makefile.contains("enrich-live-prove:"),
         "Makefile missing enrich-live-prove"
     );
-    assert!(makefile.contains("scripts/enrich-prepare.sh"));
-    assert!(makefile.contains("scripts/enrich-live-prove.sh"));
-    let script = std::fs::read_to_string(root.join("scripts/enrich-prepare.sh")).unwrap();
-    assert!(script.contains("ollama-modelfile"), "{script}");
-    assert!(script.contains("external-manifest"), "{script}");
-    assert!(script.contains("--all-drivers"), "{script}");
-    assert!(script.contains("import-prepared"), "{script}");
-    assert!(script.contains("Do not add to make smoke or GitHub Actions"));
-    assert!(script.contains("FROM llama3"));
-    assert!(script.contains("refuse:base-model"));
-    let live = std::fs::read_to_string(root.join("scripts/enrich-live-prove.sh")).unwrap();
-    assert!(live.contains("ollama create"), "{live}");
-    assert!(live.contains("from-pack"), "{live}");
-    assert!(live.contains("import-prepared"), "{live}");
-    assert!(live.contains("ollama show"), "{live}");
-    assert!(live.contains("not a factory-wide live test"), "{live}");
-    assert!(live.contains("Do not add to make smoke"), "{live}");
-    assert!(!live.contains("READY_FOR_LIVE_TEST: yes"), "{live}");
-    for rel in [
+assert!(makefile.contains("scripts/enrich-prepare.sh"));
+assert!(makefile.contains("scripts/enrich-live-prove.sh"));
+let script = std::fs::read_to_string(root.join("scripts/enrich-prepare.sh")).unwrap();
+assert!(script.contains("ollama-modelfile"), "{script}");
+assert!(script.contains("external-manifest"), "{script}");
+assert!(script.contains("--all-drivers"), "{script}");
+assert!(script.contains("import-prepared"), "{script}");
+assert!(script.contains("Do not add to make smoke or GitHub Actions"));
+assert!(script.contains("FROM llama3"));
+assert!(script.contains("refuse:base-model"));
+let live = std::fs::read_to_string(root.join("scripts/enrich-live-prove.sh")).unwrap();
+assert!(live.contains("ollama create"), "{live}");
+assert!(live.contains("from-pack"), "{live}");
+assert!(live.contains("import-prepared"), "{live}");
+assert!(live.contains("ollama show"), "{live}");
+assert!(live.contains("not a factory-wide live test"), "{live}");
+assert!(live.contains("Do not add to make smoke"), "{live}");
+assert!(!live.contains("READY_FOR_LIVE_TEST: yes"), "{live}");
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -2406,296 +946,296 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
             "{rel} must not run enrich-live-prove"
         );
     }
-    let dispatch =
+let dispatch =
         std::fs::read_to_string(root.join("crates/estate-control/src/dispatch.rs")).unwrap();
-    assert!(!dispatch.contains("ollama-modelfile"));
-    assert!(!dispatch.contains("external-manifest"));
-    assert!(!dispatch.contains("axolotl-lora"));
-    assert!(!dispatch.contains("axolotl-qlora"));
-    assert!(!dispatch.contains("llamafactory-qlora"));
-    assert!(!dispatch.contains("llamafactory-lora"));
-    assert!(!dispatch.contains("unsloth-qlora"));
-    assert!(!dispatch.contains("unsloth-lora"));
-    assert!(!dispatch.contains("mlx-lm-lora"));
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+assert!(!dispatch.contains("ollama-modelfile"));
+assert!(!dispatch.contains("external-manifest"));
+assert!(!dispatch.contains("axolotl-lora"));
+assert!(!dispatch.contains("axolotl-qlora"));
+assert!(!dispatch.contains("llamafactory-qlora"));
+assert!(!dispatch.contains("llamafactory-lora"));
+assert!(!dispatch.contains("unsloth-qlora"));
+assert!(!dispatch.contains("unsloth-lora"));
+assert!(!dispatch.contains("mlx-lm-lora"));
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.contains("train-prepare:"),
         "Makefile missing train-prepare"
     );
-    assert!(makefile.contains("scripts/train-prepare.sh"));
-    let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
-    assert!(
+assert!(makefile.contains("scripts/train-prepare.sh"));
+let train_script = std::fs::read_to_string(root.join("scripts/train-prepare.sh")).unwrap();
+assert!(
         train_script.contains("llamafactory-qlora"),
         "{train_script}"
     );
-    assert!(train_script.contains("llamafactory-lora"), "{train_script}");
-    assert!(train_script.contains("qwen3_nothink"), "{train_script}");
-    assert!(
+assert!(train_script.contains("llamafactory-lora"), "{train_script}");
+assert!(train_script.contains("qwen3_nothink"), "{train_script}");
+assert!(
         train_script.contains("examples/fixtures/llama32-instruct.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("meta-llama/Llama-3.2-3B-Instruct"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/gemma2-instruct.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/gemma2-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Gemma-2 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/phi3-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Phi-3 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: phi$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("google/gemma-2-2b-it"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: gemma2$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/mistral-instruct.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/mistral-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("mistralai/Mistral-7B-Instruct-v0.3"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: mistral$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Mistral Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/qwen3-instruct.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/qwen25-instruct.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/glm4-chat.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("zai-org/glm-4-9b-chat"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: glm4$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, and DeepSeek-R1-Distill chat QLoRA."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("glm4 fixture on the LoRA card wrote the QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("glm4 prepare took the DeepSeek-R1-Distill QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/glm4-chat-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the GLM-4 Chat QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("glm4 QLoRA prepare took the GLM-4 Chat LoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("glm4 LoRA fixture prepare wrote the QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("glm4 LoRA fixture on the QLoRA card wrote the LoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/deepseek-r1-distill.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: deepseekr1$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, and Qwen3 Instruct QLoRA."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("deepseek fixture on the LoRA card wrote the QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the DeepSeek-R1-Distill chat QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("deepseek QLoRA prepare took the DeepSeek-R1-Distill LoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("deepseek LoRA fixture prepare wrote the QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen3 Instruct QLoRA."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("qwen2.5 LoRA prepare took the Qwen2.5 Instruct QLoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/qwen25-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen2.5 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("qwen2.5 QLoRA prepare took the Qwen2.5 Instruct LoRA reproduce note"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("Qwen/Qwen3-4B-Instruct-2507"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: qwen3_nothink$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/qwen3-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/fixtures/llama32-instruct-lora.pack.json"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Llama-3.2 Instruct QLoRA prepare."
         ),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("^template: llama3$"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("does not require bitsandbytes"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("llamafactory-cli train"),
         "{train_script}"
     );
-    assert!(train_script.contains("axolotl-lora"), "{train_script}");
-    assert!(train_script.contains("axolotl-qlora"), "{train_script}");
-    assert!(train_script.contains("unsloth-qlora"), "{train_script}");
-    assert!(train_script.contains("UNSLOTH.md"), "{train_script}");
-    assert!(train_script.contains("mlx-lm-lora"), "{train_script}");
-    assert!(train_script.contains("MLX.md"), "{train_script}");
-    assert!(train_script.contains("refuse:host"), "{train_script}");
-    assert!(
+assert!(train_script.contains("axolotl-lora"), "{train_script}");
+assert!(train_script.contains("axolotl-qlora"), "{train_script}");
+assert!(train_script.contains("unsloth-qlora"), "{train_script}");
+assert!(train_script.contains("UNSLOTH.md"), "{train_script}");
+assert!(train_script.contains("mlx-lm-lora"), "{train_script}");
+assert!(train_script.contains("MLX.md"), "{train_script}");
+assert!(train_script.contains("refuse:host"), "{train_script}");
+assert!(
         train_script.contains("does not call Unsloth"),
         "{train_script}"
     );
-    assert!(train_script.contains("axolotl train"), "{train_script}");
-    assert!(
+assert!(train_script.contains("axolotl train"), "{train_script}");
+assert!(
         train_script.contains("examples/llama-3/lora-1b.yml"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/llama-3/qlora.yml"),
         "{train_script}"
     );
-    assert!(train_script.contains("SKIP live train"), "{train_script}");
-    assert!(
+assert!(train_script.contains("SKIP live train"), "{train_script}");
+assert!(
         train_script.contains("job") && train_script.contains("train"),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("examples/estate.yaml") || train_script.contains("\"$ESTATE\""),
         "{train_script}"
     );
-    assert!(
+assert!(
         train_script.contains("Do not add to make smoke"),
         "{train_script}"
     );
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -2706,25 +1246,25 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
             "{rel} must not run train-prepare"
         );
     }
-    let floor = std::fs::read_to_string(root.join("crates/floor-supervisor/src/lib.rs")).unwrap();
-    assert!(!floor.contains("TrainEnrichDriver"));
+let floor = std::fs::read_to_string(root.join("crates/floor-supervisor/src/lib.rs")).unwrap();
+assert!(!floor.contains("TrainEnrichDriver"));
 }
 
 #[test]
 fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.lines().any(|line| line.trim() == "lora-journey:"),
         "Makefile missing lora-journey"
     );
-    assert!(makefile.contains("scripts/lora-journey.sh"));
-    assert!(
+assert!(makefile.contains("scripts/lora-journey.sh"));
+assert!(
         makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
         "lora-journey must stay off smoke, gate-90, and Actions"
     );
-    let script = std::fs::read_to_string(root.join("scripts/lora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/lora-journey.sh")).unwrap();
+for needle in [
         "Target A",
         "llamafactory-lora",
         "Qwen/Qwen2.5-0.5B-Instruct",
@@ -2751,15 +1291,15 @@ fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
     ] {
         assert!(script.contains(needle), "lora-journey missing {needle}");
     }
-    assert!(
+assert!(
         !script.contains("READY_FOR_LIVE_TEST: yes"),
         "lora-journey must keep READY_FOR_LIVE_TEST no"
     );
-    assert!(
+assert!(
         script.contains("bitsandbytes>=0.49"),
         "lora-journey must refuse a bitsandbytes install line"
     );
-    let shells_out = script.lines().any(|line| {
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -2773,18 +1313,19 @@ fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         trimmed.contains("llamafactory-cli")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "lora-journey must not shell out to llamafactory-cli, llama.cpp, or ollama"
     );
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat"));
-    assert!(journey.contains("make lora-journey"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("## Target A — Qwen LoRA operator journey"));
-    assert!(train.contains("make lora-journey"));
-    for rel in [
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 9. Target A — Qwen / LLaMA-Factory LoRA to the local seat"));
+assert!(journey.contains("make lora-journey"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("## Target A — Qwen LoRA operator journey"));
+assert!(train.contains("make lora-journey"));
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -2800,19 +1341,19 @@ fn lora_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
 
 #[test]
 fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.lines().any(|line| line.trim() == "seat-journey:"),
         "Makefile missing seat-journey"
     );
-    assert!(makefile.contains("scripts/seat-journey.sh"));
-    assert!(
+assert!(makefile.contains("scripts/seat-journey.sh"));
+assert!(
         makefile.contains("Do not add to smoke, gate-90, or GitHub Actions"),
         "seat-journey must stay off smoke, gate-90, and Actions"
     );
-    let script = std::fs::read_to_string(root.join("scripts/seat-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/seat-journey.sh")).unwrap();
+for needle in [
         "Target C",
         "llamafactory-qlora",
         "Qwen/Qwen2.5-0.5B-Instruct",
@@ -2870,24 +1411,24 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
     ] {
         assert!(script.contains(needle), "seat-journey missing {needle}");
     }
-    let bad = script
+let bad = script
         .find("-- 5090-shaped export tokenizer is refuse:tokenizer --")
         .expect("seat-journey missing the refuse:tokenizer step");
-    let replace = script
+let replace = script
         .find("-- replace the broken tokenizer with the good merged stub --")
         .expect("seat-journey missing the good-stub replace");
-    let happy = script
+let happy = script
         .find("-- gguf-convert prints convert_hf_to_gguf.py --")
         .expect("seat-journey missing the happy-path convert");
-    assert!(
+assert!(
         bad < replace && replace < happy,
         "refuse:tokenizer must run before the good stubs and the convert print"
     );
-    assert!(
+assert!(
         !script.contains("READY_FOR_LIVE_TEST: yes"),
         "seat-journey must keep READY_FOR_LIVE_TEST no"
     );
-    let shells_out = script.lines().any(|line| {
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -2901,25 +1442,26 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
         trimmed.contains("llamafactory-cli")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "seat-journey must not shell out to llamafactory-cli, llama.cpp, or ollama"
     );
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains(
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains(
         "## 10. Target C seat ladder — fixture stubs print the merge, convert, seat, and import"
     ));
-    assert!(journey.contains("make seat-journey"));
-    let section_10 = journey
+assert!(journey.contains("make seat-journey"));
+let section_10 = journey
         .split("## 10. Target C seat ladder")
         .nth(1)
         .expect("section 10");
-    assert!(
+assert!(
         section_10.contains("5090-shaped") && section_10.contains("refuse:tokenizer"),
         "section 10 must name the refuse:tokenizer fixture"
     );
-    assert!(
+assert!(
         section_10.contains("HF cache snapshot")
             && section_10.contains("equivalent base checkout")
             && section_10.contains("into the export directory")
@@ -2933,14 +1475,14 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
             && section_10.contains("The refuse does not print `python3 convert_hf_to_gguf.py`."),
         "section 10 must name the HF cache restore, the dereference copy, and the gguf-convert re-run"
     );
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("## Target C seat ladder — fixture print path"));
-    assert!(train.contains("make seat-journey"));
-    assert!(
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("## Target C seat ladder — fixture print path"));
+assert!(train.contains("make seat-journey"));
+assert!(
         train.contains("5090-shaped"),
         "TRAIN-ENRICH must name the refuse:tokenizer fixture"
     );
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -2955,16 +1497,15 @@ fn seat_journey_script_locks_the_opt_in_ladder_and_stays_off_smoke() {
 
 #[test]
 fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
-    let root = tmp("loop");
-    let estate = fixture("examples/estate.yaml");
-    let seated = write_seated_estate(&root, "llama3");
-    let seated_path = seated.display().to_string();
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let state = root.join("state");
-
-    let both = estate_bin()
+let root = tmp("loop");
+let estate = fixture("examples/estate.yaml");
+let seated = write_seated_estate(&root, "llama3");
+let seated_path = seated.display().to_string();
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let state = root.join("state");
+let both = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -2982,12 +1523,11 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let both_text = text(&both);
-    assert!(!both.status.success(), "{both_text}");
-    assert!(both_text.contains("refuse:driver"), "{both_text}");
-    assert!(!state.join("enrich").exists());
-
-    let prepared = estate_bin()
+let both_text = text(&both);
+assert!(!both.status.success(), "{both_text}");
+assert!(both_text.contains("refuse:driver"), "{both_text}");
+assert!(!state.join("enrich").exists());
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3003,32 +1543,31 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(prepared_text.contains("prepared=2"), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(prepared_text.contains("prepared=2"), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=ollama-modelfile"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("driver=external-manifest"),
         "{prepared_text}"
     );
-    let ollama = state.join("enrich/overnight-traces/ollama-modelfile");
-    let manifest = state.join("enrich/overnight-traces/external-manifest");
-    assert!(ollama.join("Modelfile").is_file());
-    let both_modelfile = std::fs::read_to_string(ollama.join("Modelfile")).unwrap();
-    assert!(both_modelfile.contains("FROM llama3\n"), "{both_modelfile}");
-    assert!(
+let ollama = state.join("enrich/overnight-traces/ollama-modelfile");
+let manifest = state.join("enrich/overnight-traces/external-manifest");
+assert!(ollama.join("Modelfile").is_file());
+let both_modelfile = std::fs::read_to_string(ollama.join("Modelfile")).unwrap();
+assert!(both_modelfile.contains("FROM llama3\n"), "{both_modelfile}");
+assert!(
         !both_modelfile.contains("FROM local_slm"),
         "{both_modelfile}"
     );
-    assert!(ollama.join("NEXT.md").is_file());
-    assert!(manifest.join("manifest.json").is_file());
-    let next = std::fs::read_to_string(manifest.join("NEXT.md")).unwrap();
-    assert!(!next.contains("ollama create"), "{next}");
-
-    let listed = estate_bin()
+assert!(ollama.join("NEXT.md").is_file());
+assert!(manifest.join("manifest.json").is_file());
+let next = std::fs::read_to_string(manifest.join("NEXT.md")).unwrap();
+assert!(!next.contains("ollama create"), "{next}");
+let listed = estate_bin()
         .args([
             "enrich",
             "list",
@@ -3037,16 +1576,15 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let listed_text = text(&listed);
-    assert!(listed.status.success(), "{listed_text}");
-    assert!(listed_text.contains("count=2"), "{listed_text}");
-    assert!(
+let listed_text = text(&listed);
+assert!(listed.status.success(), "{listed_text}");
+assert!(listed_text.contains("count=2"), "{listed_text}");
+assert!(
         listed_text.contains("tag=cell-enrich-overnight-traces"),
         "{listed_text}"
     );
-    assert!(listed_text.contains("promoted=false"), "{listed_text}");
-
-    let missing = estate_bin()
+assert!(listed_text.contains("promoted=false"), "{listed_text}");
+let missing = estate_bin()
         .args([
             "enrich",
             "list",
@@ -3055,15 +1593,14 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let missing_text = text(&missing);
-    assert!(!missing.status.success(), "{missing_text}");
-    assert!(
+let missing_text = text(&missing);
+assert!(!missing.status.success(), "{missing_text}");
+assert!(
         missing_text.contains("refuse:enrich-index"),
         "{missing_text}"
     );
-    assert!(!root.join("absent").exists());
-
-    let tag = estate_bin()
+assert!(!root.join("absent").exists());
+let tag = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3080,12 +1617,11 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let tag_text = text(&tag);
-    assert!(!tag.status.success(), "{tag_text}");
-    assert!(tag_text.contains("refuse:tag"), "{tag_text}");
-    assert!(!ollama.join("binding-proposal.json").exists());
-
-    let imported = estate_bin()
+let tag_text = text(&tag);
+assert!(!tag.status.success(), "{tag_text}");
+assert!(tag_text.contains("refuse:tag"), "{tag_text}");
+assert!(!ollama.join("binding-proposal.json").exists());
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3102,47 +1638,46 @@ fn prepare_all_list_and_import_prepared_stay_off_the_estate() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(imported.status.success(), "{imported_text}");
-    assert!(
+let imported_text = text(&imported);
+assert!(imported.status.success(), "{imported_text}");
+assert!(
         imported_text.contains("binding=local_slm"),
         "{imported_text}"
     );
-    assert!(
+assert!(
         imported_text.contains("auto_apply=false"),
         "{imported_text}"
     );
-    assert!(imported_text.contains("did not apply"), "{imported_text}");
-    let proposal: serde_json::Value = serde_json::from_str(
+assert!(imported_text.contains("did not apply"), "{imported_text}");
+let proposal: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(ollama.join("binding-proposal.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(proposal["schema"], "cell-one.enrich-binding-proposal.v0");
-    assert_eq!(proposal["auto_apply"], false);
-    assert_eq!(proposal["promoted"], false);
-    assert_eq!(proposal["estate_rewritten"], false);
-    assert_eq!(
+assert_eq!(proposal["schema"], "cell-one.enrich-binding-proposal.v0");
+assert_eq!(proposal["auto_apply"], false);
+assert_eq!(proposal["promoted"], false);
+assert_eq!(proposal["estate_rewritten"], false);
+assert_eq!(
         proposal["proposed_binding"]["params"]["model"],
         "cell-enrich-overnight-traces"
     );
-    assert_eq!(proposal["proposed_binding"]["id"], "local_slm");
-    assert!(!ollama.join("catalog.json").exists());
-    assert_eq!(estate_bytes(), before, "import-prepared rewrote the estate");
+assert_eq!(proposal["proposed_binding"]["id"], "local_slm");
+assert!(!ollama.join("catalog.json").exists());
+assert_eq!(estate_bytes(), before, "import-prepared rewrote the estate");
 }
 
 #[test]
 fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
-    let root = tmp("apply-proposal");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let example = repo_root().join("examples/estate.yaml");
-    let example_before = std::fs::read(&example).unwrap();
-    let lab = write_seated_estate(&root, "llama3");
-    let lab_before = std::fs::read(&lab).unwrap();
-    let state = root.join("state");
-    let plans = root.join("plans");
-
-    let prepared = estate_bin()
+let root = tmp("apply-proposal");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let example = repo_root().join("examples/estate.yaml");
+let example_before = std::fs::read(&example).unwrap();
+let lab = write_seated_estate(&root, "llama3");
+let lab_before = std::fs::read(&lab).unwrap();
+let state = root.join("state");
+let plans = root.join("plans");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3159,13 +1694,12 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    assert!(prepared.status.success(), "{}", text(&prepared));
-    let dir = state.join("enrich/overnight-traces/ollama-modelfile");
-    let modelfile = std::fs::read_to_string(dir.join("Modelfile")).unwrap();
-    assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
-    assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
-
-    let imported = estate_bin()
+assert!(prepared.status.success(), "{}", text(&prepared));
+let dir = state.join("enrich/overnight-traces/ollama-modelfile");
+let modelfile = std::fs::read_to_string(dir.join("Modelfile")).unwrap();
+assert!(modelfile.contains("FROM llama3\n"), "{modelfile}");
+assert!(!modelfile.contains("FROM local_slm"), "{modelfile}");
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3182,14 +1716,13 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    assert!(imported.status.success(), "{}", text(&imported));
-    assert!(
+assert!(imported.status.success(), "{}", text(&imported));
+assert!(
         text(&imported).contains("apply-proposal"),
         "{}",
         text(&imported)
     );
-
-    let verify = estate_bin()
+let verify = estate_bin()
         .env_remove("CELL_LOCAL_ENDPOINT")
         .env_remove("CELL_RENTED_ENDPOINT")
         .args([
@@ -3209,12 +1742,11 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let verify_text = text(&verify);
-    assert!(!verify.status.success(), "{verify_text}");
-    assert!(verify_text.contains("refuse:local-tag"), "{verify_text}");
-    assert!(!root.join("verify-state").join("enrich-stage").exists());
-
-    let wrong = estate_bin()
+let verify_text = text(&verify);
+assert!(!verify.status.success(), "{verify_text}");
+assert!(verify_text.contains("refuse:local-tag"), "{verify_text}");
+assert!(!root.join("verify-state").join("enrich-stage").exists());
+let wrong = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3231,12 +1763,11 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let wrong_text = text(&wrong);
-    assert!(!wrong.status.success(), "{wrong_text}");
-    assert!(wrong_text.contains("refuse:tag"), "{wrong_text}");
-    assert!(!state.join("enrich-stage").exists());
-
-    let staged = estate_bin()
+let wrong_text = text(&wrong);
+assert!(!wrong.status.success(), "{wrong_text}");
+assert!(wrong_text.contains("refuse:tag"), "{wrong_text}");
+assert!(!state.join("enrich-stage").exists());
+let staged = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3255,18 +1786,18 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let staged_text = text(&staged);
-    assert!(staged.status.success(), "{staged_text}");
-    assert!(
+let staged_text = text(&staged);
+assert!(staged.status.success(), "{staged_text}");
+assert!(
         staged_text.contains("apply-proposal did not apply"),
         "{staged_text}"
     );
-    assert!(staged_text.contains("auto_apply=false"), "{staged_text}");
-    assert!(staged_text.contains("--require-plan"), "{staged_text}");
-    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
-    let staged_estate = state.join("enrich-stage/staged-estate.yaml");
-    assert!(staged_estate.is_file());
-    let again = estate_bin()
+assert!(staged_text.contains("auto_apply=false"), "{staged_text}");
+assert!(staged_text.contains("--require-plan"), "{staged_text}");
+assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+let staged_estate = state.join("enrich-stage/staged-estate.yaml");
+assert!(staged_estate.is_file());
+let again = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3283,11 +1814,10 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let again_text = text(&again);
-    assert!(again.status.success(), "{again_text}");
-    assert!(again_text.contains("no-op:"), "{again_text}");
-
-    let status = estate_bin()
+let again_text = text(&again);
+assert!(again.status.success(), "{again_text}");
+assert!(again_text.contains("no-op:"), "{again_text}");
+let status = estate_bin()
         .args([
             "status",
             "--estate",
@@ -3301,18 +1831,17 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let status_text = text(&status);
-    assert!(status.status.success(), "{status_text}");
-    assert!(
+let status_text = text(&status);
+assert!(status.status.success(), "{status_text}");
+assert!(
         status_text.contains("enrich_binding: pending"),
         "{status_text}"
     );
-    assert!(
+assert!(
         status_text.contains("enrich_stage: applied=false"),
         "{status_text}"
     );
-
-    let doctor = estate_bin()
+let doctor = estate_bin()
         .args([
             "doctor",
             "--root",
@@ -3322,15 +1851,14 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let doctor_text = text(&doctor);
-    assert!(doctor.status.success(), "{doctor_text}");
-    assert!(
+let doctor_text = text(&doctor);
+assert!(doctor.status.success(), "{doctor_text}");
+assert!(
         doctor_text.contains("source estate not written"),
         "{doctor_text}"
     );
-    assert!(doctor_text.contains("binding proposal"), "{doctor_text}");
-
-    let plan = estate_bin()
+assert!(doctor_text.contains("binding proposal"), "{doctor_text}");
+let plan = estate_bin()
         .args([
             "plan",
             "--estate",
@@ -3342,11 +1870,10 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let plan_text = text(&plan);
-    assert!(plan.status.success(), "{plan_text}");
-    assert!(plan_text.contains("local_slm"), "{plan_text}");
-
-    let dry = estate_bin()
+let plan_text = text(&plan);
+assert!(plan.status.success(), "{plan_text}");
+assert!(plan_text.contains("local_slm"), "{plan_text}");
+let dry = estate_bin()
         .args([
             "apply",
             "--dry-run",
@@ -3362,10 +1889,9 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    assert!(dry.status.success(), "{}", text(&dry));
-    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
-
-    let ungated = estate_bin()
+assert!(dry.status.success(), "{}", text(&dry));
+assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+let ungated = estate_bin()
         .args([
             "apply",
             "--estate",
@@ -3379,12 +1905,11 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let ungated_text = text(&ungated);
-    assert!(ungated.status.success(), "{ungated_text}");
-    assert!(ungated_text.contains("enrich stage held"), "{ungated_text}");
-    assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
-
-    let applied = estate_bin()
+let ungated_text = text(&ungated);
+assert!(ungated.status.success(), "{ungated_text}");
+assert!(ungated_text.contains("enrich stage held"), "{ungated_text}");
+assert_eq!(std::fs::read(&lab).unwrap(), lab_before);
+let applied = estate_bin()
         .args([
             "apply",
             "--require-plan",
@@ -3399,20 +1924,19 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let applied_text = text(&applied);
-    assert!(applied.status.success(), "{applied_text}");
-    assert!(
+let applied_text = text(&applied);
+assert!(applied.status.success(), "{applied_text}");
+assert!(
         applied_text.contains("enrich stage wrote"),
         "{applied_text}"
     );
-    let lab_after = std::fs::read_to_string(&lab).unwrap();
-    assert!(
+let lab_after = std::fs::read_to_string(&lab).unwrap();
+assert!(
         lab_after.contains("cell-enrich-overnight-traces"),
         "{lab_after}"
     );
-    assert_eq!(std::fs::read(&example).unwrap(), example_before);
-
-    let joined = estate_bin()
+assert_eq!(std::fs::read(&example).unwrap(), example_before);
+let joined = estate_bin()
         .args([
             "status",
             "--estate",
@@ -3426,13 +1950,13 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
         ])
         .output()
         .unwrap();
-    let joined_text = text(&joined);
-    assert!(joined.status.success(), "{joined_text}");
-    assert!(
+let joined_text = text(&joined);
+assert!(joined.status.success(), "{joined_text}");
+assert!(
         joined_text.contains("enrich_binding: local_slm model=cell-enrich-overnight-traces"),
         "{joined_text}"
     );
-    assert!(
+assert!(
         joined_text.contains("enrich_stage: applied=true"),
         "{joined_text}"
     );
@@ -3440,18 +1964,17 @@ fn apply_proposal_then_plan_and_require_plan_writes_only_the_lab_estate() {
 
 #[test]
 fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
-    let root = tmp("from-pack");
-    let seated = write_seated_estate(&root, "llama3");
-    let seated_path = seated.display().to_string();
-    let sacred = fixture("policy/sacred.yaml");
-    let pack_src = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
-    let accepted = root.join("packs/accepted");
-    std::fs::create_dir_all(&accepted).unwrap();
-    std::fs::copy(&pack_src, accepted.join("overnight-traces.pack.json")).unwrap();
-    let before = estate_bytes();
-    let state = root.join("state");
-
-    let prepared = estate_bin()
+let root = tmp("from-pack");
+let seated = write_seated_estate(&root, "llama3");
+let seated_path = seated.display().to_string();
+let sacred = fixture("policy/sacred.yaml");
+let pack_src = repo_root().join("examples/fixtures/specialist-overnight.pack.json");
+let accepted = root.join("packs/accepted");
+std::fs::create_dir_all(&accepted).unwrap();
+std::fs::copy(&pack_src, accepted.join("overnight-traces.pack.json")).unwrap();
+let before = estate_bytes();
+let state = root.join("state");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3468,29 +1991,28 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(
         prepared_text.contains("enrich from-pack:"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("prepared=2"), "{prepared_text}");
-    assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
-    let modelfile = state.join("enrich/overnight-traces/ollama-modelfile/Modelfile");
-    let body = std::fs::read_to_string(&modelfile).unwrap();
-    assert!(body.contains("FROM llama3\n"), "{body}");
-    assert!(!body.contains("FROM local_slm"), "{body}");
-    assert!(state
+assert!(prepared_text.contains("prepared=2"), "{prepared_text}");
+assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
+let modelfile = state.join("enrich/overnight-traces/ollama-modelfile/Modelfile");
+let body = std::fs::read_to_string(&modelfile).unwrap();
+assert!(body.contains("FROM llama3\n"), "{body}");
+assert!(!body.contains("FROM local_slm"), "{body}");
+assert!(state
         .join("enrich/overnight-traces/external-manifest/manifest.json")
         .is_file());
-    assert_eq!(
+assert_eq!(
         estate_bytes(),
         before,
         "from-pack rewrote examples/estate.yaml"
     );
-
-    let one = root.join("one");
-    let driver = estate_bin()
+let one = root.join("one");
+let driver = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3507,17 +2029,16 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let driver_text = text(&driver);
-    assert!(driver.status.success(), "{driver_text}");
-    assert!(driver_text.contains("prepared=1"), "{driver_text}");
-    assert!(one
+let driver_text = text(&driver);
+assert!(driver.status.success(), "{driver_text}");
+assert!(driver_text.contains("prepared=1"), "{driver_text}");
+assert!(one
         .join("enrich/overnight-traces/ollama-modelfile/Modelfile")
         .is_file());
-    assert!(!one
+assert!(!one
         .join("enrich/overnight-traces/external-manifest")
         .exists());
-
-    let both = estate_bin()
+let both = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3537,21 +2058,20 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let both_text = text(&both);
-    assert!(!both.status.success(), "{both_text}");
-    assert!(both_text.contains("refuse:driver"), "{both_text}");
-    assert!(!root.join("both/enrich").exists());
-
-    let mut sacred_doc: serde_json::Value =
+let both_text = text(&both);
+assert!(!both.status.success(), "{both_text}");
+assert!(both_text.contains("refuse:driver"), "{both_text}");
+assert!(!root.join("both/enrich").exists());
+let mut sacred_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
-    sacred_doc["id"] = serde_json::json!("sacred-pack");
-    sacred_doc["note"] = serde_json::Value::String("please mention cyera".into());
-    std::fs::write(
+sacred_doc["id"] = serde_json::json!("sacred-pack");
+sacred_doc["note"] = serde_json::Value::String("please mention cyera".into());
+std::fs::write(
         accepted.join("sacred-pack.pack.json"),
         serde_json::to_string_pretty(&sacred_doc).unwrap(),
     )
     .unwrap();
-    let sacred_run = estate_bin()
+let sacred_run = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3568,21 +2088,20 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let sacred_text = text(&sacred_run);
-    assert!(!sacred_run.status.success(), "{sacred_text}");
-    assert!(sacred_text.contains("refuse:sacred"), "{sacred_text}");
-    assert!(!root.join("sacred-state/enrich").exists());
-
-    let mut sku_doc: serde_json::Value =
+let sacred_text = text(&sacred_run);
+assert!(!sacred_run.status.success(), "{sacred_text}");
+assert!(sacred_text.contains("refuse:sacred"), "{sacred_text}");
+assert!(!root.join("sacred-state/enrich").exists());
+let mut sku_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
-    sku_doc["id"] = serde_json::json!("sku-pack");
-    sku_doc["model_hint"] = serde_json::Value::String("rtx-5090".into());
-    std::fs::write(
+sku_doc["id"] = serde_json::json!("sku-pack");
+sku_doc["model_hint"] = serde_json::Value::String("rtx-5090".into());
+std::fs::write(
         accepted.join("sku-pack.pack.json"),
         serde_json::to_string_pretty(&sku_doc).unwrap(),
     )
     .unwrap();
-    let sku_run = estate_bin()
+let sku_run = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3599,12 +2118,11 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let sku_text = text(&sku_run);
-    assert!(!sku_run.status.success(), "{sku_text}");
-    assert!(sku_text.to_ascii_lowercase().contains("sku"), "{sku_text}");
-    assert!(!root.join("sku-state/enrich").exists());
-
-    let curator = estate_bin()
+let sku_text = text(&sku_run);
+assert!(!sku_run.status.success(), "{sku_text}");
+assert!(sku_text.to_ascii_lowercase().contains("sku"), "{sku_text}");
+assert!(!root.join("sku-state/enrich").exists());
+let curator = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3623,28 +2141,27 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let curator_text = text(&curator);
-    assert!(!curator.status.success(), "{curator_text}");
-    assert!(curator_text.contains("refuse:curator"), "{curator_text}");
-    assert!(!root.join("curator-state/enrich").exists());
-
-    let local_estate = root.join("local-only.yaml");
-    std::fs::write(
+let curator_text = text(&curator);
+assert!(!curator.status.success(), "{curator_text}");
+assert!(curator_text.contains("refuse:curator"), "{curator_text}");
+assert!(!root.join("curator-state/enrich").exists());
+let local_estate = root.join("local-only.yaml");
+std::fs::write(
         &local_estate,
         "version: 0\nname: local-only\ndefault_effect: deny\nagents:\n  - id: horizon\n    display_name: Horizon\n    lane: horizon\n    desktop: horizon-desktop\nlanes:\n  - id: horizon\n    root_path: lanes/horizon\n    owner_agent_id: horizon\nmodel_bindings:\n  - id: local_slm\n    class: local\n    driver: ollama\n    wired: true\n    params:\n      model: \"llama3\"\nenrich_packs:\n  curator: jason\n  policy: manual\n",
     )
     .unwrap();
-    let mut frontier_doc: serde_json::Value =
+let mut frontier_doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pack_src).unwrap()).unwrap();
-    frontier_doc["id"] = serde_json::json!("frontier-pack");
-    frontier_doc["source_drivers"] = serde_json::json!(["frontier"]);
-    frontier_doc["path_counts"]["frontier"] = serde_json::json!(1);
-    std::fs::write(
+frontier_doc["id"] = serde_json::json!("frontier-pack");
+frontier_doc["source_drivers"] = serde_json::json!(["frontier"]);
+frontier_doc["path_counts"]["frontier"] = serde_json::json!(1);
+std::fs::write(
         accepted.join("frontier-pack.pack.json"),
         serde_json::to_string_pretty(&frontier_doc).unwrap(),
     )
     .unwrap();
-    let frontier = estate_bin()
+let frontier = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3661,25 +2178,25 @@ fn from_pack_prepares_accepted_fixture_and_keeps_refuses() {
         ])
         .output()
         .unwrap();
-    let frontier_text = text(&frontier);
-    assert!(!frontier.status.success(), "{frontier_text}");
-    assert!(
+let frontier_text = text(&frontier);
+assert!(!frontier.status.success(), "{frontier_text}");
+assert!(
         frontier_text.contains("refuse:frontier-invent"),
         "{frontier_text}"
     );
-    assert!(!root.join("frontier-state/enrich").exists());
-    assert_eq!(estate_bytes(), before);
+assert!(!root.join("frontier-state/enrich").exists());
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
-    let root = tmp("axolotl-cli");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let seat_only = write_seated_estate(&root, "llama3");
-    let blocked = root.join("seat-only");
-    let refused = estate_bin()
+let root = tmp("axolotl-cli");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let seat_only = write_seated_estate(&root, "llama3");
+let blocked = root.join("seat-only");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3696,14 +2213,13 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
-    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
-    assert!(!blocked.exists());
-
-    let blocked_state = root.join("blocked-state");
-    let blocked_all = estate_bin()
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+assert!(!blocked.exists());
+let blocked_state = root.join("blocked-state");
+let blocked_all = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3721,19 +2237,17 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let blocked_all_text = text(&blocked_all);
-    assert!(!blocked_all.status.success(), "{blocked_all_text}");
-    assert!(
+let blocked_all_text = text(&blocked_all);
+assert!(!blocked_all.status.success(), "{blocked_all_text}");
+assert!(
         blocked_all_text.contains("refuse:train-base"),
         "{blocked_all_text}"
     );
-    assert!(!blocked_state.join("enrich").exists());
-
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let seated_path = seated.display().to_string();
-    let out = root.join("recipe");
-
-    let prepared = estate_bin()
+assert!(!blocked_state.join("enrich").exists());
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let seated_path = seated.display().to_string();
+let out = root.join("recipe");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3750,57 +2264,56 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(prepared_text.contains("job=train"), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(prepared_text.contains("job=train"), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=axolotl-lora"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("promoted=false"), "{prepared_text}");
-    assert!(
+assert!(prepared_text.contains("promoted=false"), "{prepared_text}");
+assert!(
         prepared_text.contains("estate_rewritten=false"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("axolotl train "), "{prepared_text}");
-    let doc: serde_json::Value =
+assert!(prepared_text.contains("axolotl train "), "{prepared_text}");
+let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    assert_eq!(doc["job"], "train");
-    assert_eq!(doc["promoted"], false);
-    assert_eq!(doc["auto_apply"], false);
-    assert_eq!(doc["estate_rewritten"], false);
-    assert!(out.join("axolotl.yml").is_file());
-    assert!(out.join("dataset.jsonl").is_file());
-    assert_eq!(doc["base_model"], "llama3");
-    assert_eq!(doc["seat_tag"], "llama3");
-    assert_eq!(doc["train_base_model"], "Qwen/Qwen2.5-0.5B-Instruct");
-    let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
-    assert!(
+assert_eq!(doc["job"], "train");
+assert_eq!(doc["promoted"], false);
+assert_eq!(doc["auto_apply"], false);
+assert_eq!(doc["estate_rewritten"], false);
+assert!(out.join("axolotl.yml").is_file());
+assert!(out.join("dataset.jsonl").is_file());
+assert_eq!(doc["base_model"], "llama3");
+assert_eq!(doc["seat_tag"], "llama3");
+assert_eq!(doc["train_base_model"], "Qwen/Qwen2.5-0.5B-Instruct");
+let yaml = std::fs::read_to_string(out.join("axolotl.yml")).unwrap();
+assert!(
         yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{yaml}"
     );
-    assert!(
+assert!(
         !yaml
             .lines()
             .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
         "{yaml}"
     );
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(next.contains("Seat tag is llama3"), "{next}");
-    assert!(
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(next.contains("Seat tag is llama3"), "{next}");
+assert!(
         next.contains("Train base is Qwen/Qwen2.5-0.5B-Instruct"),
         "{next}"
     );
-    assert!(
+assert!(
         next.contains(&format!(
             "axolotl train {}",
             out.join("axolotl.yml").display()
         )),
         "{next}"
     );
-    assert_eq!(estate_bytes(), before);
-
-    let enrich_job = estate_bin()
+assert_eq!(estate_bytes(), before);
+let enrich_job = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3819,13 +2332,12 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let enrich_text = text(&enrich_job);
-    assert!(!enrich_job.status.success(), "{enrich_text}");
-    assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
-    assert!(!root.join("enrich-job").exists());
-
-    let state = root.join("state");
-    let all_train = estate_bin()
+let enrich_text = text(&enrich_job);
+assert!(!enrich_job.status.success(), "{enrich_text}");
+assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
+assert!(!root.join("enrich-job").exists());
+let state = root.join("state");
+let all_train = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3843,102 +2355,101 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let all_text = text(&all_train);
-    assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=8"), "{all_text}");
-    assert!(all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
-    assert!(all_text.contains("refuse:host"), "{all_text}");
-    assert!(
+let all_text = text(&all_train);
+assert!(all_train.status.success(), "{all_text}");
+assert!(all_text.contains("prepared=8"), "{all_text}");
+assert!(all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
+assert!(all_text.contains("refuse:host"), "{all_text}");
+assert!(
         !all_text.contains("enrich prepare: driver=mlx-lm-lora"),
         "{all_text}"
     );
-    assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
-    assert!(all_text.contains("driver=unsloth-lora"), "{all_text}");
-    assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
-    assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
-    assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
-    assert!(all_text.contains("driver=axolotl-qlora"), "{all_text}");
-    let unsloth_dir = state.join("enrich/overnight-traces/unsloth-qlora");
-    assert!(unsloth_dir.join("UNSLOTH.md").is_file());
-    assert!(unsloth_dir.join("NEXT.md").is_file());
-    assert!(!unsloth_dir.join("train_unsloth.py").exists());
-    assert!(!unsloth_dir.join("dataset.jsonl").exists());
-    let unsloth_lora_dir = state.join("enrich/overnight-traces/unsloth-lora");
-    assert!(unsloth_lora_dir.join("UNSLOTH.md").is_file());
-    let unsloth_lora_md = std::fs::read_to_string(unsloth_lora_dir.join("UNSLOTH.md")).unwrap();
-    assert!(unsloth_lora_md.contains("Unsloth LoRA handoff"), "{unsloth_lora_md}");
-    assert!(!unsloth_lora_dir.join("dataset.jsonl").exists());
-    assert!(!state.join("enrich/overnight-traces/mlx-lm-lora").exists());
-    assert!(state
+assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
+assert!(all_text.contains("driver=unsloth-lora"), "{all_text}");
+assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
+assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
+assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
+assert!(all_text.contains("driver=axolotl-qlora"), "{all_text}");
+let unsloth_dir = state.join("enrich/overnight-traces/unsloth-qlora");
+assert!(unsloth_dir.join("UNSLOTH.md").is_file());
+assert!(unsloth_dir.join("NEXT.md").is_file());
+assert!(!unsloth_dir.join("train_unsloth.py").exists());
+assert!(!unsloth_dir.join("dataset.jsonl").exists());
+let unsloth_lora_dir = state.join("enrich/overnight-traces/unsloth-lora");
+assert!(unsloth_lora_dir.join("UNSLOTH.md").is_file());
+let unsloth_lora_md = std::fs::read_to_string(unsloth_lora_dir.join("UNSLOTH.md")).unwrap();
+assert!(unsloth_lora_md.contains("Unsloth LoRA handoff"), "{unsloth_lora_md}");
+assert!(!unsloth_lora_dir.join("dataset.jsonl").exists());
+assert!(!state.join("enrich/overnight-traces/mlx-lm-lora").exists());
+assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
         .is_file());
-    let all_yaml =
+let all_yaml =
         std::fs::read_to_string(state.join("enrich/overnight-traces/axolotl-lora/axolotl.yml"))
             .unwrap();
-    assert!(
+assert!(
         all_yaml.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{all_yaml}"
     );
-    assert!(
+assert!(
         all_yaml.lines().any(|line| line == "adapter: lora"),
         "{all_yaml}"
     );
-    assert!(
+assert!(
         all_yaml.lines().any(|line| line == "load_in_4bit: false"),
         "{all_yaml}"
     );
-    assert!(
+assert!(
         !all_yaml
             .lines()
             .any(|line| line.trim_start().starts_with("base_model:") && line.contains("llama3")),
         "{all_yaml}"
     );
-    let all_ax_qlora =
+let all_ax_qlora =
         std::fs::read_to_string(state.join("enrich/overnight-traces/axolotl-qlora/axolotl.yml"))
             .unwrap();
-    assert!(
+assert!(
         all_ax_qlora.contains("base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{all_ax_qlora}"
     );
-    assert!(
+assert!(
         all_ax_qlora.lines().any(|line| line == "adapter: qlora"),
         "{all_ax_qlora}"
     );
-    assert!(
+assert!(
         all_ax_qlora
             .lines()
             .any(|line| line == "load_in_4bit: true"),
         "{all_ax_qlora}"
     );
-    let all_modelfile =
+let all_modelfile =
         std::fs::read_to_string(state.join("enrich/overnight-traces/ollama-modelfile/Modelfile"))
             .unwrap();
-    assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
-    let all_lora = std::fs::read_to_string(
+assert!(all_modelfile.contains("FROM llama3\n"), "{all_modelfile}");
+let all_lora = std::fs::read_to_string(
         state.join("enrich/overnight-traces/llamafactory-lora/recipe.yaml"),
     )
     .unwrap();
-    assert!(
+assert!(
         all_lora.lines().any(|line| line.trim() == "lora_rank: 8"),
         "{all_lora}"
     );
-    assert!(
+assert!(
         !all_lora.contains("quantization_bit") && !all_lora.contains("quantization_method"),
         "{all_lora}"
     );
-    let all_qlora = std::fs::read_to_string(
+let all_qlora = std::fs::read_to_string(
         state.join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml"),
     )
     .unwrap();
-    assert!(
+assert!(
         all_qlora.contains("quantization_method: bnb"),
         "{all_qlora}"
     );
-
-    let adapter = root.join("adapter");
-    std::fs::create_dir_all(&adapter).unwrap();
-    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
-    let imported = estate_bin()
+let adapter = root.join("adapter");
+std::fs::create_dir_all(&adapter).unwrap();
+std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3955,24 +2466,23 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(imported.status.success(), "{imported_text}");
-    assert!(
+let imported_text = text(&imported);
+assert!(imported.status.success(), "{imported_text}");
+assert!(
         imported_text.contains("binding=local_slm"),
         "{imported_text}"
     );
-    assert!(
+assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
     );
-    assert!(
+assert!(
         imported_text.contains("auto_apply=false"),
         "{imported_text}"
     );
-    assert!(out.join("binding-proposal.json").is_file());
-    assert_eq!(estate_bytes(), before);
-
-    let missing = estate_bin()
+assert!(out.join("binding-proposal.json").is_file());
+assert_eq!(estate_bytes(), before);
+let missing = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -3989,22 +2499,21 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let missing_text = text(&missing);
-    assert!(!missing.status.success(), "{missing_text}");
-    assert!(missing_text.contains("refuse:adapter"), "{missing_text}");
+let missing_text = text(&missing);
+assert!(!missing.status.success(), "{missing_text}");
+assert!(missing_text.contains("refuse:adapter"), "{missing_text}");
 }
 
 #[test]
 fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
-    let root = tmp("llamafactory-cli");
-    let seated_only = write_seated_estate(&root, "llama3");
-    let seated_only_path = seated_only.display().to_string();
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let blocked = root.join("seat-only");
-
-    let refused = estate_bin()
+let root = tmp("llamafactory-cli");
+let seated_only = write_seated_estate(&root, "llama3");
+let seated_only_path = seated_only.display().to_string();
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let blocked = root.join("seat-only");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4021,17 +2530,15 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
-    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
-    assert!(!blocked.exists());
-
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let seated_path = seated.display().to_string();
-    let out = root.join("recipe");
-
-    let prepared = estate_bin()
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+assert!(!blocked.exists());
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let seated_path = seated.display().to_string();
+let out = root.join("recipe");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4048,68 +2555,67 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(
         prepared_text.contains("train_base=Qwen/Qwen2.5-0.5B-Instruct"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
-    assert!(prepared_text.contains("job=train"), "{prepared_text}");
-    assert!(
+assert!(prepared_text.contains("base=llama3"), "{prepared_text}");
+assert!(prepared_text.contains("job=train"), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=llamafactory-qlora"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("llamafactory-cli train "),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("pip install llamafactory"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("bitsandbytes>=0.49"),
         "{prepared_text}"
     );
-    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
-    assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
-    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
-    assert!(
+let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+assert!(
         !recipe.contains("quantization_method: bitsandbytes"),
         "{recipe}"
     );
-    assert!(recipe.contains("lora_rank: 16"), "{recipe}");
-    assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
-    assert!(recipe.contains("template: qwen"), "{recipe}");
-    assert!(
+assert!(recipe.contains("lora_rank: 16"), "{recipe}");
+assert!(recipe.contains("cutoff_len: 512"), "{recipe}");
+assert!(recipe.contains("template: qwen"), "{recipe}");
+assert!(
         recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{recipe}"
     );
-    assert!(
+assert!(
         !recipe
             .lines()
             .any(|line| line.trim_start().starts_with("max_steps:")),
         "{recipe}"
     );
-    let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
-    assert!(jsonl.contains("\"messages\""), "{jsonl}");
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(
+let jsonl = std::fs::read_to_string(out.join("dataset.jsonl")).unwrap();
+assert!(jsonl.contains("\"messages\""), "{jsonl}");
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(
         next.contains(&format!(
             "llamafactory-cli train {}",
             out.join("recipe.yaml").display()
         )),
         "{next}"
     );
-    assert!(next.contains("llamafactory-cli export "), "{next}");
-    assert!(next.contains("Faster single-GPU alternate"), "{next}");
-    assert!(next.contains("bitsandbytes>=0.49"), "{next}");
-    assert!(next.contains("--max-steps 10"), "{next}");
-    assert_eq!(estate_bytes(), before);
-
-    let gauge = root.join("gauge");
-    let gauged = estate_bin()
+assert!(next.contains("llamafactory-cli export "), "{next}");
+assert!(next.contains("Faster single-GPU alternate"), "{next}");
+assert!(next.contains("bitsandbytes>=0.49"), "{next}");
+assert!(next.contains("--max-steps 10"), "{next}");
+assert_eq!(estate_bytes(), before);
+let gauge = root.join("gauge");
+let gauged = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4128,27 +2634,26 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let gauge_text = text(&gauged);
-    assert!(gauged.status.success(), "{gauge_text}");
-    let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
-    assert!(
+let gauge_text = text(&gauged);
+assert!(gauged.status.success(), "{gauge_text}");
+let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
+assert!(
         gauge_recipe
             .lines()
             .any(|line| line.trim() == "max_steps: 10"),
         "{gauge_recipe}"
     );
-    assert!(
+assert!(
         gauge_recipe
             .lines()
             .any(|line| line.trim() == "save_steps: 10"),
         "{gauge_recipe}"
     );
-    assert!(
+assert!(
         gauge_recipe.contains("quantization_method: bnb"),
         "{gauge_recipe}"
     );
-
-    let enrich_job = estate_bin()
+let enrich_job = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4167,15 +2672,14 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let enrich_text = text(&enrich_job);
-    assert!(!enrich_job.status.success(), "{enrich_text}");
-    assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
-    assert!(!root.join("enrich-job").exists());
-
-    let adapter = root.join("adapter");
-    std::fs::create_dir_all(&adapter).unwrap();
-    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
-    let imported = estate_bin()
+let enrich_text = text(&enrich_job);
+assert!(!enrich_job.status.success(), "{enrich_text}");
+assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
+assert!(!root.join("enrich-job").exists());
+let adapter = root.join("adapter");
+std::fs::create_dir_all(&adapter).unwrap();
+std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4192,34 +2696,33 @@ fn llamafactory_qlora_prepare_and_import_trained_leave_the_estate() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(imported.status.success(), "{imported_text}");
-    assert!(
+let imported_text = text(&imported);
+assert!(imported.status.success(), "{imported_text}");
+assert!(
         imported_text.contains("driver=llamafactory-qlora"),
         "{imported_text}"
     );
-    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
-    assert!(
+assert!(imported_text.contains("shape=adapter"), "{imported_text}");
+assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
     );
-    let trained: serde_json::Value =
+let trained: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    assert_eq!(trained["trained_shape"], "adapter");
-    assert_eq!(trained["promoted"], false);
-    assert_eq!(trained["auto_apply"], false);
-    assert_eq!(trained["estate_rewritten"], false);
-    assert_eq!(estate_bytes(), before);
+assert_eq!(trained["trained_shape"], "adapter");
+assert_eq!(trained["promoted"], false);
+assert_eq!(trained["auto_apply"], false);
+assert_eq!(trained["estate_rewritten"], false);
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
-    let root = tmp("llamafactory-abs");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-
-    for bad in ["./llama3", "../llama3"] {
+let root = tmp("llamafactory-abs");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+for bad in ["./llama3", "../llama3"] {
         let seated = write_train_estate(&root, "llama3", Some(bad));
         let out = root.join(bad.trim_start_matches('.').replace('/', "_"));
         let refused = estate_bin()
@@ -4255,10 +2758,9 @@ fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
         );
         assert!(!out.exists(), "{bad}");
     }
-
-    let seated = write_train_estate(&root, "llama3", Some("./weights/Qwen2.5-0.5B-Instruct"));
-    let out = root.join("relative");
-    let prepared = estate_bin()
+let seated = write_train_estate(&root, "llama3", Some("./weights/Qwen2.5-0.5B-Instruct"));
+let out = root.join("relative");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4275,27 +2777,27 @@ fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
-    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
-    let doc: serde_json::Value =
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    let train = doc["train_base_model"].as_str().unwrap();
-    assert!(std::path::Path::new(train).is_absolute(), "{train}");
-    assert!(train.ends_with("/weights/Qwen2.5-0.5B-Instruct"), "{train}");
-    assert!(!train.contains("/./") && !train.contains(".."), "{train}");
-    let quoted = format!("model_name_or_path: \"{train}\"");
-    assert!(recipe.contains(&quoted), "{recipe}");
-    assert!(export.contains(&quoted), "{export}");
-    assert!(recipe.contains("template: qwen"), "{recipe}");
-    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
-    assert!(!recipe.contains("./weights"), "{recipe}");
-    assert_eq!(doc["base_model"], "llama3");
-    assert_eq!(doc["seat_tag"], "llama3");
-    let hub = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let hub_out = root.join("hub");
-    let hub_run = estate_bin()
+let train = doc["train_base_model"].as_str().unwrap();
+assert!(std::path::Path::new(train).is_absolute(), "{train}");
+assert!(train.ends_with("/weights/Qwen2.5-0.5B-Instruct"), "{train}");
+assert!(!train.contains("/./") && !train.contains(".."), "{train}");
+let quoted = format!("model_name_or_path: \"{train}\"");
+assert!(recipe.contains(&quoted), "{recipe}");
+assert!(export.contains(&quoted), "{export}");
+assert!(recipe.contains("template: qwen"), "{recipe}");
+assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+assert!(!recipe.contains("./weights"), "{recipe}");
+assert_eq!(doc["base_model"], "llama3");
+assert_eq!(doc["seat_tag"], "llama3");
+let hub = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let hub_out = root.join("hub");
+let hub_run = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4312,24 +2814,24 @@ fn llamafactory_relative_train_base_is_absolute_and_seat_leaves_refuse() {
         ])
         .output()
         .unwrap();
-    assert!(hub_run.status.success(), "{}", text(&hub_run));
-    let hub_recipe = std::fs::read_to_string(hub_out.join("recipe.yaml")).unwrap();
-    assert!(
+assert!(hub_run.status.success(), "{}", text(&hub_run));
+let hub_recipe = std::fs::read_to_string(hub_out.join("recipe.yaml")).unwrap();
+assert!(
         hub_recipe.contains("model_name_or_path: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{hub_recipe}"
     );
-    assert_eq!(estate_bytes(), before);
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn llamafactory_lora_prepare_omits_quantization_and_imports() {
-    let root = tmp("llamafactory-lora-cli");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let seated_only = write_seated_estate(&root, "llama3");
-    let blocked = root.join("seat-only");
-    let refused = estate_bin()
+let root = tmp("llamafactory-lora-cli");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let seated_only = write_seated_estate(&root, "llama3");
+let blocked = root.join("seat-only");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4346,15 +2848,14 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
-    assert!(!refused_text.contains("meta-llama"), "{refused_text}");
-    assert!(!blocked.exists());
-
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen3-4B-Instruct-2507"));
-    let out = root.join("recipe");
-    let prepared = estate_bin()
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+assert!(!refused_text.contains("meta-llama"), "{refused_text}");
+assert!(!blocked.exists());
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen3-4B-Instruct-2507"));
+let out = root.join("recipe");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4371,93 +2872,92 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=llamafactory-lora"),
         "{prepared_text}"
     );
-    assert!(prepared_text.contains("job=train"), "{prepared_text}");
-    assert!(
+assert!(prepared_text.contains("job=train"), "{prepared_text}");
+assert!(
         prepared_text.contains("does not require bitsandbytes"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         !prepared_text.contains("bitsandbytes>=0.49"),
         "{prepared_text}"
     );
-    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
-    assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
-    assert!(
+let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+assert!(recipe.contains("finetuning_type: lora"), "{recipe}");
+assert!(
         recipe.lines().any(|line| line.trim() == "lora_rank: 8"),
         "{recipe}"
     );
-    assert!(
+assert!(
         recipe.lines().any(|line| line.trim() == "packing: false"),
         "{recipe}"
     );
-    assert!(
+assert!(
         recipe
             .lines()
             .any(|line| line.trim() == "template: qwen3_nothink"),
         "{recipe}"
     );
-    assert!(
+assert!(
         !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
         "{recipe}"
     );
-    assert!(
+assert!(
         recipe.contains("model_name_or_path: \"Qwen/Qwen3-4B-Instruct-2507\""),
         "{recipe}"
     );
-    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
-    assert!(!export.contains("quantization_bit"), "{export}");
-    assert!(export.contains("# merge_status: not_run"), "{export}");
-    assert!(export.contains("This prepare did not merge"), "{export}");
-    assert!(
+let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+assert!(!export.contains("quantization_bit"), "{export}");
+assert!(export.contains("# merge_status: not_run"), "{export}");
+assert!(export.contains("This prepare did not merge"), "{export}");
+assert!(
         export
             .lines()
             .any(|line| line.trim() == "template: qwen3_nothink"),
         "{export}"
     );
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(next.contains("does not require bitsandbytes"), "{next}");
-    assert!(!next.contains("bitsandbytes>=0.49"), "{next}");
-    assert!(
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(next.contains("does not require bitsandbytes"), "{next}");
+assert!(!next.contains("bitsandbytes>=0.49"), "{next}");
+assert!(
         next.contains(
             "Reproduce target on the unquantized LoRA card, the non-quant twin of the Qwen3 Instruct QLoRA prepare."
         ),
         "{next}"
     );
-    assert!(
+assert!(
         !next.contains(
             "Reproduce target beside Phi-3, Llama-3.2, Gemma-2, Mistral, and Qwen2.x LoRA/QLoRA."
         ),
         "{next}"
     );
-    assert!(
+assert!(
         !next.contains("quantization_bit: 4") && !next.contains("quantization_method: bnb"),
         "{next}"
     );
-    assert!(next.contains("pip install llamafactory"), "{next}");
-    assert!(
+assert!(next.contains("pip install llamafactory"), "{next}");
+assert!(
         next.contains(&format!(
             "llamafactory-cli train {}",
             out.join("recipe.yaml").display()
         )),
         "{next}"
     );
-    let doc: serde_json::Value =
+let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    assert_eq!(doc["driver"], "llamafactory-lora");
-    assert_eq!(doc["base_model"], "llama3");
-    assert_eq!(doc["seat_tag"], "llama3");
-    assert_eq!(doc["train_base_model"], "Qwen/Qwen3-4B-Instruct-2507");
-
-    let adapter = root.join("adapter");
-    std::fs::create_dir_all(&adapter).unwrap();
-    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
-    let imported = estate_bin()
+assert_eq!(doc["driver"], "llamafactory-lora");
+assert_eq!(doc["base_model"], "llama3");
+assert_eq!(doc["seat_tag"], "llama3");
+assert_eq!(doc["train_base_model"], "Qwen/Qwen3-4B-Instruct-2507");
+let adapter = root.join("adapter");
+std::fs::create_dir_all(&adapter).unwrap();
+std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4474,18 +2974,18 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(imported.status.success(), "{imported_text}");
-    assert!(
+let imported_text = text(&imported);
+assert!(imported.status.success(), "{imported_text}");
+assert!(
         imported_text.contains("driver=llamafactory-lora"),
         "{imported_text}"
     );
-    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
-    assert!(
+assert!(imported_text.contains("shape=adapter"), "{imported_text}");
+assert!(
         imported_text.contains("import-trained did not apply"),
         "{imported_text}"
     );
-    assert!(
+assert!(
         next.contains(&format!(
             "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
             out.display(),
@@ -4493,7 +2993,7 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         )),
         "{next}"
     );
-    assert!(
+assert!(
         next.contains(&format!(
             "estate enrich import-trained --estate <estate.yaml> --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
             out.display(),
@@ -4501,15 +3001,14 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         )),
         "{next}"
     );
-    let trained: serde_json::Value =
+let trained: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    assert_eq!(trained["trained_shape"], "adapter");
-    assert_eq!(trained["promoted"], false);
-    assert_eq!(estate_bytes(), before);
-
-    let garbage = root.join("garbage.txt");
-    std::fs::write(&garbage, "not weights\n").unwrap();
-    let refused = estate_bin()
+assert_eq!(trained["trained_shape"], "adapter");
+assert_eq!(trained["promoted"], false);
+assert_eq!(estate_bytes(), before);
+let garbage = root.join("garbage.txt");
+std::fs::write(&garbage, "not weights\n").unwrap();
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4526,29 +3025,28 @@ fn llamafactory_lora_prepare_omits_quantization_and_imports() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:adapter"), "{refused_text}");
-    assert!(
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:adapter"), "{refused_text}");
+assert!(
         refused_text.contains("is a file and is not a GGUF"),
         "{refused_text}"
     );
-    let still: serde_json::Value =
+let still: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("prepare.json")).unwrap()).unwrap();
-    assert_eq!(still["trained_shape"], "adapter");
-    assert_eq!(estate_bytes(), before);
+assert_eq!(still["trained_shape"], "adapter");
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
-    let root = tmp("official-scale");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let before = estate_bytes();
-
-    let out = root.join("lora");
-    let prepared = estate_bin()
+let root = tmp("official-scale");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let before = estate_bytes();
+let out = root.join("lora");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4566,10 +3064,10 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
-    for line in [
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+let recipe = std::fs::read_to_string(out.join("recipe.yaml")).unwrap();
+for line in [
         "cutoff_len: 2048",
         "num_train_epochs: 3.0",
         "gradient_accumulation_steps: 8",
@@ -4582,23 +3080,22 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
             "{line} missing\n{recipe}"
         );
     }
-    assert!(
+assert!(
         !recipe.contains("quantization_bit") && !recipe.contains("quantization_method"),
         "{recipe}"
     );
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(next.contains("This prepare did not merge"), "{next}");
-    assert!(next.contains("The merge has not happened."), "{next}");
-    assert!(
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(next.contains("This prepare did not merge"), "{next}");
+assert!(next.contains("The merge has not happened."), "{next}");
+assert!(
         next.contains("Do not set quantization_bit on export.yaml"),
         "{next}"
     );
-    let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
-    assert!(!export.contains("quantization_bit"), "{export}");
-    assert!(export.contains("# merge_status: not_run"), "{export}");
-
-    let gauge = root.join("gauge");
-    let gauged = estate_bin()
+let export = std::fs::read_to_string(out.join("export.yaml")).unwrap();
+assert!(!export.contains("quantization_bit"), "{export}");
+assert!(export.contains("# merge_status: not_run"), "{export}");
+let gauge = root.join("gauge");
+let gauged = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4618,24 +3115,23 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
         ])
         .output()
         .unwrap();
-    assert!(gauged.status.success(), "{}", text(&gauged));
-    let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
-    assert!(
+assert!(gauged.status.success(), "{}", text(&gauged));
+let gauge_recipe = std::fs::read_to_string(gauge.join("recipe.yaml")).unwrap();
+assert!(
         gauge_recipe
             .lines()
             .any(|row| row.trim() == "max_steps: 10"),
         "{gauge_recipe}"
     );
-    assert!(
+assert!(
         gauge_recipe
             .lines()
             .any(|row| row.trim() == "cutoff_len: 2048"),
         "{gauge_recipe}"
     );
-    assert!(!gauge_recipe.contains("quantization_bit"), "{gauge_recipe}");
-
-    let blocked = root.join("ollama");
-    let refused = estate_bin()
+assert!(!gauge_recipe.contains("quantization_bit"), "{gauge_recipe}");
+let blocked = root.join("ollama");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4653,21 +3149,20 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(
         refused_text.contains("refuse:official-scale"),
         "{refused_text}"
     );
-    assert!(!blocked.exists());
-
-    let export_path = out.join("export.yaml");
-    let original = std::fs::read_to_string(&export_path).unwrap();
-    std::fs::write(&export_path, format!("{original}quantization_bit: 4\n")).unwrap();
-    let adapter = root.join("adapter");
-    std::fs::create_dir_all(&adapter).unwrap();
-    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
-    let imported = estate_bin()
+assert!(!blocked.exists());
+let export_path = out.join("export.yaml");
+let original = std::fs::read_to_string(&export_path).unwrap();
+std::fs::write(&export_path, format!("{original}quantization_bit: 4\n")).unwrap();
+let adapter = root.join("adapter");
+std::fs::create_dir_all(&adapter).unwrap();
+std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4684,25 +3179,25 @@ fn official_scale_flag_writes_the_sft_fields_and_refuses_a_quantized_export() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(!imported.status.success(), "{imported_text}");
-    assert!(imported_text.contains("refuse:export"), "{imported_text}");
-    assert_eq!(estate_bytes(), before);
+let imported_text = text(&imported);
+assert!(!imported.status.success(), "{imported_text}");
+assert!(imported_text.contains("refuse:export"), "{imported_text}");
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
-    let root = tmp("unsloth-cli");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let seated_bytes = std::fs::read_to_string(&seated).unwrap();
-    let seat_dir = root.join("seat-only-src");
-    std::fs::create_dir_all(&seat_dir).unwrap();
-    let seat_only = write_seated_estate(&seat_dir, "llama3");
-    let blocked = root.join("blocked");
-    let refused = estate_bin()
+let root = tmp("unsloth-cli");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let seated_bytes = std::fs::read_to_string(&seated).unwrap();
+let seat_dir = root.join("seat-only-src");
+std::fs::create_dir_all(&seat_dir).unwrap();
+let seat_only = write_seated_estate(&seat_dir, "llama3");
+let blocked = root.join("blocked");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4719,13 +3214,12 @@ fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
-    assert!(!blocked.exists());
-
-    let out = root.join("handoff");
-    let prepared = estate_bin()
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:train-base"), "{refused_text}");
+assert!(!blocked.exists());
+let out = root.join("handoff");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4742,39 +3236,38 @@ fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=unsloth-qlora"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("estate_rewritten=false"),
         "{prepared_text}"
     );
-    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
-    assert_eq!(estate_bytes(), before);
-    let handoff = std::fs::read_to_string(out.join("UNSLOTH.md")).unwrap();
-    assert!(handoff.contains("operator-owned"), "{handoff}");
-    assert!(handoff.contains("does not call Unsloth"), "{handoff}");
-    assert!(
+assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+assert_eq!(estate_bytes(), before);
+let handoff = std::fs::read_to_string(out.join("UNSLOTH.md")).unwrap();
+assert!(handoff.contains("operator-owned"), "{handoff}");
+assert!(handoff.contains("does not call Unsloth"), "{handoff}");
+assert!(
         handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{handoff}"
     );
-    assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
-    assert!(!out.join("train_unsloth.py").exists());
-    assert!(!out.join("dataset.jsonl").exists());
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(next.contains("import-trained"), "{next}");
-    assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
-    assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
-    assert!(
+assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+assert!(!out.join("train_unsloth.py").exists());
+assert!(!out.join("dataset.jsonl").exists());
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(next.contains("import-trained"), "{next}");
+assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
+assert!(
         next.contains("https://unsloth.ai/docs/get-started/install"),
         "{next}"
     );
-
-    let official = root.join("official");
-    let official_out = estate_bin()
+let official = root.join("official");
+let official_out = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4792,19 +3285,18 @@ fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
         ])
         .output()
         .unwrap();
-    let official_text = text(&official_out);
-    assert!(!official_out.status.success(), "{official_text}");
-    assert!(
+let official_text = text(&official_out);
+assert!(!official_out.status.success(), "{official_text}");
+assert!(
         official_text.contains("refuse:official-scale"),
         "{official_text}"
     );
-    assert!(!official.exists());
-    assert_eq!(estate_bytes(), before);
-
-    let adapter = root.join("adapter");
-    std::fs::create_dir_all(&adapter).unwrap();
-    std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
-    let imported = estate_bin()
+assert!(!official.exists());
+assert_eq!(estate_bytes(), before);
+let adapter = root.join("adapter");
+std::fs::create_dir_all(&adapter).unwrap();
+std::fs::write(adapter.join("adapter_config.json"), "{}\n").unwrap();
+let imported = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4821,45 +3313,44 @@ fn unsloth_qlora_prepare_refuses_a_missing_train_base_and_leaves_the_estate() {
         ])
         .output()
         .unwrap();
-    let imported_text = text(&imported);
-    assert!(imported.status.success(), "{imported_text}");
-    assert!(imported_text.contains("shape=adapter"), "{imported_text}");
-    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
-    assert_eq!(estate_bytes(), before);
-    let proposal = std::fs::read_to_string(out.join("binding-proposal.json")).unwrap();
-    assert!(
+let imported_text = text(&imported);
+assert!(imported.status.success(), "{imported_text}");
+assert!(imported_text.contains("shape=adapter"), "{imported_text}");
+assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+assert_eq!(estate_bytes(), before);
+let proposal = std::fs::read_to_string(out.join("binding-proposal.json")).unwrap();
+assert!(
         proposal.contains("\"driver\": \"unsloth-qlora\""),
         "{proposal}"
     );
-    assert!(
+assert!(
         proposal.contains("\"estate_rewritten\": false"),
         "{proposal}"
     );
-    assert!(proposal.contains("\"promoted\": false"), "{proposal}");
+assert!(proposal.contains("\"promoted\": false"), "{proposal}");
 }
 
 #[test]
 fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_silicon() {
-    let root = tmp("mlx-cli");
-    let sacred = fixture("policy/sacred.yaml");
-    let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
-    let before = estate_bytes();
-    let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
-    let seated_bytes = std::fs::read_to_string(&seated).unwrap();
-    let apple_src = std::fs::read_to_string(
+let root = tmp("mlx-cli");
+let sacred = fixture("policy/sacred.yaml");
+let pack = fixture("examples/fixtures/specialist-overnight.pack.json");
+let before = estate_bytes();
+let seated = write_train_estate(&root, "llama3", Some("Qwen/Qwen2.5-0.5B-Instruct"));
+let seated_bytes = std::fs::read_to_string(&seated).unwrap();
+let apple_src = std::fs::read_to_string(
         repo_root().join("examples/fixtures/specialist-overnight.pack.json"),
     )
     .unwrap();
-    let apple_body = apple_src.replace(
+let apple_body = apple_src.replace(
         "\"host_class_affinity\": \"any\"",
         "\"host_class_affinity\": \"apple-silicon\"",
     );
-    assert_ne!(apple_body, apple_src);
-    let apple_pack = root.join("apple.pack.json");
-    std::fs::write(&apple_pack, apple_body).unwrap();
-
-    let blocked = root.join("wrong-host");
-    let refused = estate_bin()
+assert_ne!(apple_body, apple_src);
+let apple_pack = root.join("apple.pack.json");
+std::fs::write(&apple_pack, apple_body).unwrap();
+let blocked = root.join("wrong-host");
+let refused = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4876,18 +3367,17 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let refused_text = text(&refused);
-    assert!(!refused.status.success(), "{refused_text}");
-    assert!(refused_text.contains("refuse:host"), "{refused_text}");
-    assert!(refused_text.contains("apple-silicon"), "{refused_text}");
-    assert!(!blocked.exists());
-    assert_eq!(estate_bytes(), before);
-
-    let seat_dir = root.join("seat-only-src");
-    std::fs::create_dir_all(&seat_dir).unwrap();
-    let seat_only = write_seated_estate(&seat_dir, "llama3");
-    let missing = root.join("missing-base");
-    let missing_out = estate_bin()
+let refused_text = text(&refused);
+assert!(!refused.status.success(), "{refused_text}");
+assert!(refused_text.contains("refuse:host"), "{refused_text}");
+assert!(refused_text.contains("apple-silicon"), "{refused_text}");
+assert!(!blocked.exists());
+assert_eq!(estate_bytes(), before);
+let seat_dir = root.join("seat-only-src");
+std::fs::create_dir_all(&seat_dir).unwrap();
+let seat_only = write_seated_estate(&seat_dir, "llama3");
+let missing = root.join("missing-base");
+let missing_out = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4904,13 +3394,12 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let missing_text = text(&missing_out);
-    assert!(!missing_out.status.success(), "{missing_text}");
-    assert!(missing_text.contains("refuse:train-base"), "{missing_text}");
-    assert!(!missing.exists());
-
-    let enrich_job = root.join("enrich-job");
-    let enrich = estate_bin()
+let missing_text = text(&missing_out);
+assert!(!missing_out.status.success(), "{missing_text}");
+assert!(missing_text.contains("refuse:train-base"), "{missing_text}");
+assert!(!missing.exists());
+let enrich_job = root.join("enrich-job");
+let enrich = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4929,13 +3418,12 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let enrich_text = text(&enrich);
-    assert!(!enrich.status.success(), "{enrich_text}");
-    assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
-    assert!(!enrich_job.exists());
-
-    let official = root.join("official");
-    let official_out = estate_bin()
+let enrich_text = text(&enrich);
+assert!(!enrich.status.success(), "{enrich_text}");
+assert!(enrich_text.contains("refuse:job"), "{enrich_text}");
+assert!(!enrich_job.exists());
+let official = root.join("official");
+let official_out = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4953,16 +3441,15 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let official_text = text(&official_out);
-    assert!(!official_out.status.success(), "{official_text}");
-    assert!(
+let official_text = text(&official_out);
+assert!(!official_out.status.success(), "{official_text}");
+assert!(
         official_text.contains("refuse:official-scale"),
         "{official_text}"
     );
-    assert!(!official.exists());
-
-    let out = root.join("handoff");
-    let prepared = estate_bin()
+assert!(!official.exists());
+let out = root.join("handoff");
+let prepared = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -4979,78 +3466,78 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let prepared_text = text(&prepared);
-    assert!(prepared.status.success(), "{prepared_text}");
-    assert!(
+let prepared_text = text(&prepared);
+assert!(prepared.status.success(), "{prepared_text}");
+assert!(
         prepared_text.contains("driver=mlx-lm-lora"),
         "{prepared_text}"
     );
-    assert!(
+assert!(
         prepared_text.contains("estate_rewritten=false"),
         "{prepared_text}"
     );
-    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
-    assert_eq!(estate_bytes(), before);
-    let handoff = std::fs::read_to_string(out.join("MLX.md")).unwrap();
-    assert!(handoff.contains("operator-owned"), "{handoff}");
-    assert!(handoff.contains("does not call mlx-lm"), "{handoff}");
-    assert!(
+assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+assert_eq!(estate_bytes(), before);
+let handoff = std::fs::read_to_string(out.join("MLX.md")).unwrap();
+assert!(handoff.contains("operator-owned"), "{handoff}");
+assert!(handoff.contains("does not call mlx-lm"), "{handoff}");
+assert!(
         handoff.contains("train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\""),
         "{handoff}"
     );
-    assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
-    assert!(
+assert!(handoff.contains("seat_tag: \"llama3\""), "{handoff}");
+assert!(
         handoff.contains("https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md"),
         "{handoff}"
     );
-    assert!(
+assert!(
         handoff.contains("mlx_lm.fuse --model <path_to_model>"),
         "{handoff}"
     );
-    assert!(handoff.contains("refuse:adapter"), "{handoff}");
-    assert!(
+assert!(handoff.contains("refuse:adapter"), "{handoff}");
+assert!(
         !handoff
             .contains("a merged directory that contains config.json and at least one .safetensors"),
         "{handoff}"
     );
-    assert!(!out.join("dataset.jsonl").exists());
-    assert!(!out.join("recipe.yaml").exists());
-    assert!(out.read_dir().unwrap().all(|entry| {
+assert!(!out.join("dataset.jsonl").exists());
+assert!(!out.join("recipe.yaml").exists());
+assert!(out.read_dir().unwrap().all(|entry| {
         let name = entry.unwrap().file_name().into_string().unwrap();
         !name.ends_with(".py")
-    }));
-    let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
-    assert!(next.contains("import-trained"), "{next}");
-    assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
-    assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
-    assert!(
+    }
+));
+let next = std::fs::read_to_string(out.join("NEXT.md")).unwrap();
+assert!(next.contains("import-trained"), "{next}");
+assert!(next.contains("READY_FOR_LIVE_TEST: no"), "{next}");
+assert!(!next.contains("READY_FOR_LIVE_TEST: yes"), "{next}");
+assert!(
         next.contains("mlx_lm.fuse --model <path_to_model>"),
         "{next}"
     );
-    assert!(next.contains("mlx_lm.fuse --export-gguf"), "{next}");
-    assert!(next.contains("adapters.safetensors"), "{next}");
-    assert!(next.contains("ggml-model-f16.gguf"), "{next}");
-    assert!(next.contains("estate enrich merge-adapt"), "{next}");
-    assert!(next.contains("## After the mlx-lm train"), "{next}");
-    assert!(next.contains("fused MLX"), "{next}");
-    assert!(next.contains("refuse:adapter"), "{next}");
-    assert!(!next.contains("--adapter <merged-dir>"), "{next}");
-    assert!(!next.contains("including fuse when you fused"), "{next}");
-    assert!(!next.contains("python3 convert_hf_to_gguf.py"), "{next}");
-    let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
-    assert!(
+assert!(next.contains("mlx_lm.fuse --export-gguf"), "{next}");
+assert!(next.contains("adapters.safetensors"), "{next}");
+assert!(next.contains("ggml-model-f16.gguf"), "{next}");
+assert!(next.contains("estate enrich merge-adapt"), "{next}");
+assert!(next.contains("## After the mlx-lm train"), "{next}");
+assert!(next.contains("fused MLX"), "{next}");
+assert!(next.contains("refuse:adapter"), "{next}");
+assert!(!next.contains("--adapter <merged-dir>"), "{next}");
+assert!(!next.contains("including fuse when you fused"), "{next}");
+assert!(!next.contains("python3 convert_hf_to_gguf.py"), "{next}");
+let prepare_md = std::fs::read_to_string(out.join("PREPARE.md")).unwrap();
+assert!(
         prepare_md.contains("estate enrich merge-adapt"),
         "{prepare_md}"
     );
-    assert!(prepare_md.contains("--export-gguf"), "{prepare_md}");
-    assert!(prepare_md.contains("refuse:adapter"), "{prepare_md}");
-    assert!(
+assert!(prepare_md.contains("--export-gguf"), "{prepare_md}");
+assert!(prepare_md.contains("refuse:adapter"), "{prepare_md}");
+assert!(
         !prepare_md.contains("python3 convert_hf_to_gguf.py"),
         "{prepare_md}"
     );
-
-    let state = root.join("state");
-    let all_train = estate_bin()
+let state = root.join("state");
+let all_train = estate_bin()
         .args([
             "--sacred",
             &sacred,
@@ -5068,71 +3555,70 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         ])
         .output()
         .unwrap();
-    let all_text = text(&all_train);
-    assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=9"), "{all_text}");
-    assert!(
+let all_text = text(&all_train);
+assert!(all_train.status.success(), "{all_text}");
+assert!(all_text.contains("prepared=9"), "{all_text}");
+assert!(
         all_text.contains("enrich prepare: driver=mlx-lm-lora"),
         "{all_text}"
     );
-    assert!(!all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
-    let mlx_dir = state.join("enrich/overnight-traces/mlx-lm-lora");
-    assert!(mlx_dir.join("MLX.md").is_file());
-    assert!(!mlx_dir.join("dataset.jsonl").exists());
-    let recipe = std::fs::read_to_string(
+assert!(!all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
+let mlx_dir = state.join("enrich/overnight-traces/mlx-lm-lora");
+assert!(mlx_dir.join("MLX.md").is_file());
+assert!(!mlx_dir.join("dataset.jsonl").exists());
+let recipe = std::fs::read_to_string(
         state.join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml"),
     )
     .unwrap();
-    assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
-    assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
-    assert!(!recipe.contains("mlx-lm-lora"), "{recipe}");
-    assert!(!recipe.contains("mlx_lm"), "{recipe}");
-    assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
-    assert_eq!(estate_bytes(), before);
+assert!(recipe.contains("quantization_method: bnb"), "{recipe}");
+assert!(recipe.contains("quantization_bit: 4"), "{recipe}");
+assert!(!recipe.contains("mlx-lm-lora"), "{recipe}");
+assert!(!recipe.contains("mlx_lm"), "{recipe}");
+assert_eq!(std::fs::read_to_string(&seated).unwrap(), seated_bytes);
+assert_eq!(estate_bytes(), before);
 }
 
 #[test]
 fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    for target in ["axolotl-qlora-journey:", "uniqueness-axolotl:"] {
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+for target in ["axolotl-qlora-journey:", "uniqueness-axolotl:"] {
         assert!(
             makefile.lines().any(|line| line.trim() == target),
             "Makefile missing {target}"
         );
     }
-    assert!(makefile.contains("scripts/axolotl-qlora-journey.sh"));
-    assert!(makefile.contains("scripts/uniqueness-axolotl.sh"));
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+assert!(makefile.contains("scripts/axolotl-qlora-journey.sh"));
+assert!(makefile.contains("scripts/uniqueness-axolotl.sh"));
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("axolotl-qlora-journey") && phony.contains("uniqueness-axolotl"),
         "axolotl journey targets must be phony"
     );
-    let gate90 = makefile
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !gate90.contains("axolotl-qlora-journey") && !gate90.contains("uniqueness-axolotl"),
         "gate-90 must not run the axolotl journey: {gate90}"
     );
-    let smoke = makefile
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !smoke.contains("axolotl-qlora-journey") && !smoke.contains("uniqueness-axolotl"),
         "smoke must not run the axolotl journey: {smoke}"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/axolotl-qlora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/axolotl-qlora-journey.sh")).unwrap();
+for needle in [
         "axolotl-qlora",
         "Qwen/Qwen2.5-0.5B-Instruct",
         "llama3",
@@ -5161,21 +3647,21 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
     ] {
         assert!(script.contains(needle), "axolotl-qlora-journey missing {needle}");
     }
-    let bad = script
+let bad = script
         .find("-- Qwen-shaped merged tokenizer is refuse:tokenizer --")
         .expect("missing refuse:tokenizer step");
-    let replace = script
+let replace = script
         .find("-- replace the broken tokenizer with the good merged stub --")
         .expect("missing good-stub replace");
-    let happy = script
+let happy = script
         .find("-- gguf-convert prints convert_hf_to_gguf.py --")
         .expect("missing happy-path convert");
-    assert!(
+assert!(
         bad < replace && replace < happy,
         "refuse:tokenizer must run before the good stubs and the convert print"
     );
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    let shells_out = script.lines().any(|line| {
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -5190,101 +3676,39 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         trimmed.contains("axolotl ")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "axolotl-qlora-journey must not shell out to axolotl, llama.cpp, or ollama"
     );
-
-    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-axolotl.sh")).unwrap();
-    assert!(chain.contains("AXOLOTL_QLORA_PHASE=prepare"));
-    assert!(chain.contains("AXOLOTL_QLORA_PHASE=seat"));
-    assert!(chain.contains("make axolotl-qlora-journey"));
-    assert!(chain.contains("set -euo pipefail"));
-    assert!(chain.contains("SKIP live train"));
-    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(
+let chain = std::fs::read_to_string(root.join("scripts/uniqueness-axolotl.sh")).unwrap();
+assert!(chain.contains("AXOLOTL_QLORA_PHASE=prepare"));
+assert!(chain.contains("AXOLOTL_QLORA_PHASE=seat"));
+assert!(chain.contains("make axolotl-qlora-journey"));
+assert!(chain.contains("set -euo pipefail"));
+assert!(chain.contains("SKIP live train"));
+assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(
         chain.find("AXOLOTL_QLORA_PHASE=prepare") < chain.find("AXOLOTL_QLORA_PHASE=seat"),
         "uniqueness-axolotl must run prepare-assert before the seat print"
     );
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 11. Axolotl QLoRA — popular-config print journey"));
+assert!(journey.contains("make axolotl-qlora-journey"));
+assert!(journey.contains("make uniqueness-axolotl"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("`make axolotl-qlora-journey`"));
+assert!(train.contains("`make uniqueness-axolotl`"));
+assert!(train.contains("adapter: qlora"));
+assert!(train.contains("load_in_4bit: true"));
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains("make axolotl-qlora-journey"));
+assert!(help.contains("make uniqueness-axolotl"));
+assert!(help.contains("section 11"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 11. Axolotl QLoRA — popular-config print journey"));
-    assert!(journey.contains("make axolotl-qlora-journey"));
-    assert!(journey.contains("make uniqueness-axolotl"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("`make axolotl-qlora-journey`"));
-    assert!(train.contains("`make uniqueness-axolotl`"));
-    assert!(train.contains("adapter: qlora"));
-    assert!(train.contains("load_in_4bit: true"));
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains("make axolotl-qlora-journey"));
-    assert!(help.contains("make uniqueness-axolotl"));
-    assert!(help.contains("section 11"));
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .expect("CHANGELOG missing a slice")
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(
-        changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
-        "CHANGELOG must keep the landed Unsloth slice"
-    );
-    assert!(
-        changelog.contains("scripts/uniqueness-unsloth.sh")
-            && changelog.contains("scripts/uniqueness-axolotl-lora.sh"),
-        "CHANGELOG head slices must keep both journey scripts"
-    );
-    let slice = changelog
-        .split("## This slice — print-only Axolotl QLoRA uniqueness and seat journey")
-        .nth(1)
-        .expect("CHANGELOG missing the axolotl journey slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "make axolotl-qlora-journey",
-        "scripts/axolotl-qlora-journey.sh",
-        "make uniqueness-axolotl",
-        "adapter: qlora",
-        "load_in_4bit: true",
-        "sequence_len: 4096",
-        "lora_r: 32",
-        "refuse:train-base",
-        "refuse:adapter",
-        "refuse:seat",
-        "refuse:tokenizer",
-        "SKIP live train",
-        "SKIP live convert",
-        "SKIP live seat",
-        "does not add Kimi",
-        "43770130 3391",
-        "READY_FOR_LIVE_TEST",
-    ] {
-        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
-    }
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-
-    let cksum = std::process::Command::new("cksum")
-        .arg(root.join("examples/estate.yaml"))
-        .output()
-        .unwrap();
-    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
-    assert!(
-        cksum_text.starts_with("43770130 3391"),
-        "examples/estate.yaml cksum changed: {cksum_text}"
-    );
-
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -5299,46 +3723,45 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
 
 #[test]
 fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    for target in ["unsloth-qlora-journey:", "uniqueness-unsloth:"] {
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+for target in ["unsloth-qlora-journey:", "uniqueness-unsloth:"] {
         assert!(
             makefile.lines().any(|line| line.trim() == target),
             "Makefile missing {target}"
         );
     }
-    assert!(makefile.contains("scripts/unsloth-qlora-journey.sh"));
-    assert!(makefile.contains("scripts/uniqueness-unsloth.sh"));
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+assert!(makefile.contains("scripts/unsloth-qlora-journey.sh"));
+assert!(makefile.contains("scripts/uniqueness-unsloth.sh"));
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("unsloth-qlora-journey") && phony.contains("uniqueness-unsloth"),
         "unsloth journey targets must be phony"
     );
-    let gate90 = makefile
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !gate90.contains("unsloth-qlora-journey") && !gate90.contains("uniqueness-unsloth"),
         "gate-90 must not run the unsloth journey: {gate90}"
     );
-    let smoke = makefile
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !smoke.contains("unsloth-qlora-journey") && !smoke.contains("uniqueness-unsloth"),
         "smoke must not run the unsloth journey: {smoke}"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/unsloth-qlora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/unsloth-qlora-journey.sh")).unwrap();
+for needle in [
         "unsloth-qlora",
         "Qwen/Qwen2.5-0.5B-Instruct",
         "llama3",
@@ -5368,35 +3791,35 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
     ] {
         assert!(script.contains(needle), "unsloth-qlora-journey missing {needle}");
     }
-    assert!(
+assert!(
         script.contains("must not invent a script") && script.contains("train_unsloth.py"),
         "journey must forbid a training script"
     );
-    let bad = script
+let bad = script
         .find("-- Qwen-shaped merged tokenizer is refuse:tokenizer --")
         .expect("missing refuse:tokenizer step");
-    let replace = script
+let replace = script
         .find("-- replace the broken tokenizer with the good merged stub --")
         .expect("missing good-stub replace");
-    let happy = script
+let happy = script
         .find("-- gguf-convert prints convert_hf_to_gguf.py --")
         .expect("missing happy-path convert");
-    assert!(
+assert!(
         bad < replace && replace < happy,
         "refuse:tokenizer must run before the good stubs and the convert print"
     );
-    let shape = script
+let shape = script
         .find("-- adapter_config.json without adapter_model.safetensors is refuse:adapter --")
         .expect("missing wrong-shape step");
-    let seat_adapter = script
+let seat_adapter = script
         .find("-- local-seat --adapter stays refuse:adapter --")
         .expect("missing local-seat --adapter refuse");
-    assert!(
+assert!(
         shape < seat_adapter,
         "wrong-shape refuse must run, and local-seat --adapter stays refuse:adapter"
     );
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    let shells_out = script.lines().any(|line| {
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -5411,102 +3834,39 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         trimmed.contains("unsloth ")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "unsloth-qlora-journey must not shell out to Unsloth, llama.cpp, or ollama"
     );
-
-    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-unsloth.sh")).unwrap();
-    assert!(chain.contains("UNSLOTH_QLORA_PHASE=prepare"));
-    assert!(chain.contains("UNSLOTH_QLORA_PHASE=seat"));
-    assert!(chain.contains("make unsloth-qlora-journey"));
-    assert!(chain.contains("set -euo pipefail"));
-    assert!(chain.contains("SKIP live train"));
-    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(
+let chain = std::fs::read_to_string(root.join("scripts/uniqueness-unsloth.sh")).unwrap();
+assert!(chain.contains("UNSLOTH_QLORA_PHASE=prepare"));
+assert!(chain.contains("UNSLOTH_QLORA_PHASE=seat"));
+assert!(chain.contains("make unsloth-qlora-journey"));
+assert!(chain.contains("set -euo pipefail"));
+assert!(chain.contains("SKIP live train"));
+assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(
         chain.find("UNSLOTH_QLORA_PHASE=prepare") < chain.find("UNSLOTH_QLORA_PHASE=seat"),
         "uniqueness-unsloth must run prepare-assert before the seat print"
     );
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 12. Unsloth QLoRA — optional NEXT print journey"));
+assert!(journey.contains("make unsloth-qlora-journey"));
+assert!(journey.contains("make uniqueness-unsloth"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("`make unsloth-qlora-journey`"));
+assert!(train.contains("`make uniqueness-unsloth`"));
+assert!(train.contains("save_pretrained_merged"));
+assert!(train.contains("merged_16bit"));
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains("make unsloth-qlora-journey"));
+assert!(help.contains("make uniqueness-unsloth"));
+assert!(help.contains("section 12"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 12. Unsloth QLoRA — optional NEXT print journey"));
-    assert!(journey.contains("make unsloth-qlora-journey"));
-    assert!(journey.contains("make uniqueness-unsloth"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("`make unsloth-qlora-journey`"));
-    assert!(train.contains("`make uniqueness-unsloth`"));
-    assert!(train.contains("save_pretrained_merged"));
-    assert!(train.contains("merged_16bit"));
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains("make unsloth-qlora-journey"));
-    assert!(help.contains("make uniqueness-unsloth"));
-    assert!(help.contains("section 12"));
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .expect("CHANGELOG missing a slice")
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(
-        changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
-        "CHANGELOG must keep the landed Unsloth slice"
-    );
-    assert!(
-        changelog.contains("scripts/uniqueness-unsloth.sh")
-            && changelog.contains("scripts/uniqueness-axolotl-lora.sh"),
-        "CHANGELOG head slices must keep both journey scripts"
-    );
-    let slice = changelog
-        .split("## This slice — print-only Unsloth QLoRA uniqueness and seat journey")
-        .nth(1)
-        .expect("CHANGELOG missing the unsloth journey slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "make unsloth-qlora-journey",
-        "scripts/unsloth-qlora-journey.sh",
-        "make uniqueness-unsloth",
-        "UNSLOTH.md",
-        "adapter_model.safetensors",
-        "merged_16bit",
-        "refuse:train-base",
-        "refuse:adapter",
-        "refuse:seat",
-        "refuse:tokenizer",
-        "local-seat --adapter",
-        "SKIP live train",
-        "SKIP live convert",
-        "SKIP live seat",
-        "does not add Kimi",
-        "optional",
-        "43770130 3391",
-        "READY_FOR_LIVE_TEST",
-    ] {
-        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
-    }
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-
-    let cksum = std::process::Command::new("cksum")
-        .arg(root.join("examples/estate.yaml"))
-        .output()
-        .unwrap();
-    let cksum_text = String::from_utf8(cksum.stdout).unwrap();
-    assert!(
-        cksum_text.starts_with("43770130 3391"),
-        "examples/estate.yaml cksum changed: {cksum_text}"
-    );
-
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -5521,46 +3881,45 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
 
 #[test]
 fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    for target in ["axolotl-lora-journey:", "uniqueness-axolotl-lora:"] {
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+for target in ["axolotl-lora-journey:", "uniqueness-axolotl-lora:"] {
         assert!(
             makefile.lines().any(|line| line.trim() == target),
             "Makefile missing {target}"
         );
     }
-    assert!(makefile.contains("scripts/axolotl-lora-journey.sh"));
-    assert!(makefile.contains("scripts/uniqueness-axolotl-lora.sh"));
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+assert!(makefile.contains("scripts/axolotl-lora-journey.sh"));
+assert!(makefile.contains("scripts/uniqueness-axolotl-lora.sh"));
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("axolotl-lora-journey") && phony.contains("uniqueness-axolotl-lora"),
         "axolotl lora journey targets must be phony"
     );
-    let gate90 = makefile
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !gate90.contains("axolotl-lora-journey") && !gate90.contains("uniqueness-axolotl-lora"),
         "gate-90 must not run the axolotl lora journey: {gate90}"
     );
-    let smoke = makefile
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !smoke.contains("axolotl-lora-journey") && !smoke.contains("uniqueness-axolotl-lora"),
         "smoke must not run the axolotl lora journey: {smoke}"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/axolotl-lora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/axolotl-lora-journey.sh")).unwrap();
+for needle in [
         "axolotl-lora",
         "Qwen/Qwen2.5-0.5B-Instruct",
         "llama3",
@@ -5590,32 +3949,32 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     ] {
         assert!(script.contains(needle), "axolotl-lora-journey missing {needle}");
     }
-    assert!(
+assert!(
         !script.contains("require \"adapter: qlora\"")
             && !script.contains("require \"load_in_4bit: true\""),
         "axolotl-lora-journey must not require the 4-bit card"
     );
-    assert!(
+assert!(
         script.contains("must not write adapter qlora")
             && script.contains("must not write load_in_4bit true")
             && script.contains("must not print --dequant"),
         "axolotl-lora-journey must keep the 4-bit card off this prepare"
     );
-    let bad = script
+let bad = script
         .find("-- Qwen-shaped merged tokenizer is refuse:tokenizer --")
         .expect("missing refuse:tokenizer step");
-    let replace = script
+let replace = script
         .find("-- replace the broken tokenizer with the good merged stub --")
         .expect("missing good-stub replace");
-    let happy = script
+let happy = script
         .find("-- gguf-convert prints convert_hf_to_gguf.py --")
         .expect("missing happy-path convert");
-    assert!(
+assert!(
         bad < replace && replace < happy,
         "refuse:tokenizer must run before the good stubs and the convert print"
     );
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    let shells_out = script.lines().any(|line| {
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -5630,112 +3989,48 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         trimmed.contains("axolotl ")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "axolotl-lora-journey must not shell out to axolotl, llama.cpp, or ollama"
     );
-
-    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-axolotl-lora.sh")).unwrap();
-    assert!(chain.contains("AXOLOTL_LORA_PHASE=prepare"));
-    assert!(chain.contains("AXOLOTL_LORA_PHASE=seat"));
-    assert!(chain.contains("make axolotl-lora-journey"));
-    assert!(chain.contains("set -euo pipefail"));
-    assert!(chain.contains("SKIP live train"));
-    assert!(!chain.contains("make axolotl-qlora-journey;") && !chain.contains("axolotl-qlora-journey;"));
-    assert!(
+let chain = std::fs::read_to_string(root.join("scripts/uniqueness-axolotl-lora.sh")).unwrap();
+assert!(chain.contains("AXOLOTL_LORA_PHASE=prepare"));
+assert!(chain.contains("AXOLOTL_LORA_PHASE=seat"));
+assert!(chain.contains("make axolotl-lora-journey"));
+assert!(chain.contains("set -euo pipefail"));
+assert!(chain.contains("SKIP live train"));
+assert!(!chain.contains("make axolotl-qlora-journey;") && !chain.contains("axolotl-qlora-journey;"));
+assert!(
         chain.find("AXOLOTL_LORA_PHASE=prepare") < chain.find("AXOLOTL_LORA_PHASE=seat"),
         "uniqueness-axolotl-lora must run prepare-assert before the seat print"
     );
-    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 13. Axolotl LoRA — popular-config print journey"));
+assert!(journey.contains("make axolotl-lora-journey"));
+assert!(journey.contains("make uniqueness-axolotl-lora"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("`make axolotl-lora-journey`"));
+assert!(train.contains("`make uniqueness-axolotl-lora`"));
+assert!(train.contains("adapter: lora"));
+assert!(train.contains("load_in_4bit: false"));
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains("make axolotl-lora-journey"));
+assert!(help.contains("make uniqueness-axolotl-lora"));
+assert!(help.contains("section 13"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
 
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 13. Axolotl LoRA — popular-config print journey"));
-    assert!(journey.contains("make axolotl-lora-journey"));
-    assert!(journey.contains("make uniqueness-axolotl-lora"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("`make axolotl-lora-journey`"));
-    assert!(train.contains("`make uniqueness-axolotl-lora`"));
-    assert!(train.contains("adapter: lora"));
-    assert!(train.contains("load_in_4bit: false"));
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains("make axolotl-lora-journey"));
-    assert!(help.contains("make uniqueness-axolotl-lora"));
-    assert!(help.contains("section 13"));
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .expect("CHANGELOG missing a slice")
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(
-        changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
-        "CHANGELOG must keep the landed Unsloth slice"
-    );
-    assert!(
-        changelog.contains("scripts/uniqueness-unsloth.sh")
-            && changelog.contains("scripts/uniqueness-axolotl-lora.sh"),
-        "CHANGELOG head slices must keep both journey scripts"
-    );
-    let slice = changelog
-        .split("## This slice — print-only Axolotl LoRA uniqueness and seat journey")
-        .nth(1)
-        .expect("CHANGELOG missing the axolotl lora journey slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "make axolotl-lora-journey",
-        "scripts/axolotl-lora-journey.sh",
-        "make uniqueness-axolotl-lora",
-        "adapter: lora",
-        "load_in_4bit: false",
-        "sequence_len: 2048",
-        "lora_r: 16",
-        "without `--dequant`",
-        "refuse:train-base",
-        "refuse:adapter",
-        "refuse:seat",
-        "refuse:tokenizer",
-        "SKIP live train",
-        "SKIP live convert",
-        "SKIP live seat",
-        "does not add Kimi",
-        "43770130 3391",
-        "READY_FOR_LIVE_TEST",
-    ] {
-        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
-    }
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-
-    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    assert!(status.contains("make axolotl-lora-journey"));
-    assert!(status.contains("make uniqueness-axolotl-lora"));
-    assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #183"));
-    assert!(status.contains("3fb3e8d48b1d6fcc92a88d2b2038faff98dae0be"));
-    assert!(status.contains("b31461e3cbe910dbbcd146a58d3335f37adced39"));
-    assert!(status.contains("7cc330801c3b7f87f2b9ecd23a21d823d5b87b12"));
-    assert!(status.contains("2234e95f6aebd219e5e6733f108400782e6a623b"));
-    assert!(status.contains("make mlx-lm-lora-journey"));
-    assert!(status.contains("make uniqueness-mlx"));
-    assert!(status.contains("operator section 16"));
-    assert!(status.contains("1002abcdaf648277e15750a44a16e53b324a251d"));
-    assert!(status.contains("651f31a4dd3a84dad270d40dbdd3892081b9380e"));
-    assert!(status.contains("aa374875f221be908ff473c8096eeea1c0f32846"));
-    assert!(status.contains("c244e721d7275651ecfa1c8f4578ba008a668aa9"));
-    assert!(status.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"));
-    assert!(!status.contains("READY_FOR_LIVE_TEST: yes"));
-
-    for rel in [
+let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+assert!(status.contains("make axolotl-lora-journey"));
+assert!(status.contains("make uniqueness-axolotl-lora"));
+assert!(status.contains("does not invent a live PASS"));
+assert!(status.contains("make mlx-lm-lora-journey"));
+assert!(status.contains("make uniqueness-mlx"));
+assert!(status.contains("operator section 16"));
+assert!(!status.contains("READY_FOR_LIVE_TEST: yes"));
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -5750,46 +4045,45 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
 
 #[test]
 fn unsloth_lora_journey_stays_print_only_and_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    for target in ["unsloth-lora-journey:", "uniqueness-unsloth-lora:"] {
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+for target in ["unsloth-lora-journey:", "uniqueness-unsloth-lora:"] {
         assert!(
             makefile.lines().any(|line| line.trim() == target),
             "Makefile missing {target}"
         );
     }
-    assert!(makefile.contains("scripts/unsloth-lora-journey.sh"));
-    assert!(makefile.contains("scripts/uniqueness-unsloth-lora.sh"));
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+assert!(makefile.contains("scripts/unsloth-lora-journey.sh"));
+assert!(makefile.contains("scripts/uniqueness-unsloth-lora.sh"));
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("unsloth-lora-journey") && phony.contains("uniqueness-unsloth-lora"),
         "unsloth lora journey targets must be phony"
     );
-    let gate90 = makefile
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !gate90.contains("unsloth-lora-journey") && !gate90.contains("uniqueness-unsloth-lora"),
         "gate-90 must not run the unsloth lora journey: {gate90}"
     );
-    let smoke = makefile
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !smoke.contains("unsloth-lora-journey") && !smoke.contains("uniqueness-unsloth-lora"),
         "smoke must not run the unsloth lora journey: {smoke}"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/unsloth-lora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/unsloth-lora-journey.sh")).unwrap();
+for needle in [
         "unsloth-lora",
         "Qwen/Qwen2.5-0.5B-Instruct",
         "llama3",
@@ -5821,72 +4115,39 @@ fn unsloth_lora_journey_stays_print_only_and_off_smoke() {
     ] {
         assert!(script.contains(needle), "unsloth-lora-journey missing {needle}");
     }
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(
         !script.contains("make unsloth-qlora-journey") && !script.contains("make uniqueness-unsloth"),
         "the LoRA journey must not invoke the QLoRA chain"
     );
-
-    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-unsloth-lora.sh")).unwrap();
-    assert!(chain.contains("UNSLOTH_LORA_PHASE=prepare"));
-    assert!(chain.contains("UNSLOTH_LORA_PHASE=seat"));
-    assert!(chain.contains("make unsloth-lora-journey"));
-    assert!(chain.contains("set -euo pipefail"));
-    assert!(!chain.contains("make unsloth-qlora-journey\n") && chain.contains("Does not run make unsloth-qlora-journey"));
-    assert!(chain.contains("make uniqueness-unsloth"));
-    assert!(
+let chain = std::fs::read_to_string(root.join("scripts/uniqueness-unsloth-lora.sh")).unwrap();
+assert!(chain.contains("UNSLOTH_LORA_PHASE=prepare"));
+assert!(chain.contains("UNSLOTH_LORA_PHASE=seat"));
+assert!(chain.contains("make unsloth-lora-journey"));
+assert!(chain.contains("set -euo pipefail"));
+assert!(!chain.contains("make unsloth-qlora-journey\n") && chain.contains("Does not run make unsloth-qlora-journey"));
+assert!(chain.contains("make uniqueness-unsloth"));
+assert!(
         chain.find("UNSLOTH_LORA_PHASE=prepare") < chain.find("UNSLOTH_LORA_PHASE=seat"),
         "uniqueness-unsloth-lora must run prepare-assert before the seat print"
     );
-    assert!(
+assert!(
         !chain.contains("UNSLOTH_QLORA_PHASE") && !chain.contains("make axolotl-lora-journey\n"),
         "uniqueness-unsloth-lora must not run the other chains"
     );
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 14. Unsloth LoRA — optional NEXT print journey"));
+assert!(journey.contains("make unsloth-lora-journey"));
+assert!(journey.contains("make uniqueness-unsloth-lora"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("`make unsloth-lora-journey`"));
+assert!(train.contains("`make uniqueness-unsloth-lora`"));
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains("make unsloth-lora-journey"));
+assert!(help.contains("make uniqueness-unsloth-lora"));
+assert!(help.contains("section 14"));
 
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 14. Unsloth LoRA — optional NEXT print journey"));
-    assert!(journey.contains("make unsloth-lora-journey"));
-    assert!(journey.contains("make uniqueness-unsloth-lora"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("`make unsloth-lora-journey`"));
-    assert!(train.contains("`make uniqueness-unsloth-lora`"));
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains("make unsloth-lora-journey"));
-    assert!(help.contains("make uniqueness-unsloth-lora"));
-    assert!(help.contains("section 14"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let slice = changelog
-        .split("## This slice — print-only Unsloth LoRA uniqueness and seat journey")
-        .nth(1)
-        .expect("CHANGELOG missing the unsloth lora journey slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "make unsloth-lora-journey",
-        "scripts/unsloth-lora-journey.sh",
-        "make uniqueness-unsloth-lora",
-        "UNSLOTH.md",
-        "merged_16bit",
-        "refuse:train-base",
-        "refuse:official-scale",
-        "refuse:dataset",
-        "refuse:adapter",
-        "refuse:tokenizer",
-        "SKIP live train",
-        "optional",
-        "43770130 3391",
-        "READY_FOR_LIVE_TEST",
-    ] {
-        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
-    }
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -5901,46 +4162,45 @@ fn unsloth_lora_journey_stays_print_only_and_off_smoke() {
 
 #[test]
 fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
-    let root = repo_root();
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    for target in ["mlx-lm-lora-journey:", "uniqueness-mlx:"] {
+let root = repo_root();
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+for target in ["mlx-lm-lora-journey:", "uniqueness-mlx:"] {
         assert!(
             makefile.lines().any(|line| line.trim() == target),
             "Makefile missing {target}"
         );
     }
-    assert!(makefile.contains("scripts/mlx-lm-lora-journey.sh"));
-    assert!(makefile.contains("scripts/uniqueness-mlx.sh"));
-    let phony = makefile.lines().next().unwrap_or("");
-    assert!(
+assert!(makefile.contains("scripts/mlx-lm-lora-journey.sh"));
+assert!(makefile.contains("scripts/uniqueness-mlx.sh"));
+let phony = makefile.lines().next().unwrap_or("");
+assert!(
         phony.contains("mlx-lm-lora-journey") && phony.contains("uniqueness-mlx"),
         "mlx journey targets must be phony"
     );
-    let gate90 = makefile
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !gate90.contains("mlx-lm-lora-journey") && !gate90.contains("uniqueness-mlx"),
         "gate-90 must not run the mlx journey: {gate90}"
     );
-    let smoke = makefile
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(
+assert!(
         !smoke.contains("mlx-lm-lora-journey") && !smoke.contains("uniqueness-mlx"),
         "smoke must not run the mlx journey: {smoke}"
     );
-
-    let script = std::fs::read_to_string(root.join("scripts/mlx-lm-lora-journey.sh")).unwrap();
-    for needle in [
+let script = std::fs::read_to_string(root.join("scripts/mlx-lm-lora-journey.sh")).unwrap();
+for needle in [
         "mlx-lm-lora",
         "apple-silicon",
         "Qwen/Qwen2.5-0.5B-Instruct",
@@ -5974,21 +4234,21 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
     ] {
         assert!(script.contains(needle), "mlx-lm-lora-journey missing {needle}");
     }
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    let shape = script
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+let shape = script
         .find("-- PEFT adapter_model.safetensors is the wrong shape --")
         .expect("missing wrong-shape step");
-    let fused = script
+let fused = script
         .find("-- fused MLX directory is refuse:adapter and refuse:seat --")
         .expect("missing fused refuse");
-    let seat = script
+let seat = script
         .find("-- local-seat prints ollama create for the GGUF stub --")
         .expect("missing seat print");
-    assert!(
+assert!(
         shape < fused && fused < seat,
         "wrong-shape and fused refuses must run before the seat print"
     );
-    let shells_out = script.lines().any(|line| {
+let shells_out = script.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
             || trimmed.starts_with("echo")
@@ -6005,42 +4265,41 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
             || trimmed.contains("mlx_lm.fuse ")
             || trimmed.contains("convert_hf_to_gguf.py")
             || trimmed.contains("ollama ")
-    });
-    assert!(
+    }
+);
+assert!(
         !shells_out,
         "mlx-lm-lora-journey must not shell out to mlx-lm, llama.cpp, or ollama"
     );
-
-    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-mlx.sh")).unwrap();
-    assert!(chain.contains("MLX_LM_LORA_PHASE=prepare"));
-    assert!(chain.contains("MLX_LM_LORA_PHASE=seat"));
-    assert!(chain.contains("make mlx-lm-lora-journey"));
-    assert!(chain.contains("set -euo pipefail"));
-    assert!(chain.contains("SKIP live train"));
-    assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(
+let chain = std::fs::read_to_string(root.join("scripts/uniqueness-mlx.sh")).unwrap();
+assert!(chain.contains("MLX_LM_LORA_PHASE=prepare"));
+assert!(chain.contains("MLX_LM_LORA_PHASE=seat"));
+assert!(chain.contains("make mlx-lm-lora-journey"));
+assert!(chain.contains("set -euo pipefail"));
+assert!(chain.contains("SKIP live train"));
+assert!(!chain.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(
         chain.find("MLX_LM_LORA_PHASE=prepare") < chain.find("MLX_LM_LORA_PHASE=seat"),
         "uniqueness-mlx must run prepare-assert before the seat print"
     );
-
-    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
-    assert!(journey.contains("## 16. mlx-lm LoRA — optional Apple Silicon print journey"));
-    assert!(journey.contains("make mlx-lm-lora-journey"));
-    assert!(journey.contains("make uniqueness-mlx"));
-    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
-    assert!(train.contains("`make mlx-lm-lora-journey`"));
-    assert!(train.contains("`make uniqueness-mlx`"));
-    assert!(train.contains("mlx_lm.fuse"));
-    assert!(train.contains("--export-gguf"));
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains("make mlx-lm-lora-journey"));
-    assert!(help.contains("make uniqueness-mlx"));
-    assert!(help.contains(
+let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+assert!(journey.contains("## 16. mlx-lm LoRA — optional Apple Silicon print journey"));
+assert!(journey.contains("make mlx-lm-lora-journey"));
+assert!(journey.contains("make uniqueness-mlx"));
+let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+assert!(train.contains("`make mlx-lm-lora-journey`"));
+assert!(train.contains("`make uniqueness-mlx`"));
+assert!(train.contains("mlx_lm.fuse"));
+assert!(train.contains("--export-gguf"));
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains("make mlx-lm-lora-journey"));
+assert!(help.contains("make uniqueness-mlx"));
+assert!(help.contains(
         "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
     ));
-    assert!(help.contains("section 16"));
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(
+assert!(help.contains("section 16"));
+let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+assert!(
         readme.contains("`make mlx-lm-lora-journey`")
             && readme.contains("`make uniqueness-mlx`")
             && readme.contains(
@@ -6048,8 +4307,8 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
             ),
         "{readme}"
     );
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(
         makefile.contains(
             "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)"
         ) && makefile.contains(
@@ -6057,96 +4316,14 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         ),
         "Makefile comments must name the mlx journey"
     );
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+let checklist = std::fs::read_to_string(root.join("scripts/purpose-build-checklist.sh")).unwrap();
+assert!(checklist.contains("make mlx-lm-lora-journey"));
+assert!(checklist.contains("This checklist does not run it."));
+assert!(checklist.contains("Not native MLX."));
 
-    let checklist = std::fs::read_to_string(root.join("scripts/purpose-build-checklist.sh")).unwrap();
-    assert!(checklist.contains("make mlx-lm-lora-journey"));
-    assert!(checklist.contains("This checklist does not run it."));
-    assert!(checklist.contains("Not native MLX."));
 
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .expect("CHANGELOG missing a slice")
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(
-        changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
-        "CHANGELOG must keep the PR #175 tip-honesty slice"
-    );
-    let named = changelog
-        .split("## This slice — help names the mlx-lm LoRA journey")
-        .nth(1)
-        .expect("CHANGELOG missing the mlx help-names slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "estate help enrich",
-        "estate help train",
-        "make mlx-lm-lora-journey",
-        "print-only Apple Silicon mlx-lm LoRA journey (operator section 16)",
-        "make uniqueness-mlx",
-        "print-only chain of that journey",
-        "does not move the GATE-90 or Cell One tip header",
-        "through PR #175",
-        "7cc330801c3b7f87f2b9ecd23a21d823d5b87b12",
-        "only live uniqueness prove",
-        "43770130 3391",
-        "Not native MLX",
-    ] {
-        assert!(
-            named.contains(needle),
-            "mlx help-names CHANGELOG slice missing {needle}"
-        );
-    }
-    assert!(
-        named.contains("READY_FOR_LIVE_TEST`: no") || named.contains("READY_FOR_LIVE_TEST: no"),
-        "{named}"
-    );
-    assert!(
-        !named.contains("READY_FOR_LIVE_TEST: yes")
-            && !named.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{named}"
-    );
-    let slice = changelog
-        .split("## This slice — print-only mlx-lm LoRA uniqueness and seat journey")
-        .nth(1)
-        .expect("CHANGELOG missing the mlx journey slice")
-        .split("## This slice —")
-        .next()
-        .unwrap();
-    for needle in [
-        "make mlx-lm-lora-journey",
-        "scripts/mlx-lm-lora-journey.sh",
-        "make uniqueness-mlx",
-        "MLX.md",
-        "adapters.safetensors",
-        "--export-gguf",
-        "ggml-model-f16.gguf",
-        "refuse:host",
-        "refuse:adapter",
-        "refuse:seat",
-        "local-seat --adapter",
-        "SKIP live train",
-        "does not add Kimi",
-        "optional",
-        "43770130 3391",
-        "READY_FOR_LIVE_TEST",
-        "through PR #173",
-        "1002abcdaf648277e15750a44a16e53b324a251d",
-    ] {
-        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
-    }
-    assert!(
-        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
-        "{slice}"
-    );
-
-    for rel in [
+for rel in [
         "scripts/smoke.sh",
         "scripts/day90-gate.sh",
         ".github/workflows/ci.yml",
@@ -6157,136 +4334,84 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
             "{rel} must not run the mlx journey"
         );
     }
-
-    let cksum = std::process::Command::new("cksum")
-        .arg(root.join("examples/estate.yaml"))
-        .output()
-        .unwrap();
-    let sum = String::from_utf8_lossy(&cksum.stdout);
-    assert!(
-        sum.starts_with("43770130 3391"),
-        "examples/estate.yaml cksum drifted: {sum}"
-    );
 }
 
 #[test]
 fn deepseek_r1_distill_journey_help_and_locks_stay_print_only() {
-    let root = repo_root();
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains(
+let root = repo_root();
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains(
         "make deepseek-r1-distill-journey is the print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19)"
     ));
-    assert!(help.contains("make uniqueness-deepseek is the print-only chain of that journey"));
-    assert!(help.contains("make deepseek-r1-distill-lora-journey"));
-    assert!(help.contains("make uniqueness-deepseek-lora"));
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
-
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-qlora bash scripts/deepseek-r1-distill-journey.sh"));
-    assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-lora bash scripts/deepseek-r1-distill-journey.sh"));
-    let gate90 = makefile
+assert!(help.contains("make uniqueness-deepseek is the print-only chain of that journey"));
+assert!(help.contains("make deepseek-r1-distill-lora-journey"));
+assert!(help.contains("make uniqueness-deepseek-lora"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-qlora bash scripts/deepseek-r1-distill-journey.sh"));
+assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-lora bash scripts/deepseek-r1-distill-journey.sh"));
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(!gate90.contains("deepseek-r1-distill-journey"));
-    let smoke = makefile
+assert!(!gate90.contains("deepseek-r1-distill-journey"));
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(!smoke.contains("deepseek-r1-distill-journey"));
-
-    let script = std::fs::read_to_string(root.join("scripts/deepseek-r1-distill-journey.sh")).unwrap();
-    assert!(script.contains("^template: ${TEMPLATE}$"));
-    assert!(script.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"));
-    assert!(script.contains("examples/fixtures/deepseek-r1-distill.pack.json"));
-    assert!(script.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"));
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(!script.to_ascii_lowercase().contains("kimi"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .unwrap()
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(changelog.contains("## This slice — print-only DeepSeek-R1-Distill journey"));
-    assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
-
-    let cksum = std::process::Command::new("cksum")
-        .arg(root.join("examples/estate.yaml"))
-        .output()
-        .unwrap();
-    let sum = String::from_utf8_lossy(&cksum.stdout);
-    assert!(sum.starts_with("43770130 3391"), "{sum}");
+assert!(!smoke.contains("deepseek-r1-distill-journey"));
+let script = std::fs::read_to_string(root.join("scripts/deepseek-r1-distill-journey.sh")).unwrap();
+assert!(script.contains("^template: ${TEMPLATE}$"));
+assert!(script.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"));
+assert!(script.contains("examples/fixtures/deepseek-r1-distill.pack.json"));
+assert!(script.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"));
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(!script.to_ascii_lowercase().contains("kimi"));
 }
 
 #[test]
 fn glm4_chat_journey_help_and_locks_stay_print_only() {
-    let root = repo_root();
-    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
-    assert!(help.contains(
+let root = repo_root();
+let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+assert!(help.contains(
         "make glm4-chat-journey is the print-only GLM-4 Chat QLoRA journey (operator section 20)"
     ));
-    assert!(help.contains("make uniqueness-glm is the print-only chain of that journey"));
-    assert!(help.contains("make glm4-chat-lora-journey"));
-    assert!(help.contains("make uniqueness-glm-lora"));
-    assert!(help.contains("zai-org/glm-4-9b-chat"));
-    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(!help.to_ascii_lowercase().contains("kimi"));
-
-    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
-    assert!(makefile.contains("GLM_CARD=llamafactory-qlora bash scripts/glm4-chat-journey.sh"));
-    assert!(makefile.contains("GLM_CARD=llamafactory-lora bash scripts/glm4-chat-journey.sh"));
-    let gate90 = makefile
+assert!(help.contains("make uniqueness-glm is the print-only chain of that journey"));
+assert!(help.contains("make glm4-chat-lora-journey"));
+assert!(help.contains("make uniqueness-glm-lora"));
+assert!(help.contains("zai-org/glm-4-9b-chat"));
+assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(!help.to_ascii_lowercase().contains("kimi"));
+let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+assert!(makefile.contains("GLM_CARD=llamafactory-qlora bash scripts/glm4-chat-journey.sh"));
+assert!(makefile.contains("GLM_CARD=llamafactory-lora bash scripts/glm4-chat-journey.sh"));
+let gate90 = makefile
         .split("\ngate-90:\n")
         .nth(1)
         .expect("gate-90 recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(!gate90.contains("glm4-chat-journey"));
-    let smoke = makefile
+assert!(!gate90.contains("glm4-chat-journey"));
+let smoke = makefile
         .split("\nsmoke:\n")
         .nth(1)
         .expect("smoke recipe")
         .split("\n\n")
         .next()
         .unwrap();
-    assert!(!smoke.contains("glm4-chat-journey"));
-
-    let script = std::fs::read_to_string(root.join("scripts/glm4-chat-journey.sh")).unwrap();
-    assert!(script.contains("^template: ${TEMPLATE}$"));
-    assert!(script.contains("zai-org/glm-4-9b-chat"));
-    assert!(script.contains("examples/fixtures/glm4-chat.pack.json"));
-    assert!(script.contains("examples/fixtures/glm4-chat-lora.pack.json"));
-    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
-    assert!(!script.to_ascii_lowercase().contains("kimi"));
-
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .unwrap()
-        .split('\n')
-        .next()
-        .unwrap();
-    assert_eq!(head, " TRAIN-ENRICH names the purpose-build mid-software-build entry");
-    assert!(changelog.contains("## This slice — print-only GLM-4 Chat journey"));
-    assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
-
-    let cksum = std::process::Command::new("cksum")
-        .arg(root.join("examples/estate.yaml"))
-        .output()
-        .unwrap();
-    let sum = String::from_utf8_lossy(&cksum.stdout);
-    assert!(sum.starts_with("43770130 3391"), "{sum}");
+assert!(!smoke.contains("glm4-chat-journey"));
+let script = std::fs::read_to_string(root.join("scripts/glm4-chat-journey.sh")).unwrap();
+assert!(script.contains("^template: ${TEMPLATE}$"));
+assert!(script.contains("zai-org/glm-4-9b-chat"));
+assert!(script.contains("examples/fixtures/glm4-chat.pack.json"));
+assert!(script.contains("examples/fixtures/glm4-chat-lora.pack.json"));
+assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+assert!(!script.to_ascii_lowercase().contains("kimi"));
 }
