@@ -610,7 +610,7 @@ fn lf_beachhead_prepare_walks_the_matrix_inventory() {
 }
 
 #[test]
-fn cell_one_status_tip_names_pr_157() {
+fn cell_one_status_tip_names_pr_161() {
     let root = repo_root();
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
     assert!(
@@ -619,7 +619,7 @@ fn cell_one_status_tip_names_pr_157() {
     );
     assert!(
         !status.contains("what is on `main` through PR #140"),
-        "status snapshot must name tip through PR #157"
+        "status snapshot must name tip through PR #161"
     );
     assert!(
         !status.contains("what is on `main` through PR #143"),
@@ -647,12 +647,12 @@ fn cell_one_status_tip_names_pr_157() {
     );
     assert!(
         !status.contains("on tip through PR #142"),
-        "prepare walk stays PR #142; tip is PR #157"
+        "prepare walk stays PR #142; tip is PR #161"
     );
-    let head: String = status.lines().take(20).collect::<Vec<_>>().join("\n");
+    let head: String = status.lines().take(26).collect::<Vec<_>>().join("\n");
     assert!(
-        head.contains("through PR #157"),
-        "status header must name tip through PR #157: {head}"
+        head.contains("through PR #161"),
+        "status header must name tip through PR #161: {head}"
     );
     assert!(
         !head.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
@@ -687,8 +687,29 @@ fn cell_one_status_tip_names_pr_157() {
         "status header must not freeze tip at PR #143: {head}"
     );
     assert!(
+        head.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"),
+        "status header must name the PR #161 tip SHA: {head}"
+    );
+    assert!(
         head.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
-        "status header must name the PR #157 tip SHA: {head}"
+        "status header must keep the PR #157 standing-next SHA: {head}"
+    );
+    assert!(
+        !head.contains("what is on `main` through PR #157"),
+        "status header must not freeze the snapshot at PR #157: {head}"
+    );
+    assert!(
+        head.contains("make uniqueness-full-lora")
+            && head.contains("9bc8db52ee157bc7c50261362c7790d4248ed4b4")
+            && head.contains("make axolotl-qlora-journey")
+            && head.contains("make uniqueness-axolotl")
+            && head.contains("1b06ea067f7cec44649fbc3aba6650dc0ad6b0f9")
+            && head.contains("make unsloth-qlora-journey")
+            && head.contains("operator section 12")
+            && head.contains("e60d201af8c852e7b54eda7e2e37deb52428e38a")
+            && head.contains("make axolotl-lora-journey")
+            && head.contains("operator section 13"),
+        "status header must name the post-#157 print-only journeys: {head}"
     );
     assert!(
         head.contains("cbecb0b554a655a5276e0c75b8fdc59d55c77f76"),
@@ -1087,6 +1108,44 @@ fn cell_one_status_tip_names_pr_157() {
         !tip157.contains("through PR #155 (`cbecb0b554a655a5276e0c75b8fdc59d55c77f76`)"),
         "tip slice must not freeze at the PR #155 tip SHA: {tip157}"
     );
+
+    let tip161 = changelog
+        .split("## This slice — GATE-90 and Cell One tip honesty through PR #161")
+        .nth(1)
+        .expect("CHANGELOG missing the PR #161 tip-honesty slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    assert!(
+        tip161.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"),
+        "{tip161}"
+    );
+    assert!(
+        tip161.contains("6a43ff12a91295739c5a9c8a8f1dc9cc9c084466"),
+        "{tip161}"
+    );
+    assert!(tip161.contains("via PR #143"), "{tip161}");
+    assert!(tip161.contains("PR #159"), "{tip161}");
+    assert!(tip161.contains("PR #160"), "{tip161}");
+    assert!(tip161.contains("PR #161"), "{tip161}");
+    assert!(tip161.contains("PR #162"), "{tip161}");
+    assert!(tip161.contains("operator section 12"), "{tip161}");
+    assert!(tip161.contains("operator section 13"), "{tip161}");
+    assert!(tip161.contains("make lf-beachhead-prepare"), "{tip161}");
+    assert!(
+        tip161.contains("does not invent a new live PASS"),
+        "{tip161}"
+    );
+    assert!(
+        tip161.contains("READY_FOR_LIVE_TEST`: no") || tip161.contains("READY_FOR_LIVE_TEST: no"),
+        "{tip161}"
+    );
+    assert!(
+        !tip161.contains("READY_FOR_LIVE_TEST: yes")
+            && !tip161.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{tip161}"
+    );
+    assert!(!tip161.to_ascii_lowercase().contains("kimi/"), "{tip161}");
 }
 
 fn beachhead_matrix_rows(matrix: &str) -> Vec<Vec<String>> {
@@ -4250,7 +4309,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4471,7 +4530,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4691,7 +4750,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " print-only Axolotl LoRA uniqueness and seat journey");
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4739,7 +4798,8 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
     assert!(status.contains("make axolotl-lora-journey"));
     assert!(status.contains("make uniqueness-axolotl-lora"));
     assert!(status.contains("does not invent a live PASS"));
-    assert!(status.contains("through PR #157"));
+    assert!(status.contains("through PR #161"));
+    assert!(status.contains("0cc8b9e5bf2423d90f54f222a182804b3b337d94"));
     assert!(!status.contains("READY_FOR_LIVE_TEST: yes"));
 
     for rel in [
