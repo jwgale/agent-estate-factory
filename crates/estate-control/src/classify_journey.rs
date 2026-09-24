@@ -4,7 +4,10 @@
 //! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
 //! `--base-tag` is an opt-in library tag and skips that base build.
 
-use crate::classify::{cmd_classify_eval, cmd_classify_prepare, DatasetFormat, EvalApi, EvalGate};
+use crate::classify::{
+    cmd_classify_eval, cmd_classify_prepare, cmd_classify_prepare_presplit, newcombe_delta_ci95,
+    wilson_ci95, DatasetFormat, EvalApi, EvalGate,
+};
 use anyhow::{bail, Result};
 use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
@@ -794,8 +797,31 @@ fn ollama_inputs(
     ))
 }
 
+fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<String> {
+    let dataset = req
+        .import_dataset
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: dataset is unset"))?;
+    let preset = crate::classify_import::preset_by_name(dataset)?;
+    let import_dir = crate::classify_import::default_import_dir(preset.alias);
+    let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
+    let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
+    let _ = paths;
+    Ok(crate::classify_import::import_fingerprint(
+        preset.hf_id,
+        req.train_size,
+        req.heldout_size,
+        req.seed,
+        &train_hash,
+        &held_hash,
+    ))
+}
+
 fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs> {
-    let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+    let prepare = if req.import_dataset.is_some() {
+        dataset_prepare_key(req, paths)?
+    } else {
+        prepare_inputs(req.input, req.seed, req.held_out_ratio)?
+    };
     let resolved = resolved_base_dir(req.base, paths).display().to_string();
     let pipeline = pipeline_inputs(
         &resolved,
@@ -1444,6 +1470,7 @@ fn plan_with(ctx: &PlanCtx<'_>) -> Vec<StepPlan> {
 #[derive(Clone, Debug)]
 pub struct SideScore {
     pub accuracy: f64,
+    pub correct: u64,
     pub invalid: u64,
     pub records: u64,
     pub p50: f64,
@@ -1473,8 +1500,12 @@ pub fn side_score(report: &Value) -> Result<SideScore> {
         .get("thinking_leak")
         .and_then(Value::as_u64)
         .unwrap_or(0);
+    let correct = report.get("correct").and_then(Value::as_u64).unwrap_or_else(|| {
+        (accuracy * records as f64).round() as u64
+    });
     Ok(SideScore {
         accuracy,
+        correct,
         invalid,
         records,
         p50,
@@ -1488,6 +1519,10 @@ pub struct Comparison {
     pub base_accuracy: f64,
     pub specialist_accuracy: f64,
     pub delta: f64,
+    pub base_correct: u64,
+    pub specialist_correct: u64,
+    pub base_records: u64,
+    pub specialist_records: u64,
     pub base_invalid_rate: f64,
     pub specialist_invalid_rate: f64,
     pub base_p50: f64,
@@ -1503,6 +1538,10 @@ pub fn compare_sides(base: &SideScore, specialist: &SideScore) -> Comparison {
         base_accuracy: base.accuracy,
         specialist_accuracy: specialist.accuracy,
         delta: specialist.accuracy - base.accuracy,
+        base_correct: base.correct,
+        specialist_correct: specialist.correct,
+        base_records: base.records,
+        specialist_records: specialist.records,
         base_invalid_rate: rate(base.invalid, base.records),
         specialist_invalid_rate: rate(specialist.invalid, specialist.records),
         base_p50: base.p50,
@@ -1568,6 +1607,43 @@ pub struct JourneyRequest<'a> {
     pub seat: SeatChat,
     pub llama_note: &'a str,
     pub preset: JourneyPreset,
+    /// `ag_news` (or a Hub id) replaces the built-in fixture. Import already made the held-out split.
+    pub import_dataset: Option<&'a str>,
+    pub train_size: &'a str,
+    pub heldout_size: &'a str,
+}
+
+pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
+
+/// Suffix the default tag and journey directory so 3k / 10k / 30k runs coexist.
+/// An explicit tag or `--out` is kept.
+pub fn apply_dataset_layout(
+    dataset: &str,
+    train_size: &str,
+    applied_tag: &str,
+    requested_tag: &str,
+    out: &Path,
+    dataset_name: &str,
+) -> Result<(String, PathBuf, String)> {
+    let preset = crate::classify_import::preset_by_name(dataset)?;
+    let size = crate::classify_import::parse_split_size(train_size)?;
+    let suffix = crate::classify_import::tag_suffix(preset, &size);
+    let tag = if requested_tag == DEFAULT_TAG {
+        format!("{applied_tag}{suffix}")
+    } else {
+        applied_tag.to_string()
+    };
+    let out = if out == Path::new(DEFAULT_JOURNEY_OUT) {
+        PathBuf::from(format!("{DEFAULT_JOURNEY_OUT}{suffix}"))
+    } else {
+        out.to_path_buf()
+    };
+    let dataset_name = if dataset_name == DEFAULT_DATASET {
+        preset.alias.to_string()
+    } else {
+        dataset_name.to_string()
+    };
+    Ok((tag, out, dataset_name))
 }
 
 fn library_tag(base_tag: Option<&str>) -> Option<&str> {
@@ -1716,6 +1792,12 @@ fn print_plan(
         println!("downloader: {}", hf_bin_label());
     }
     println!("out: {}", paths.out.display());
+    if let Some(dataset) = req.import_dataset {
+        println!(
+            "dataset: {dataset} train_size: {} heldout_size: {} seed: {} option_order: fixed no-second-split",
+            req.train_size, req.heldout_size, req.seed
+        );
+    }
     for step in steps {
         let word = match step.action {
             StepAction::Run => "run",
@@ -1768,17 +1850,46 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
         }
         match step.name {
             "prepare" => {
-                cmd_classify_prepare(
-                    req.input,
-                    &paths.out,
-                    req.seed,
-                    req.held_out_ratio,
-                    DatasetFormat::Sharegpt,
-                    req.dataset_name,
-                    false,
-                    req.force || ran_prepare || paths.dataset_jsonl.is_file(),
-                )?;
-                let prepare = prepare_inputs(req.input, req.seed, req.held_out_ratio)?;
+                if let Some(dataset) = req.import_dataset {
+                    let preset = crate::classify_import::preset_by_name(dataset)?;
+                    let import_dir = crate::classify_import::default_import_dir(preset.alias);
+                    crate::classify_import::cmd_classify_import(
+                        &crate::classify_import::ImportRequest {
+                            dataset: preset.alias,
+                            train_size: req.train_size,
+                            heldout_size: req.heldout_size,
+                            seed: req.seed,
+                            out: &import_dir,
+                            force: req.force,
+                            native_train: None,
+                            native_test: None,
+                        },
+                    )?;
+                    cmd_classify_prepare_presplit(
+                        &import_dir.join("train.jsonl"),
+                        &import_dir.join("heldout.jsonl"),
+                        &paths.out,
+                        DatasetFormat::Sharegpt,
+                        req.dataset_name,
+                        req.force || ran_prepare || paths.dataset_jsonl.is_file(),
+                    )?;
+                } else {
+                    cmd_classify_prepare(
+                        req.input,
+                        &paths.out,
+                        req.seed,
+                        req.held_out_ratio,
+                        DatasetFormat::Sharegpt,
+                        req.dataset_name,
+                        false,
+                        req.force || ran_prepare || paths.dataset_jsonl.is_file(),
+                    )?;
+                }
+                let prepare = if req.import_dataset.is_some() {
+                    dataset_prepare_key(req, paths)?
+                } else {
+                    prepare_inputs(req.input, req.seed, req.held_out_ratio)?
+                };
                 write_manifest(&paths.manifest_path("prepare"), &prepare, None)?;
                 ran_prepare = true;
             }
@@ -2082,6 +2193,7 @@ fn seat_gguf(
         bail!("refuse:classify-journey: ollama show {tag} failed after create");
     }
     probe_ollama_load(req.endpoint, tag, &gguf_abs, req.timeout_secs)?;
+    println!("load probe ok {tag}");
     write_step_manifest(req, paths, step, Some(&gguf_sha))?;
     Ok(())
 }
@@ -2214,6 +2326,25 @@ fn write_recipe(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<()> {
     Ok(())
 }
 
+fn ci_field(interval: Option<(f64, f64)>) -> Value {
+    match interval {
+        Some((low, high)) => json!({"low": low, "high": high, "method": "wilson"}),
+        None => Value::Null,
+    }
+}
+
+fn delta_ci_field(comparison: &Comparison) -> Value {
+    match newcombe_delta_ci95(
+        comparison.base_correct,
+        comparison.base_records,
+        comparison.specialist_correct,
+        comparison.specialist_records,
+    ) {
+        Some((_, low, high)) => json!({"low": low, "high": high, "method": "newcombe-wilson"}),
+        None => Value::Null,
+    }
+}
+
 fn write_comparison(
     req: &JourneyRequest<'_>,
     paths: &JourneyPaths,
@@ -2252,6 +2383,9 @@ fn write_comparison(
         "base_accuracy": comparison.base_accuracy,
         "specialist_accuracy": comparison.specialist_accuracy,
         "delta": comparison.delta,
+        "base_accuracy_ci95": ci_field(wilson_ci95(comparison.base_correct, comparison.base_records)),
+        "specialist_accuracy_ci95": ci_field(wilson_ci95(comparison.specialist_correct, comparison.specialist_records)),
+        "delta_ci95": delta_ci_field(comparison),
         "base_invalid_rate": comparison.base_invalid_rate,
         "specialist_invalid_rate": comparison.specialist_invalid_rate,
         "thinking_leak": {
@@ -2264,6 +2398,10 @@ fn write_comparison(
             "specialist_p50": comparison.specialist_p50,
             "specialist_p95": comparison.specialist_p95
         },
+        "dataset": req.import_dataset,
+        "train_size": if req.import_dataset.is_some() { json!(req.train_size) } else { Value::Null },
+        "heldout_size": if req.import_dataset.is_some() { json!(req.heldout_size) } else { Value::Null },
+        "import_seed": if req.import_dataset.is_some() { json!(req.seed) } else { Value::Null },
         "min_delta": req.min_delta,
         "min_accuracy": req.min_accuracy,
         "threshold": verdict_text,
@@ -3610,6 +3748,7 @@ mod tests {
     fn comparison_math_and_thresholds() {
         let base = SideScore {
             accuracy: 0.25,
+            correct: 2,
             invalid: 2,
             records: 8,
             p50: 10.0,
@@ -3618,6 +3757,7 @@ mod tests {
         };
         let specialist = SideScore {
             accuracy: 0.75,
+            correct: 6,
             invalid: 1,
             records: 8,
             p50: 12.0,

@@ -298,6 +298,29 @@ pub(crate) fn run() -> Result<()> {
             EnrichCommand::Drivers => crate::enrich::cmd_enrich_drivers(),
         },
         Command::Classify { command } => match command {
+            ClassifyCommand::Import {
+                dataset,
+                train_size,
+                heldout_size,
+                seed,
+                out,
+                force,
+                native_train,
+                native_test,
+            } => {
+                let preset = crate::classify_import::preset_by_name(&dataset)?;
+                let out = out.unwrap_or_else(|| crate::classify_import::default_import_dir(preset.alias));
+                crate::classify_import::cmd_classify_import(&crate::classify_import::ImportRequest {
+                    dataset: preset.alias,
+                    train_size: &train_size,
+                    heldout_size: &heldout_size,
+                    seed,
+                    out: &out,
+                    force,
+                    native_train: native_train.as_deref(),
+                    native_test: native_test.as_deref(),
+                })
+            }
             ClassifyCommand::Prepare {
                 input,
                 out,
@@ -368,6 +391,9 @@ pub(crate) fn run() -> Result<()> {
                 together_model,
                 together_base_url,
                 api_key_env,
+                dataset,
+                train_size,
+                heldout_size,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -380,13 +406,25 @@ pub(crate) fn run() -> Result<()> {
                     train_driver,
                     together_model.as_deref(),
                 )?;
+                let (tag, out, dataset_name) = if let Some(dataset) = dataset.as_deref() {
+                    crate::classify_journey::apply_dataset_layout(
+                        dataset,
+                        &train_size,
+                        &applied.tag,
+                        &tag,
+                        &out,
+                        &dataset_name,
+                    )?
+                } else {
+                    (applied.tag.clone(), out.clone(), dataset_name)
+                };
                 crate::classify_journey::cmd_classify_journey(
                     &crate::classify_journey::JourneyRequest {
                         input: &input,
                         out: &out,
                         base: &applied.base,
                         base_tag: base_tag.as_deref(),
-                        tag: &applied.tag,
+                        tag: &tag,
                         endpoint: &endpoint,
                         dataset_name: &dataset_name,
                         seed,
@@ -409,6 +447,9 @@ pub(crate) fn run() -> Result<()> {
                         seat: applied.seat,
                         llama_note: applied.llama_note,
                         preset,
+                        import_dataset: dataset.as_deref(),
+                        train_size: &train_size,
+                        heldout_size: &heldout_size,
                     },
                 )
             }

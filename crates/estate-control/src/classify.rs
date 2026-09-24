@@ -552,6 +552,49 @@ pub(crate) fn accuracy_of(correct: usize, total: usize) -> f64 {
     }
 }
 
+/// 95% Wilson score interval for `correct` successes in `total` trials.
+pub(crate) fn wilson_ci95(correct: u64, total: u64) -> Option<(f64, f64)> {
+    if total == 0 {
+        return None;
+    }
+    let z = 1.959_963_984_540_054_f64;
+    let n = total as f64;
+    let phat = correct as f64 / n;
+    let z2 = z * z;
+    let denom = 1.0 + z2 / n;
+    let center = (phat + z2 / (2.0 * n)) / denom;
+    let margin = z * ((phat * (1.0 - phat) / n) + (z2 / (4.0 * n * n))).sqrt() / denom;
+    Some(((center - margin).clamp(0.0, 1.0), (center + margin).clamp(0.0, 1.0)))
+}
+
+/// Newcombe interval for `specialist - base`, using the Wilson intervals of each side.
+pub(crate) fn newcombe_delta_ci95(
+    base_correct: u64,
+    base_total: u64,
+    specialist_correct: u64,
+    specialist_total: u64,
+) -> Option<(f64, f64, f64)> {
+    let (l1, u1) = wilson_ci95(base_correct, base_total)?;
+    let (l2, u2) = wilson_ci95(specialist_correct, specialist_total)?;
+    let p1 = base_correct as f64 / base_total as f64;
+    let p2 = specialist_correct as f64 / specialist_total as f64;
+    let delta = p2 - p1;
+    let lower = delta - ((p1 - l1).powi(2) + (u2 - p2).powi(2)).sqrt();
+    let upper = delta + ((u1 - p1).powi(2) + (p2 - l2).powi(2)).sqrt();
+    Some((delta, lower, upper))
+}
+
+fn ci_json(interval: Option<(f64, f64)>) -> Value {
+    match interval {
+        Some((low, high)) => serde_json::json!({
+            "low": low,
+            "high": high,
+            "method": "wilson"
+        }),
+        None => Value::Null,
+    }
+}
+
 fn confusion_map(rows: &[ScoredRow]) -> Map<String, Value> {
     let mut columns: Vec<char> = Vec::new();
     let mut golds: Vec<char> = Vec::new();
@@ -958,6 +1001,100 @@ pub(crate) fn cmd_classify_prepare(
     Ok(())
 }
 
+/// Format an import that already split train and held-out. Does not shuffle again.
+pub(crate) fn cmd_classify_prepare_presplit(
+    train_input: &Path,
+    heldout_input: &Path,
+    out: &Path,
+    format: DatasetFormat,
+    dataset_name: &str,
+    force: bool,
+) -> Result<()> {
+    check_dataset_name(dataset_name)?;
+    let train_text = fs::read_to_string(train_input).map_err(|e| {
+        anyhow::anyhow!(
+            "refuse:classify: cannot read {}: {e}",
+            train_input.display()
+        )
+    })?;
+    let held_text = fs::read_to_string(heldout_input).map_err(|e| {
+        anyhow::anyhow!(
+            "refuse:classify: cannot read {}: {e}",
+            heldout_input.display()
+        )
+    })?;
+    let train = parse_jsonl(&train_text);
+    let held = parse_jsonl(&held_text);
+    if !train.errors.is_empty() || !held.errors.is_empty() {
+        bail!(
+            "refuse:classify: presplit input has bad rows; train {} held {}",
+            format_row_errors(&train.errors),
+            format_row_errors(&held.errors)
+        );
+    }
+    if train.decisions.is_empty() || held.decisions.is_empty() {
+        bail!("refuse:classify: presplit train and held-out must both be non-empty");
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for row in train.decisions.iter().chain(held.decisions.iter()) {
+        let id = row
+            .heldout
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if id.is_empty() || !seen.insert(id.to_string()) {
+            bail!("refuse:classify: presplit ids must be present and disjoint, saw {id}");
+        }
+    }
+    if out.is_file() {
+        if !force {
+            bail!(
+                "refuse:classify: --out {} is a file; pass --force to replace it",
+                out.display()
+            );
+        }
+        fs::remove_file(out)?;
+    } else if !force && output_occupied(out)? {
+        bail!("refuse:classify: output exists and is non-empty; pass --force");
+    }
+    fs::create_dir_all(out)?;
+    let train_rows: Vec<Value> = train.decisions.iter().map(|row| train_row(format, row)).collect();
+    let held_rows: Vec<Value> = held.decisions.iter().map(|row| row.heldout.clone()).collect();
+    write_jsonl(&out.join("dataset.jsonl"), &train_rows)?;
+    write_jsonl(&out.join("heldout.jsonl"), &held_rows)?;
+    let info = dataset_info(dataset_name, format);
+    fs::write(
+        out.join("dataset_info.json"),
+        format!("{}\n", serde_json::to_string_pretty(&info)?),
+    )?;
+    let manifest = serde_json::json!({
+        "schema": "cell-one.classify-prepare.v0",
+        "format": format.as_str(),
+        "dataset_name": dataset_name,
+        "presplit": true,
+        "rows_train": train_rows.len(),
+        "rows_held_out": held_rows.len(),
+        "rows_skipped": 0,
+        "strict": true,
+        "target": "one letter",
+        "live_train": false,
+        "note": "classify prepare wrote a LLaMA-Factory dataset from an import that already held out the test split. It did not split again. It does not train."
+    });
+    fs::write(
+        out.join("prepare.json"),
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    println!(
+        "train={} held_out={} presplit=true format={} dataset={} out={}",
+        train_rows.len(),
+        held_rows.len(),
+        format.as_str(),
+        dataset_name,
+        out.display()
+    );
+    Ok(())
+}
+
 /// When a score is too broken to trust.
 /// Standalone eval fails only when every row failed at HTTP.
 /// The journey also fails when no row yields a letter, or when HTTP errors are more than 10%.
@@ -1044,6 +1181,8 @@ pub(crate) fn cmd_classify_eval(
             "records": parsed.decisions.len(),
             "correct": Value::Null,
             "accuracy": Value::Null,
+            "accuracy_ci95": Value::Null,
+            "per_class_accuracy": Value::Null,
             "invalid": Value::Null,
             "http_errors": 0,
             "errors": [],
@@ -1079,7 +1218,8 @@ pub(crate) fn cmd_classify_eval(
     };
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
-    let mut scored = Vec::with_capacity(parsed.decisions.len());
+    let total = parsed.decisions.len();
+    let mut scored = Vec::with_capacity(total);
     let mut errors: Vec<Value> = Vec::new();
     let mut thinking_leak = 0u64;
     for (index, row) in parsed.decisions.iter().enumerate() {
@@ -1118,38 +1258,54 @@ pub(crate) fn cmd_classify_eval(
             http_error,
             latency_ms,
         });
+        if scored.len() % 500 == 0 {
+            let correct_so_far = scored.iter().filter(|r| r.correct).count();
+            eprintln!(
+                "classify-eval: {}/{} accuracy={:.4}",
+                scored.len(),
+                total,
+                accuracy_of(correct_so_far, scored.len())
+            );
+            let partial = eval_report(
+                mode,
+                api,
+                model,
+                url.as_deref(),
+                timeout_secs,
+                thinking_leak,
+                &scored,
+                &errors,
+                !mock,
+                false,
+            );
+            write_report_file(report_path, &partial, false)?;
+        }
     }
 
-    let correct = scored.iter().filter(|r| r.correct).count();
+    if total % 500 != 0 {
+        let correct_so_far = scored.iter().filter(|r| r.correct).count();
+        eprintln!(
+            "classify-eval: {}/{} accuracy={:.4}",
+            scored.len(),
+            total,
+            accuracy_of(correct_so_far, scored.len())
+        );
+    }
+    let report = eval_report(
+        mode,
+        api,
+        model,
+        url.as_deref(),
+        timeout_secs,
+        thinking_leak,
+        &scored,
+        &errors,
+        !mock,
+        true,
+    );
+    write_report(report_path, &report)?;
     let invalid = scored.iter().filter(|r| !r.valid).count();
     let http_errors = scored.iter().filter(|r| r.http_error).count();
-    let mut latencies: Vec<f64> = scored.iter().map(|r| r.latency_ms).collect();
-    latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let measured = !mock;
-    let report = serde_json::json!({
-        "schema": "cell-one.classify-eval.v0",
-        "mode": mode,
-        "api": api.as_str(),
-        "model": model,
-        "thinking_leak": thinking_leak,
-        "endpoint": url,
-        "records": scored.len(),
-        "correct": correct,
-        "accuracy": accuracy_of(correct, scored.len()),
-        "invalid": invalid,
-        "http_errors": http_errors,
-        "errors": errors,
-        "timeout_secs": timeout_secs,
-        "confusion": Value::Object(confusion_map(&scored)),
-        "latency_ms": {
-            "p50": percentile_nearest(&latencies, 50.0),
-            "p95": percentile_nearest(&latencies, 95.0)
-        },
-        "latency_measured": measured,
-        "live_pass_recorded": false,
-        "note": "This score is not a factory live PASS. READY_FOR_LIVE_TEST stays no. The recorded Target C PASS is the only live uniqueness prove."
-    });
-    write_report(report_path, &report)?;
     if let Some(err) = eval_gate_error(gate, scored.len() as u64, http_errors as u64, invalid as u64) {
         bail!(err);
     }
@@ -1172,7 +1328,80 @@ fn read_api_key(name: Option<&str>) -> Result<Option<String>> {
     }
 }
 
+fn eval_report(
+    mode: &str,
+    api: EvalApi,
+    model: &str,
+    url: Option<&str>,
+    timeout_secs: u64,
+    thinking_leak: u64,
+    scored: &[ScoredRow],
+    errors: &[Value],
+    measured: bool,
+    complete: bool,
+) -> Value {
+    let correct = scored.iter().filter(|r| r.correct).count();
+    let invalid = scored.iter().filter(|r| !r.valid).count();
+    let http_errors = scored.iter().filter(|r| r.http_error).count();
+    let mut latencies: Vec<f64> = scored.iter().map(|r| r.latency_ms).collect();
+    latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    serde_json::json!({
+        "schema": "cell-one.classify-eval.v0",
+        "mode": mode,
+        "api": api.as_str(),
+        "model": model,
+        "thinking_leak": thinking_leak,
+        "endpoint": url,
+        "records": scored.len(),
+        "correct": correct,
+        "accuracy": accuracy_of(correct, scored.len()),
+        "accuracy_ci95": ci_json(wilson_ci95(correct as u64, scored.len() as u64)),
+        "per_class_accuracy": Value::Object(per_class_accuracy(scored)),
+        "invalid": invalid,
+        "http_errors": http_errors,
+        "errors": errors,
+        "timeout_secs": timeout_secs,
+        "confusion": Value::Object(confusion_map(scored)),
+        "latency_ms": {
+            "p50": percentile_nearest(&latencies, 50.0),
+            "p95": percentile_nearest(&latencies, 95.0)
+        },
+        "latency_measured": measured,
+        "complete": complete,
+        "live_pass_recorded": false,
+        "note": "This score is not a factory live PASS. READY_FOR_LIVE_TEST stays no. The recorded Target C PASS is the only live uniqueness prove."
+    })
+}
+
+fn per_class_accuracy(rows: &[ScoredRow]) -> Map<String, Value> {
+    let mut labels = Vec::new();
+    for row in rows {
+        if !labels.contains(&row.expected) {
+            labels.push(row.expected);
+        }
+    }
+    labels.sort_unstable();
+    let mut out = Map::new();
+    for label in labels {
+        let total = rows.iter().filter(|r| r.expected == label).count();
+        let correct = rows.iter().filter(|r| r.expected == label && r.correct).count();
+        out.insert(
+            label.to_string(),
+            serde_json::json!({
+                "correct": correct,
+                "total": total,
+                "accuracy": accuracy_of(correct, total),
+            }),
+        );
+    }
+    out
+}
+
 fn write_report(path: &Path, report: &Value) -> Result<()> {
+    write_report_file(path, report, true)
+}
+
+fn write_report_file(path: &Path, report: &Value, echo: bool) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
@@ -1181,7 +1410,9 @@ fn write_report(path: &Path, report: &Value) -> Result<()> {
     let pretty = serde_json::to_string_pretty(report)?;
     let mut file = fs::File::create(path)?;
     writeln!(file, "{pretty}")?;
-    println!("{pretty}");
+    if echo {
+        println!("{pretty}");
+    }
     Ok(())
 }
 
@@ -1331,6 +1562,18 @@ mod tests {
         assert_eq!(parse_choice_letter("Because", &allowed), None);
         assert_eq!(parse_choice_letter("ZZ", &allowed), None);
         assert_eq!(parse_choice_letter("D", &abc), None);
+    }
+
+    #[test]
+    fn wilson_interval_covers_a_known_proportion() {
+        let (low, high) = wilson_ci95(81, 100).unwrap();
+        assert!(low > 0.72 && low < 0.73, "{low}");
+        assert!(high > 0.87 && high < 0.88, "{high}");
+        assert!(low < 0.81 && high > 0.81);
+        let (delta, dlow, dhigh) = newcombe_delta_ci95(50, 100, 70, 100).unwrap();
+        assert!((delta - 0.2).abs() < 1e-9);
+        assert!(dlow < delta && dhigh > delta, "{dlow} {delta} {dhigh}");
+        assert!(wilson_ci95(0, 0).is_none());
     }
 
     #[test]
