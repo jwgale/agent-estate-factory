@@ -499,18 +499,22 @@ fn strip_answer_lead(input: &str) -> String {
                 c.is_whitespace() || matches!(c, ':' | '"' | '\'' | '`' | '(')
             });
         if boundary {
-            return after.trim().to_string();
+            let rest = after.trim_start_matches(|c: char| c.is_whitespace() || c == ':');
+            return rest.trim().to_string();
         }
     }
     input.to_string()
 }
 
 fn strip_one_trailer(input: &str) -> String {
-    let s = input.trim();
-    if let Some(stripped) = s.strip_suffix('.').or_else(|| s.strip_suffix(')')) {
-        stripped.trim().to_string()
-    } else {
-        s.to_string()
+    let mut s = input.trim().to_string();
+    loop {
+        let trimmed = s.trim();
+        if let Some(stripped) = trimmed.strip_suffix('.').or_else(|| trimmed.strip_suffix(')')) {
+            s = stripped.trim().to_string();
+        } else {
+            return trimmed.to_string();
+        }
     }
 }
 
@@ -690,9 +694,15 @@ fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) 
             match serde_json::from_str::<Value>(&raw) {
                 Ok(v) => match extract_message_text(&v) {
                     Some(text) => HttpOutcome::Ok(text),
-                    None => HttpOutcome::Ok(String::new()),
+                    None => HttpOutcome::Fail(HttpFailure {
+                        status,
+                        body: scrub_snippet(&raw, api_key),
+                    }),
                 },
-                Err(_) => HttpOutcome::Ok(String::new()),
+                Err(_) => HttpOutcome::Fail(HttpFailure {
+                    status,
+                    body: scrub_snippet(&raw, api_key),
+                }),
             }
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -789,7 +799,20 @@ pub(crate) fn cmd_classify_prepare(
     }
     let (train_idx, held_idx) = split_by_group(&parsed.decisions, seed, held_out_ratio)
         .map_err(|e| anyhow::anyhow!("refuse:classify: {e}"))?;
-    if !force && output_occupied(out)? {
+    if out.is_file() {
+        if !force {
+            bail!(
+                "refuse:classify: --out {} is a file; pass --force to replace it",
+                out.display()
+            );
+        }
+        fs::remove_file(out).map_err(|e| {
+            anyhow::anyhow!(
+                "refuse:classify: cannot replace {}: {e}",
+                out.display()
+            )
+        })?;
+    } else if !force && output_occupied(out)? {
         bail!("refuse:classify: output exists and is non-empty; pass --force");
     }
     fs::create_dir_all(out)?;
@@ -1106,6 +1129,18 @@ mod tests {
     }
 
     #[test]
+    fn single_group_refuses_and_tiny_n_clamps() {
+        let err = held_out_len(1, 0.2).unwrap_err();
+        assert!(err.contains("at least 2"), "{err}");
+        assert_eq!(held_out_len(5, 0.01).unwrap(), 1);
+        assert_eq!(held_out_len(5, 0.99).unwrap(), 4);
+        let one = parse_jsonl(&format!("{}\n{}", sample_line("A"), sample_line("B")));
+        assert_eq!(one.decisions.len(), 2);
+        let split = split_by_group(&one.decisions, 1, 0.2).unwrap_err();
+        assert!(split.contains("at least 2 groups"), "{split}");
+    }
+
+    #[test]
     fn sharegpt_and_alpaca_targets_are_one_letter() {
         let parsed = parse_jsonl(&sample_line("B")).decisions;
         let share = train_row(DatasetFormat::Sharegpt, &parsed[0]);
@@ -1137,6 +1172,9 @@ mod tests {
         assert_eq!(parse_choice_letter(" b.", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("Answer: C", &allowed), Some('C'));
         assert_eq!(parse_choice_letter("answer is B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("answer is: B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("Answer is: B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("B).", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("\"B\"", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("(B)", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("B)", &allowed), Some('B'));
