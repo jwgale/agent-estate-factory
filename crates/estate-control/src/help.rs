@@ -128,6 +128,12 @@ Pick:       make purpose-build-pick
             print-only host and stack picker for purpose-build journeys (operator section 17)
 Journey:    make purpose-build-journey
             print-only purpose-build on-demand entry (operator section 18)
+DeepSeek:   make deepseek-r1-distill-journey
+            print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19)
+Ds chain:   make uniqueness-deepseek
+            print-only chain of that journey (operator section 19)
+DeepSeek LoRA: make deepseek-r1-distill-lora-journey
+Ds LoRA chain: make uniqueness-deepseek-lora
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -392,6 +398,14 @@ and the Target A LoRA twins that already exist. It does not run those targets.
 It does not invent a live PASS. Not native MLX. Not in make smoke,
 make gate-90, or Actions. READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 17).
+make deepseek-r1-distill-journey is the print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19).
+make uniqueness-deepseek is the print-only chain of that journey. The LoRA twin is
+make deepseek-r1-distill-lora-journey and make uniqueness-deepseek-lora.
+Seat tag llama3. Train base deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B. Template deepseekr1.
+They do not train, merge, convert, shell out to ollama, or promote.
+They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 19).
 make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not train, fuse, convert, shell out to ollama, promote, or apply the estate.
@@ -458,6 +472,10 @@ Walk: docs/operator-enrich-journeys.md (section 16).
   make purpose-build-checklist
   make purpose-build-pick
   make purpose-build-journey
+  make deepseek-r1-distill-journey
+  make uniqueness-deepseek
+  make deepseek-r1-distill-lora-journey
+  make uniqueness-deepseek-lora
   make lf-beachhead-prepare
   make enrich-live-prove
 
@@ -1052,6 +1070,14 @@ Axolotl stays integration. Apple Silicon is mlx-lm-lora-journey and uniqueness-m
 A stock any-affinity pack is refuse:host for mlx-lm-lora. Target A LoRA twins
 are the LLaMA-Factory, Unsloth, and Axolotl pairs that already exist.
 Walk: docs/operator-enrich-journeys.md (section 17).
+make deepseek-r1-distill-journey is the print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19).
+make uniqueness-deepseek is the print-only chain of that journey.
+make deepseek-r1-distill-lora-journey and make uniqueness-deepseek-lora are the LoRA twin.
+Seat tag llama3. Train base deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B. Template deepseekr1.
+They do not train, merge, convert, shell out to ollama, or promote.
+They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 19).
 make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not invent a live PASS. The recorded PASS stays the only live uniqueness prove.

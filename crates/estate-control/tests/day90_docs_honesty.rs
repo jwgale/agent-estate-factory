@@ -5777,3 +5777,204 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
     let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
     assert_eq!(before, after, "journey must not rewrite examples/estate.yaml");
 }
+
+#[test]
+fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in [
+        "deepseek-r1-distill-journey:",
+        "uniqueness-deepseek:",
+        "deepseek-r1-distill-lora-journey:",
+        "uniqueness-deepseek-lora:",
+    ] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/deepseek-r1-distill-journey.sh"));
+    assert!(makefile.contains("scripts/uniqueness-deepseek.sh"));
+    assert!(makefile.contains("scripts/uniqueness-deepseek-lora.sh"));
+    assert!(makefile.contains("operator section 19"));
+    let phony = makefile.lines().next().unwrap_or("");
+    for name in [
+        "deepseek-r1-distill-journey",
+        "uniqueness-deepseek",
+        "deepseek-r1-distill-lora-journey",
+        "uniqueness-deepseek-lora",
+    ] {
+        assert!(phony.contains(name), "{name} must be a phony target");
+    }
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("deepseek-r1-distill"),
+        "gate-90 must not run the deepseek journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("deepseek-r1-distill"),
+        "smoke must not run the deepseek journey: {smoke}"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/deepseek-r1-distill-journey.sh")).unwrap();
+    for needle in [
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        "examples/fixtures/deepseek-r1-distill.pack.json",
+        "examples/fixtures/deepseek-r1-distill-lora.pack.json",
+        "TEMPLATE=\"deepseekr1\"",
+        "DEEPSEEK_R1_DISTILL_PHASE",
+        "READY_FOR_LIVE_TEST: no",
+        "SKIP live train",
+        "CELL_TRAIN_LIVE or CELL_SEAT_LIVE is set. This journey stays print-only.",
+        "deepseek-r1:1.5b",
+        "llamafactory-qlora",
+        "llamafactory-lora",
+        "This print is not a live PASS.",
+        "only live uniqueness prove",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+    ] {
+        assert!(script.contains(needle), "journey missing {needle}");
+    }
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!script.to_ascii_lowercase().contains("kimi"));
+    assert!(!script.contains("glm"));
+
+    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-deepseek.sh")).unwrap();
+    let prepare_at = chain
+        .find("DEEPSEEK_R1_DISTILL_PHASE=prepare make -C \"$ROOT\" deepseek-r1-distill-journey")
+        .expect("prepare phase");
+    let seat_at = chain
+        .find("DEEPSEEK_R1_DISTILL_PHASE=seat make -C \"$ROOT\" deepseek-r1-distill-journey")
+        .expect("seat phase");
+    assert!(prepare_at < seat_at, "prepare-assert must run before seat-print");
+    assert!(chain.contains("Does not run make deepseek-r1-distill-lora-journey"));
+    assert!(chain.contains("READY_FOR_LIVE_TEST: no"));
+
+    let lora_chain = std::fs::read_to_string(root.join("scripts/uniqueness-deepseek-lora.sh")).unwrap();
+    assert!(lora_chain.contains("make -C \"$ROOT\" deepseek-r1-distill-lora-journey"));
+    assert!(lora_chain.contains("Does not run make deepseek-r1-distill-journey or make uniqueness-deepseek."));
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #181"),
+        "GATE-90 header stays through PR #181"
+    );
+    assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
+    for row_name in [
+        "`make deepseek-r1-distill-journey`",
+        "`make uniqueness-deepseek`",
+        "`make deepseek-r1-distill-lora-journey`",
+        "`make uniqueness-deepseek-lora`",
+    ] {
+        let row = gate
+            .lines()
+            .find(|line| line.contains(&format!("| {row_name} |")))
+            .unwrap_or_else(|| panic!("missing remaining row {row_name}"));
+        assert!(row.contains("operator section 19"), "{row}");
+        assert!(row.contains("Not a live train"), "{row}");
+    }
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section = journey
+        .split("## 19. DeepSeek-R1-Distill chat — LLaMA-Factory print journey")
+        .nth(1)
+        .expect("operator section 19");
+    assert!(section.contains("make deepseek-r1-distill-journey"));
+    assert!(section.contains("make uniqueness-deepseek"));
+    assert!(section.contains("deepseekr1"));
+    assert!(section.contains("43770130 3391"));
+    assert!(section.contains("only live uniqueness prove"));
+    assert!(!journey.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make deepseek-r1-distill-journey is the print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19)"
+    ));
+    assert!(help.contains("make uniqueness-deepseek"));
+    assert!(help.contains("make deepseek-r1-distill-lora-journey"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("`make deepseek-r1-distill-journey`"));
+    assert!(readme.contains("`make uniqueness-deepseek`"));
+    assert!(readme.contains(
+        "print-only DeepSeek-R1-Distill chat QLoRA ladder (operator section 19)"
+    ));
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(45).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #181"));
+    assert!(status.contains("make deepseek-r1-distill-journey # opt-in:"));
+    assert!(status.contains("| deepseek r1 distill journey |"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    let slice = changelog
+        .split("## This slice — print-only DeepSeek-R1-Distill journey")
+        .nth(1)
+        .expect("CHANGELOG missing the deepseek slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make deepseek-r1-distill-journey",
+        "scripts/deepseek-r1-distill-journey.sh",
+        "make uniqueness-deepseek",
+        "operator section 19",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #181",
+        "c4a6d255a08146613c9c6cba262959d913f5cac0",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "does not add Kimi",
+        "does not add GLM",
+        "deepseekr1",
+    ] {
+        assert!(slice.contains(needle), "deepseek CHANGELOG slice missing {needle}");
+    }
+    assert!(slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no"));
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("deepseek-r1-distill-journey"),
+            "{rel} must not run the deepseek journey"
+        );
+    }
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(
+        sum.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {sum}"
+    );
+}

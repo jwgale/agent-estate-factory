@@ -5943,3 +5943,63 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         "examples/estate.yaml cksum drifted: {sum}"
     );
 }
+
+#[test]
+fn deepseek_r1_distill_journey_help_and_locks_stay_print_only() {
+    let root = repo_root();
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make deepseek-r1-distill-journey is the print-only DeepSeek-R1-Distill chat QLoRA journey (operator section 19)"
+    ));
+    assert!(help.contains("make uniqueness-deepseek is the print-only chain of that journey"));
+    assert!(help.contains("make deepseek-r1-distill-lora-journey"));
+    assert!(help.contains("make uniqueness-deepseek-lora"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-qlora bash scripts/deepseek-r1-distill-journey.sh"));
+    assert!(makefile.contains("DEEPSEEK_CARD=llamafactory-lora bash scripts/deepseek-r1-distill-journey.sh"));
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(!gate90.contains("deepseek-r1-distill-journey"));
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(!smoke.contains("deepseek-r1-distill-journey"));
+
+    let script = std::fs::read_to_string(root.join("scripts/deepseek-r1-distill-journey.sh")).unwrap();
+    assert!(script.contains("^template: ${TEMPLATE}$"));
+    assert!(script.contains("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"));
+    assert!(script.contains("examples/fixtures/deepseek-r1-distill.pack.json"));
+    assert!(script.contains("examples/fixtures/deepseek-r1-distill-lora.pack.json"));
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(!script.to_ascii_lowercase().contains("kimi"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .unwrap()
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #181");
+    assert!(changelog.contains("## This slice — print-only DeepSeek-R1-Distill journey"));
+    assert!(changelog.contains("does not move the GATE-90 or Cell One tip header"));
+
+    let cksum = std::process::Command::new("cksum")
+        .arg(root.join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum = String::from_utf8_lossy(&cksum.stdout);
+    assert!(sum.starts_with("43770130 3391"), "{sum}");
+}
