@@ -107,6 +107,7 @@ Seat walk:  make seat-journey
 Axolotl:    make axolotl-qlora-journey
 Ax chain:   make uniqueness-axolotl
 Unsloth:    make unsloth-qlora-journey
+Unsloth LoRA: make unsloth-lora-journey
 Us chain:   make uniqueness-unsloth
 Ax LoRA:    make axolotl-lora-journey
 Ax LoRA chain: make uniqueness-axolotl-lora
@@ -1218,6 +1219,34 @@ the seat-print phase. It does not run make uniqueness-axolotl.
 Both stay print-only. Not in make smoke, make gate-90,
 or Actions. READY_FOR_LIVE_TEST stays no. This is not a live PASS.
 Walk: docs/operator-enrich-journeys.md (section 13).
+
+Unsloth LoRA journey
+--------------------
+Print-only optional NEXT path for unsloth-lora. Status stays optional.
+It is the non-quant twin of unsloth-qlora. It does not write load_in_4bit.
+make unsloth-lora-journey prepares that card on a throwaway copy of
+examples/estate.yaml. Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.
+The card writes UNSLOTH.md, PREPARE.md, NEXT.md, and prepare.json.
+It does not write a script, a recipe, or dataset.jsonl.
+A seat tag with no train base is refuse:train-base.
+--official-scale on this card alone is refuse:official-scale.
+--from-feed on this card alone is refuse:dataset.
+A missing adapter, or an adapter directory without adapter_model.safetensors,
+is refuse:adapter. A merged directory or a GGUF passed as --adapter is
+refuse:adapter. local-seat --adapter on this card is refuse:adapter.
+A missing merged directory or GGUF is refuse:seat.
+Before the good merged stub, a Qwen-shaped merged directory beside the
+prepare is refuse:tokenizer. The script prints save_pretrained_merged
+with save_method merged_16bit, and the documented LoRA save
+(save_method lora), then gguf-convert, local-seat, and import-trained.
+import-trained records trained_shape gguf. The proposal stays auto_apply=false.
+It prints SKIP live train, SKIP live convert, and SKIP live seat.
+It does not call Unsloth, does not convert, does not run ollama, and does
+not promote. make uniqueness-unsloth-lora runs the prepare-assert phase,
+then the seat-print phase. It does not run make unsloth-qlora-journey or
+make uniqueness-unsloth. Both stay print-only. Not in make smoke,
+make gate-90, or Actions. READY_FOR_LIVE_TEST stays no. This is not a live PASS.
+Walk: docs/operator-enrich-journeys.md (section 14).
 
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.

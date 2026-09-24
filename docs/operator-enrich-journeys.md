@@ -26,6 +26,8 @@ Axolotl QLoRA print path: the same overnight pack, seat tag `llama3`, and train 
 
 Unsloth QLoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on the optional NEXT card `unsloth-qlora`. Section 12. Opt-in check: `make unsloth-qlora-journey`. It checks `UNSLOTH.md` (seat tag and train base) and prints `save_pretrained_merged` (`merged_16bit`), the convert, the seat, and the import against fixture stubs. It does not call Unsloth. `make uniqueness-unsloth` runs the prepare-assert phase, then the seat-print phase. Print-only. Status stays `optional`. It is not in `make smoke`, `make gate-90`, or GitHub Actions.
 
+Unsloth LoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on the optional NEXT card `unsloth-lora`. Section 14. That card is the non-quant twin of `unsloth-qlora`. Opt-in check: `make unsloth-lora-journey`. It checks `UNSLOTH.md` and prints `save_pretrained_merged` (`merged_16bit` and `save_method` `lora`), the convert, the seat, and the import against fixture stubs. It does not call Unsloth. `make uniqueness-unsloth-lora` runs the prepare-assert phase, then the seat-print phase. It does not run `make unsloth-qlora-journey` or `make uniqueness-unsloth`. Print-only. Status stays `optional`. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
 Axolotl LoRA print path: the same overnight pack, seat tag `llama3`, and train base `Qwen/Qwen2.5-0.5B-Instruct`, on `axolotl-lora`. Section 13. Opt-in check: `make axolotl-lora-journey`. It checks `axolotl.yml` (`adapter: lora`, `load_in_8bit: false`, `load_in_4bit: false`, `sequence_len` 2048, `lora_r` 16, train base in `base_model`) and prints `axolotl merge-lora` without `--dequant`, then the convert, seat, and import lines against the same fixture stubs. It does not run Axolotl. `make uniqueness-axolotl-lora` runs the prepare-assert phase, then the seat-print phase. Print-only. It does not run `make axolotl-qlora-journey` or `make uniqueness-axolotl`. It is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
 
 The smoke pairs for Phi-3, Llama-3.2, Gemma-2, Mistral, Qwen2.5 Instruct, Qwen3 Instruct, DeepSeek-R1-Distill chat, and GLM-4 Chat are one table: [`lf-beachhead-matrix.md`](lf-beachhead-matrix.md). `estate help enrich` prints that file. A bare Ollama seat tag on those train bases is `refuse:train-base`. The table does not add a journey to `make smoke`, `make gate-90`, or GitHub Actions. Opt-in prepare walk: `make lf-beachhead-prepare`. It prepares every row on a throwaway copy of `examples/estate.yaml`, checks the matrix knobs, and prints `SKIP live train`. It does not train, merge, convert, seat, or promote. Phi-3-small stays QLoRA-only and is not a row.
@@ -743,3 +745,25 @@ make uniqueness-axolotl-lora
 ```
 
 That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make axolotl-qlora-journey`, `make uniqueness-axolotl`, `make qlora-journey`, `make seat-journey`, or `make train-next`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS.
+
+## 14. Unsloth LoRA — optional NEXT print journey
+
+This is the print-only check for the optional Nvidia-only non-quant LoRA handoff. The card is `unsloth-lora`, the twin of `unsloth-qlora`. It writes `UNSLOTH.md`. It does not write a script, a recipe, `dataset.jsonl`, or `load_in_4bit`. It does not call Unsloth, does not merge, does not run `convert_hf_to_gguf.py`, does not run `ollama create`, and does not promote. Status stays `optional`. `--official-scale` on this card alone is `refuse:official-scale`. `--from-feed` on this card alone is `refuse:dataset`.
+
+The prepare uses the overnight pack `examples/fixtures/specialist-overnight.pack.json` on a throwaway copy of `examples/estate.yaml`. The seat tag is `llama3`. The train base is `Qwen/Qwen2.5-0.5B-Instruct`. `UNSLOTH.md` records both. `prepare.json` keeps them split. `examples/estate.yaml` stays hash-locked.
+
+The refuse ladder and the fixture stubs match section 12: missing adapter, an adapter directory without `adapter_model.safetensors`, and `adapters.safetensors` are `refuse:adapter`. `local-seat --adapter` stays `refuse:adapter`. A missing merged directory or GGUF is `refuse:seat`. A Qwen-shaped merged directory is `refuse:tokenizer` before the good stub. `merge-adapt` prints `save_pretrained_merged` with `save_method` `merged_16bit`, and the documented LoRA save (`save_method` `lora`). `gguf-convert`, `local-seat`, and `import-trained` then print against `merged.gguf`. `import-trained` records `trained_shape` `gguf`. The proposal stays `auto_apply=false`.
+
+The script prints `SKIP live train`, `SKIP live convert`, and `SKIP live seat`. `CELL_SEAT_LIVE=1` and `CELL_TRAIN_LIVE=1` do not start a convert or an `ollama create`. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+make unsloth-lora-journey
+```
+
+`UNSLOTH_LORA_PHASE=prepare` stops after the handoff check and the refuses. `UNSLOTH_LORA_PHASE=seat` prints the fixture ladder.
+
+```bash
+make uniqueness-unsloth-lora
+```
+
+That opt-in script chains the prepare-assert phase, then the seat-print phase. If the prepare phase fails, it exits nonzero before the seat print. It does not run `make unsloth-qlora-journey`, `make uniqueness-unsloth`, `make axolotl-lora-journey`, `make uniqueness-axolotl-lora`, `make qlora-journey`, `make seat-journey`, or `make train-next`. It leaves `examples/estate.yaml` unchanged. It is not in `make smoke`, `make gate-90`, or GitHub Actions.

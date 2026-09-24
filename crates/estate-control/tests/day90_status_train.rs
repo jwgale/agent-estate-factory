@@ -99,7 +99,8 @@ fn assert_catalog_is_the_card(text: &str) {
         "{text}"
     );
     assert!(
-        text.contains("train_catalog: unsloth-qlora status=optional live=false"),
+        text.contains("train_catalog: unsloth-qlora status=optional live=false")
+            && text.contains("train_catalog: unsloth-lora status=optional live=false"),
         "{text}"
     );
     assert!(

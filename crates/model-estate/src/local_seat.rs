@@ -28,9 +28,9 @@
 
 use crate::error::ModelError;
 use crate::train_enrich::{
-    is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
-    MLX_LM_LORA_ID, UNSLOTH_QLORA_ID,
+    is_axolotl_driver, is_post_merge_print_driver, is_unsloth_driver, load_prepare_doc,
+    local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku,
+    EnrichJobKind, MLX_LM_LORA_ID,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use std::fs::File;
@@ -340,7 +340,7 @@ pub fn plan_local_seat_for(
             }
             return Err(err);
         }
-        Err(err) if prep.driver == UNSLOTH_QLORA_ID => {
+        Err(err) if is_unsloth_driver(&prep.driver) => {
             let text = err.to_string();
             if text.contains("is an adapter directory") {
                 return Err(crate::merge_adapt::refuse_unsloth_adapter_weights(weights));
@@ -389,7 +389,7 @@ pub fn plan_adapter_seat_for(
     if prep.driver == MLX_LM_LORA_ID {
         return Err(crate::merge_adapt::refuse_mlx_adapter_seat());
     }
-    if prep.driver == UNSLOTH_QLORA_ID {
+    if is_unsloth_driver(&prep.driver) {
         return Err(crate::merge_adapt::refuse_unsloth_adapter_seat());
     }
     let runtime = LocalSeatRuntime::parse(runtime)?;
@@ -424,7 +424,7 @@ fn load_seat_prepare(
     refuse_sacred_and_sku(artifact_label, &artifact.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
-    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
+    let unsloth = is_unsloth_driver(&doc.driver);
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("local-seat", &doc.driver));
     }
@@ -1098,7 +1098,7 @@ fn merged_from_note(
     if !on_disk {
         return Ok(if is_axolotl_driver(driver) {
             "This merged directory has no Modelfile yet. Axolotl does not write a Modelfile. Axolotl does not write GGUF. The operator owns the merge into this Hugging Face directory. Do not run ollama create until a Modelfile exists, or seat the sibling GGUF after the convert line.".to_string()
-        } else if driver == UNSLOTH_QLORA_ID {
+        } else if is_unsloth_driver(driver) {
             "This merged directory has no Modelfile yet. Unsloth's save_pretrained_merged with save_method merged_16bit writes the 16-bit Hugging Face directory. The Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory does not write that file and does not invent a chat template. Seat the sibling GGUF after the convert line.".to_string()
         } else {
             format!(
@@ -1116,13 +1116,13 @@ fn merged_from_note(
     if from_arg_is_here(&from) {
         Ok(if is_axolotl_driver(driver) {
             "This Modelfile FROM is . That names this merged directory. Axolotl did not write this Modelfile and did not write GGUF.".to_string()
-        } else if driver == UNSLOTH_QLORA_ID {
+        } else if is_unsloth_driver(driver) {
             "This Modelfile FROM is . That names this merged directory. Unsloth's merged_16bit save is the Hugging Face directory. The Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory did not write this file.".to_string()
         } else {
             "LLaMA-Factory wrote this Modelfile with FROM . That names this merged directory."
                 .to_string()
         })
-    } else if driver == UNSLOTH_QLORA_ID {
+    } else if is_unsloth_driver(driver) {
         Ok(format!(
             "This Modelfile FROM is {from}. The create line uses the file as written. Unsloth's Ollama page says Unsloth writes a Modelfile when it exports to GGUF. This factory did not write this file."
         ))

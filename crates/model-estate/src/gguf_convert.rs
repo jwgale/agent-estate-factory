@@ -42,9 +42,9 @@
 use crate::error::ModelError;
 use crate::local_seat::{classify_weights, shell_quote, WeightsShape};
 use crate::train_enrich::{
-    is_axolotl_driver, is_post_merge_print_driver, load_prepare_doc, local_enrich_tag,
-    refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku, EnrichJobKind,
-    MLX_LM_LORA_ID, UNSLOTH_GGUF_DOC, UNSLOTH_QLORA_ID,
+    is_axolotl_driver, is_post_merge_print_driver, is_unsloth_driver, load_prepare_doc,
+    local_enrich_tag, refuse_post_merge_driver, refuse_recipe_train_record, refuse_sacred_and_sku,
+    EnrichJobKind, MLX_LM_LORA_ID, UNSLOTH_GGUF_DOC,
 };
 use feed_collector::{refuse_raw_secrets, FeedError};
 use serde_json::Value;
@@ -357,7 +357,7 @@ pub fn plan_gguf_convert(
     refuse_sacred_and_sku("weights", &weights.display().to_string())?;
     let doc = load_prepare_doc(&prepared_dir.join("prepare.json"))?;
     let mlx = doc.driver == MLX_LM_LORA_ID;
-    let unsloth = doc.driver == UNSLOTH_QLORA_ID;
+    let unsloth = is_unsloth_driver(&doc.driver);
     if !mlx && !is_post_merge_print_driver(&doc.driver) {
         return Err(refuse_post_merge_driver("gguf-convert", &doc.driver));
     }

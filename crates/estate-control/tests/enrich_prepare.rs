@@ -1500,6 +1500,7 @@ fn enrich_prepare_stays_off_smoke_and_dispatch_does_not_match_drivers() {
     assert!(!dispatch.contains("llamafactory-qlora"));
     assert!(!dispatch.contains("llamafactory-lora"));
     assert!(!dispatch.contains("unsloth-qlora"));
+    assert!(!dispatch.contains("unsloth-lora"));
     assert!(!dispatch.contains("mlx-lm-lora"));
     let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
     assert!(
@@ -2929,7 +2930,7 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=7"), "{all_text}");
+    assert!(all_text.contains("prepared=8"), "{all_text}");
     assert!(all_text.contains("omit driver=mlx-lm-lora"), "{all_text}");
     assert!(all_text.contains("refuse:host"), "{all_text}");
     assert!(
@@ -2937,6 +2938,7 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
         "{all_text}"
     );
     assert!(all_text.contains("driver=unsloth-qlora"), "{all_text}");
+    assert!(all_text.contains("driver=unsloth-lora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-qlora"), "{all_text}");
     assert!(all_text.contains("driver=llamafactory-lora"), "{all_text}");
     assert!(all_text.contains("driver=axolotl-lora"), "{all_text}");
@@ -2946,6 +2948,11 @@ fn axolotl_lora_prepare_and_import_trained_leave_the_estate() {
     assert!(unsloth_dir.join("NEXT.md").is_file());
     assert!(!unsloth_dir.join("train_unsloth.py").exists());
     assert!(!unsloth_dir.join("dataset.jsonl").exists());
+    let unsloth_lora_dir = state.join("enrich/overnight-traces/unsloth-lora");
+    assert!(unsloth_lora_dir.join("UNSLOTH.md").is_file());
+    let unsloth_lora_md = std::fs::read_to_string(unsloth_lora_dir.join("UNSLOTH.md")).unwrap();
+    assert!(unsloth_lora_md.contains("Unsloth LoRA handoff"), "{unsloth_lora_md}");
+    assert!(!unsloth_lora_dir.join("dataset.jsonl").exists());
     assert!(!state.join("enrich/overnight-traces/mlx-lm-lora").exists());
     assert!(state
         .join("enrich/overnight-traces/llamafactory-qlora/recipe.yaml")
@@ -4148,7 +4155,7 @@ fn mlx_lm_lora_prepare_refuses_the_wrong_host_and_writes_a_handoff_on_apple_sili
         .unwrap();
     let all_text = text(&all_train);
     assert!(all_train.status.success(), "{all_text}");
-    assert!(all_text.contains("prepared=8"), "{all_text}");
+    assert!(all_text.contains("prepared=9"), "{all_text}");
     assert!(
         all_text.contains("enrich prepare: driver=mlx-lm-lora"),
         "{all_text}"
@@ -4309,7 +4316,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4530,7 +4537,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4750,7 +4757,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #161");
+    assert_eq!(head, " print-only Unsloth LoRA uniqueness and seat journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4811,6 +4818,157 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         assert!(
             !body.contains("axolotl-lora-journey") && !body.contains("uniqueness-axolotl-lora"),
             "{rel} must not run the axolotl lora journey"
+        );
+    }
+}
+
+#[test]
+fn unsloth_lora_journey_stays_print_only_and_off_smoke() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    for target in ["unsloth-lora-journey:", "uniqueness-unsloth-lora:"] {
+        assert!(
+            makefile.lines().any(|line| line.trim() == target),
+            "Makefile missing {target}"
+        );
+    }
+    assert!(makefile.contains("scripts/unsloth-lora-journey.sh"));
+    assert!(makefile.contains("scripts/uniqueness-unsloth-lora.sh"));
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("unsloth-lora-journey") && phony.contains("uniqueness-unsloth-lora"),
+        "unsloth lora journey targets must be phony"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("unsloth-lora-journey") && !gate90.contains("uniqueness-unsloth-lora"),
+        "gate-90 must not run the unsloth lora journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("unsloth-lora-journey") && !smoke.contains("uniqueness-unsloth-lora"),
+        "smoke must not run the unsloth lora journey: {smoke}"
+    );
+
+    let script = std::fs::read_to_string(root.join("scripts/unsloth-lora-journey.sh")).unwrap();
+    for needle in [
+        "unsloth-lora",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "llama3",
+        "UNSLOTH.md",
+        "Unsloth LoRA handoff",
+        "does not write load_in_4bit",
+        "refuse:official-scale",
+        "refuse:dataset",
+        "adapter_model.safetensors",
+        "save_pretrained_merged",
+        "merged_16bit",
+        "save_method = \\\"lora\\\"",
+        "status: optional",
+        "refuse:train-base",
+        "refuse:adapter",
+        "refuse:seat",
+        "refuse:tokenizer",
+        "local-seat --adapter",
+        "SKIP live train",
+        "SKIP live convert",
+        "SKIP live seat",
+        "READY_FOR_LIVE_TEST: no",
+        "CELL_SEAT_LIVE",
+        "CELL_TRAIN_LIVE",
+        "examples/estate.yaml",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "UNSLOTH_LORA_PHASE",
+        "does not call Unsloth",
+    ] {
+        assert!(script.contains(needle), "unsloth-lora-journey missing {needle}");
+    }
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        !script.contains("make unsloth-qlora-journey") && !script.contains("make uniqueness-unsloth"),
+        "the LoRA journey must not invoke the QLoRA chain"
+    );
+
+    let chain = std::fs::read_to_string(root.join("scripts/uniqueness-unsloth-lora.sh")).unwrap();
+    assert!(chain.contains("UNSLOTH_LORA_PHASE=prepare"));
+    assert!(chain.contains("UNSLOTH_LORA_PHASE=seat"));
+    assert!(chain.contains("make unsloth-lora-journey"));
+    assert!(chain.contains("set -euo pipefail"));
+    assert!(!chain.contains("make unsloth-qlora-journey\n") && chain.contains("Does not run make unsloth-qlora-journey"));
+    assert!(chain.contains("make uniqueness-unsloth"));
+    assert!(
+        chain.find("UNSLOTH_LORA_PHASE=prepare") < chain.find("UNSLOTH_LORA_PHASE=seat"),
+        "uniqueness-unsloth-lora must run prepare-assert before the seat print"
+    );
+    assert!(
+        !chain.contains("UNSLOTH_QLORA_PHASE") && !chain.contains("make axolotl-lora-journey\n"),
+        "uniqueness-unsloth-lora must not run the other chains"
+    );
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journey.contains("## 14. Unsloth LoRA — optional NEXT print journey"));
+    assert!(journey.contains("make unsloth-lora-journey"));
+    assert!(journey.contains("make uniqueness-unsloth-lora"));
+    let train = std::fs::read_to_string(root.join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("`make unsloth-lora-journey`"));
+    assert!(train.contains("`make uniqueness-unsloth-lora`"));
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains("make unsloth-lora-journey"));
+    assert!(help.contains("make uniqueness-unsloth-lora"));
+    assert!(help.contains("section 14"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let slice = changelog
+        .split("## This slice — print-only Unsloth LoRA uniqueness and seat journey")
+        .nth(1)
+        .expect("CHANGELOG missing the unsloth lora journey slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make unsloth-lora-journey",
+        "scripts/unsloth-lora-journey.sh",
+        "make uniqueness-unsloth-lora",
+        "UNSLOTH.md",
+        "merged_16bit",
+        "refuse:train-base",
+        "refuse:official-scale",
+        "refuse:dataset",
+        "refuse:adapter",
+        "refuse:tokenizer",
+        "SKIP live train",
+        "optional",
+        "43770130 3391",
+        "READY_FOR_LIVE_TEST",
+    ] {
+        assert!(slice.contains(needle), "CHANGELOG slice missing {needle}");
+    }
+    assert!(
+        !slice.contains("READY_FOR_LIVE_TEST: yes") && !slice.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{slice}"
+    );
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("unsloth-lora-journey") && !body.contains("uniqueness-unsloth-lora"),
+            "{rel} must not run the unsloth lora journey"
         );
     }
 }
