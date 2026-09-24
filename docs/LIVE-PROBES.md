@@ -109,7 +109,7 @@ Opt-in print of the DeepSeek-R1-Distill chat ladder: `make deepseek-r1-distill-j
 
 Opt-in print of the GLM-4 Chat ladder: `make glm4-chat-journey` and `make uniqueness-glm` (operator section 20), plus the LoRA twin `make glm4-chat-lora-journey` and `make uniqueness-glm-lora`. Those commands do not train, merge, convert, shell out to ollama, or promote. They do not invent a new live PASS. The recorded PASS above stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: **no**. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
-Opt-in print of the purpose-build pick then checklist: `make purpose-build-journey` (operator section 18). That command runs those two print targets through make and does not train, fuse, convert, shell out to ollama, promote, or apply the estate. It does not invent a new live PASS. The recorded PASS above stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
+When an SLM fits mid-software-build, or on demand, the same print-only entry is `make purpose-build-journey`. Opt-in print of the purpose-build pick then checklist: `make purpose-build-journey` (operator section 18). That command runs `make purpose-build-pick`, then `make purpose-build-checklist`. Those two targets are the parts. It does not train, fuse, convert, shell out to ollama, promote, or apply the estate. It does not invent a new live PASS. The recorded PASS above stays the only live uniqueness prove. `READY_FOR_LIVE_TEST`: **no**. Not native MLX. Not in `make smoke`, `make gate-90`, or GitHub Actions.
 
 Walk: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Seat: [`local-seat.md`](local-seat.md).
 

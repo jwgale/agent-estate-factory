@@ -3372,7 +3372,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3736,7 +3736,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4218,7 +4218,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4596,7 +4596,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5315,7 +5315,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let named_journeys = changelog
         .split("## This slice — checklist names DeepSeek and GLM print journeys")
         .nth(1)
@@ -5801,7 +5801,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -6119,7 +6119,7 @@ fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let slice = changelog
         .split("## This slice — print-only purpose-build journey")
         .nth(1)
@@ -6403,7 +6403,7 @@ fn deepseek_r1_distill_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let slice = changelog
         .split("## This slice — print-only DeepSeek-R1-Distill journey")
         .nth(1)
@@ -6662,7 +6662,7 @@ fn glm4_chat_journey_stays_print_only_and_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let slice = changelog
         .split("## This slice — print-only GLM-4 Chat journey")
         .nth(1)
@@ -6807,7 +6807,7 @@ fn purpose_build_operator_surfaces_name_the_journey() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #189");
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
     let slice = changelog
         .split("## This slice — operator surfaces name purpose-build on demand")
         .nth(1)
@@ -6839,4 +6839,161 @@ fn purpose_build_operator_surfaces_name_the_journey() {
         );
     }
     assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+}
+
+#[test]
+fn purpose_build_surfaces_name_mid_software_build_entry() {
+    let root = repo_root();
+    let entry = "When an SLM fits mid-software-build, or on demand, the same print-only entry is `make purpose-build-journey`.";
+    let parts = "Those two targets are the parts.";
+    let day = std::fs::read_to_string(root.join("docs/OPERATOR-DAY.md")).unwrap();
+    assert!(day.contains(entry), "OPERATOR-DAY missing the mid-software-build entry");
+    assert!(day.contains(parts), "OPERATOR-DAY missing the parts line");
+    assert!(day.contains("## 4. Enrich prepare"));
+
+    let north = std::fs::read_to_string(root.join("docs/NORTH-STAR.md")).unwrap();
+    assert!(north.contains(entry), "NORTH-STAR suite missing the mid-software-build entry");
+    assert!(
+        north.contains("when an SLM fits mid-software-build, or on demand, this is the same print-only entry"),
+        "NORTH-STAR operator loop missing the mid-software-build entry"
+    );
+    assert!(north.contains(parts));
+
+    let journeys = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section15 = journeys
+        .split("## 15. Purpose-build on demand")
+        .nth(1)
+        .expect("section 15")
+        .split("## 16.")
+        .next()
+        .unwrap();
+    let section17 = journeys
+        .split("## 17. Purpose-build pick")
+        .nth(1)
+        .expect("section 17")
+        .split("## 18.")
+        .next()
+        .unwrap();
+    let section18 = journeys
+        .split("## 18. Purpose-build journey")
+        .nth(1)
+        .expect("section 18")
+        .split("## 19.")
+        .next()
+        .unwrap();
+    for (name, body) in [
+        ("section 15", section15),
+        ("section 17", section17),
+        ("section 18", section18),
+    ] {
+        assert!(body.contains(entry), "{name} missing the mid-software-build entry");
+        assert!(
+            body.contains("make purpose-build-pick") && body.contains("make purpose-build-checklist"),
+            "{name} must keep both parts"
+        );
+        assert!(body.contains(parts), "{name} missing the parts line");
+    }
+    assert!(
+        !section17.contains("`make purpose-build-checklist` (section 18)"),
+        "section 17 must not cite the checklist as section 18"
+    );
+    assert!(journeys.contains(entry));
+
+    let banner = "When an SLM fits mid-software-build, or on demand, the same print-only entry is make purpose-build-journey.";
+    for rel in [
+        "scripts/purpose-build-journey.sh",
+        "scripts/purpose-build-pick.sh",
+        "scripts/purpose-build-checklist.sh",
+    ] {
+        let script = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(script.contains(banner), "{rel} missing the mid-software-build banner");
+        assert!(
+            script.contains("make purpose-build-pick") && script.contains("make purpose-build-checklist"),
+            "{rel} must keep both parts"
+        );
+        assert!(script.contains("Those two targets are the parts."), "{rel} missing the parts line");
+        assert!(script.contains("READY_FOR_LIVE_TEST: no"), "{rel} must stay print-only");
+    }
+
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains(entry), "README missing the mid-software-build entry");
+    assert!(readme.contains("`make purpose-build-journey` (when an SLM fits mid-software-build, or on demand"));
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #189")
+            && gate_head.contains("a857f05a256b214a2069de42e6918130eb080d66"),
+        "tip header stays through PR #189"
+    );
+    let row = gate
+        .lines()
+        .find(|line| line.contains("| `make purpose-build-journey` |"))
+        .expect("remaining row");
+    assert!(row.contains("mid-software-build"), "{row}");
+    assert!(row.contains("Those two targets are the parts."), "{row}");
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(6).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #189"));
+    assert!(status.contains("| mid-software-build purpose-build |"));
+    assert!(status.contains(entry));
+
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    assert!(probes.contains(entry), "LIVE-PROBES missing the mid-software-build entry");
+    assert!(probes.contains("Those two targets are the parts."));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .unwrap()
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " operator surfaces name mid-software-build purpose-build");
+    let slice = changelog
+        .split("## This slice — operator surfaces name mid-software-build purpose-build")
+        .nth(1)
+        .expect("CHANGELOG missing the mid-software-build slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        entry,
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "docs/OPERATOR-DAY.md",
+        "docs/NORTH-STAR.md",
+        "docs/operator-enrich-journeys.md",
+        "scripts/purpose-build-journey.sh",
+        "scripts/purpose-build-pick.sh",
+        "scripts/purpose-build-checklist.sh",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #189",
+        "a857f05a256b214a2069de42e6918130eb080d66",
+        "make uniqueness-prove-checklist",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "does not add Kimi",
+        "does not add DeepSeek or GLM journey code",
+        "CELL_TRAIN_LIVE=1",
+        "CELL_SEAT_LIVE=1",
+        "READY_FOR_LIVE_TEST`: no",
+    ] {
+        assert!(slice.contains(needle), "mid-software-build CHANGELOG slice missing {needle}");
+    }
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("purpose-build-journey"),
+            "{rel} must not run purpose-build-journey"
+        );
+    }
 }

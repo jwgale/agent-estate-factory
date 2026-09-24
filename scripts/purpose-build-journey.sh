@@ -19,8 +19,9 @@ unset XAI_API_KEY CELL_FRONTIER_ENDPOINT CELL_LOCAL_ENDPOINT CELL_RENTED_ENDPOIN
 
 echo "== purpose-build-journey (print-only purpose-build on-demand entry) =="
 echo "Print-only. READY_FOR_LIVE_TEST: no"
+echo "When an SLM fits mid-software-build, or on demand, the same print-only entry is make purpose-build-journey."
 echo "Purpose-build on demand. This journey is operator UX."
-echo "Chain: make purpose-build-pick, then make purpose-build-checklist."
+echo "Chain: make purpose-build-pick, then make purpose-build-checklist. Those two targets are the parts."
 echo "It calls those targets through make. It does not inline their bodies."
 echo "It does not resolve or execute estate beyond what those targets already do."
 echo "It is not a re-prove of the recorded Target C live PASS."

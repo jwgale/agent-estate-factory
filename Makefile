@@ -377,8 +377,9 @@ purpose-build-checklist:
 purpose-build-pick:
 	bash scripts/purpose-build-pick.sh
 
+# When an SLM fits mid-software-build, or on demand, the same print-only entry.
 # Opt-in print-only purpose-build on-demand entry (operator section 18).
-# Chains make purpose-build-pick, then make purpose-build-checklist.
+# Chains make purpose-build-pick, then make purpose-build-checklist. Those two targets are the parts.
 # Calls those targets through make. Does not inline their bodies.
 # Does not train, fuse, convert, shell out to ollama, promote, or apply the estate.
 # Does not invent a live PASS. The recorded Target C PASS stays the only live uniqueness prove.
