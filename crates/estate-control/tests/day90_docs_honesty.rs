@@ -2994,7 +2994,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3358,7 +3358,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3768,7 +3768,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4146,7 +4146,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4839,7 +4839,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     let named = changelog
         .split("## This slice — help names the purpose-build checklist")
         .nth(1)
@@ -5261,7 +5261,7 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     let slice = changelog
         .split("## This slice — print-only purpose-build host picker")
         .nth(1)
@@ -5385,4 +5385,313 @@ fn purpose_build_pick_prints_host_table_and_stays_off_gates() {
     }
     let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
     assert_eq!(before, after, "picker must not rewrite examples/estate.yaml");
+}
+
+#[test]
+fn purpose_build_journey_chains_pick_then_checklist_and_stays_off_gates() {
+    let root = repo_root();
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile
+            .lines()
+            .any(|line| line.trim() == "purpose-build-journey:"),
+        "Makefile missing purpose-build-journey"
+    );
+    assert!(makefile.contains("scripts/purpose-build-journey.sh"));
+    let phony = makefile.lines().next().unwrap_or("");
+    assert!(
+        phony.contains("purpose-build-journey"),
+        "purpose-build-journey must be a phony target"
+    );
+    let gate90 = makefile
+        .split("\ngate-90:\n")
+        .nth(1)
+        .expect("gate-90 recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !gate90.contains("purpose-build-journey"),
+        "gate-90 must not run purpose-build-journey: {gate90}"
+    );
+    let smoke = makefile
+        .split("\nsmoke:\n")
+        .nth(1)
+        .expect("smoke recipe")
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !smoke.contains("purpose-build-journey"),
+        "smoke must not run purpose-build-journey: {smoke}"
+    );
+    assert!(makefile.contains(
+        "print-only purpose-build on-demand entry (operator section 18)"
+    ));
+    assert!(
+        !makefile.contains("uniqueness-purpose-build"),
+        "uniqueness-* stays a prepare-then-seat chain; no alias for this entry"
+    );
+
+    let script_path = root.join("scripts/purpose-build-journey.sh");
+    let script = std::fs::read_to_string(&script_path).unwrap();
+    for needle in [
+        "Print-only",
+        "READY_FOR_LIVE_TEST: no",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "does not inline their bodies",
+        "does not resolve or execute estate beyond what those targets already do",
+        "43770130 3391",
+        "does not invent a new live PASS",
+        "This print is not a live PASS.",
+        "only live uniqueness prove",
+        "make uniqueness-prove-checklist",
+        "Not native MLX.",
+        "CELL_TRAIN_LIVE=1 stays print-only.",
+        "CELL_SEAT_LIVE=1 stays print-only.",
+        "CELL_TRAIN_LIVE=1 is set. This journey stays print-only.",
+        "CELL_SEAT_LIVE=1 is set. This journey stays print-only.",
+        "Do not add to make smoke, make gate-90, or GitHub Actions",
+        "Purpose-build journey: make purpose-build-journey.",
+        "make -C \"$ROOT\" purpose-build-pick",
+        "make -C \"$ROOT\" purpose-build-checklist",
+    ] {
+        assert!(
+            script.contains(needle),
+            "purpose-build-journey missing {needle}"
+        );
+    }
+    assert!(
+        script.find("make -C \"$ROOT\" purpose-build-pick")
+            < script.find("make -C \"$ROOT\" purpose-build-checklist"),
+        "journey must run the pick before the checklist"
+    );
+    assert!(!script.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(
+        !script.to_ascii_lowercase().contains("kimi"),
+        "journey must not name Kimi"
+    );
+    assert!(
+        !script.contains("resolve_estate"),
+        "journey must not resolve estate itself"
+    );
+    let executed: Vec<&str> = script
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') || trimmed.starts_with("echo") || trimmed.starts_with("printf")
+            {
+                return false;
+            }
+            let make_child = trimmed.contains("make -C \"$ROOT\" purpose-build-pick")
+                || trimmed.contains("make -C \"$ROOT\" purpose-build-checklist");
+            if make_child {
+                return false;
+            }
+            trimmed.contains("ollama ")
+                || trimmed.contains("llamafactory-cli")
+                || trimmed.contains("convert_hf_to_gguf.py")
+                || trimmed.contains("mlx_lm")
+                || trimmed.contains("cargo ")
+                || trimmed.contains("make ")
+                || trimmed.contains(" estate enrich ")
+        })
+        .collect();
+    assert!(
+        executed.is_empty(),
+        "purpose-build-journey must not train, fuse, convert, or shell out: {executed:?}"
+    );
+
+    let gate = std::fs::read_to_string(root.join("docs/GATE-90.md")).unwrap();
+    let gate_head: String = gate.lines().take(8).collect::<Vec<_>>().join("\n");
+    assert!(
+        gate_head.contains("through PR #179"),
+        "GATE-90 header stays through PR #179: {gate_head}"
+    );
+    assert!(!gate.contains("READY_FOR_LIVE_TEST: yes"));
+    let row = gate
+        .lines()
+        .find(|line| line.contains("| `make purpose-build-journey` |"))
+        .expect("remaining row for purpose-build-journey");
+    assert!(row.contains("operator section 18"), "{row}");
+    assert!(row.contains("make purpose-build-pick"), "{row}");
+    assert!(row.contains("make purpose-build-checklist"), "{row}");
+    assert!(row.contains("Does not invent a live PASS"), "{row}");
+    assert!(row.contains("Not native MLX"), "{row}");
+    assert!(row.contains("Not a live train"), "{row}");
+
+    let journey = std::fs::read_to_string(root.join("docs/operator-enrich-journeys.md")).unwrap();
+    let section = journey
+        .split("## 18. Purpose-build journey — pick then checklist")
+        .nth(1)
+        .expect("operator section 18");
+    assert!(section.contains("make purpose-build-journey"));
+    assert!(section.contains("make purpose-build-pick"));
+    assert!(section.contains("make purpose-build-checklist"));
+    assert!(section.contains("43770130 3391"));
+    assert!(section.contains("only live uniqueness prove"));
+    assert!(!journey.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let help = std::fs::read_to_string(root.join("crates/estate-control/src/help.rs")).unwrap();
+    assert!(help.contains(
+        "make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18)"
+    ));
+    assert!(help.contains("make purpose-build-checklist"));
+    assert!(help.contains("make purpose-build-pick"));
+    assert!(help.contains("make mlx-lm-lora-journey"));
+    assert!(!help.contains("READY_FOR_LIVE_TEST: yes"));
+
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("`make purpose-build-journey`"));
+    assert!(readme.contains("`make purpose-build-checklist`"));
+    assert!(readme.contains("`make purpose-build-pick`"));
+    assert!(readme.contains("`make mlx-lm-lora-journey`"));
+    assert!(readme.contains(
+        "print-only purpose-build on-demand entry (operator section 18)"
+    ));
+
+    let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
+    let status_head: String = status.lines().take(43).collect::<Vec<_>>().join("\n");
+    assert!(status_head.contains("through PR #179"));
+    assert!(status.contains("make purpose-build-journey # opt-in:"));
+    assert!(status.contains("make purpose-build-checklist # opt-in:"));
+    assert!(status.contains("make purpose-build-pick # opt-in:"));
+
+    let probes = std::fs::read_to_string(root.join("docs/LIVE-PROBES.md")).unwrap();
+    let recorded = probes
+        .split("## Target C live uniqueness (5090-class)")
+        .nth(1)
+        .expect("LIVE-PROBES section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(recorded.contains("`make purpose-build-journey`"));
+    assert!(recorded.contains("does not invent a new live PASS"));
+    assert!(recorded.contains("only live uniqueness prove"));
+    assert!(recorded.contains("through PR #179"));
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .expect("CHANGELOG missing a slice")
+        .split('\n')
+        .next()
+        .unwrap();
+    assert_eq!(head, " print-only purpose-build journey");
+    let slice = changelog
+        .split("## This slice — print-only purpose-build journey")
+        .nth(1)
+        .expect("CHANGELOG missing the journey slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "make purpose-build-journey",
+        "scripts/purpose-build-journey.sh",
+        "make purpose-build-pick",
+        "make purpose-build-checklist",
+        "operator section 18",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #179",
+        "4772e0f001a9422cefa8e6f2a9378836285068c7",
+        "only live uniqueness prove",
+        "43770130 3391",
+        "Not native MLX",
+        "does not add Kimi",
+        "make mlx-lm-lora-journey",
+    ] {
+        assert!(
+            slice.contains(needle),
+            "journey CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(
+        slice.contains("READY_FOR_LIVE_TEST`: no") || slice.contains("READY_FOR_LIVE_TEST: no")
+    );
+    assert!(!slice.contains("READY_FOR_LIVE_TEST: yes"));
+    assert!(changelog.contains(
+        "## This slice — GATE-90 and Cell One tip honesty through PR #179"
+    ));
+
+    for rel in [
+        "scripts/smoke.sh",
+        "scripts/day90-gate.sh",
+        ".github/workflows/ci.yml",
+    ] {
+        let body = std::fs::read_to_string(root.join(rel)).unwrap();
+        assert!(
+            !body.contains("purpose-build-journey"),
+            "{rel} must not run purpose-build-journey"
+        );
+    }
+
+    let before = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    let syntax = std::process::Command::new("bash")
+        .arg("-n")
+        .arg(&script_path)
+        .output()
+        .unwrap();
+    assert!(
+        syntax.status.success(),
+        "{}",
+        String::from_utf8_lossy(&syntax.stderr)
+    );
+
+    for (train, seat) in [(false, false), (true, true)] {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&script_path)
+            .current_dir(&root)
+            .env_remove("XAI_API_KEY");
+        if train {
+            cmd.env("CELL_TRAIN_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_TRAIN_LIVE");
+        }
+        if seat {
+            cmd.env("CELL_SEAT_LIVE", "1");
+        } else {
+            cmd.env_remove("CELL_SEAT_LIVE");
+        }
+        let output = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        assert!(
+            output.status.success(),
+            "journey failed train={train} seat={seat}\n{stdout}\n{stderr}"
+        );
+        assert!(stderr.is_empty(), "{stderr}");
+        let pick_at = stdout
+            .find("== purpose-build-pick")
+            .expect("pick banner");
+        let checklist_at = stdout
+            .find("== purpose-build-checklist")
+            .expect("checklist banner");
+        assert!(
+            pick_at < checklist_at,
+            "pick must print before the checklist"
+        );
+        for needle in [
+            "Print-only. READY_FOR_LIVE_TEST: no",
+            "== purpose-build-journey (print-only purpose-build on-demand entry) ==",
+            "== purpose-build-pick (print-only host and stack picker) ==",
+            "== purpose-build-checklist (print-only operator steps for purpose-build on demand) ==",
+            "cksum: 43770130 3391 ",
+            "This print is not a live PASS.",
+            "Purpose-build journey: make purpose-build-journey.",
+            "This journey does not invent a new live PASS.",
+        ] {
+            assert!(stdout.contains(needle), "output missing {needle}\n{stdout}");
+        }
+        assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"));
+        if train {
+            assert!(stdout.contains("CELL_TRAIN_LIVE=1 is set. This journey stays print-only."));
+        }
+        if seat {
+            assert!(stdout.contains("CELL_SEAT_LIVE=1 is set. This journey stays print-only."));
+        }
+    }
+    let after = std::fs::read(root.join("examples/estate.yaml")).unwrap();
+    assert_eq!(before, after, "journey must not rewrite examples/estate.yaml");
 }

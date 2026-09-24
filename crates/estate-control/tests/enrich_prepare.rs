@@ -181,6 +181,12 @@ fn help_enrich_and_train_name_the_seam() {
             "{body}"
         );
         assert!(
+            body.contains(
+                "make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18)"
+            ),
+            "{body}"
+        );
+        assert!(
             body.contains("make uniqueness-mlx is the print-only chain of that journey"),
             "{body}"
         );
@@ -222,6 +228,10 @@ fn help_enrich_and_train_name_the_seam() {
             && index_text.contains("make purpose-build-pick")
             && index_text.contains(
                 "print-only host and stack picker for purpose-build journeys (operator section 17)"
+            )
+            && index_text.contains("make purpose-build-journey")
+            && index_text.contains(
+                "print-only purpose-build on-demand entry (operator section 18)"
             )
             && index_text.contains("make uniqueness-mlx")
             && index_text.contains(
@@ -4923,7 +4933,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5144,7 +5154,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5364,7 +5374,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -5764,7 +5774,7 @@ fn mlx_lm_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #179");
+    assert_eq!(head, " print-only purpose-build journey");
     assert!(
         changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #175"),
         "CHANGELOG must keep the PR #175 tip-honesty slice"
