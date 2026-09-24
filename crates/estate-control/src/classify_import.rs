@@ -6,10 +6,12 @@
 //! `--fetch rows-api` is the explicit datasets-server fallback. Tests inject the
 //! Python and `hf` runners and never spawn a process or call the network.
 //!
-//! Option order for `fixed_classes` presets (ag_news, devign) is the class table
-//! order. Letters A, B, C, … follow that order and are not shuffled. The answer
-//! letter is the class letter. `sample_distractors` (banking77, later) shuffles
-//! the chosen options with the import seed, and the answer letter follows that shuffle.
+//! Option order for `fixed_classes` presets (ag_news, devign, rust_idiom) is the
+//! class table order. Letters A, B, C, … follow that order and are not shuffled.
+//! The answer letter is the class letter. `sample_distractors` (banking77, later)
+//! shuffles the chosen options with the import seed, and the answer letter follows
+//! that shuffle. `rust_idiom` reads CommitPackFT Rust commits (`old_contents` /
+//! `new_contents`) through this same path and holds out whole commits with a fixed seed.
 
 use crate::classify::split_indices;
 use anyhow::{bail, Result};
@@ -59,6 +61,25 @@ enum Fetch {
     Later,
 }
 
+/// How a snapshot becomes native rows. Parquet presets stay one labeled row per record.
+#[derive(Clone, Copy, Debug)]
+enum SourceShape {
+    LabeledColumns,
+    /// One commit becomes NeedsFix (`old_field`) and Idiomatic (`new_field`).
+    /// Empty sides are dropped. There is no official test split.
+    CommitPair {
+        old_field: &'static str,
+        new_field: &'static str,
+        lang_field: &'static str,
+        lang_value: &'static str,
+        /// `hf download --include` so the Rust subset is fetched, not the full pack.
+        include: &'static str,
+        source_commits: u64,
+        usable_pairs: u64,
+        holdout_seed: u64,
+    },
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct DatasetPreset {
     pub alias: &'static str,
@@ -76,6 +97,9 @@ pub struct DatasetPreset {
     pub label_field: &'static str,
     pub map: LabelMap,
     pub license_note: &'static str,
+    /// datasets-server config. `default` for single-config sets. `rust` for CommitPackFT.
+    rows_config: &'static str,
+    shape: SourceShape,
     fetch: Fetch,
 }
 
@@ -109,6 +133,27 @@ const DEVIGN_CLASSES: &[ClassSpec] = &[
     },
 ];
 
+const RUST_IDIOM_CLASSES: &[ClassSpec] = &[
+    ClassSpec {
+        key: "needs_fix",
+        description: "NeedsFix",
+    },
+    ClassSpec {
+        key: "idiomatic",
+        description: "Idiomatic",
+    },
+];
+
+/// CommitPackFT rust file rows. The card table lists this sample count.
+const RUST_SOURCE_COMMITS: u64 = 2_996;
+/// Both sides non-empty and different. Counted from `data/rust/data.jsonl`.
+const RUST_USABLE_PAIRS: u64 = 2_340;
+const RUST_HOLDOUT_SEED: u64 = 42;
+/// Shape of the CommitPair expand and drop rules. A change invalidates native caches
+/// even when the expanded row counts stay the same.
+const COMMIT_PAIR_TRANSFORM: &str =
+    "drop-empty-or-identical;expand-old0-new1;holdout-one-fifth-whole-commit";
+
 const MULTI_NLI_CLASSES: &[ClassSpec] = &[
     ClassSpec {
         key: "entailment",
@@ -124,7 +169,7 @@ const MULTI_NLI_CLASSES: &[ClassSpec] = &[
     },
 ];
 
-/// Downloadable presets plus the two later rows. `ag_news` and `devign` download.
+/// Downloadable presets plus the two later rows. `ag_news`, `devign`, and `rust_idiom` download.
 const CATALOG: &[DatasetPreset] = &[
     DatasetPreset {
         alias: "ag_news",
@@ -139,6 +184,8 @@ const CATALOG: &[DatasetPreset] = &[
         label_field: "label",
         map: LabelMap::FixedClasses(AG_NEWS_CLASSES),
         license_note: "ag_news license is unspecified on the Hugging Face dataset card; this output is for local training only, do not redistribute.",
+        rows_config: "default",
+        shape: SourceShape::LabeledColumns,
         fetch: Fetch::RowsApi,
     },
     DatasetPreset {
@@ -154,6 +201,36 @@ const CATALOG: &[DatasetPreset] = &[
         label_field: "target",
         map: LabelMap::FixedClasses(DEVIGN_CLASSES),
         license_note: "Devign / CodeXGLUE defect detection (google/code_x_glue_cc_defect_detection, C-UDA) is for local training only. Do not redistribute. Credit Devign and CodeXGLUE.",
+        rows_config: "default",
+        shape: SourceShape::LabeledColumns,
+        fetch: Fetch::RowsApi,
+    },
+    DatasetPreset {
+        alias: "rust_idiom",
+        hf_id: "bigcode/commitpackft",
+        slug: "rustidiom",
+        train_split: "train",
+        test_split: "test",
+        // Expanded rows after the seeded holdout, not the 2,996 source commits.
+        // Train commits 1,872 × 2 = 3,744. Held-out commits 468 × 2 = 936.
+        official_train: 3_744,
+        official_test: 936,
+        question: "Does this Rust snippet need a fix, or is it the idiomatic version?",
+        text_field: "old_contents",
+        label_field: "label",
+        map: LabelMap::FixedClasses(RUST_IDIOM_CLASSES),
+        license_note: "CommitPackFT rust (bigcode/commitpackft) mixes a dataset-card MIT name with per-sample repository licenses, including unknown and copyleft. This output is for local training only. Do not redistribute.",
+        rows_config: "rust",
+        shape: SourceShape::CommitPair {
+            old_field: "old_contents",
+            new_field: "new_contents",
+            lang_field: "lang",
+            lang_value: "Rust",
+            include: "data/rust/*",
+            source_commits: RUST_SOURCE_COMMITS,
+            usable_pairs: RUST_USABLE_PAIRS,
+            holdout_seed: RUST_HOLDOUT_SEED,
+        },
         fetch: Fetch::RowsApi,
     },
     DatasetPreset {
@@ -172,6 +249,8 @@ const CATALOG: &[DatasetPreset] = &[
             distractors: 4,
         },
         license_note: "banking77 is not fetched in this slice.",
+        rows_config: "default",
+        shape: SourceShape::LabeledColumns,
         fetch: Fetch::Later,
     },
     DatasetPreset {
@@ -191,6 +270,8 @@ const CATALOG: &[DatasetPreset] = &[
             hypothesis_field: "hypothesis",
         },
         license_note: "multi_nli is not fetched in this slice.",
+        rows_config: "default",
+        shape: SourceShape::LabeledColumns,
         fetch: Fetch::Later,
     },
 ];
@@ -233,7 +314,7 @@ pub fn preset_by_name(name: &str) -> Result<&'static DatasetPreset> {
         .find(|row| row.alias == name || row.hf_id == name || row.slug == name)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "refuse:classify-import: unknown dataset {name}. This slice downloads ag_news (fancyzhx/ag_news) and devign (google/code_x_glue_cc_defect_detection)."
+                "refuse:classify-import: unknown dataset {name}. This slice downloads ag_news (fancyzhx/ag_news), devign (google/code_x_glue_cc_defect_detection), and rust_idiom (bigcode/commitpackft)."
             )
         })
 }
@@ -613,6 +694,49 @@ fn to_record(preset: &DatasetPreset, split: &str, row: &NativeRow, seed: u64) ->
     }))
 }
 
+fn heldout_kind(preset: &DatasetPreset) -> &'static str {
+    match preset.shape {
+        SourceShape::CommitPair { .. } => "seeded-commit-holdout",
+        SourceShape::LabeledColumns => "official-test",
+    }
+}
+
+fn source_commits(preset: &DatasetPreset) -> Option<u64> {
+    match preset.shape {
+        SourceShape::CommitPair { source_commits, .. } => Some(source_commits),
+        SourceShape::LabeledColumns => None,
+    }
+}
+
+fn usable_pairs(preset: &DatasetPreset) -> Option<u64> {
+    match preset.shape {
+        SourceShape::CommitPair { usable_pairs, .. } => Some(usable_pairs),
+        SourceShape::LabeledColumns => None,
+    }
+}
+
+fn heldout_note(preset: &DatasetPreset) -> String {
+    match preset.shape {
+        SourceShape::CommitPair {
+            source_commits,
+            usable_pairs,
+            holdout_seed,
+            ..
+        } => {
+            let held_commits = usable_pairs / 5;
+            let train_commits = usable_pairs - held_commits;
+            format!(
+                "CommitPackFT rust has no test split. Source file rows: {source_commits}. Usable before/after pairs (both sides non-empty and different): {usable_pairs}. Held-out is a deterministic SplitMix holdout of whole commits at seed {holdout_seed}, one fifth of usable commits ({held_commits}). Both sides of a pair stay in the same split. Expanded rows: train {} ({train_commits} commits), held-out {} ({held_commits} commits).",
+                preset.official_train, preset.official_test
+            )
+        }
+        SourceShape::LabeledColumns => format!(
+            "Held-out is the official {} split ({} rows).",
+            preset.test_split, preset.official_test
+        ),
+    }
+}
+
 fn option_order_note(preset: &DatasetPreset) -> String {
     match preset.map {
         LabelMap::FixedClasses(classes) | LabelMap::ThreeWay { classes, .. } => {
@@ -735,7 +859,7 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
     let preset = preset_by_name(req.dataset)?;
     if preset.fetch != Fetch::RowsApi && req.native_train.is_none() {
         bail!(
-            "refuse:classify-import: {} is a catalog row for a later slice. This slice downloads ag_news and devign.",
+            "refuse:classify-import: {} is a catalog row for a later slice. This slice downloads ag_news, devign, and rust_idiom.",
             preset.hf_id
         );
     }
@@ -786,8 +910,12 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
         },
         "option_order_note": option_order_note(preset),
         "heldout_split": preset.test_split,
+        "heldout_kind": heldout_kind(preset),
+        "heldout_note": heldout_note(preset),
         "official_train": preset.official_train,
         "official_test": preset.official_test,
+        "source_commits": source_commits(preset),
+        "usable_pairs": usable_pairs(preset),
         "license_note": preset.license_note,
         "live_train": false,
         "note": "classify import writes tev1 JSONL for local training. It does not train. Do not redistribute the rows."
@@ -839,6 +967,12 @@ struct ParquetJob<'a> {
     label_field: &'a str,
     premise_field: Option<&'a str>,
     hypothesis_field: Option<&'a str>,
+    /// Set for CommitPackFT. The script writes `{index, old, new, lang}` lines.
+    pair_old: Option<&'a str>,
+    pair_new: Option<&'a str>,
+    lang_field: Option<&'a str>,
+    /// Source commit rows the injected reader should emit. Live Python ignores this and reads the file.
+    commit_rows: u64,
     out_partial: &'a Path,
 }
 
@@ -919,22 +1053,27 @@ fn acquire_native(
             let snapshot = hf_snapshot_dir(req, preset.alias);
             fs::create_dir_all(&snapshot)?;
             let bin = crate::classify_journey::hf_bin_name().unwrap_or("hf");
-            io.hf_download(&hf_dataset_argv(bin, preset.hf_id, &snapshot))?;
+            io.hf_download(&hf_dataset_argv(bin, preset, &snapshot))?;
             acquire_local_parquet(preset, &native, &snapshot, true, req.python, io)
         }
     }
 }
 
-fn hf_dataset_argv(bin: &str, repo: &str, local_dir: &Path) -> Vec<String> {
-    vec![
+fn hf_dataset_argv(bin: &str, preset: &DatasetPreset, local_dir: &Path) -> Vec<String> {
+    let mut argv = vec![
         bin.to_string(),
         "download".into(),
-        repo.to_string(),
+        preset.hf_id.to_string(),
         "--repo-type".into(),
         "dataset".into(),
         "--local-dir".into(),
         local_dir.display().to_string(),
-    ]
+    ];
+    if let SourceShape::CommitPair { include, .. } = preset.shape {
+        argv.push("--include".into());
+        argv.push(include.to_string());
+    }
+    argv
 }
 
 #[derive(Clone)]
@@ -952,6 +1091,9 @@ fn acquire_local_parquet(
     python: Option<&str>,
     io: &dyn ImportIo,
 ) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
+    if let SourceShape::CommitPair { .. } = preset.shape {
+        return acquire_commit_pairs(preset, native, source_dir, force, python, io);
+    }
     let source_dir = canonical_snapshot(source_dir)?;
     let source = inspect_parquet_source(&source_dir, preset.train_split, preset.test_split)?;
     let train_final = native.join(format!("{}.jsonl", preset.train_split));
@@ -1040,6 +1182,10 @@ fn read_one_parquet_split(
         label_field: preset.label_field,
         premise_field,
         hypothesis_field,
+        pair_old: None,
+        pair_new: None,
+        lang_field: None,
+        commit_rows: 0,
         out_partial: &partial,
     })?;
     let rows = read_native(&partial)?;
@@ -1060,7 +1206,7 @@ fn bulk_cache_reusable(preset: &DatasetPreset, native: &Path, snapshot: &Path) -
     let Some(stored) = manifest_source_fp(native)? else {
         return Ok(false);
     };
-    let Ok(source) = inspect_parquet_source(snapshot, preset.train_split, preset.test_split) else {
+    let Ok(source) = inspect_preset_source(preset, snapshot) else {
         return Ok(false);
     };
     Ok(stored == source.token)
@@ -1097,6 +1243,30 @@ pub fn dataset_source_token(
     match fetch {
         ImportFetch::RowsApi => "rows-api".to_string(),
         ImportFetch::Bulk => "hf-download".to_string(),
+    }
+}
+
+pub fn preset_source_token(
+    preset: &DatasetPreset,
+    from_local: Option<&Path>,
+    fetch: ImportFetch,
+) -> String {
+    if let Some(dir) = from_local {
+        if let SourceShape::CommitPair { .. } = preset.shape {
+            return inspect_commit_jsonl(dir)
+                .map(|source| source.token)
+                .unwrap_or_else(|_| format!("local-unreadable:{}", dir.display()));
+        }
+    }
+    dataset_source_token(from_local, fetch, preset.train_split, preset.test_split)
+}
+
+fn inspect_preset_source(preset: &DatasetPreset, dir: &Path) -> Result<ParquetSource> {
+    match preset.shape {
+        SourceShape::CommitPair { .. } => inspect_commit_jsonl(dir),
+        SourceShape::LabeledColumns => {
+            inspect_parquet_source(dir, preset.train_split, preset.test_split)
+        }
     }
 }
 
@@ -1351,12 +1521,36 @@ fn python_failure(python: &str, code: i32, stderr: &str) -> String {
 
 const PARQUET_SCRIPT: &str = r#"
 import json, numbers, sys
+spec = json.loads(sys.stdin.read())
+pair_old = spec.get("pair_old") or ""
+if pair_old:
+    pair_new = spec["pair_new"]
+    lang_field = spec["lang_field"]
+    index = 0
+    with open(spec["out"], "w", encoding="utf-8") as out:
+        for path in spec["files"]:
+            with open(path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    row = json.loads(line)
+                    old = row.get(pair_old)
+                    new = row.get(pair_new)
+                    lang = row.get(lang_field)
+                    out.write(json.dumps({
+                        "index": index,
+                        "old": "" if old is None else str(old),
+                        "new": "" if new is None else str(new),
+                        "lang": "" if lang is None else str(lang),
+                    }, ensure_ascii=False) + "\n")
+                    index += 1
+    sys.exit(0)
 try:
     import pyarrow.parquet as pq
 except Exception:
     sys.stderr.write("pyarrow-missing\n")
     sys.exit(2)
-spec = json.loads(sys.stdin.read())
 text_field = spec["text_field"]
 label_field = spec["label_field"]
 premise_field = spec.get("premise_field") or ""
@@ -1446,6 +1640,10 @@ fn live_read_parquet(job: &ParquetJob<'_>) -> Result<()> {
         "label_field": job.label_field,
         "premise_field": job.premise_field,
         "hypothesis_field": job.hypothesis_field,
+        "pair_old": job.pair_old,
+        "pair_new": job.pair_new,
+        "lang_field": job.lang_field,
+        "commit_rows": job.commit_rows,
         "out": job.out_partial.display().to_string(),
     });
     let mut child = Command::new(&bin)
@@ -1527,6 +1725,501 @@ fn live_hf_download(argv: &[String]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone)]
+struct CommitLine {
+    index: u64,
+    old: String,
+    new: String,
+    lang: String,
+}
+
+fn acquire_commit_pairs(
+    preset: &DatasetPreset,
+    native: &Path,
+    source_dir: &Path,
+    force: bool,
+    python: Option<&str>,
+    io: &dyn ImportIo,
+) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
+    let source_dir = canonical_snapshot(source_dir)?;
+    let source = inspect_commit_jsonl(&source_dir)?;
+    let train_final = native.join(format!("{}.jsonl", preset.train_split));
+    let test_final = native.join(format!("{}.jsonl", preset.test_split));
+    if !force && cache_verified(preset, native)? {
+        if manifest_source_fp(native)?.as_deref() == Some(source.token.as_str()) {
+            return Ok((read_native(&train_final)?, read_native(&test_final)?));
+        }
+    }
+    let files = commit_jsonl_files(&source_dir)?;
+    let (
+        old_field,
+        new_field,
+        lang_field,
+        lang_value,
+        source_commits,
+    ) = commit_pair_fields(preset)?;
+    let partial = native.join("commits.jsonl.partial");
+    if let Some(parent) = partial.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let _ = fs::remove_file(&partial);
+    io.read_parquet(&ParquetJob {
+        python,
+        split: "commits",
+        files: &files,
+        text_field: preset.text_field,
+        label_field: preset.label_field,
+        premise_field: None,
+        hypothesis_field: None,
+        pair_old: Some(old_field),
+        pair_new: Some(new_field),
+        lang_field: Some(lang_field),
+        commit_rows: source_commits,
+        out_partial: &partial,
+    })?;
+    let (train_rows, test_rows) = commits_to_splits(preset, &read_commit_lines(&partial)?, lang_value)?;
+    let _ = fs::remove_file(&partial);
+    write_native_rows(&partial_path(&train_final), &train_rows)?;
+    write_native_rows(&partial_path(&test_final), &test_rows)?;
+    publish_native(&train_final)?;
+    publish_native(&test_final)?;
+    let manifest = commit_pair_manifest(
+        preset,
+        json!({
+            "hf_id": preset.hf_id,
+            "source": "local-jsonl",
+            "source_dir": source.dir_display,
+            "source_fp": source.token,
+            "jsonl": source.files,
+            "train_rows": train_rows.len(),
+            "test_rows": test_rows.len(),
+            "complete": true,
+        }),
+    )?;
+    fs::write(
+        native.join("manifest.json"),
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    Ok((train_rows, test_rows))
+}
+
+fn commit_pair_fields(
+    preset: &DatasetPreset,
+) -> Result<(&'static str, &'static str, &'static str, &'static str, u64)> {
+    match preset.shape {
+        SourceShape::CommitPair {
+            old_field,
+            new_field,
+            lang_field,
+            lang_value,
+            source_commits,
+            ..
+        } => Ok((old_field, new_field, lang_field, lang_value, source_commits)),
+        SourceShape::LabeledColumns => {
+            bail!("refuse:classify-import: {} is not a commit-pair preset", preset.alias)
+        }
+    }
+}
+
+fn commits_to_splits(
+    preset: &DatasetPreset,
+    lines: &[CommitLine],
+    lang_value: &str,
+) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
+    let (source_commits, usable_pairs, holdout_seed) = match preset.shape {
+        SourceShape::CommitPair {
+            source_commits,
+            usable_pairs,
+            holdout_seed,
+            ..
+        } => (source_commits, usable_pairs, holdout_seed),
+        SourceShape::LabeledColumns => {
+            bail!("refuse:classify-import: {} is not a commit-pair preset", preset.alias)
+        }
+    };
+    if lines.len() as u64 != source_commits {
+        bail!(
+            "refuse:classify-import: {} source file has {} commits but the official count is {source_commits}",
+            preset.alias,
+            lines.len()
+        );
+    }
+    let mut usable = Vec::new();
+    for line in lines {
+        if line.lang != lang_value {
+            bail!(
+                "refuse:classify-import: {} commit {} lang {} is not {lang_value}",
+                preset.alias,
+                line.index,
+                line.lang
+            );
+        }
+        if line.old.trim().is_empty() || line.new.trim().is_empty() || line.old == line.new {
+            continue;
+        }
+        usable.push(line);
+    }
+    if usable.len() as u64 != usable_pairs {
+        bail!(
+            "refuse:classify-import: {} has {} usable before/after pairs but the preset count is {usable_pairs}",
+            preset.alias,
+            usable.len()
+        );
+    }
+    let held_commits = usable.len() / 5;
+    let (mut train_at, mut test_at) = split_indices(usable.len(), holdout_seed, held_commits);
+    train_at.sort_unstable();
+    test_at.sort_unstable();
+    let train_rows = expand_commits(&usable, &train_at);
+    let test_rows = expand_commits(&usable, &test_at);
+    verify_split_count(
+        preset.train_split,
+        train_rows.len() as u64,
+        train_rows.len() as u64,
+        preset.official_train,
+    )?;
+    verify_split_count(
+        preset.test_split,
+        test_rows.len() as u64,
+        test_rows.len() as u64,
+        preset.official_test,
+    )?;
+    eprintln!(
+        "classify-import: {} usable pairs, train {} rows, held-out {} rows (seeded commit holdout)",
+        usable.len(),
+        train_rows.len(),
+        test_rows.len()
+    );
+    Ok((train_rows, test_rows))
+}
+
+fn expand_commits(usable: &[&CommitLine], indices: &[usize]) -> Vec<NativeRow> {
+    let mut rows = Vec::with_capacity(indices.len() * 2);
+    for &at in indices {
+        let line = usable[at];
+        rows.push(NativeRow {
+            index: line.index.saturating_mul(2),
+            text: line.old.clone(),
+            premise: None,
+            hypothesis: None,
+            label: 0,
+        });
+        rows.push(NativeRow {
+            index: line.index.saturating_mul(2).saturating_add(1),
+            text: line.new.clone(),
+            premise: None,
+            hypothesis: None,
+            label: 1,
+        });
+    }
+    rows
+}
+
+fn read_commit_lines(path: &Path) -> Result<Vec<CommitLine>> {
+    let file = File::open(path).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-import: cannot read {}: {err}",
+            path.display()
+        )
+    })?;
+    let mut rows = Vec::new();
+    for (line_no, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-import: {} line {} is not JSON: {err}",
+                path.display(),
+                line_no + 1
+            )
+        })?;
+        rows.push(commit_from_value(line_no as u64, &value, "old", "new", "lang")?);
+    }
+    Ok(rows)
+}
+
+fn commit_from_value(
+    fallback_index: u64,
+    value: &Value,
+    old_field: &str,
+    new_field: &str,
+    lang_field: &str,
+) -> Result<CommitLine> {
+    let index = value
+        .get("index")
+        .and_then(Value::as_u64)
+        .unwrap_or(fallback_index);
+    let text_of = |field: &str| -> String {
+        match value.get(field) {
+            Some(Value::String(text)) => text.clone(),
+            Some(other) if !other.is_null() => other.to_string(),
+            _ => String::new(),
+        }
+    };
+    Ok(CommitLine {
+        index,
+        old: text_of(old_field),
+        new: text_of(new_field),
+        lang: text_of(lang_field),
+    })
+}
+
+fn write_native_rows(path: &Path, rows: &[NativeRow]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = File::create(path)?;
+    for row in rows {
+        writeln!(file, "{}", serde_json::to_string(&native_json(row))?)?;
+    }
+    Ok(())
+}
+
+fn inspect_commit_jsonl(dir: &Path) -> Result<ParquetSource> {
+    let canon = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let paths = commit_jsonl_files(&canon)?;
+    let cache_key = format!("jsonl\n{}", canon.display());
+    let mut cheap_lines = vec![format!("dir={}", canon.display())];
+    let mut stats = Vec::new();
+    for path in &paths {
+        let meta = fs::metadata(path).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-import: cannot stat {}: {err}",
+                path.display()
+            )
+        })?;
+        let mtime = file_mtime_secs(&meta);
+        let mtime_ns = file_mtime_nanos(&meta);
+        let rel = path
+            .strip_prefix(&canon)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        cheap_lines.push(format!("{rel} bytes={} mtime_ns={mtime_ns}", meta.len()));
+        stats.push((path.clone(), rel, meta.len(), mtime));
+    }
+    let cheap = cheap_lines.join("\n");
+    if let Some(hit) = remembered_source(&cache_key, &cheap) {
+        return Ok(hit);
+    }
+    let mut lines = vec![format!("dir={}", canon.display())];
+    let mut files = Vec::new();
+    for (path, rel, bytes, mtime) in &stats {
+        let hash = sha256_file(path)?;
+        lines.push(format!("{rel} sha256={hash} bytes={bytes} mtime={mtime}"));
+        files.push(json!({
+            "path": rel,
+            "sha256": hash,
+            "bytes": bytes,
+            "mtime": mtime,
+        }));
+    }
+    let source = ParquetSource {
+        dir_display: canon.display().to_string(),
+        token: lines.join("\n"),
+        files,
+    };
+    remember_source(&cache_key, &cheap, &source);
+    Ok(source)
+}
+
+fn commit_jsonl_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    collect_commit_jsonl(dir, &mut seen, &mut found)?;
+    let rust: Vec<PathBuf> = found
+        .iter()
+        .filter(|path| {
+            path.components().any(|part| match part {
+                std::path::Component::Normal(name) => name == "rust",
+                _ => false,
+            })
+        })
+        .cloned()
+        .collect();
+    let chosen = if !rust.is_empty() {
+        rust
+    } else if found.len() == 1 {
+        found
+    } else if found.is_empty() {
+        bail!(
+            "refuse:classify-import: no data/rust/data.jsonl under {}",
+            dir.display()
+        );
+    } else {
+        bail!(
+            "refuse:classify-import: multiple data.jsonl files under {} and none is the rust subset",
+            dir.display()
+        );
+    };
+    let mut chosen = chosen;
+    chosen.sort();
+    Ok(chosen)
+}
+
+fn collect_commit_jsonl(
+    dir: &Path,
+    seen: &mut std::collections::BTreeSet<(u64, u64)>,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let dir_meta = fs::symlink_metadata(dir).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-import: cannot stat {}: {err}",
+            dir.display()
+        )
+    })?;
+    if dir_meta.file_type().is_symlink() {
+        bail!(
+            "refuse:classify-import: directory symlink {} is refused",
+            dir.display()
+        );
+    }
+    if !seen.insert((dir_meta.dev(), dir_meta.ino())) {
+        bail!(
+            "refuse:classify-import: directory cycle at {}",
+            dir.display()
+        );
+    }
+    let entries = fs::read_dir(dir).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-import: cannot read {}: {err}",
+            dir.display()
+        )
+    })?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path).map_err(|err| {
+            anyhow::anyhow!(
+                "refuse:classify-import: cannot stat {}: {err}",
+                path.display()
+            )
+        })?;
+        if meta.file_type().is_symlink() {
+            let followed = fs::metadata(&path).map_err(|err| {
+                anyhow::anyhow!(
+                    "refuse:classify-import: cannot stat {}: {err}",
+                    path.display()
+                )
+            })?;
+            if followed.is_dir() {
+                bail!(
+                    "refuse:classify-import: directory symlink {} is refused",
+                    path.display()
+                );
+            }
+            if followed.is_file() && is_commit_jsonl(&path) {
+                out.push(path);
+                continue;
+            }
+            eprintln!("classify-import: skip symlink {}", path.display());
+            continue;
+        }
+        if meta.is_dir() {
+            collect_commit_jsonl(&path, seen, out)?;
+        } else if meta.is_file() && is_commit_jsonl(&path) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn is_commit_jsonl(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("data.jsonl")
+}
+
+fn fetch_commit_pairs(
+    preset: &DatasetPreset,
+    native: &Path,
+    get: &mut impl FnMut(&str) -> PageGet,
+    sleep: &mut impl FnMut(Duration),
+) -> Result<(Vec<NativeRow>, Vec<NativeRow>)> {
+    let (old_field, new_field, lang_field, lang_value, source_commits) = commit_pair_fields(preset)?;
+    let mut lines = Vec::new();
+    let mut offset = 0u64;
+    let mut total = None;
+    loop {
+        if offset >= source_commits {
+            break;
+        }
+        let url = format!(
+            "{DATASETS_SERVER}/rows?dataset={}&config={}&split={}&offset={offset}&length={ROWS_PAGE}",
+            urlencoding_dataset(preset.hf_id),
+            preset.rows_config,
+            preset.train_split
+        );
+        let body = get_with_retry(&url, get, sleep)?;
+        let value: Value = serde_json::from_str(&body).map_err(|err| {
+            anyhow::anyhow!("refuse:classify-import: datasets-server JSON failed: {err}")
+        })?;
+        if total.is_none() {
+            total = value.get("num_rows_total").and_then(Value::as_u64);
+        }
+        let reported = total.ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-import: commits page has no num_rows_total")
+        })?;
+        if reported != source_commits {
+            bail!(
+                "refuse:classify-import: {} rows API reports {reported} commits but the official count is {source_commits}",
+                preset.alias
+            );
+        }
+        let page = value.get("rows").and_then(Value::as_array).ok_or_else(|| {
+            anyhow::anyhow!("refuse:classify-import: datasets-server page has no rows")
+        })?;
+        if page.is_empty() {
+            bail!(
+                "refuse:classify-import: {} returned an empty page at offset {offset} before {source_commits} commits",
+                preset.alias
+            );
+        }
+        for item in page {
+            let row_idx = item
+                .get("row_idx")
+                .and_then(Value::as_u64)
+                .unwrap_or(offset);
+            let native_row = item.get("row").cloned().unwrap_or(Value::Null);
+            let mut line = commit_from_value(row_idx, &native_row, old_field, new_field, lang_field)?;
+            line.index = row_idx;
+            lines.push(line);
+            offset = offset.saturating_add(1);
+            if offset >= source_commits {
+                break;
+            }
+        }
+        eprintln!("classify-import: commits {offset}/{source_commits}");
+        if offset < source_commits {
+            sleep(PAGE_POLITENESS);
+        }
+    }
+    let (train_rows, test_rows) = commits_to_splits(preset, &lines, lang_value)?;
+    let train_final = native.join(format!("{}.jsonl", preset.train_split));
+    let test_final = native.join(format!("{}.jsonl", preset.test_split));
+    write_native_rows(&partial_path(&train_final), &train_rows)?;
+    write_native_rows(&partial_path(&test_final), &test_rows)?;
+    publish_native(&train_final)?;
+    publish_native(&test_final)?;
+    let manifest = commit_pair_manifest(
+        preset,
+        json!({
+            "hf_id": preset.hf_id,
+            "source": "datasets-server rows API",
+            "config": preset.rows_config,
+            "train_rows": train_rows.len(),
+            "test_rows": test_rows.len(),
+            "complete": true,
+        }),
+    )?;
+    fs::write(
+        native.join("manifest.json"),
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    Ok((train_rows, test_rows))
+}
+
 fn load_or_fetch_native(
     preset: &DatasetPreset,
     native: &Path,
@@ -1545,6 +2238,9 @@ fn load_or_fetch_native(
         let _ = fs::remove_file(partial_path(&test_final));
     } else if cache_verified(preset, native)? {
         return Ok((read_native(&train_final)?, read_native(&test_final)?));
+    }
+    if let SourceShape::CommitPair { .. } = preset.shape {
+        return fetch_commit_pairs(preset, native, &mut get, &mut sleep);
     }
     let train_rows = fetch_split(
         preset,
@@ -1602,10 +2298,38 @@ fn cache_verified(preset: &DatasetPreset, native: &Path) -> Result<bool> {
     }
     let train_rows = value.get("train_rows").and_then(Value::as_u64);
     let test_rows = value.get("test_rows").and_then(Value::as_u64);
-    Ok(train_rows == Some(preset.official_train)
-        && test_rows == Some(preset.official_test)
-        && count_complete_lines(&train_path)? == preset.official_train
-        && count_complete_lines(&test_path)? == preset.official_test)
+    if train_rows != Some(preset.official_train)
+        || test_rows != Some(preset.official_test)
+        || count_complete_lines(&train_path)? != preset.official_train
+        || count_complete_lines(&test_path)? != preset.official_test
+    {
+        return Ok(false);
+    }
+    if let SourceShape::CommitPair { holdout_seed, .. } = preset.shape {
+        // Missing or mismatched seed/transform must rebuild. Row counts alone are not the split.
+        if value.get("holdout_seed").and_then(Value::as_u64) != Some(holdout_seed) {
+            return Ok(false);
+        }
+        if value.get("pair_transform").and_then(Value::as_str) != Some(COMMIT_PAIR_TRANSFORM) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn commit_pair_manifest(preset: &DatasetPreset, mut manifest: Value) -> Result<Value> {
+    let SourceShape::CommitPair { holdout_seed, .. } = preset.shape else {
+        bail!(
+            "refuse:classify-import: {} is not a commit-pair preset",
+            preset.alias
+        );
+    };
+    let obj = manifest
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-import: native manifest is not an object"))?;
+    obj.insert("holdout_seed".into(), json!(holdout_seed));
+    obj.insert("pair_transform".into(), json!(COMMIT_PAIR_TRANSFORM));
+    Ok(manifest)
 }
 
 fn publish_native(final_path: &Path) -> Result<()> {
@@ -1658,8 +2382,9 @@ fn fetch_split(
             }
         }
         let url = format!(
-            "{DATASETS_SERVER}/rows?dataset={}&config=default&split={split}&offset={offset}&length={page_len}",
-            urlencoding_dataset(preset.hf_id)
+            "{DATASETS_SERVER}/rows?dataset={}&config={}&split={split}&offset={offset}&length={page_len}",
+            urlencoding_dataset(preset.hf_id),
+            preset.rows_config
         );
         let body = get_with_retry(&url, &mut get, &mut sleep)?;
         let value: Value = serde_json::from_str(&body).map_err(|err| {
@@ -2025,6 +2750,8 @@ pub fn sample_with_map(
         label_field: "label",
         map,
         license_note: "",
+        rows_config: "default",
+        shape: SourceShape::LabeledColumns,
         fetch: Fetch::Later,
     };
     sample_records(
@@ -2744,6 +3471,25 @@ mod tests {
 
     impl ImportIo for FakeIo {
         fn read_parquet(&self, job: &ParquetJob<'_>) -> Result<()> {
+            if job.pair_old.is_some() {
+                use std::io::Write;
+                let mut file = std::fs::File::create(job.out_partial)?;
+                let empty = job.commit_rows.saturating_sub(RUST_USABLE_PAIRS);
+                for i in 0..job.commit_rows {
+                    if i < empty {
+                        writeln!(
+                            file,
+                            "{{\"index\":{i},\"old\":\"\",\"new\":\"fn kept_{i}(){{}}\",\"lang\":\"Rust\"}}"
+                        )?;
+                    } else {
+                        writeln!(
+                            file,
+                            "{{\"index\":{i},\"old\":\"fn old_{i}(){{}}\",\"new\":\"fn new_{i}(){{}}\",\"lang\":\"Rust\"}}"
+                        )?;
+                    }
+                }
+                return Ok(());
+            }
             if self.pyarrow_missing {
                 bail!("{}", pyarrow_refuse(job.python.unwrap_or("python3")));
             }
@@ -2782,9 +3528,15 @@ mod tests {
                 .ok_or_else(|| {
                     anyhow::anyhow!("refuse:classify-import: hf argv has no --local-dir")
                 })?;
-            fs::create_dir_all(dir.join("data"))?;
-            fs::write(dir.join("data").join("train-00000-of-00001.parquet"), b"t")?;
-            fs::write(dir.join("data").join("test-00000-of-00001.parquet"), b"e")?;
+            if argv.iter().any(|arg| arg == "data/rust/*") {
+                let rust_dir = dir.join("data").join("rust");
+                fs::create_dir_all(&rust_dir)?;
+                fs::write(rust_dir.join("data.jsonl"), b"{}\n")?;
+            } else {
+                fs::create_dir_all(dir.join("data"))?;
+                fs::write(dir.join("data").join("train-00000-of-00001.parquet"), b"t")?;
+                fs::write(dir.join("data").join("test-00000-of-00001.parquet"), b"e")?;
+            }
             Ok(())
         }
 
@@ -3588,5 +4340,345 @@ mod tests {
         .to_string();
         assert!(err.contains("not a bool or integer"), "{err}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rust_idiom_holdout_keeps_pairs_together_and_fixed_ab_order() {
+        let preset = preset_by_name("rust_idiom").unwrap();
+        let by_hub = preset_by_name("bigcode/commitpackft").unwrap();
+        let by_slug = preset_by_name("rustidiom").unwrap();
+        assert!(std::ptr::eq(preset, by_hub));
+        assert!(std::ptr::eq(preset, by_slug));
+        assert_eq!(preset.slug, "rustidiom");
+        assert_eq!(preset.rows_config, "rust");
+        assert_eq!(preset.official_train, 3_744);
+        assert_eq!(preset.official_test, 936);
+        assert!(preset.license_note.contains("Do not redistribute"));
+        assert!(preset.license_note.contains("local training only"));
+        let note = heldout_note(preset);
+        assert!(note.contains("no test split"), "{note}");
+        assert!(note.contains("seed 42"), "{note}");
+        assert!(note.contains("2996"), "{note}");
+        assert!(note.contains("2340"), "{note}");
+        assert!(PARQUET_SCRIPT.contains("pair_old"));
+        assert!(PARQUET_SCRIPT.contains("old_contents") == false);
+        assert!(PARQUET_SCRIPT.contains("pair_new"));
+        let mut lines = Vec::new();
+        for i in 0..10u64 {
+            lines.push(CommitLine {
+                index: i,
+                old: format!("fn old_{i}() {{}}"),
+                new: format!("fn new_{i}() {{}}"),
+                lang: "Rust".into(),
+            });
+        }
+        lines.push(CommitLine {
+            index: 10,
+            old: String::new(),
+            new: "fn dropped() {}".into(),
+            lang: "Rust".into(),
+        });
+        let tiny = DatasetPreset {
+            official_train: 16,
+            official_test: 4,
+            shape: SourceShape::CommitPair {
+                old_field: "old_contents",
+                new_field: "new_contents",
+                lang_field: "lang",
+                lang_value: "Rust",
+                include: "data/rust/*",
+                source_commits: 11,
+                usable_pairs: 10,
+                holdout_seed: RUST_HOLDOUT_SEED,
+            },
+            ..*preset
+        };
+        let (train, test) = commits_to_splits(&tiny, &lines, "Rust").unwrap();
+        assert_eq!(train.len(), 16);
+        assert_eq!(test.len(), 4);
+        let train_idx: std::collections::BTreeSet<_> = train.iter().map(|row| row.index / 2).collect();
+        let test_idx: std::collections::BTreeSet<_> = test.iter().map(|row| row.index / 2).collect();
+        assert!(train_idx.is_disjoint(&test_idx));
+        for idxs in [&train_idx, &test_idx] {
+            for idx in idxs {
+                let pair: Vec<_> = train
+                    .iter()
+                    .chain(test.iter())
+                    .filter(|row| row.index / 2 == *idx)
+                    .map(|row| row.label)
+                    .collect();
+                assert_eq!(pair, vec![0, 1], "commit {idx} must stay together");
+            }
+        }
+        let sampled = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::All,
+            &SplitSize::All,
+            42,
+        )
+        .unwrap();
+        assert_eq!(sampled.train[0]["question"], preset.question);
+        let opts = sampled.train[0]["options"].as_array().unwrap();
+        assert_eq!(opts[0]["label"], "A");
+        assert_eq!(opts[0]["key"], "needs_fix");
+        assert_eq!(opts[0]["description"], "NeedsFix");
+        assert_eq!(opts[1]["label"], "B");
+        assert_eq!(opts[1]["key"], "idiomatic");
+        assert_eq!(opts[1]["description"], "Idiomatic");
+        let mut wrong = lines.clone();
+        wrong[0].lang = "Python".into();
+        let bad_lang = commits_to_splits(&tiny, &wrong, "Rust")
+            .unwrap_err()
+            .to_string();
+        assert!(bad_lang.contains("not Rust"), "{bad_lang}");
+    }
+
+    #[test]
+    fn rust_idiom_from_local_and_rows_api_use_the_seeded_holdout() {
+        let root = std::env::temp_dir().join(format!(
+            "import-rust-idiom-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let source = root.join("nas").join("data").join("rust");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("data.jsonl"), b"{\"lang\":\"Rust\"}\n").unwrap();
+        let preset = preset_by_name("rust_idiom").unwrap();
+        let io = fake_io(false, false);
+        let out = root.join("sampled");
+        let cache = root.join("cache");
+        classify_import_with(
+            &ImportRequest {
+                dataset: "rust_idiom",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &out,
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&root.join("nas")),
+                fetch: ImportFetch::Bulk,
+                python: Some("python3"),
+                cache_root: Some(&cache),
+            },
+            &io,
+        )
+        .unwrap();
+        assert_eq!(io.hf_calls.get(), 0);
+        assert_eq!(io.http_calls.get(), 0);
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(out.join("import.json")).unwrap()).unwrap();
+        assert_eq!(manifest["dataset"], "rust_idiom");
+        assert_eq!(manifest["hf_id"], "bigcode/commitpackft");
+        assert_eq!(manifest["heldout_kind"], "seeded-commit-holdout");
+        assert_eq!(manifest["official_train"], 3_744);
+        assert_eq!(manifest["official_test"], 936);
+        assert_eq!(manifest["source_commits"], 2_996);
+        assert_eq!(manifest["usable_pairs"], 2_340);
+        assert_eq!(manifest["option_order"], "fixed");
+        let note = manifest["option_order_note"].as_str().unwrap();
+        assert!(note.contains("A=NeedsFix, B=Idiomatic"), "{note}");
+        let train = fs::read_to_string(out.join("train.jsonl")).unwrap();
+        assert!(train.contains("\"key\":\"needs_fix\""));
+        assert!(train.contains("\"key\":\"idiomatic\""));
+        assert_eq!(train.lines().count(), 4);
+        let native: Value = serde_json::from_str(
+            &fs::read_to_string(cache.join("rust_idiom").join("native").join("manifest.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(native["source"], "local-jsonl");
+        assert!(native["jsonl"].to_string().contains("data.jsonl"));
+        assert_eq!(native["train_rows"], 3_744);
+        assert_eq!(native["test_rows"], 936);
+        assert_eq!(native["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(native["pair_transform"], COMMIT_PAIR_TRANSFORM);
+
+        let rows_root = root.join("rows");
+        fs::create_dir_all(&rows_root).unwrap();
+        let mut calls = 0u32;
+        let page = |offset: u64| {
+            let mut rows = Vec::new();
+            let end = (offset + ROWS_PAGE).min(RUST_SOURCE_COMMITS);
+            for idx in offset..end {
+                let old = if idx < RUST_SOURCE_COMMITS - RUST_USABLE_PAIRS {
+                    ""
+                } else {
+                    "fn old() {}"
+                };
+                rows.push(json!({
+                    "row_idx": idx,
+                    "row": {
+                        "old_contents": old,
+                        "new_contents": format!("fn new_{idx}() {{}}"),
+                        "lang": "Rust"
+                    }
+                }));
+            }
+            json!({"num_rows_total": RUST_SOURCE_COMMITS, "rows": rows}).to_string()
+        };
+        let (train_rows, test_rows) = fetch_commit_pairs(
+            preset,
+            &rows_root,
+            &mut |_| {
+                let offset = calls as u64 * ROWS_PAGE;
+                calls += 1;
+                ok_page(page(offset))
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(train_rows.len(), 3_744);
+        assert_eq!(test_rows.len(), 936);
+        assert!(calls >= 30, "{calls}");
+        let url_bits = format!("config={}", preset.rows_config);
+        assert_eq!(url_bits, "config=rust");
+        let argv = hf_dataset_argv("hf", preset, Path::new("/tmp/rust"));
+        assert!(argv.iter().any(|arg| arg == "--include"));
+        assert!(argv.iter().any(|arg| arg == "data/rust/*"));
+        assert!(argv.iter().any(|arg| arg == "bigcode/commitpackft"));
+        let rows_manifest: Value =
+            serde_json::from_str(&fs::read_to_string(rows_root.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(rows_manifest["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(rows_manifest["pair_transform"], COMMIT_PAIR_TRANSFORM);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn commit_pair_cache_rejects_a_missing_or_mismatched_holdout_seed() {
+        let preset = preset_by_name("rust_idiom").unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "import-holdout-id-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let native = root.join("rust_idiom").join("native");
+        fs::create_dir_all(&native).unwrap();
+        let row = "{\"index\":0,\"text\":\"stale-holdout\",\"label\":0}\n";
+        fs::write(
+            native.join("train.jsonl"),
+            row.repeat(preset.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            native.join("test.jsonl"),
+            row.repeat(preset.official_test as usize),
+        )
+        .unwrap();
+        let write_manifest = |extra: &str| {
+            fs::write(
+                native.join("manifest.json"),
+                format!(
+                    "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}{extra}}}\n",
+                    serde_json::to_string(preset.hf_id).unwrap(),
+                    preset.official_train,
+                    preset.official_test
+                ),
+            )
+            .unwrap();
+        };
+        write_manifest("");
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a cache with no holdout_seed must not verify"
+        );
+        write_manifest(",\"holdout_seed\":7,\"pair_transform\":\"drop-empty-or-identical;expand-old0-new1;holdout-one-fifth-whole-commit\"");
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a mismatched holdout_seed must not verify"
+        );
+        write_manifest(&format!(",\"holdout_seed\":{RUST_HOLDOUT_SEED}"));
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a cache with no pair_transform must not verify"
+        );
+        write_manifest(&format!(
+            ",\"holdout_seed\":{RUST_HOLDOUT_SEED},\"pair_transform\":\"other-transform\""
+        ));
+        assert!(
+            !cache_verified(preset, &native).unwrap(),
+            "a mismatched pair_transform must not verify"
+        );
+        write_manifest(&format!(
+            ",\"holdout_seed\":{RUST_HOLDOUT_SEED},\"pair_transform\":{transform}",
+            transform = serde_json::to_string(COMMIT_PAIR_TRANSFORM).unwrap()
+        ));
+        assert!(cache_verified(preset, &native).unwrap());
+
+        let ag = preset_by_name("ag_news").unwrap();
+        let ag_native = root.join("ag");
+        fs::create_dir_all(&ag_native).unwrap();
+        fs::write(
+            ag_native.join("train.jsonl"),
+            row.repeat(ag.official_train as usize),
+        )
+        .unwrap();
+        fs::write(
+            ag_native.join("test.jsonl"),
+            row.repeat(ag.official_test as usize),
+        )
+        .unwrap();
+        fs::write(
+            ag_native.join("manifest.json"),
+            format!(
+                "{{\"hf_id\":{},\"complete\":true,\"train_rows\":{},\"test_rows\":{}}}\n",
+                serde_json::to_string(ag.hf_id).unwrap(),
+                ag.official_train,
+                ag.official_test
+            ),
+        )
+        .unwrap();
+        assert!(
+            cache_verified(ag, &ag_native).unwrap(),
+            "labeled-column caches do not require holdout_seed"
+        );
+
+        write_manifest("");
+        let source = root.join("nas").join("data").join("rust");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("data.jsonl"), b"{\"lang\":\"Rust\"}\n").unwrap();
+        let io = fake_io(false, false);
+        classify_import_with(
+            &ImportRequest {
+                dataset: "rust_idiom",
+                train_size: "4",
+                heldout_size: "4",
+                seed: 42,
+                out: &root.join("sampled-rebuild"),
+                force: false,
+                native_train: None,
+                native_test: None,
+                from_local: Some(&root.join("nas")),
+                fetch: ImportFetch::Bulk,
+                python: Some("python3"),
+                cache_root: Some(&root),
+            },
+            &io,
+        )
+        .unwrap();
+        let rebuilt = fs::read_to_string(native.join("train.jsonl")).unwrap();
+        assert!(
+            rebuilt.contains("fn old_"),
+            "missing holdout_seed must rebuild the native split"
+        );
+        assert!(!rebuilt.contains("stale-holdout"));
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(native.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["holdout_seed"], RUST_HOLDOUT_SEED);
+        assert_eq!(manifest["pair_transform"], COMMIT_PAIR_TRANSFORM);
+        let _ = fs::remove_dir_all(&root);
     }
 }

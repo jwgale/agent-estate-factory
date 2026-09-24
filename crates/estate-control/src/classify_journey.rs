@@ -927,12 +927,7 @@ fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
-    let source = crate::classify_import::dataset_source_token(
-        req.from_local,
-        req.import_fetch,
-        preset.train_split,
-        preset.test_split,
-    );
+    let source = crate::classify_import::preset_source_token(preset, req.from_local, req.import_fetch);
     let stored = read_manifest(&paths.manifest_path("prepare")).map(|manifest| manifest.inputs);
     let cached = crate::classify_import::cached_native_source_fp(preset.alias);
     Ok(crate::classify_import::journey_prepare_fingerprint(
@@ -2088,7 +2083,7 @@ pub struct JourneyRequest<'a> {
     pub seat: SeatChat,
     pub llama_note: &'a str,
     pub preset: JourneyPreset,
-    /// `ag_news` or `devign` (or a Hub id) replaces the built-in fixture. Import already made the held-out split.
+    /// `ag_news`, `devign`, or `rust_idiom` (or a Hub id) replaces the built-in fixture. Import already made the held-out split.
     pub import_dataset: Option<&'a str>,
     pub train_size: &'a str,
     pub heldout_size: &'a str,

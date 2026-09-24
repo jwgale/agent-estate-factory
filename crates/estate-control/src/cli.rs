@@ -498,19 +498,20 @@ pub(crate) enum ClassifyCommand {
         force: bool,
     },
     /// Download a public Hugging Face classification set and write tev1 JSONL.
-    /// This slice downloads ag_news and devign (CodeXGLUE defect detection).
+    /// This slice downloads ag_news, devign (CodeXGLUE defect detection), and rust_idiom (CommitPackFT Rust before/after).
     /// Sampled rows land in `.cell/classify-import/<alias>-<train-size>-s<seed>/`.
     /// ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech).
     /// devign options stay in class-table order (A=Secure, B=Insecure). Held-out is the official test split.
+    /// rust_idiom options stay in class-table order (A=NeedsFix, B=Idiomatic). Held-out is a seeded commit holdout, not an official test split.
     /// Output is for local training only. Do not redistribute.
     Import {
-        /// `ag_news`, `fancyzhx/ag_news`, `devign`, or `google/code_x_glue_cc_defect_detection`. banking77 and multi_nli are catalog rows for a later slice.
+        /// `ag_news`, `fancyzhx/ag_news`, `devign`, `google/code_x_glue_cc_defect_detection`, `rust_idiom`, or `bigcode/commitpackft`. banking77 and multi_nli are catalog rows for a later slice.
         #[arg(long)]
         dataset: String,
         /// Class-balanced train rows. `all` keeps the official train split. No upper cap.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows drawn only from the official test split. `all` is 7600 for ag_news and 2732 for devign.
+        /// Held-out rows drawn only from the official test split, or from the seeded commit holdout for rust_idiom. `all` is 7600 for ag_news, 2732 for devign, and 936 for rust_idiom.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Sample seed. Default 42.
@@ -663,15 +664,15 @@ pub(crate) enum ClassifyCommand {
         /// Environment variable that holds the Together API key. Default `TOGETHER_API_KEY`. The value is never printed.
         #[arg(long)]
         api_key_env: Option<String>,
-        /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news. `devign` downloads google/code_x_glue_cc_defect_detection.
-        /// Import already holds out the official test split. Prepare does not split again.
+        /// Public set to import instead of the built-in fixture. `ag_news` downloads fancyzhx/ag_news. `devign` downloads google/code_x_glue_cc_defect_detection. `rust_idiom` downloads the Rust subset of bigcode/commitpackft.
+        /// Import already holds out the official test split for ag_news and devign. rust_idiom holds out a seeded commit split (seed 42), not an official test split. Prepare does not split again.
         /// The default tag and `--out` gain a suffix such as `-agnews-3000` so sizes can coexist.
         #[arg(long)]
         dataset: Option<String>,
         /// Class-balanced train rows for `--dataset`. `all` keeps the official train split.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows for `--dataset`, drawn only from the official test split.
+        /// Held-out rows for `--dataset`, drawn only from the official test split, or from the seeded commit holdout for rust_idiom.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Local HF dataset snapshot. Same as `classify import --from-local`. Not modified.
