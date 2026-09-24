@@ -2488,7 +2488,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -2852,7 +2852,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3202,7 +3202,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3580,7 +3580,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4234,7 +4234,59 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
+    let named = changelog
+        .split("## This slice — help names the purpose-build checklist")
+        .nth(1)
+        .expect("CHANGELOG missing the help-names slice")
+        .split("## This slice —")
+        .next()
+        .unwrap();
+    for needle in [
+        "estate help enrich",
+        "estate help train",
+        "make purpose-build-checklist",
+        "print-only operator path for purpose-building an SLM on demand (operator section 15)",
+        "make uniqueness-prove-checklist",
+        "does not move the GATE-90 or Cell One tip header",
+        "through PR #169",
+        "aa374875f221be908ff473c8096eeea1c0f32846",
+        "only live uniqueness prove",
+        "43770130 3391",
+    ] {
+        assert!(
+            named.contains(needle),
+            "help-names CHANGELOG slice missing {needle}"
+        );
+    }
+    assert!(
+        named.contains("READY_FOR_LIVE_TEST`: no") || named.contains("READY_FOR_LIVE_TEST: no"),
+        "{named}"
+    );
+    assert!(
+        !named.contains("READY_FOR_LIVE_TEST: yes")
+            && !named.contains("READY_FOR_LIVE_TEST`: yes"),
+        "{named}"
+    );
+    assert!(!named.to_ascii_lowercase().contains("kimi"), "{named}");
+    assert!(
+        changelog.contains("## This slice — GATE-90 and Cell One tip honesty through PR #169"),
+        "CHANGELOG must keep the PR #169 tip-honesty slice"
+    );
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(
+        readme.contains("`make purpose-build-checklist`")
+            && readme.contains(
+                "print-only operator path for purpose-building an SLM on demand (operator section 15)"
+            ),
+        "{readme}"
+    );
+    assert!(
+        makefile.contains(
+            "print-only operator path for purpose-building an SLM on demand (operator section 15)"
+        ),
+        "Makefile comment must name the purpose-build path"
+    );
     let slice = changelog
         .split("## This slice — print-only purpose-build operator checklist")
         .nth(1)

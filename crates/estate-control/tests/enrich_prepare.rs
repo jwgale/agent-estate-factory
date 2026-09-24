@@ -162,6 +162,15 @@ fn help_enrich_and_train_name_the_seam() {
         assert!(body.contains("llamafactory-cli train"), "{body}");
         assert!(body.contains("llamafactory-cli export"), "{body}");
         assert!(body.contains("docs/operator-enrich-journeys.md"), "{body}");
+        assert!(
+            body.contains(
+                "make purpose-build-checklist is the print-only operator path for purpose-building an SLM on demand (operator section 15)"
+            ),
+            "{body}"
+        );
+        assert!(body.contains("make uniqueness-prove-checklist"), "{body}");
+        assert!(body.contains("make lf-beachhead-prepare"), "{body}");
+        assert!(body.contains("docs/lf-beachhead-matrix.md"), "{body}");
         assert!(body.contains("make enrich-prepare"), "{body}");
         assert!(body.contains("make enrich-live-prove"), "{body}");
         assert!(body.contains("estate enrich from-pack"), "{body}");
@@ -185,6 +194,13 @@ fn help_enrich_and_train_name_the_seam() {
     let index = estate_bin().args(["help"]).output().unwrap();
     let index_text = text(&index);
     assert!(index_text.contains("estate help enrich"), "{index_text}");
+    assert!(
+        index_text.contains("make purpose-build-checklist")
+            && index_text.contains(
+                "print-only operator path for purpose-building an SLM on demand (operator section 15)"
+            ),
+        "{index_text}"
+    );
     assert!(index_text.contains("make lora-journey"), "{index_text}");
     assert!(index_text.contains("make seat-journey"), "{index_text}");
 
@@ -4531,7 +4547,7 @@ fn axolotl_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4752,7 +4768,7 @@ fn unsloth_qlora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4972,7 +4988,7 @@ fn axolotl_lora_journey_stays_print_only_and_off_smoke() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #169");
+    assert_eq!(head, " help names the purpose-build checklist");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
