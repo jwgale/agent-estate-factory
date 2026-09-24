@@ -108,6 +108,8 @@ Axolotl:    make axolotl-qlora-journey
 Ax chain:   make uniqueness-axolotl
 Unsloth:    make unsloth-qlora-journey
 Us chain:   make uniqueness-unsloth
+Ax LoRA:    make axolotl-lora-journey
+Ax LoRA chain: make uniqueness-axolotl-lora
 Train next: make train-next
 Full print: make uniqueness-full
 LoRA train: make train-next-lora
@@ -403,6 +405,8 @@ READY_FOR_LIVE_TEST stays no.
   make uniqueness-axolotl
   make unsloth-qlora-journey
   make uniqueness-unsloth
+  make axolotl-lora-journey
+  make uniqueness-axolotl-lora
   make uniqueness-ladder
   make uniqueness-full
   make train-next-lora
@@ -1191,6 +1195,29 @@ ollama, and does not promote. make uniqueness-unsloth runs the
 prepare-assert phase, then the seat-print phase. Both stay print-only.
 Not in make smoke, make gate-90, or Actions. READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 12).
+
+Axolotl LoRA journey
+--------------------
+Print-only popular-config parity for axolotl-lora.
+make axolotl-lora-journey prepares that card on a throwaway copy of
+examples/estate.yaml. Seat tag llama3. Train base Qwen/Qwen2.5-0.5B-Instruct.
+axolotl.yml matches examples/llama-3/lora-1b.yml: adapter lora,
+load_in_8bit false, load_in_4bit false, sequence_len 2048, lora_r 16.
+base_model is that train base.
+A seat tag with no train base is refuse:train-base. A missing adapter is
+refuse:adapter. A missing merged directory or GGUF is refuse:seat.
+Before the good merged stub, a Qwen-shaped outputs/merged is refuse:tokenizer.
+The good stub is config.json {} plus model.safetensors (not adapter_model).
+The GGUF stub starts with GGUF magic. The script prints axolotl merge-lora
+without --dequant, then gguf-convert, local-seat, and import-trained.
+import-trained records trained_shape gguf. The proposal stays auto_apply=false.
+It prints SKIP live train, SKIP live convert, and SKIP live seat.
+It does not run axolotl, does not convert, does not run ollama, and does
+not promote. make uniqueness-axolotl-lora runs the prepare-assert phase, then
+the seat-print phase. It does not run make uniqueness-axolotl.
+Both stay print-only. Not in make smoke, make gate-90,
+or Actions. READY_FOR_LIVE_TEST stays no. This is not a live PASS.
+Walk: docs/operator-enrich-journeys.md (section 13).
 
 Docs: docs/TRAIN-ENRICH.md and docs/LIVE-PROBES.md.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
