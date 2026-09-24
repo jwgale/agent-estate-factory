@@ -1016,7 +1016,7 @@ fn unsloth_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(status_head.contains("through PR #175"), "{status_head}");
     assert!(
         !status_head.contains("what is on `main` through PR #165"),
@@ -1119,7 +1119,7 @@ fn mlx_lm_doctor_status_honesty_stays_optional_and_keeps_the_tip() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(status_head.contains("through PR #175"), "{status_head}");
     assert!(
         !status_head.contains("what is on `main` through PR #171"),
@@ -1489,7 +1489,7 @@ fn train_next_prints_target_c_recipe_and_stays_off_smoke() {
     assert!(uniq_row.contains("Does not run train-next"), "{uniq_row}");
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -1828,7 +1828,7 @@ fn uniqueness_full_chains_prepare_train_seat_and_leaves_ladder_unchanged() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -2796,7 +2796,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -2834,7 +2834,7 @@ fn tokenizer_restore_names_dereference_and_keeps_tip_framing() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3164,7 +3164,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         "GATE-90 header must not freeze tip at PR #153: {gate_head}"
     );
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -3198,7 +3198,7 @@ fn local_seat_print_only_names_the_unwritten_modelfile() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3479,7 +3479,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -3584,7 +3584,7 @@ fn target_c_live_uniqueness_prove_stays_recorded() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -3865,7 +3865,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
     assert!(row.contains("reconcile"), "{row}");
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -3962,7 +3962,7 @@ fn uniqueness_prove_checklist_prints_recorded_steps_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     assert!(
         changelog.contains("## This slice — print-only Unsloth QLoRA uniqueness and seat journey"),
         "CHANGELOG must keep the landed Unsloth slice"
@@ -4557,7 +4557,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
     );
 
     let status = std::fs::read_to_string(root.join("docs/CELL-ONE-STATUS.md")).unwrap();
-    let status_head: String = status.lines().take(39).collect::<Vec<_>>().join("\n");
+    let status_head: String = status.lines().take(40).collect::<Vec<_>>().join("\n");
     assert!(
         status_head.contains("through PR #175"),
         "status header must keep tip through PR #175"
@@ -4654,7 +4654,7 @@ fn purpose_build_checklist_prints_ordered_path_and_stays_off_gates() {
         .split('\n')
         .next()
         .unwrap();
-    assert_eq!(head, " GATE-90 and Cell One tip honesty through PR #175");
+    assert_eq!(head, " help names the mlx-lm LoRA journey");
     let named = changelog
         .split("## This slice — help names the purpose-build checklist")
         .nth(1)
