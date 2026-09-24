@@ -73,8 +73,13 @@ printf '%-22s %-14s %s\n' "Target A LoRA twin" "optional" "make unsloth-lora-jou
 printf '%-22s %-14s %s\n' "Target A LoRA twin" "optional" "make uniqueness-unsloth-lora"
 printf '%-22s %-14s %s\n' "Target A LoRA twin" "integration" "make axolotl-lora-journey"
 printf '%-22s %-14s %s\n' "Target A LoRA twin" "integration" "make uniqueness-axolotl-lora"
+printf '%-22s %-14s %s\n' "DeepSeek-R1-Distill" "print-only" "make deepseek-r1-distill-journey"
+printf '%-22s %-14s %s\n' "DeepSeek-R1-Distill" "print-only" "make uniqueness-deepseek"
+printf '%-22s %-14s %s\n' "DeepSeek-R1-Distill" "print-only" "make deepseek-r1-distill-lora-journey"
+printf '%-22s %-14s %s\n' "DeepSeek-R1-Distill" "print-only" "make uniqueness-deepseek-lora"
 echo
 echo "Nvidia / CUDA primary is the LLaMA-Factory beachhead, make qlora-journey, and make uniqueness-full."
+echo "DeepSeek-R1-Distill chat is print-only: make deepseek-r1-distill-journey and make uniqueness-deepseek, plus the LoRA twin make deepseek-r1-distill-lora-journey and make uniqueness-deepseek-lora. This picker does not run them."
 echo "Unsloth on that host stays optional. Axolotl on that host stays integration."
 echo "Apple Silicon is make mlx-lm-lora-journey and make uniqueness-mlx. Status stays optional."
 echo "A stock pack whose host_class_affinity is any is refuse:host for mlx-lm-lora. Not native MLX."
