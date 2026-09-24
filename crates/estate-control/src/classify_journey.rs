@@ -149,12 +149,20 @@ const QWEN35_NOTHINK_TEMPLATE: &str = "\
 
 ";
 
-/// Non-thinking DeepSeek-R1-Distill prompt. Official chat tokens, generation ends at Assistant.
-/// `enable_thinking: false` on the recipe keeps the one-letter target free of think tokens.
+/// Non-thinking DeepSeek-R1-Distill prompt.
+/// LLaMA-Factory `deepseekr1` is a `ReasoningTemplate` and does not override
+/// `thought_words`, so they stay `("<think>\n", "\n</think>\n\n")`.
+/// `Template.add_thought("")` concatenates those words to `<think>\n\n</think>\n\n`.
+/// With `enable_thinking: false`, `ReasoningTemplate.encode_oneturn` appends that
+/// empty thought to the prompt after `<｜Assistant｜>` (no extra newline) so the
+/// letter is the only target and `num_predict 8` is not spent on `<think>`.
 const DEEPSEEK_R1_TEMPLATE: &str = "\
 {{ if .System }}<｜begin▁of▁sentence｜>{{ .System }}{{ else }}<｜begin▁of▁sentence｜>{{ end }}{{ range .Messages }}{{ if eq .Role \"user\" }}<｜User｜>
 {{ .Content }}{{ else if eq .Role \"assistant\" }}<｜Assistant｜>
-{{ .Content }}<｜end▁of▁sentence｜>{{ end }}{{ end }}<｜Assistant｜>
+{{ .Content }}<｜end▁of▁sentence｜>{{ end }}{{ end }}<｜Assistant｜><think>
+
+</think>
+
 ";
 
 const STEP_ORDER: &[&str] = &[
@@ -642,7 +650,7 @@ struct Inputs {
     pipeline: Option<String>,
     /// Desired recipe from the CLI. Independent of the recipe file on disk.
     recipe: Option<String>,
-    /// Eval skip key: pipeline plus tag, endpoint, and base seat.
+    /// Eval skip key: pipeline, tags, and the rendered base and specialist Modelfiles.
     eval: Option<String>,
     ollama_base: Option<String>,
     ollama_spec: Option<String>,
@@ -740,10 +748,14 @@ fn eval_inputs(
     endpoint: &str,
     library_tag: Option<&str>,
     built_base_tag: &str,
+    base_modelfile: &str,
+    specialist_modelfile: &str,
 ) -> String {
     sha256_text(&format!(
-        "eval\n{pipeline}\n{}",
-        seat_material(specialist_tag, endpoint, library_tag, built_base_tag)
+        "eval\n{pipeline}\n{}\n{}\n{}",
+        seat_material(specialist_tag, endpoint, library_tag, built_base_tag),
+        sha256_text(base_modelfile),
+        sha256_text(specialist_modelfile),
     ))
 }
 
@@ -754,10 +766,12 @@ fn ollama_inputs(
     endpoint: &str,
     library_tag: Option<&str>,
     built_base_tag: &str,
+    modelfile: &str,
 ) -> String {
     sha256_text(&format!(
-        "ollama\n{pipeline}\n{tag}\n{}",
-        seat_material(specialist_tag, endpoint, library_tag, built_base_tag)
+        "ollama\n{pipeline}\n{tag}\n{}\n{}",
+        seat_material(specialist_tag, endpoint, library_tag, built_base_tag),
+        sha256_text(modelfile),
     ))
 }
 
@@ -782,9 +796,19 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
         req.max_steps,
     );
     let library = library_tag(req.base_tag);
-    let eval = pipeline
-        .as_ref()
-        .map(|pipeline| eval_inputs(pipeline, req.tag, req.endpoint, library, req.built_base_tag));
+    let base_modelfile = journey_modelfile(&paths.seated_gguf("base", req.quant), req.seat);
+    let spec_modelfile = journey_modelfile(&paths.seated_gguf("specialist", req.quant), req.seat);
+    let eval = pipeline.as_ref().map(|pipeline| {
+        eval_inputs(
+            pipeline,
+            req.tag,
+            req.endpoint,
+            library,
+            req.built_base_tag,
+            &base_modelfile,
+            &spec_modelfile,
+        )
+    });
     let ollama_base = pipeline.as_ref().map(|pipeline| {
         ollama_inputs(
             pipeline,
@@ -793,6 +817,7 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
             req.endpoint,
             library,
             req.built_base_tag,
+            &base_modelfile,
         )
     });
     let ollama_spec = pipeline.as_ref().map(|pipeline| {
@@ -803,6 +828,7 @@ fn load_inputs(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<Inputs>
             req.endpoint,
             library,
             req.built_base_tag,
+            &spec_modelfile,
         )
     });
     Ok(Inputs {
@@ -2817,12 +2843,16 @@ mod tests {
             None,
         )
         .unwrap();
+        let base_model = journey_modelfile(&seated_b, SeatChat::Qwen35);
+        let spec_model = journey_modelfile(&seated_s, SeatChat::Qwen35);
         let eval_key = eval_inputs(
             &pipeline,
             DEFAULT_TAG,
             endpoint,
             None,
             DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+            &spec_model,
         );
         let ollama_base = ollama_inputs(
             &pipeline,
@@ -2831,6 +2861,7 @@ mod tests {
             endpoint,
             None,
             DEFAULT_BUILT_BASE_TAG,
+            &base_model,
         );
         let ollama_spec = ollama_inputs(
             &pipeline,
@@ -2839,6 +2870,7 @@ mod tests {
             endpoint,
             None,
             DEFAULT_BUILT_BASE_TAG,
+            &spec_model,
         );
         for step in [
             "prepare",
@@ -2949,6 +2981,8 @@ mod tests {
             endpoint,
             None,
             DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+            &spec_model,
         );
         assert_ne!(retagged, eval_key);
         let retag_inputs = Inputs {
@@ -2960,6 +2994,7 @@ mod tests {
                 endpoint,
                 None,
                 DEFAULT_BUILT_BASE_TAG,
+                &spec_model,
             )),
             ..inputs.clone()
         };
@@ -2986,6 +3021,8 @@ mod tests {
             "http://127.0.0.1:9",
             Some("qwen3.5:4b"),
             DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+            &spec_model,
         );
         assert_ne!(moved, eval_key);
         let moved_inputs = Inputs {
@@ -3035,6 +3072,8 @@ mod tests {
                 endpoint,
                 None,
                 DEFAULT_BUILT_BASE_TAG,
+                &base_model,
+                &spec_model,
             )),
             ollama_base: None,
             ollama_spec: Some(ollama_inputs(
@@ -3044,6 +3083,7 @@ mod tests {
                 endpoint,
                 None,
                 DEFAULT_BUILT_BASE_TAG,
+                &spec_model,
             )),
         };
         let ctx = PlanCtx {
@@ -3067,6 +3107,146 @@ mod tests {
                 .contains("redo ollama-create-specialist: GGUF hash changed"),
             "{seat:?}"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn changed_modelfile_invalidates_ollama_and_eval() {
+        let dir = std::env::temp_dir().join(format!("journey-modelfile-fp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let paths = JourneyPaths::new(&dir);
+        fs::write(&paths.base_report, "{}\n").unwrap();
+        fs::write(&paths.specialist_report, "{}\n").unwrap();
+        let seated_b = paths.seated_gguf("base", DEFAULT_QUANT);
+        let seated_s = paths.seated_gguf("specialist", DEFAULT_QUANT);
+        fs::write(&seated_b, "base-q").unwrap();
+        fs::write(&seated_s, "spec-q").unwrap();
+        let pipeline = "pipeline-key";
+        let endpoint = "http://127.0.0.1:11434";
+        let base_model = journey_modelfile(&seated_b, SeatChat::Qwen35);
+        let spec_model = journey_modelfile(&seated_s, SeatChat::Qwen35);
+        let eval_key = eval_inputs(
+            pipeline,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+            &spec_model,
+        );
+        let ollama_base = ollama_inputs(
+            pipeline,
+            DEFAULT_BUILT_BASE_TAG,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+        );
+        let ollama_spec = ollama_inputs(
+            pipeline,
+            DEFAULT_TAG,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+            &spec_model,
+        );
+        write_manifest(&paths.manifest_path("eval-base"), &eval_key, None).unwrap();
+        write_manifest(&paths.manifest_path("eval-specialist"), &eval_key, None).unwrap();
+        write_manifest(
+            &paths.manifest_path("ollama-create-base"),
+            &ollama_base,
+            Some(&file_sha(&seated_b).unwrap()),
+        )
+        .unwrap();
+        write_manifest(
+            &paths.manifest_path("ollama-create-specialist"),
+            &ollama_spec,
+            Some(&file_sha(&seated_s).unwrap()),
+        )
+        .unwrap();
+        let inputs = Inputs {
+            prepare: "prepare-key".into(),
+            fetch: fetch_inputs(DEFAULT_BASE),
+            pipeline: Some(pipeline.into()),
+            recipe: None,
+            eval: Some(eval_key.clone()),
+            ollama_base: Some(ollama_base),
+            ollama_spec: Some(ollama_spec),
+        };
+        let ctx = PlanCtx {
+            paths: &paths,
+            base: DEFAULT_BASE,
+            hf_bin: "huggingface-cli",
+            quant: DEFAULT_QUANT,
+            library_tag: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            specialist_tag: DEFAULT_TAG,
+            llama: None,
+            inputs: &inputs,
+            check_ollama: false,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+        };
+        for step in plan_with(&ctx) {
+            if matches!(
+                step.name,
+                "eval-base" | "eval-specialist" | "ollama-create-base" | "ollama-create-specialist"
+            ) {
+                assert_eq!(
+                    step.action,
+                    StepAction::Skip,
+                    "{} {}",
+                    step.name,
+                    step.detail
+                );
+            }
+        }
+
+        let changed_spec =
+            spec_model.replace("PARAMETER num_predict 8", "PARAMETER num_predict 64");
+        assert_ne!(changed_spec, spec_model);
+        let changed_eval = eval_inputs(
+            pipeline,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+            &base_model,
+            &changed_spec,
+        );
+        let changed_ollama = ollama_inputs(
+            pipeline,
+            DEFAULT_TAG,
+            DEFAULT_TAG,
+            endpoint,
+            None,
+            DEFAULT_BUILT_BASE_TAG,
+            &changed_spec,
+        );
+        assert_ne!(changed_eval, eval_key);
+        let changed_inputs = Inputs {
+            eval: Some(changed_eval),
+            ollama_spec: Some(changed_ollama),
+            ..inputs.clone()
+        };
+        let changed_ctx = PlanCtx {
+            inputs: &changed_inputs,
+            ..ctx
+        };
+        let planned = plan_with(&changed_ctx);
+        for name in ["eval-base", "eval-specialist", "ollama-create-specialist"] {
+            let step = planned.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(step.action, StepAction::Run, "{step:?}");
+            assert!(step.detail.contains("inputs changed"), "{step:?}");
+        }
+        let base_seat = planned
+            .iter()
+            .find(|s| s.name == "ollama-create-base")
+            .unwrap();
+        assert_eq!(base_seat.action, StepAction::Skip, "{base_seat:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -3471,6 +3651,10 @@ mod tests {
         let model = journey_modelfile(&paths.specialist_f16, SeatChat::DeepseekR1);
         assert!(model.contains("<｜User｜>"), "{model}");
         assert!(model.contains("<｜Assistant｜>"), "{model}");
+        assert!(
+            model.contains("<｜Assistant｜><think>\n\n</think>\n\n"),
+            "empty think prefill missing\n{model}"
+        );
         assert!(
             model.contains("PARAMETER stop <｜end▁of▁sentence｜>"),
             "{model}"

@@ -1470,6 +1470,15 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
     assert!(modelfile.contains("<｜User｜>"), "{modelfile}");
     assert!(modelfile.contains("<｜Assistant｜>"), "{modelfile}");
     assert!(
+        modelfile.contains("<｜Assistant｜><think>\n\n</think>\n\n"),
+        "empty think prefill missing\n{modelfile}"
+    );
+    let base_modelfile = fs::read_to_string(work.join("base.Modelfile")).unwrap();
+    assert!(
+        base_modelfile.contains("<｜Assistant｜><think>\n\n</think>\n\n"),
+        "empty think prefill missing\n{base_modelfile}"
+    );
+    assert!(
         !modelfile.contains("<|im_end|>"),
         "qwen stop leaked\n{modelfile}"
     );
