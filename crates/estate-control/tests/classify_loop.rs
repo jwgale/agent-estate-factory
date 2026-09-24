@@ -637,3 +637,54 @@ fn eval_few_shot_dry_run_report_and_refusals() {
     assert!(err.contains("larger than"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn rust_idiom_native_import_stays_offline_and_fixed_order() {
+    let dir = std::env::temp_dir().join(format!("classify-rust-idiom-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let train = dir.join("native-train.jsonl");
+    let test = dir.join("native-test.jsonl");
+    std::fs::write(
+        &train,
+        concat!(
+            "{\"index\":1,\"text\":\"fn needs_fix() {}\",\"label\":0}\n",
+            "{\"index\":2,\"text\":\"fn idiomatic() {}\",\"label\":1}\n",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &test,
+        "{\"index\":9,\"text\":\"fn held() {}\",\"label\":0}\n",
+    )
+    .unwrap();
+    let out = dir.join("out");
+    let imported = bin()
+        .args([
+            "classify",
+            "import",
+            "--dataset",
+            "rust_idiom",
+            "--native-train",
+            train.to_str().unwrap(),
+            "--native-test",
+            test.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    let stderr = String::from_utf8_lossy(&imported.stderr);
+    assert!(imported.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("local training only"), "{stdout}");
+    let body = std::fs::read_to_string(out.join("train.jsonl")).unwrap();
+    assert!(body.contains("NeedsFix"));
+    assert!(body.contains("Idiomatic"));
+    assert!(body.contains("\"answer\":\"A\""));
+    assert!(body.contains("\"answer\":\"B\""));
+    let manifest = std::fs::read_to_string(out.join("import.json")).unwrap();
+    assert!(manifest.contains("\"live_train\": false"), "{manifest}");
+    assert!(manifest.contains("seeded-commit-holdout"), "{manifest}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

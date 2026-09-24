@@ -104,6 +104,16 @@ estate classify journey --dataset devign --from-local "$NAS/datasets/devign" --t
 estate classify journey --dataset google/code_x_glue_cc_defect_detection --train-size all --heldout-size all --seed 42 --print
 ```
 
+## rust_idiom letter runs
+
+`estate classify import --dataset rust_idiom` reads the Rust subset of `bigcode/commitpackft` (CommitPackFT) on the same import path as ag_news and devign. The Hub id is an alias. Bulk fetch is `hf download --repo-type dataset --include data/rust/*`. The file is `data/rust/data.jsonl` (2,996 commits, `lang` `Rust`). A small transform in that same Python reader emits `old_contents` and `new_contents`. Empty or identical sides are dropped (2,340 usable pairs). Each usable commit becomes two tev1 rows: A=NeedsFix (`old_contents`) and B=Idiomatic (`new_contents`). Options stay in class-table order and are not shuffled. The question is `Does this Rust snippet need a fix, or is it the idiomatic version?`. There is no official test split. Held-out is a deterministic SplitMix holdout of whole commits at seed 42, one fifth of the usable commits (468 commits, 936 rows). Train is the rest (1,872 commits, 3,744 rows). Both sides of a pair stay in the same split. `--train-size` and `--heldout-size` then class-balance those rows; `all` keeps them. `--from-local` reads a snapshot that contains `data/rust/data.jsonl` and does not write there. `--fetch rows-api` pages `config=rust`. `estate classify journey --dataset rust_idiom` reuses the tev1 Qwen path. The default tag suffix is `-rustidiom-<train-size>`. The card names MIT and also per-sample licenses, so this output is for local training only. Do not redistribute it. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify import --dataset rust_idiom --from-local "$NAS/datasets/commitpackft" --train-size all --heldout-size all --seed 42
+estate classify journey --dataset rust_idiom --from-local "$NAS/datasets/commitpackft" --train-size 3000 --heldout-size all --seed 42 --print --llama-cpp-dir "$LLAMA_CPP_DIR"
+estate classify journey --dataset bigcode/commitpackft --train-size all --heldout-size all --seed 42 --print
+```
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.
