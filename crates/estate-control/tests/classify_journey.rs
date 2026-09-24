@@ -227,6 +227,203 @@ fn journey_print_lists_steps_without_tools() {
     );
 }
 
+fn downloader_tools(dir: &std::path::Path, hf: Option<&str>, huggingface_cli: Option<&str>) {
+    write_exe(dir, "nvidia-smi", "#!/bin/sh\nexit 0\n");
+    write_exe(dir, "llamafactory-cli", "#!/bin/sh\nexit 0\n");
+    write_exe(dir, "ollama", "#!/bin/sh\nexit 0\n");
+    if let Some(body) = hf {
+        write_exe(dir, "hf", body);
+    }
+    if let Some(body) = huggingface_cli {
+        write_exe(dir, "huggingface-cli", body);
+    }
+}
+
+const HF_DOWNLOAD_OK: &str = r#"#!/bin/sh
+set -e
+printf '%s\n' "$0 $*" >> "${JOURNEY_TOOL_LOG:?}"
+local_dir=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "--local-dir" ]; then
+    local_dir=$arg
+  fi
+  prev=$arg
+done
+mkdir -p "$local_dir"
+printf '%s\n' '{}' > "$local_dir/config.json"
+printf '%s\n' '{}' > "$local_dir/tokenizer.json"
+printf 'w\n' > "$local_dir/model.safetensors"
+"#;
+
+const HF_CLI_DEPRECATION: &str = r#"#!/bin/sh
+printf '%s\n' "$0 $*" >> "${JOURNEY_TOOL_LOG:?}"
+echo '`huggingface-cli` is deprecated and no longer works. Use `hf` instead.' >&2
+exit 1
+"#;
+
+fn journey_print(dir: &std::path::Path, tools: &std::path::Path) -> String {
+    let out = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", tools.display().to_string())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(out.status.success(), "{stdout}\n{stderr}");
+    stdout
+}
+
+#[test]
+fn journey_prefers_hf_when_both_downloaders_are_on_path() {
+    let root = std::env::temp_dir().join(format!("journey-hf-both-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    downloader_tools(&tools, Some(HF_DOWNLOAD_OK), Some(HF_CLI_DEPRECATION));
+    let printed = journey_print(&root.join("print"), &tools);
+    assert!(printed.contains("downloader: hf\n"), "{printed}");
+    assert!(printed.contains("hf download Qwen/Qwen3.5-4B"), "{printed}");
+    assert!(!printed.contains("huggingface-cli download"), "{printed}");
+
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let work = root.join("work");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+        ])
+        .env("PATH", tools.display().to_string())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let tool_log = fs::read_to_string(&log).unwrap();
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    assert!(
+        tool_log.contains("hf download Qwen/Qwen3.5-4B"),
+        "{tool_log}"
+    );
+    assert!(
+        !tool_log.contains("huggingface-cli"),
+        "deprecated stub must not run\n{tool_log}"
+    );
+    assert!(stdout.contains("hf download Qwen/Qwen3.5-4B"), "{stdout}");
+    assert!(work.join("base-hf/config.json").is_file());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn journey_falls_back_to_huggingface_cli_when_hf_is_absent() {
+    let root = std::env::temp_dir().join(format!("journey-hf-fallback-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    downloader_tools(&tools, None, Some(HF_DOWNLOAD_OK));
+    let printed = journey_print(&root.join("print"), &tools);
+    assert!(
+        printed.contains("downloader: huggingface-cli\n"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains("huggingface-cli download Qwen/Qwen3.5-4B"),
+        "{printed}"
+    );
+    assert!(!printed.contains("\nhf download"), "{printed}");
+
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let work = root.join("work");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+        ])
+        .env("PATH", tools.display().to_string())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    let tool_log = fs::read_to_string(&log).unwrap();
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    assert!(
+        tool_log.contains("huggingface-cli download Qwen/Qwen3.5-4B"),
+        "{tool_log}"
+    );
+    assert!(
+        stdout.contains("huggingface-cli download Qwen/Qwen3.5-4B"),
+        "{stdout}"
+    );
+    assert!(work.join("base-hf/config.json").is_file());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn journey_deprecated_huggingface_cli_names_the_hf_install() {
+    let root = std::env::temp_dir().join(format!("journey-hf-deprecated-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let tools = root.join("bin");
+    fs::create_dir_all(&tools).unwrap();
+    downloader_tools(&tools, None, Some(HF_CLI_DEPRECATION));
+    let llama = root.join("llama.cpp");
+    fake_llama(&llama);
+    let log = root.join("tools.log");
+    fs::write(&log, "").unwrap();
+    let work = root.join("work");
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            work.to_str().unwrap(),
+            "--run",
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+        ])
+        .env("PATH", tools.display().to_string())
+        .env("JOURNEY_TOOL_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(!ran.status.success());
+    let err = String::from_utf8_lossy(&ran.stderr);
+    assert!(err.contains("refuse:classify-journey"), "{err}");
+    assert!(err.contains("deprecated"), "{err}");
+    assert!(
+        err.contains("pipx install \"huggingface_hub[cli]\""),
+        "{err}"
+    );
+    assert!(err.contains("pip install -U huggingface_hub"), "{err}");
+    assert!(!work.join("base-hf/config.json").exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn journey_run_refuses_missing_tools() {
     let dir = std::env::temp_dir().join(format!("journey-miss-{}", std::process::id()));

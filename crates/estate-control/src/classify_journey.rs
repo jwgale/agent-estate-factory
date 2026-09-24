@@ -10,7 +10,7 @@ use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -594,15 +594,31 @@ pub fn hf_download_argv(bin: &str, repo: &str, local_dir: &Path) -> Vec<String> 
     ]
 }
 
-fn hf_bin_name() -> Option<&'static str> {
-    if which("huggingface-cli").is_some() {
-        Some("huggingface-cli")
-    } else if which("hf").is_some() {
+/// `hf` from current `huggingface_hub`, then the older `huggingface-cli` only when `hf` is absent.
+/// huggingface_hub 1.x leaves `huggingface-cli` as a stub that prints a deprecation line and exits 1.
+pub fn hf_bin_name() -> Option<&'static str> {
+    if which("hf").is_some() {
         Some("hf")
+    } else if which("huggingface-cli").is_some() {
+        Some("huggingface-cli")
     } else {
         None
     }
 }
+
+fn hf_bin_label() -> String {
+    match hf_bin_name() {
+        Some(name) => name.to_string(),
+        None => "missing".into(),
+    }
+}
+
+/// True when a failed downloader printed the huggingface_hub 1.x stub notice.
+pub fn hf_downloader_deprecated(output: &str) -> bool {
+    output.to_ascii_lowercase().contains("deprecated")
+}
+
+const HF_DEPRECATION_HINT: &str = "Install or use `hf` (`pipx install \"huggingface_hub[cli]\"` or `pip install -U huggingface_hub` in the venv)";
 
 pub fn tool_gaps(
     has: impl Fn(&str) -> bool,
@@ -1542,7 +1558,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     let ctx = PlanCtx {
         paths: &paths,
         base: req.base,
-        hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
+        hf_bin: hf_bin_name().unwrap_or("hf"),
         quant: req.quant,
         library_tag: library,
         built_base_tag: req.built_base_tag,
@@ -1644,6 +1660,9 @@ fn print_plan(
             ),
         }
     );
+    if !base_is_local_dir(req.base) {
+        println!("downloader: {}", hf_bin_label());
+    }
     println!("out: {}", paths.out.display());
     for step in steps {
         let word = match step.action {
@@ -1668,7 +1687,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
         let ctx = PlanCtx {
             paths,
             base: req.base,
-            hf_bin: hf_bin_name().unwrap_or("huggingface-cli"),
+            hf_bin: hf_bin_name().unwrap_or("hf"),
             quant: req.quant,
             library_tag: library,
             built_base_tag: req.built_base_tag,
@@ -1720,7 +1739,7 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                             "refuse:classify-journey: huggingface-cli and hf are not on PATH; needed to download the base. HF_TOKEN is read from the environment and is not printed"
                         )
                     })?;
-                    run_argv(&hf_download_argv(bin, req.base, &dir))?;
+                    run_hf_download(&hf_download_argv(bin, req.base, &dir))?;
                 }
                 validate_snapshot(&dir)?;
                 write_manifest(
@@ -2592,6 +2611,73 @@ fn tar_size(bytes: &[u8]) -> Result<usize> {
     })
 }
 
+fn run_hf_download(argv: &[String]) -> Result<()> {
+    let line = argv_line(argv);
+    println!("{line}");
+    let (bin, args) = argv
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: empty command"))?;
+    let bin_path = which(bin)
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: {bin} is not on PATH"))?;
+    let mut child = Command::new(&bin_path)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "refuse:classify-journey: cannot run {}: {e}",
+                bin_path.display()
+            )
+        })?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: {bin} stdout is closed"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: {bin} stderr is closed"))?;
+    let out_task = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        let _ = std::io::stdout().write_all(&buf);
+        buf
+    });
+    let err_task = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        let _ = std::io::stderr().write_all(&buf);
+        buf
+    });
+    let status = child.wait().map_err(|e| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot wait for {}: {e}",
+            bin_path.display()
+        )
+    })?;
+    let out_bytes = out_task.join().unwrap_or_default();
+    let err_bytes = err_task.join().unwrap_or_default();
+    if !status.success() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out_bytes),
+            String::from_utf8_lossy(&err_bytes)
+        );
+        if hf_downloader_deprecated(&combined) {
+            bail!(
+                "refuse:classify-journey: {bin} is deprecated and no longer downloads. {HF_DEPRECATION_HINT}."
+            );
+        }
+        bail!(
+            "refuse:classify-journey: {} exited {status}",
+            bin_path.display()
+        );
+    }
+    let _ = line;
+    Ok(())
+}
+
 fn run_argv(argv: &[String]) -> Result<()> {
     let line = argv_line(argv);
     println!("{line}");
@@ -3295,6 +3381,15 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn deprecation_notice_is_the_stub_text() {
+        assert!(hf_downloader_deprecated(
+            "`huggingface-cli` is deprecated and no longer works. Use `hf` instead."
+        ));
+        assert!(!hf_downloader_deprecated("connection reset by peer"));
+    }
+
+    #[test]
     fn missing_tool_messages_name_each_gap() {
         let gaps = tool_gaps(|_| false, None, false, true, QWEN35_RECENT);
         let text = gaps.message();
@@ -3666,27 +3761,18 @@ mod tests {
     fn deepseek_system_user_prompt_matches_llamafactory() {
         let system = "Classify the row.";
         let user = "choose one letter";
-        let rendered = render_ollama_template(
-            DEEPSEEK_R1_TEMPLATE,
-            system,
-            &[("user", user)],
-        );
+        let rendered = render_ollama_template(DEEPSEEK_R1_TEMPLATE, system, &[("user", user)]);
         let expected = format!(
             "<｜begin▁of▁sentence｜>{system}<｜User｜>{user}<｜Assistant｜><think>\n\n</think>\n\n"
         );
         assert_eq!(rendered, expected);
-        let history = render_ollama_template(
-            DEEPSEEK_R1_TEMPLATE,
-            "",
-            &[("assistant", "A")],
-        );
+        let history = render_ollama_template(DEEPSEEK_R1_TEMPLATE, "", &[("assistant", "A")]);
         assert!(
             history.contains("<｜Assistant｜>A<｜end▁of▁sentence｜>"),
             "{history}"
         );
         assert!(
-            DEEPSEEK_R1_TEMPLATE
-                .contains("<｜Assistant｜>{{ .Content }}<｜end▁of▁sentence｜>"),
+            DEEPSEEK_R1_TEMPLATE.contains("<｜Assistant｜>{{ .Content }}<｜end▁of▁sentence｜>"),
             "format_assistant is content then eos with no newline\n{DEEPSEEK_R1_TEMPLATE}"
         );
         assert!(
@@ -3714,9 +3800,7 @@ mod tests {
                 toks.push(GoTok::Text(&rest[..start]));
             }
             let after = &rest[start + 2..];
-            let end = after
-                .find("}}")
-                .expect("unclosed go template action");
+            let end = after.find("}}").expect("unclosed go template action");
             toks.push(GoTok::Action(after[..end].trim()));
             rest = &after[end + 2..];
         }
@@ -3740,7 +3824,9 @@ mod tests {
                     out.push_str(text);
                     *i += 1;
                 }
-                GoTok::Action(action) if action == "end" || action == "else" || action.starts_with("else if") => {
+                GoTok::Action(action)
+                    if action == "end" || action == "else" || action.starts_with("else if") =>
+                {
                     break;
                 }
                 GoTok::Action(".System") => {
@@ -3753,7 +3839,14 @@ mod tests {
                 }
                 GoTok::Action("if .System") => {
                     *i += 1;
-                    out.push_str(&take_if(toks, i, system, messages, message, !system.is_empty()));
+                    out.push_str(&take_if(
+                        toks,
+                        i,
+                        system,
+                        messages,
+                        message,
+                        !system.is_empty(),
+                    ));
                 }
                 GoTok::Action("range .Messages") => {
                     *i += 1;
@@ -3769,19 +3862,10 @@ mod tests {
                     expect_end(toks, i);
                 }
                 GoTok::Action(action) if action.starts_with("if eq .Role ") => {
-                    let want = action
-                        .trim_start_matches("if eq .Role ")
-                        .trim_matches('"');
+                    let want = action.trim_start_matches("if eq .Role ").trim_matches('"');
                     let role = message.map(|(role, _)| role).unwrap_or("");
                     *i += 1;
-                    out.push_str(&take_if(
-                        toks,
-                        i,
-                        system,
-                        messages,
-                        message,
-                        role == want,
-                    ));
+                    out.push_str(&take_if(toks, i, system, messages, message, role == want));
                 }
                 other => panic!("unexpected go action {other:?}"),
             }
@@ -3842,7 +3926,10 @@ mod tests {
         while *i < toks.len() {
             match toks[*i] {
                 GoTok::Action(action)
-                    if depth == 0 && (action == "end" || action == "else" || action.starts_with("else if")) =>
+                    if depth == 0
+                        && (action == "end"
+                            || action == "else"
+                            || action.starts_with("else if")) =>
                 {
                     break;
                 }
