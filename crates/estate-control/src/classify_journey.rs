@@ -3633,6 +3633,11 @@ mod tests {
         let shared = resolved_base_dir(DEFAULT_BASE, &paths);
         fs::create_dir_all(&shared).unwrap();
         fs::write(shared.join("config.json"), "{}\n").unwrap();
+        fs::write(
+            shared.join(HUB_COMPLETE_MARKER),
+            "{\"files\":[{\"path\":\"config.json\",\"bytes\":3}]}\n",
+        )
+        .unwrap();
         fs::create_dir_all(&paths.adapter_dir).unwrap();
         fs::create_dir_all(&paths.export_dir).unwrap();
         fs::write(&paths.dataset_jsonl, "row\n").unwrap();
