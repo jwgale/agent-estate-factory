@@ -6893,6 +6893,10 @@ fn purpose_build_surfaces_name_mid_software_build_entry() {
         );
         assert!(body.contains(parts), "{name} missing the parts line");
     }
+    assert!(
+        !section17.contains("`make purpose-build-checklist` (section 18)"),
+        "section 17 must not cite the checklist as section 18"
+    );
     assert!(journeys.contains(entry));
 
     let banner = "When an SLM fits mid-software-build, or on demand, the same print-only entry is make purpose-build-journey.";
