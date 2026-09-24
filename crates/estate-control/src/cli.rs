@@ -481,7 +481,7 @@ pub(crate) enum ClassifyCommand {
         /// Seed for the Fisher–Yates split. Same seed and file split the same way.
         #[arg(long, default_value_t = 20_260_920)]
         seed: u64,
-        /// Fraction of valid rows held out for eval. Greater than 0 and less than 1.
+        /// Fraction of question groups held out for eval. Greater than 0 and less than 1.
         #[arg(long, default_value_t = 0.2)]
         held_out_ratio: f64,
         /// LLaMA-Factory dataset shape. The assistant target is exactly one letter.
@@ -493,6 +493,9 @@ pub(crate) enum ClassifyCommand {
         /// Fail on any bad row and write nothing. Omit to skip bad rows and print the count plus the first line numbers.
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// Overwrite files in a non-empty `--out` directory. Without this, a non-empty `--out` is refused.
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
     /// Score held-out JSONL against an OpenAI-compatible chat endpoint (Ollama `/v1` or a hosted endpoint).
     /// Temperature 0, small max_tokens, thinking off where the body supports it. Does not record a live PASS.

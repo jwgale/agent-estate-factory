@@ -12,7 +12,7 @@ When an SLM fits mid-software-build, or on demand, `make purpose-build-journey` 
 
 [togethercomputer/tev1](https://github.com/togethercomputer/tev1) fine-tuned Qwen3.5 4B into a classifier. The record is JSON `{state, question, options}` with letters `A` onward. The model returns one letter. That single letter is the first measurable pass/fail for a purpose-built SLM on this factory. The committed fixture is `examples/fixtures/tev1-decisions.jsonl` (hand-written rows, not copied public datasets).
 
-`estate classify prepare` reads that JSONL offline. It checks consecutive letters, non-empty options, and an answer letter. `--strict` stops on bad rows and writes nothing. Without it, bad rows are skipped and the error names the count and the first line numbers. A seeded shuffle writes a train set and a held-out file. The train set is LLaMA-Factory sharegpt by default (system line, user JSON, assistant letter) plus `dataset_info.json`. `--format alpaca` writes `instruction` / `input` / `output` with the same one-letter target. Prepare does not train.
+`estate classify prepare` reads that JSONL offline. It checks consecutive letters, non-empty options, and an answer letter. `--strict` stops on bad rows and writes nothing. Without it, bad rows are skipped and the error names the count and the first line numbers. A seeded shuffle of question groups (or `group_id`, when that field is set) writes a train set and a held-out file. A non-empty `--out` is refused unless `--force` is set. The train set is LLaMA-Factory sharegpt by default (system line, user JSON, assistant letter) plus `dataset_info.json`. `--format alpaca` writes `instruction` / `input` / `output` with the same one-letter target. Prepare does not train.
 
 Operator loop on a 5090-class host:
 

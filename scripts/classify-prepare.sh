@@ -28,14 +28,13 @@ else
 fi
 
 BEFORE="$(cksum "$ESTATE")"
-rm -rf "$OUT"
-mkdir -p "$OUT"
 echo "== classify-prepare (offline; not a live train) =="
 echo "SKIP live train"
 "${ESTATE_CMD[@]}" classify prepare \
   --input "$INPUT" \
   --out "$OUT" \
-  --format "${FORMAT:-sharegpt}"
+  --format "${FORMAT:-sharegpt}" \
+  --force
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then
   echo "FAIL  examples/estate.yaml cksum changed" >&2

@@ -29,6 +29,11 @@ else
   exit 1
 fi
 
+if [[ -n "${CLASSIFY_ENDPOINT:-}" && -z "${CLASSIFY_MODEL:-}" ]]; then
+  echo "FAIL  CLASSIFY_ENDPOINT is set but CLASSIFY_MODEL is empty. Set CLASSIFY_MODEL." >&2
+  exit 1
+fi
+
 if [[ ! -f "$OUT/heldout.jsonl" ]]; then
   echo "== classify-eval needs a held-out file; running classify-prepare =="
   OUT="$OUT" bash "$ROOT/scripts/classify-prepare.sh"

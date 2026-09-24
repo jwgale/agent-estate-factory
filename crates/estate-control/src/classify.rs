@@ -47,6 +47,8 @@ pub(crate) struct Decision {
     pub user_json: String,
     /// Canonical labeled record for the held-out JSONL.
     pub heldout: Value,
+    /// `id:{group_id}` when that field is set, otherwise `q:{normalized question}`.
+    pub group: String,
 }
 
 pub(crate) struct ParseOutcome {
@@ -186,17 +188,48 @@ fn parse_record_line(line: &str, line_no: usize) -> Result<Decision, String> {
         labels,
         user_json,
         heldout: Value::Object(held),
+        group: group_key(obj, question),
     })
 }
 
 fn validate_state(state: &Value) -> Result<(), String> {
     match state {
         Value::String(s) if s.trim().is_empty() => Err("state is empty".into()),
-        Value::String(_) => Ok(()),
-        Value::Object(map) if map.is_empty() => Err("state object is empty".into()),
-        Value::Object(_) | Value::Array(_) => Ok(()),
-        _ => Err("state must be a non-empty string or object".into()),
+        Value::String(_) | Value::Object(_) | Value::Array(_) => Ok(()),
+        _ => Err("state must be a non-empty string, an object, or an array".into()),
     }
+}
+
+/// Optional `group_id` keeps variants together. Otherwise the normalized question does.
+fn group_key(obj: &Map<String, Value>, question: &str) -> String {
+    if let Some(id) = obj.get("group_id").and_then(Value::as_str) {
+        let id = id.trim();
+        if !id.is_empty() {
+            return format!("id:{id}");
+        }
+    }
+    format!("q:{}", normalize_question(question))
+}
+
+/// Lowercase, keep letters, digits, and `_`, collapse the rest to single spaces.
+fn normalize_question(question: &str) -> String {
+    let mut out = String::new();
+    let mut spaced = false;
+    for ch in question.chars() {
+        if ch.is_alphanumeric() || ch == '_' {
+            for lower in ch.to_lowercase() {
+                out.push(lower);
+            }
+            spaced = false;
+        } else if !spaced && !out.is_empty() {
+            out.push(' ');
+            spaced = true;
+        }
+    }
+    if out.ends_with(' ') {
+        out.pop();
+    }
+    out
 }
 
 fn required_text(obj: &Map<String, Value>, field: &str, nth: usize) -> Result<String, String> {
@@ -210,14 +243,14 @@ fn required_text(obj: &Map<String, Value>, field: &str, nth: usize) -> Result<St
     Ok(text.to_string())
 }
 
-/// Python `json.dumps(..., ensure_ascii=False)` separators: `", "` and `": "`.
+/// Python `json.dumps(..., ensure_ascii=False)` with default separators `", "` and `": "`.
 pub(crate) fn py_dumps(value: &Value) -> String {
     match value {
         Value::Null => "null".into(),
         Value::Bool(true) => "true".into(),
         Value::Bool(false) => "false".into(),
         Value::Number(n) => n.to_string(),
-        Value::String(s) => serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into()),
+        Value::String(s) => py_string(s),
         Value::Array(items) => {
             let parts: Vec<String> = items.iter().map(py_dumps).collect();
             format!("[{}]", parts.join(", "))
@@ -225,17 +258,31 @@ pub(crate) fn py_dumps(value: &Value) -> String {
         Value::Object(map) => {
             let parts: Vec<String> = map
                 .iter()
-                .map(|(k, v)| {
-                    format!(
-                        "{}: {}",
-                        serde_json::to_string(k).unwrap_or_else(|_| "\"\"".into()),
-                        py_dumps(v)
-                    )
-                })
+                .map(|(k, v)| format!("{}: {}", py_string(k), py_dumps(v)))
                 .collect();
             format!("{{{}}}", parts.join(", "))
         }
     }
+}
+
+fn py_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 pub(crate) fn format_row_errors(errors: &[RowError]) -> String {
@@ -257,7 +304,7 @@ pub(crate) fn held_out_len(n: usize, ratio: f64) -> Result<usize, String> {
         return Err("held-out ratio must be greater than 0 and less than 1".into());
     }
     if n < 2 {
-        return Err("need at least 2 valid rows to split".into());
+        return Err("need at least 2 groups to split".into());
     }
     let mut k = (n as f64 * ratio).round() as usize;
     if k == 0 {
@@ -285,6 +332,35 @@ impl SplitMix {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^ (z >> 31)
     }
+}
+
+/// Shuffle groups, then keep every row of a group on one side of the cut.
+pub(crate) fn split_by_group(
+    decisions: &[Decision],
+    seed: u64,
+    ratio: f64,
+) -> Result<(Vec<usize>, Vec<usize>), String> {
+    let mut order: Vec<&str> = Vec::new();
+    let mut buckets: Vec<Vec<usize>> = Vec::new();
+    for (i, row) in decisions.iter().enumerate() {
+        if let Some(pos) = order.iter().position(|g| *g == row.group.as_str()) {
+            buckets[pos].push(i);
+        } else {
+            order.push(row.group.as_str());
+            buckets.push(vec![i]);
+        }
+    }
+    let held_groups = held_out_len(order.len(), ratio)?;
+    let (train_g, held_g) = split_indices(order.len(), seed, held_groups);
+    let mut train = Vec::new();
+    let mut held = Vec::new();
+    for i in train_g {
+        train.extend_from_slice(&buckets[i]);
+    }
+    for i in held_g {
+        held.extend_from_slice(&buckets[i]);
+    }
+    Ok((train, held))
 }
 
 /// Deterministic Fisher–Yates. Same `n` and `seed` always yield the same index order.
@@ -364,24 +440,78 @@ fn assistant_letter(row: &Value) -> Option<String> {
         })
 }
 
-/// First standalone ASCII letter that is one of `allowed`. `"B"`, `" b."`, `"Answer: C"`.
+/// Exactly one allowed letter after a trivial wrapper. Anything else is invalid.
 pub(crate) fn parse_choice_letter(text: &str, allowed: &[char]) -> Option<char> {
-    let chars: Vec<char> = text.chars().collect();
-    for (i, ch) in chars.iter().enumerate() {
-        if !ch.is_ascii_alphabetic() {
-            continue;
+    let mut s = peel_wrappers(text);
+    s = strip_answer_lead(&s);
+    s = peel_wrappers(&s);
+    s = strip_one_trailer(&s);
+    s = peel_wrappers(&s);
+    let mut chars = s.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() || !ch.is_ascii_alphabetic() {
+        return None;
+    }
+    let up = ch.to_ascii_uppercase();
+    if allowed.iter().any(|c| c.to_ascii_uppercase() == up) {
+        Some(up)
+    } else {
+        None
+    }
+}
+
+fn peel_wrappers(input: &str) -> String {
+    let mut s = input.trim().to_string();
+    loop {
+        let trimmed = s.trim();
+        let mut chars = trimmed.chars();
+        let Some(open) = chars.next() else {
+            return String::new();
+        };
+        let Some(close) = trimmed.chars().next_back() else {
+            return trimmed.to_string();
+        };
+        if trimmed.chars().count() < 2 {
+            return trimmed.to_string();
         }
-        let prev_letter = i > 0 && chars[i - 1].is_ascii_alphabetic();
-        let next_letter = i + 1 < chars.len() && chars[i + 1].is_ascii_alphabetic();
-        if prev_letter || next_letter {
-            continue;
+        let paired = matches!(
+            (open, close),
+            ('"', '"') | ('\'', '\'') | ('`', '`') | ('(', ')')
+        );
+        if !paired {
+            return trimmed.to_string();
         }
-        let up = ch.to_ascii_uppercase();
-        if allowed.contains(&up) {
-            return Some(up);
+        let inner_len = trimmed.chars().count() - 2;
+        s = trimmed.chars().skip(1).take(inner_len).collect();
+    }
+}
+
+fn strip_answer_lead(input: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("answer:") {
+        let rest = &input[input.len() - rest.len()..];
+        return rest.trim().to_string();
+    }
+    if lower.starts_with("answer is") {
+        let after = &input["answer is".len()..];
+        let boundary = after.is_empty()
+            || after.starts_with(|c: char| {
+                c.is_whitespace() || matches!(c, ':' | '"' | '\'' | '`' | '(')
+            });
+        if boundary {
+            return after.trim().to_string();
         }
     }
-    None
+    input.to_string()
+}
+
+fn strip_one_trailer(input: &str) -> String {
+    let s = input.trim();
+    if let Some(stripped) = s.strip_suffix('.').or_else(|| s.strip_suffix(')')) {
+        stripped.trim().to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 pub(crate) fn percentile_nearest(sorted_ms: &[f64], pct: f64) -> f64 {
@@ -419,17 +549,27 @@ pub(crate) fn accuracy_of(correct: usize, total: usize) -> f64 {
 }
 
 fn confusion_map(rows: &[ScoredRow]) -> Map<String, Value> {
-    let mut labels: Vec<char> = Vec::new();
+    let mut columns: Vec<char> = Vec::new();
+    let mut golds: Vec<char> = Vec::new();
     for row in rows {
-        if !labels.contains(&row.expected) {
-            labels.push(row.expected);
+        if !golds.contains(&row.expected) {
+            golds.push(row.expected);
+        }
+        if !columns.contains(&row.expected) {
+            columns.push(row.expected);
+        }
+        if let Some(pred) = row.predicted {
+            if !columns.contains(&pred) {
+                columns.push(pred);
+            }
         }
     }
-    labels.sort_unstable();
+    golds.sort_unstable();
+    columns.sort_unstable();
     let mut out = Map::new();
-    for gold in &labels {
+    for gold in &golds {
         let mut cell = Map::new();
-        for pred in &labels {
+        for pred in &columns {
             let n = rows
                 .iter()
                 .filter(|r| r.expected == *gold && r.predicted == Some(*pred))
@@ -497,19 +637,28 @@ fn extract_message_text(body: &Value) -> Option<String> {
     }
 }
 
-enum HttpOutcome {
-    Ok(String),
-    Status,
-    Transport,
+struct HttpFailure {
+    status: u16,
+    body: String,
 }
 
-fn scrub(text: &str, secret: Option<&str>) -> String {
-    match secret {
-        Some(secret) if !secret.is_empty() && text.contains(secret) => {
-            text.replace(secret, "[redacted]")
-        }
+enum HttpOutcome {
+    Ok(String),
+    Fail(HttpFailure),
+}
+
+const SNIPPET_CHARS: usize = 180;
+
+fn scrub_snippet(text: &str, secret: Option<&str>) -> String {
+    let cleaned = match secret {
+        Some(secret) if !secret.is_empty() => text.replace(secret, "[redacted]"),
         _ => text.to_string(),
+    };
+    let mut out: String = cleaned.chars().take(SNIPPET_CHARS).collect();
+    if cleaned.chars().count() > SNIPPET_CHARS {
+        out.push('…');
     }
+    out
 }
 
 fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) -> HttpOutcome {
@@ -525,10 +674,18 @@ fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) 
             let status = resp.status();
             let raw = match resp.into_string() {
                 Ok(s) => s,
-                Err(_) => return HttpOutcome::Transport,
+                Err(err) => {
+                    return HttpOutcome::Fail(HttpFailure {
+                        status: 0,
+                        body: scrub_snippet(&err.to_string(), api_key),
+                    });
+                }
             };
             if !(200..300).contains(&status) {
-                return HttpOutcome::Status;
+                return HttpOutcome::Fail(HttpFailure {
+                    status,
+                    body: scrub_snippet(&raw, api_key),
+                });
             }
             match serde_json::from_str::<Value>(&raw) {
                 Ok(v) => match extract_message_text(&v) {
@@ -538,14 +695,17 @@ fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) 
                 Err(_) => HttpOutcome::Ok(String::new()),
             }
         }
-        Err(ureq::Error::Status(_code, resp)) => {
-            let _ = resp.into_string();
-            HttpOutcome::Status
+        Err(ureq::Error::Status(code, resp)) => {
+            let raw = resp.into_string().unwrap_or_default();
+            HttpOutcome::Fail(HttpFailure {
+                status: code,
+                body: scrub_snippet(&raw, api_key),
+            })
         }
-        Err(err) => {
-            let _ = scrub(&err.to_string(), api_key);
-            HttpOutcome::Transport
-        }
+        Err(err) => HttpOutcome::Fail(HttpFailure {
+            status: 0,
+            body: scrub_snippet(&err.to_string(), api_key),
+        }),
     }
 }
 
@@ -583,6 +743,19 @@ fn write_jsonl(path: &Path, rows: &[Value]) -> Result<()> {
     Ok(())
 }
 
+fn output_occupied(out: &Path) -> Result<bool> {
+    if !out.exists() {
+        return Ok(false);
+    }
+    if out.is_dir() {
+        let mut entries = fs::read_dir(out).map_err(|e| {
+            anyhow::anyhow!("refuse:classify: cannot read {}: {e}", out.display())
+        })?;
+        return Ok(entries.next().is_some());
+    }
+    Ok(fs::metadata(out)?.len() > 0)
+}
+
 pub(crate) fn cmd_classify_prepare(
     input: &Path,
     out: &Path,
@@ -591,6 +764,7 @@ pub(crate) fn cmd_classify_prepare(
     format: DatasetFormat,
     dataset_name: &str,
     strict: bool,
+    force: bool,
 ) -> Result<()> {
     check_dataset_name(dataset_name)?;
     let text = fs::read_to_string(input).map_err(|e| {
@@ -613,9 +787,11 @@ pub(crate) fn cmd_classify_prepare(
     if parsed.decisions.is_empty() {
         bail!("refuse:classify: no valid rows");
     }
-    let held = held_out_len(parsed.decisions.len(), held_out_ratio)
+    let (train_idx, held_idx) = split_by_group(&parsed.decisions, seed, held_out_ratio)
         .map_err(|e| anyhow::anyhow!("refuse:classify: {e}"))?;
-    let (train_idx, held_idx) = split_indices(parsed.decisions.len(), seed, held);
+    if !force && output_occupied(out)? {
+        bail!("refuse:classify: output exists and is non-empty; pass --force");
+    }
     fs::create_dir_all(out)?;
     let train_rows: Vec<Value> = train_idx
         .iter()
@@ -720,6 +896,8 @@ pub(crate) fn cmd_classify_eval(
             "accuracy": Value::Null,
             "invalid": Value::Null,
             "http_errors": 0,
+            "errors": [],
+            "timeout_secs": timeout_secs,
             "confusion": Value::Null,
             "latency_ms": Value::Null,
             "latency_measured": false,
@@ -752,6 +930,7 @@ pub(crate) fn cmd_classify_eval(
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
     let mut scored = Vec::with_capacity(parsed.decisions.len());
+    let mut errors: Vec<Value> = Vec::new();
     for (index, row) in parsed.decisions.iter().enumerate() {
         let started = Instant::now();
         let (text, http_error) = if mock {
@@ -760,7 +939,14 @@ pub(crate) fn cmd_classify_eval(
             let body = request_body(model, row);
             match post_chat(url.as_deref().unwrap(), &body, api_key.as_deref(), timeout) {
                 HttpOutcome::Ok(text) => (text, false),
-                HttpOutcome::Status | HttpOutcome::Transport => (String::new(), true),
+                HttpOutcome::Fail(fail) => {
+                    errors.push(serde_json::json!({
+                        "line": row.line,
+                        "status": fail.status,
+                        "body": fail.body,
+                    }));
+                    (String::new(), true)
+                }
             }
         };
         let latency_ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -795,6 +981,8 @@ pub(crate) fn cmd_classify_eval(
         "accuracy": accuracy_of(correct, scored.len()),
         "invalid": invalid,
         "http_errors": http_errors,
+        "errors": errors,
+        "timeout_secs": timeout_secs,
         "confusion": Value::Object(confusion_map(&scored)),
         "latency_ms": {
             "p50": percentile_nearest(&latencies, 50.0),
@@ -944,19 +1132,28 @@ mod tests {
     #[test]
     fn letter_parser_edges() {
         let allowed = ['A', 'B', 'C', 'D'];
+        let abc = ['A', 'B', 'C'];
         assert_eq!(parse_choice_letter("B", &allowed), Some('B'));
         assert_eq!(parse_choice_letter(" b.", &allowed), Some('B'));
         assert_eq!(parse_choice_letter("Answer: C", &allowed), Some('C'));
+        assert_eq!(parse_choice_letter("answer is B", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("\"B\"", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("(B)", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("B)", &allowed), Some('B'));
+        assert_eq!(parse_choice_letter("C.", &allowed), Some('C'));
         assert_eq!(parse_choice_letter("garbage", &allowed), None);
-        assert_eq!(parse_choice_letter("I pick D", &allowed), Some('D'));
+        assert_eq!(parse_choice_letter("I pick D", &allowed), None);
+        assert_eq!(parse_choice_letter("Not A, pick B", &allowed), None);
+        assert_eq!(parse_choice_letter("Because", &allowed), None);
         assert_eq!(parse_choice_letter("ZZ", &allowed), None);
+        assert_eq!(parse_choice_letter("D", &abc), None);
     }
 
     #[test]
     fn accuracy_confusion_and_percentiles() {
         let rows = vec![
             ScoredRow { expected: 'A', predicted: Some('A'), valid: true, correct: true, http_error: false, latency_ms: 10.0 },
-            ScoredRow { expected: 'A', predicted: Some('B'), valid: true, correct: false, http_error: false, latency_ms: 20.0 },
+            ScoredRow { expected: 'A', predicted: Some('C'), valid: true, correct: false, http_error: false, latency_ms: 20.0 },
             ScoredRow { expected: 'B', predicted: None, valid: false, correct: false, http_error: false, latency_ms: 30.0 },
             ScoredRow { expected: 'B', predicted: Some('B'), valid: true, correct: true, http_error: false, latency_ms: 40.0 },
         ];
@@ -964,13 +1161,125 @@ mod tests {
         assert!((accuracy_of(correct, rows.len()) - 0.5).abs() < 1e-9);
         let matrix = confusion_map(&rows);
         assert_eq!(matrix["A"]["A"], 1);
-        assert_eq!(matrix["A"]["B"], 1);
+        assert_eq!(matrix["A"]["C"], 1);
+        assert_eq!(matrix["A"]["B"], 0);
+        assert_eq!(matrix["A"]["invalid"], 0);
         assert_eq!(matrix["B"]["invalid"], 1);
         assert_eq!(matrix["B"]["B"], 1);
+        assert_eq!(matrix["B"]["C"], 0);
+        for gold in ["A", "B"] {
+            let cell = matrix[gold].as_object().unwrap();
+            assert!(cell.contains_key("invalid"));
+            let sum: u64 = cell.values().filter_map(Value::as_u64).sum();
+            let count = rows.iter().filter(|r| r.expected.to_string() == gold).count() as u64;
+            assert_eq!(sum, count, "{gold}");
+        }
         let mut lat = vec![10.0, 20.0, 30.0, 40.0];
         lat.sort_by(f64::total_cmp);
         assert_eq!(percentile_nearest(&lat, 50.0), 20.0);
         assert_eq!(percentile_nearest(&lat, 95.0), 40.0);
         assert_eq!(percentile_nearest(&[7.0], 95.0), 7.0);
+    }
+
+    #[test]
+    fn py_dumps_keeps_non_ascii() {
+        let dumped = py_dumps(&serde_json::json!({"state": "café 東京"}));
+        assert!(dumped.contains("café 東京"), "{dumped}");
+        assert!(!dumped.contains("\\u"), "{dumped}");
+        assert!(dumped.contains(": "), "{dumped}");
+    }
+
+    #[test]
+    fn empty_state_containers_are_valid() {
+        let obj = row_with_state(&serde_json::json!({}), "Which empty object?");
+        let arr = row_with_state(&serde_json::json!([]), "Which empty array?");
+        let parsed = parse_jsonl(&format!("{obj}\n{arr}\n"));
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        assert_eq!(parsed.decisions.len(), 2);
+        let empty = row_with_state(&serde_json::json!("  "), "Which blank?");
+        let err = parse_jsonl(&empty);
+        assert!(err.errors[0].reason.contains("empty"), "{}", err.errors[0].reason);
+        let num = row_with_state(&serde_json::json!(3), "Which number?");
+        let err = parse_jsonl(&num);
+        assert!(
+            err.errors[0].reason.contains("an object, or an array"),
+            "{}",
+            err.errors[0].reason
+        );
+    }
+
+    fn row_with_state(state: &Value, question: &str) -> String {
+        serde_json::to_string(&serde_json::json!({
+            "state": state,
+            "question": question,
+            "options": [
+                {"label": "A", "key": "yes", "description": "Yes."},
+                {"label": "B", "key": "no", "description": "No."}
+            ],
+            "answer": "A",
+            "answer_key": "yes"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn chat_url_joins_base_slash_and_v1() {
+        assert_eq!(
+            chat_completions_url("http://127.0.0.1:11434"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("http://127.0.0.1:11434/"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("http://127.0.0.1:11434/v1"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("http://127.0.0.1:11434/v1/"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn fixture_groups_stay_on_one_side_of_the_split() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/fixtures/tev1-decisions.jsonl");
+        let text = fs::read_to_string(path).unwrap();
+        let parsed = parse_jsonl(&text);
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let mut groups = std::collections::BTreeSet::new();
+        let mut seen_q: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut seen_id: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for row in &parsed.decisions {
+            groups.insert(row.group.clone());
+            if let Some(id) = row.group.strip_prefix("id:") {
+                *seen_id.entry(id.to_string()).or_insert(0) += 1;
+            } else {
+                *seen_q.entry(row.group.clone()).or_insert(0) += 1;
+            }
+        }
+        let shared_question = seen_q.values().any(|n| *n >= 2);
+        let shared_id = seen_id.values().any(|n| *n >= 2);
+        assert!(shared_question, "fixture needs a shared question group");
+        assert!(shared_id, "fixture needs a shared group_id");
+        assert!(groups.len() >= 20, "groups {}", groups.len());
+        let (train, held) = split_by_group(&parsed.decisions, 20_260_920, 0.2).unwrap();
+        assert!(!train.is_empty() && !held.is_empty());
+        let train_g: std::collections::BTreeSet<_> = train
+            .iter()
+            .map(|i| parsed.decisions[*i].group.as_str())
+            .collect();
+        let held_g: std::collections::BTreeSet<_> = held
+            .iter()
+            .map(|i| parsed.decisions[*i].group.as_str())
+            .collect();
+        assert!(train_g.is_disjoint(&held_g));
+        assert!(held_g.len() >= 2);
+        assert_eq!(train.len() + held.len(), parsed.decisions.len());
+        let again = split_by_group(&parsed.decisions, 20_260_920, 0.2).unwrap();
+        assert_eq!(train, again.0);
+        assert_eq!(held, again.1);
     }
 }

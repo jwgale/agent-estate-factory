@@ -303,6 +303,7 @@ pub(crate) fn run() -> Result<()> {
                 format,
                 dataset_name,
                 strict,
+                force,
             } => crate::classify::cmd_classify_prepare(
                 &input,
                 &out,
@@ -311,6 +312,7 @@ pub(crate) fn run() -> Result<()> {
                 format,
                 &dataset_name,
                 strict,
+                force,
             ),
             ClassifyCommand::Eval {
                 records,

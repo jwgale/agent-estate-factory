@@ -64,7 +64,8 @@ fn prepare_is_deterministic_and_llama_factory_shaped() {
         .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
         .collect();
     assert_eq!(train.len() + held.len(), 36);
-    assert_eq!(held.len(), 7);
+    assert!(!held.is_empty());
+    assert!(held.len() < train.len());
     for row in &train {
         let msgs = row["messages"].as_array().unwrap();
         let letter = msgs
@@ -95,9 +96,9 @@ fn strict_refuses_bad_rows_and_skip_writes() {
     std::fs::write(
         &input,
         concat!(
-            "{\"state\":\"The note is blank on purpose but not empty.\",\"question\":\"Pick a letter.\",\"options\":[{\"label\":\"A\",\"key\":\"one\",\"description\":\"First.\"},{\"label\":\"B\",\"key\":\"two\",\"description\":\"Second.\"}],\"answer\":\"A\",\"answer_key\":\"one\"}\n",
+            "{\"state\":\"The note is blank on purpose but not empty.\",\"question\":\"Pick the first letter.\",\"options\":[{\"label\":\"A\",\"key\":\"one\",\"description\":\"First.\"},{\"label\":\"B\",\"key\":\"two\",\"description\":\"Second.\"}],\"answer\":\"A\",\"answer_key\":\"one\"}\n",
             "{\"state\":\"\",\"question\":\"Pick a letter.\",\"options\":[],\"answer\":\"\"}\n",
-            "{\"state\":\"Another short original note.\",\"question\":\"Pick a letter.\",\"options\":[{\"label\":\"A\",\"key\":\"one\",\"description\":\"First.\"},{\"label\":\"B\",\"key\":\"two\",\"description\":\"Second.\"}],\"answer\":\"B\",\"answer_key\":\"two\"}\n",
+            "{\"state\":\"Another short original note.\",\"question\":\"Pick the second letter.\",\"options\":[{\"label\":\"A\",\"key\":\"one\",\"description\":\"First.\"},{\"label\":\"B\",\"key\":\"two\",\"description\":\"Second.\"}],\"answer\":\"B\",\"answer_key\":\"two\"}\n",
         ),
     )
     .unwrap();
@@ -180,8 +181,13 @@ fn eval_dry_run_and_mock_stay_offline() {
     assert!(dry_out.status.success(), "{}", String::from_utf8_lossy(&dry_out.stderr));
     let report: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dry).unwrap()).unwrap();
+    let held_n = std::fs::read_to_string(&held)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count();
     assert_eq!(report["mode"], "dry_run");
-    assert_eq!(report["records"], 7);
+    assert_eq!(report["records"], held_n);
     assert!(report["accuracy"].is_null());
     assert_eq!(report["live_pass_recorded"], false);
     assert!(report["sample_request"]["temperature"].as_i64() == Some(0) || report["sample_request"]["temperature"].as_f64() == Some(0.0));
@@ -208,7 +214,7 @@ fn eval_dry_run_and_mock_stay_offline() {
     let report: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&mock_path).unwrap()).unwrap();
     assert_eq!(report["mode"], "mock");
-    assert_eq!(report["records"], 7);
+    assert_eq!(report["records"], held_n);
     assert!(report["accuracy"].as_f64().unwrap() > 0.0);
     assert!(report["accuracy"].as_f64().unwrap() < 1.0);
     assert!(report["invalid"].as_u64().unwrap() >= 1);
@@ -306,5 +312,146 @@ fn eval_scores_in_process_http_server() {
     assert_eq!(report["live_pass_recorded"], false);
     let rendered = serde_json::to_string(&report).unwrap();
     assert!(!rendered.contains("sk-"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn prepare_refuses_nonempty_out_unless_force() {
+    let dir = std::env::temp_dir().join(format!("classify-force-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("keep.txt"), "keep").unwrap();
+    let refused = bin()
+        .args([
+            "classify",
+            "prepare",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let err = String::from_utf8_lossy(&refused.stderr);
+    assert!(err.contains("refuse:classify"), "{err}");
+    assert!(err.contains("--force") || err.contains("force"), "{err}");
+    assert!(!dir.join("dataset.jsonl").exists());
+    assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "keep");
+
+    let forced = bin()
+        .args([
+            "classify",
+            "prepare",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            dir.to_str().unwrap(),
+            "--force",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        forced.status.success(),
+        "{}",
+        String::from_utf8_lossy(&forced.stderr)
+    );
+    assert!(dir.join("dataset.jsonl").exists());
+    assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "keep");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn eval_records_http_errors_timeout_and_scrubs_bearer() {
+    let secret = "classify-test-key-9f3a";
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        other => panic!("expected ip listen addr, got {other:?}"),
+    };
+    thread::spawn(move || {
+        for (n, mut req) in server.incoming_requests().enumerate() {
+            let mut body = String::new();
+            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+            let auth = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.as_str().to_string())
+                .unwrap_or_default();
+            assert_eq!(auth, format!("Bearer {secret}"), "{auth}");
+            let (status, payload) = match n {
+                0 => (
+                    200,
+                    serde_json::json!({"choices": [{"message": {"content": "B"}}]}).to_string(),
+                ),
+                1 => (400, format!("{{\"error\":\"bad {secret}\"}}")),
+                2 => (500, format!("upstream {secret} failed")),
+                _ => {
+                    thread::sleep(std::time::Duration::from_secs(3));
+                    (200, "{}".into())
+                }
+            };
+            let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap();
+            let resp = tiny_http::Response::from_string(payload)
+                .with_status_code(status)
+                .with_header(header);
+            let _ = req.respond(resp);
+        }
+    });
+
+    let dir = std::env::temp_dir().join(format!("classify-http-err-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let records = dir.join("heldout.jsonl");
+    std::fs::write(
+        &records,
+        concat!(
+            "{\"id\":\"e1\",\"state\":\"Note one.\",\"question\":\"Which letter is first?\",\"options\":[{\"label\":\"A\",\"key\":\"a\",\"description\":\"A.\"},{\"label\":\"B\",\"key\":\"b\",\"description\":\"B.\"},{\"label\":\"C\",\"key\":\"c\",\"description\":\"C.\"}],\"answer\":\"B\",\"answer_key\":\"b\"}\n",
+            "{\"id\":\"e2\",\"state\":\"Note two.\",\"question\":\"Which letter is second?\",\"options\":[{\"label\":\"A\",\"key\":\"a\",\"description\":\"A.\"},{\"label\":\"B\",\"key\":\"b\",\"description\":\"B.\"},{\"label\":\"C\",\"key\":\"c\",\"description\":\"C.\"}],\"answer\":\"A\",\"answer_key\":\"a\"}\n",
+            "{\"id\":\"e3\",\"state\":\"Note three.\",\"question\":\"Which letter is third?\",\"options\":[{\"label\":\"A\",\"key\":\"a\",\"description\":\"A.\"},{\"label\":\"B\",\"key\":\"b\",\"description\":\"B.\"},{\"label\":\"C\",\"key\":\"c\",\"description\":\"C.\"}],\"answer\":\"C\",\"answer_key\":\"c\"}\n",
+            "{\"id\":\"e4\",\"state\":\"Note four.\",\"question\":\"Which letter is fourth?\",\"options\":[{\"label\":\"A\",\"key\":\"a\",\"description\":\"A.\"},{\"label\":\"B\",\"key\":\"b\",\"description\":\"B.\"},{\"label\":\"C\",\"key\":\"c\",\"description\":\"C.\"}],\"answer\":\"A\",\"answer_key\":\"a\"}\n",
+        ),
+    )
+    .unwrap();
+    let report_path = dir.join("report.json");
+    let out = bin()
+        .args([
+            "classify",
+            "eval",
+            "--records",
+            records.to_str().unwrap(),
+            "--endpoint",
+            &format!("http://127.0.0.1:{port}/v1"),
+            "--model",
+            "fixture-model",
+            "--api-key-env",
+            "CLASSIFY_TEST_KEY",
+            "--report",
+            report_path.to_str().unwrap(),
+            "--timeout-secs",
+            "1",
+        ])
+        .env("CLASSIFY_TEST_KEY", secret)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout {stdout}\nstderr {stderr}");
+    let report_text = std::fs::read_to_string(&report_path).unwrap();
+    assert!(!stdout.contains(secret), "{stdout}");
+    assert!(!stderr.contains(secret), "{stderr}");
+    assert!(!report_text.contains(secret), "{report_text}");
+    let report: serde_json::Value = serde_json::from_str(&report_text).unwrap();
+    assert_eq!(report["http_errors"], 3);
+    assert_eq!(report["correct"], 1);
+    let errors = report["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 3);
+    assert_eq!(errors[0]["status"], 400);
+    assert_eq!(errors[1]["status"], 500);
+    assert_eq!(errors[2]["status"], 0);
+    assert!(errors[0]["body"].as_str().unwrap().contains("[redacted]"));
+    assert!(errors[1]["body"].as_str().unwrap().contains("[redacted]"));
+    assert!(!errors[0]["body"].as_str().unwrap().contains(secret));
     let _ = std::fs::remove_dir_all(&dir);
 }
