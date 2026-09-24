@@ -19,7 +19,7 @@ echo "Print-only. READY_FOR_LIVE_TEST: no"
 echo "Does not train, merge, convert, seat, or promote."
 echo "Chain: prepare-assert, then seat-print (make glm4-chat-lora-journey)."
 echo "Does not run make glm4-chat-journey or make uniqueness-glm."
-echo "Does not run make deepseek-r1-distill-journey or make uniqueness-deepseek."
+echo "Does not run make deepseek-r1-distill-lora-journey or make uniqueness-deepseek-lora."
 echo "This print is not a live PASS."
 echo "The recorded Target C PASS stays the only live uniqueness prove."
 echo
