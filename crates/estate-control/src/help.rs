@@ -134,6 +134,12 @@ Ds chain:   make uniqueness-deepseek
             print-only chain of that journey (operator section 19)
 DeepSeek LoRA: make deepseek-r1-distill-lora-journey
 Ds LoRA chain: make uniqueness-deepseek-lora
+GLM-4:      make glm4-chat-journey
+            print-only GLM-4 Chat QLoRA journey (operator section 20)
+GLM chain:  make uniqueness-glm
+            print-only chain of that journey (operator section 20)
+GLM-4 LoRA: make glm4-chat-lora-journey
+GLM LoRA chain: make uniqueness-glm-lora
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
 ";
@@ -406,6 +412,14 @@ They do not train, merge, convert, shell out to ollama, or promote.
 They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 19).
+make glm4-chat-journey is the print-only GLM-4 Chat QLoRA journey (operator section 20).
+make uniqueness-glm is the print-only chain of that journey. The LoRA twin is
+make glm4-chat-lora-journey and make uniqueness-glm-lora.
+Seat tag llama3. Train base zai-org/glm-4-9b-chat. Template glm4.
+They do not train, merge, convert, shell out to ollama, or promote.
+They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 20).
 make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not train, fuse, convert, shell out to ollama, promote, or apply the estate.
@@ -476,6 +490,10 @@ Walk: docs/operator-enrich-journeys.md (section 16).
   make uniqueness-deepseek
   make deepseek-r1-distill-lora-journey
   make uniqueness-deepseek-lora
+  make glm4-chat-journey
+  make uniqueness-glm
+  make glm4-chat-lora-journey
+  make uniqueness-glm-lora
   make lf-beachhead-prepare
   make enrich-live-prove
 
@@ -1078,6 +1096,14 @@ They do not train, merge, convert, shell out to ollama, or promote.
 They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
 READY_FOR_LIVE_TEST stays no.
 Walk: docs/operator-enrich-journeys.md (section 19).
+make glm4-chat-journey is the print-only GLM-4 Chat QLoRA journey (operator section 20).
+make uniqueness-glm is the print-only chain of that journey. The LoRA twin is
+make glm4-chat-lora-journey and make uniqueness-glm-lora.
+Seat tag llama3. Train base zai-org/glm-4-9b-chat. Template glm4.
+They do not train, merge, convert, shell out to ollama, or promote.
+They do not invent a live PASS. Not in make smoke, make gate-90, or Actions.
+READY_FOR_LIVE_TEST stays no.
+Walk: docs/operator-enrich-journeys.md (section 20).
 make purpose-build-journey is the print-only purpose-build on-demand entry (operator section 18).
 It runs make purpose-build-pick, then make purpose-build-checklist. It does not inline those bodies.
 It does not invent a live PASS. The recorded PASS stays the only live uniqueness prove.
