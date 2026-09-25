@@ -549,6 +549,53 @@ pub fn agent_call_coverage_cites(estate: &Estate) -> Vec<AgentCallCoverageCite> 
     cites
 }
 
+/// One memory-read edge on apply. `line` is the same own-lane / cross-lane
+/// row [`describe_intention_coverage`] prints. Allow is omitted (quiet).
+/// Deny and deny-default stay visible. Memory rows have no
+/// capability-mismatch class, so `fail` is false for those words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryCoverageCite {
+    pub fail: bool,
+    pub line: String,
+}
+
+/// Every agent × lane memory row. Allow (own-lane or cross-lane) is quiet.
+/// Deny and deny-default are notes. A missing edge or an unrecognized word
+/// fails closed (`refuse:memory`). Compiled intention lines stay on the
+/// describe text and are not apply findings. Does not read a mesh and does
+/// not write.
+pub fn memory_coverage_cites(estate: &Estate) -> Vec<MemoryCoverageCite> {
+    let rows = intention_coverage_rows(estate);
+    let mut cites = Vec::new();
+    for agent in &estate.agents {
+        for lane in &estate.lanes {
+            let object = format!("lane:{}", lane.id);
+            let prefix = format!("{} memory_read {object}:", agent.id);
+            let Some(row) = rows.iter().find(|row| {
+                normalize_name(&row.agent_id) == normalize_name(&agent.id)
+                    && row.line.starts_with(&prefix)
+            }) else {
+                cites.push(MemoryCoverageCite {
+                    fail: true,
+                    line: format!("refuse:memory: {prefix} deny-default (missing edge)"),
+                });
+                continue;
+            };
+            if row.line.contains(": allow (") {
+                continue;
+            }
+            // Deny and deny-default are the coverage words. They are not a
+            // capability mismatch. An unrecognized word fails closed.
+            let known = row.line.contains(": deny-default (") || row.line.contains(": deny (");
+            cites.push(MemoryCoverageCite {
+                fail: !known,
+                line: row.line.clone(),
+            });
+        }
+    }
+    cites
+}
+
 /// Own-lane memory is allow. Cross-lane memory is deny-default unless an
 /// intention covers it. An explicit deny wins. Each compiled intention is
 /// also a row so allow and deny are visible without reading the estate file.
@@ -1334,6 +1381,67 @@ mod tests {
                 && missing[0].line.contains("not an estate agent"),
             "{}",
             missing[0].line
+        );
+    }
+
+    #[test]
+    fn memory_coverage_cites_deny_and_stays_quiet_on_allow() {
+        let raw = estate();
+        let cited = memory_coverage_cites(&raw);
+        assert!(cited.iter().all(|cite| !cite.fail), "{cited:?}");
+        assert!(
+            cited.iter().any(|cite| {
+                cite.line == "horizon memory_read lane:research: deny-default (cross-lane)"
+            }),
+            "{cited:?}"
+        );
+        assert!(
+            cited.iter().all(
+                |cite| cite.line.contains("memory_read ") && cite.line.contains("(cross-lane)")
+            ),
+            "{cited:?}"
+        );
+        let described = describe_intention_coverage(&raw);
+        for cite in &cited {
+            assert!(described.contains(&cite.line), "{}", cite.line);
+        }
+
+        let mut allowed = raw.clone();
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::MemoryRead,
+            "lane:research",
+            Effect::Allow,
+        );
+        let quiet = memory_coverage_cites(&allowed);
+        assert!(
+            quiet
+                .iter()
+                .all(|cite| cite.line != "horizon memory_read lane:research: allow (cross-lane)"),
+            "{quiet:?}"
+        );
+        assert!(
+            quiet.iter().any(|cite| {
+                cite.line == "horizon memory_read lane:sanctum: deny-default (cross-lane)"
+            }),
+            "{quiet:?}"
+        );
+
+        let mut denied = allowed;
+        grant(
+            &mut denied,
+            "horizon",
+            IntentionKind::MemoryRead,
+            "lane:research",
+            Effect::Deny,
+        );
+        let explicit = memory_coverage_cites(&denied);
+        assert!(
+            explicit.iter().any(|cite| {
+                !cite.fail && cite.line == "horizon memory_read lane:research: deny (cross-lane)"
+            }),
+            "{explicit:?}"
         );
     }
 
