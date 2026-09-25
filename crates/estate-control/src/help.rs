@@ -284,6 +284,9 @@ Fixtures only. Isolated target/feed-loop-cell. Not part of make smoke.
   estate packs accept --id overnight-traces --curator jason
 
 Cursor is a watermark. Rematerialize does not auto-promote.
+estate convey call and a convey hop coverage or intention refuse append
+proxy.hop lines to {state-dir}/feed/events.jsonl and restamp feed-cursor.json.
+estate feed cursor --feed-dir .cell/feed prints that watermark. No promote.
 Packs tag source_drivers frontier and/or local. Promote stays locked off.
 Propose and accept refuse a frontier source_driver when the estate has no
 frontier binding (refuse:frontier-invent). They do not invent one.

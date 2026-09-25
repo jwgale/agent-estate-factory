@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — proxy allow/deny lines feed the cursor
+
+- A conveyor allow or deny on `estate convey call`, `estate convey hop` (coverage or intention refuse), and `call_hop` / `call_hop_for_agent` appends one scrubbed line to `{state-dir}/feed/events.jsonl` and restamps `{state-dir}/feed/feed-cursor.json`. `conveyor-proxy check --feed-dir` does the same for `authorize`. The kind is `proxy.hop` or `proxy.{tool|mcp|mount|model|memory_read}`. The decision word is `allow`, `deny`, or `deny-default`. `estate feed cursor --feed-dir .cell/feed` prints that watermark. `proxy_audit_events` lists those lines. A missing `events.jsonl` is an empty list. A line that does not parse refuses. If the append fails after the decision, the call is `refuse:proxy-audit` and the allow is not returned. This does not materialize a pack, does not promote, and does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — cloud hop rows say declared, not spawned
 
 - `hop_coverage_rows` still marks a cloud-agent placement `deny`. The printed line now ends `(declared, not spawned)` for an empty population and for each named agent on that placement. Box rows stay `lane-tool` with `allow` / `deny` / `deny-default` and do not gain that phrase. `describe_hop_coverage` is the shared cite, so `estate plan`, `estate drift`, and `estate doctor` print the same line. The Agents hop block uses those rows. The word stays `deny`, so convey gates do not treat the phrase as a new decision. Cloud kinds stay out of the capability-mismatch cite (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase): that cite is a capability disagreement, and a cloud hop is not spawned. Floor does not spawn. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
