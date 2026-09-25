@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — plan names each agent
+
+- `estate plan` prints an Agents section for each estate agent: id, lane, desktop, placement (`box`, `cloud-agent` declared-not-spawned, or `none`), declared tool / mcp / mount / model counts, and that agent's allow / deny / deny-default coverage. Security-as-IaC intention and model-binding deltas stay. `estate drift` prints the same Agents section next to the existing coverage lines. Plan does not spawn. Control does not complete. This slice does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — intention objects resolve at load
 
 - Compiling or loading an estate rejects an intention whose object does not resolve. Tool, MCP, and Mount objects (bare or `tool:` / `mcp:` / `mount:`) must be declared on that agent. Model objects must be a binding on `model_bindings` and that agent's `models:` (`binding:` / `model:` / bare), or a real class (`class:frontier`, `class:local`, or a bare class token). Unknown agents are rejected. An explicit deny of an undeclared object is rejected the same way. Memory read keeps the existing lane and sacred checks. `estate doctor` prints a Security-as-IaC section (`describe_model_class_coverage` and `describe_declared_coverage`: who holds what, `allow` / `deny` / `deny-default`). That section is informational. `estate doctor --strict` does not fail because the locked example is deny-default with empty intentions. `estate doctor --strict-intentions` is the opt-in gate for deny-default coverage. It is not part of `make smoke`, `make gate-90`, or GitHub Actions. This is not a gateway. Authorize deny-default from the Model, Tool, MCP, and Mount slices stays. This slice does not invent a live PASS. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

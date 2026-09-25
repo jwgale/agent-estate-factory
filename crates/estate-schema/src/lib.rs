@@ -19,7 +19,8 @@ pub use firewall::{
 };
 pub use hash::estate_hash;
 pub use plan::{
-    blast_grows, covering_plan, covering_plan_stem, diff_estates, latest_plan, list_plans,
+    blast_grows, covering_plan, covering_plan_stem, describe_agents_section, diff_estates,
+    latest_plan, list_plans,
     load_plan_json, mark_plan_reviewed, plan_against_is_fresh, plan_against_is_fresh_strict,
     plan_blast_width, plan_covers_hash, plan_is_reviewable, render_plan, render_plan_diff,
     render_plan_pr, render_review_diff, render_security_iac, write_plan, write_plan_index,
