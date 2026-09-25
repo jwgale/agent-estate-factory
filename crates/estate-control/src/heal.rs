@@ -1,7 +1,10 @@
 //! Day 90+ heal / accept / probe polish. Never auto-applies. Never rewrites the estate.
 
 use anyhow::{bail, Context, Result};
-use estate_schema::{load_estate, load_estate_unvalidated};
+use conveyor_proxy::{
+    authority_report, describe_authority_section, load_mesh, refuse_mesh_host_classes, MeshError,
+};
+use estate_schema::{describe_agents_section, load_estate, load_estate_unvalidated};
 use feed_collector::{refuse_accept_frontier_invent, LOCKED_CURATOR};
 use floor_supervisor::{
     load_placements, reconcile_placements, render_reconcile, write_reconcile,
@@ -84,6 +87,11 @@ pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path, suggest: bool) -> Res
         .with_context(|| format!("load {}", path.display()))?;
     model_estate::frontier_plan_view(&parsed).map_err(|e| anyhow::anyhow!("{e}"))?;
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
+    // After the estate load and the frontier refuse, before reconcile.json,
+    // the suggest patch, and the placement report. Same stack as status,
+    // doctor, and convey authority. Hop cites do not change this command's
+    // exit code. Placement drift still bails below.
+    print_reconcile_honesty(&estate, state_dir)?;
     let before = load_placements(state_dir)?;
     let report = reconcile_placements(&estate, state_dir)?;
     let written = write_reconcile(state_dir, &report)?;
@@ -101,6 +109,38 @@ pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path, suggest: bool) -> Res
     if !report.in_sync {
         bail!("reconcile drift (fail closed)");
     }
+    Ok(())
+}
+
+/// Agents, hop coverage cites, then Authority. Print-only.
+///
+/// A present mesh that does not parse, or a bad `host_class` on that file,
+/// refuses before any section. Reconcile does not invent cites, Agents, or
+/// Authority rows, and does not write `reconcile.json` or a suggest patch.
+/// A missing mesh is the empty mesh from `load_mesh`: the cite list is
+/// empty and Authority stays `not-enforced` (`missing-mesh`).
+///
+/// `authority_report` also reads placement-actual. Only
+/// `MeshError::BadHostClass` (a placement-actual SKU or other bad
+/// `host_class` from slim-parse) continues without sections, so the
+/// placement report can still print `refuse:bad-host-class`. Every other
+/// mesh error, including a population ahead of the floor
+/// (`refuse:agent-unplaced`), refuses here before any section and before
+/// `reconcile.json` or a suggest patch. Capability mismatch prints `FAIL`.
+/// Deny and deny-default print `note`. A match stays quiet. Those cites are
+/// discarded here. Does not rewrite the mesh, the leases, the estate, or
+/// the apply audit. Does not spawn. No `enforced` status.
+fn print_reconcile_honesty(estate: &estate_schema::Estate, state_dir: &Path) -> Result<()> {
+    let mesh = load_mesh(state_dir)?;
+    refuse_mesh_host_classes(&mesh)?;
+    let rows = match authority_report(state_dir, estate) {
+        Ok(rows) => rows,
+        Err(MeshError::BadHostClass(_)) => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    println!("{}", describe_agents_section(estate));
+    let _mismatches = crate::watch::print_hop_coverage_cites(estate, &mesh);
+    println!("{}", describe_authority_section(&rows, state_dir));
     Ok(())
 }
 

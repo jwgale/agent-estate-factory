@@ -395,6 +395,25 @@ estate reconcile — desired vs actual
 ====================================
 Report only. --suggest writes a patch file. Never auto-applies.
 
+After the estate loads, and before reconcile.json, a suggest patch, or
+the placement report, reconcile prints the same Agents section as status,
+doctor, and convey authority (`describe_agents_section`), then hop coverage
+cites from `hop_coverage_cites` / `print_hop_coverage_cites`. A capability
+mismatch prints `FAIL`. Deny and deny-default print `note`. A match stays
+quiet. Those cites do not fail reconcile. Authority follows
+(`describe_authority_section` over `authority_report`). A missing mesh is
+an empty cite list. Authority rows stay not-enforced and cite that the
+mesh file is absent (missing-mesh). A present mesh that does not parse,
+or a bad host_class on that file, refuses before those sections and does
+not invent cites, Agents, or Authority rows. A placement-actual SKU
+host_class still reaches the placement report (`refuse:bad-host-class`).
+A mesh population ahead of placement-actual is `refuse:agent-unplaced`
+before those sections and before reconcile.json or a suggest patch.
+Placement drift still fails closed.
+The command does not spawn. It does not rewrite leases, the estate, or
+the mesh. --suggest still does not rewrite leases. The Authority section
+has no enforced status.
+
   estate reconcile --estate examples/estate.yaml --state-dir .cell
   estate reconcile --suggest --estate examples/estate.yaml --state-dir .cell
 

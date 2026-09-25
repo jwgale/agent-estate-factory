@@ -203,6 +203,20 @@ pub(crate) enum Command {
         state_dir: PathBuf,
     },
     /// Desired vs actual placement reconcile. Sacred-id deny stays.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, and convey authority (`describe_agents_section`), then the
+    /// same hop coverage cites (`hop_coverage_cites`: `FAIL` on mismatch,
+    /// `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`), before
+    /// reconcile.json, a suggest patch, or this report. Those cites do not
+    /// fail this command. A match stays quiet. A missing mesh is an empty
+    /// cite list and stays not-enforced. A present mesh that does not parse,
+    /// or a bad host_class on that file, refuses before those sections. A
+    /// placement-actual SKU host_class still reaches the placement report.
+    /// A mesh population ahead of placement-actual is `refuse:agent-unplaced`
+    /// before those sections. Placement drift
+    /// still fails closed. `--suggest` writes a patch file and does not
+    /// rewrite leases. Does not spawn. Does not rewrite the estate or the mesh.
     /// Examples: `estate help reconcile`
     Reconcile {
         #[arg(long, default_value = "examples/estate.yaml")]
