@@ -1,10 +1,11 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    hop_now_unix, list_expired_hop_leases,
+    hop_now_unix, list_expired_hop_leases, load_mesh, ConveyorMesh, HopDecl, HopLease,
 };
 use estate_schema::{
-    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
-    describe_model_class_coverage, estate_hash, latest_plan, load_estate,
+    convey_hop_declared_capability, describe_declared_coverage, describe_hop_coverage,
+    describe_intention_coverage, describe_model_class_coverage, estate_hash, latest_plan,
+    load_estate, Estate,
 };
 use feed_collector::list_open_proposals;
 use floor_supervisor::{
@@ -318,7 +319,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
 
     println!("\nSecurity-as-IaC");
     println!("---------------");
-    print_doctor_intention_coverage(root, &mut fails);
+    print_doctor_intention_coverage(root, state_dir, &mut fails);
 
     println!("\nHealth");
     println!("------");
@@ -336,7 +337,7 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     }
 }
 
-fn print_doctor_intention_coverage(root: &Path, fails: &mut Vec<String>) {
+fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Vec<String>) {
     let path = root.join("examples/estate.yaml");
     if !path.is_file() {
         println!("  note  examples/estate.yaml missing (coverage skipped)");
@@ -366,6 +367,107 @@ fn print_doctor_intention_coverage(root: &Path, fails: &mut Vec<String>) {
     for line in describe_hop_coverage(&estate).lines() {
         println!("  {line}");
     }
+    // Missing mesh is empty, not a failure. A present file that does not
+    // parse is already FAIL from the hop-lease read above. This cite does
+    // not write the mesh.
+    if let Ok(mesh) = load_mesh(state_dir) {
+        print_doctor_hop_coverage_cites(&estate, &mesh, fails);
+    }
+}
+
+/// File check. A granted box lease (or a box hop declaration with no lease)
+/// whose placement hop coverage is deny, deny-default, or a capability
+/// mismatch quotes `refuse:hop-coverage`. Mismatch fails doctor. Deny and
+/// deny-default are cited and do not fail `--strict`: the locked example
+/// stays deny-default. Cloud hops, empty populations, ungranted leases, and
+/// hop ids that are not placements stay out. Does not write.
+fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: &mut Vec<String>) {
+    for cite in doctor_hop_coverage_cites(estate, mesh) {
+        if cite.fail {
+            println!("  FAIL  {}", cite.line);
+            fails.push(cite.line);
+        } else {
+            println!("  note  {}", cite.line);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct HopCoverageCite {
+    fail: bool,
+    line: String,
+}
+
+fn doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<HopCoverageCite> {
+    let mut cites = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for lease in &mesh.leases {
+        if !lease_is_hop_coverage_subject(lease) {
+            continue;
+        }
+        for agent in &lease.agents {
+            push_hop_coverage_cite(
+                estate,
+                &lease.hop_id,
+                agent,
+                &lease.capability,
+                &mut seen,
+                &mut cites,
+            );
+        }
+    }
+    for hop in &mesh.hops {
+        if mesh.leases.iter().any(|lease| lease.hop_id == hop.id) {
+            continue;
+        }
+        if !decl_is_hop_coverage_subject(hop) {
+            continue;
+        }
+        for agent in &hop.agents {
+            push_hop_coverage_cite(
+                estate,
+                &hop.id,
+                agent,
+                &hop.capability,
+                &mut seen,
+                &mut cites,
+            );
+        }
+    }
+    cites
+}
+
+fn lease_is_hop_coverage_subject(lease: &HopLease) -> bool {
+    lease.granted && !lease.agents.is_empty() && !hop_kind_is_cloud(&lease.kind)
+}
+
+fn decl_is_hop_coverage_subject(hop: &HopDecl) -> bool {
+    !hop.agents.is_empty() && !hop_kind_is_cloud(&hop.kind)
+}
+
+fn hop_kind_is_cloud(kind: &str) -> bool {
+    kind == "cloud-mesh" || kind == "cloud-agent"
+}
+
+fn push_hop_coverage_cite(
+    estate: &Estate,
+    hop_id: &str,
+    agent: &str,
+    capability: &str,
+    seen: &mut std::collections::BTreeSet<(String, String, String)>,
+    cites: &mut Vec<HopCoverageCite>,
+) {
+    let key = (hop_id.to_string(), agent.to_string(), capability.to_string());
+    if !seen.insert(key) {
+        return;
+    }
+    let Err(gate) = convey_hop_declared_capability(estate, hop_id, Some(agent), capability) else {
+        return;
+    };
+    cites.push(HopCoverageCite {
+        fail: gate.word == "mismatch",
+        line: format!("refuse:hop-coverage: {} ({})", gate.line, gate.word),
+    });
 }
 
 pub(crate) fn cmd_status(
@@ -967,5 +1069,205 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let _ = fs::remove_dir_all(&root);
+    }
+
+    fn allow_estate() -> Estate {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/estate.yaml");
+        let mut estate = load_estate(&path).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes-append".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        estate
+    }
+
+    fn box_lease(hop_id: &str, capability: &str, agents: &[&str]) -> HopLease {
+        HopLease {
+            hop_id: hop_id.into(),
+            kind: "box".into(),
+            capability: capability.into(),
+            host_class: "any".into(),
+            granted: true,
+            spawned: true,
+            durable: true,
+            driver: "box".into(),
+            note: None,
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
+            agents: agents.iter().map(|agent| (*agent).to_string()).collect(),
+        }
+    }
+
+    fn mesh_with(leases: Vec<HopLease>, hops: Vec<HopDecl>) -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops,
+            leases,
+        }
+    }
+
+    #[test]
+    fn doctor_cites_hop_coverage_mismatch_and_stays_quiet_on_a_match() {
+        let estate = allow_estate();
+        let mismatch = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        let cites = doctor_hop_coverage_cites(&estate, &mismatch);
+        assert_eq!(cites.len(), 1);
+        assert!(cites[0].fail);
+        assert!(
+            cites[0].line.contains("refuse:hop-coverage")
+                && cites[0].line.contains("(mismatch)")
+                && cites[0].line.contains(
+                    "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+                ),
+            "{}",
+            cites[0].line
+        );
+
+        let matched = mesh_with(
+            vec![box_lease("cell-one-box", "lane-tool", &["research"])],
+            vec![],
+        );
+        let quiet = doctor_hop_coverage_cites(&estate, &matched);
+        assert!(
+            quiet.iter().all(|cite| !cite.line.contains("(mismatch)")),
+            "{quiet:?}"
+        );
+        assert!(quiet.is_empty(), "{quiet:?}");
+
+        let outsider = mesh_with(
+            vec![box_lease("ttl-hop", "notes-append", &["research"])],
+            vec![],
+        );
+        assert!(doctor_hop_coverage_cites(&estate, &outsider).is_empty());
+    }
+
+    #[test]
+    fn doctor_cites_deny_and_deny_default_without_calling_them_mismatch() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/estate.yaml");
+        let mut denied = load_estate(&path).unwrap();
+        denied
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        denied.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+        let mesh = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        let deny = doctor_hop_coverage_cites(&denied, &mesh);
+        assert_eq!(deny.len(), 1);
+        assert!(!deny[0].fail);
+        assert!(
+            deny[0].line.contains("refuse:hop-coverage")
+                && deny[0].line.contains("(deny)")
+                && !deny[0].line.contains("(mismatch)"),
+            "{}",
+            deny[0].line
+        );
+
+        let defaulted = load_estate(&path).unwrap();
+        let hop_default = doctor_hop_coverage_cites(&defaulted, &mesh);
+        assert_eq!(hop_default.len(), 1);
+        assert!(!hop_default[0].fail);
+        assert!(
+            hop_default[0].line.contains("refuse:hop-coverage")
+                && hop_default[0].line.contains("(deny-default)")
+                && !hop_default[0].line.contains("(mismatch)"),
+            "{}",
+            hop_default[0].line
+        );
+    }
+
+    #[test]
+    fn doctor_cites_a_hop_declaration_when_no_lease_is_present() {
+        let estate = allow_estate();
+        let mesh = mesh_with(
+            vec![],
+            vec![HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            }],
+        );
+        let cites = doctor_hop_coverage_cites(&estate, &mesh);
+        assert!(
+            cites.iter().any(|cite| cite.fail && cite.line.contains("(mismatch)")),
+            "{cites:?}"
+        );
+    }
+
+    #[test]
+    fn doctor_hop_coverage_cite_does_not_write_the_mesh() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-doctor-hop-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mesh = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            }],
+        );
+        conveyor_proxy::persist_mesh(&dir, &mesh).unwrap();
+        let before = fs::read(dir.join(conveyor_proxy::MESH_FILE)).unwrap();
+        let hops = fs::read(dir.join("conveyor-hops.json")).unwrap();
+        let leases = fs::read(dir.join("conveyor-leases.json")).unwrap();
+        let loaded = load_mesh(&dir).unwrap();
+        let _ = doctor_hop_coverage_cites(&allow_estate(), &loaded);
+        assert_eq!(fs::read(dir.join(conveyor_proxy::MESH_FILE)).unwrap(), before);
+        assert_eq!(fs::read(dir.join("conveyor-hops.json")).unwrap(), hops);
+        assert_eq!(fs::read(dir.join("conveyor-leases.json")).unwrap(), leases);
+        let _ = fs::remove_dir_all(&dir);
     }
 }
