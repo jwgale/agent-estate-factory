@@ -90,6 +90,8 @@ fn probes_and_hop_ids_refuse_sku_like_sync() {
             "hop",
             "--id",
             "local-5090",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &tmp.display().to_string(),
         ])
@@ -135,12 +137,52 @@ fn readers_refuse_tampered_sku_host_class() {
         .output()
         .unwrap();
     assert!(sync.status.success(), "{}", text(&sync));
+    // Stock cell-one-box is deny-default. Rename that placement so this hop
+    // id is not a coverage row. The synced lease names a population, so an
+    // unnamed call is refuse:agent-unbound. Horizon is on that lease; the
+    // bypass grants lane-tool so the baseline call can succeed.
+    let bypass = root.join("not-this-hop.yaml");
+    let mut bypass_estate =
+        estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
+    bypass_estate
+        .placements
+        .iter_mut()
+        .find(|p| p.id == "cell-one-box")
+        .unwrap()
+        .id = "other-box".into();
+    bypass_estate
+        .agents
+        .iter_mut()
+        .find(|a| a.id == "horizon")
+        .unwrap()
+        .tools
+        .push(estate_schema::ToolDecl {
+            id: "lane-tool".into(),
+            description: None,
+        });
+    bypass_estate.intentions.push(estate_schema::Intention {
+        subject_agent: "horizon".into(),
+        object: "lane-tool".into(),
+        kind: estate_schema::IntentionKind::Tool,
+        effect: estate_schema::Effect::Allow,
+        note: None,
+    });
+    std::fs::write(
+        &bypass,
+        estate_schema::render_estate_yaml(&bypass_estate).unwrap(),
+    )
+    .unwrap();
+    let bypass_s = bypass.display().to_string();
     let call_ok = estate_bin()
         .args([
             "convey",
             "call",
             "--id",
             "cell-one-box",
+            "--agent",
+            "horizon",
+            "--estate",
+            &bypass_s,
             "--state-dir",
             &state_s,
         ])
@@ -174,6 +216,8 @@ fn readers_refuse_tampered_sku_host_class() {
             "call",
             "--id",
             "cell-one-box",
+            "--estate",
+            &bypass_s,
             "--state-dir",
             &state_s,
         ])

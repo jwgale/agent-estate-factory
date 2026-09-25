@@ -263,6 +263,8 @@ fn convey_call_refuses_policy_deny() {
             "cell-one-box",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
             "--policy",
