@@ -609,12 +609,22 @@ pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()
     Ok(())
 }
 
-/// File check. Same section as `estate plan`. Does not write. Does not claim mediation.
-/// Not an identity lookup.
+/// File check. Same Agents section as plan, drift, apply, status, and doctor
+/// (`describe_agents_section`), immediately before the same Authority section
+/// those commands print. Does not write the mesh, the leases, the estate, or
+/// the apply audit. Does not spawn. Does not claim mediation. Not an identity
+/// lookup. A missing or unreadable estate refuses before either section. A
+/// present mesh that does not parse refuses before either section and does
+/// not invent Agents or Authority rows. Deny and deny-default stay notes. A
+/// would-deny row does not fail this command.
 pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Result<()> {
     let estate = estate_schema::load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
+    // Read first. A mesh that does not parse refuses before either print
+    // and does not invent Agents or Authority rows. A missing mesh stays
+    // not-enforced inside the Authority section.
     let rows = authority_report(state_dir, &estate)?;
+    println!("{}", describe_agents_section(&estate));
     println!("{}", describe_authority_section(&rows, state_dir));
     Ok(())
 }
