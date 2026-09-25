@@ -385,12 +385,13 @@ pub(crate) fn cmd_convey_hop(
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
-    let agent = if agents.len() == 1 {
-        Some(agents[0].as_str())
+    if agents.is_empty() {
+        refuse_convey_coverage(estate_path, id, None)?;
     } else {
-        None
-    };
-    refuse_convey_coverage(estate_path, id, agent)?;
+        for agent in agents {
+            refuse_convey_coverage(estate_path, id, Some(agent.as_str()))?;
+        }
+    }
     let lease = declare_hop(
         state_dir,
         HopDecl {

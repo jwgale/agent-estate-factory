@@ -237,6 +237,69 @@ fn convey_fails_closed_on_hop_coverage() {
     assert!(!cloud_text.contains("deny-default"), "{cloud_text}");
     assert!(!cloud_text.to_ascii_lowercase().contains("spawned a cloud"));
 
+    let cloud_named = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cursor-cloud",
+            "--kind",
+            "cloud-mesh",
+            "--capability",
+            "mesh-stub",
+            "--agent",
+            "research",
+            "--estate",
+            &repo_root()
+                .join("examples/estate.yaml")
+                .display()
+                .to_string(),
+            "--state-dir",
+            &root.join("cloud-named-state").display().to_string(),
+        ],
+    );
+    let cloud_named_text = text(&cloud_named);
+    assert!(!cloud_named.status.success(), "{cloud_named_text}");
+    assert!(
+        cloud_named_text.contains("refuse:hop-coverage") && cloud_named_text.contains("(deny)"),
+        "{cloud_named_text}"
+    );
+    assert!(
+        !cloud_named_text.contains("deny-default"),
+        "empty cloud population with --agent must be deny, got {cloud_named_text}"
+    );
+    assert!(!root.join("cloud-named-state").join("conveyor-mesh.json").exists());
+
+    let pair_state = root.join("pair-state");
+    let pair = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "lane-tool",
+            "--agent",
+            "research",
+            "--agent",
+            "horizon",
+            "--estate",
+            &allow_estate.display().to_string(),
+            "--state-dir",
+            &pair_state.display().to_string(),
+        ],
+    );
+    let pair_text = text(&pair);
+    assert!(!pair.status.success(), "{pair_text}");
+    assert!(
+        pair_text.contains("refuse:hop-coverage") && pair_text.contains("(deny-default)"),
+        "each --agent is checked; horizon stays deny-default, got {pair_text}"
+    );
+    assert!(pair_text.contains("horizon"), "{pair_text}");
+    assert!(!pair_state.join("conveyor-mesh.json").exists());
+
     let plan = convey(
         &root,
         &[

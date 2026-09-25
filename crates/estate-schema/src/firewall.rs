@@ -162,10 +162,40 @@ fn model_intention_effect(
 
 /// One coverage fact. `agent_id` is the filter key. `line` is the display.
 /// An empty `agent_id` is an estate-wide row (an empty hop population).
+/// Hop rows also carry `hop_id` and `word` so convey does not parse `line`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoverageRow {
     pub agent_id: String,
     pub line: String,
+    /// Placement id when this row is hop coverage. Empty otherwise.
+    pub hop_id: String,
+    /// `allow`, `deny`, or `deny-default` for hop rows. Empty otherwise.
+    pub word: &'static str,
+}
+
+impl CoverageRow {
+    fn fact(agent_id: impl Into<String>, line: impl Into<String>) -> Self {
+        Self {
+            agent_id: agent_id.into(),
+            line: line.into(),
+            hop_id: String::new(),
+            word: "",
+        }
+    }
+
+    fn hop(
+        agent_id: impl Into<String>,
+        hop_id: impl Into<String>,
+        word: &'static str,
+        line: impl Into<String>,
+    ) -> Self {
+        Self {
+            agent_id: agent_id.into(),
+            hop_id: hop_id.into(),
+            word,
+            line: line.into(),
+        }
+    }
 }
 
 /// Rows whose `agent_id` matches. Display text is not parsed.
@@ -217,10 +247,10 @@ pub fn model_class_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                 .and_then(|b| model_intention_effect(estate, &agent.id, &model.id, b.class))
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!("{} {} {}: {covered}", agent.id, class, model.id),
-            });
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!("{} {} {}: {covered}", agent.id, class, model.id),
+            ));
         }
     }
     rows
@@ -321,29 +351,29 @@ pub fn declared_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
             let covered = named_intention_effect(estate, &agent.id, IntentionKind::Tool, &tool.id)
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!("{} tool {}: {covered}", agent.id, tool.id),
-            });
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!("{} tool {}: {covered}", agent.id, tool.id),
+            ));
         }
         for mcp in &agent.mcp {
             let covered = named_intention_effect(estate, &agent.id, IntentionKind::Mcp, &mcp.id)
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!("{} mcp {}: {covered}", agent.id, mcp.id),
-            });
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!("{} mcp {}: {covered}", agent.id, mcp.id),
+            ));
         }
         for mount in &agent.mounts {
             let covered =
                 named_intention_effect(estate, &agent.id, IntentionKind::Mount, &mount.id)
                     .map(|effect| effect.as_str())
                     .unwrap_or("deny-default");
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!("{} mount {}: {covered}", agent.id, mount.id),
-            });
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!("{} mount {}: {covered}", agent.id, mount.id),
+            ));
         }
     }
     rows
@@ -373,30 +403,30 @@ pub fn intention_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                     object: &object,
                 },
             );
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!(
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!(
                     "{} memory_read {object}: {}",
                     agent.id,
                     coverage_word(&decision)
                 ),
-            });
+            ));
         }
         for intention in estate
             .intentions
             .iter()
             .filter(|i| normalize_name(&i.subject_agent) == normalize_name(&agent.id))
         {
-            rows.push(CoverageRow {
-                agent_id: agent.id.clone(),
-                line: format!(
+            rows.push(CoverageRow::fact(
+                agent.id.clone(),
+                format!(
                     "{} intention {} {}: {}",
                     agent.id,
                     intention.kind.as_str(),
                     intention.object,
                     intention.effect.as_str()
                 ),
-            });
+            ));
         }
     }
     rows
@@ -418,18 +448,22 @@ pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
         let capability = if cloud { "mesh-stub" } else { "lane-tool" };
         if place.agents.is_empty() {
             let word = if cloud { "deny" } else { "deny-default" };
-            rows.push(CoverageRow {
-                agent_id: String::new(),
-                line: format!("{} hop {capability}: {word}", place.id),
-            });
+            rows.push(CoverageRow::hop(
+                String::new(),
+                place.id.clone(),
+                word,
+                format!("{} hop {capability}: {word}", place.id),
+            ));
             continue;
         }
         for agent_id in &place.agents {
             let word = hop_coverage_word(estate, agent_id, capability, cloud);
-            rows.push(CoverageRow {
-                agent_id: agent_id.clone(),
-                line: format!("{agent_id} hop {} {capability}: {word}", place.id),
-            });
+            rows.push(CoverageRow::hop(
+                agent_id.clone(),
+                place.id.clone(),
+                word,
+                format!("{agent_id} hop {} {capability}: {word}", place.id),
+            ));
         }
     }
     rows
@@ -498,13 +532,27 @@ pub fn convey_hop_coverage(
     agent_id: Option<&str>,
 ) -> Result<Option<HopCoverageGate>, HopCoverageGate> {
     let want_hop = normalize_name(hop_id);
+    let Some(place) = estate
+        .placements
+        .iter()
+        .find(|place| normalize_name(&place.id) == want_hop)
+    else {
+        return Ok(None);
+    };
     let rows = hop_coverage_rows(estate);
     let mut hits: Vec<&CoverageRow> = rows
         .iter()
-        .filter(|row| hop_row_targets(&row.line, &want_hop))
+        .filter(|row| !row.hop_id.is_empty() && normalize_name(&row.hop_id) == want_hop)
         .collect();
     if hits.is_empty() {
-        return Ok(None);
+        // Placement exists. Missing metadata is not "not a placement".
+        return Err(HopCoverageGate {
+            word: "deny-default",
+            line: format!(
+                "{} hop: deny-default (placement coverage missing; not a grant)",
+                place.id
+            ),
+        });
     }
     if let Some(agent) = agent_id {
         let want = normalize_name(agent);
@@ -514,6 +562,14 @@ pub fn convey_hop_coverage(
             .filter(|row| !row.agent_id.is_empty() && normalize_name(&row.agent_id) == want)
             .collect();
         if named.is_empty() {
+            // Empty-population cloud is deny. Do not label it deny-default
+            // just because the named agent is absent from an empty list.
+            if let Some(row) = hits.iter().find(|row| row.word == "deny") {
+                return Err(HopCoverageGate {
+                    word: "deny",
+                    line: row.line.clone(),
+                });
+            }
             return Err(HopCoverageGate {
                 word: "deny-default",
                 line: format!(
@@ -523,20 +579,8 @@ pub fn convey_hop_coverage(
         }
         hits = named;
     }
-    if let Some(row) = hits.iter().find(|row| hop_line_word(&row.line) == "deny") {
-        return Err(HopCoverageGate {
-            word: "deny",
-            line: row.line.clone(),
-        });
-    }
-    if let Some(row) = hits
-        .iter()
-        .find(|row| hop_line_word(&row.line) == "deny-default")
-    {
-        return Err(HopCoverageGate {
-            word: "deny-default",
-            line: row.line.clone(),
-        });
+    if let Some(gate) = hop_gate_from_hits(&hits) {
+        return Err(gate);
     }
     let line = hits
         .first()
@@ -545,26 +589,20 @@ pub fn convey_hop_coverage(
     Ok(Some(HopCoverageGate { word: "allow", line }))
 }
 
-fn hop_row_targets(line: &str, hop_norm: &str) -> bool {
-    let mut parts = line.split_whitespace();
-    let first = parts.next().unwrap_or("");
-    if parts.next() != Some("hop") {
-        return false;
+fn hop_gate_from_hits(hits: &[&CoverageRow]) -> Option<HopCoverageGate> {
+    if let Some(row) = hits.iter().find(|row| row.word == "deny") {
+        return Some(HopCoverageGate {
+            word: "deny",
+            line: row.line.clone(),
+        });
     }
-    let third = parts.next().unwrap_or("");
-    if third.ends_with(':') {
-        normalize_name(first) == hop_norm
-    } else {
-        normalize_name(third.trim_end_matches(':')) == hop_norm
+    if let Some(row) = hits.iter().find(|row| row.word == "deny-default") {
+        return Some(HopCoverageGate {
+            word: "deny-default",
+            line: row.line.clone(),
+        });
     }
-}
-
-fn hop_line_word(line: &str) -> &'static str {
-    match line.rsplit(':').next().unwrap_or("").trim() {
-        "allow" => "allow",
-        "deny" => "deny",
-        _ => "deny-default",
-    }
+    None
 }
 
 fn authorize_memory(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
@@ -1105,20 +1143,32 @@ mod tests {
         let cloud_agent = convey_hop_coverage(&allowed, "cursor-cloud", None).unwrap_err();
         assert_eq!(cloud_agent.word, "deny");
 
+        let named_cloud = convey_hop_coverage(&raw, "cursor-cloud", Some("research")).unwrap_err();
+        assert_eq!(named_cloud.word, "deny");
+        assert!(named_cloud.line.contains("deny"));
+        assert!(
+            !named_cloud.line.contains("deny-default"),
+            "{}",
+            named_cloud.line
+        );
+
+        let off_box = convey_hop_coverage(&raw, "cell-one-box", Some("not-placed")).unwrap_err();
+        assert_eq!(off_box.word, "deny-default");
+        assert!(off_box.line.contains("not on the hop population"));
+
         assert!(convey_hop_coverage(&raw, "ttl-hop", None).unwrap().is_none());
     }
 
     #[test]
     fn coverage_for_agent_ignores_display_prefix() {
         let rows = vec![
-            CoverageRow {
-                agent_id: "horizon".into(),
-                line: "not-the-id model class: allow".into(),
-            },
-            CoverageRow {
-                agent_id: String::new(),
-                line: "horizon hop mesh-stub: deny".into(),
-            },
+            CoverageRow::fact("horizon", "not-the-id model class: allow"),
+            CoverageRow::hop(
+                String::new(),
+                "cursor-cloud",
+                "deny",
+                "horizon hop mesh-stub: deny",
+            ),
         ];
         let matched: Vec<_> = coverage_for_agent(&rows, "horizon").collect();
         assert_eq!(matched.len(), 1);
