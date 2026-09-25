@@ -822,6 +822,10 @@ fn resolve_intention_kind(
     if agent.has_model(capability) {
         hits.push(estate_schema::IntentionKind::Model);
     }
+    let call_name = capability.strip_prefix("agent:").unwrap_or(capability).trim();
+    if !call_name.is_empty() && agent.has_call(call_name) {
+        hits.push(estate_schema::IntentionKind::Agent);
+    }
     match hits.as_slice() {
         [one] => Ok(*one),
         [] => Err(MeshError::Intention {

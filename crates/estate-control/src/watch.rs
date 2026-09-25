@@ -3,7 +3,8 @@ use conveyor_proxy::{
     hop_is_cloud, hop_now_unix, list_expired_hop_leases, load_mesh, ConveyorMesh, HopDecl, HopLease,
 };
 use estate_schema::{
-    convey_hop_declared_capability, describe_declared_coverage, describe_hop_coverage,
+    convey_hop_declared_capability, describe_agent_edge_coverage, describe_declared_coverage,
+    describe_hop_coverage,
     describe_intention_coverage, describe_model_class_coverage, estate_hash, latest_plan,
     load_estate, Estate,
 };
@@ -357,6 +358,10 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
     }
     println!("tool mcp mount:");
     for line in describe_declared_coverage(&estate).lines() {
+        println!("  {line}");
+    }
+    println!("agent call:");
+    for line in describe_agent_edge_coverage(&estate).lines() {
         println!("  {line}");
     }
     println!("intention:");

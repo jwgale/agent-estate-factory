@@ -6,8 +6,9 @@ use conveyor_proxy::{
 };
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
-    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
-    describe_model_class_coverage, describe_placements, estate_hash, list_plans, load_estate,
+    describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
+    describe_intention_coverage, describe_model_class_coverage, describe_placements, estate_hash,
+    list_plans, load_estate,
     load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
@@ -853,6 +854,7 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
     println!("{}", describe_agents_section(&estate));
     println!("model class:\n{}", describe_model_class_coverage(&estate));
     println!("tool mcp mount:\n{}", describe_declared_coverage(&estate));
+    println!("agent call:\n{}", describe_agent_edge_coverage(&estate));
     println!("intention:\n{}", describe_intention_coverage(&estate));
     println!("hop:\n{}", describe_hop_coverage(&estate));
     // Missing mesh is an empty cite list, not a failure. A present file

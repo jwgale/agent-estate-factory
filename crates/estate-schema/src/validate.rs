@@ -107,6 +107,24 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
             agent.models.iter().map(|m| m.id.as_str()),
             &mut errors,
         );
+        check_unique_slugs(
+            &format!("agent '{}' calls", agent.id),
+            agent.calls.iter().map(|c| c.id.as_str()),
+            &mut errors,
+        );
+        for call in &agent.calls {
+            if is_sacred_name(&call.id) || estate.is_sacred(&call.id) {
+                errors.push(format!(
+                    "sacred exclusion '{}' cannot be an agent call target",
+                    call.id
+                ));
+            } else if estate.agent(&call.id).is_none() {
+                errors.push(format!(
+                    "agent '{}' call '{}' is not an estate agent",
+                    agent.id, call.id
+                ));
+            }
+        }
         for model in &agent.models {
             reject_sku(&format!("agent '{}' model", agent.id), &model.id, &mut errors);
             if estate

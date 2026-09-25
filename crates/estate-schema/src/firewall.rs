@@ -45,8 +45,8 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
         ));
     }
 
-    // Model, Tool, Mcp, and Mount decide coverage inside their own path. An
-    // early explicit match would hide deny-default when no intention covers
+    // Model, Tool, Mcp, Mount, and Agent decide coverage inside their own path.
+    // An early explicit match would hide deny-default when no intention covers
     // the object.
     if !matches!(
         req.kind,
@@ -54,6 +54,7 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
             | IntentionKind::Tool
             | IntentionKind::Mcp
             | IntentionKind::Mount
+            | IntentionKind::Agent
     ) {
         if let Some(decision) = explicit_intention(estate, req) {
             return decision;
@@ -66,6 +67,59 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
             authorize_declared_named(estate, req)
         }
         IntentionKind::Model => authorize_model(estate, req),
+        IntentionKind::Agent => authorize_agent(estate, req),
+    }
+}
+
+/// Who may call whom. The object is an estate agent (bare id or `agent:`).
+/// The subject must declare that call. Missing coverage is deny-default.
+/// An explicit deny wins. Sacred ids are not agents. This is not a gateway.
+fn authorize_agent(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
+    let Some(agent) = estate.agent(req.subject_agent) else {
+        return deny(format!("unknown subject agent '{}'", req.subject_agent));
+    };
+    let Some(name) = agent_object_name(req.object) else {
+        return deny(format!(
+            "agent '{}' is not an estate agent (deny-default)",
+            req.object
+        ));
+    };
+    if estate.is_sacred(&name) {
+        return deny(format!(
+            "sacred exclusion '{name}' is not an agent call target"
+        ));
+    }
+    if name.is_empty() || estate.agent(&name).is_none() {
+        return deny(format!(
+            "agent '{name}' is not an estate agent (deny-default)"
+        ));
+    }
+    if !agent.has_call(&name) {
+        return deny(format!(
+            "agent '{name}' undeclared for agent '{}' (deny-default)",
+            req.subject_agent
+        ));
+    }
+    match named_intention_effect(estate, req.subject_agent, IntentionKind::Agent, &name) {
+        Some(Effect::Deny) => deny(format!(
+            "explicit deny intention: {} agent {name}",
+            req.subject_agent
+        )),
+        Some(Effect::Allow) => allow(format!(
+            "allow intention: {} agent {name}",
+            req.subject_agent
+        )),
+        None => deny(format!(
+            "agent '{name}' is not covered by an allow Agent intention for agent '{}' (deny-default)",
+            req.subject_agent
+        )),
+    }
+}
+
+fn agent_object_name(object: &str) -> Option<String> {
+    match ObjectRef::parse(object) {
+        ObjectRef::Agent(name) | ObjectRef::Bare(name) => Some(normalize_name(&name)),
+        _ => None,
     }
 }
 
@@ -317,6 +371,7 @@ fn kind_title(kind: IntentionKind) -> &'static str {
         IntentionKind::Model => "Model",
         IntentionKind::Mount => "Mount",
         IntentionKind::MemoryRead => "Memory",
+        IntentionKind::Agent => "Agent",
     }
 }
 
@@ -395,6 +450,48 @@ pub fn describe_declared_coverage(estate: &Estate) -> String {
     join_coverage(
         &declared_coverage_rows(estate),
         "(no agent tool, mcp, or mount uses)",
+    )
+}
+
+/// One row per ordered pair of estate agents. `own` is the same agent.
+/// `peer` is another agent. Missing coverage is deny-default.
+pub fn agent_edge_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
+    let mut rows = Vec::new();
+    for subject in &estate.agents {
+        for target in &estate.agents {
+            let object = format!("agent:{}", target.id);
+            let decision = authorize(
+                estate,
+                &AccessRequest {
+                    subject_agent: &subject.id,
+                    kind: IntentionKind::Agent,
+                    object: &object,
+                },
+            );
+            let edge = if normalize_name(&subject.id) == normalize_name(&target.id) {
+                "own"
+            } else {
+                "peer"
+            };
+            rows.push(CoverageRow::fact(
+                subject.id.clone(),
+                format!(
+                    "{} agent {}: {} ({edge})",
+                    subject.id,
+                    target.id,
+                    coverage_word(&decision)
+                ),
+            ));
+        }
+    }
+    rows
+}
+
+/// Who may call whom. Plan, drift, and doctor print this cite.
+pub fn describe_agent_edge_coverage(estate: &Estate) -> String {
+    join_coverage(
+        &agent_edge_coverage_rows(estate),
+        "(no agent call edges)",
     )
 }
 
@@ -574,14 +671,25 @@ fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<In
     if agent.has_model(capability) {
         hits.push(IntentionKind::Model);
     }
+    if declared_agent_call(agent, capability) {
+        hits.push(IntentionKind::Agent);
+    }
     hits
+}
+
+fn declared_agent_call(agent: &crate::types::Agent, capability: &str) -> bool {
+    let name = capability
+        .strip_prefix("agent:")
+        .unwrap_or(capability)
+        .trim();
+    !name.is_empty() && agent.has_call(name)
 }
 
 /// Named-agent intention for one convey capability. `Ok` is allow and the
 /// caller continues to hop coverage. `Err` is deny or deny-default.
 /// Kind inference matches `resolve_intention_kind`: an explicit kind wins,
-/// `lane:` is MemoryRead, and one declared tool, MCP, mount, or model is
-/// that kind. A missing intention is deny-default. More than one declared
+/// `lane:` is MemoryRead, and one declared tool, MCP, mount, model, or
+/// agent call is that kind. A missing intention is deny-default. More than one declared
 /// kind is still deny-default. Call says `ambiguous capability; pass kind`.
 /// Hop says `pass --intention-kind` so that hint is not hop `--kind`.
 /// An explicit deny wins. An unresolved `mesh-stub` on a cloud-agent
@@ -986,6 +1094,135 @@ mod tests {
         assert!(d.reason().contains("not covered by an allow Tool intention"));
         assert!(d.reason().contains("deny-default"));
         assert!(!d.reason().contains("class"));
+    }
+
+    fn declare_call(estate: &mut Estate, agent_id: &str, target: &str) {
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == agent_id)
+            .unwrap()
+            .calls
+            .push(crate::CallDecl {
+                id: target.into(),
+                description: None,
+            });
+    }
+
+    #[test]
+    fn agent_call_allow_deny_and_deny_default() {
+        let mut allowed = estate();
+        declare_call(&mut allowed, "horizon", "research");
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::Agent,
+            "agent:research",
+            Effect::Allow,
+        );
+        let ok = authorize(&allowed, &req("horizon", IntentionKind::Agent, "research"));
+        assert!(ok.is_allow(), "{}", ok.reason());
+        assert!(authorize(&allowed, &req("horizon", IntentionKind::Agent, "agent:research")).is_allow());
+
+        let mut denied = estate();
+        declare_call(&mut denied, "horizon", "research");
+        grant(
+            &mut denied,
+            "horizon",
+            IntentionKind::Agent,
+            "research",
+            Effect::Deny,
+        );
+        let explicit = authorize(&denied, &req("horizon", IntentionKind::Agent, "agent:research"));
+        assert!(!explicit.is_allow());
+        assert!(explicit.reason().contains("explicit deny"), "{}", explicit.reason());
+
+        let mut bare = estate();
+        declare_call(&mut bare, "horizon", "research");
+        let missing = authorize(&bare, &req("horizon", IntentionKind::Agent, "research"));
+        assert!(!missing.is_allow());
+        assert!(missing.reason().contains("deny-default"), "{}", missing.reason());
+        assert!(missing.reason().contains("not covered"), "{}", missing.reason());
+
+        let undeclared = authorize(&estate(), &req("horizon", IntentionKind::Agent, "research"));
+        assert!(!undeclared.is_allow());
+        assert!(undeclared.reason().contains("undeclared"), "{}", undeclared.reason());
+
+        let allow_gate = convey_intention_coverage(
+            &allowed,
+            "cell-one-box",
+            "horizon",
+            "agent:research",
+            None,
+            false,
+        );
+        assert!(allow_gate.is_ok(), "{allow_gate:?}");
+        let deny_gate = convey_intention_coverage(
+            &denied,
+            "cell-one-box",
+            "horizon",
+            "research",
+            Some(IntentionKind::Agent),
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(deny_gate.word, "deny");
+        assert!(deny_gate.line.contains("agent"), "{}", deny_gate.line);
+        let default_gate = convey_intention_coverage(
+            &bare,
+            "cell-one-box",
+            "horizon",
+            "agent:research",
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(default_gate.word, "deny-default");
+    }
+
+    #[test]
+    fn agent_call_unknown_and_sacred_refuse() {
+        let unknown = authorize(&estate(), &req("horizon", IntentionKind::Agent, "ghost"));
+        assert!(!unknown.is_allow());
+        assert!(unknown.reason().contains("not an estate agent"), "{}", unknown.reason());
+
+        let sacred = authorize(&estate(), &req("horizon", IntentionKind::Agent, "cyera-ci"));
+        assert!(!sacred.is_allow());
+        assert!(sacred.reason().contains("sacred"), "{}", sacred.reason());
+        let prefixed = authorize(
+            &estate(),
+            &req("horizon", IntentionKind::Agent, "agent:rust-classroom"),
+        );
+        assert!(!prefixed.is_allow());
+        assert!(prefixed.reason().contains("sacred"), "{}", prefixed.reason());
+    }
+
+    #[test]
+    fn agent_edge_coverage_names_own_and_peer() {
+        let mut allowed = estate();
+        declare_call(&mut allowed, "horizon", "horizon");
+        declare_call(&mut allowed, "horizon", "research");
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::Agent,
+            "agent:research",
+            Effect::Allow,
+        );
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::Agent,
+            "horizon",
+            Effect::Deny,
+        );
+        let text = describe_agent_edge_coverage(&allowed);
+        assert!(text.contains("horizon agent horizon: deny (own)"), "{text}");
+        assert!(text.contains("horizon agent research: allow (peer)"), "{text}");
+        assert!(text.contains("horizon agent sanctum: deny-default (peer)"), "{text}");
+        let rows = agent_edge_coverage_rows(&estate());
+        assert!(rows.iter().any(|row| row.line.contains("(own)")));
+        assert!(rows.iter().any(|row| row.line.contains("(peer)")));
     }
 
     #[test]

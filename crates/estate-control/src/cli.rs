@@ -341,7 +341,8 @@ pub(crate) enum ConveyCommand {
         /// Agent on this hop. Repeat for a population. Empty is not a grant.
         #[arg(long = "agent")]
         agents: Vec<String>,
-        /// tool | mcp | mount | model | memory_read. Disambiguates the intention.
+        /// tool | mcp | mount | model | memory_read | agent. Disambiguates the intention.
+        /// `agent` is who-may-call-whom (`agent_call` and `agent-call` are the same kind).
         /// Does not set hop `--kind` (the hop declaration kind).
         #[arg(long)]
         intention_kind: Option<String>,
@@ -372,7 +373,8 @@ pub(crate) enum ConveyCommand {
         capability: String,
         #[arg(long)]
         agent: Option<String>,
-        /// tool | mcp | mount | model | memory_read. Omit to infer from the agent.
+        /// tool | mcp | mount | model | memory_read | agent. Omit to infer from the agent.
+        /// `agent` is who-may-call-whom. Aliases: agent_call, agent-call.
         #[arg(long)]
         kind: Option<String>,
         #[arg(long, default_value = "examples/estate.yaml")]

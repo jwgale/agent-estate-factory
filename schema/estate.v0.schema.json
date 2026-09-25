@@ -98,6 +98,18 @@
               "description": { "type": "string" }
             }
           }
+        },
+        "calls": {
+          "type": "array",
+          "description": "Estate agents this agent may call. Empty is not a grant. Not a tool.",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "$ref": "#/definitions/slug" },
+              "description": { "type": "string" }
+            }
+          }
         }
       }
     },
@@ -118,7 +130,8 @@
         "object": { "type": "string", "minLength": 1 },
         "kind": {
           "type": "string",
-          "enum": ["memory_read", "tool", "mcp", "mount", "model"]
+          "enum": ["memory_read", "tool", "mcp", "mount", "model", "agent"],
+          "description": "agent is who-may-call-whom. Aliases agent_call and agent-call load as agent. Object is an estate agent id, bare or agent:."
         },
         "effect": { "type": "string", "enum": ["allow", "deny"] },
         "note": { "type": "string" }
