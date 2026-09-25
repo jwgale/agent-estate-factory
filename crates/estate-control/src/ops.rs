@@ -417,10 +417,20 @@ pub(crate) fn cmd_convey_hop(
     wired: bool,
     ttl_secs: Option<u64>,
     agents: &[String],
+    intention_kind: Option<&str>,
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
-    refuse_named_intentions(estate_path, id, capability, agents, None, true)?;
+    // `--intention-kind` is the intention gate, the same tokens as
+    // `convey call --kind`. Hop `--kind` stays the hop declaration kind.
+    let parsed_kind = match intention_kind {
+        Some(raw) => Some(conveyor_proxy::parse_kind(raw).map_err(anyhow::Error::msg)?),
+        None => None,
+    };
+    if parsed_kind.is_some() && agents.is_empty() {
+        bail!("refuse:agent-unbound: --intention-kind requires --agent");
+    }
+    refuse_named_intentions(estate_path, id, capability, agents, parsed_kind, true)?;
     if agents.is_empty() {
         refuse_convey_coverage(estate_path, id, None)?;
     } else {

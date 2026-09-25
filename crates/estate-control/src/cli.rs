@@ -327,6 +327,10 @@ pub(crate) enum ConveyCommand {
         /// Agent on this hop. Repeat for a population. Empty is not a grant.
         #[arg(long = "agent")]
         agents: Vec<String>,
+        /// tool | mcp | mount | model | memory_read. Disambiguates the intention.
+        /// Does not set hop `--kind` (the hop declaration kind).
+        #[arg(long)]
+        intention_kind: Option<String>,
         /// Estate used for intention and placement-derived hop coverage.
         /// A named agent refuses on intention deny or deny-default
         /// (`refuse:intention`). Allow continues to hop coverage.

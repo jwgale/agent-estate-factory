@@ -169,6 +169,7 @@ pub(crate) fn run() -> Result<()> {
                 wired,
                 ttl_secs,
                 agents,
+                intention_kind,
                 estate,
                 state_dir,
             } => cmd_convey_hop(
@@ -179,6 +180,7 @@ pub(crate) fn run() -> Result<()> {
                 wired,
                 ttl_secs,
                 &agents,
+                intention_kind.as_deref(),
                 &estate,
                 &state_dir,
             ),
