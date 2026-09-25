@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — dual Qwen and GLM-4 Chat classify journey
+
+- `estate classify journey --dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache. Both students use that cache's held-out file. `--print` writes `journey-plan.json` under `{out}/tev1` and `{out}/glm4-chat` plus a `dual-compare.json` stub and does not call the network. `--run` executes the existing journey for each preset and fills the compare file with base vs specialist metrics and the Qwen↔GLM specialist delta. The report is not a factory live PASS. `live_pass_recorded` stays false. This slice does not wire the path into `make smoke`, `make gate-90`, or GitHub Actions. It does not add Kimi. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — north star is the harness and custom AI creator suite
 
 - The product is a next-generation harness and custom AI creator suite. Pillars, in order: agents under security-as-IaC, a Grok Bot–like harness (the UI may still be deferred), and on-spot specialty SLMs. A central learning brain stays parked. Train/enrich stays one facet. Overnight packing stays SLM-heavy. Security posture is akin to a service mesh for agents; the IaC control catalog is still being designed. Whether Sanctum holds credentials is an open design call, not a vault. Placement may be fully local, cloud, or mixed. The planning posture stays 12–18 months ahead of the market. [`docs/NORTH-STAR.md`](docs/NORTH-STAR.md), the README opening, and `estate help north-star` use that sentence. Anti-shrink still refuses a thin Grok Bot clone without the estate, a UI-only shell, and an undirected agent farm. This slice does not rebalance overnight work. It does not invent a live PASS. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

@@ -587,6 +587,7 @@ pub(crate) enum ClassifyCommand {
     /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek and GLM-4 Chat presets, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
     /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
+    /// `--dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/tev1` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
     Journey {
         /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Tev1)]
@@ -697,6 +698,12 @@ pub(crate) enum ClassifyCommand {
         /// The specialist tag and `--out` gain `-<tag>` when they are still the defaults. rust_idiom only. Does not call the teacher.
         #[arg(long)]
         expand_tag: Option<String>,
+        /// Train and evaluate tev1 (Qwen/Qwen3.5-4B) and glm4-chat (zai-org/glm-4-9b-chat) on the same rust_idiom `--expand-tag` cache.
+        /// Requires `--dataset rust_idiom` and `--expand-tag`. Writes `{out}/tev1`, `{out}/glm4-chat`, and `{out}/dual-compare.json`.
+        /// `--print` (default) writes both plans and a compare stub and does not use the network. `--run` executes both journeys.
+        /// The compare file is local output. It is not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
+        #[arg(long, default_value_t = false)]
+        dual: bool,
     },
     /// Grow the rust_idiom FixedClasses curriculum with an OpenAI-compatible coding teacher.
     /// `--print` is the default. It writes `expand-plan.json` and does not call the network.

@@ -124,6 +124,12 @@ estate classify expand --dataset rust_idiom --train .cell/classify-import/rust_i
 estate classify journey --dataset rust_idiom --expand-tag rev1 --seed 42 --train-size all --print --llama-cpp-dir "$LLAMA_CPP_DIR"
 ```
 
+`estate classify journey --dual` trains both local students on that same expand cache. The pair is `--preset tev1` (`Qwen/Qwen3.5-4B`, template `qwen3_5`) and `--preset glm4-chat` (`zai-org/glm-4-9b-chat`, template `glm4`). It requires `--dataset rust_idiom` and `--expand-tag`. Both journeys read `.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/heldout.jsonl` and do not import or split again. Outs are `{out}/tev1` and `{out}/glm4-chat`. The default `--out` gains the dataset suffix and `-dual`. The compare file is `dual-compare.json`: base vs specialist for each preset, and the Qwen specialist accuracy minus the GLM specialist accuracy. `--print` (the default) writes `journey-plan.json` in each out and a compare stub. It does not call the network or the teacher. `--run` executes the existing journey steps for each preset. DeepSeek is refused. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. The report is not a factory live PASS. `live_pass_recorded` stays false. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify journey --dual --dataset rust_idiom --expand-tag rev1 --seed 42 --train-size all --print --out .cell/classify-dual
+```
+
 ## Rust compile-and-test grade
 
 `estate classify grade` scores MultiPL-E Rust and HumanEvalPack Rust. Those generation tasks are not A/B letter rows, so they stay off `classify import`. `--print` is the default. It writes `grade-plan.json` and does not download or compile. `--run` reads `--from-local` or `--tasks` and scores one completion per task with `rustc` (a `fn main` harness) or `cargo test` (a `#[test]` harness). The report is `grade-report.json`: pass rate and a 95% Wilson interval. `--limit` keeps a stable id prefix, not a random sample. Omit it to score every task. `humanevalpack_rust` is `bigcode/humanevalpack` (MIT, from HumanEval MIT). `multiple_rust` is `nuprl/MultiPL-E` humaneval-rs (BSD-3-Clause translations of HumanEval MIT, not MBPP). Parquet is refused; export JSONL first. This command does not download. Output is for local training proof only. Do not redistribute it. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.

@@ -1,0 +1,247 @@
+//! Dual tev1 + glm4-chat journey on one rust_idiom expand cache. No network and no live PASS.
+
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+
+fn bin() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_estate"))
+}
+
+fn workspace() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn pair(split: &str, commit: u64) -> String {
+    let base = commit * 2;
+    format!(
+        "{{\"id\":\"rust_idiom:{split}:{base}\",\"state\":\"fn old() {{}}\",\"question\":\"Does this Rust snippet need a fix, or is it the idiomatic version?\",\"options\":[{{\"label\":\"A\",\"key\":\"needs_fix\"}},{{\"label\":\"B\",\"key\":\"idiomatic\"}}],\"answer\":\"A\"}}\n{{\"id\":\"rust_idiom:{split}:{}\",\"state\":\"fn new() {{}}\",\"question\":\"Does this Rust snippet need a fix, or is it the idiomatic version?\",\"options\":[{{\"label\":\"A\",\"key\":\"needs_fix\"}},{{\"label\":\"B\",\"key\":\"idiomatic\"}}],\"answer\":\"B\"}}\n",
+        base + 1
+    )
+}
+
+#[test]
+fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
+    let help = bin()
+        .args(["classify", "journey", "--help"])
+        .output()
+        .unwrap();
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help.status.success(), "{help_text}");
+    assert!(help_text.contains("--dual"), "{help_text}");
+    assert!(help_text.contains("READY_FOR_LIVE_TEST"), "{help_text}");
+    assert!(help_text.contains("glm4-chat"), "{help_text}");
+
+    let tag = format!("dual{}", std::process::id());
+    let cache = PathBuf::from(format!(".cell/classify-import/rust_idiom-all-s42-{tag}"));
+    let _ = fs::remove_dir_all(&cache);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("train.jsonl"), pair("train", 1)).unwrap();
+    let held = pair("test", 9);
+    fs::write(cache.join("heldout.jsonl"), &held).unwrap();
+
+    let out = std::env::temp_dir().join(format!("classify-dual-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    let secret = "dual-secret-not-for-logs-91";
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "all",
+            "--print",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .env("TOGETHER_API_KEY", secret)
+        .env("TEACHER_API_KEY", secret)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("classify journey dual: print"), "{stdout}");
+    assert!(stdout.contains("no-import"), "{stdout}");
+    assert!(stdout.contains("dry-run no teacher"), "{stdout}");
+    assert!(stdout.contains("preset glm4-chat"), "{stdout}");
+    assert!(stdout.contains("Qwen/Qwen3.5-4B"), "{stdout}");
+    assert!(stdout.contains("zai-org/glm-4-9b-chat"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains(secret), "{stdout}");
+    assert!(!stderr.contains(secret), "{stderr}");
+
+    let tev1_plan = fs::read_to_string(out.join("tev1/journey-plan.json")).unwrap();
+    let glm_plan = fs::read_to_string(out.join("glm4-chat/journey-plan.json")).unwrap();
+    let compare = fs::read_to_string(out.join("dual-compare.json")).unwrap();
+
+    assert!(tev1_plan.contains("\"preset\": \"tev1\""), "{tev1_plan}");
+    assert!(
+        tev1_plan.contains("\"base\": \"Qwen/Qwen3.5-4B\""),
+        "{tev1_plan}"
+    );
+    assert!(
+        tev1_plan.contains("\"template\": \"qwen3_5\""),
+        "{tev1_plan}"
+    );
+    assert!(glm_plan.contains("\"preset\": \"glm4-chat\""), "{glm_plan}");
+    assert!(
+        glm_plan.contains("\"base\": \"zai-org/glm-4-9b-chat\""),
+        "{glm_plan}"
+    );
+    assert!(glm_plan.contains("\"template\": \"glm4\""), "{glm_plan}");
+    assert!(tev1_plan.contains("\"out\":"), "{tev1_plan}");
+    assert!(!tev1_plan.contains("glm4-chat"), "{tev1_plan}");
+    assert!(
+        glm_plan.contains("/glm4-chat") || glm_plan.contains("\\glm4-chat"),
+        "{glm_plan}"
+    );
+    let tev1_sha = tev1_plan
+        .lines()
+        .find(|line| line.contains("heldout_sha256"))
+        .unwrap();
+    let glm_sha = glm_plan
+        .lines()
+        .find(|line| line.contains("heldout_sha256"))
+        .unwrap();
+    assert_eq!(tev1_sha.trim(), glm_sha.trim(), "{tev1_sha} vs {glm_sha}");
+    assert!(compare.contains(tev1_sha.trim()), "{compare}");
+    assert!(compare.contains("\"holdout_shared\": true"), "{compare}");
+    assert!(compare.contains("\"mode\": \"print\""), "{compare}");
+    assert!(
+        compare.contains("\"qwen_glm_specialist_delta\": null"),
+        "{compare}"
+    );
+    assert!(compare.contains("\"base_accuracy\": null"), "{compare}");
+    assert!(
+        compare.contains("\"factory_live_pass\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"live_pass_recorded\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"ready_for_live_test\": \"no\""),
+        "{compare}"
+    );
+    assert!(compare.contains("not a factory live PASS"), "{compare}");
+    assert!(tev1_plan.contains("\"network\": false"), "{tev1_plan}");
+    assert!(glm_plan.contains("\"network\": false"), "{glm_plan}");
+    assert!(
+        tev1_plan.contains("\"live_pass_recorded\": false"),
+        "{tev1_plan}"
+    );
+    assert!(!out.join("tev1/comparison.json").exists());
+    assert!(!out.join("glm4-chat/comparison.json").exists());
+
+    let foreign = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "ag_news",
+            "--expand-tag",
+            "rev1",
+            "--print",
+            "--out",
+            out.join("foreign").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let ferr = String::from_utf8_lossy(&foreign.stderr);
+    assert!(!foreign.status.success(), "{ferr}");
+    assert!(ferr.contains("rust_idiom"), "{ferr}");
+
+    let missing = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            "missing-dual-cache",
+            "--print",
+            "--out",
+            out.join("missing").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let merr = String::from_utf8_lossy(&missing.stderr);
+    assert!(!missing.status.success(), "{merr}");
+    assert!(merr.contains("expand cache"), "{merr}");
+    assert!(!out.join("missing/dual-compare.json").exists());
+
+    let deepseek = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--preset",
+            "deepseek-r1-distill",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--print",
+            "--out",
+            out.join("deepseek").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let derr = String::from_utf8_lossy(&deepseek.stderr);
+    assert!(!deepseek.status.success(), "{derr}");
+    assert!(derr.contains("DeepSeek"), "{derr}");
+
+    let default_print = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "all",
+            "--print",
+        ])
+        .output()
+        .unwrap();
+    let default_out = String::from_utf8_lossy(&default_print.stdout);
+    let default_err = String::from_utf8_lossy(&default_print.stderr);
+    assert!(
+        default_print.status.success(),
+        "{default_out}\n{default_err}"
+    );
+    let default_parent = PathBuf::from(format!(".cell/classify-journey-rustidiom-all-{tag}-dual"));
+    assert!(
+        default_parent.join("dual-compare.json").is_file(),
+        "{}",
+        default_parent.display()
+    );
+    assert!(default_parent.join("tev1/journey-plan.json").is_file());
+    assert!(default_parent.join("glm4-chat/journey-plan.json").is_file());
+    let _ = fs::remove_dir_all(&default_parent);
+
+    let sum = Command::new("cksum")
+        .arg(workspace().join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum_text = String::from_utf8_lossy(&sum.stdout);
+    assert!(sum.status.success(), "{sum_text}");
+    assert!(sum_text.starts_with("43770130 3391"), "{sum_text}");
+
+    let _ = fs::remove_dir_all(&cache);
+    let _ = fs::remove_dir_all(&out);
+}
