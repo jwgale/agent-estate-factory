@@ -352,6 +352,35 @@ mod tests {
     }
 
     #[test]
+    fn agent_kind_aliases_load_from_yaml() {
+        for token in ["agent", "agent_call", "agent-call"] {
+            let kind: IntentionKind = serde_yaml::from_str(token).unwrap();
+            assert_eq!(kind, IntentionKind::Agent, "{token}");
+            assert_eq!(token.parse::<IntentionKind>().unwrap(), IntentionKind::Agent);
+        }
+        let mut declared = load_estate_str(crate::tests::example_yaml()).unwrap();
+        declared
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .calls
+            .push(crate::types::CallDecl {
+                id: "research".into(),
+                description: None,
+            });
+        for token in ["agent_call", "agent-call"] {
+            let raw = format!(
+                "subject_agent: horizon\nobject: agent:research\nkind: {token}\neffect: allow\n"
+            );
+            let intention: Intention = serde_yaml::from_str(&raw).unwrap();
+            assert_eq!(intention.kind, IntentionKind::Agent, "{token}");
+            declared.intentions = vec![intention];
+            assert!(crate::validate(&declared).is_ok(), "{token}");
+        }
+    }
+
+    #[test]
     fn unknown_agent_rejected() {
         let e = with_intention(IntentionKind::Tool, "ghost", "notes-append", Effect::Deny);
         let text = compile_intentions(&e).unwrap_err().join("\n");

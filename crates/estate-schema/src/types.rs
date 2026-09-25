@@ -83,6 +83,8 @@ pub enum IntentionKind {
     Mount,
     Model,
     /// Who may call whom. Object is another estate agent (`agent:` or a bare id).
+    /// `agent_call` and `agent-call` load as this kind in estate YAML.
+    #[serde(alias = "agent_call", alias = "agent-call")]
     Agent,
 }
 
@@ -109,7 +111,8 @@ impl FromStr for IntentionKind {
             "mcp" => Ok(IntentionKind::Mcp),
             "mount" => Ok(IntentionKind::Mount),
             "model" | "binding" => Ok(IntentionKind::Model),
-            "agent" | "agent_call" | "agent-call" => Ok(IntentionKind::Agent),
+            // `normalize_name` maps `agent_call` to `agent-call`.
+            "agent" | "agent-call" => Ok(IntentionKind::Agent),
             other => Err(format!("unknown intention kind '{other}'")),
         }
     }
