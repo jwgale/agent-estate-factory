@@ -184,7 +184,7 @@ make gate
 | **A1** | `estate validate` lists horizon, research, sanctum on separate lanes. Invalid fixtures exit 1. |
 | **A2** | `estate apply` binds three profile-dir sessions. |
 | **A3** | Horizon → `lane:research` denied. Cyera CI and Rust classroom cannot be read. |
-| **A4** | Undeclared `shell` / `secrets` denied. Research `notes-append` and mount `notes` allowed. |
+| **A4** | Undeclared `shell` / `secrets` denied. Research `notes-append` and mount `notes` are declared and still denied: no allow intention covers them (deny-default). |
 
 ## Layout
 

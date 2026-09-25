@@ -23,7 +23,7 @@ cargo test --workspace
 
 ## A4 — deny-default tools / mounts
 
-Undeclared `shell` / `secrets` deny. Research `notes-append` and mount `notes` allow.
+Undeclared `shell` / `secrets` deny. Research `notes-append` and mount `notes` are declared and still deny: no allow intention covers them (deny-default).
 
 ## Pause
 

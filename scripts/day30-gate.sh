@@ -76,7 +76,7 @@ check_deny sanctum memory_read rust-classroom "A3 Rust classroom excluded"
 note
 note "-- A4 deny-default tools --"
 check_deny horizon tool shell "A4 undeclared tool denied"
-check_allow research tool notes-append "A4 declared tool allowed"
+check_deny research tool notes-append "A4 declared tool without allow intention denied"
 check_deny research mount secrets "A4 undeclared mount denied"
 check_deny research mount notes "A4 declared mount without allow intention denied"
 
