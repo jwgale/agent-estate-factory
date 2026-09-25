@@ -17,7 +17,7 @@ pub use firewall::{
     authorize, convey_hop_coverage, convey_hop_declared_capability, convey_intention_coverage,
     agent_call_coverage_cites, agent_edge_coverage_rows, coverage_for_agent,
     declared_coverage_cites, declared_coverage_cites_from_rows, declared_coverage_rows,
-    memory_coverage_cites,
+    memory_coverage_cites, memory_coverage_cites_from_rows,
     describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
     describe_intention_coverage, describe_model_class_coverage, hop_coverage_rows,
     intention_coverage_rows,

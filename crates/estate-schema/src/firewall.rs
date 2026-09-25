@@ -710,9 +710,10 @@ pub fn agent_call_coverage_cites(estate: &Estate) -> Vec<AgentCallCoverageCite> 
     cites
 }
 
-/// One memory-read edge on apply. `line` is the same own-lane / cross-lane
-/// row [`describe_intention_coverage`] prints. Allow is omitted (quiet).
-/// Deny and deny-default stay visible. Memory rows have no
+/// One memory-read edge on plan and apply. `line` is the same own-lane /
+/// cross-lane row [`describe_intention_coverage`] prints, except a hard
+/// cite, which prefixes that row with `refuse:memory`. Allow is omitted
+/// (quiet). Deny and deny-default stay visible. Memory rows have no
 /// capability-mismatch class, so `fail` is false for those words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryCoverageCite {
@@ -723,14 +724,23 @@ pub struct MemoryCoverageCite {
 /// Every agent × lane memory row. Allow (own-lane or cross-lane) is quiet.
 /// Deny and deny-default are notes. A missing edge or an unrecognized word
 /// fails closed (`refuse:memory`). Compiled intention lines stay on the
-/// describe text and are not apply findings. Does not read a mesh and does
-/// not write.
+/// describe text and are not plan or apply findings. Does not read a mesh
+/// and does not write.
 pub fn memory_coverage_cites(estate: &Estate) -> Vec<MemoryCoverageCite> {
-    let rows = intention_coverage_rows(estate);
+    memory_coverage_cites_from_rows(estate, &intention_coverage_rows(estate))
+}
+
+/// Same cites as [`memory_coverage_cites`], over a supplied row list.
+/// An agent × lane with no row is a missing edge. A row whose word is not
+/// allow, deny, or deny-default is unrecognized. Both fail closed.
+pub fn memory_coverage_cites_from_rows(
+    estate: &Estate,
+    rows: &[CoverageRow],
+) -> Vec<MemoryCoverageCite> {
     let mut cites = Vec::new();
     for agent in &estate.agents {
         for lane in &estate.lanes {
-            cite_memory_edge(&mut cites, &rows, &agent.id, &lane.id);
+            cite_memory_edge(&mut cites, rows, &agent.id, &lane.id);
         }
     }
     cites
@@ -761,7 +771,11 @@ fn cite_memory_edge(
     let known = row.line.contains(": deny-default (") || row.line.contains(": deny (");
     cites.push(MemoryCoverageCite {
         fail: !known,
-        line: row.line.clone(),
+        line: if known {
+            row.line.clone()
+        } else {
+            format!("refuse:memory: {}", row.line)
+        },
     });
 }
 
@@ -1612,6 +1626,67 @@ mod tests {
             }),
             "{explicit:?}"
         );
+        let described = describe_intention_coverage(&denied);
+        assert!(
+            described.contains("horizon intention memory_read lane:research: deny"),
+            "{described}"
+        );
+        assert!(
+            explicit.iter().all(|cite| !cite.line.contains("intention ")),
+            "{explicit:?}"
+        );
+    }
+
+    #[test]
+    fn memory_missing_and_unrecognized_are_refuse_memory() {
+        let missing = memory_coverage_cites_from_rows(&estate(), &[]);
+        assert!(missing.iter().all(|cite| cite.fail), "{missing:?}");
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line
+                    == "refuse:memory: horizon memory_read lane:horizon: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(missing.iter().all(|cite| !cite.line.contains("(mismatch)")));
+        assert!(missing.iter().all(|cite| !cite.line.contains("intention ")));
+
+        let intention_only = vec![CoverageRow::fact(
+            "horizon",
+            "horizon intention memory_read lane:research: deny",
+        )];
+        let still_missing = memory_coverage_cites_from_rows(&estate(), &intention_only);
+        assert!(still_missing.iter().all(|cite| cite.fail), "{still_missing:?}");
+        assert!(
+            still_missing
+                .iter()
+                .all(|cite| !cite.line.contains("intention ")),
+            "{still_missing:?}"
+        );
+
+        let mut rows = Vec::new();
+        for agent in ["horizon", "research", "sanctum"] {
+            for lane in ["horizon", "research", "sanctum"] {
+                let edge = if agent == lane { "own-lane" } else { "cross-lane" };
+                let word = if agent == "horizon" && lane == "research" {
+                    "bogon"
+                } else {
+                    "allow"
+                };
+                rows.push(CoverageRow::fact(
+                    agent,
+                    format!("{agent} memory_read lane:{lane}: {word} ({edge})"),
+                ));
+            }
+        }
+        let unrecognized = memory_coverage_cites_from_rows(&estate(), &rows);
+        let hard: Vec<_> = unrecognized.iter().filter(|cite| cite.fail).collect();
+        assert_eq!(hard.len(), 1, "{unrecognized:?}");
+        assert_eq!(
+            hard[0].line,
+            "refuse:memory: horizon memory_read lane:research: bogon (cross-lane)"
+        );
+        assert!(!hard[0].line.contains("(mismatch)"), "{}", hard[0].line);
     }
 
     #[test]
