@@ -382,7 +382,7 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
 /// stays deny-default. Cloud hops, empty populations, ungranted leases, and
 /// hop ids that are not placements stay out. Does not write.
 fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: &mut Vec<String>) {
-    for cite in doctor_hop_coverage_cites(estate, mesh) {
+    for cite in hop_coverage_cites(estate, mesh) {
         if cite.fail {
             println!("  FAIL  {}", cite.line);
             fails.push(cite.line);
@@ -392,13 +392,16 @@ fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: 
     }
 }
 
+/// Shared with `estate drift`. `fail` is capability mismatch only.
+/// Deny and deny-default stay visible and do not fail doctor `--strict`
+/// or drift by themselves.
 #[derive(Debug)]
-struct HopCoverageCite {
-    fail: bool,
-    line: String,
+pub(crate) struct HopCoverageCite {
+    pub(crate) fail: bool,
+    pub(crate) line: String,
 }
 
-fn doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<HopCoverageCite> {
+pub(crate) fn hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<HopCoverageCite> {
     let mut cites = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for lease in &mesh.leases {
@@ -1130,7 +1133,7 @@ mod tests {
             vec![box_lease("cell-one-box", "notes-append", &["research"])],
             vec![],
         );
-        let cites = doctor_hop_coverage_cites(&estate, &mismatch);
+        let cites = hop_coverage_cites(&estate, &mismatch);
         assert_eq!(cites.len(), 1);
         assert!(cites[0].fail);
         assert!(
@@ -1147,7 +1150,7 @@ mod tests {
             vec![box_lease("cell-one-box", "lane-tool", &["research"])],
             vec![],
         );
-        let quiet = doctor_hop_coverage_cites(&estate, &matched);
+        let quiet = hop_coverage_cites(&estate, &matched);
         assert!(
             quiet.iter().all(|cite| !cite.line.contains("(mismatch)")),
             "{quiet:?}"
@@ -1158,7 +1161,7 @@ mod tests {
             vec![box_lease("ttl-hop", "notes-append", &["research"])],
             vec![],
         );
-        assert!(doctor_hop_coverage_cites(&estate, &outsider).is_empty());
+        assert!(hop_coverage_cites(&estate, &outsider).is_empty());
     }
 
     #[test]
@@ -1186,7 +1189,7 @@ mod tests {
             vec![box_lease("cell-one-box", "notes-append", &["research"])],
             vec![],
         );
-        let deny = doctor_hop_coverage_cites(&denied, &mesh);
+        let deny = hop_coverage_cites(&denied, &mesh);
         assert_eq!(deny.len(), 1);
         assert!(!deny[0].fail);
         assert!(
@@ -1198,7 +1201,7 @@ mod tests {
         );
 
         let defaulted = load_estate(&path).unwrap();
-        let hop_default = doctor_hop_coverage_cites(&defaulted, &mesh);
+        let hop_default = hop_coverage_cites(&defaulted, &mesh);
         assert_eq!(hop_default.len(), 1);
         assert!(!hop_default[0].fail);
         assert!(
@@ -1226,7 +1229,7 @@ mod tests {
                 agents: vec!["research".into()],
             }],
         );
-        let cites = doctor_hop_coverage_cites(&estate, &mesh);
+        let cites = hop_coverage_cites(&estate, &mesh);
         assert!(
             cites.iter().any(|cite| cite.fail && cite.line.contains("(mismatch)")),
             "{cites:?}"
@@ -1240,7 +1243,7 @@ mod tests {
             let mut lease = box_lease("cell-one-box", "notes-append", &["research"]);
             lease.kind = kind.into();
             let leased = mesh_with(vec![lease], vec![]);
-            let cites = doctor_hop_coverage_cites(&estate, &leased);
+            let cites = hop_coverage_cites(&estate, &leased);
             assert!(cites.is_empty(), "{kind}: {cites:?}");
 
             let declared = mesh_with(
@@ -1256,7 +1259,7 @@ mod tests {
                     agents: vec!["research".into()],
                 }],
             );
-            let decl_cites = doctor_hop_coverage_cites(&estate, &declared);
+            let decl_cites = hop_coverage_cites(&estate, &declared);
             assert!(decl_cites.is_empty(), "{kind} decl: {decl_cites:?}");
         }
     }
@@ -1288,7 +1291,7 @@ mod tests {
         let hops = fs::read(dir.join("conveyor-hops.json")).unwrap();
         let leases = fs::read(dir.join("conveyor-leases.json")).unwrap();
         let loaded = load_mesh(&dir).unwrap();
-        let _ = doctor_hop_coverage_cites(&allow_estate(), &loaded);
+        let _ = hop_coverage_cites(&allow_estate(), &loaded);
         assert_eq!(fs::read(dir.join(conveyor_proxy::MESH_FILE)).unwrap(), before);
         assert_eq!(fs::read(dir.join("conveyor-hops.json")).unwrap(), hops);
         assert_eq!(fs::read(dir.join("conveyor-leases.json")).unwrap(), leases);
