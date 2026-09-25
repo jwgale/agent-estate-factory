@@ -696,6 +696,7 @@ fn blast_radius(
     lines.push(crate::firewall::describe_declared_coverage(estate));
     lines.push("Model class delta (who gained or lost which class):".into());
     lines.push(model_class_delta(estate, against));
+    lines.push(describe_agents_section(estate));
     if !added.agents.is_empty() {
         lines.push(format!("Adding agents {} expands session count.", added.agents.join(", ")));
     }
@@ -755,6 +756,86 @@ fn ids<'a>(iter: impl Iterator<Item = &'a str>) -> BTreeSet<String> {
 
 fn set_diff(have: BTreeSet<String>, against: BTreeSet<String>) -> Vec<String> {
     have.difference(&against).cloned().collect()
+}
+
+/// Per-agent blast block: id, lane, desktop, placement, declared counts,
+/// and that agent's allow / deny / deny-default coverage. Plan does not spawn.
+pub fn describe_agents_section(estate: &Estate) -> String {
+    let model = crate::firewall::describe_model_class_coverage(estate);
+    let declared = crate::firewall::describe_declared_coverage(estate);
+    let mut lines = vec![
+        "Agents".into(),
+        "------".into(),
+        "First-class agents. Plan does not spawn. Cloud-agent stays declared, not spawned. Control does not complete."
+            .into(),
+    ];
+    if estate.agents.is_empty() {
+        lines.push("(no agents)".into());
+        return lines.join("\n");
+    }
+    for agent in &estate.agents {
+        lines.push(format!("- id: {}", agent.id));
+        lines.push(format!("  lane: {}", agent.lane));
+        lines.push(format!("  desktop: {}", agent.desktop));
+        lines.push(format!(
+            "  placement: {}",
+            agent_placement_line(estate, &agent.id)
+        ));
+        lines.push(format!(
+            "  declared: tools={} mcp={} mounts={} models={}",
+            agent.tools.len(),
+            agent.mcp.len(),
+            agent.mounts.len(),
+            agent.models.len()
+        ));
+        lines.push("  model class:".into());
+        push_agent_coverage(&mut lines, &model, &agent.id);
+        lines.push("  tool mcp mount:".into());
+        push_agent_coverage(&mut lines, &declared, &agent.id);
+    }
+    lines.join("\n")
+}
+
+fn agent_placement_line(estate: &Estate, agent_id: &str) -> String {
+    let want = crate::sacred::normalize_name(agent_id);
+    let mut parts = Vec::new();
+    for place in &estate.placements {
+        let named = place
+            .agents
+            .iter()
+            .any(|id| crate::sacred::normalize_name(id) == want);
+        if !named {
+            continue;
+        }
+        match place.kind {
+            PlacementKind::Box => parts.push(format!("box {}", place.id)),
+            PlacementKind::CloudAgent => {
+                parts.push(format!(
+                    "cloud-agent {} (declared, not spawned)",
+                    place.id
+                ));
+            }
+        }
+    }
+    if parts.is_empty() {
+        "none".into()
+    } else {
+        parts.join("; ")
+    }
+}
+
+fn push_agent_coverage(lines: &mut Vec<String>, coverage: &str, agent_id: &str) {
+    let matched: Vec<&str> = coverage
+        .lines()
+        .filter(|line| line.split_whitespace().next() == Some(agent_id))
+        .collect();
+    if matched.is_empty() {
+        lines.push("    (none)".into());
+        return;
+    }
+    for line in matched {
+        lines.push(format!("    {line}"));
+    }
 }
 
 fn model_use_keys(estate: &Estate) -> BTreeSet<String> {
@@ -873,6 +954,94 @@ mod tests {
         let iac = render_security_iac(&plan);
         assert!(iac.contains("+ model_bindings:"));
         assert!(iac.contains("+ intentions:"));
+        assert!(iac.contains("\nAgents\n"));
+    }
+
+    #[test]
+    fn plan_agents_section_names_placement_and_coverage() {
+        let mut e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        e.placements
+            .iter_mut()
+            .find(|p| p.id == "cell-one-box")
+            .unwrap()
+            .agents = vec!["horizon".into()];
+        e.placements
+            .iter_mut()
+            .find(|p| p.id == "cursor-cloud")
+            .unwrap()
+            .agents = vec!["sanctum".into()];
+        e.agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .mcp
+            .push(crate::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        e.intentions.push(crate::Intention {
+            subject_agent: "horizon".into(),
+            object: "class:frontier".into(),
+            kind: crate::IntentionKind::Model,
+            effect: crate::Effect::Allow,
+            note: None,
+        });
+        e.intentions.push(crate::Intention {
+            subject_agent: "horizon".into(),
+            object: "local_slm".into(),
+            kind: crate::IntentionKind::Model,
+            effect: crate::Effect::Deny,
+            note: None,
+        });
+        e.intentions.push(crate::Intention {
+            subject_agent: "horizon".into(),
+            object: "mcp:docs".into(),
+            kind: crate::IntentionKind::Mcp,
+            effect: crate::Effect::Allow,
+            note: None,
+        });
+        let plan = diff_estates(&e, None);
+        let text = render_plan(&plan);
+        let agents = text
+            .split("Agents\n------\n")
+            .nth(1)
+            .expect("Agents section");
+        assert!(agents.contains("- id: horizon"));
+        assert!(agents.contains("lane: horizon"));
+        assert!(agents.contains("desktop: horizon-desktop"));
+        assert!(agents.contains("placement: box cell-one-box"));
+        assert!(agents.contains("declared: tools=0 mcp=1 mounts=0 models=2"));
+        assert!(agents.contains("horizon frontier xai_grok: allow"));
+        assert!(agents.contains("horizon local local_slm: deny"));
+        assert!(agents.contains("horizon mcp docs: allow"));
+        assert!(agents.contains("- id: research"));
+        assert!(agents.contains("placement: none"));
+        assert!(agents.contains("research tool notes-append: deny-default"));
+        assert!(agents.contains("research mount notes: deny-default"));
+        assert!(agents.contains("- id: sanctum"));
+        assert!(agents.contains(
+            "placement: cloud-agent cursor-cloud (declared, not spawned)"
+        ));
+        assert!(agents.contains("Control does not complete"));
+        assert!(text.contains("+ model_bindings:"));
+        assert!(text.contains("+ intentions:"));
+        assert!(describe_agents_section(&e).contains("- id: horizon"));
+    }
+
+    #[test]
+    fn example_plan_agents_are_box_and_deny_default() {
+        let e = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let text = render_plan(&diff_estates(&e, None));
+        assert!(text.contains("\nAgents\n"));
+        assert!(text.contains("- id: horizon"));
+        assert!(text.contains("- id: research"));
+        assert!(text.contains("- id: sanctum"));
+        assert!(text.contains("placement: box cell-one-box"));
+        assert!(text.contains("horizon frontier xai_grok: deny-default"));
+        assert!(text.contains("research tool notes-append: deny-default"));
+        assert!(text.contains("research mount notes: deny-default"));
+        assert!(text.contains("+ intentions:"));
+        assert!(text.contains("Security-as-IaC"));
     }
 
     #[test]
