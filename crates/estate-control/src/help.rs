@@ -199,6 +199,17 @@ in-tree card status (integration, optional, or portable) with
 live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
+After the hop expired count and that cloud-agent line, status prints
+an Authority section. The text is `describe_authority_section` over
+`authority_report`, the same section plan, drift, apply, doctor, and
+convey authority print. Counts are would-allow, would-deny, and
+not-enforced. One line per row. A missing mesh stays not-enforced and
+does not invent a lease. The section has no enforced status and does
+not claim a worker called the conveyor. A mesh that does not parse is
+the existing hop-lease refuse before the page and does not invent
+Authority rows. A would-deny row does not fail status. Status does not
+write the mesh, the leases, or the estate.
+
   estate status --estate examples/estate.yaml --state-dir .cell
   make day90
 
