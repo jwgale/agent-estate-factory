@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — apply prints the Agents section
+
+- `estate apply` and `estate apply --dry-run` print the same Agents section as `estate plan` and `estate drift`, from `describe_agents_section`, before any estate, mesh, lease, or apply-audit write. Each estate agent shows id, lane, desktop, placement (`box`, `cloud-agent` declared-not-spawned, or `none`), declared tool / mcp / mount / model counts, and that agent's allow / deny / deny-default coverage, including agent-call own and peer rows. Deny and deny-default agent-call rows stay notes and do not fail apply by themselves. A hop-coverage mismatch and `refuse:agent-call` still bail before writes. Apply does not spawn. Cloud-mesh stays declared, not spawned. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — proxy audit includes agent calls
 
 - An Agent allow, deny, or deny-default on `authorize` / `conveyor-proxy check --feed-dir` and on `call_hop_for_agent` appends one scrubbed `proxy.agent` line to `{state-dir}/feed/events.jsonl` and restamps `{state-dir}/feed/feed-cursor.json`. `estate convey call` and `estate convey hop` do the same when the intention gate resolves `IntentionKind::Agent` (missing coverage and an undeclared cross-peer are `deny-default`). The decision word stays `allow`, `deny`, or `deny-default`. Hop coverage, an unresolved capability, and every other hop decision stay `proxy.hop`. `lane-tool` and `mesh-stub` are not inferred as Agent, so an allow Agent intention cannot grant that hop or stamp the hop line `proxy.agent`. A failed append is still `refuse:proxy-audit`. This does not materialize a pack, does not promote, and does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::load_mesh;
 use estate_schema::{
-    blast_grows, covering_plan, describe_placements, diff_estates,
+    blast_grows, covering_plan, describe_agents_section, describe_placements, diff_estates,
     estate_hash, latest_plan, load_estate, load_plan_json, mark_plan_reviewed, overlay_sacred_ids,
     plan_against_is_fresh, plan_against_is_fresh_strict, plan_blast_width, plan_is_reviewable,
     render_plan, render_plan_diff, render_plan_pr, write_plan,
@@ -293,6 +293,9 @@ pub(crate) fn cmd_apply(
         }
     }
     refuse_apply_catalog_mismatch(&estate, state_dir)?;
+    // Same Agents block plan and drift print. Before any estate, mesh,
+    // lease, or apply-audit write, including dry-run. Notes and bails follow.
+    println!("{}", describe_agents_section(&estate));
     // Declared agent calls cite before any write. Deny and deny-default
     // are notes. A call target that is not an estate agent fails here.
     // Missing mesh is an empty hop cite list, not a failure. A present
