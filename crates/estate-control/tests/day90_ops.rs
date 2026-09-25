@@ -319,7 +319,7 @@ fn convey_call_refuses_policy_deny() {
         .unwrap();
     assert!(hop.status.success(), "{}", text(&hop));
 
-    let allow = estate_bin()
+    let locked = estate_bin()
         .args([
             "convey",
             "call",
@@ -331,6 +331,47 @@ fn convey_call_refuses_policy_deny() {
             "research",
             "--estate",
             &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
+    let locked_text = text(&locked);
+    assert!(!locked.status.success(), "{locked_text}");
+    assert!(
+        locked_text.contains("not covered by an allow Tool intention"),
+        "{locked_text}"
+    );
+
+    let mut granted = estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml"))
+        .unwrap();
+    granted.intentions.push(estate_schema::Intention {
+        subject_agent: "research".into(),
+        object: "tool:notes-append".into(),
+        kind: estate_schema::IntentionKind::Tool,
+        effect: estate_schema::Effect::Allow,
+        note: None,
+    });
+    let granted_path = root.join("granted-estate.yaml");
+    std::fs::write(
+        &granted_path,
+        estate_schema::render_estate_yaml(&granted).unwrap(),
+    )
+    .unwrap();
+    let allow = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "notes-hop",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--estate",
+            &granted_path.display().to_string(),
             "--state-dir",
             &state.display().to_string(),
             "--policy",

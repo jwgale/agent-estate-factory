@@ -116,7 +116,8 @@ fn a4_deny_default_tools_and_mounts() {
             object: "notes-append",
         },
     );
-    assert!(declared.is_allow());
+    assert!(!declared.is_allow());
+    assert!(declared.reason().contains("not covered by an allow Tool intention"));
     let mount_ok = authorize(
         &e,
         &AccessRequest {

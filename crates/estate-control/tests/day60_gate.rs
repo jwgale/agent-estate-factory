@@ -88,8 +88,16 @@ fn a7_a8_a9_mixed_path_obeys_firewall() {
     assert_eq!(a7.output.as_deref(), Some("pong"));
     assert!(a7.path.iter().any(|s| s == "local:allow"));
 
+    let mut tool_ok = e.clone();
+    tool_ok.intentions.push(Intention {
+        subject_agent: "research".into(),
+        object: "notes-append".into(),
+        kind: IntentionKind::Tool,
+        effect: Effect::Allow,
+        note: None,
+    });
     let a8 = run_task(
-        &e,
+        &tool_ok,
         &TaskRequest {
             agent_id: "research".into(),
             act: TaskAct::Tool,
