@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — convey coverage refuses a missing estate
+
+- `estate convey hop` and `estate convey call` refuse when the estate path is missing or not a file (`refuse:hop-coverage: estate missing` / `estate not a file`). Coverage is mandatory on those two paths. A wrong-cwd default `examples/estate.yaml` no longer skips coverage and falls through to the lease stub. When the estate loads, allow still proceeds, deny and deny-default still refuse, and a hop id that is not a placement stays the lease stub. Plan, doctor, and drift stay print-only. Convey does not apply the estate. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — plan names each agent
 
 - `estate plan` prints an Agents section for each estate agent: id, lane, desktop, placement (`box`, `cloud-agent` declared-not-spawned, or `none`), declared tool / mcp / mount / model counts, and that agent's allow / deny / deny-default coverage. Security-as-IaC intention and model-binding deltas stay. `estate drift` prints the same Agents section next to the existing coverage lines. Plan does not spawn. Control does not complete. This slice does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

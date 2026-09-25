@@ -95,9 +95,22 @@ fn convey_readers_refuse_tampered_mesh_sku_host_class() {
     assert!(tampered.contains("rtx-5090"));
     let hops_before = std::fs::read_to_string(state.join("conveyor-hops.json")).unwrap();
     let leases_before = std::fs::read_to_string(state.join("conveyor-leases.json")).unwrap();
+    let bypass = root.join("not-this-hop.yaml");
+    let raw = std::fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+    std::fs::write(&bypass, raw.replace("id: cell-one-box", "id: other-box")).unwrap();
+    let bypass_s = bypass.display().to_string();
 
     for args in [
-        vec!["convey", "call", "--id", "cell-one-box", "--state-dir", &state_s],
+        vec![
+            "convey",
+            "call",
+            "--id",
+            "cell-one-box",
+            "--estate",
+            &bypass_s,
+            "--state-dir",
+            &state_s,
+        ],
         vec!["convey", "list", "--state-dir", &state_s],
         vec!["convey", "leases", "--state-dir", &state_s],
         vec!["convey", "expire", "--state-dir", &state_s],

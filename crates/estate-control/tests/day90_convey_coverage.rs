@@ -328,3 +328,142 @@ fn convey_fails_closed_on_hop_coverage() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn convey_refuses_missing_and_non_file_estate() {
+    let root = repo_root().join(format!(
+        "target/test-convey-missing-estate-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state");
+    let missing = root.join("no-such-estate.yaml");
+    let missing_s = missing.display().to_string();
+    let state_s = state.display().to_string();
+    let policy = repo_root()
+        .join("examples/fixtures/policy-allow.yaml")
+        .display()
+        .to_string();
+
+    let hop = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--estate",
+            &missing_s,
+            "--state-dir",
+            &state_s,
+        ],
+    );
+    let hop_text = text(&hop);
+    assert!(!hop.status.success(), "{hop_text}");
+    assert!(
+        hop_text.contains("refuse:hop-coverage") && hop_text.contains("estate missing"),
+        "{hop_text}"
+    );
+    assert!(hop_text.contains("coverage is mandatory"), "{hop_text}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+
+    let call = convey(
+        &root,
+        &[
+            "convey",
+            "call",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--estate",
+            &missing_s,
+            "--state-dir",
+            &state_s,
+            "--policy",
+            &policy,
+        ],
+    );
+    let call_text = text(&call);
+    assert!(!call.status.success(), "{call_text}");
+    assert!(
+        call_text.contains("refuse:hop-coverage") && call_text.contains("estate missing"),
+        "{call_text}"
+    );
+
+    let dir = root.join("estate-dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    let dir_s = dir.display().to_string();
+    let non_file = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "ttl-box",
+            "--capability",
+            "lane-tool",
+            "--estate",
+            &dir_s,
+            "--state-dir",
+            &state_s,
+        ],
+    );
+    let non_file_text = text(&non_file);
+    assert!(!non_file.status.success(), "{non_file_text}");
+    assert!(
+        non_file_text.contains("refuse:hop-coverage")
+            && non_file_text.contains("estate not a file"),
+        "{non_file_text}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
+
+    let wrong_cwd = root.join("wrong-cwd");
+    std::fs::create_dir_all(&wrong_cwd).unwrap();
+    let mut cmd = estate_bin();
+    cmd.current_dir(&wrong_cwd);
+    cmd.args([
+        "convey",
+        "hop",
+        "--id",
+        "ttl-box",
+        "--capability",
+        "lane-tool",
+        "--state-dir",
+        &state_s,
+    ]);
+    let skipped = cmd.output().unwrap();
+    let skipped_text = text(&skipped);
+    assert!(!skipped.status.success(), "{skipped_text}");
+    assert!(
+        skipped_text.contains("refuse:hop-coverage")
+            && skipped_text.contains("examples/estate.yaml")
+            && skipped_text.contains("estate missing"),
+        "wrong-cwd default must refuse, got {skipped_text}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
+
+    let plan = convey(
+        &root,
+        &[
+            "plan",
+            "--estate",
+            &missing_s,
+            "--plans-dir",
+            &root.join("plans").display().to_string(),
+            "--state-dir",
+            &root.join("plan-state").display().to_string(),
+        ],
+    );
+    let plan_text = text(&plan);
+    assert!(!plan.status.success(), "{plan_text}");
+    assert!(
+        !plan_text.contains("coverage is mandatory"),
+        "plan stays a load error, not the convey coverage refuse: {plan_text}"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}

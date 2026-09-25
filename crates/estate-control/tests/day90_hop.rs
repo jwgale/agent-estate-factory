@@ -14,6 +14,10 @@ fn estate_bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_estate"))
 }
 
+fn fixture(rel: &str) -> String {
+    repo_root().join(rel).display().to_string()
+}
+
 fn text(out: &std::process::Output) -> String {
     format!(
         "{}{}",
@@ -48,6 +52,8 @@ fn hop_ttl_expire_forget_call_restamps() {
             "lane-tool",
             "--ttl-secs",
             "1",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state_s,
         ])
@@ -88,6 +94,8 @@ fn hop_ttl_expire_forget_call_restamps() {
             "ttl-hop",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state_s,
         ])
@@ -134,6 +142,8 @@ fn hop_ttl_expire_forget_call_restamps() {
             "ttl-hop",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state_s,
         ])
