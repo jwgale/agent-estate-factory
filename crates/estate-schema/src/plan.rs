@@ -117,7 +117,7 @@ pub fn diff_estates(desired: &Estate, against: Option<&Estate>) -> EstatePlan {
     };
 
     let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let blast_radius_text = blast_radius(desired, &added, &removed, &changed, against.is_none());
+    let blast_radius_text = blast_radius(desired, &added, &removed, &changed, against);
     EstatePlan {
         schema: default_plan_schema(),
         desired_hash,
@@ -456,6 +456,20 @@ pub fn render_security_iac(plan: &EstatePlan) -> String {
     out.push_str(&format!("+ placements: {}\n", fmt_list(&plan.added.placements)));
     out.push_str(&format!("- placements: {}\n", fmt_list(&plan.removed.placements)));
     out.push_str(&format!("+ enrich_packs: {}\n", fmt_list(&plan.added.enrich_packs)));
+    out.push_str(&format!(
+        "+ model_bindings: {}\n",
+        fmt_list(&plan.added.model_bindings)
+    ));
+    out.push_str(&format!(
+        "- model_bindings: {}\n",
+        fmt_list(&plan.removed.model_bindings)
+    ));
+    out.push_str(&format!(
+        "~ model_bindings: {}\n",
+        fmt_list(&plan.changed.model_bindings)
+    ));
+    out.push_str(&format!("+ intentions: {}\n", fmt_list(&plan.added.intentions)));
+    out.push_str(&format!("- intentions: {}\n", fmt_list(&plan.removed.intentions)));
     out.push_str("\nApply without a covering, reviewable, fresh plan is refuse.\n");
     out.push_str("Cloud-agent placements stay unspawned. Feed does not auto-promote.\n");
     out
@@ -521,8 +535,9 @@ fn blast_radius(
     added: &PlanDelta,
     removed: &PlanDelta,
     changed: &PlanDelta,
-    greenfield: bool,
+    against: Option<&Estate>,
 ) -> String {
+    let greenfield = against.is_none();
     let mut lines = Vec::new();
     if greenfield {
         lines.push(format!(
@@ -670,6 +685,12 @@ fn blast_radius(
                 .join(", ")
         ));
     }
+    lines.push(
+        "Model class coverage (frontier and local use the same allow-intention rule):".into(),
+    );
+    lines.push(crate::firewall::describe_model_class_coverage(estate));
+    lines.push("Model class delta (who gained or lost which class):".into());
+    lines.push(model_class_delta(estate, against));
     if !added.agents.is_empty() {
         lines.push(format!("Adding agents {} expands session count.", added.agents.join(", ")));
     }
@@ -729,6 +750,42 @@ fn ids<'a>(iter: impl Iterator<Item = &'a str>) -> BTreeSet<String> {
 
 fn set_diff(have: BTreeSet<String>, against: BTreeSet<String>) -> Vec<String> {
     have.difference(&against).cloned().collect()
+}
+
+fn model_use_keys(estate: &Estate) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    for agent in &estate.agents {
+        for model in &agent.models {
+            let class = estate
+                .model_bindings
+                .iter()
+                .find(|b| {
+                    crate::sacred::normalize_name(&b.id)
+                        == crate::sacred::normalize_name(&model.id)
+                })
+                .map(|b| b.class.as_str())
+                .unwrap_or("undeclared");
+            keys.insert(format!("{} {} {}", agent.id, class, model.id));
+        }
+    }
+    keys
+}
+
+fn model_class_delta(desired: &Estate, against: Option<&Estate>) -> String {
+    let have = model_use_keys(desired);
+    let prev = against.map(model_use_keys).unwrap_or_default();
+    let mut lines = Vec::new();
+    for key in have.difference(&prev) {
+        lines.push(format!("+ {key}"));
+    }
+    for key in prev.difference(&have) {
+        lines.push(format!("- {key}"));
+    }
+    if lines.is_empty() {
+        "(none)".into()
+    } else {
+        lines.join("\n")
+    }
 }
 
 fn intention_keys(estate: &Estate) -> Vec<String> {
@@ -800,6 +857,14 @@ mod tests {
         assert!(plan.blast_radius_text.contains("not-enforced: research tool notes-append on cell-one-box"));
         assert!(plan.blast_radius_text.contains("Uncertain:"));
         assert!(plan.blast_radius_text.contains("Identity stays parked"));
+        assert!(plan.blast_radius_text.contains("horizon frontier xai_grok: deny-default"));
+        assert!(plan.blast_radius_text.contains("horizon local local_slm: deny-default"));
+        assert!(plan.blast_radius_text.contains("research local local_slm: deny-default"));
+        assert!(plan.blast_radius_text.contains("+ horizon frontier xai_grok"));
+        assert!(plan.blast_radius_text.contains("+ research local local_slm"));
+        let iac = render_security_iac(&plan);
+        assert!(iac.contains("+ model_bindings:"));
+        assert!(iac.contains("+ intentions:"));
     }
 
     #[test]

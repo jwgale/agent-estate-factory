@@ -4,8 +4,8 @@ use conveyor_proxy::{
     list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    describe_placements, estate_hash, list_plans, load_estate, load_estate_unvalidated,
-    load_policy, policy_allows,
+    describe_model_class_coverage, describe_placements, estate_hash, list_plans, load_estate,
+    load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -449,9 +449,15 @@ pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Resu
     let estate = estate_schema::load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     let rows = authority_report(state_dir, &estate)?;
-    let allow = rows.iter().filter(|row| row.status == "would-allow").count();
+    let allow = rows
+        .iter()
+        .filter(|row| row.status == "would-allow")
+        .count();
     let deny = rows.iter().filter(|row| row.status == "would-deny").count();
-    let pending = rows.iter().filter(|row| row.status == "not-enforced").count();
+    let pending = rows
+        .iter()
+        .filter(|row| row.status == "not-enforced")
+        .count();
     println!("authority would-allow={allow} would-deny={deny} not-enforced={pending}");
     println!(
         "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
@@ -691,6 +697,7 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
     let models = model_estate::drift_bindings(&estate, state_dir)?;
     println!("floor:\n{}", serde_json::to_string_pretty(&report)?);
     println!("models:\n{}", serde_json::to_string_pretty(&models)?);
+    println!("model class:\n{}", describe_model_class_coverage(&estate));
     if !report.in_sync || !models.in_sync {
         bail!("drift detected");
     }

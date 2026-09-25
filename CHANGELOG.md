@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — equal-class Model intentions
+
+- A named-agent `authorize` / `estate convey call --agent` for `IntentionKind::Model` allows a binding only when `model_bindings` declares it and an allow Model intention covers that binding or its class (`frontier` or `local`, including `class:`, `binding:`, and `model:`). Frontier and local use the same deny text. Missing coverage is deny-default. An explicit deny wins. The agent `models:` list stays required. `estate plan` Security-as-IaC lists model-binding and intention deltas, and the blast radius names who holds which class. `estate drift` prints that coverage. This is not a gateway. Cloud-mesh stays declared, not spawned. Sacred exclusions stay refused. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — agent population on the capability mesh
 
 - `estate convey hop --agent` records who may use the hop. `estate convey sync` copies placement `agents` onto that hop lease. An unnamed `estate convey call` against a populated lease is `refuse:agent-unbound`. `estate convey call --agent` checks the estate intention only when that command runs (`refuse:intention` on deny). A lease that lists an agent the placement row does not is `refuse:agent-unplaced` and writes nothing. A granted hop is not mediation. `estate convey authority` is a file check (`would-allow`, `would-deny`, `not-enforced`) and does not write. `estate plan` lists desired rows as not-enforced. Whether a hop lease is the right station shape is uncertain. Identity stays parked. Not a gateway. This slice does not invent a live PASS. `factory_live_pass` / `live_pass_recorded` stay false. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

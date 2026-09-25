@@ -2449,4 +2449,192 @@ mod tests {
         }));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn model_class_intentions_refuse_the_same_way_for_frontier_and_local() {
+        let dir = tmp();
+        let estate = example_estate();
+        for (hop, capability, class) in [
+            ("frontier-hop", "xai_grok", "frontier"),
+            ("local-hop", "local_slm", "local"),
+        ] {
+            declare_hop(
+                &dir,
+                HopDecl {
+                    id: hop.into(),
+                    kind: "box".into(),
+                    capability: capability.into(),
+                    host_class: "any".into(),
+                    wired: true,
+                    note: None,
+                    ttl_secs: None,
+                    agents: vec!["horizon".into()],
+                },
+            )
+            .unwrap();
+            let denied = call_hop_for_agent(
+                &dir,
+                hop,
+                capability,
+                "horizon",
+                Some(estate_schema::IntentionKind::Model),
+                &estate,
+            )
+            .unwrap_err();
+            assert!(
+                denied.to_string().starts_with("refuse:intention"),
+                "{denied}"
+            );
+            assert!(
+                denied
+                    .to_string()
+                    .contains(&format!("model class '{class}'")),
+                "{denied}"
+            );
+            assert!(denied.to_string().contains("deny-default"), "{denied}");
+        }
+
+        let missing = call_hop_for_agent(
+            &dir,
+            "frontier-hop",
+            "other_slm",
+            "horizon",
+            Some(estate_schema::IntentionKind::Model),
+            &estate,
+        )
+        .unwrap_err();
+        let missing = missing.to_string();
+        assert!(missing.starts_with("refuse:capability"), "{missing}");
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "undeclared-hop".into(),
+                kind: "box".into(),
+                capability: "other_slm".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["horizon".into()],
+            },
+        )
+        .unwrap();
+        let undeclared = call_hop_for_agent(
+            &dir,
+            "undeclared-hop",
+            "other_slm",
+            "horizon",
+            Some(estate_schema::IntentionKind::Model),
+            &estate,
+        )
+        .unwrap_err();
+        assert!(
+            undeclared
+                .to_string()
+                .contains("not declared on model_bindings"),
+            "{undeclared}"
+        );
+
+        let mut granted = estate.clone();
+        for class in ["frontier", "local"] {
+            granted.intentions.push(estate_schema::Intention {
+                subject_agent: "horizon".into(),
+                object: format!("class:{class}"),
+                kind: estate_schema::IntentionKind::Model,
+                effect: estate_schema::Effect::Allow,
+                note: None,
+            });
+        }
+        for (hop, capability, class) in [
+            ("frontier-hop", "xai_grok", "frontier"),
+            ("local-hop", "local_slm", "local"),
+        ] {
+            let allowed =
+                call_hop_for_agent(&dir, hop, capability, "horizon", None, &granted).unwrap();
+            assert!(allowed.allow, "{capability}");
+            assert!(
+                allowed.reason.contains(&format!("class {class}")),
+                "{}",
+                allowed.reason
+            );
+        }
+        let local_only = {
+            let mut estate = estate.clone();
+            estate.intentions.push(estate_schema::Intention {
+                subject_agent: "horizon".into(),
+                object: "class:local".into(),
+                kind: estate_schema::IntentionKind::Model,
+                effect: estate_schema::Effect::Allow,
+                note: None,
+            });
+            estate
+        };
+        let frontier_still = call_hop_for_agent(
+            &dir,
+            "frontier-hop",
+            "xai_grok",
+            "horizon",
+            Some(estate_schema::IntentionKind::Model),
+            &local_only,
+        )
+        .unwrap_err();
+        assert!(
+            frontier_still
+                .to_string()
+                .contains("model class 'frontier'"),
+            "{frontier_still}"
+        );
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cloud-model".into(),
+                kind: "cloud-mesh".into(),
+                capability: "xai_grok".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["horizon".into()],
+            },
+        )
+        .unwrap();
+        let cloud = call_hop_for_agent(
+            &dir,
+            "cloud-model",
+            "xai_grok",
+            "horizon",
+            Some(estate_schema::IntentionKind::Model),
+            &granted,
+        )
+        .unwrap_err();
+        assert!(matches!(cloud, MeshError::CloudNotSpawned(_)), "{cloud}");
+        assert!(
+            cloud.to_string().starts_with("refuse:cloud-not-spawned"),
+            "{cloud}"
+        );
+
+        let sacred = call_hop_for_agent(
+            &dir,
+            "frontier-hop",
+            "xai_grok",
+            "cyera-ci",
+            Some(estate_schema::IntentionKind::Model),
+            &granted,
+        )
+        .unwrap_err();
+        assert!(matches!(sacred, MeshError::SacredId(_)), "{sacred}");
+        let classroom = call_hop_for_agent(
+            &dir,
+            "local-hop",
+            "local_slm",
+            "rust-classroom",
+            Some(estate_schema::IntentionKind::Model),
+            &granted,
+        )
+        .unwrap_err();
+        assert!(matches!(classroom, MeshError::SacredId(_)), "{classroom}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
