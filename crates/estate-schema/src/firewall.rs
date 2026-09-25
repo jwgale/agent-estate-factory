@@ -162,7 +162,7 @@ fn model_intention_effect(
 
 /// One coverage fact. `agent_id` is the filter key. `line` is the display.
 /// An empty `agent_id` is an estate-wide row (an empty hop population).
-/// Hop rows also carry `hop_id` and `word` so convey does not parse `line`.
+/// Hop rows also carry `hop_id`, `word`, and `capability` so convey does not parse `line`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoverageRow {
     pub agent_id: String,
@@ -171,6 +171,9 @@ pub struct CoverageRow {
     pub hop_id: String,
     /// `allow`, `deny`, or `deny-default` for hop rows. Empty otherwise.
     pub word: &'static str,
+    /// Placement-derived hop capability (`lane-tool` on box, `mesh-stub` on cloud).
+    /// Empty on fact rows.
+    pub capability: String,
 }
 
 impl CoverageRow {
@@ -180,6 +183,7 @@ impl CoverageRow {
             line: line.into(),
             hop_id: String::new(),
             word: "",
+            capability: String::new(),
         }
     }
 
@@ -187,12 +191,14 @@ impl CoverageRow {
         agent_id: impl Into<String>,
         hop_id: impl Into<String>,
         word: &'static str,
+        capability: impl Into<String>,
         line: impl Into<String>,
     ) -> Self {
         Self {
             agent_id: agent_id.into(),
             hop_id: hop_id.into(),
             word,
+            capability: capability.into(),
             line: line.into(),
         }
     }
@@ -452,6 +458,7 @@ pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                 String::new(),
                 place.id.clone(),
                 word,
+                capability,
                 format!("{} hop {capability}: {word}", place.id),
             ));
             continue;
@@ -462,6 +469,7 @@ pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                 agent_id.clone(),
                 place.id.clone(),
                 word,
+                capability,
                 format!("{agent_id} hop {} {capability}: {word}", place.id),
             ));
         }
@@ -625,6 +633,9 @@ pub fn convey_intention_coverage(
 pub struct HopCoverageGate {
     pub word: &'static str,
     pub line: String,
+    /// Placement-derived capability from [`hop_coverage_rows`]. Empty when
+    /// the hop id is not a placement.
+    pub capability: String,
 }
 
 /// Coverage for a convey hop target. `Ok(None)` means this hop id is not a
@@ -657,6 +668,7 @@ pub fn convey_hop_coverage(
                 "{} hop: deny-default (placement coverage missing; not a grant)",
                 place.id
             ),
+            capability: String::new(),
         });
     }
     if let Some(agent) = agent_id {
@@ -678,6 +690,7 @@ pub fn convey_hop_coverage(
                 return Err(HopCoverageGate {
                     word: "deny",
                     line: row.line.clone(),
+                    capability: row.capability.clone(),
                 });
             }
             return Err(HopCoverageGate {
@@ -685,6 +698,7 @@ pub fn convey_hop_coverage(
                 line: format!(
                     "{agent} hop {hop_id}: deny-default (not on the hop population; not a grant)"
                 ),
+                capability: String::new(),
             });
         }
         hits = named;
@@ -696,7 +710,45 @@ pub fn convey_hop_coverage(
         .first()
         .map(|row| row.line.clone())
         .unwrap_or_else(|| format!("{hop_id}: allow"));
-    Ok(Some(HopCoverageGate { word: "allow", line }))
+    let capability = hits
+        .first()
+        .map(|row| row.capability.clone())
+        .unwrap_or_default();
+    Ok(Some(HopCoverageGate {
+        word: "allow",
+        line,
+        capability,
+    }))
+}
+
+/// Allow continues only when `declared` equals the placement-derived
+/// capability on the allow row (`lane-tool` on box, `mesh-stub` on cloud,
+/// or whatever [`hop_coverage_rows`] stored). Deny and deny-default return
+/// unchanged. A hop id that is not a placement stays `Ok(None)`.
+pub fn convey_hop_declared_capability(
+    estate: &Estate,
+    hop_id: &str,
+    agent_id: Option<&str>,
+    declared: &str,
+) -> Result<Option<HopCoverageGate>, HopCoverageGate> {
+    let gate = convey_hop_coverage(estate, hop_id, agent_id)?;
+    let Some(gate) = gate else {
+        return Ok(None);
+    };
+    if gate.word != "allow" {
+        return Err(gate);
+    }
+    let want = gate.capability.as_str();
+    if declared == want {
+        return Ok(Some(gate));
+    }
+    Err(HopCoverageGate {
+        word: "mismatch",
+        line: format!(
+            "capability '{declared}' does not match hop coverage capability '{want}'"
+        ),
+        capability: want.to_string(),
+    })
 }
 
 fn hop_gate_from_hits(hits: &[&CoverageRow]) -> Option<HopCoverageGate> {
@@ -704,12 +756,14 @@ fn hop_gate_from_hits(hits: &[&CoverageRow]) -> Option<HopCoverageGate> {
         return Some(HopCoverageGate {
             word: "deny",
             line: row.line.clone(),
+            capability: row.capability.clone(),
         });
     }
     if let Some(row) = hits.iter().find(|row| row.word == "deny-default") {
         return Some(HopCoverageGate {
             word: "deny-default",
             line: row.line.clone(),
+            capability: row.capability.clone(),
         });
     }
     None
@@ -1240,7 +1294,9 @@ mod tests {
             });
         grant(&mut allowed, "research", IntentionKind::Tool, "lane-tool", Effect::Allow);
         let allow = convey_hop_coverage(&allowed, "cell-one-box", Some("research")).unwrap();
-        assert_eq!(allow.unwrap().word, "allow");
+        let allow = allow.unwrap();
+        assert_eq!(allow.word, "allow");
+        assert_eq!(allow.capability, "lane-tool");
         let still = convey_hop_coverage(&allowed, "cell-one-box", None).unwrap_err();
         assert_eq!(still.word, "deny-default");
 
@@ -1282,6 +1338,73 @@ mod tests {
         assert!(off_box.line.contains("not on the hop population"));
 
         assert!(convey_hop_coverage(&raw, "ttl-hop", None).unwrap().is_none());
+    }
+
+    #[test]
+    fn convey_hop_declared_capability_matches_allow_and_refuses_mismatch() {
+        let mut allowed = estate();
+        allowed
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap()
+            .tools
+            .push(crate::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        grant(
+            &mut allowed,
+            "research",
+            IntentionKind::Tool,
+            "lane-tool",
+            Effect::Allow,
+        );
+        let matched = convey_hop_declared_capability(
+            &allowed,
+            "cell-one-box",
+            Some("research"),
+            "lane-tool",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(matched.word, "allow");
+        assert_eq!(matched.capability, "lane-tool");
+
+        let mismatch = convey_hop_declared_capability(
+            &allowed,
+            "cell-one-box",
+            Some("research"),
+            "notes-append",
+        )
+        .unwrap_err();
+        assert_eq!(mismatch.word, "mismatch");
+        assert_eq!(mismatch.capability, "lane-tool");
+        assert!(
+            mismatch.line.contains(
+                "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+            ),
+            "{}",
+            mismatch.line
+        );
+
+        let rows = hop_coverage_rows(&allowed);
+        let cloud = rows.iter().find(|row| row.hop_id == "cursor-cloud").unwrap();
+        assert_eq!(cloud.capability, "mesh-stub");
+        let denied =
+            convey_hop_declared_capability(&allowed, "cursor-cloud", None, "lane-tool").unwrap_err();
+        assert_eq!(denied.word, "deny");
+        assert!(!denied.line.contains("does not match"));
+
+        let still =
+            convey_hop_declared_capability(&allowed, "cell-one-box", None, "notes-append")
+                .unwrap_err();
+        assert_eq!(still.word, "deny-default");
+        assert!(!still.line.contains("does not match"));
+
+        assert!(convey_hop_declared_capability(&allowed, "ttl-hop", None, "other")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -1519,6 +1642,7 @@ mod tests {
                 String::new(),
                 "cursor-cloud",
                 "deny",
+                "mesh-stub",
                 "horizon hop mesh-stub: deny",
             ),
         ];
