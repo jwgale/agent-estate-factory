@@ -4,10 +4,9 @@ use conveyor_proxy::{
     list_expired_hop_leases, load_mesh, ConveyorMesh, HopDecl, HopLease,
 };
 use estate_schema::{
-    convey_hop_declared_capability, describe_agent_edge_coverage, describe_declared_coverage,
-    describe_hop_coverage,
-    describe_intention_coverage, describe_model_class_coverage, estate_hash, latest_plan,
-    load_estate, Estate,
+    convey_hop_declared_capability, describe_agent_edge_coverage, describe_agents_section,
+    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
+    describe_model_class_coverage, estate_hash, latest_plan, load_estate, Estate,
 };
 use feed_collector::list_open_proposals;
 use floor_supervisor::{
@@ -642,18 +641,25 @@ pub(crate) fn cmd_status(
         );
     }
     println!("cloud-agent: declared, not spawned");
-    // Print-only file check after the hop expired count and this
-    // cloud-agent line. Same text as plan, drift, apply, doctor, and
-    // convey authority. A mesh that does not parse already refused above
-    // (`list_expired_hop_leases`) and does not reach this section, so it
-    // does not invent rows. A missing mesh stays not-enforced. A
-    // would-deny row does not add a hop-coverage fail. Does not write
-    // the mesh, the leases, or the estate. Does not invent a lease.
+    // Same Agents text as plan, drift, and apply. Print-only, after the
+    // hop expired count and this cloud-agent line, and before Authority.
+    // Deny and deny-default coverage stay notes and do not add a status
+    // fail. Does not spawn. Does not write the mesh, the leases, or the
+    // estate. A spawned cloud lease already refused above and does not
+    // reach this section.
+    println!("{}", describe_agents_section(&estate));
+    // Print-only file check after that Agents section. Same text as plan,
+    // drift, apply, doctor, and convey authority. A mesh that does not
+    // parse already refused above (`list_expired_hop_leases`) and does not
+    // reach this section, so it does not invent rows. A missing mesh stays
+    // not-enforced. A would-deny row does not add a hop-coverage fail.
+    // Does not write the mesh, the leases, or the estate. Does not invent
+    // a lease.
     println!("{}", status_authority_text(&estate, state_dir)?);
     Ok(())
 }
 
-/// File check printed after the status one-pager. Same text as `estate plan`,
+/// File check printed after the Agents section. Same text as `estate plan`,
 /// `estate drift`, `estate apply`, `estate doctor`, and `estate convey authority`.
 /// Does not write the mesh, the leases, or the estate. Does not invent a lease.
 /// Does not add a hop-coverage fail.

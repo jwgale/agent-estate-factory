@@ -1,6 +1,8 @@
-//! `estate status` prints the same Authority section as plan, drift, apply,
-//! doctor, and convey authority, after the hop expired count and the
-//! cloud-agent line. Print-only. A would-deny row does not fail status.
+//! `estate status` prints the same Agents section as plan, drift, and apply,
+//! then the same Authority section as plan, drift, apply, doctor, and convey
+//! authority. Agents follows the hop expired count and the cloud-agent line.
+//! Print-only. Deny and deny-default notes, and a would-deny row, do not
+//! fail status.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -176,6 +178,12 @@ fn status_prints_the_same_not_enforced_section_as_the_other_surfaces() {
         "{section}"
     );
     assert!(no_enforced_status_token(&section), "{section}");
+    let agents = estate_schema::describe_agents_section(&estate);
+    assert!(agents.starts_with("Agents\n------\n"), "{agents}");
+    assert!(agents.contains("- id: horizon"), "{agents}");
+    assert!(agents.contains("placement: box cell-one-box"), "{agents}");
+    assert!(agents.contains("deny-default"), "{agents}");
+    assert!(no_enforced_status_token(&agents), "{agents}");
     let before = snapshot(&state);
     let estate_bytes = std::fs::read(&estate_path).unwrap();
     let (ok, stdout, stderr) = status(&estate_path, &state, &dir);
@@ -186,7 +194,10 @@ fn status_prints_the_same_not_enforced_section_as_the_other_surfaces() {
     let cloud_at = stdout.find(cloud).unwrap();
     assert!(hop_at < cloud_at, "{stdout}");
     assert!(stdout[hop_at..cloud_at].contains("hop="), "{stdout}");
-    assert_eq!(stdout[cloud_at + cloud.len()..].trim_end(), section);
+    assert_eq!(
+        stdout[cloud_at + cloud.len()..].trim_end(),
+        format!("{agents}\n{section}")
+    );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert_eq!(snapshot(&state), before);
     assert!(!state.join("conveyor-mesh.json").exists());
@@ -313,6 +324,14 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
         !section.contains("conveyor-mesh.json is absent"),
         "{section}"
     );
+    let agents = estate_schema::describe_agents_section(&estate);
+    assert!(
+        agents.lines().any(|line| {
+            line.contains("research tool lane-tool: deny") && !line.contains("deny-default")
+        }),
+        "{agents}"
+    );
+    assert!(no_enforced_status_token(&agents), "{agents}");
     let before = snapshot(&state);
     let estate_bytes = std::fs::read(&estate_path).unwrap();
     let locked = std::fs::read(repo_root().join("examples/estate.yaml")).unwrap();
@@ -321,7 +340,10 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
     assert!(stderr.is_empty(), "{stderr}");
     let cloud = "cloud-agent: declared, not spawned\n";
     let cloud_at = stdout.find(cloud).unwrap();
-    assert_eq!(stdout[cloud_at + cloud.len()..].trim_end(), section);
+    assert_eq!(
+        stdout[cloud_at + cloud.len()..].trim_end(),
+        format!("{agents}\n{section}")
+    );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     let (convey_ok, convey_out, convey_err) = convey_authority(&estate_path, &state);
     assert!(convey_ok, "{convey_out}\n{convey_err}");
@@ -388,11 +410,12 @@ fn unreadable_mesh_invents_no_authority_rows_and_writes_nothing() {
         "parse refuse stays before the page\n{stdout}"
     );
     assert!(
-        !stdout.contains("Authority")
+        !stdout.contains("Agents\n------")
+            && !stdout.contains("Authority")
             && !stdout.contains("would-allow")
             && !stdout.contains("would-deny")
             && !stdout.contains("not-enforced"),
-        "a mesh that does not parse must not invent Authority rows\n{stdout}"
+        "a mesh that does not parse must not invent Agents or Authority rows\n{stdout}"
     );
     assert!(stderr.contains("parse:"), "{stderr}");
     assert!(stderr.contains("conveyor-mesh.json"), "{stderr}");
@@ -422,10 +445,11 @@ fn unreadable_mesh_invents_no_authority_rows_and_writes_nothing() {
     assert!(!ok, "{stdout}\n{stderr}");
     assert!(stderr.contains("refuse:bad-host-class"), "{stderr}");
     assert!(
-        !stdout.contains("Authority")
+        !stdout.contains("Agents\n------")
+            && !stdout.contains("Authority")
             && !stdout.contains("would-allow")
             && !stdout.contains("not-enforced"),
-        "a mesh authority cannot read must not invent Authority rows\n{stdout}"
+        "a mesh authority cannot read must not invent Agents or Authority rows\n{stdout}"
     );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert!(no_enforced_status_token(&stderr), "{stderr}");
