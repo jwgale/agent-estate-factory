@@ -57,6 +57,13 @@ fn fixture_estate(dir: &Path) -> PathBuf {
     path
 }
 
+fn no_enforced_status_token(text: &str) -> bool {
+    !text.split_whitespace().any(|word| {
+        let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+        token == "enforced"
+    })
+}
+
 fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
     let mut rows = Vec::new();
     if state.is_dir() {
@@ -150,6 +157,23 @@ fn apply_and_dry_run_print_the_plan_agents_section_and_dry_run_writes_nothing() 
     assert!(dry_ok, "{dry_out}\n{dry_err}");
     assert!(dry_out.contains(&section), "{dry_out}");
     assert!(dry_out.contains("dry-run ok (no writes)"), "{dry_out}");
+    let agents_at = dry_out.find("Agents\n").unwrap();
+    let auth_at = dry_out
+        .find("Authority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{dry_out}"));
+    let ok_at = dry_out.find("dry-run ok (no writes)").unwrap();
+    assert!(agents_at < auth_at && auth_at < ok_at, "{dry_out}");
+    assert!(
+        dry_out.contains("authority would-allow=0 would-deny=0 not-enforced="),
+        "{dry_out}"
+    );
+    assert!(
+        dry_out.contains(
+            "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+        ),
+        "{dry_out}"
+    );
+    assert!(no_enforced_status_token(&dry_out), "{dry_out}");
     assert_eq!(snapshot(&state), before);
     assert!(!state.join("apply-audit.jsonl").exists());
     assert!(!state.join("placement-actual.json").exists());
@@ -170,6 +194,22 @@ fn apply_and_dry_run_print_the_plan_agents_section_and_dry_run_writes_nothing() 
     ]);
     assert!(ok, "{stdout}\n{stderr}");
     assert!(stdout.contains(&section), "{stdout}");
+    let apply_agents_at = stdout.find("Agents\n").unwrap();
+    let apply_auth_at = stdout
+        .find("Authority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{stdout}"));
+    let applied_at = stdout
+        .find("applied ")
+        .unwrap_or_else(|| panic!("missing applied line\n{stdout}"));
+    assert!(
+        apply_agents_at < apply_auth_at && apply_auth_at < applied_at,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("authority would-allow=0 would-deny=0 not-enforced="),
+        "{stdout}"
+    );
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert!(state.join("apply-audit.jsonl").is_file());
     assert_eq!(std::fs::read(&estate_path).unwrap(), estate_bytes);
     let _ = std::fs::remove_dir_all(&dir);
@@ -243,6 +283,19 @@ fn apply_still_bails_on_hop_mismatch_and_a_non_agent_call_target() {
     let text = format!("{stdout}{stderr}");
     assert!(!ok, "{text}");
     assert!(stdout.contains(&section), "{stdout}");
+    let agents_at = stdout.find("Agents\n").unwrap();
+    let fail_at = stdout
+        .find("\n  FAIL  ")
+        .unwrap_or_else(|| panic!("missing hop FAIL cite\n{stdout}"));
+    let auth_at = stdout
+        .find("Authority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{stdout}"));
+    assert!(agents_at < fail_at && fail_at < auth_at, "{stdout}");
+    assert!(
+        stdout.contains("would-deny") && stdout.contains("(mismatch)"),
+        "{stdout}"
+    );
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert!(
         text.contains("refuse:hop-coverage") && text.contains("(mismatch)"),
         "{text}"
@@ -262,6 +315,23 @@ fn apply_still_bails_on_hop_mismatch_and_a_non_agent_call_target() {
     let dry_text = format!("{dry_out}{dry_err}");
     assert!(!dry_ok, "{dry_text}");
     assert!(dry_out.contains(&section), "{dry_out}");
+    let dry_agents_at = dry_out.find("Agents\n").unwrap();
+    let dry_fail_at = dry_out
+        .find("\n  FAIL  ")
+        .unwrap_or_else(|| panic!("missing hop FAIL cite\n{dry_out}"));
+    let dry_auth_at = dry_out
+        .find("Authority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{dry_out}"));
+    assert!(
+        dry_agents_at < dry_fail_at && dry_fail_at < dry_auth_at,
+        "{dry_out}"
+    );
+    assert!(
+        dry_out.contains("would-deny") && dry_out.contains("(mismatch)"),
+        "{dry_out}"
+    );
+    assert!(no_enforced_status_token(&dry_out), "{dry_out}");
+    assert!(!dry_out.contains("dry-run ok"), "{dry_out}");
     assert!(
         dry_text.contains("refuse:hop-coverage") && dry_text.contains("(mismatch)"),
         "{dry_text}"
