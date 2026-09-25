@@ -700,7 +700,7 @@ fn blast_radius(
     );
     lines.push(crate::firewall::describe_intention_coverage(estate));
     lines.push(
-        "Hop coverage (placement-derived; plan does not spawn; empty population is not a grant; cloud-agent is deny):"
+        "Hop coverage (placement-derived; plan does not spawn; empty population is not a grant; cloud-agent is deny and declared, not spawned):"
             .into(),
     );
     lines.push(crate::firewall::describe_hop_coverage(estate));
@@ -1042,7 +1042,9 @@ mod tests {
         assert!(agents.contains("horizon intention model local_slm: deny"));
         assert!(agents.contains("horizon hop cell-one-box lane-tool: deny-default"));
         assert!(agents.contains("research memory_read lane:research: allow (own-lane)"));
-        assert!(agents.contains("sanctum hop cursor-cloud mesh-stub: deny"));
+        assert!(agents.contains(
+            "sanctum hop cursor-cloud mesh-stub: deny (declared, not spawned)"
+        ));
         assert!(agents.contains("- id: sanctum"));
         assert!(agents.contains(
             "placement: cloud-agent cursor-cloud (declared, not spawned)"
@@ -1068,7 +1070,7 @@ mod tests {
         assert!(text.contains("horizon memory_read lane:horizon: allow (own-lane)"));
         assert!(text.contains("horizon memory_read lane:research: deny-default (cross-lane)"));
         assert!(text.contains("horizon hop cell-one-box lane-tool: deny-default"));
-        assert!(text.contains("cursor-cloud hop mesh-stub: deny"));
+        assert!(text.contains("cursor-cloud hop mesh-stub: deny (declared, not spawned)"));
         assert!(text.contains("Intention coverage"));
         assert!(text.contains("Hop coverage"));
         assert!(text.contains("+ intentions:"));

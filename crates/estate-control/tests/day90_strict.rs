@@ -151,7 +151,10 @@ fn doctor_prints_security_iac_coverage() {
         "{text}"
     );
     assert!(text.contains("horizon hop cell-one-box lane-tool: deny-default"), "{text}");
-    assert!(text.contains("cursor-cloud hop mesh-stub: deny"), "{text}");
+    assert!(
+        text.contains("cursor-cloud hop mesh-stub: deny (declared, not spawned)"),
+        "{text}"
+    );
     assert!(!text.contains("Strict intentions"), "{text}");
 }
 

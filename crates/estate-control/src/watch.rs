@@ -380,7 +380,10 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
 /// mismatch quotes `refuse:hop-coverage`. Mismatch fails doctor. Deny and
 /// deny-default are cited and do not fail `--strict`: the locked example
 /// stays deny-default. Cloud hops, empty populations, ungranted leases, and
-/// hop ids that are not placements stay out. Does not write.
+/// hop ids that are not placements stay out. Cloud kinds stay out of this
+/// cite on purpose: `cloud-mesh`, `cloud_mesh`, and `cloud-agent` (trim,
+/// lowercase) are declared-not-spawned, not a capability mismatch. The
+/// hop describe line already names that. Does not write.
 fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: &mut Vec<String>) {
     for cite in hop_coverage_cites(estate, mesh) {
         if cite.fail {

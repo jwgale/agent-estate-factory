@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — cloud hop rows say declared, not spawned
+
+- `hop_coverage_rows` still marks a cloud-agent placement `deny`. The printed line now ends `(declared, not spawned)` for an empty population and for each named agent on that placement. Box rows stay `lane-tool` with `allow` / `deny` / `deny-default` and do not gain that phrase. `describe_hop_coverage` is the shared cite, so `estate plan`, `estate drift`, and `estate doctor` print the same line. The Agents hop block uses those rows. The word stays `deny`, so convey gates do not treat the phrase as a new decision. Cloud kinds stay out of the capability-mismatch cite (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase): that cite is a capability disagreement, and a cloud hop is not spawned. Floor does not spawn. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — memory rows flag cross-lane edges
 
 - Memory read already fail-closes. A named-agent `authorize` and `estate convey call --agent` allow `memory_read` across lanes only when an allow memory intention covers that lane. A cross-lane edge with no intention is deny-default. An explicit deny wins. Own-lane memory stays allow. Sacred exclusions stay refused. This slice does not change that gate.
