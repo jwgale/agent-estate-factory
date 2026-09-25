@@ -249,6 +249,11 @@ Binds box sessions. Records placement leases. Does not spawn cursor-cloud.
 
 Second identical apply is a no-op (unchanged). Expired leases refuse.
 After `estate expire --forget`, apply restamps leases. That is not `--force`.
+Apply and apply --dry-run print the same Agents section as plan and drift
+before any estate, mesh, lease, or apply-audit write: id, lane, desktop,
+placement (box, cloud-agent declared-not-spawned, or none), declared tool /
+mcp / mount / model counts, and that agent's allow / deny / deny-default
+coverage, including agent-call own and peer rows. Apply does not spawn.
 A cell catalog that disagrees with the binding is `refuse:frontier-model`
 before any apply write. The schema card is not the binding. A missing
 catalog is not a disagreement, and `--force` does not overwrite one.
