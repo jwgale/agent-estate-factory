@@ -292,6 +292,7 @@ Fixtures only. Isolated target/feed-loop-cell. Not part of make smoke.
 Cursor is a watermark. Rematerialize does not auto-promote.
 estate convey call and a convey hop coverage or intention refuse append
 proxy.hop lines to {state-dir}/feed/events.jsonl and restamp feed-cursor.json.
+An Agent allow, deny, or deny-default on those paths appends proxy.agent.
 estate feed cursor --feed-dir .cell/feed prints that watermark. No promote.
 Packs tag source_drivers frontier and/or local. Promote stays locked off.
 Propose and accept refuse a frontier source_driver when the estate has no

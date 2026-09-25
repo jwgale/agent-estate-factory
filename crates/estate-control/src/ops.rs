@@ -369,14 +369,22 @@ fn record_proxy_gate(
     capability: &str,
     word: &str,
     line: &str,
+    kind: Option<estate_schema::IntentionKind>,
 ) -> Result<()> {
     let note = format!("hop={hop_id} capability={capability} {line}");
+    // Hop coverage and an unresolved capability stay `proxy.hop`. A resolved
+    // Agent intention is `proxy.agent`, the same stamp `check` writes.
+    let (feed_kind, object_class) = if kind == Some(estate_schema::IntentionKind::Agent) {
+        ("proxy.agent", "agent")
+    } else {
+        ("proxy.hop", "proxy")
+    };
     append_proxy_audit(
         &state_dir.join("feed"),
-        "proxy.hop",
+        &feed_kind,
         agent,
         word,
-        "proxy",
+        object_class,
         Some(&note),
     )
     .map_err(|err| anyhow::anyhow!("{err}"))?;
@@ -408,6 +416,7 @@ fn refuse_named_intentions(
                 capability,
                 gate.word,
                 &gate.line,
+                gate.kind,
             )?;
             bail!("refuse:intention: {} ({})", gate.line, gate.word);
         }
@@ -440,6 +449,7 @@ fn refuse_convey_coverage(
             capability,
             "deny",
             &format!("estate {why}"),
+            None,
         )?;
         bail!(
             "refuse:hop-coverage: estate {why}: {} (coverage is mandatory; not a grant)",
@@ -455,7 +465,7 @@ fn refuse_convey_coverage(
             // allow | deny | deny-default, same as hop audit.
             let decision = estate_schema::coverage_word_for_reason(false, &gate.line);
             let noted = format!("{} ({})", gate.line, gate.word);
-            record_proxy_gate(state_dir, hop_id, agent, capability, decision, &noted)?;
+            record_proxy_gate(state_dir, hop_id, agent, capability, decision, &noted, None)?;
             bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word)
         }
     }
@@ -1044,6 +1054,62 @@ mod convey_coverage_tests {
         let note = lines[0].note.as_deref().unwrap_or("");
         assert!(note.contains("does not match"), "{note}");
         assert!(note.contains("(mismatch)"), "{note}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn agent_intention_refuse_audits_proxy_agent() {
+        let mut estate =
+            estate_schema::load_estate(&repo_root().join("examples/estate.yaml")).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .calls
+            .push(estate_schema::CallDecl {
+                id: "research".into(),
+                description: None,
+            });
+        let yaml = estate_schema::render_estate_yaml(&estate).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "cell-agent-feed-estate-{}.yaml",
+            std::process::id()
+        ));
+        std::fs::write(&path, yaml).unwrap();
+        let state = state_dir("agent-feed");
+        let err = super::refuse_named_intentions(
+            &path,
+            &state,
+            "peer-hop",
+            "research",
+            &["horizon".to_string()],
+            Some(estate_schema::IntentionKind::Agent),
+            false,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("refuse:intention"), "{msg}");
+        assert!(msg.contains("deny-default"), "{msg}");
+        let lines = feed_collector::proxy_audit_events(&state.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].kind, "proxy.agent");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny-default"));
+        assert_eq!(lines[0].object_class.as_deref(), Some("agent"));
+        assert_eq!(lines[0].agent_id.as_deref(), Some("horizon"));
+        let blocked = state_dir("agent-feed-blocked");
+        std::fs::write(blocked.join("feed"), "not-a-dir").unwrap();
+        let err = super::refuse_named_intentions(
+            &path,
+            &blocked,
+            "peer-hop",
+            "agent:research",
+            &["horizon".to_string()],
+            Some(estate_schema::IntentionKind::Agent),
+            true,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("refuse:proxy-audit"), "{err}");
         let _ = std::fs::remove_file(&path);
     }
 }

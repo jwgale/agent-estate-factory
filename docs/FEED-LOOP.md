@@ -48,8 +48,11 @@ feed cursor` pretty-prints the JSON.
 Convey allow and deny lines use that same file. `estate convey call` and a
 coverage or intention refuse on `estate convey hop` append `proxy.hop` to
 `.cell/feed/events.jsonl` and restamp `.cell/feed/feed-cursor.json`.
-`conveyor-proxy check --feed-dir .cell/feed` appends `proxy.{kind}` the same
-way. `estate feed cursor --feed-dir .cell/feed` shows the watermark. Nothing
+An Agent intention on those paths, and `conveyor-proxy check --feed-dir`,
+appends `proxy.agent` the same way (`allow`, `deny`, or `deny-default`).
+`conveyor-proxy check --feed-dir .cell/feed` appends `proxy.{kind}` for
+`tool`, `mcp`, `mount`, `model`, `memory_read`, and `agent`.
+`estate feed cursor --feed-dir .cell/feed` shows the watermark. Nothing
 in that path promotes a pack.
 
 ## Rails
