@@ -495,6 +495,60 @@ pub fn describe_agent_edge_coverage(estate: &Estate) -> String {
     )
 }
 
+/// One declared call on apply. `line` is the same `own` / `peer` row
+/// [`describe_agent_edge_coverage`] prints. Allow is omitted (quiet).
+/// Deny and deny-default stay visible. Agent-call rows have no
+/// capability-mismatch class, so `fail` is false for those words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCallCoverageCite {
+    pub fail: bool,
+    pub line: String,
+}
+
+/// Declared `calls` only. Undeclared pairs stay on the plan, drift, and
+/// doctor describe lines and are not apply findings. Does not read a mesh
+/// and does not write.
+pub fn agent_call_coverage_cites(estate: &Estate) -> Vec<AgentCallCoverageCite> {
+    let rows = agent_edge_coverage_rows(estate);
+    let mut cites = Vec::new();
+    for subject in &estate.agents {
+        for call in &subject.calls {
+            let Some(target) = estate.agent(&call.id) else {
+                cites.push(AgentCallCoverageCite {
+                    fail: true,
+                    line: format!(
+                        "refuse:agent-call: {} agent {}: deny-default (not an estate agent)",
+                        subject.id, call.id
+                    ),
+                });
+                continue;
+            };
+            let prefix = format!("{} agent {}:", subject.id, target.id);
+            let Some(row) = rows.iter().find(|row| {
+                normalize_name(&row.agent_id) == normalize_name(&subject.id)
+                    && row.line.starts_with(&prefix)
+            }) else {
+                cites.push(AgentCallCoverageCite {
+                    fail: true,
+                    line: format!("refuse:agent-call: {prefix} deny-default (missing edge)"),
+                });
+                continue;
+            };
+            if row.line.contains(": allow (") {
+                continue;
+            }
+            // Deny and deny-default are the coverage words. They are not a
+            // capability mismatch. An unrecognized word fails closed.
+            let known = row.line.contains(": deny-default (") || row.line.contains(": deny (");
+            cites.push(AgentCallCoverageCite {
+                fail: !known,
+                line: row.line.clone(),
+            });
+        }
+    }
+    cites
+}
+
 /// Own-lane memory is allow. Cross-lane memory is deny-default unless an
 /// intention covers it. An explicit deny wins. Each compiled intention is
 /// also a row so allow and deny are visible without reading the estate file.
@@ -1241,6 +1295,39 @@ mod tests {
         let rows = agent_edge_coverage_rows(&estate());
         assert!(rows.iter().any(|row| row.line.contains("(own)")));
         assert!(rows.iter().any(|row| row.line.contains("(peer)")));
+
+        let cites = agent_call_coverage_cites(&allowed);
+        assert_eq!(cites.len(), 1, "{cites:?}");
+        assert!(cites.iter().all(|cite| !cite.fail), "{cites:?}");
+        assert!(
+            cites.iter().any(|cite| cite.line == "horizon agent horizon: deny (own)"),
+            "{cites:?}"
+        );
+        assert!(
+            cites.iter().all(|cite| cite.line != "horizon agent research: allow (peer)"),
+            "{cites:?}"
+        );
+        let bare = {
+            let mut estate = estate();
+            declare_call(&mut estate, "horizon", "research");
+            estate
+        };
+        let defaults = agent_call_coverage_cites(&bare);
+        assert_eq!(defaults.len(), 1, "{defaults:?}");
+        assert!(!defaults[0].fail);
+        assert_eq!(defaults[0].line, "horizon agent research: deny-default (peer)");
+        assert!(agent_call_coverage_cites(&estate()).is_empty());
+        let mut ghost = estate();
+        declare_call(&mut ghost, "horizon", "ghost");
+        let missing = agent_call_coverage_cites(&ghost);
+        assert_eq!(missing.len(), 1, "{missing:?}");
+        assert!(missing[0].fail, "{missing:?}");
+        assert!(
+            missing[0].line.contains("refuse:agent-call")
+                && missing[0].line.contains("not an estate agent"),
+            "{}",
+            missing[0].line
+        );
     }
 
     #[test]
