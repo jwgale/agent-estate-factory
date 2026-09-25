@@ -328,6 +328,17 @@ pub fn sampled_import_dir(alias: &str, train_size: &str, seed: u64) -> PathBuf {
     PathBuf::from(DEFAULT_IMPORT_ROOT).join(format!("{alias}-{train_size}-s{seed}"))
 }
 
+/// Tag-suffixed rust_idiom cache from `classify expand`. The held-out file in this
+/// directory is the source holdout. Journey `--expand-tag` reads it and does not import again.
+pub fn expand_cache_dir(alias: &str, train_size: &str, seed: u64, tag: &str) -> PathBuf {
+    let base = sampled_import_dir(alias, train_size, seed);
+    let name = base
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("{alias}-{train_size}-s{seed}"));
+    base.with_file_name(format!("{name}-{tag}"))
+}
+
 /// Full official splits. Shared across train sizes. A manifest exists only after both splits match.
 pub fn native_cache_dir(alias: &str) -> PathBuf {
     default_import_dir(alias).join("native")

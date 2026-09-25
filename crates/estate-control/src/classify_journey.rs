@@ -916,14 +916,32 @@ fn ollama_inputs(
     ))
 }
 
+fn journey_import_dir(
+    alias: &str,
+    train_size: &str,
+    seed: u64,
+    expand_tag: Option<&str>,
+) -> Result<PathBuf> {
+    match expand_tag {
+        Some(tag) => {
+            let tag = crate::classify_expand::validate_expand_tag(tag)?;
+            Ok(crate::classify_import::expand_cache_dir(
+                alias, train_size, seed, &tag,
+            ))
+        }
+        None => Ok(crate::classify_import::sampled_import_dir(
+            alias, train_size, seed,
+        )),
+    }
+}
+
 fn dataset_prepare_key(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> Result<String> {
     let dataset = req
         .import_dataset
         .ok_or_else(|| anyhow::anyhow!("refuse:classify-journey: dataset is unset"))?;
     let preset = crate::classify_import::preset_by_name(dataset)?;
     let size = crate::classify_import::parse_split_size(req.train_size)?;
-    let import_dir =
-        crate::classify_import::sampled_import_dir(preset.alias, &size.token(), req.seed);
+    let import_dir = journey_import_dir(preset.alias, &size.token(), req.seed, req.expand_tag)?;
     let train_hash = file_sha(&import_dir.join("train.jsonl")).unwrap_or_else(|| "missing".into());
     let held_hash = file_sha(&import_dir.join("heldout.jsonl")).unwrap_or_else(|| "missing".into());
     let _ = paths;
@@ -2152,6 +2170,8 @@ pub struct JourneyRequest<'a> {
     pub base_cache: &'a Path,
     /// `0` scores only the zero-shot base. `N >= 1` also writes `base-few-shot-report.json`.
     pub few_shot: u32,
+    /// Tag-suffixed rust_idiom cache from `classify expand`. Prepare reads that cache and does not import again.
+    pub expand_tag: Option<&'a str>,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -2165,10 +2185,18 @@ pub fn apply_dataset_layout(
     requested_tag: &str,
     out: &Path,
     dataset_name: &str,
+    expand_tag: Option<&str>,
 ) -> Result<(String, PathBuf, String)> {
     let preset = crate::classify_import::preset_by_name(dataset)?;
     let size = crate::classify_import::parse_split_size(train_size)?;
-    let suffix = crate::classify_import::tag_suffix(preset, &size);
+    let mut suffix = crate::classify_import::tag_suffix(preset, &size);
+    if let Some(tag) = expand_tag {
+        let tag = crate::classify_expand::validate_expand_tag(tag)?;
+        if preset.alias != "rust_idiom" {
+            bail!("refuse:classify-journey: --expand-tag is the rust_idiom curriculum cache");
+        }
+        suffix = format!("{suffix}-{tag}");
+    }
     let tag = if requested_tag == DEFAULT_TAG {
         format!("{applied_tag}{suffix}")
     } else {
@@ -2384,7 +2412,16 @@ fn print_plan(
             "dataset: {dataset} train_size: {} heldout_size: {} seed: {} option_order: fixed no-second-split",
             req.train_size, req.heldout_size, req.seed
         );
-        if let Some(dir) = req.from_local {
+        if let Some(tag) = req.expand_tag {
+            let cache = crate::classify_import::preset_by_name(dataset)
+                .and_then(|preset| {
+                    let size = crate::classify_import::parse_split_size(req.train_size)?;
+                    journey_import_dir(preset.alias, &size.token(), req.seed, Some(tag))
+                })
+                .map(|dir| dir.display().to_string())
+                .unwrap_or_else(|_| "missing".into());
+            println!("expand_tag: {tag} cache: {cache} no-import dry-run no teacher");
+        } else if let Some(dir) = req.from_local {
             println!("dataset_source: local {}", dir.display());
         } else if req.import_fetch == crate::classify_import::ImportFetch::RowsApi {
             println!("dataset_source: rows-api");
@@ -2480,27 +2517,35 @@ fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> 
                 if let Some(dataset) = req.import_dataset {
                     let preset = crate::classify_import::preset_by_name(dataset)?;
                     let size = crate::classify_import::parse_split_size(req.train_size)?;
-                    let import_dir = crate::classify_import::sampled_import_dir(
-                        preset.alias,
-                        &size.token(),
-                        req.seed,
-                    );
-                    crate::classify_import::cmd_classify_import(
-                        &crate::classify_import::ImportRequest {
-                            dataset: preset.alias,
-                            train_size: req.train_size,
-                            heldout_size: req.heldout_size,
-                            seed: req.seed,
-                            out: &import_dir,
-                            force: req.force,
-                            native_train: None,
-                            native_test: None,
-                            from_local: req.from_local,
-                            fetch: req.import_fetch,
-                            python: req.python,
-                            cache_root: None,
-                        },
-                    )?;
+                    let import_dir =
+                        journey_import_dir(preset.alias, &size.token(), req.seed, req.expand_tag)?;
+                    if req.expand_tag.is_some() {
+                        if !import_dir.join("train.jsonl").is_file()
+                            || !import_dir.join("heldout.jsonl").is_file()
+                        {
+                            bail!(
+                                "refuse:classify-journey: expand cache {} is missing train.jsonl or heldout.jsonl. Run classify expand --run --tag first.",
+                                import_dir.display()
+                            );
+                        }
+                    } else {
+                        crate::classify_import::cmd_classify_import(
+                            &crate::classify_import::ImportRequest {
+                                dataset: preset.alias,
+                                train_size: req.train_size,
+                                heldout_size: req.heldout_size,
+                                seed: req.seed,
+                                out: &import_dir,
+                                force: req.force,
+                                native_train: None,
+                                native_test: None,
+                                from_local: req.from_local,
+                                fetch: req.import_fetch,
+                                python: req.python,
+                                cache_root: None,
+                            },
+                        )?;
+                    }
                     cmd_classify_prepare_presplit(
                         &import_dir.join("train.jsonl"),
                         &import_dir.join("heldout.jsonl"),
