@@ -457,11 +457,52 @@ pub(crate) fn run() -> Result<()> {
                 python,
                 few_shot,
                 expand_tag,
+                dual,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
                 let llama_cpp_dir =
                     llama_cpp_dir.or_else(|| std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from));
+                if dual {
+                    return crate::classify_journey::cmd_classify_journey_dual(
+                        &crate::classify_journey::DualJourneyRequest {
+                            input: &input,
+                            out: &out,
+                            base: &base,
+                            base_tag: base_tag.as_deref(),
+                            tag: &tag,
+                            endpoint: &endpoint,
+                            dataset_name: &dataset_name,
+                            seed,
+                            held_out_ratio,
+                            max_steps,
+                            quant: &quant,
+                            llama_cpp_dir: llama_cpp_dir.as_deref(),
+                            force,
+                            print,
+                            run,
+                            min_delta,
+                            min_accuracy,
+                            require_significant_lift,
+                            timeout_secs,
+                            together_poll_secs,
+                            train_driver,
+                            together_model: together_model.as_deref(),
+                            together_base_url: &together_base_url,
+                            api_key_env: api_key_env.as_deref(),
+                            preset,
+                            import_dataset: dataset.as_deref(),
+                            train_size: &train_size,
+                            heldout_size: &heldout_size,
+                            from_local: from_local.as_deref(),
+                            import_fetch: fetch,
+                            python: python.as_deref(),
+                            base_cache: &base_cache,
+                            few_shot,
+                            expand_tag: expand_tag.as_deref(),
+                        },
+                    );
+                }
                 let applied = crate::classify_journey::apply_preset(
                     preset,
                     &base,

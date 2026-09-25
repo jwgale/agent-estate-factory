@@ -3736,6 +3736,588 @@ fn run_argv(argv: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `--dual` trains tev1 and glm4-chat on one rust_idiom expand cache.
+pub struct DualJourneyRequest<'a> {
+    pub input: &'a Path,
+    pub out: &'a Path,
+    pub base: &'a str,
+    pub base_tag: Option<&'a str>,
+    pub tag: &'a str,
+    pub endpoint: &'a str,
+    pub dataset_name: &'a str,
+    pub seed: u64,
+    pub held_out_ratio: f64,
+    pub max_steps: Option<u32>,
+    pub quant: &'a str,
+    pub llama_cpp_dir: Option<&'a Path>,
+    pub force: bool,
+    pub print: bool,
+    pub run: bool,
+    pub min_delta: Option<f64>,
+    pub min_accuracy: Option<f64>,
+    pub require_significant_lift: bool,
+    pub timeout_secs: u64,
+    pub together_poll_secs: u64,
+    pub train_driver: TrainDriver,
+    pub together_model: Option<&'a str>,
+    pub together_base_url: &'a str,
+    pub api_key_env: Option<&'a str>,
+    pub preset: JourneyPreset,
+    pub import_dataset: Option<&'a str>,
+    pub train_size: &'a str,
+    pub heldout_size: &'a str,
+    pub from_local: Option<&'a Path>,
+    pub import_fetch: crate::classify_import::ImportFetch,
+    pub python: Option<&'a str>,
+    pub base_cache: &'a Path,
+    pub few_shot: u32,
+    pub expand_tag: Option<&'a str>,
+}
+
+/// Scored base-vs-specialist counts for one student. Absent on `--print`.
+#[derive(Clone, Debug)]
+pub struct DualPresetScore {
+    pub base_accuracy: f64,
+    pub specialist_accuracy: f64,
+    pub delta: f64,
+    pub base_correct: u64,
+    pub base_records: u64,
+    pub specialist_correct: u64,
+    pub specialist_records: u64,
+}
+
+struct DualSide {
+    preset: JourneyPreset,
+    dir_name: &'static str,
+    base: String,
+    tag: String,
+    built_base_tag: &'static str,
+    seat: SeatChat,
+    llama_note: &'static str,
+    together_model: String,
+    out: PathBuf,
+    dataset_name: String,
+}
+
+fn preset_token(preset: JourneyPreset) -> &'static str {
+    match preset {
+        JourneyPreset::Tev1 => "tev1",
+        JourneyPreset::DeepseekR1Distill => "deepseek-r1-distill",
+        JourneyPreset::Glm4Chat => "glm4-chat",
+    }
+}
+
+/// Parent directory for the two preset outs and `dual-compare.json`.
+fn dual_parent_out(out: &Path, train_size: &str, expand_tag: &str) -> Result<PathBuf> {
+    let (_, layout_out, _) = apply_dataset_layout(
+        "rust_idiom",
+        train_size,
+        DEFAULT_TAG,
+        DEFAULT_TAG,
+        Path::new(DEFAULT_JOURNEY_OUT),
+        DEFAULT_DATASET,
+        Some(expand_tag),
+    )?;
+    if out == Path::new(DEFAULT_JOURNEY_OUT) {
+        Ok(PathBuf::from(format!("{}-dual", layout_out.display())))
+    } else {
+        Ok(out.to_path_buf())
+    }
+}
+
+fn validate_dual(req: &DualJourneyRequest<'_>) -> Result<String> {
+    if req.print && req.run {
+        bail!("refuse:classify-journey: pass only one of --print and --run");
+    }
+    if req.preset == JourneyPreset::DeepseekR1Distill {
+        bail!(
+            "refuse:classify-journey: --dual trains tev1 and glm4-chat on one expand cache. DeepSeek is not in this pair"
+        );
+    }
+    if req.train_driver == TrainDriver::Together
+        || req
+            .together_model
+            .map(str::trim)
+            .is_some_and(|model| !model.is_empty())
+    {
+        bail!(
+            "refuse:classify-journey: --dual trains local llamafactory-cli students. Together stays on a single preset"
+        );
+    }
+    if req.base != DEFAULT_BASE {
+        bail!(
+            "refuse:classify-journey: --dual keeps {DEFAULT_BASE} and {GLM4_CHAT_BASE}. Omit --base"
+        );
+    }
+    if req.tag != DEFAULT_TAG {
+        bail!(
+            "refuse:classify-journey: --dual keeps the tev1 and glm4-chat specialist tags. Omit --tag"
+        );
+    }
+    if library_tag(req.base_tag).is_some() {
+        bail!("refuse:classify-journey: --dual builds each base. Omit --base-tag");
+    }
+    let dataset = req.import_dataset.ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: --dual needs --dataset rust_idiom and --expand-tag"
+        )
+    })?;
+    let alias = crate::classify_import::preset_by_name(dataset)?.alias;
+    if alias != "rust_idiom" {
+        bail!("refuse:classify-journey: --dual reads the rust_idiom expand cache");
+    }
+    let tag = req.expand_tag.ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: --dual needs --expand-tag on the rust_idiom cache"
+        )
+    })?;
+    crate::classify_expand::validate_expand_tag(tag)
+}
+
+fn dual_side(
+    preset: JourneyPreset,
+    parent: &Path,
+    train_size: &str,
+    expand_tag: &str,
+    dataset_name: &str,
+) -> Result<DualSide> {
+    let applied = apply_preset(preset, DEFAULT_BASE, DEFAULT_TAG, TrainDriver::Local, None)?;
+    let (tag, _, dataset_name) = apply_dataset_layout(
+        "rust_idiom",
+        train_size,
+        &applied.tag,
+        DEFAULT_TAG,
+        Path::new(DEFAULT_JOURNEY_OUT),
+        dataset_name,
+        Some(expand_tag),
+    )?;
+    let dir_name = preset_token(preset);
+    Ok(DualSide {
+        preset,
+        dir_name,
+        base: applied.base,
+        tag,
+        built_base_tag: applied.built_base_tag,
+        seat: applied.seat,
+        llama_note: applied.llama_note,
+        together_model: applied.together_model,
+        out: parent.join(dir_name),
+        dataset_name,
+    })
+}
+
+fn dual_journey_request<'a>(
+    req: &'a DualJourneyRequest<'a>,
+    side: &'a DualSide,
+    run: bool,
+) -> JourneyRequest<'a> {
+    JourneyRequest {
+        input: req.input,
+        out: &side.out,
+        base: &side.base,
+        base_tag: None,
+        tag: &side.tag,
+        endpoint: req.endpoint,
+        dataset_name: &side.dataset_name,
+        seed: req.seed,
+        held_out_ratio: req.held_out_ratio,
+        max_steps: req.max_steps,
+        quant: req.quant,
+        llama_cpp_dir: req.llama_cpp_dir,
+        force: req.force,
+        print: !run,
+        run,
+        min_delta: req.min_delta,
+        min_accuracy: req.min_accuracy,
+        require_significant_lift: req.require_significant_lift,
+        timeout_secs: req.timeout_secs,
+        together_poll_secs: req.together_poll_secs,
+        train_driver: TrainDriver::Local,
+        together_model: &side.together_model,
+        together_base_url: req.together_base_url,
+        api_key_env: req.api_key_env,
+        built_base_tag: side.built_base_tag,
+        seat: side.seat,
+        llama_note: side.llama_note,
+        preset: side.preset,
+        import_dataset: Some("rust_idiom"),
+        train_size: req.train_size,
+        heldout_size: req.heldout_size,
+        from_local: req.from_local,
+        import_fetch: req.import_fetch,
+        python: req.python,
+        base_cache: req.base_cache,
+        few_shot: req.few_shot,
+        expand_tag: req.expand_tag,
+    }
+}
+
+fn journey_plan_value(req: &JourneyRequest<'_>, cache: &Path, held_sha: &str) -> Result<Value> {
+    let mut paths = JourneyPaths::new(req.out);
+    paths.base_cache = req.base_cache.to_path_buf();
+    paths.few_shot = req.few_shot;
+    paths.few_shot_seed = req.seed;
+    let template = train_template(req.base);
+    let inputs = load_inputs(req, &paths)?;
+    let llama = match req.llama_cpp_dir {
+        Some(dir) => resolve_llama_cpp_note(dir, req.llama_note).ok(),
+        None => None,
+    };
+    let ctx = PlanCtx {
+        paths: &paths,
+        base: req.base,
+        hf_bin: hf_bin_name().unwrap_or("hf"),
+        quant: req.quant,
+        library_tag: None,
+        built_base_tag: req.built_base_tag,
+        specialist_tag: req.tag,
+        llama: llama.as_ref(),
+        inputs: &inputs,
+        check_ollama: false,
+        train_driver: req.train_driver,
+        together_model: req.together_model,
+    };
+    let steps = plan_with(&ctx);
+    let steps: Vec<Value> = steps
+        .iter()
+        .map(|step| {
+            json!({
+                "name": step.name,
+                "action": match step.action {
+                    StepAction::Run => "run",
+                    StepAction::Skip => "skip",
+                },
+                "detail": step.detail,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "schema": "cell-one.classify-journey-plan.v0",
+        "preset": preset_token(req.preset),
+        "base": req.base,
+        "template": template,
+        "specialist_tag": req.tag,
+        "built_base_tag": req.built_base_tag,
+        "out": paths.out.display().to_string(),
+        "cache": cache.display().to_string(),
+        "heldout": cache.join("heldout.jsonl").display().to_string(),
+        "heldout_sha256": held_sha,
+        "steps": steps,
+        "would_train": false,
+        "network": false,
+        "live_pass_recorded": false,
+        "ready_for_live_test": "no",
+        "note": "Print plan only. This file does not train and is not a factory live PASS. READY_FOR_LIVE_TEST stays no."
+    }))
+}
+
+fn score_field(score: Option<&DualPresetScore>, field: &str) -> Value {
+    let Some(score) = score else {
+        return Value::Null;
+    };
+    match field {
+        "base_accuracy" => json!(score.base_accuracy),
+        "specialist_accuracy" => json!(score.specialist_accuracy),
+        "delta" => json!(score.delta),
+        "base_correct" => json!(score.base_correct),
+        "base_records" => json!(score.base_records),
+        "specialist_correct" => json!(score.specialist_correct),
+        "specialist_records" => json!(score.specialist_records),
+        _ => Value::Null,
+    }
+}
+
+fn preset_block(side: &DualSide, score: Option<&DualPresetScore>) -> Value {
+    json!({
+        "preset": side.dir_name,
+        "out": side.out.display().to_string(),
+        "base": side.base,
+        "template": train_template(&side.base),
+        "specialist_tag": side.tag,
+        "comparison": side.out.join("comparison.json").display().to_string(),
+        "base_accuracy": score_field(score, "base_accuracy"),
+        "specialist_accuracy": score_field(score, "specialist_accuracy"),
+        "delta": score_field(score, "delta"),
+        "base_correct": score_field(score, "base_correct"),
+        "base_records": score_field(score, "base_records"),
+        "specialist_correct": score_field(score, "specialist_correct"),
+        "specialist_records": score_field(score, "specialist_records"),
+    })
+}
+
+/// Qwen specialist accuracy minus GLM specialist accuracy, with a Newcombe interval when both scores exist.
+fn qwen_minus_glm(qwen: &DualPresetScore, glm: &DualPresetScore) -> Value {
+    let delta = qwen.specialist_accuracy - glm.specialist_accuracy;
+    let ci = newcombe_delta_ci95(
+        glm.specialist_correct,
+        glm.specialist_records,
+        qwen.specialist_correct,
+        qwen.specialist_records,
+    );
+    json!({
+        "specialist_accuracy": delta,
+        "ci95": match ci {
+            Some((_, low, high)) => json!({"low": low, "high": high, "method": "newcombe-wilson"}),
+            None => Value::Null,
+        }
+    })
+}
+
+fn dual_report_value(
+    mode: &str,
+    cache: &Path,
+    held_sha: &str,
+    expand_tag: &str,
+    train_size: &str,
+    seed: u64,
+    tev1: &DualSide,
+    glm: &DualSide,
+    tev1_score: Option<&DualPresetScore>,
+    glm_score: Option<&DualPresetScore>,
+    prepared_sha: Option<&str>,
+) -> Value {
+    let cross = match (tev1_score, glm_score) {
+        (Some(qwen), Some(glm)) => json!(qwen.specialist_accuracy - glm.specialist_accuracy),
+        _ => Value::Null,
+    };
+    let cross_detail = match (tev1_score, glm_score) {
+        (Some(qwen), Some(glm)) => qwen_minus_glm(qwen, glm),
+        _ => Value::Null,
+    };
+    let note = match mode {
+        "in-progress" => "Scores stay absent until both students finish. A prior compare was cleared. This file is not a completed comparison and is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+        _ => "Local dual comparison of Qwen (tev1) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+    };
+    json!({
+        "schema": "cell-one.classify-journey-dual.v0",
+        "mode": mode,
+        "dataset": "rust_idiom",
+        "expand_tag": expand_tag,
+        "train_size": train_size,
+        "seed": seed,
+        "cache": cache.display().to_string(),
+        "heldout": cache.join("heldout.jsonl").display().to_string(),
+        "heldout_sha256": held_sha,
+        "holdout_shared": true,
+        "prepared_heldout_sha256": prepared_sha,
+        "students": ["tev1", "glm4-chat"],
+        "presets": {
+            "tev1": preset_block(tev1, tev1_score),
+            "glm4-chat": preset_block(glm, glm_score),
+        },
+        "qwen_glm_specialist_delta": cross,
+        "qwen_minus_glm": cross_detail,
+        "factory_live_pass": false,
+        "live_pass_recorded": false,
+        "ready_for_live_test": "no",
+        "note": note
+    })
+}
+
+fn write_dual_report(path: &Path, report: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, format!("{}\n", serde_json::to_string_pretty(report)?))?;
+    Ok(())
+}
+
+/// Drop a prior print stub or scored compare before either student starts.
+/// A mid-pair failure must not leave that file readable as the current result.
+fn mark_dual_compare_started(
+    compare_path: &Path,
+    cache: &Path,
+    held_sha: &str,
+    expand_tag: &str,
+    train_size: &str,
+    seed: u64,
+    tev1: &DualSide,
+    glm: &DualSide,
+) -> Result<()> {
+    if compare_path.is_file() {
+        fs::remove_file(compare_path)?;
+    }
+    let started = dual_report_value(
+        "in-progress",
+        cache,
+        held_sha,
+        expand_tag,
+        train_size,
+        seed,
+        tev1,
+        glm,
+        None,
+        None,
+        None,
+    );
+    write_dual_report(compare_path, &started)
+}
+
+fn score_from_out(out: &Path) -> Result<(DualPresetScore, String)> {
+    let base = side_score(&read_json(&out.join("base-report.json"))?)?;
+    let specialist = side_score(&read_json(&out.join("specialist-report.json"))?)?;
+    let comparison = compare_sides(&base, &specialist);
+    let held = file_sha(&out.join("heldout.jsonl")).ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: missing held-out file in {}",
+            out.display()
+        )
+    })?;
+    Ok((
+        DualPresetScore {
+            base_accuracy: comparison.base_accuracy,
+            specialist_accuracy: comparison.specialist_accuracy,
+            delta: comparison.delta,
+            base_correct: comparison.base_correct,
+            base_records: comparison.base_records,
+            specialist_correct: comparison.specialist_correct,
+            specialist_records: comparison.specialist_records,
+        },
+        held,
+    ))
+}
+
+pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
+    let expand_tag = validate_dual(req)?;
+    let size = crate::classify_import::parse_split_size(req.train_size)?;
+    let cache = crate::classify_import::expand_cache_dir(
+        "rust_idiom",
+        &size.token(),
+        req.seed,
+        &expand_tag,
+    );
+    if !cache.join("train.jsonl").is_file() || !cache.join("heldout.jsonl").is_file() {
+        bail!(
+            "refuse:classify-journey: expand cache {} is missing train.jsonl or heldout.jsonl. Run classify expand --run --tag first.",
+            cache.display()
+        );
+    }
+    let held_sha = file_sha(&cache.join("heldout.jsonl")).ok_or_else(|| {
+        anyhow::anyhow!(
+            "refuse:classify-journey: cannot hash {}",
+            cache.join("heldout.jsonl").display()
+        )
+    })?;
+    let parent = dual_parent_out(req.out, req.train_size, &expand_tag)?;
+    let tev1 = dual_side(
+        JourneyPreset::Tev1,
+        &parent,
+        req.train_size,
+        &expand_tag,
+        req.dataset_name,
+    )?;
+    let glm = dual_side(
+        JourneyPreset::Glm4Chat,
+        &parent,
+        req.train_size,
+        &expand_tag,
+        req.dataset_name,
+    )?;
+    let compare_path = parent.join("dual-compare.json");
+    if !req.run {
+        println!("classify journey dual: print");
+        println!(
+            "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha} no-import dry-run no teacher",
+            cache.display()
+        );
+        mark_dual_compare_started(
+            &compare_path,
+            &cache,
+            &held_sha,
+            &expand_tag,
+            req.train_size,
+            req.seed,
+            &tev1,
+            &glm,
+        )?;
+        println!(
+            "dual-compare: {} in-progress. Scores stay absent until both students finish. This print does not train. It is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+            compare_path.display()
+        );
+        for side in [&tev1, &glm] {
+            let journey = dual_journey_request(req, side, false);
+            let plan = journey_plan_value(&journey, &cache, &held_sha)?;
+            if let Some(dir) = journey.out.parent() {
+                fs::create_dir_all(dir)?;
+            }
+            fs::create_dir_all(journey.out)?;
+            fs::write(
+                journey.out.join("journey-plan.json"),
+                format!("{}\n", serde_json::to_string_pretty(&plan)?),
+            )?;
+            cmd_classify_journey(&journey)?;
+        }
+        let report = dual_report_value(
+            "print",
+            &cache,
+            &held_sha,
+            &expand_tag,
+            req.train_size,
+            req.seed,
+            &tev1,
+            &glm,
+            None,
+            None,
+            None,
+        );
+        write_dual_report(&compare_path, &report)?;
+        println!(
+            "dual-compare: {} This print does not train. It is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+            compare_path.display()
+        );
+        return Ok(());
+    }
+    println!("classify journey dual: run");
+    println!(
+        "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha}",
+        cache.display()
+    );
+    mark_dual_compare_started(
+        &compare_path,
+        &cache,
+        &held_sha,
+        &expand_tag,
+        req.train_size,
+        req.seed,
+        &tev1,
+        &glm,
+    )?;
+    println!(
+        "dual-compare: {} in-progress. Scores stay absent until both students finish. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+        compare_path.display()
+    );
+    for side in [&tev1, &glm] {
+        let journey = dual_journey_request(req, side, true);
+        cmd_classify_journey(&journey)?;
+    }
+    let (qwen_score, qwen_held) = score_from_out(&tev1.out)?;
+    let (glm_score, glm_held) = score_from_out(&glm.out)?;
+    if qwen_held != glm_held {
+        bail!(
+            "refuse:classify-journey: tev1 and glm4-chat held-out files differ ({qwen_held} vs {glm_held})"
+        );
+    }
+    let report = dual_report_value(
+        "run",
+        &cache,
+        &held_sha,
+        &expand_tag,
+        req.train_size,
+        req.seed,
+        &tev1,
+        &glm,
+        Some(&qwen_score),
+        Some(&glm_score),
+        Some(&qwen_held),
+    );
+    write_dual_report(&compare_path, &report)?;
+    println!(
+        "dual-compare: {} Local output only. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+        compare_path.display()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5403,10 +5985,15 @@ mod tests {
             .to_string();
         assert!(err.contains("rust_idiom"), "{err}");
         let rust = journey_import_dir("rust_idiom", "all", 7, Some("rev1")).unwrap();
-        assert!(rust.ends_with("rust_idiom-all-s7-rev1"), "{}", rust.display());
+        assert!(
+            rust.ends_with("rust_idiom-all-s7-rev1"),
+            "{}",
+            rust.display()
+        );
 
         let input = std::env::temp_dir().join("tev1-decisions.jsonl");
-        let out = std::env::temp_dir().join(format!("journey-expand-foreign-{}", std::process::id()));
+        let out =
+            std::env::temp_dir().join(format!("journey-expand-foreign-{}", std::process::id()));
         let base_cache = std::env::temp_dir().join("classify-base-cache");
         let err = cmd_classify_journey(&JourneyRequest {
             input: &input,
@@ -5451,5 +6038,112 @@ mod tests {
         .to_string();
         assert!(err.contains("rust_idiom"), "{err}");
         assert!(!err.contains("seed"), "{err}");
+    }
+
+    #[test]
+    fn dual_compare_report_records_the_specialist_delta_without_a_live_pass() {
+        let parent = std::env::temp_dir().join(format!("dual-compare-unit-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&parent);
+        let tev1 = DualSide {
+            preset: JourneyPreset::Tev1,
+            dir_name: "tev1",
+            base: DEFAULT_BASE.into(),
+            tag: "tev1-specialist-rustidiom-all-rev1".into(),
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: QWEN35_RECENT,
+            together_model: DEFAULT_TOGETHER_MODEL.into(),
+            out: parent.join("tev1"),
+            dataset_name: "rust_idiom".into(),
+        };
+        let glm = DualSide {
+            preset: JourneyPreset::Glm4Chat,
+            dir_name: "glm4-chat",
+            base: GLM4_CHAT_BASE.into(),
+            tag: "glm4-chat-specialist-rustidiom-all-rev1".into(),
+            built_base_tag: GLM4_CHAT_BUILT_BASE_TAG,
+            seat: SeatChat::Glm4,
+            llama_note: GLM4_LLAMA_NOTE,
+            together_model: DEFAULT_TOGETHER_MODEL.into(),
+            out: parent.join("glm4-chat"),
+            dataset_name: "rust_idiom".into(),
+        };
+        let qwen = DualPresetScore {
+            base_accuracy: 0.5,
+            specialist_accuracy: 0.75,
+            delta: 0.25,
+            base_correct: 2,
+            base_records: 4,
+            specialist_correct: 3,
+            specialist_records: 4,
+        };
+        let glm_score = DualPresetScore {
+            base_accuracy: 0.25,
+            specialist_accuracy: 0.25,
+            delta: 0.0,
+            base_correct: 1,
+            base_records: 4,
+            specialist_correct: 1,
+            specialist_records: 4,
+        };
+        let cache = PathBuf::from(".cell/classify-import/rust_idiom-all-s42-rev1");
+        let report = dual_report_value(
+            "run",
+            &cache,
+            "abc",
+            "rev1",
+            "all",
+            42,
+            &tev1,
+            &glm,
+            Some(&qwen),
+            Some(&glm_score),
+            Some("def"),
+        );
+        assert_eq!(report["qwen_glm_specialist_delta"], 0.5);
+        assert_eq!(report["presets"]["tev1"]["specialist_accuracy"], 0.75);
+        assert_eq!(report["presets"]["tev1"]["base_accuracy"], 0.5);
+        assert_eq!(report["presets"]["tev1"]["delta"], 0.25);
+        assert_eq!(report["presets"]["glm4-chat"]["specialist_accuracy"], 0.25);
+        assert_eq!(report["presets"]["glm4-chat"]["base_accuracy"], 0.25);
+        assert_eq!(report["factory_live_pass"], false);
+        assert_eq!(report["live_pass_recorded"], false);
+        assert_eq!(report["ready_for_live_test"], "no");
+        assert_eq!(report["holdout_shared"], true);
+        assert_eq!(report["prepared_heldout_sha256"], "def");
+        let note = report["note"].as_str().unwrap();
+        assert!(note.contains("not a factory live PASS"), "{note}");
+        assert!(note.contains("READY_FOR_LIVE_TEST stays no"), "{note}");
+        assert!(report["qwen_minus_glm"]["ci95"]["method"]
+            .as_str()
+            .unwrap()
+            .contains("newcombe"));
+        let started = dual_report_value(
+            "in-progress",
+            &cache,
+            "abc",
+            "rev1",
+            "all",
+            42,
+            &tev1,
+            &glm,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(started["mode"], "in-progress");
+        assert!(started["qwen_glm_specialist_delta"].is_null());
+        assert!(started["presets"]["tev1"]["specialist_accuracy"].is_null());
+        assert!(started["presets"]["glm4-chat"]["base_accuracy"].is_null());
+        assert_eq!(started["factory_live_pass"], false);
+        assert_eq!(started["live_pass_recorded"], false);
+        assert_eq!(started["ready_for_live_test"], "no");
+        let started_note = started["note"].as_str().unwrap();
+        assert!(started_note.contains("Scores stay absent"), "{started_note}");
+        assert!(
+            started_note.contains("not a factory live PASS"),
+            "{started_note}"
+        );
+        let _ = fs::remove_dir_all(&parent);
     }
 }
