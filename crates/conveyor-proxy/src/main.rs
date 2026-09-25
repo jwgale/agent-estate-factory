@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use conveyor_proxy::{
-    call_hop, call_hop_for_agent, check, declare_hop, list_hop_leases, list_hops, parse_kind,
-    response_from, sync_from_placements, HopDecl, ProxyRequest,
+    authority_report, call_hop, call_hop_for_agent, check, declare_hop_with_estate,
+    list_hop_leases, list_hops, parse_kind, response_from, sync_from_placements_with_estate,
+    HopDecl, ProxyRequest,
 };
 use std::path::PathBuf;
 
@@ -55,6 +56,9 @@ enum Command {
         /// Agent on this hop. Repeat for a population. Empty is not a grant.
         #[arg(long = "agent")]
         agents: Vec<String>,
+        /// When set, enforced is true only if every named agent is allowed the capability.
+        #[arg(long)]
+        estate: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -86,9 +90,19 @@ enum Command {
         state_dir: PathBuf,
     },
     /// Derive hops from placement-actual.json (slim parse).
+    /// Without --estate, leases stay enforced false.
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        #[arg(long)]
+        estate: Option<PathBuf>,
+    },
+    /// Print enforced versus not-enforced. Does not write.
+    Authority {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
     },
 }
 
@@ -144,9 +158,17 @@ fn main() -> Result<()> {
             wired,
             ttl_secs,
             agents,
+            estate,
             state_dir,
         } => {
-            let lease = declare_hop(
+            let loaded = match &estate {
+                Some(path) => Some(
+                    estate_schema::load_estate(path)
+                        .with_context(|| format!("load {}", path.display()))?,
+                ),
+                None => None,
+            };
+            let lease = declare_hop_with_estate(
                 &state_dir,
                 HopDecl {
                     id,
@@ -158,6 +180,7 @@ fn main() -> Result<()> {
                     ttl_secs,
                     agents,
                 },
+                loaded.as_ref(),
             )?;
             println!("{}", serde_json::to_string_pretty(&lease)?);
         }
@@ -205,9 +228,25 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&leases)?);
             }
         }
-        Command::Sync { state_dir } => {
-            let mesh = sync_from_placements(&state_dir)?;
+        Command::Sync { state_dir, estate } => {
+            let loaded = match &estate {
+                Some(path) => Some(
+                    estate_schema::load_estate(path)
+                        .with_context(|| format!("load {}", path.display()))?,
+                ),
+                None => None,
+            };
+            let mesh = sync_from_placements_with_estate(&state_dir, loaded.as_ref())?;
             println!("{}", serde_json::to_string_pretty(&mesh)?);
+        }
+        Command::Authority { state_dir, estate } => {
+            let loaded = estate_schema::load_estate(&estate)
+                .with_context(|| format!("load {}", estate.display()))?;
+            let rows = authority_report(&state_dir, &loaded)?;
+            let enforced = rows.iter().filter(|row| row.status == "enforced").count();
+            let pending = rows.len().saturating_sub(enforced);
+            println!("authority enforced={enforced} not-enforced={pending}");
+            println!("{}", serde_json::to_string_pretty(&rows)?);
         }
     }
     Ok(())

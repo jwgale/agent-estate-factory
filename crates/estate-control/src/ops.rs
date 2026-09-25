@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    call_hop, declare_hop, forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases,
-    list_hop_leases, list_hops, sync_from_placements, HopDecl,
+    authority_report, call_hop, declare_hop_with_estate, forget_expired_hop_leases, hop_now_unix,
+    list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements_with_estate, HopDecl,
 };
 use estate_schema::{
     describe_placements, estate_hash, list_plans, load_estate, load_estate_unvalidated,
@@ -366,9 +366,11 @@ pub(crate) fn cmd_convey_hop(
     wired: bool,
     ttl_secs: Option<u64>,
     agents: &[String],
+    estate_path: Option<&Path>,
     state_dir: &Path,
 ) -> Result<()> {
-    let lease = declare_hop(
+    let estate = load_optional_estate(estate_path)?;
+    let lease = declare_hop_with_estate(
         state_dir,
         HopDecl {
             id: id.to_string(),
@@ -380,6 +382,7 @@ pub(crate) fn cmd_convey_hop(
             ttl_secs,
             agents: agents.to_vec(),
         },
+        estate.as_ref(),
     )?;
     println!("{}", serde_json::to_string_pretty(&lease)?);
     Ok(())
@@ -438,10 +441,36 @@ pub(crate) fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_convey_sync(state_dir: &Path) -> Result<()> {
-    let mesh = sync_from_placements(state_dir)?;
+pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: Option<&Path>) -> Result<()> {
+    let estate = load_optional_estate(estate_path)?;
+    let mesh = sync_from_placements_with_estate(state_dir, estate.as_ref())?;
     println!("{}", serde_json::to_string_pretty(&mesh)?);
     Ok(())
+}
+
+/// Print enforced versus not-enforced. Does not write. Not an identity lookup.
+pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Result<()> {
+    let estate = estate_schema::load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let rows = authority_report(state_dir, &estate)?;
+    let enforced = rows.iter().filter(|row| row.status == "enforced").count();
+    let pending = rows.len().saturating_sub(enforced);
+    println!("authority enforced={enforced} not-enforced={pending}");
+    if rows.is_empty() {
+        println!("no hop leases under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("{}", serde_json::to_string_pretty(&rows)?);
+    Ok(())
+}
+
+fn load_optional_estate(path: Option<&Path>) -> Result<Option<estate_schema::Estate>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let estate = estate_schema::load_estate(path)
+        .with_context(|| format!("load {}", path.display()))?;
+    Ok(Some(estate))
 }
 
 pub(crate) fn cmd_convey_expire(state_dir: &Path, forget: bool) -> Result<()> {

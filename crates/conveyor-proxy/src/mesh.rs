@@ -154,6 +154,10 @@ pub struct HopLease {
     /// Copied from the hop decl. Empty is not a grant to every agent.
     #[serde(default)]
     pub agents: Vec<String>,
+    /// True only when every bound agent is allowed this capability by the estate.
+    /// Absent on old files. Default false: a granted lease is not enforcement.
+    #[serde(default)]
+    pub enforced: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -256,6 +260,7 @@ impl ConveyorHop for BoxHop {
             issued_at: None,
             expires_at: None,
             agents: hop.agents.clone(),
+            enforced: false,
         }
     }
 
@@ -308,6 +313,7 @@ impl ConveyorHop for CloudMeshHop {
             issued_at: None,
             expires_at: None,
             agents: hop.agents.clone(),
+            enforced: false,
         }
     }
 
@@ -528,6 +534,16 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
 /// records that lie. A missing placement file is an empty list, not a spawned
 /// lease. The placement file is not rewritten.
 pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
+    sync_from_placements_with_estate(state_dir, None)
+}
+
+/// Same as [`sync_from_placements`]. When `estate` is present, `enforced` is
+/// true only if every bound agent is allowed the hop capability. Otherwise
+/// the lease stays `enforced: false` (not enforced yet).
+pub fn sync_from_placements_with_estate(
+    state_dir: &Path,
+    estate: Option<&estate_schema::Estate>,
+) -> Result<ConveyorMesh, MeshError> {
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
     let spawned: Vec<String> = places
         .iter()
@@ -552,6 +568,7 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
             lease.spawned = place.spawned && hop.wired;
             lease.granted = hop.wired;
         }
+        lease.enforced = lease_is_enforced(&lease, estate);
         mesh.hops.retain(|h| h.id != hop.id);
         mesh.leases.retain(|l| l.hop_id != hop.id);
         mesh.hops.push(hop);
@@ -562,6 +579,16 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
 }
 
 pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError> {
+    declare_hop_with_estate(state_dir, hop, None)
+}
+
+/// Declare a hop. `enforced` stays false unless `estate` allows the capability
+/// for every named agent. An empty population is not enforced.
+pub fn declare_hop_with_estate(
+    state_dir: &Path,
+    hop: HopDecl,
+    estate: Option<&estate_schema::Estate>,
+) -> Result<HopLease, MeshError> {
     refuse_hop(&hop)?;
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
     refuse_lease_ahead(&hop.id, &hop.agents, &places)?;
@@ -573,6 +600,7 @@ pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError
     }
     let mut lease = hop_driver(&hop.kind)?.declare(&hop);
     stamp_hop_ttl(&mut lease, &hop, hop_now_unix());
+    lease.enforced = lease_is_enforced(&lease, estate);
     let mut mesh = load_interpreted_mesh(state_dir)?;
     mesh.hops.retain(|h| h.id != hop.id);
     mesh.leases.retain(|l| l.hop_id != hop.id);
@@ -861,6 +889,164 @@ pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshEr
     Ok(forgotten)
 }
 
+/// A granted lease is enforced only when the estate allows `capability` for every bound agent.
+/// No estate, an empty population, or a cloud hop stays not enforced.
+pub fn lease_is_enforced(lease: &HopLease, estate: Option<&estate_schema::Estate>) -> bool {
+    let Some(estate) = estate else {
+        return false;
+    };
+    if !lease.granted || lease.agents.is_empty() || hop_is_cloud(&lease.kind) {
+        return false;
+    }
+    lease
+        .agents
+        .iter()
+        .all(|agent| intention_allows(estate, agent, &lease.capability))
+}
+
+fn intention_allows(estate: &estate_schema::Estate, agent_id: &str, capability: &str) -> bool {
+    if estate_schema::is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
+        return false;
+    }
+    let Ok(kind) = resolve_intention_kind(estate, agent_id, capability, None) else {
+        return false;
+    };
+    let object = if kind == estate_schema::IntentionKind::MemoryRead && !capability.contains(':') {
+        format!("lane:{capability}")
+    } else {
+        capability.to_string()
+    };
+    estate_schema::authorize(
+        estate,
+        &estate_schema::AccessRequest {
+            subject_agent: agent_id,
+            kind,
+            object: &object,
+        },
+    )
+    .is_allow()
+}
+
+/// One row of who-may-call-what next to a hop. `not-enforced` is an honest status, not a deny log.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthorityRow {
+    pub agent: String,
+    pub hop_id: String,
+    pub capability: String,
+    pub status: String,
+    pub reason: String,
+}
+
+/// Read-only. Does not write the mesh or the estate. Identity is not resolved.
+pub fn authority_report(
+    state_dir: &Path,
+    estate: &estate_schema::Estate,
+) -> Result<Vec<AuthorityRow>, MeshError> {
+    let mesh = load_interpreted_mesh(state_dir)?;
+    let mut rows = Vec::new();
+    for lease in &mesh.leases {
+        if lease.agents.is_empty() {
+            rows.push(AuthorityRow {
+                agent: "(none)".into(),
+                hop_id: lease.hop_id.clone(),
+                capability: lease.capability.clone(),
+                status: "not-enforced".into(),
+                reason: "empty population is not a grant".into(),
+            });
+            continue;
+        }
+        for agent in &lease.agents {
+            let allows = intention_allows(estate, agent, &lease.capability);
+            let (status, reason) = if hop_is_cloud(&lease.kind) {
+                (
+                    "not-enforced",
+                    "cloud hop is declared, not spawned",
+                )
+            } else if !lease.granted {
+                ("not-enforced", "lease is not granted")
+            } else if lease.enforced && allows {
+                (
+                    "enforced",
+                    "lease.enforced and the estate allows this capability",
+                )
+            } else if allows {
+                (
+                    "not-enforced",
+                    "estate would allow this capability; lease.enforced is false",
+                )
+            } else if lease.enforced {
+                (
+                    "not-enforced",
+                    "lease.enforced is stale; the estate does not allow this capability",
+                )
+            } else {
+                (
+                    "not-enforced",
+                    "the estate does not allow this capability",
+                )
+            };
+            rows.push(AuthorityRow {
+                agent: agent.clone(),
+                hop_id: lease.hop_id.clone(),
+                capability: lease.capability.clone(),
+                status: status.into(),
+                reason: reason.into(),
+            });
+        }
+    }
+    for place in &estate.placements {
+        if place.kind != estate_schema::PlacementKind::Box {
+            rows.push(AuthorityRow {
+                agent: if place.agents.is_empty() {
+                    "(none)".into()
+                } else {
+                    place.agents.join(",")
+                },
+                hop_id: place.id.clone(),
+                capability: "mesh-stub".into(),
+                status: "not-enforced".into(),
+                reason: "cloud placement is declared, not spawned".into(),
+            });
+            continue;
+        }
+        for agent_id in &place.agents {
+            let Some(agent) = estate.agent(agent_id) else {
+                continue;
+            };
+            let mut caps = Vec::new();
+            caps.extend(agent.tools.iter().map(|t| t.id.clone()));
+            caps.extend(agent.mounts.iter().map(|m| m.id.clone()));
+            caps.extend(agent.mcp.iter().map(|m| m.id.clone()));
+            caps.extend(agent.models.iter().map(|m| m.id.clone()));
+            for cap in caps {
+                let already = rows.iter().any(|row| {
+                    row.hop_id == place.id && row.capability == cap && row.agent == *agent_id
+                });
+                if already {
+                    continue;
+                }
+                let enforced = mesh.leases.iter().any(|lease| {
+                    lease.hop_id == place.id
+                        && lease.capability == cap
+                        && lease.enforced
+                        && agent_on(&lease.agents, agent_id)
+                });
+                if enforced {
+                    continue;
+                }
+                rows.push(AuthorityRow {
+                    agent: agent_id.clone(),
+                    hop_id: place.id.clone(),
+                    capability: cap,
+                    status: "not-enforced".into(),
+                    reason: "declared on the estate; no enforced hop lease".into(),
+                });
+            }
+        }
+    }
+    Ok(rows)
+}
+
 /// File SoT committed next to the crate must match the schema snapshot.
 pub fn mesh_file_sot() -> ConveyorMesh {
     ConveyorMesh {
@@ -902,6 +1088,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 issued_at: None,
                 expires_at: None,
                 agents: Vec::new(),
+                enforced: false,
             },
             HopLease {
                 hop_id: "cursor-cloud".into(),
@@ -917,6 +1104,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 issued_at: None,
                 expires_at: None,
                 agents: Vec::new(),
+                enforced: false,
             },
         ],
     }
@@ -2265,6 +2453,86 @@ mod tests {
             .hops
             .iter()
             .any(|h| h.id == "side-box"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn authority_marks_lane_tool_not_enforced_until_estate_allows_every_agent() {
+        let dir = tmp();
+        let placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "cell-one-box",
+                "kind": "box",
+                "host_class": "any",
+                "spawned": true,
+                "wired": true,
+                "agents": ["horizon", "research", "sanctum"]
+            }]
+        })
+        .to_string();
+        std::fs::write(dir.join("placement-actual.json"), &placement).unwrap();
+        let estate = example_estate();
+        let mesh = sync_from_placements_with_estate(&dir, Some(&estate)).unwrap();
+        let lease = mesh.leases.iter().find(|l| l.hop_id == "cell-one-box").unwrap();
+        assert!(lease.granted);
+        assert!(!lease.enforced, "lane-tool is not an estate allow");
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().any(|row| {
+            row.hop_id == "cell-one-box"
+                && row.capability == "lane-tool"
+                && row.status == "not-enforced"
+        }));
+        assert!(rows.iter().any(|row| {
+            row.agent == "research"
+                && row.capability == "notes-append"
+                && row.status == "not-enforced"
+                && row.reason.contains("no enforced hop")
+        }));
+
+        let stamped = declare_hop_with_estate(
+            &dir,
+            HopDecl {
+                id: "notes-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap();
+        assert!(stamped.enforced);
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().any(|row| {
+            row.agent == "research" && row.capability == "notes-append" && row.status == "enforced"
+        }));
+
+        let mixed = declare_hop_with_estate(
+            &dir,
+            HopDecl {
+                id: "notes-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into(), "horizon".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap();
+        assert!(!mixed.enforced, "one denied agent keeps the lease not enforced");
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().any(|row| {
+            row.agent == "horizon"
+                && row.capability == "notes-append"
+                && row.status == "not-enforced"
+        }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

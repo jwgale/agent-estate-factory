@@ -599,8 +599,57 @@ fn blast_radius(
             format!("{}[{who}]", p.id)
         })
         .collect();
+    lines.push("Authority next to the workload (desired; plan does not enforce):".into());
+    let mut authority_lines = Vec::new();
+    for place in &estate.placements {
+        if place.kind != PlacementKind::Box {
+            authority_lines.push(format!(
+                "  not-enforced: {} mesh-stub (cloud placement declared, not spawned)",
+                place.id
+            ));
+            continue;
+        }
+        for agent_id in &place.agents {
+            let Some(agent) = estate.agent(agent_id) else {
+                continue;
+            };
+            for tool in &agent.tools {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} tool {} on {}",
+                    tool.id, place.id
+                ));
+            }
+            for mount in &agent.mounts {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} mount {} on {}",
+                    mount.id, place.id
+                ));
+            }
+            for mcp in &agent.mcp {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} mcp {} on {}",
+                    mcp.id, place.id
+                ));
+            }
+            for model in &agent.models {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} model {} on {}",
+                    model.id, place.id
+                ));
+            }
+        }
+    }
+    if authority_lines.is_empty() {
+        lines.push("  (no placed declarations)".into());
+    } else {
+        lines.extend(authority_lines);
+    }
+    lines.push(
+        "Those rows stay not-enforced until a hop lease sets enforced and convey call --agent allows the capability. Identity stays parked. Not a gateway."
+            .into(),
+    );
     lines.push(format!(
-        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. Identity stays parked. Not a gateway.",
+        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` prints enforced versus not-enforced. Identity stays parked. Not a gateway.",
         if populations.is_empty() {
             "no placements".to_string()
         } else {
@@ -748,6 +797,8 @@ mod tests {
         assert!(review.contains("+ placements:"));
         assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
         assert!(plan.blast_radius_text.contains("cloud-agent stub"));
+        assert!(plan.blast_radius_text.contains("not-enforced: research tool notes-append on cell-one-box"));
+        assert!(plan.blast_radius_text.contains("Identity stays parked"));
     }
 
     #[test]
