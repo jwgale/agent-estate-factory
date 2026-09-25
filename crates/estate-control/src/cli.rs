@@ -98,6 +98,9 @@ pub(crate) enum Command {
     /// check does not write the mesh and does not change floor or models
     /// `in_sync`. A present mesh file that does not parse fails with the
     /// mesh error and is not rewritten. A missing mesh is not a failure.
+    /// After the cites, an Authority section prints the same file check as
+    /// `estate plan` and `estate convey authority` (`would-allow`,
+    /// `would-deny`, `not-enforced`). It does not claim mediation.
     Drift {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
