@@ -84,6 +84,11 @@ pub(crate) enum Command {
         force: bool,
     },
     /// Compare desired estate to regenerable actual-state.
+    /// A placement hop capability that disagrees with hop coverage is
+    /// `refuse:hop-coverage` (mismatch) and fails this command. Deny and
+    /// deny-default are cited and do not fail drift by themselves. The
+    /// check does not write the mesh and does not change floor or models
+    /// `in_sync`.
     Drift {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,

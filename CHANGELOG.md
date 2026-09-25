@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — drift cites hop-coverage mismatch
+
+- `estate drift` cites a placement hop lease, or a box hop declaration that has no lease, when its capability disagrees with placement-derived coverage. The finding quotes `refuse:hop-coverage` in the same shape as `estate doctor`. A capability mismatch fails drift. A matching capability is quiet. Deny and deny-default are cited and do not fail drift by themselves, and they do not change floor or models `in_sync`. A hop id that is not a placement stays out. Cloud hops stay out under the same kind match as mesh authority (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase). The check reads the mesh and does not write it, the leases, or the estate. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — doctor cites hop-coverage mismatch
 
 - `estate doctor` and `estate doctor --strict` cite a placement hop lease, or a box hop declaration that has no lease, when its capability disagrees with placement-derived coverage. The finding quotes `refuse:hop-coverage: capability '…' does not match hop coverage capability '…' (mismatch)` and fails the doctor. A matching capability is quiet on that finding. Deny and deny-default are cited the same way (`refuse:hop-coverage` with those words) and do not fail `--strict`. A hop id that is not a placement stays out. Cloud hops stay out under the same kind match as mesh authority (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase). Empty populations and ungranted leases stay out. The check reads the mesh and does not write it, does not spawn, and does not apply the estate. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
