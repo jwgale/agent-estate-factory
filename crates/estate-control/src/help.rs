@@ -261,8 +261,14 @@ A declared agent call is cited before any write, in the same line plan,
 drift, and doctor print (`subject agent target: word (own|peer)`).
 Allow is quiet. Deny and deny-default are notes and do not fail apply.
 A call target that is not an estate agent fails before writes. Agent-call
-rows have no capability-mismatch class. A hop-coverage mismatch still
-fails before writes. Undeclared pairs stay on plan, drift, and doctor.
+rows have no capability-mismatch class. A memory read is cited in that
+same window, in the line plan, drift, and doctor print
+(`agent memory_read lane: word (own-lane|cross-lane)`). Allow is quiet,
+including own-lane allow. Deny and deny-default, including a cross-lane
+read with no intention, are notes and do not fail apply. A missing or
+unrecognized memory edge fails before writes. Memory rows have no
+capability-mismatch class. A hop-coverage mismatch still fails before
+writes. Undeclared pairs stay on plan, drift, and doctor.
 ";
 
 const RECONCILE: &str = "\
