@@ -13,7 +13,9 @@ mod validate;
 
 pub use compile::{compile_intentions, CompiledIntention};
 pub use error::EstateError;
-pub use firewall::{authorize, read_lane_file, AccessRequest, Decision, Deny};
+pub use firewall::{
+    authorize, describe_model_class_coverage, read_lane_file, AccessRequest, Decision, Deny,
+};
 pub use hash::estate_hash;
 pub use plan::{
     blast_grows, covering_plan, covering_plan_stem, diff_estates, latest_plan, list_plans,

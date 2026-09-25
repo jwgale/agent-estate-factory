@@ -314,7 +314,24 @@ pub fn readiness(estate: &Estate) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use estate_schema::{load_estate_str, IntentionKind};
+    use estate_schema::{load_estate_str, Effect, Intention, IntentionKind};
+
+    fn with_model_class_allows(mut estate: Estate) -> Estate {
+        for (agent, class) in [
+            ("horizon", "frontier"),
+            ("horizon", "local"),
+            ("research", "local"),
+        ] {
+            estate.intentions.push(Intention {
+                subject_agent: agent.into(),
+                object: format!("class:{class}"),
+                kind: IntentionKind::Model,
+                effect: Effect::Allow,
+                note: None,
+            });
+        }
+        estate
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn estate() -> Estate {
@@ -512,7 +529,7 @@ mod tests {
 
     #[test]
     fn a7_horizon_completes_via_frontier_after_local() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let local = MockLocal {
             id: "local_slm".into(),
         };
@@ -627,7 +644,7 @@ mod tests {
 
     #[test]
     fn a8_precheck_blocks_frontier() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let local = MockLocal {
             id: "local_slm".into(),
         };
@@ -657,7 +674,7 @@ mod tests {
 
     #[test]
     fn fail_closed_local_down_does_not_hit_frontier() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let local = DownLocal {
             id: "local_slm".into(),
             reason: ModelError::Unreachable("specialist unreachable".into()),
@@ -698,7 +715,7 @@ mod tests {
 
     #[test]
     fn mlx_stub_fail_closed_no_frontier_fallback() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let local = MlxDriver {
             id: "local_slm".into(),
         };
@@ -729,7 +746,7 @@ mod tests {
 
     #[test]
     fn local_down_http_frontier_does_not_post() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let live = CompatServer::spawn(CompatScript::OpenAi {
             models: vec!["grok-4.7".into()],
         })
@@ -842,7 +859,7 @@ mod tests {
 
     #[test]
     fn http_local_and_frontier_mocks() {
-        let e = estate();
+        let e = with_model_class_allows(estate());
         let local_srv = MockLocalServer::spawn().unwrap();
         let front_srv = MockFrontierServer::spawn("pong").unwrap();
         let local = HttpLocal {

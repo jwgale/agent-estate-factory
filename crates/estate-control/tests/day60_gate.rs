@@ -1,10 +1,8 @@
 //! A5–A9 automated checks on the synthetic mixed-model estate.
 
-use estate_schema::{diff_estates, load_estate_str};
+use estate_schema::{diff_estates, load_estate_str, Effect, Intention, IntentionKind};
 use floor_supervisor::{apply_with_profile_dir, drift_with_roots, stop_runtime};
-use model_estate::{
-    record_bindings, run_task, MockFrontier, MockLocal, TaskAct, TaskRequest,
-};
+use model_estate::{record_bindings, run_task, MockFrontier, MockLocal, TaskAct, TaskRequest};
 
 fn example() -> estate_schema::Estate {
     load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
@@ -28,9 +26,13 @@ fn tmp() -> std::path::PathBuf {
 fn a5_plan_blast_radius_names_sessions_and_bindings() {
     let e = example();
     let plan = diff_estates(&e, None);
-    assert!(plan.blast_radius_text.contains("3 sessions") || plan.blast_radius_text.contains("bind"));
+    assert!(
+        plan.blast_radius_text.contains("3 sessions") || plan.blast_radius_text.contains("bind")
+    );
     assert!(plan.blast_radius_text.contains("live-capable"));
-    assert!(plan.blast_radius_text.contains("Control does not invoke models"));
+    assert!(plan
+        .blast_radius_text
+        .contains("Control does not invoke models"));
     let same = diff_estates(&e, Some(&e));
     assert!(same.blast_radius_text.contains("empty"));
 }
@@ -62,8 +64,16 @@ fn a7_a8_a9_mixed_path_obeys_firewall() {
         id: "xai_grok".into(),
         reply: "pong".into(),
     };
+    let mut granted = e.clone();
+    granted.intentions.push(Intention {
+        subject_agent: "horizon".into(),
+        object: "class:frontier".into(),
+        kind: IntentionKind::Model,
+        effect: Effect::Allow,
+        note: None,
+    });
     let a7 = run_task(
-        &e,
+        &granted,
         &TaskRequest {
             agent_id: "horizon".into(),
             act: TaskAct::Model,
