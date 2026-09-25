@@ -119,3 +119,57 @@ fn doctor_strict_fails_on_empty_root() {
     assert!(!out.status.success(), "empty root must fail --strict");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn doctor_prints_security_iac_coverage() {
+    let out = estate_bin()
+        .args([
+            "doctor",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &repo_root()
+                .join("target/test-doctor-coverage")
+                .display()
+                .to_string(),
+        ])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("Security-as-IaC"), "{text}");
+    assert!(text.contains("horizon frontier xai_grok: deny-default"), "{text}");
+    assert!(text.contains("research tool notes-append: deny-default"), "{text}");
+    assert!(text.contains("research mount notes: deny-default"), "{text}");
+    assert!(!text.contains("Strict intentions"), "{text}");
+}
+
+#[test]
+fn doctor_strict_intentions_fails_on_locked_example() {
+    let out = estate_bin()
+        .args([
+            "doctor",
+            "--strict-intentions",
+            "--root",
+            &repo_root().display().to_string(),
+            "--state-dir",
+            &repo_root()
+                .join("target/test-doctor-strict-intentions")
+                .display()
+                .to_string(),
+        ])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "{text}");
+    assert!(text.contains("strict-intentions"), "{text}");
+    assert!(text.contains("deny-default"), "{text}");
+}

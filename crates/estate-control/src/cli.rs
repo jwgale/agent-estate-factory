@@ -239,6 +239,10 @@ pub(crate) enum Command {
         /// Pre-merge operator checks. Local only. No live Mac / GPU.
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// Fail when a declared tool, MCP, mount, or model is deny-default.
+        /// Not part of `--strict`. Not used by `make smoke` or `make gate-90`.
+        #[arg(long, default_value_t = false)]
+        strict_intentions: bool,
     },
     /// Append-only `.cell/sessions.jsonl` (spawn/unspawn/suspend/resume).
     Sessions {

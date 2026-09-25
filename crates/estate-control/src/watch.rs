@@ -3,7 +3,8 @@ use conveyor_proxy::{
     hop_now_unix, list_expired_hop_leases,
 };
 use estate_schema::{
-    estate_hash, latest_plan, load_estate,
+    describe_declared_coverage, describe_model_class_coverage, estate_hash, latest_plan,
+    load_estate,
 };
 use feed_collector::list_open_proposals;
 use floor_supervisor::{
@@ -315,6 +316,10 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
     );
     doctor_cell_frontier(state_dir, &mut fails);
 
+    println!("\nSecurity-as-IaC");
+    println!("---------------");
+    print_doctor_intention_coverage(root, &mut fails);
+
     println!("\nHealth");
     println!("------");
     if fails.is_empty() {
@@ -328,6 +333,30 @@ pub(crate) fn cmd_doctor(root: &Path, state_dir: &Path) -> Result<()> {
             println!("  FAIL  {fail}");
         }
         bail!("doctor failed ({} check(s))", fails.len());
+    }
+}
+
+fn print_doctor_intention_coverage(root: &Path, fails: &mut Vec<String>) {
+    let path = root.join("examples/estate.yaml");
+    if !path.is_file() {
+        println!("  note  examples/estate.yaml missing (coverage skipped)");
+        return;
+    }
+    let estate = match load_estate(&path) {
+        Ok(estate) => estate,
+        Err(err) => {
+            println!("  FAIL  examples/estate.yaml: {err}");
+            fails.push(format!("examples/estate.yaml: {err}"));
+            return;
+        }
+    };
+    println!("model class:");
+    for line in describe_model_class_coverage(&estate).lines() {
+        println!("  {line}");
+    }
+    println!("tool mcp mount:");
+    for line in describe_declared_coverage(&estate).lines() {
+        println!("  {line}");
     }
 }
 
