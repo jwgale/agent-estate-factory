@@ -1,8 +1,19 @@
 # North star
 
-One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs.
+Next-generation harness and custom AI creator suite: first-class agents under a security-first control suite, a Grok Bot–like harness, and on-spot specialty SLMs, on one box with sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera) and equal-class frontier+local.
 
 Locked defaults: [`../charter.md`](../charter.md). Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md). `estate help north-star` prints this sentence.
+
+Cell One is that suite. Training a specialty model is one facet. Overnight packing may stay SLM-heavy. This page is the vision. It does not rebalance that overnight work.
+
+## Suite
+
+Pillars, in this order:
+
+1. **Agents.** Spin up and run agents as first-class under security-as-IaC. Sacred isolation, plan then apply, fail closed. Control does not complete. Promote stays refused. The curator is Jason.
+2. **Harness.** Grok Bot–like look and feel. That is the aspirational product surface. The UI may still be deferred as implementation.
+3. **On-spot specialty SLMs.** Create, train, enrich, and seat purpose-built small models when specialty work needs them. One facet.
+4. **Optional later.** A central model brain that learns from the user. Parked. Not a commitment to ship now.
 
 ## Cell One
 
@@ -12,9 +23,9 @@ Frontier (`xai_grok`) and local (`local_slm`) are equal-class bindings. The loca
 
 Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom stay out. Sanctum stays a lane.
 
-## Suite
+## Beachhead
 
-Both jobs are first-class.
+The beachhead under the suite is still the local seat and purpose-built SLMs. Agents and the harness sit above that work. They are not a later add-on.
 
 1. A local runtime is an ecosystem seat. Ollama fills it today. Another process can fill it tomorrow. Catalog, route, and bind take any entrant. Integrate that driver.
 2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
@@ -31,7 +42,7 @@ Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+
 - `estate convey` is a lease-bound hop stub.
 - A `cursor-cloud` placement is a declared lease. Floor records the lease.
 - Native MLX, vLLM, and TRT stay parked catalog cards.
-- Anti-shrink: Ollama wrapper-as-product, LM Studio-alone, AI gateway, Grok Bot clone. Also MCP catalog, chat UI, weight browser, agent farm, frontier-proxy-only, local-studio-only.
+- Anti-shrink: Ollama wrapper-as-product, LM Studio-alone, AI gateway, a thin Grok Bot clone without the estate. The Grok Bot–like look and feel stays. Also MCP catalog, a UI-only shell, weight browser, undirected agent sprawl, frontier-proxy-only, local-studio-only. Agents and controlled spin-up stay first-class. An eval harness stays refused. The suite harness is the creator and control surface.
 
 ## Operator loop
 

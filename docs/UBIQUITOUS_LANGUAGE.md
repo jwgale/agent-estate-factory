@@ -96,12 +96,14 @@ Where agents run. `box` is this Cell One. `cloud-agent` (`cursor-cloud`) is a de
 
 ## Suite
 
-Both are first-class:
+Next-generation harness and custom AI creator suite. Pillars, in order:
 
-1. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant.
-2. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
+1. Agents. Spin up and run agents as first-class under security-as-IaC. Sacred isolation, plan/apply, fail closed.
+2. Harness. Grok Bot–like look and feel. The UI may still be deferred.
+3. On-spot specialty SLMs. Create, train, enrich, and seat purpose-built small models when the work needs them. One facet. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
+4. Optional later. A central model brain that learns from the user. Parked. Not a commitment.
 
-Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. `llamafactory-lora` facilitates LoRA without quantization by writing a LLaMA-Factory recipe, `llamafactory-qlora` facilitates QLoRA the same way, `axolotl-lora` writes the bf16 Axolotl YAML, and `axolotl-qlora` writes the 4-bit Axolotl YAML; the factory does not run the trainer. Ollama is the local-run seat. The suite is that portable seat and facilitation of purpose-built SLMs. Integrate the driver that already does the job. `READY_FOR_LIVE_TEST` stays no. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. `llamafactory-lora` facilitates LoRA without quantization by writing a LLaMA-Factory recipe, `llamafactory-qlora` facilitates QLoRA the same way, `axolotl-lora` writes the bf16 Axolotl YAML, and `axolotl-qlora` writes the 4-bit Axolotl YAML; the factory does not run the trainer. Ollama is the local-run seat. That portable seat and facilitation of purpose-built SLMs are one facet of the suite. Integrate the driver that already does the job. `READY_FOR_LIVE_TEST` stays no. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Aliases to avoid
 
@@ -111,8 +113,8 @@ Draft word on the left. Charter term on the right.
 | --- | --- |
 | gateway, AI gateway, MCP catalog | control does not complete; conveyor allow/deny |
 | Ollama wrapper-as-product | local-runtime seat; integrate the driver |
-| LM Studio-alone, chat UI, weight browser | local-runtime seat inside the estate |
-| Grok Bot clone, agent farm, computer-use farm | estate; lanes Horizon / Research / Sanctum |
+| LM Studio-alone, weight browser, UI-only shell | local-runtime seat inside the estate; harness look and feel stays in the suite |
+| thin Grok Bot clone (look without the estate), undirected agent sprawl, computer-use farm | agents under security-as-IaC; lanes Horizon / Research / Sanctum |
 | frontier-proxy-only | equal-class frontier and local; `model.local.down` |
 | local-studio-only | equal-class bindings; purpose-built SLM stays in the suite |
 | capability mesh (as the product) | convey, lease-bound hop stub. Path `.cell/conveyor-mesh.json` stays a filename |

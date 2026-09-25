@@ -338,11 +338,18 @@ north-star — Agent Estate Factory
 charter prints this same page. charter.md is the source of truth.
 Words: docs/UBIQUITOUS_LANGUAGE.md.
 
-One-box Agent Estate Factory — plan/apply IaC, sacred isolation
-(Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class
-frontier+local, manual enrich packs.
+Next-generation harness and custom AI creator suite: first-class agents
+under a security-first control suite, a Grok Bot–like harness, and
+on-spot specialty SLMs, on one box with sacred isolation (Cyera CI +
+Rust classroom out; Sanctum is not Cyera) and equal-class frontier+local.
 
-Suite (first-class):
+Pillars, in order:
+- Agents. Spin up and run agents as first-class under security-as-IaC. Sacred isolation, plan/apply, fail closed. Control does not complete.
+- Harness. Grok Bot–like look and feel. The UI may still be deferred.
+- Specialty SLMs. Create, train, enrich, and seat purpose-built small models when the work needs them. One facet.
+- Later, optional. A central model brain that learns from the user. Parked. Not a commitment.
+
+Beachhead (overnight packing may stay SLM-heavy; this page does not rebalance it):
 - A local runtime is an ecosystem seat. Ollama is today's entrant. Catalog / route / bind take the next process.
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
 - Facilitate train/enrich of purpose-built small-parameter models. Open-source SLMs get more common.
@@ -352,9 +359,10 @@ Suite (first-class):
 Anti-shrink:
 - Not a gateway. Not an MCP catalog.
 - Not an Ollama wrapper-as-product. Not LM Studio-alone.
-- Not a Grok Bot clone. Not an agent farm.
+- Not a thin Grok Bot clone without the estate. The look and feel stays.
+- Not a UI-only shell. Not undirected agent sprawl. Agents stay first-class.
 - Not frontier-proxy-only. Not a local-studio-only shrink.
-- Enrich packs stay manual. The curator accepts by hand.
+- Not a weight browser. Enrich packs stay manual. The curator accepts by hand.
 
 Pointers:
   charter.md
