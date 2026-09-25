@@ -926,19 +926,19 @@ fn extract_message_text(body: &Value) -> Option<String> {
     Some(fold_thinking(text, thinking))
 }
 
-struct HttpFailure {
-    status: u16,
-    body: String,
+pub(crate) struct HttpFailure {
+    pub status: u16,
+    pub body: String,
 }
 
-enum HttpOutcome {
+pub(crate) enum HttpOutcome {
     Ok(String),
     Fail(HttpFailure),
 }
 
 const SNIPPET_CHARS: usize = 180;
 
-fn scrub_snippet(text: &str, secret: Option<&str>) -> String {
+pub(crate) fn scrub_snippet(text: &str, secret: Option<&str>) -> String {
     let cleaned = match secret {
         Some(secret) if !secret.is_empty() => text.replace(secret, "[redacted]"),
         _ => text.to_string(),
@@ -950,7 +950,12 @@ fn scrub_snippet(text: &str, secret: Option<&str>) -> String {
     out
 }
 
-fn post_chat(url: &str, body: &Value, api_key: Option<&str>, timeout: Duration) -> HttpOutcome {
+pub(crate) fn post_chat(
+    url: &str,
+    body: &Value,
+    api_key: Option<&str>,
+    timeout: Duration,
+) -> HttpOutcome {
     let agent = ureq::AgentBuilder::new().timeout(timeout).build();
     let mut req = agent.post(url).set("Content-Type", "application/json");
     if let Some(key) = api_key {

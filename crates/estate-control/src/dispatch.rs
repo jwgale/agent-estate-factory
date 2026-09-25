@@ -456,6 +456,7 @@ pub(crate) fn run() -> Result<()> {
                 fetch,
                 python,
                 few_shot,
+                expand_tag,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -476,6 +477,7 @@ pub(crate) fn run() -> Result<()> {
                         &tag,
                         &out,
                         &dataset_name,
+                        expand_tag.as_deref(),
                     )?
                 } else {
                     (applied.tag.clone(), out.clone(), dataset_name)
@@ -518,9 +520,43 @@ pub(crate) fn run() -> Result<()> {
                         python: python.as_deref(),
                         base_cache: &base_cache,
                         few_shot,
+                        expand_tag: expand_tag.as_deref(),
                     },
                 )
             }
+            ClassifyCommand::Expand {
+                dataset,
+                train,
+                heldout,
+                from_local,
+                out,
+                tag,
+                train_size,
+                seed,
+                print,
+                run,
+                endpoint,
+                model,
+                api_key_env,
+                timeout_secs,
+            } => crate::classify_expand::cmd_classify_expand(
+                &crate::classify_expand::ExpandRequest {
+                    dataset: &dataset,
+                    train: train.as_deref(),
+                    heldout: heldout.as_deref(),
+                    from_local: from_local.as_deref(),
+                    out: out.as_deref(),
+                    tag: &tag,
+                    train_size: &train_size,
+                    seed,
+                    print,
+                    run,
+                    endpoint: endpoint.as_deref(),
+                    model: model.as_deref(),
+                    api_key_env: api_key_env.as_deref(),
+                    timeout_secs,
+                },
+            ),
         },
         Command::Packs { command } => match command {
             PacksCommand::List { drop_dir } => cmd_feed_list(&drop_dir),

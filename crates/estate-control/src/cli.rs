@@ -693,6 +693,62 @@ pub(crate) enum ClassifyCommand {
         /// The report is `base-few-shot-report.json`. It does not record a live PASS.
         #[arg(long, default_value_t = 0)]
         few_shot: u32,
+        /// Read a `classify expand` cache (`.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/`) instead of importing again.
+        /// The specialist tag and `--out` gain `-<tag>` when they are still the defaults. rust_idiom only. Does not call the teacher.
+        #[arg(long)]
+        expand_tag: Option<String>,
+    },
+    /// Grow the rust_idiom FixedClasses curriculum with an OpenAI-compatible coding teacher.
+    /// `--print` is the default. It writes `expand-plan.json` and does not call the network.
+    /// `--run` reads `TEACHER_API_KEY` or `--api-key-env` (for example `OPENAI_API_KEY`) and never prints the value.
+    /// Inputs are an existing rust_idiom train JSONL or import cache, and an optional raw Rust snippet JSONL (`--from-local`).
+    /// Output is tev1 A=NeedsFix, B=Idiomatic JSONL in `.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/`.
+    /// Held-out commits stay out of the expanded train. `classify journey --dataset rust_idiom --expand-tag <tag>` trains that cache and does not split again.
+    /// Parquet is refused. This command does not train. Does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
+    Expand {
+        /// `rust_idiom` or `bigcode/commitpackft`.
+        #[arg(long, default_value = "rust_idiom")]
+        dataset: String,
+        /// tev1 train JSONL, or an import cache directory that contains `train.jsonl` and `heldout.jsonl`.
+        #[arg(long)]
+        train: Option<PathBuf>,
+        /// Held-out tev1 JSONL. Required when `--train` is a file. A cache directory supplies its own `heldout.jsonl`.
+        #[arg(long)]
+        heldout: Option<PathBuf>,
+        /// Raw Rust snippet JSONL (`snippet`, `text`, `code`, or `old_contents`). The teacher writes before/after pairs. Not modified. Parquet is refused.
+        #[arg(long)]
+        from_local: Option<PathBuf>,
+        /// Cache directory. Default: `.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Suffix on the cache directory and on the journey tag. Letters, digits, `-`, or `_`.
+        #[arg(long)]
+        tag: String,
+        /// Train-size token recorded on the cache. Same token `classify journey --train-size` uses. Default `all`.
+        #[arg(long, default_value = "all")]
+        train_size: String,
+        /// Names the expand cache directory, same token as the sampled import path. Default 42.
+        /// The report `holdout_seed` is read from the source import or native manifest, not from this flag.
+        #[arg(long, default_value_t = crate::classify_import::DEFAULT_IMPORT_SEED)]
+        seed: u64,
+        /// Write `expand-plan.json` only. This is the default. Does not call the teacher.
+        #[arg(long, default_value_t = false)]
+        print: bool,
+        /// Call the teacher and write `train.jsonl`, a byte copy of the held-out file, and `expand-report.json`.
+        #[arg(long, default_value_t = false)]
+        run: bool,
+        /// OpenAI-compatible base URL. `/v1/chat/completions` is added when it is missing. Used only with `--run`.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Model id sent in the chat body. Used only with `--run`.
+        #[arg(long)]
+        model: Option<String>,
+        /// Environment variable that holds the teacher API key. Default `TEACHER_API_KEY`. `OPENAI_API_KEY` is the other common name. The value is never printed.
+        #[arg(long)]
+        api_key_env: Option<String>,
+        /// Per-request HTTP timeout in seconds.
+        #[arg(long, default_value_t = 60)]
+        timeout_secs: u64,
     },
     /// Compile-and-test grader for MultiPL-E Rust and HumanEvalPack Rust.
     /// Generation tasks are not FixedClasses A/B. `--print` is the default and does not compile or download.
