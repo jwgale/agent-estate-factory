@@ -160,6 +160,10 @@ fn status_prints_the_same_not_enforced_section_as_the_other_surfaces() {
         "{section}"
     );
     assert!(
+        section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+        "{section}"
+    );
+    assert!(
         section.contains("research notes-append cell-one-box: not-enforced --"),
         "{section}"
     );
@@ -296,6 +300,15 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
         section.contains("no hop lease names this capability"),
         "{section}"
     );
+    let reasons = section
+        .lines()
+        .find(|line| line.starts_with("not-enforced reasons:"))
+        .unwrap_or_else(|| panic!("missing reason classes\n{section}"));
+    assert!(
+        reasons.contains("no-lease=") && reasons.contains("cloud="),
+        "{reasons}"
+    );
+    assert!(!reasons.contains("missing-mesh"), "{reasons}");
     assert!(
         !section.contains("conveyor-mesh.json is absent"),
         "{section}"

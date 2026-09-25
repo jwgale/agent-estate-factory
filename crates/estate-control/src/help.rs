@@ -206,7 +206,10 @@ convey authority print. Counts are would-allow, would-deny, and
 not-enforced. One line per row. A missing conveyor-mesh.json stays
 not-enforced, cites that the file is absent, and does not invent a
 lease. A present mesh with no lease for a declared capability stays
-not-enforced and says no hop lease names it. The section has no
+not-enforced and says no hop lease names it. After the counts, a
+line names non-zero not-enforced reason classes (missing-mesh, no-lease,
+cloud, ungranted, empty-population, other). Zero classes are omitted.
+The section has no
 enforced status and does not claim a worker called the conveyor. A
 mesh that does not parse is the existing hop-lease refuse before the
 page and does not invent
@@ -294,8 +297,9 @@ After those cites, plan prints an Authority section. The text is
 drift, apply, doctor, status, and convey authority print. A missing
 conveyor-mesh.json stays not-enforced and cites that the file is
 absent. A present mesh with no lease for a declared capability stays
-not-enforced and says no hop lease names it. The section does not
-write and does not claim a worker called the conveyor.
+not-enforced and says no hop lease names it. After the counts, a
+line names non-zero not-enforced reason classes and omits zeros. The
+section does not write and does not claim a worker called the conveyor.
 ";
 
 const APPLY: &str = "\
@@ -350,7 +354,8 @@ print. Counts are would-allow, would-deny, and not-enforced. One line
 per row. A missing conveyor-mesh.json stays not-enforced, cites that
 the file is absent, and does not invent a lease. A present mesh with
 no lease for a declared capability stays not-enforced and says no hop
-lease names it. The section has no enforced status and does not claim
+lease names it. After the counts, a line names non-zero not-enforced
+reason classes and omits zeros. The section has no enforced status and does not claim
 a worker called the conveyor. A hop-coverage mismatch prints that
 section, then fails
 before any estate, mesh, lease, or apply-audit write. A hard agent-call,

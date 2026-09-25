@@ -1559,6 +1559,10 @@ mod drift_authority_section_tests {
             "{section}"
         );
         assert!(
+            section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+            "{section}"
+        );
+        assert!(
             !section.contains("would-deny=0 not-enforced=0"),
             "{section}"
         );

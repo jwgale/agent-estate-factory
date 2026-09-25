@@ -4652,6 +4652,10 @@ mod plan_authority_section_tests {
             section.contains("authority would-allow=0 would-deny=0 not-enforced="),
             "{section}"
         );
+        assert!(
+            section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+            "{section}"
+        );
         assert!(section.contains("not-enforced="));
         assert!(
             !section.contains("would-deny=0 not-enforced=0"),
@@ -4963,6 +4967,10 @@ mod apply_authority_section_tests {
         assert_same_printer(&estate, &state);
         assert!(
             section.contains("authority would-allow=0 would-deny=0 not-enforced="),
+            "{section}"
+        );
+        assert!(
+            section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
             "{section}"
         );
         assert!(

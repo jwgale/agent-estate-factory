@@ -1117,16 +1117,10 @@ fn lease_authority_status(
     agent: &str,
 ) -> (String, String) {
     if hop_is_cloud(&lease.kind) {
-        return (
-            "not-enforced".into(),
-            "cloud hop is declared, not spawned. Not mediated.".into(),
-        );
+        return ("not-enforced".into(), CLOUD_HOP_REASON.into());
     }
     if !lease.granted {
-        return (
-            "not-enforced".into(),
-            "lease is not granted. Not mediated.".into(),
-        );
+        return ("not-enforced".into(), UNGRANTED_LEASE_REASON.into());
     }
     match hop_coverage_authority(estate, &lease.hop_id, agent, &lease.capability) {
         HopAuthority::CoverageRefuse(reason) => ("would-deny".into(), reason),
@@ -1173,7 +1167,9 @@ fn authority_status_word(status: &str) -> &str {
 /// Shared text for `estate plan`, `estate drift`, `estate apply` (including
 /// dry-run), `estate doctor` (including `--strict`), `estate status`, and
 /// `estate convey authority`.
-/// Summary counts and one line per row (agent, capability, hop, status, reason).
+/// Summary counts, then one `not-enforced reasons:` line when that count is
+/// non-zero, then the uncertain non-mediation line, then one line per row
+/// (agent, capability, hop, status, reason). Zero reason classes are omitted.
 /// Print-only. Does not write. Does not claim a worker called the conveyor.
 /// An empty row list says there are no hop leases and does not invent one.
 pub fn describe_authority_section(rows: &[AuthorityRow], state_dir: &Path) -> String {
@@ -1197,8 +1193,14 @@ pub fn describe_authority_section(rows: &[AuthorityRow], state_dir: &Path) -> St
         "Authority".to_string(),
         "---------".to_string(),
         format!("authority would-allow={allow} would-deny={deny} not-enforced={pending}"),
-        "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor.".to_string(),
     ];
+    if let Some(reasons) = not_enforced_reason_summary(rows) {
+        lines.push(reasons);
+    }
+    lines.push(
+        "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+            .to_string(),
+    );
     if rows.is_empty() {
         lines.push(format!("no hop leases under {}", state_dir.display()));
     } else {
@@ -1210,6 +1212,75 @@ pub fn describe_authority_section(rows: &[AuthorityRow], state_dir: &Path) -> St
 const DECLARED_NO_LEASE_REASON: &str =
     "declared on the estate; no hop lease names this capability. Not mediated.";
 const CLOUD_PLACEMENT_REASON: &str = "cloud placement is declared, not spawned. Not mediated.";
+const CLOUD_HOP_REASON: &str = "cloud hop is declared, not spawned. Not mediated.";
+const UNGRANTED_LEASE_REASON: &str = "lease is not granted. Not mediated.";
+const EMPTY_POPULATION_REASON: &str =
+    "empty population is not a grant. This file check is not mediation.";
+
+/// Print order for the summary. A zero count is left off the line.
+const NOT_ENFORCED_REASON_CLASSES: [&str; 6] = [
+    "missing-mesh",
+    "no-lease",
+    "cloud",
+    "ungranted",
+    "empty-population",
+    "other",
+];
+
+/// One class per not-enforced row. `would-allow` and `would-deny` are not
+/// passed here. A cloud declared-not-spawned sentence stays `cloud` when it
+/// also cites an absent mesh file. Any other reason that cites the absent
+/// file is `missing-mesh`. A reason that matches none of the named classes
+/// is `other` so the row is still counted.
+fn not_enforced_reason_class(reason: &str) -> &'static str {
+    if cloud_not_spawned_reason(reason) {
+        "cloud"
+    } else if reason.contains(&mesh_file_absent_cite()) {
+        "missing-mesh"
+    } else if reason == DECLARED_NO_LEASE_REASON {
+        "no-lease"
+    } else if reason == UNGRANTED_LEASE_REASON {
+        "ungranted"
+    } else if reason == EMPTY_POPULATION_REASON {
+        "empty-population"
+    } else {
+        "other"
+    }
+}
+
+fn cloud_not_spawned_reason(reason: &str) -> bool {
+    reason.starts_with("cloud placement is declared, not spawned")
+        || reason.starts_with("cloud hop is declared, not spawned")
+}
+
+/// `None` when no row's status word is `not-enforced`. Otherwise one line,
+/// zero classes omitted, in `NOT_ENFORCED_REASON_CLASSES` order.
+fn not_enforced_reason_summary(rows: &[AuthorityRow]) -> Option<String> {
+    let mut counts = [0usize; NOT_ENFORCED_REASON_CLASSES.len()];
+    let mut any = false;
+    for row in rows {
+        if authority_status_word(&row.status) != "not-enforced" {
+            continue;
+        }
+        any = true;
+        let class = not_enforced_reason_class(&row.reason);
+        let idx = NOT_ENFORCED_REASON_CLASSES
+            .iter()
+            .position(|name| *name == class)
+            .expect("reason class is one of the printed tokens");
+        counts[idx] += 1;
+    }
+    if !any {
+        return None;
+    }
+    let parts: Vec<String> = NOT_ENFORCED_REASON_CLASSES
+        .iter()
+        .zip(counts)
+        .filter(|(_, count)| *count > 0)
+        .map(|(name, count)| format!("{name}={count}"))
+        .collect();
+    Some(format!("not-enforced reasons: {}", parts.join(" ")))
+}
 
 /// A missing mesh file is not an empty lease list that was read.
 fn mesh_file_absent_cite() -> String {
@@ -1264,8 +1335,7 @@ pub fn authority_report(
                     hop_id: lease.hop_id.clone(),
                     capability: lease.capability.clone(),
                     status: "not-enforced".into(),
-                    reason: "empty population is not a grant. This file check is not mediation."
-                        .into(),
+                    reason: EMPTY_POPULATION_REASON.into(),
                 });
                 continue;
             }
@@ -2847,6 +2917,19 @@ mod tests {
         })
     }
 
+    fn reasons_line(text: &str) -> &str {
+        text.lines()
+            .find(|line| line.starts_with("not-enforced reasons:"))
+            .unwrap_or_else(|| panic!("missing not-enforced reasons line\n{text}"))
+    }
+
+    fn reason_summary_sits_between_counts_and_uncertain(text: &str) -> bool {
+        let counts = text.find("authority would-allow=").unwrap_or(usize::MAX);
+        let reasons = text.find("not-enforced reasons:").unwrap_or(usize::MAX);
+        let uncertain = text.find("uncertain:").unwrap_or(0);
+        counts < reasons && reasons < uncertain
+    }
+
     #[test]
     fn describe_authority_section_counts_rows_and_never_prints_enforced() {
         let dir = tmp();
@@ -2868,6 +2951,11 @@ mod tests {
             "authority would-allow=0 would-deny=0 not-enforced={}",
             rows.len()
         )));
+        assert_eq!(
+            reasons_line(&text),
+            "not-enforced reasons: missing-mesh=5 cloud=1"
+        );
+        assert!(reason_summary_sits_between_counts_and_uncertain(&text));
         assert!(text.contains(
             "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
         ));
@@ -2889,6 +2977,12 @@ mod tests {
 
         let empty = describe_authority_section(&[], &dir);
         assert!(empty.contains("authority would-allow=0 would-deny=0 not-enforced=0"));
+        assert!(
+            empty
+                .lines()
+                .all(|line| !line.starts_with("not-enforced reasons:")),
+            "{empty}"
+        );
         assert!(empty.contains(&format!("no hop leases under {}", dir.display())));
         assert!(no_enforced_status_token(&empty), "{empty}");
 
@@ -2903,9 +2997,218 @@ mod tests {
             &dir,
         );
         assert!(relabeled.contains("not-enforced=1"));
+        assert_eq!(reasons_line(&relabeled), "not-enforced reasons: other=1");
         assert!(relabeled.contains("research lane-tool cell-one-box: not-enforced --"));
         assert!(!relabeled.contains("would-allow=1"));
         assert!(no_enforced_status_token(&relabeled), "{relabeled}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn row_for(agent: &str, capability: &str, status: &str, reason: &str) -> AuthorityRow {
+        AuthorityRow {
+            agent: agent.into(),
+            hop_id: "cell-one-box".into(),
+            capability: capability.into(),
+            status: status.into(),
+            reason: reason.into(),
+        }
+    }
+
+    #[test]
+    fn not_enforced_reason_classes_count_only_not_enforced_rows() {
+        let dir = tmp();
+        let rows = vec![
+            row_for(
+                "research",
+                "notes-append",
+                "not-enforced",
+                &declared_capability_reason(true),
+            ),
+            row_for(
+                "research",
+                "notes",
+                "not-enforced",
+                DECLARED_NO_LEASE_REASON,
+            ),
+            row_for("research", "mesh-stub", "not-enforced", CLOUD_HOP_REASON),
+            row_for(
+                "research",
+                "mesh-stub",
+                "not-enforced",
+                &cloud_placement_reason(true),
+            ),
+            row_for(
+                "horizon",
+                "mesh-stub",
+                "not-enforced",
+                CLOUD_PLACEMENT_REASON,
+            ),
+            row_for(
+                "research",
+                "lane-tool",
+                "not-enforced",
+                UNGRANTED_LEASE_REASON,
+            ),
+            row_for(
+                "(none)",
+                "lane-tool",
+                "not-enforced",
+                EMPTY_POPULATION_REASON,
+            ),
+            row_for(
+                "sanctum",
+                "lane-tool",
+                "not-enforced",
+                "unclassified file check. Not mediated.",
+            ),
+            row_for(
+                "research",
+                "notes-append",
+                "would-allow",
+                &declared_capability_reason(true),
+            ),
+            row_for("research", "notes", "would-deny", UNGRANTED_LEASE_REASON),
+            row_for(
+                "horizon",
+                "xai_grok",
+                "enforced",
+                "must not print that status. Not mediated.",
+            ),
+        ];
+        let text = describe_authority_section(&rows, &dir);
+        assert!(
+            text.contains("authority would-allow=1 would-deny=1 not-enforced=9"),
+            "{text}"
+        );
+        assert_eq!(
+            reasons_line(&text),
+            "not-enforced reasons: missing-mesh=1 no-lease=1 cloud=3 ungranted=1 empty-population=1 other=2"
+        );
+        assert!(reason_summary_sits_between_counts_and_uncertain(&text));
+        assert_eq!(
+            not_enforced_reason_class(&cloud_placement_reason(true)),
+            "cloud"
+        );
+        assert_eq!(
+            not_enforced_reason_class(&declared_capability_reason(true)),
+            "missing-mesh"
+        );
+        assert_ne!(
+            not_enforced_reason_class(&declared_capability_reason(true)),
+            not_enforced_reason_class(DECLARED_NO_LEASE_REASON)
+        );
+        let total: usize = reasons_line(&text)
+            .split_whitespace()
+            .skip(2)
+            .map(|part| part.split_once('=').unwrap().1.parse::<usize>().unwrap())
+            .sum();
+        assert_eq!(total, 9);
+        for row in &rows {
+            let status = authority_status_word(&row.status);
+            let line = format!(
+                "  {} {} {}: {} -- {}",
+                row.agent, row.capability, row.hop_id, status, row.reason
+            );
+            assert!(text.contains(&line), "missing {line}\n{text}");
+        }
+        assert!(no_enforced_status_token(&text), "{text}");
+        let allow_only = describe_authority_section(
+            &[row_for(
+                "research",
+                "lane-tool",
+                "would-allow",
+                DECLARED_NO_LEASE_REASON,
+            )],
+            &dir,
+        );
+        assert!(
+            allow_only.contains("would-allow=1 would-deny=0 not-enforced=0"),
+            "{allow_only}"
+        );
+        assert!(
+            allow_only
+                .lines()
+                .all(|line| !line.starts_with("not-enforced reasons:")),
+            "{allow_only}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn box_lease(hop_id: &str, capability: &str, granted: bool, agents: Vec<String>) -> HopLease {
+        HopLease {
+            hop_id: hop_id.into(),
+            kind: "box".into(),
+            capability: capability.into(),
+            host_class: "any".into(),
+            granted,
+            spawned: true,
+            durable: true,
+            driver: "box".into(),
+            note: None,
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
+            agents,
+        }
+    }
+
+    #[test]
+    fn authority_report_rows_classify_ungranted_and_empty_population() {
+        let dir = tmp();
+        let estate = example_estate();
+        let mesh = ConveyorMesh {
+            schema: MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![
+                box_lease(
+                    "cell-one-box",
+                    "notes-append",
+                    false,
+                    vec!["research".into()],
+                ),
+                box_lease("spare-box", "lane-tool", true, vec![]),
+                HopLease {
+                    hop_id: "cursor-cloud".into(),
+                    kind: "cloud-mesh".into(),
+                    capability: "mesh-stub".into(),
+                    host_class: "any".into(),
+                    granted: false,
+                    spawned: false,
+                    durable: true,
+                    driver: "cloud-mesh".into(),
+                    note: None,
+                    ttl_secs: None,
+                    issued_at: None,
+                    expires_at: None,
+                    agents: vec!["research".into()],
+                },
+            ],
+        };
+        persist_mesh(&dir, &mesh).unwrap();
+        let before = std::fs::read(dir.join(MESH_FILE)).unwrap();
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), before);
+        let ungranted = row(&rows, "research", "cell-one-box", "notes-append");
+        assert_eq!(ungranted.status, "not-enforced");
+        assert_eq!(ungranted.reason, UNGRANTED_LEASE_REASON);
+        let empty = rows
+            .iter()
+            .find(|row| row.hop_id == "spare-box" && row.agent == "(none)")
+            .expect("empty population row");
+        assert_eq!(empty.status, "not-enforced");
+        assert_eq!(empty.reason, EMPTY_POPULATION_REASON);
+        let cloud_hop = row(&rows, "research", "cursor-cloud", "mesh-stub");
+        assert_eq!(cloud_hop.status, "not-enforced");
+        assert_eq!(cloud_hop.reason, CLOUD_HOP_REASON);
+        let text = describe_authority_section(&rows, &dir);
+        assert_eq!(
+            reasons_line(&text),
+            "not-enforced reasons: no-lease=4 cloud=2 ungranted=1 empty-population=1"
+        );
+        assert!(text.contains("would-allow=0 would-deny=0 not-enforced="));
+        assert!(!reasons_line(&text).contains("missing-mesh"), "{text}");
+        assert!(no_enforced_status_token(&text), "{text}");
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), before);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2961,6 +3264,10 @@ mod tests {
             "authority would-allow=0 would-deny=0 not-enforced={}",
             missing.len()
         )));
+        assert_eq!(
+            reasons_line(&text),
+            "not-enforced reasons: missing-mesh=5 cloud=1"
+        );
         assert!(text.contains(
             "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
         ));
@@ -2985,6 +3292,11 @@ mod tests {
         assert!(!present_cloud.reason.contains(absent.as_str()));
         let present_text = describe_authority_section(&present, &dir);
         assert!(present_text.contains("would-allow=0 would-deny=0 not-enforced="));
+        assert_eq!(
+            reasons_line(&present_text),
+            "not-enforced reasons: no-lease=5 cloud=1"
+        );
+        assert_ne!(reasons_line(&text), reasons_line(&present_text));
         assert!(no_enforced_status_token(&present_text), "{present_text}");
         assert!(!present_text.contains(absent.as_str()), "{present_text}");
 
@@ -3021,6 +3333,19 @@ mod tests {
         assert!(!leased.reason.contains("no hop lease names this capability"));
         let omitted_text = describe_authority_section(&omitted, &dir);
         assert!(no_enforced_status_token(&omitted_text), "{omitted_text}");
+        let omitted_reasons = reasons_line(&omitted_text);
+        assert!(
+            omitted_reasons.contains("no-lease=") && omitted_reasons.contains("cloud="),
+            "{omitted_reasons}"
+        );
+        assert!(
+            !omitted_reasons.contains("missing-mesh"),
+            "{omitted_reasons}"
+        );
+        assert!(
+            !omitted_reasons.contains("would-allow") && !omitted_reasons.contains("would-deny"),
+            "{omitted_reasons}"
+        );
 
         std::fs::write(dir.join(MESH_FILE), "not-json").unwrap();
         let corrupt = std::fs::read(dir.join(MESH_FILE)).unwrap();
