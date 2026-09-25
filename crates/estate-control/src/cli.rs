@@ -152,17 +152,19 @@ pub(crate) enum Command {
     /// Persisted estate + durable lifecycle + disposable runtime.
     /// After the hop expired count and the cloud-agent line, the same
     /// Agents section as plan, drift, apply, doctor, and convey authority
-    /// (`describe_agents_section`) prints before an Authority section. That
-    /// Authority section is the same file check as `estate plan`,
-    /// `estate drift`, `estate apply`, `estate doctor`, and
+    /// (`describe_agents_section`) prints, then the same hop coverage cites
+    /// doctor prints (`hop_coverage_cites`: `FAIL` on mismatch, `note` on
+    /// deny and deny-default). Those cites do not fail status. An Authority
+    /// section follows. That Authority section is the same file check as
+    /// `estate plan`, `estate drift`, `estate apply`, `estate doctor`, and
     /// `estate convey authority`
     /// (`would-allow`, `would-deny`, `not-enforced`). Deny and deny-default
     /// on the Agents section are notes and do not fail status. A
     /// `not-enforced reasons:` line counts those rows by class and omits
     /// zeros. It does not claim mediation. A missing mesh stays
-    /// not-enforced and cites that conveyor-mesh.json is absent. A mesh
-    /// that does not parse does not invent Authority rows. Does not write.
-    /// Does not spawn.
+    /// not-enforced, cites that conveyor-mesh.json is absent, and adds no
+    /// hop coverage cite. A mesh that does not parse does not invent cites
+    /// or Authority rows. Does not write. Does not spawn.
     /// Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]

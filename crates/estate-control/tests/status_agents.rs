@@ -259,8 +259,12 @@ fn status_help_names_the_shared_agents_section_before_authority() {
     let authority = stdout
         .find("describe_authority_section")
         .unwrap_or_else(|| panic!("help omits describe_authority_section\n{stdout}"));
-    assert!(agents < authority, "{stdout}");
+    let cites = stdout
+        .find("hop_coverage_cites")
+        .unwrap_or_else(|| panic!("help omits hop_coverage_cites\n{stdout}"));
+    assert!(agents < cites && cites < authority, "{stdout}");
     assert!(stdout.contains("do not fail status"), "{stdout}");
+    assert!(stdout.contains("Neither fails status."), "{stdout}");
     assert!(stdout.contains("Does not spawn."), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
 }

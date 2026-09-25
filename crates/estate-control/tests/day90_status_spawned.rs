@@ -110,6 +110,10 @@ fn status_does_not_call_a_spawned_cloud_lease_not_spawned() {
         !text.contains("\nAuthority\n---------\n"),
         "spawned refuse stays before the Authority section: {text}"
     );
+    assert!(
+        !text.contains("refuse:hop-coverage"),
+        "spawned refuse stays before hop coverage cites: {text}"
+    );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), spawned);
 }
 
