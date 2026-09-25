@@ -65,6 +65,10 @@ pub enum MeshError {
         capability: String,
         reason: String,
     },
+    /// Placement hop coverage allow, and the capability being stamped is not
+    /// the placement-derived capability. Deny and deny-default are not this error.
+    #[error("refuse:hop-coverage: {line} (mismatch)")]
+    HopCoverage { line: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -518,6 +522,31 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
     }
 }
 
+/// Allow continues. A hop id that is not a placement (`Ok(None)`) stays the
+/// lease stub. Deny and deny-default are not this gate. Does not write.
+fn refuse_stamped_capability(
+    estate: &estate_schema::Estate,
+    hop_id: &str,
+    agents: &[String],
+    capability: &str,
+) -> Result<(), MeshError> {
+    let checks: Vec<Option<&str>> = if agents.is_empty() {
+        vec![None]
+    } else {
+        agents.iter().map(|agent| Some(agent.as_str())).collect()
+    };
+    for agent in checks {
+        if let Err(gate) =
+            estate_schema::convey_hop_declared_capability(estate, hop_id, agent, capability)
+        {
+            if gate.word == "mismatch" {
+                return Err(MeshError::HopCoverage { line: gate.line });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Derive hops from durable placement leases. Pause-safe; no live spawn.
 /// Matching kinds (`box` → box, `cloud-agent` → cloud-mesh) upsert hops.
 /// Manually declared hops with other ids stay. Sacred ids refuse.
@@ -528,6 +557,18 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
 /// records that lie. A missing placement file is an empty list, not a spawned
 /// lease. The placement file is not rewritten.
 pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
+    sync_from_placements_covering(state_dir, None)
+}
+
+/// Same as [`sync_from_placements`]. When `estate` is set, a placement hop
+/// whose stamped capability disagrees with placement-derived coverage
+/// (`lane-tool` on box, `mesh-stub` on cloud) is `refuse:hop-coverage`
+/// and the mesh is not written. Deny and deny-default stay those words.
+/// A hop id that is not a placement stays the lease stub. Does not spawn.
+pub fn sync_from_placements_covering(
+    state_dir: &Path,
+    estate: Option<&estate_schema::Estate>,
+) -> Result<ConveyorMesh, MeshError> {
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
     let spawned: Vec<String> = places
         .iter()
@@ -545,6 +586,9 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
         refuse_placement_seed(place)?;
         let hop = hop_from_placement(place);
         refuse_hop(&hop)?;
+        if let Some(estate) = estate {
+            refuse_stamped_capability(estate, &hop.id, &hop.agents, &hop.capability)?;
+        }
         let mut lease = hop_driver(&hop.kind)?.declare(&hop);
         stamp_hop_ttl(&mut lease, &hop, hop_now_unix());
         // Box live-ness follows the placement lease (suspend unspawns).
@@ -562,7 +606,22 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
 }
 
 pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError> {
+    declare_hop_covering(state_dir, hop, None)
+}
+
+/// Same as [`declare_hop`]. When `estate` is set, a placement hop whose
+/// operator capability disagrees with placement-derived coverage is
+/// `refuse:hop-coverage` and the mesh is not written. A hop id that is
+/// not a placement stays the lease stub. Does not spawn.
+pub fn declare_hop_covering(
+    state_dir: &Path,
+    hop: HopDecl,
+    estate: Option<&estate_schema::Estate>,
+) -> Result<HopLease, MeshError> {
     refuse_hop(&hop)?;
+    if let Some(estate) = estate {
+        refuse_stamped_capability(estate, &hop.id, &hop.agents, &hop.capability)?;
+    }
     let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
     refuse_lease_ahead(&hop.id, &hop.agents, &places)?;
     // CloudMeshHop::declare hardcodes spawned:false. A spawned placement
@@ -3035,5 +3094,211 @@ mod tests {
             "{mount_denied}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn allow_lane_tool_estate() -> estate_schema::Estate {
+        let mut allow = example_estate();
+        allow
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        allow.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        allow
+    }
+
+    fn mesh_snapshot(dir: &std::path::Path) -> Vec<(String, Option<Vec<u8>>)> {
+        [MESH_FILE, HOPS_FILE, LEASES_FILE]
+            .into_iter()
+            .map(|name| {
+                let path = dir.join(name);
+                let bytes = path.is_file().then(|| std::fs::read(&path).unwrap());
+                (name.to_string(), bytes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn write_path_refuses_capability_mismatch_and_leaves_mesh() {
+        let estate = allow_lane_tool_estate();
+        let dir = tmp();
+        let prior = br#"{"schema":"cell-one.conveyor-mesh.v0","hops":[],"leases":[]}"#;
+        std::fs::write(dir.join(MESH_FILE), prior).unwrap();
+        std::fs::write(dir.join(HOPS_FILE), prior).unwrap();
+        std::fs::write(dir.join(LEASES_FILE), prior).unwrap();
+        let before = mesh_snapshot(&dir);
+
+        let mismatch = declare_hop_covering(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap_err();
+        let text = mismatch.to_string();
+        assert!(
+            text.contains("refuse:hop-coverage")
+                && text.contains("(mismatch)")
+                && text.contains(
+                    "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+                ),
+            "{text}"
+        );
+        assert_eq!(mesh_snapshot(&dir), before);
+
+        let matched = declare_hop_covering(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap();
+        assert_eq!(matched.capability, "lane-tool");
+        assert!(dir.join(MESH_FILE).is_file());
+        assert!(dir.join(LEASES_FILE).is_file());
+
+        let other = declare_hop_covering(
+            &dir,
+            HopDecl {
+                id: "ttl-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap();
+        assert_eq!(other.hop_id, "ttl-hop");
+        assert_eq!(other.capability, "notes-append");
+
+        let cloud_deny = declare_hop_covering(
+            &dir,
+            HopDecl {
+                id: "cursor-cloud".into(),
+                kind: "cloud-mesh".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+            Some(&estate),
+        )
+        .unwrap();
+        assert_eq!(cloud_deny.capability, "lane-tool");
+
+        let sync_dir = tmp();
+        let placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "cell-one-box",
+                "kind": "cloud-agent",
+                "host_class": "any",
+                "spawned": false,
+                "wired": false,
+                "agents": ["research"]
+            }]
+        })
+        .to_string();
+        std::fs::write(sync_dir.join("placement-actual.json"), &placement).unwrap();
+        std::fs::write(sync_dir.join(MESH_FILE), prior).unwrap();
+        std::fs::write(sync_dir.join(HOPS_FILE), prior).unwrap();
+        std::fs::write(sync_dir.join(LEASES_FILE), prior).unwrap();
+        let sync_before = mesh_snapshot(&sync_dir);
+        let sync_err = sync_from_placements_covering(&sync_dir, Some(&estate)).unwrap_err();
+        let sync_text = sync_err.to_string();
+        assert!(
+            sync_text.contains("refuse:hop-coverage")
+                && sync_text.contains("(mismatch)")
+                && sync_text.contains("mesh-stub")
+                && sync_text.contains("lane-tool"),
+            "{sync_text}"
+        );
+        assert_eq!(mesh_snapshot(&sync_dir), sync_before);
+        assert_eq!(
+            std::fs::read_to_string(sync_dir.join("placement-actual.json")).unwrap(),
+            placement
+        );
+
+        let match_dir = tmp();
+        let box_placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "cell-one-box",
+                "kind": "box",
+                "host_class": "any",
+                "spawned": true,
+                "wired": true,
+                "agents": ["research"]
+            }]
+        })
+        .to_string();
+        std::fs::write(match_dir.join("placement-actual.json"), &box_placement).unwrap();
+        let synced = sync_from_placements_covering(&match_dir, Some(&estate)).unwrap();
+        let lease = synced
+            .leases
+            .iter()
+            .find(|lease| lease.hop_id == "cell-one-box")
+            .unwrap();
+        assert_eq!(lease.capability, "lane-tool");
+
+        let other_dir = tmp();
+        let other_placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "ttl-hop",
+                "kind": "box",
+                "host_class": "any",
+                "spawned": true,
+                "wired": true,
+                "agents": ["research"]
+            }]
+        })
+        .to_string();
+        std::fs::write(other_dir.join("placement-actual.json"), &other_placement).unwrap();
+        let other_sync = sync_from_placements_covering(&other_dir, Some(&estate)).unwrap();
+        let other_lease = other_sync
+            .leases
+            .iter()
+            .find(|lease| lease.hop_id == "ttl-hop")
+            .unwrap();
+        assert_eq!(other_lease.capability, "lane-tool");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&sync_dir);
+        let _ = std::fs::remove_dir_all(&match_dir);
+        let _ = std::fs::remove_dir_all(&other_dir);
     }
 }

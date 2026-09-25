@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — convey write refuses a capability mismatch
+
+- `estate convey hop` and `estate convey sync` refuse before writing when a placement hop's capability disagrees with placement-derived coverage (`lane-tool` on box, `mesh-stub` on cloud). The refusal is `refuse:hop-coverage: capability '…' does not match hop coverage capability '…' (mismatch)`. The mesh and lease files stay as they were. A matching capability still writes. A hop id that is not a placement stays the lease stub. Deny and deny-default stay those words. Sync still restamps a placement hop to `lane-tool` or `mesh-stub` when that stamp matches coverage. A missing `--estate` on sync keeps that restamp. This slice does not spawn, does not apply the estate, and does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — authority cites hop coverage
 
 - `estate convey authority` stays a file check. After empty population, cloud-not-spawned, and not-granted, a granted box lease also consults placement hop coverage. Deny and deny-default are `would-deny` and cite `refuse:hop-coverage`. Allow with a capability that does not match the placement-derived capability (`lane-tool` on box, `mesh-stub` on cloud) is `would-deny` and cites that mismatch. A match continues to the estate intention (`would-allow` or `would-deny`). A hop id that is not a placement stays the lease stub. The report does not write the mesh or the estate, does not spawn, and does not claim mediation. `estate convey call` help names the same capability match. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
