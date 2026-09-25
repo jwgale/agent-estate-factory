@@ -58,6 +58,16 @@ pub(crate) enum Command {
         reviewed_dir: PathBuf,
     },
     /// Converge isolation (Control→Data apply seam). Stretch: included, thin.
+    /// A placement hop capability that disagrees with hop coverage is
+    /// `refuse:hop-coverage` (mismatch) and fails this command. Deny and
+    /// deny-default are cited and do not fail apply by themselves. The
+    /// check does not write the mesh. A present mesh file that does not
+    /// parse fails with the mesh error and is not rewritten. A missing
+    /// mesh is not a failure. After the cites, an Authority section prints
+    /// the same file check as `estate plan`, `estate drift`, and
+    /// `estate convey authority` (`would-allow`, `would-deny`,
+    /// `not-enforced`), including on `--dry-run`. It does not claim
+    /// mediation. `--dry-run` writes nothing.
     /// Examples: `estate help apply`
     Apply {
         #[arg(long, default_value = "examples/estate.yaml")]

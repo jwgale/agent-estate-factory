@@ -296,8 +296,10 @@ pub(crate) fn cmd_apply(
     refuse_apply_catalog_mismatch(&estate, state_dir)?;
     // Cites before any estate, mesh, lease, or apply-audit write, including
     // dry-run. Order: Agents section, agent-call, memory, model class,
-    // declared tool/mcp/mount, hop. Allow is quiet. Deny and deny-default
-    // are notes. A hard cite bails here.
+    // declared tool/mcp/mount, hop, then the Authority section. Allow is
+    // quiet. Deny and deny-default are notes. A hard agent-call, memory,
+    // model-class, or declared cite bails here, before the section. A hop
+    // mismatch prints the section, then bails, still before writes.
     apply_cites_before_writes(&estate, state_dir)?;
     if dry_run {
         return cmd_apply_dry_run(
@@ -461,18 +463,38 @@ pub(crate) fn cmd_apply(
     Ok(())
 }
 
-/// Agents section, then coverage cites, before any estate, mesh, lease, or
-/// apply-audit write. Order matches doctor on model class versus declared
-/// coverage: model class, then tool / MCP / mount. Agent-call and memory
-/// stay ahead of that pair. Hop stays last. Allow is quiet. Deny and
-/// deny-default are notes. A hard cite bails. Does not write.
+/// Agents section, then coverage cites, then the Authority section, before
+/// any estate, mesh, lease, or apply-audit write. Order matches doctor on
+/// model class versus declared coverage: model class, then tool / MCP /
+/// mount. Agent-call and memory stay ahead of that pair. Hop stays last
+/// among the cites. Allow is quiet. Deny and deny-default are notes. A
+/// hard agent-call, memory, model-class, or declared cite bails before hop
+/// and before the Authority section. A hop mismatch prints that section,
+/// then bails on `refuse:hop-coverage` (same print-then-bail order as
+/// drift). A present mesh that does not parse fails with the mesh error
+/// before the section and is not rewritten. Does not write. Does not
+/// invent a lease.
 fn apply_cites_before_writes(estate: &estate_schema::Estate, state_dir: &Path) -> Result<()> {
     println!("{}", describe_agents_section(estate));
     refuse_apply_agent_call_coverage(estate)?;
     refuse_apply_memory_coverage(estate)?;
     refuse_apply_model_class_coverage(estate)?;
     refuse_apply_declared_coverage(estate)?;
-    refuse_apply_hop_coverage(estate, state_dir)?;
+    // Hop cites print first, including a mismatch FAIL line. A mesh that
+    // does not parse returns here and is not rewritten. The Authority
+    // section is the same file check plan and drift print. A mismatch
+    // still exits below, before any write. An authority read error does
+    // not hide that mismatch. On a cite-pass path the read error fails
+    // apply before writes, matching plan and drift.
+    let hop_mismatch = hop_cites(estate, state_dir)?;
+    let authority_text = apply_authority_text(estate, state_dir);
+    if let Ok(text) = &authority_text {
+        println!("{text}");
+    }
+    if let Some(line) = hop_mismatch {
+        bail!(line);
+    }
+    authority_text?;
     Ok(())
 }
 
@@ -601,6 +623,18 @@ fn refuse_model_class_coverage(estate: &estate_schema::Estate) -> Result<()> {
 /// File check printed after coverage cites. Same text as `estate convey authority`.
 /// Does not write the mesh, the leases, or the estate. Does not invent a lease.
 fn plan_authority_text(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+    authority_section_text(estate, state_dir)
+}
+
+/// File check printed after apply coverage cites, including hop refuse.
+/// Same text as `estate plan`, `estate drift`, and `estate convey authority`.
+/// Does not write the mesh, the leases, the estate, or the apply audit.
+/// Does not invent a lease.
+fn apply_authority_text(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+    authority_section_text(estate, state_dir)
+}
+
+fn authority_section_text(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
     let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
     Ok(describe_authority_section(&rows, state_dir))
 }
@@ -709,29 +743,6 @@ fn refuse_declared_cites(cites: &[estate_schema::DeclaredCoverageCite]) -> Resul
         }
     }
     if let Some(line) = hard {
-        bail!(line);
-    }
-    Ok(())
-}
-
-/// Shared with plan, doctor, and drift. Prints `refuse:hop-coverage` cites.
-/// Mismatch fails apply. Deny and deny-default do not. Does not write.
-fn refuse_apply_hop_coverage(estate: &estate_schema::Estate, state_dir: &Path) -> Result<()> {
-    let mut hop_mismatch: Option<String> = None;
-    match load_mesh(state_dir) {
-        Ok(mesh) => {
-            for cite in crate::watch::hop_coverage_cites(estate, &mesh) {
-                if cite.fail {
-                    println!("  FAIL  {}", cite.line);
-                    hop_mismatch.get_or_insert(cite.line);
-                } else {
-                    println!("  note  {}", cite.line);
-                }
-            }
-        }
-        Err(err) => bail!("{err}"),
-    }
-    if let Some(line) = hop_mismatch {
         bail!(line);
     }
     Ok(())
@@ -4805,6 +4816,344 @@ mod plan_authority_section_tests {
         assert!(!cited.contains("refuse:hop-coverage"), "{cited}");
         assert_eq!(snapshot(&state), mesh_before);
         assert_reviewed_untouched(&reviewed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn examples_estate_yaml_stays_hash_locked() {
+        let path = repo_root().join("examples/estate.yaml");
+        let sum = Command::new("cksum").arg(&path).output().unwrap();
+        let text = String::from_utf8_lossy(&sum.stdout);
+        assert!(
+            text.starts_with("43770130 3391"),
+            "examples/estate.yaml cksum changed: {text}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod apply_authority_section_tests {
+    use super::{apply_authority_text, apply_cites_before_writes, cmd_apply, plan_authority_text};
+    use conveyor_proxy::{persist_mesh, ConveyorMesh, HopLease, MESH_FILE};
+    use estate_schema::load_estate;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-apply-authority-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn apply(dir: &Path, estate: &Path, state: &Path, dry_run: bool) -> anyhow::Result<()> {
+        cmd_apply(
+            estate,
+            state,
+            &dir.join("roots"),
+            &dir.join("plans"),
+            false,
+            None,
+            &dir.join("packs"),
+            false,
+            dry_run,
+            &dir.join("missing-policy.yaml"),
+            "curator",
+            false,
+        )
+    }
+
+    fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+        let mut rows = Vec::new();
+        if state.is_dir() {
+            for entry in fs::read_dir(state).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    rows.push((
+                        path.file_name().unwrap().to_string_lossy().into_owned(),
+                        fs::read(&path).unwrap(),
+                    ));
+                }
+            }
+        }
+        rows.sort();
+        rows
+    }
+
+    fn file_names(dir: &Path) -> Vec<String> {
+        if !dir.is_dir() {
+            return Vec::new();
+        }
+        let mut names = Vec::new();
+        for entry in fs::read_dir(dir).unwrap().flatten() {
+            if entry.path().is_file() {
+                names.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        names.sort();
+        names
+    }
+
+    fn no_enforced_status_token(text: &str) -> bool {
+        !text.split_whitespace().any(|word| {
+            let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+            token == "enforced"
+        })
+    }
+
+    fn granted_box(capability: &str) -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![HopLease {
+                hop_id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: capability.into(),
+                host_class: "any".into(),
+                granted: true,
+                spawned: true,
+                durable: true,
+                driver: "box".into(),
+                note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
+                agents: vec!["research".into()],
+            }],
+        }
+    }
+
+    fn assert_same_printer(estate: &estate_schema::Estate, state: &Path) {
+        let section = apply_authority_text(estate, state).unwrap();
+        assert_eq!(section, plan_authority_text(estate, state).unwrap());
+        assert!(section.starts_with("Authority\n---------\n"), "{section}");
+        assert!(no_enforced_status_token(&section), "{section}");
+        assert!(
+            section.contains(
+                "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+            ),
+            "{section}"
+        );
+    }
+
+    #[test]
+    fn authority_section_is_not_enforced_when_no_mesh_exists() {
+        let dir = scratch();
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        assert!(!state.join(MESH_FILE).exists());
+        let section = apply_authority_text(&estate, &state).unwrap();
+        assert_same_printer(&estate, &state);
+        assert!(
+            section.contains("authority would-allow=0 would-deny=0 not-enforced="),
+            "{section}"
+        );
+        assert!(
+            !section.contains("would-deny=0 not-enforced=0"),
+            "{section}"
+        );
+        assert!(
+            section.contains("research notes-append cell-one-box: not-enforced --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("no hop lease names this capability"),
+            "{section}"
+        );
+        assert!(
+            section.contains("cursor-cloud") && section.contains("not spawned"),
+            "{section}"
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        apply(&dir, &estate_path, &state, true).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(file_names(&dir.join("plans")).is_empty());
+        assert!(!state.join(MESH_FILE).exists());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert!(!state.join("conveyor-leases.json").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        apply(&dir, &estate_path, &state, false).unwrap();
+        assert!(!state.join(MESH_FILE).exists());
+        assert!(!state.join("conveyor-leases.json").exists());
+        assert!(state.join("apply-audit.jsonl").is_file());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+        assert_eq!(fs::read(&estate_path).unwrap(), locked);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn authority_section_would_deny_when_hop_coverage_denies_a_granted_box_lease() {
+        let dir = scratch();
+        let estate_path = dir.join("deny.yaml");
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: deny\n",
+        );
+        fs::write(&estate_path, &text).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        persist_mesh(&state, &granted_box("lane-tool")).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let section = apply_authority_text(&estate, &state).unwrap();
+        assert_same_printer(&estate, &state);
+        assert!(
+            section.contains("authority would-allow=0 would-deny="),
+            "{section}"
+        );
+        let denied = section
+            .lines()
+            .find(|line| line.contains("research lane-tool cell-one-box:"))
+            .unwrap_or_else(|| panic!("missing deny row\n{section}"));
+        assert!(
+            denied.contains(": would-deny --")
+                && denied.contains("refuse:hop-coverage")
+                && denied.contains("(deny).")
+                && !denied.contains("deny-default")
+                && !denied.contains("(mismatch)")
+                && denied.contains("Not mediated"),
+            "{denied}"
+        );
+        let before = snapshot(&state);
+        let mesh_bytes = fs::read(state.join(MESH_FILE)).unwrap();
+        let leases_bytes = fs::read(state.join("conveyor-leases.json")).unwrap();
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        apply(&dir, &estate_path, &state, true).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(file_names(&dir.join("plans")).is_empty());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        apply(&dir, &estate_path, &state, false).unwrap();
+        assert_eq!(fs::read(state.join(MESH_FILE)).unwrap(), mesh_bytes);
+        assert_eq!(
+            fs::read(state.join("conveyor-leases.json")).unwrap(),
+            leases_bytes
+        );
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        assert!(state.join("apply-audit.jsonl").is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hop_mismatch_refuses_before_writes_and_the_section_never_prints_enforced() {
+        let dir = scratch();
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+        );
+        let mismatch_path = dir.join("mismatch.yaml");
+        fs::write(&mismatch_path, &text).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        persist_mesh(&state, &granted_box("notes-append")).unwrap();
+        let estate = load_estate(&mismatch_path).unwrap();
+        let section = apply_authority_text(&estate, &state).unwrap();
+        assert_same_printer(&estate, &state);
+        assert!(
+            section.contains("research notes-append cell-one-box: would-deny --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("refuse:hop-coverage") && section.contains("(mismatch)"),
+            "{section}"
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&mismatch_path).unwrap();
+        let err = apply(&dir, &mismatch_path, &state, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert!(no_enforced_status_token(&err), "{err}");
+        assert!(!err.contains("applied"), "{err}");
+        assert!(!err.contains("audit"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert!(file_names(&dir.join("plans")).is_empty());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&mismatch_path).unwrap(), estate_bytes);
+        let dry = apply(&dir, &mismatch_path, &state, true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            dry.contains("refuse:hop-coverage") && dry.contains("(mismatch)"),
+            "{dry}"
+        );
+        assert!(!dry.contains("dry-run ok"), "{dry}");
+        assert!(!dry.contains("would-refuse"), "{dry}");
+        assert_eq!(snapshot(&state), before);
+        assert!(file_names(&dir.join("plans")).is_empty());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&mismatch_path).unwrap(), estate_bytes);
+
+        let mut ghost = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        let needle = "    mcp: []\n    models:\n      - id: xai_grok\n";
+        let insert =
+            "    mcp: []\n    calls:\n      - id: ghost\n    models:\n      - id: xai_grok\n";
+        assert!(ghost.contains(needle), "horizon mcp block missing");
+        ghost = ghost.replacen(needle, insert, 1);
+        let ghost_path = dir.join("ghost.yaml");
+        fs::write(&ghost_path, &ghost).unwrap();
+        let ghost_bytes = fs::read(&ghost_path).unwrap();
+        let err = format!("{:#}", apply(&dir, &ghost_path, &state, false).unwrap_err());
+        assert!(err.contains("not an estate agent"), "{err}");
+        assert!(!err.contains("refuse:hop-coverage"), "{err}");
+        assert!(!err.contains("applied"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert!(file_names(&dir.join("plans")).is_empty());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&ghost_path).unwrap(), ghost_bytes);
+        let dry = format!("{:#}", apply(&dir, &ghost_path, &state, true).unwrap_err());
+        assert!(dry.contains("not an estate agent"), "{dry}");
+        assert_eq!(snapshot(&state), before);
+
+        let mut reached = load_estate(&mismatch_path).unwrap();
+        reached
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .calls
+            .push(estate_schema::CallDecl {
+                id: "ghost".into(),
+                description: None,
+            });
+        let cited = apply_cites_before_writes(&reached, &state)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            cited.contains("refuse:agent-call") && cited.contains("not an estate agent"),
+            "{cited}"
+        );
+        assert!(!cited.contains("refuse:hop-coverage"), "{cited}");
+        assert!(!cited.contains("Authority"), "{cited}");
+        assert_eq!(snapshot(&state), before);
+        assert!(!state.join("apply-audit.jsonl").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

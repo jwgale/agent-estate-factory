@@ -320,6 +320,18 @@ unrecognized row fails before writes (`refuse:tool`, `refuse:mcp`, or
 `refuse:mount`). These rows have no capability-mismatch class. A
 hop-coverage mismatch still fails before writes. Undeclared pairs stay
 on plan, drift, and doctor.
+
+After those cites, including hop refuse, apply and apply --dry-run print
+an Authority section. The text is `describe_authority_section` over
+`authority_report`, the same section plan, drift, and convey authority
+print. Counts are would-allow, would-deny, and not-enforced. One line
+per row. A missing mesh stays not-enforced and does not invent a lease.
+The section has no enforced status and does not claim a worker called
+the conveyor. A hop-coverage mismatch prints that section, then fails
+before any estate, mesh, lease, or apply-audit write. A hard agent-call,
+memory, model-class, or declared cite still fails before the section
+and before writes. Dry-run writes nothing. A present mesh that does not
+parse fails with the mesh error and is not rewritten.
 ";
 
 const RECONCILE: &str = "\

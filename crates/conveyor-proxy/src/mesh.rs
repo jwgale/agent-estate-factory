@@ -1170,7 +1170,8 @@ fn authority_status_word(status: &str) -> &str {
     }
 }
 
-/// Shared text for `estate plan`, `estate drift`, and `estate convey authority`.
+/// Shared text for `estate plan`, `estate drift`, `estate apply` (including
+/// dry-run), and `estate convey authority`.
 /// Summary counts and one line per row (agent, capability, hop, status, reason).
 /// Print-only. Does not write. Does not claim a worker called the conveyor.
 /// An empty row list says there are no hop leases and does not invent one.
