@@ -229,8 +229,8 @@ sets none. It does not copy the schema card. An estate with no frontier
 binding refuses (refuse:frontier-invent) instead of inventing a frontier
 source_driver or catalog model. No live key.
 
-A declared agent call is cited after that blast and before model-class
-rows. The line is the same own / peer row the blast prints (`subject
+A declared agent call is cited after that blast and before memory rows.
+The line is the same own / peer row the blast prints (`subject
 agent target: allow|deny|deny-default (own|peer)`), from
 `agent_call_coverage_cites`. Allow is quiet. Deny and deny-default are
 notes and do not fail plan by themselves. A missing row, or a call
@@ -239,7 +239,18 @@ target that is not an estate agent when that row is reached, fails plan
 class. Undeclared pairs stay on the blast and are not plan refuse
 findings.
 
-A model-class row is cited after that agent-call row and before declared
+A memory-read row is cited after that agent-call row and before
+model-class rows. The line is the same own-lane / cross-lane row the
+blast prints (`agent memory_read lane: allow|deny|deny-default
+(own-lane|cross-lane)`), from `memory_coverage_cites`. Allow is quiet,
+including own-lane allow and a covered cross-lane allow. Deny and
+deny-default are notes and do not fail plan by themselves, including a
+cross-lane read with no intention. A missing edge or an unrecognized
+word fails plan (`refuse:memory`). Memory rows have no
+capability-mismatch class. Compiled intention lines stay on the blast
+and are not plan refuse findings.
+
+A model-class row is cited after that memory row and before declared
 tool, MCP, and mount rows. The line is the same row the blast prints (`agent
 frontier|local binding: allow|deny|deny-default`), from
 `model_class_coverage_cites`. Allow is quiet. Deny and deny-default are
@@ -253,9 +264,9 @@ tool|mcp|mount id: allow|deny|deny-default`), from
 `declared_coverage_cites`. Allow is quiet. Deny and deny-default are
 notes and do not fail plan by themselves. A missing row or an
 unrecognized word fails plan (`refuse:tool`, `refuse:mcp`, or
-`refuse:mount`). These rows have no capability-mismatch class. Plan
-does not yet refuse memory. The check does not write the mesh, the
-leases, or the estate. A reviewed copy stays unwritten on bail.
+`refuse:mount`). These rows have no capability-mismatch class. The
+check does not write the mesh, the leases, or the estate. A reviewed
+copy stays unwritten on bail.
 
 A granted box hop lease, or a box hop declaration with no lease, that
 disagrees with placement hop coverage is `refuse:hop-coverage` (mismatch)
