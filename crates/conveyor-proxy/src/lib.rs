@@ -5,12 +5,12 @@ mod mesh;
 
 pub use mesh::{
     authority_report, call_hop, call_hop_for_agent, declare_hop, declare_hop_covering,
-    forget_expired_hop_leases, hop_driver, hop_from_placement, hop_is_cloud,
-    hop_kind_for_placement, hop_lease_is_expired, hop_now_unix, list_expired_hop_leases,
-    list_hop_leases, list_hops, load_mesh, mesh_file_sot, persist_mesh, refuse_mesh_host_classes,
-    slim_parse_placement_actual, sync_from_placements, sync_from_placements_covering, AuthorityRow,
-    BoxHop, CloudMeshHop, ConveyorHop, ConveyorMesh, HopCall, HopDecl, HopLease, MeshError,
-    MESH_FILE, MESH_SCHEMA,
+    describe_authority_section, forget_expired_hop_leases, hop_driver, hop_from_placement,
+    hop_is_cloud, hop_kind_for_placement, hop_lease_is_expired, hop_now_unix,
+    list_expired_hop_leases, list_hop_leases, list_hops, load_mesh, mesh_file_sot, persist_mesh,
+    refuse_mesh_host_classes, slim_parse_placement_actual, sync_from_placements,
+    sync_from_placements_covering, AuthorityRow, BoxHop, CloudMeshHop, ConveyorHop, ConveyorMesh,
+    HopCall, HopDecl, HopLease, MeshError, MESH_FILE, MESH_SCHEMA,
 };
 
 use estate_schema::{authorize, coverage_word, AccessRequest, Decision, Estate, IntentionKind};

@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use conveyor_proxy::{
-    authority_report, call_hop, call_hop_for_agent, check, declare_hop, list_hop_leases, list_hops,
-    parse_kind, response_from, sync_from_placements, HopDecl, ProxyRequest,
+    authority_report, call_hop, call_hop_for_agent, check, declare_hop, describe_authority_section,
+    list_hop_leases, list_hops, parse_kind, response_from, sync_from_placements, HopDecl,
+    ProxyRequest,
 };
 use std::path::PathBuf;
 
@@ -221,20 +222,7 @@ fn main() -> Result<()> {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
             let rows = authority_report(&state_dir, &loaded)?;
-            let allow = rows
-                .iter()
-                .filter(|row| row.status == "would-allow")
-                .count();
-            let deny = rows.iter().filter(|row| row.status == "would-deny").count();
-            let pending = rows
-                .iter()
-                .filter(|row| row.status == "not-enforced")
-                .count();
-            println!("authority would-allow={allow} would-deny={deny} not-enforced={pending}");
-            println!(
-                "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
-            );
-            println!("{}", serde_json::to_string_pretty(&rows)?);
+            println!("{}", describe_authority_section(&rows, &state_dir));
         }
     }
     Ok(())

@@ -1160,6 +1160,51 @@ fn coverage_refuse_reason(gate: &estate_schema::HopCoverageGate) -> String {
     }
 }
 
+/// Status word this file check may print. `would-allow`, `would-deny`, and
+/// `not-enforced` pass through. Any other word, including `enforced`, prints
+/// as `not-enforced`. This printer does not invent an enforced status.
+fn authority_status_word(status: &str) -> &str {
+    match status {
+        "would-allow" | "would-deny" | "not-enforced" => status,
+        _ => "not-enforced",
+    }
+}
+
+/// Shared text for `estate plan` and `estate convey authority`.
+/// Summary counts and one line per row (agent, capability, hop, status, reason).
+/// Print-only. Does not write. Does not claim a worker called the conveyor.
+/// An empty row list says there are no hop leases and does not invent one.
+pub fn describe_authority_section(rows: &[AuthorityRow], state_dir: &Path) -> String {
+    let mut allow = 0usize;
+    let mut deny = 0usize;
+    let mut pending = 0usize;
+    let mut body = Vec::with_capacity(rows.len());
+    for row in rows {
+        let status = authority_status_word(&row.status);
+        match status {
+            "would-allow" => allow += 1,
+            "would-deny" => deny += 1,
+            _ => pending += 1,
+        }
+        body.push(format!(
+            "  {} {} {}: {} -- {}",
+            row.agent, row.capability, row.hop_id, status, row.reason
+        ));
+    }
+    let mut lines = vec![
+        "Authority".to_string(),
+        "---------".to_string(),
+        format!("authority would-allow={allow} would-deny={deny} not-enforced={pending}"),
+        "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor.".to_string(),
+    ];
+    if rows.is_empty() {
+        lines.push(format!("no hop leases under {}", state_dir.display()));
+    } else {
+        lines.extend(body);
+    }
+    lines.join("\n")
+}
+
 /// Read-only. Does not write the mesh or the estate. Identity is not resolved.
 pub fn authority_report(
     state_dir: &Path,
@@ -2747,6 +2792,67 @@ mod tests {
         assert!(rows.iter().any(|row| {
             row.agent == "horizon" && row.capability == "notes-append" && row.status == "would-deny"
         }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn no_enforced_status_token(text: &str) -> bool {
+        !text.split_whitespace().any(|word| {
+            let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+            token == "enforced"
+        })
+    }
+
+    #[test]
+    fn describe_authority_section_counts_rows_and_never_prints_enforced() {
+        let dir = tmp();
+        let estate = example_estate();
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().all(|row| row.status == "not-enforced"));
+        assert!(!rows.is_empty());
+        let text = describe_authority_section(&rows, &dir);
+        assert!(text.starts_with("Authority\n---------\n"));
+        assert!(text.contains(&format!(
+            "authority would-allow=0 would-deny=0 not-enforced={}",
+            rows.len()
+        )));
+        assert!(text.contains(
+            "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+        ));
+        assert!(no_enforced_status_token(&text), "{text}");
+        for row in &rows {
+            let line = format!(
+                "  {} {} {}: {} -- {}",
+                row.agent, row.capability, row.hop_id, row.status, row.reason
+            );
+            assert!(text.contains(&line), "missing {line}\n{text}");
+        }
+        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("conveyor")
+        }));
+
+        let empty = describe_authority_section(&[], &dir);
+        assert!(empty.contains("authority would-allow=0 would-deny=0 not-enforced=0"));
+        assert!(empty.contains(&format!("no hop leases under {}", dir.display())));
+        assert!(no_enforced_status_token(&empty), "{empty}");
+
+        let relabeled = describe_authority_section(
+            &[AuthorityRow {
+                agent: "research".into(),
+                hop_id: "cell-one-box".into(),
+                capability: "lane-tool".into(),
+                status: "enforced".into(),
+                reason: "must not print that status. Not mediated.".into(),
+            }],
+            &dir,
+        );
+        assert!(relabeled.contains("not-enforced=1"));
+        assert!(relabeled.contains("research lane-tool cell-one-box: not-enforced --"));
+        assert!(!relabeled.contains("would-allow=1"));
+        assert!(no_enforced_status_token(&relabeled), "{relabeled}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

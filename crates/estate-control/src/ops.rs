@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
     append_proxy_audit, authority_report, call_hop, declare_hop_covering,
-    forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases, list_hop_leases, list_hops,
-    load_mesh, sync_from_placements, sync_from_placements_covering, HopDecl,
+    describe_authority_section, forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases,
+    list_hop_leases, list_hops, load_mesh, sync_from_placements, sync_from_placements_covering,
+    HopDecl,
 };
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
@@ -608,29 +609,13 @@ pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()
     Ok(())
 }
 
-/// File check. Does not write. Does not claim mediation. Not an identity lookup.
+/// File check. Same section as `estate plan`. Does not write. Does not claim mediation.
+/// Not an identity lookup.
 pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Result<()> {
     let estate = estate_schema::load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     let rows = authority_report(state_dir, &estate)?;
-    let allow = rows
-        .iter()
-        .filter(|row| row.status == "would-allow")
-        .count();
-    let deny = rows.iter().filter(|row| row.status == "would-deny").count();
-    let pending = rows
-        .iter()
-        .filter(|row| row.status == "not-enforced")
-        .count();
-    println!("authority would-allow={allow} would-deny={deny} not-enforced={pending}");
-    println!(
-        "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
-    );
-    if rows.is_empty() {
-        println!("no hop leases under {}", state_dir.display());
-        return Ok(());
-    }
-    println!("{}", serde_json::to_string_pretty(&rows)?);
+    println!("{}", describe_authority_section(&rows, state_dir));
     Ok(())
 }
 
