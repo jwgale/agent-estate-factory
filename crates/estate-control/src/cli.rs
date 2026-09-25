@@ -526,10 +526,10 @@ pub(crate) enum ClassifyCommand {
         /// `ag_news`, `fancyzhx/ag_news`, `devign`, `google/code_x_glue_cc_defect_detection`, `rust_idiom`, or `bigcode/commitpackft`. banking77 and multi_nli are catalog rows for a later slice.
         #[arg(long)]
         dataset: String,
-        /// Class-balanced train rows. `all` keeps the official train split. No upper cap.
+        /// Class-balanced train rows for ag_news and devign. rust_idiom samples whole A/B commit pairs; an odd count is refused. `all` keeps the split. No upper cap.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows drawn only from the official test split, or from the seeded commit holdout for rust_idiom. `all` is 7600 for ag_news, 2732 for devign, and 936 for rust_idiom.
+        /// Held-out rows from the official test split, or whole commits from the rust_idiom holdout. An odd rust_idiom count is refused. `all` is 7600 for ag_news, 2732 for devign, and 936 for rust_idiom.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Sample seed. Default 42.
@@ -693,10 +693,10 @@ pub(crate) enum ClassifyCommand {
         /// The default tag and `--out` gain a suffix such as `-agnews-3000` so sizes can coexist.
         #[arg(long)]
         dataset: Option<String>,
-        /// Class-balanced train rows for `--dataset`. `all` keeps the official train split.
+        /// Class-balanced train rows for `--dataset` ag_news and devign. rust_idiom samples whole commit pairs; an odd count is refused. `all` keeps the split.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Held-out rows for `--dataset`, drawn only from the official test split, or from the seeded commit holdout for rust_idiom.
+        /// Held-out rows for `--dataset`, from the official test split, or whole commits from the rust_idiom holdout. An odd rust_idiom count is refused.
         #[arg(long, default_value = "all")]
         heldout_size: String,
         /// Local HF dataset snapshot. Same as `classify import --from-local`. Not modified.

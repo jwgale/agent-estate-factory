@@ -12,6 +12,8 @@
 //! shuffles the chosen options with the import seed, and the answer letter follows
 //! that shuffle. `rust_idiom` reads CommitPackFT Rust commits (`old_contents` /
 //! `new_contents`) through this same path and holds out whole commits with a fixed seed.
+//! A finite `--train-size` or `--heldout-size` on that preset samples whole A/B pairs.
+//! An odd count is refused. `all` keeps every row in the split.
 
 use crate::classify::split_indices;
 use anyhow::{bail, Result};
@@ -518,8 +520,9 @@ pub fn sample_records(
 ) -> Result<Sampled> {
     assert_known_labels(preset, train_rows, "train")?;
     assert_known_labels(preset, test_rows, "test")?;
-    let train_idx = balanced_indices(train_rows, train_size, seed, "train")?;
-    let held_idx = balanced_indices(
+    let train_idx = sample_indices(preset, train_rows, train_size, seed, "train")?;
+    let held_idx = sample_indices(
+        preset,
         test_rows,
         heldout_size,
         seed.wrapping_add(0xA5A5_5A5A),
@@ -579,6 +582,94 @@ fn assert_known_labels(preset: &DatasetPreset, rows: &[NativeRow], side: &str) -
         }
     }
     Ok(())
+}
+
+fn sample_indices(
+    preset: &DatasetPreset,
+    rows: &[NativeRow],
+    size: &SplitSize,
+    seed: u64,
+    side: &str,
+) -> Result<Vec<usize>> {
+    match (preset.shape, size) {
+        (SourceShape::CommitPair { .. }, SplitSize::Count(_)) => {
+            commit_pair_indices(rows, size, seed, side)
+        }
+        _ => balanced_indices(rows, size, seed, side),
+    }
+}
+
+/// Whole-commit sample for CommitPair presets. `n` is a row count and must be even.
+fn commit_pair_indices(
+    rows: &[NativeRow],
+    size: &SplitSize,
+    seed: u64,
+    side: &str,
+) -> Result<Vec<usize>> {
+    if rows.is_empty() {
+        bail!("refuse:classify-import: {side} split has no rows");
+    }
+    let SplitSize::Count(n) = size else {
+        return Ok((0..rows.len()).collect());
+    };
+    if n % 2 != 0 {
+        bail!(
+            "refuse:classify-import: {side} size {n} is odd; rust_idiom samples whole commit pairs (2 rows). Pass an even count or all."
+        );
+    }
+    let mut by_commit: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
+    for (i, row) in rows.iter().enumerate() {
+        by_commit.entry(row.index / 2).or_default().push(i);
+    }
+    let mut usable: Vec<[usize; 2]> = Vec::new();
+    for (commit, idxs) in &by_commit {
+        let pair = commit_pair_slots(rows, idxs).map_err(|detail| {
+            anyhow::anyhow!(
+                "refuse:classify-import: {side} commit {commit} is missing an A=NeedsFix or B=Idiomatic row ({detail})"
+            )
+        })?;
+        usable.push(pair);
+    }
+    let want = n / 2;
+    if want > usable.len() {
+        bail!(
+            "refuse:classify-import: {side} size {n} needs {want} commit pairs but the split has {} usable pairs",
+            usable.len()
+        );
+    }
+    let keep_at = if want == usable.len() {
+        (0..usable.len()).collect::<Vec<_>>()
+    } else {
+        let (keep, _) = split_indices(usable.len(), seed, usable.len() - want);
+        keep
+    };
+    let mut picked = Vec::with_capacity(*n);
+    for at in keep_at {
+        let [a, b] = usable[at];
+        picked.push(a);
+        picked.push(b);
+    }
+    picked.sort_unstable();
+    Ok(picked)
+}
+
+fn commit_pair_slots(rows: &[NativeRow], idxs: &[usize]) -> std::result::Result<[usize; 2], String> {
+    if idxs.len() != 2 {
+        return Err(format!("found {} rows", idxs.len()));
+    }
+    let mut needs = None;
+    let mut idiom = None;
+    for &i in idxs {
+        match rows[i].label {
+            0 if needs.is_none() => needs = Some(i),
+            1 if idiom.is_none() => idiom = Some(i),
+            label => return Err(format!("label {label} is not one A and one B")),
+        }
+    }
+    match (needs, idiom) {
+        (Some(a), Some(b)) => Ok([a, b]),
+        _ => Err("found a one-sided commit".into()),
+    }
 }
 
 fn balanced_indices(
@@ -4455,6 +4546,148 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(bad_lang.contains("not Rust"), "{bad_lang}");
+    }
+
+    fn pair_native(commits: &[u64]) -> Vec<NativeRow> {
+        let mut rows = Vec::new();
+        for &commit in commits {
+            rows.push(native(
+                commit * 2,
+                0,
+                &format!("fn old_{commit}() {{ let mut v = Vec::new(); v.push(1); }}"),
+            ));
+            rows.push(native(
+                commit * 2 + 1,
+                1,
+                &format!("fn new_{commit}() {{ let v = vec![1]; }}"),
+            ));
+        }
+        rows
+    }
+
+    fn assert_complete_ab_pairs(rows: &[Value], split: &str) {
+        let mut by_commit: BTreeMap<u64, Vec<char>> = BTreeMap::new();
+        for row in rows {
+            let id = row["id"].as_str().unwrap();
+            let prefix = format!("rust_idiom:{split}:");
+            let index: u64 = id.strip_prefix(&prefix).unwrap().parse().unwrap();
+            let letter = row["answer"].as_str().unwrap().chars().next().unwrap();
+            by_commit.entry(index / 2).or_default().push(letter);
+        }
+        assert_eq!(rows.len(), by_commit.len() * 2);
+        for (commit, letters) in &by_commit {
+            let mut letters = letters.clone();
+            letters.sort_unstable();
+            assert_eq!(letters, vec!['A', 'B'], "commit {commit}");
+        }
+    }
+
+    #[test]
+    fn rust_idiom_finite_train_size_samples_whole_commit_pairs() {
+        let preset = preset_by_name("rust_idiom").unwrap();
+        let train = pair_native(&[0, 1, 2, 3, 4, 5, 6, 7]);
+        let test = pair_native(&[100, 101, 102]);
+        let sampled = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::Count(6),
+            &SplitSize::Count(4),
+            42,
+        )
+        .unwrap();
+        assert_eq!(sampled.train.len(), 6);
+        assert_eq!(sampled.heldout.len(), 4);
+        assert_complete_ab_pairs(&sampled.train, "train");
+        assert_complete_ab_pairs(&sampled.heldout, "test");
+        let again = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::Count(6),
+            &SplitSize::All,
+            42,
+        )
+        .unwrap();
+        assert_eq!(sampled.train, again.train);
+        let all = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::All,
+            &SplitSize::All,
+            42,
+        )
+        .unwrap();
+        assert_eq!(all.train.len(), train.len());
+        assert_eq!(all.heldout.len(), test.len());
+        let all_ids: Vec<_> = all
+            .train
+            .iter()
+            .map(|row| row["id"].as_str().unwrap().to_string())
+            .collect();
+        let full_ids: Vec<_> = train
+            .iter()
+            .map(|row| format!("rust_idiom:train:{}", row.index))
+            .collect();
+        assert_eq!(all_ids, full_ids);
+        let odd = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::Count(5),
+            &SplitSize::All,
+            42,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(odd.contains("odd"), "{odd}");
+        assert!(odd.contains("even"), "{odd}");
+        let short = sample_records(
+            preset,
+            &train,
+            &test,
+            &SplitSize::Count(20),
+            &SplitSize::All,
+            42,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(short.contains("usable pairs"), "{short}");
+        let mut broken = train.clone();
+        broken.pop();
+        let bad = sample_records(
+            preset,
+            &broken,
+            &test,
+            &SplitSize::Count(4),
+            &SplitSize::All,
+            42,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            bad.contains("missing an A=NeedsFix or B=Idiomatic"),
+            "{bad}"
+        );
+        let ag = preset_by_name("ag_news").unwrap();
+        let ag_sampled = sample_records(
+            ag,
+            &grid(0, 10, 4),
+            &grid(10_000, 6, 4),
+            &SplitSize::Count(6),
+            &SplitSize::Count(4),
+            42,
+        )
+        .unwrap();
+        assert_eq!(ag_sampled.train.len(), 6);
+        let mut counts = BTreeMap::new();
+        for row in &ag_sampled.train {
+            *counts
+                .entry(row["answer"].as_str().unwrap().to_string())
+                .or_insert(0) += 1;
+        }
+        assert_eq!(counts.len(), 4);
     }
 
     #[test]

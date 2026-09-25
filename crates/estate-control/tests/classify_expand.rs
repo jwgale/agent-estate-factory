@@ -168,3 +168,122 @@ fn expand_help_is_next_to_import_and_print_does_not_echo_the_key() {
     assert!(ferr.contains("rust_idiom"), "{ferr}");
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn finite_rust_idiom_import_keeps_pairs_and_expand_print_accepts_them() {
+    let root = std::env::temp_dir().join(format!(
+        "classify-pair-sample-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let mut train = String::new();
+    for commit in 0..6u64 {
+        let base = commit * 2;
+        train.push_str(&format!(
+            "{{\"index\":{base},\"text\":\"fn old_{commit}() {{ let mut v = Vec::new(); v.push(1); }}\",\"label\":0}}\n"
+        ));
+        train.push_str(&format!(
+            "{{\"index\":{},\"text\":\"fn new_{commit}() {{ let v = vec![1]; }}\",\"label\":1}}\n",
+            base + 1
+        ));
+    }
+    let train_path = root.join("native-train.jsonl");
+    let test_path = root.join("native-test.jsonl");
+    fs::write(&train_path, &train).unwrap();
+    fs::write(
+        &test_path,
+        "{\"index\":200,\"text\":\"fn held_old() { let mut v = Vec::new(); v.push(1); }\",\"label\":0}\n{\"index\":201,\"text\":\"fn held_new() { let v = vec![1]; }\",\"label\":1}\n",
+    )
+    .unwrap();
+    let out = root.join("sampled");
+    let imported = bin()
+        .args([
+            "classify",
+            "import",
+            "--dataset",
+            "rust_idiom",
+            "--native-train",
+            train_path.to_str().unwrap(),
+            "--native-test",
+            test_path.to_str().unwrap(),
+            "--train-size",
+            "4",
+            "--heldout-size",
+            "all",
+            "--seed",
+            "42",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    let stderr = String::from_utf8_lossy(&imported.stderr);
+    assert!(imported.status.success(), "{stdout}\n{stderr}");
+    let body = fs::read_to_string(out.join("train.jsonl")).unwrap();
+    let mut by_commit: std::collections::BTreeMap<u64, Vec<String>> = std::collections::BTreeMap::new();
+    for line in body.lines() {
+        let row: serde_json::Value = serde_json::from_str(line).unwrap();
+        let id = row["id"].as_str().unwrap();
+        let index: u64 = id.strip_prefix("rust_idiom:train:").unwrap().parse().unwrap();
+        by_commit
+            .entry(index / 2)
+            .or_default()
+            .push(row["answer"].as_str().unwrap().to_string());
+    }
+    assert_eq!(by_commit.len(), 2, "{body}");
+    for letters in by_commit.values() {
+        let mut letters = letters.clone();
+        letters.sort();
+        assert_eq!(letters, ["A", "B"]);
+    }
+    let odd = bin()
+        .args([
+            "classify",
+            "import",
+            "--dataset",
+            "rust_idiom",
+            "--native-train",
+            train_path.to_str().unwrap(),
+            "--native-test",
+            test_path.to_str().unwrap(),
+            "--train-size",
+            "5",
+            "--out",
+            root.join("odd").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let odd_err = String::from_utf8_lossy(&odd.stderr);
+    assert!(!odd.status.success(), "{odd_err}");
+    assert!(odd_err.contains("odd"), "{odd_err}");
+    let printed = bin()
+        .args([
+            "classify",
+            "expand",
+            "--dataset",
+            "rust_idiom",
+            "--train",
+            out.to_str().unwrap(),
+            "--tag",
+            "rev1",
+            "--train-size",
+            "4",
+            "--seed",
+            "42",
+            "--print",
+            "--out",
+            root.join("expand").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let pout = String::from_utf8_lossy(&printed.stdout);
+    let perr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{pout}\n{perr}");
+    assert!(!perr.contains("missing an A=NeedsFix"), "{perr}");
+    let plan = fs::read_to_string(root.join("expand").join("expand-plan.json")).unwrap();
+    assert!(plan.contains("\"source_pairs\": 2"), "{plan}");
+    assert!(plan.contains("\"ready_for_live_test\": \"no\""), "{plan}");
+    let _ = fs::remove_dir_all(&root);
+}
