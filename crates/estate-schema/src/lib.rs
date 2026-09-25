@@ -14,7 +14,7 @@ mod validate;
 pub use compile::{compile_intentions, CompiledIntention};
 pub use error::EstateError;
 pub use firewall::{
-    authorize, describe_model_class_coverage, describe_tool_mcp_coverage, read_lane_file,
+    authorize, describe_declared_coverage, describe_model_class_coverage, read_lane_file,
     AccessRequest, Decision, Deny,
 };
 pub use hash::estate_hash;

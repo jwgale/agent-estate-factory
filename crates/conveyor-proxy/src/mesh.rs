@@ -2673,7 +2673,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_and_mcp_intentions_refuse_without_coverage() {
+    fn tool_mcp_and_mount_intentions_refuse_without_coverage() {
         let dir = tmp();
         let mut estate = example_estate();
         estate
@@ -2689,6 +2689,7 @@ mod tests {
         for (hop, capability, kind) in [
             ("notes-hop", "notes-append", estate_schema::IntentionKind::Tool),
             ("docs-hop", "docs", estate_schema::IntentionKind::Mcp),
+            ("mount-hop", "notes", estate_schema::IntentionKind::Mount),
         ] {
             declare_hop(
                 &dir,
@@ -2711,6 +2712,12 @@ mod tests {
             assert!(text.starts_with("refuse:intention"), "{text}");
             assert!(text.contains("deny-default"), "{text}");
             assert!(text.contains("not covered by an allow"), "{text}");
+            if kind == estate_schema::IntentionKind::Mount {
+                assert!(
+                    text.contains("not covered by an allow Mount intention"),
+                    "{text}"
+                );
+            }
         }
         let mut granted = estate.clone();
         granted.intentions.push(estate_schema::Intention {
@@ -2737,6 +2744,46 @@ mod tests {
         )
         .unwrap_err();
         assert!(denied.to_string().contains("explicit deny"), "{denied}");
+
+        let mut mount_allow = estate.clone();
+        mount_allow.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "mount:notes".into(),
+            kind: estate_schema::IntentionKind::Mount,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let allowed = call_hop_for_agent(
+            &dir,
+            "mount-hop",
+            "notes",
+            "research",
+            Some(estate_schema::IntentionKind::Mount),
+            &mount_allow,
+        )
+        .unwrap();
+        assert!(allowed.allow, "{}", allowed.reason);
+        assert!(allowed.reason.contains("allow intention"), "{}", allowed.reason);
+        mount_allow.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes".into(),
+            kind: estate_schema::IntentionKind::Mount,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+        let mount_denied = call_hop_for_agent(
+            &dir,
+            "mount-hop",
+            "notes",
+            "research",
+            None,
+            &mount_allow,
+        )
+        .unwrap_err();
+        assert!(
+            mount_denied.to_string().contains("explicit deny"),
+            "{mount_denied}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

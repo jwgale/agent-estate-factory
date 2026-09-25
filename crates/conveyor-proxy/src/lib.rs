@@ -153,4 +153,40 @@ mod tests {
             .invoke("horizon", IntentionKind::Mount, "undeclared")
             .is_allow());
     }
+
+    #[test]
+    fn worker_declared_mount_without_allow_refuses() {
+        let e = estate();
+        let worker = WorkerClient::new(&e);
+        let denied = worker.invoke("research", IntentionKind::Mount, "notes");
+        assert!(!denied.is_allow());
+        assert!(denied.reason().contains("not covered by an allow Mount intention"));
+        assert!(denied.reason().contains("deny-default"));
+    }
+
+    #[test]
+    fn worker_mount_allow_intention_passes_and_deny_wins() {
+        let mut e = estate();
+        e.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "mount:notes".into(),
+            kind: IntentionKind::Mount,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let worker = WorkerClient::new(&e);
+        let allowed = worker.invoke("research", IntentionKind::Mount, "notes");
+        assert!(allowed.is_allow(), "{}", allowed.reason());
+        e.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes".into(),
+            kind: IntentionKind::Mount,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+        let worker = WorkerClient::new(&e);
+        let denied = worker.invoke("research", IntentionKind::Mount, "mount:notes");
+        assert!(!denied.is_allow());
+        assert!(denied.reason().contains("explicit deny"));
+    }
 }

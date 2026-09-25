@@ -118,7 +118,7 @@ fn a4_deny_default_tools_and_mounts() {
     );
     assert!(!declared.is_allow());
     assert!(declared.reason().contains("not covered by an allow Tool intention"));
-    let mount_ok = authorize(
+    let mount_declared = authorize(
         &e,
         &AccessRequest {
             subject_agent: "research",
@@ -126,7 +126,10 @@ fn a4_deny_default_tools_and_mounts() {
             object: "notes",
         },
     );
-    assert!(mount_ok.is_allow());
+    assert!(!mount_declared.is_allow());
+    assert!(mount_declared
+        .reason()
+        .contains("not covered by an allow Mount intention"));
     let mount_bad = authorize(
         &e,
         &AccessRequest {

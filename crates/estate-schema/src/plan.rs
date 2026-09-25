@@ -690,10 +690,10 @@ fn blast_radius(
     );
     lines.push(crate::firewall::describe_model_class_coverage(estate));
     lines.push(
-        "Tool and MCP coverage (an allow intention covers the object; tools and MCP have no class):"
+        "Tool, MCP, and Mount coverage (an allow intention covers the object; these have no class):"
             .into(),
     );
-    lines.push(crate::firewall::describe_tool_mcp_coverage(estate));
+    lines.push(crate::firewall::describe_declared_coverage(estate));
     lines.push("Model class delta (who gained or lost which class):".into());
     lines.push(model_class_delta(estate, against));
     if !added.agents.is_empty() {
@@ -863,7 +863,8 @@ mod tests {
         assert!(plan.blast_radius_text.contains("Uncertain:"));
         assert!(plan.blast_radius_text.contains("Identity stays parked"));
         assert!(plan.blast_radius_text.contains("research tool notes-append: deny-default"));
-        assert!(plan.blast_radius_text.contains("tools and MCP have no class"));
+        assert!(plan.blast_radius_text.contains("research mount notes: deny-default"));
+        assert!(plan.blast_radius_text.contains("these have no class"));
         assert!(plan.blast_radius_text.contains("horizon frontier xai_grok: deny-default"));
         assert!(plan.blast_radius_text.contains("horizon local local_slm: deny-default"));
         assert!(plan.blast_radius_text.contains("research local local_slm: deny-default"));
