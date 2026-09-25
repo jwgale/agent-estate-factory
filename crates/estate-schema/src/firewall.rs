@@ -449,9 +449,13 @@ pub fn describe_intention_coverage(estate: &Estate) -> String {
 
 /// Placement-derived hop facts. Plan does not read a lease file and does not
 /// spawn. Box capability is `lane-tool`. Cloud capability is `mesh-stub`.
-/// A cloud hop is deny (declared, not spawned). An empty population is
-/// deny-default (not a grant). A box hop uses the same allow / deny /
-/// deny-default words as a declared capability of that name.
+/// A cloud hop stays `deny`. The printed line also says
+/// `(declared, not spawned)` so plan, drift, and doctor do not read that
+/// deny as an intention deny. The word stays `deny` so convey gates and
+/// the capability-mismatch cite are unchanged. Cloud kinds stay out of
+/// that cite: a cloud hop is not a capability mismatch, it is not spawned.
+/// An empty population is deny-default (not a grant). A box hop uses the
+/// same allow / deny / deny-default words as a declared capability of that name.
 pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
     let mut rows = Vec::new();
     for place in &estate.placements {
@@ -464,7 +468,7 @@ pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                 place.id.clone(),
                 word,
                 capability,
-                format!("{} hop {capability}: {word}", place.id),
+                hop_coverage_line("", &place.id, capability, word, cloud),
             ));
             continue;
         }
@@ -475,11 +479,32 @@ pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                 place.id.clone(),
                 word,
                 capability,
-                format!("{agent_id} hop {} {capability}: {word}", place.id),
+                hop_coverage_line(agent_id, &place.id, capability, word, cloud),
             ));
         }
     }
     rows
+}
+
+/// Display line for one hop row. `word` is unchanged. Cloud rows name
+/// declared-not-spawned so the graph is not a silent omit.
+fn hop_coverage_line(
+    agent_id: &str,
+    place_id: &str,
+    capability: &str,
+    word: &str,
+    cloud: bool,
+) -> String {
+    let line = if agent_id.is_empty() {
+        format!("{place_id} hop {capability}: {word}")
+    } else {
+        format!("{agent_id} hop {place_id} {capability}: {word}")
+    };
+    if cloud {
+        format!("{line} (declared, not spawned)")
+    } else {
+        line
+    }
 }
 
 fn hop_coverage_word(
@@ -1227,7 +1252,8 @@ mod tests {
         assert!(hops.contains("horizon hop cell-one-box lane-tool: deny-default"));
         assert!(hops.contains("research hop cell-one-box lane-tool: deny-default"));
         assert!(hops.contains("sanctum hop cell-one-box lane-tool: deny-default"));
-        assert!(hops.contains("cursor-cloud hop mesh-stub: deny"));
+        assert!(hops.contains("cursor-cloud hop mesh-stub: deny (declared, not spawned)"));
+        assert!(!hops.contains("cell-one-box lane-tool: deny-default (declared, not spawned)"));
 
         let mut granted = raw.clone();
         grant(&mut granted, "horizon", IntentionKind::MemoryRead, "lane:research", Effect::Allow);
@@ -1256,9 +1282,15 @@ mod tests {
         assert!(describe_hop_coverage(&hopped).contains("research hop cell-one-box lane-tool: allow"));
         grant(&mut hopped, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
         assert!(describe_hop_coverage(&hopped).contains("research hop cell-one-box lane-tool: deny"));
+        assert!(!describe_hop_coverage(&hopped).contains("lane-tool: deny (declared, not spawned)"));
         hopped.placements.iter_mut().find(|p| p.id == "cursor-cloud").unwrap().agents = vec!["sanctum".into()];
         let cloud = describe_hop_coverage(&hopped);
-        assert!(cloud.contains("sanctum hop cursor-cloud mesh-stub: deny"));
+        assert!(cloud.contains("sanctum hop cursor-cloud mesh-stub: deny (declared, not spawned)"));
+        let cloud_row = hop_coverage_rows(&hopped)
+            .into_iter()
+            .find(|row| row.hop_id == "cursor-cloud")
+            .expect("cloud hop row");
+        assert_eq!(cloud_row.word, "deny");
         assert!(!cloud.contains("cursor-cloud hop mesh-stub:"));
     }
 
@@ -1267,7 +1299,7 @@ mod tests {
         let raw = estate();
         let empty_cloud = convey_hop_coverage(&raw, "cursor-cloud", None).unwrap_err();
         assert_eq!(empty_cloud.word, "deny");
-        assert!(empty_cloud.line.contains("deny"));
+        assert!(empty_cloud.line.contains("deny (declared, not spawned)"));
         assert!(!empty_cloud.line.contains("deny-default"));
 
         let populated = convey_hop_coverage(&raw, "cell-one-box", None).unwrap_err();

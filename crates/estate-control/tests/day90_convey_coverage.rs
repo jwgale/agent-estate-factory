@@ -354,7 +354,7 @@ fn convey_fails_closed_on_hop_coverage() {
     let plan_text = text(&plan);
     assert!(plan.status.success(), "{plan_text}");
     assert!(
-        plan_text.contains("cursor-cloud hop mesh-stub: deny"),
+        plan_text.contains("cursor-cloud hop mesh-stub: deny (declared, not spawned)"),
         "{plan_text}"
     );
     assert!(
