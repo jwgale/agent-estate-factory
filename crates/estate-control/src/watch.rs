@@ -3,8 +3,8 @@ use conveyor_proxy::{
     hop_now_unix, list_expired_hop_leases,
 };
 use estate_schema::{
-    describe_declared_coverage, describe_model_class_coverage, estate_hash, latest_plan,
-    load_estate,
+    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
+    describe_model_class_coverage, estate_hash, latest_plan, load_estate,
 };
 use feed_collector::list_open_proposals;
 use floor_supervisor::{
@@ -356,6 +356,14 @@ fn print_doctor_intention_coverage(root: &Path, fails: &mut Vec<String>) {
     }
     println!("tool mcp mount:");
     for line in describe_declared_coverage(&estate).lines() {
+        println!("  {line}");
+    }
+    println!("intention:");
+    for line in describe_intention_coverage(&estate).lines() {
+        println!("  {line}");
+    }
+    println!("hop:");
+    for line in describe_hop_coverage(&estate).lines() {
         println!("  {line}");
     }
 }

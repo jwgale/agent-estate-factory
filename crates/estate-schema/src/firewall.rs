@@ -160,9 +160,48 @@ fn model_intention_effect(
     }
 }
 
-/// One line per agent `models:` entry. Frontier and local use the same words.
-pub fn describe_model_class_coverage(estate: &Estate) -> String {
-    let mut lines = Vec::new();
+/// One coverage fact. `agent_id` is the filter key. `line` is the display.
+/// An empty `agent_id` is an estate-wide row (an empty hop population).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoverageRow {
+    pub agent_id: String,
+    pub line: String,
+}
+
+/// Rows whose `agent_id` matches. Display text is not parsed.
+pub fn coverage_for_agent<'a>(
+    rows: &'a [CoverageRow],
+    agent_id: &str,
+) -> impl Iterator<Item = &'a CoverageRow> {
+    let want = normalize_name(agent_id);
+    rows.iter()
+        .filter(move |row| !row.agent_id.is_empty() && normalize_name(&row.agent_id) == want)
+}
+
+fn join_coverage(rows: &[CoverageRow], empty: &str) -> String {
+    if rows.is_empty() {
+        empty.into()
+    } else {
+        rows.iter().map(|row| row.line.as_str()).collect::<Vec<_>>().join("\n")
+    }
+}
+
+fn coverage_word(decision: &Decision) -> &'static str {
+    match decision {
+        Decision::Allow { .. } => "allow",
+        Decision::Deny(d) if d.reason.contains("explicit deny") => "deny",
+        Decision::Deny(d)
+            if d.reason.contains("deny-default") || d.reason.contains("no intention") =>
+        {
+            "deny-default"
+        }
+        Decision::Deny(_) => "deny",
+    }
+}
+
+/// One row per agent `models:` entry. Frontier and local use the same words.
+pub fn model_class_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
+    let mut rows = Vec::new();
     for agent in &estate.agents {
         for model in &agent.models {
             let class = estate
@@ -178,14 +217,18 @@ pub fn describe_model_class_coverage(estate: &Estate) -> String {
                 .and_then(|b| model_intention_effect(estate, &agent.id, &model.id, b.class))
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            lines.push(format!("{} {} {}: {covered}", agent.id, class, model.id));
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!("{} {} {}: {covered}", agent.id, class, model.id),
+            });
         }
     }
-    if lines.is_empty() {
-        "(no agent model uses)".into()
-    } else {
-        lines.join("\n")
-    }
+    rows
+}
+
+/// One line per agent `models:` entry. Frontier and local use the same words.
+pub fn describe_model_class_coverage(estate: &Estate) -> String {
+    join_coverage(&model_class_coverage_rows(estate), "(no agent model uses)")
 }
 
 /// A declared tool, MCP, or mount is not enough. An allow intention of that
@@ -270,35 +313,170 @@ fn named_intention_effect(
     }
 }
 
-/// One line per agent tool, MCP, and mount. These kinds have no class.
-pub fn describe_declared_coverage(estate: &Estate) -> String {
-    let mut lines = Vec::new();
+/// One row per agent tool, MCP, and mount. These kinds have no class.
+pub fn declared_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
+    let mut rows = Vec::new();
     for agent in &estate.agents {
         for tool in &agent.tools {
             let covered = named_intention_effect(estate, &agent.id, IntentionKind::Tool, &tool.id)
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            lines.push(format!("{} tool {}: {covered}", agent.id, tool.id));
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!("{} tool {}: {covered}", agent.id, tool.id),
+            });
         }
         for mcp in &agent.mcp {
             let covered = named_intention_effect(estate, &agent.id, IntentionKind::Mcp, &mcp.id)
                 .map(|effect| effect.as_str())
                 .unwrap_or("deny-default");
-            lines.push(format!("{} mcp {}: {covered}", agent.id, mcp.id));
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!("{} mcp {}: {covered}", agent.id, mcp.id),
+            });
         }
         for mount in &agent.mounts {
             let covered =
                 named_intention_effect(estate, &agent.id, IntentionKind::Mount, &mount.id)
                     .map(|effect| effect.as_str())
                     .unwrap_or("deny-default");
-            lines.push(format!("{} mount {}: {covered}", agent.id, mount.id));
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!("{} mount {}: {covered}", agent.id, mount.id),
+            });
         }
     }
-    if lines.is_empty() {
-        "(no agent tool, mcp, or mount uses)".into()
-    } else {
-        lines.join("\n")
+    rows
+}
+
+/// One line per agent tool, MCP, and mount. These kinds have no class.
+pub fn describe_declared_coverage(estate: &Estate) -> String {
+    join_coverage(
+        &declared_coverage_rows(estate),
+        "(no agent tool, mcp, or mount uses)",
+    )
+}
+
+/// Own-lane memory is allow. Cross-lane memory is deny-default unless an
+/// intention covers it. An explicit deny wins. Each compiled intention is
+/// also a row so allow and deny are visible without reading the estate file.
+pub fn intention_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
+    let mut rows = Vec::new();
+    for agent in &estate.agents {
+        for lane in &estate.lanes {
+            let object = format!("lane:{}", lane.id);
+            let decision = authorize(
+                estate,
+                &AccessRequest {
+                    subject_agent: &agent.id,
+                    kind: IntentionKind::MemoryRead,
+                    object: &object,
+                },
+            );
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!(
+                    "{} memory_read {object}: {}",
+                    agent.id,
+                    coverage_word(&decision)
+                ),
+            });
+        }
+        for intention in estate
+            .intentions
+            .iter()
+            .filter(|i| normalize_name(&i.subject_agent) == normalize_name(&agent.id))
+        {
+            rows.push(CoverageRow {
+                agent_id: agent.id.clone(),
+                line: format!(
+                    "{} intention {} {}: {}",
+                    agent.id,
+                    intention.kind.as_str(),
+                    intention.object,
+                    intention.effect.as_str()
+                ),
+            });
+        }
     }
+    rows
+}
+
+pub fn describe_intention_coverage(estate: &Estate) -> String {
+    join_coverage(&intention_coverage_rows(estate), "(no intention coverage)")
+}
+
+/// Placement-derived hop facts. Plan does not read a lease file and does not
+/// spawn. Box capability is `lane-tool`. Cloud capability is `mesh-stub`.
+/// A cloud hop is deny (declared, not spawned). An empty population is
+/// deny-default (not a grant). A box hop uses the same allow / deny /
+/// deny-default words as a declared capability of that name.
+pub fn hop_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
+    let mut rows = Vec::new();
+    for place in &estate.placements {
+        let cloud = place.kind == crate::PlacementKind::CloudAgent;
+        let capability = if cloud { "mesh-stub" } else { "lane-tool" };
+        if place.agents.is_empty() {
+            let word = if cloud { "deny" } else { "deny-default" };
+            rows.push(CoverageRow {
+                agent_id: String::new(),
+                line: format!("{} hop {capability}: {word}", place.id),
+            });
+            continue;
+        }
+        for agent_id in &place.agents {
+            let word = hop_coverage_word(estate, agent_id, capability, cloud);
+            rows.push(CoverageRow {
+                agent_id: agent_id.clone(),
+                line: format!("{agent_id} hop {} {capability}: {word}", place.id),
+            });
+        }
+    }
+    rows
+}
+
+fn hop_coverage_word(
+    estate: &Estate,
+    agent_id: &str,
+    capability: &str,
+    cloud: bool,
+) -> &'static str {
+    if cloud {
+        return "deny";
+    }
+    if estate.agent(agent_id).is_none() {
+        return "deny-default";
+    }
+    let mut hits = Vec::new();
+    if let Some(agent) = estate.agent(agent_id) {
+        if agent.has_tool(capability) {
+            hits.push(IntentionKind::Tool);
+        }
+        if agent.has_mcp(capability) {
+            hits.push(IntentionKind::Mcp);
+        }
+        if agent.has_mount(capability) {
+            hits.push(IntentionKind::Mount);
+        }
+        if agent.has_model(capability) {
+            hits.push(IntentionKind::Model);
+        }
+    }
+    match hits.as_slice() {
+        [kind] => coverage_word(&authorize(
+            estate,
+            &AccessRequest {
+                subject_agent: agent_id,
+                kind: *kind,
+                object: capability,
+            },
+        )),
+        _ => "deny-default",
+    }
+}
+
+pub fn describe_hop_coverage(estate: &Estate) -> String {
+    join_coverage(&hop_coverage_rows(estate), "(no hop coverage)")
 }
 
 fn authorize_memory(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
@@ -740,6 +918,71 @@ mod tests {
         assert!(!explicit.is_allow());
         assert!(explicit.reason().contains("explicit deny"));
         assert!(explicit.reason().contains("class frontier"));
+    }
+
+    #[test]
+    fn intention_and_hop_coverage_name_allow_deny_and_default() {
+        let raw = estate();
+        let memory = describe_intention_coverage(&raw);
+        assert!(memory.contains("horizon memory_read lane:horizon: allow"));
+        assert!(memory.contains("horizon memory_read lane:research: deny-default"));
+        assert!(memory.contains("research memory_read lane:sanctum: deny-default"));
+        assert!(!memory.contains("intention "));
+        let hops = describe_hop_coverage(&raw);
+        assert!(hops.contains("horizon hop cell-one-box lane-tool: deny-default"));
+        assert!(hops.contains("research hop cell-one-box lane-tool: deny-default"));
+        assert!(hops.contains("sanctum hop cell-one-box lane-tool: deny-default"));
+        assert!(hops.contains("cursor-cloud hop mesh-stub: deny"));
+
+        let mut granted = raw.clone();
+        grant(&mut granted, "horizon", IntentionKind::MemoryRead, "lane:research", Effect::Allow);
+        let allowed = describe_intention_coverage(&granted);
+        assert!(allowed.contains("horizon memory_read lane:research: allow"));
+        assert!(allowed.contains("horizon intention memory_read lane:research: allow"));
+        let mut denied = granted;
+        grant(&mut denied, "horizon", IntentionKind::MemoryRead, "lane:research", Effect::Deny);
+        let explicit = describe_intention_coverage(&denied);
+        assert!(explicit.contains("horizon memory_read lane:research: deny"));
+        assert!(!explicit.contains("horizon memory_read lane:research: allow"));
+        assert!(explicit.contains("horizon intention memory_read lane:research: deny"));
+
+        let rows = intention_coverage_rows(&denied);
+        let horizon: Vec<_> = coverage_for_agent(&rows, "horizon").map(|row| row.line.as_str()).collect();
+        assert!(horizon.iter().any(|line| line.contains("memory_read lane:research: deny")));
+        assert!(coverage_for_agent(&rows, "research").all(|row| row.agent_id == "research"));
+
+        let mut hopped = raw.clone();
+        hopped.agents.iter_mut().find(|a| a.id == "research").unwrap().tools.push(crate::ToolDecl {
+            id: "lane-tool".into(),
+            description: None,
+        });
+        assert!(describe_hop_coverage(&hopped).contains("research hop cell-one-box lane-tool: deny-default"));
+        grant(&mut hopped, "research", IntentionKind::Tool, "lane-tool", Effect::Allow);
+        assert!(describe_hop_coverage(&hopped).contains("research hop cell-one-box lane-tool: allow"));
+        grant(&mut hopped, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
+        assert!(describe_hop_coverage(&hopped).contains("research hop cell-one-box lane-tool: deny"));
+        hopped.placements.iter_mut().find(|p| p.id == "cursor-cloud").unwrap().agents = vec!["sanctum".into()];
+        let cloud = describe_hop_coverage(&hopped);
+        assert!(cloud.contains("sanctum hop cursor-cloud mesh-stub: deny"));
+        assert!(!cloud.contains("cursor-cloud hop mesh-stub:"));
+    }
+
+    #[test]
+    fn coverage_for_agent_ignores_display_prefix() {
+        let rows = vec![
+            CoverageRow {
+                agent_id: "horizon".into(),
+                line: "not-the-id model class: allow".into(),
+            },
+            CoverageRow {
+                agent_id: String::new(),
+                line: "horizon hop mesh-stub: deny".into(),
+            },
+        ];
+        let matched: Vec<_> = coverage_for_agent(&rows, "horizon").collect();
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].line, "not-the-id model class: allow");
+        assert!(coverage_for_agent(&rows, "research").next().is_none());
     }
 
     #[test]

@@ -220,7 +220,9 @@ apply --require-plan / --require-fresh-plan read these files.
 The plan prints an Agents section: id, lane, desktop, placement
 (box, cloud-agent declared-not-spawned, or none), declared tool / mcp /
 mount / model counts, and that agent's allow / deny / deny-default
-coverage. It does not spawn agents. Control does not complete.
+coverage for model class, tool / mcp / mount, intention (memory and
+compiled intentions), and hop (placement-derived). It does not spawn
+agents. Control does not complete.
 
 The plan line prints the bound frontier model, or model=- when the binding
 sets none. It does not copy the schema card. An estate with no frontier
