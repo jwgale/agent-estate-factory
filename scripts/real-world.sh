@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "One-box Agent Estate Factory: plan/apply IaC, sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera), equal-class frontier+local, manual enrich packs."
+echo "Next-generation harness and custom AI creator suite: first-class agents under a security-first control suite, a Grok Bot–like harness, and on-spot specialty SLMs, on one box with sacred isolation (Cyera CI + Rust classroom out; Sanctum is not Cyera) and equal-class frontier+local."
 echo "train/enrich: make enrich-prepare writes artifacts only (docs/TRAIN-ENRICH.md). Not a live train."
 echo
 

@@ -319,7 +319,7 @@ Use Ollama for running a model on the host, including Ollama-on-Mac, and for bui
 
 A new driver earns a catalog card when `ollama` and llama.cpp both lack the job. The card goes through catalog, route, and bind. The binding id stays `local_slm`. Floor core does not gain a vendor string. The driver stays a trait. The specialist process may be any language. Jason verifies before the card is Supported. Until that verification, the card stays stub or experimental and fails closed.
 
-Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a Grok Bot clone, a chat UI, a weight browser. LLaMA-Factory and Axolotl stay the trainers. This factory writes the recipe and does not run it.
+Anti-shrink keeps these out of the factory: an AI gateway, an Ollama wrapper-as-product, LM Studio-alone, a thin Grok Bot clone without the estate, a UI-only shell, undirected agent sprawl, and a weight browser. The Grok Bot–like look and feel stays. Agents and controlled spin-up stay first-class. LLaMA-Factory and Axolotl stay the trainers. This factory writes the recipe and does not run it.
 
 Control does not complete. Completion stays on the data plane (`estate specialist`, `model-estate`).
 
