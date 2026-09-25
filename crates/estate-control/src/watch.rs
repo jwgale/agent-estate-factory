@@ -404,13 +404,14 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     Ok(describe_authority_section(&rows, state_dir))
 }
 
-/// Shared printer for doctor, status, and `estate convey authority`. A
-/// granted box lease (or a box hop declaration with no lease) whose
-/// placement hop coverage is deny, deny-default, or a capability mismatch
-/// quotes `refuse:hop-coverage`. `FAIL` when `cite.fail` (capability
-/// mismatch). Deny and deny-default are `note`. Returns the mismatch lines.
-/// Doctor appends them and bails at the end. Status and convey authority
-/// discard them and do not bail. Cloud hops, empty populations, ungranted
+/// Shared printer for doctor, status, `estate convey authority`, and
+/// `estate reconcile`. A granted box lease (or a box hop declaration with
+/// no lease) whose placement hop coverage is deny, deny-default, or a
+/// capability mismatch quotes `refuse:hop-coverage`. `FAIL` when `cite.fail`
+/// (capability mismatch). Deny and deny-default are `note`. Returns the
+/// mismatch lines. Doctor appends them and bails at the end. Status, convey
+/// authority, and reconcile discard them and do not bail. Cloud hops, empty
+/// populations, ungranted
 /// leases, and hop ids that are not placements stay out. Cloud kinds stay
 /// out of this cite on purpose: `cloud-mesh`, `cloud_mesh`, and
 /// `cloud-agent` (trim, lowercase) are declared-not-spawned, not a
@@ -430,11 +431,12 @@ pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> 
 }
 
 /// Shared with `estate drift`, `estate plan`, `estate apply`,
-/// `estate status`, and `estate convey authority`. `fail` is capability
-/// mismatch only. Deny and deny-default stay visible. They do not fail
-/// doctor `--strict`, drift, plan, apply, status, or convey authority by
-/// themselves. A mismatch fails doctor, drift, plan, and apply. Status and
-/// convey authority print it and do not bail.
+/// `estate status`, `estate convey authority`, and `estate reconcile`.
+/// `fail` is capability mismatch only. Deny and deny-default stay visible.
+/// They do not fail doctor `--strict`, drift, plan, apply, status, convey
+/// authority, or reconcile by themselves. A mismatch fails doctor, drift,
+/// plan, and apply. Status, convey authority, and reconcile print it and
+/// do not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
