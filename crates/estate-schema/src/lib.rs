@@ -15,13 +15,13 @@ pub use compile::{compile_intentions, intention_object_errors, CompiledIntention
 pub use error::EstateError;
 pub use firewall::{
     authorize, convey_hop_coverage, convey_hop_declared_capability, convey_intention_coverage,
-    agent_call_coverage_cites, agent_edge_coverage_rows, coverage_for_agent, declared_coverage_rows,
-    memory_coverage_cites,
+    agent_call_coverage_cites, agent_edge_coverage_rows, coverage_for_agent,
+    declared_coverage_cites, declared_coverage_rows, memory_coverage_cites,
     describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
     describe_intention_coverage, describe_model_class_coverage, hop_coverage_rows,
     intention_coverage_rows,
     coverage_word, coverage_word_for_reason, model_class_coverage_rows, read_lane_file,
-    AccessRequest, AgentCallCoverageCite, CoverageRow, Decision, Deny,
+    AccessRequest, AgentCallCoverageCite, CoverageRow, Decision, DeclaredCoverageCite, Deny,
     MemoryCoverageCite,
     HopCoverageGate, IntentionCoverageGate,
 };

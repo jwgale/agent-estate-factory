@@ -267,8 +267,14 @@ same window, in the line plan, drift, and doctor print
 including own-lane allow. Deny and deny-default, including a cross-lane
 read with no intention, are notes and do not fail apply. A missing or
 unrecognized memory edge fails before writes. Memory rows have no
-capability-mismatch class. A hop-coverage mismatch still fails before
-writes. Undeclared pairs stay on plan, drift, and doctor.
+capability-mismatch class. A declared tool, MCP, or mount is cited after
+memory and before hop, in the line plan, drift, and doctor print
+(`agent tool|mcp|mount id: allow|deny|deny-default`). Allow is quiet.
+Deny and deny-default are notes and do not fail apply. A missing or
+unrecognized row fails before writes (`refuse:tool`, `refuse:mcp`, or
+`refuse:mount`). These rows have no capability-mismatch class. A
+hop-coverage mismatch still fails before writes. Undeclared pairs stay
+on plan, drift, and doctor.
 ";
 
 const RECONCILE: &str = "\

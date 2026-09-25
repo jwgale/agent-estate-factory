@@ -453,6 +453,81 @@ pub fn describe_declared_coverage(estate: &Estate) -> String {
     )
 }
 
+/// One declared tool, MCP, or mount on apply. `line` is the same row
+/// [`describe_declared_coverage`] prints. Allow is omitted (quiet).
+/// Deny and deny-default stay visible. These rows have no
+/// capability-mismatch class, so `fail` is false for those words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredCoverageCite {
+    pub fail: bool,
+    pub line: String,
+}
+
+/// Every declared tool, MCP, and mount. Allow is quiet. Deny and
+/// deny-default are notes. A missing row or an unrecognized word fails
+/// closed (`refuse:tool`, `refuse:mcp`, or `refuse:mount`). Does not read
+/// a mesh and does not write.
+pub fn declared_coverage_cites(estate: &Estate) -> Vec<DeclaredCoverageCite> {
+    let rows = declared_coverage_rows(estate);
+    let mut cites = Vec::new();
+    for agent in &estate.agents {
+        cite_declared_kind(
+            &mut cites,
+            &rows,
+            &agent.id,
+            "tool",
+            agent.tools.iter().map(|tool| tool.id.as_str()),
+        );
+        cite_declared_kind(
+            &mut cites,
+            &rows,
+            &agent.id,
+            "mcp",
+            agent.mcp.iter().map(|mcp| mcp.id.as_str()),
+        );
+        cite_declared_kind(
+            &mut cites,
+            &rows,
+            &agent.id,
+            "mount",
+            agent.mounts.iter().map(|mount| mount.id.as_str()),
+        );
+    }
+    cites
+}
+
+fn cite_declared_kind<'a>(
+    cites: &mut Vec<DeclaredCoverageCite>,
+    rows: &[CoverageRow],
+    agent_id: &str,
+    kind: &str,
+    ids: impl Iterator<Item = &'a str>,
+) {
+    for id in ids {
+        let prefix = format!("{agent_id} {kind} {id}:");
+        let Some(row) = rows.iter().find(|row| {
+            normalize_name(&row.agent_id) == normalize_name(agent_id)
+                && row.line.starts_with(&prefix)
+        }) else {
+            cites.push(DeclaredCoverageCite {
+                fail: true,
+                line: format!("refuse:{kind}: {prefix} deny-default (missing edge)"),
+            });
+            continue;
+        };
+        if row.line.ends_with(": allow") {
+            continue;
+        }
+        // Deny and deny-default are the coverage words. They are not a
+        // capability mismatch. An unrecognized word fails closed.
+        let known = row.line.ends_with(": deny-default") || row.line.ends_with(": deny");
+        cites.push(DeclaredCoverageCite {
+            fail: !known,
+            line: row.line.clone(),
+        });
+    }
+}
+
 /// One row per ordered pair of estate agents. `own` is the same agent.
 /// `peer` is another agent. Missing coverage is deny-default.
 pub fn agent_edge_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
@@ -1622,6 +1697,58 @@ mod tests {
         let text = describe_declared_coverage(&e);
         assert!(text.contains("research tool notes-append: allow"));
         assert!(text.contains("research mount notes: deny"));
+
+        let defaults = declared_coverage_cites(&e);
+        assert!(defaults.iter().all(|cite| !cite.fail), "{defaults:?}");
+        assert!(
+            defaults
+                .iter()
+                .any(|cite| cite.line == "horizon mcp docs: deny"),
+            "{defaults:?}"
+        );
+        assert!(
+            defaults.iter().any(|cite| {
+                !cite.fail && cite.line == "research mount notes: deny"
+            }),
+            "{defaults:?}"
+        );
+        assert!(
+            defaults
+                .iter()
+                .all(|cite| cite.line != "research tool notes-append: allow"),
+            "{defaults:?}"
+        );
+        for cite in &defaults {
+            assert!(text.contains(&cite.line), "{}", cite.line);
+        }
+
+        let mut quiet = estate();
+        quiet
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .mcp
+            .push(crate::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        grant(
+            &mut quiet,
+            "research",
+            IntentionKind::Tool,
+            "notes-append",
+            Effect::Allow,
+        );
+        grant(
+            &mut quiet,
+            "research",
+            IntentionKind::Mount,
+            "notes",
+            Effect::Allow,
+        );
+        grant(&mut quiet, "horizon", IntentionKind::Mcp, "docs", Effect::Allow);
+        assert!(declared_coverage_cites(&quiet).is_empty());
     }
 
     #[test]
