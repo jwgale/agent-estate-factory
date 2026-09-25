@@ -323,9 +323,6 @@ pub(crate) enum ConveyCommand {
         /// Agent on this hop. Repeat for a population. Empty is not a grant.
         #[arg(long = "agent")]
         agents: Vec<String>,
-        /// When set, enforced is true only if every named agent is allowed the capability.
-        #[arg(long)]
-        estate: Option<PathBuf>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -359,15 +356,11 @@ pub(crate) enum ConveyCommand {
         state_dir: PathBuf,
     },
     /// Derive hops from placement-actual.json (slim parse).
-    /// Without --estate, leases stay enforced false (not enforced yet).
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
-        /// Stamp enforced from this estate. Omit to leave enforced false.
-        #[arg(long)]
-        estate: Option<PathBuf>,
     },
-    /// Print who-may-call-what: enforced versus not-enforced. Does not write.
+    /// File check of hop leases against the estate. Does not write. Does not claim mediation.
     Authority {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

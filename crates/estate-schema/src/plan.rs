@@ -645,11 +645,11 @@ fn blast_radius(
         lines.extend(authority_lines);
     }
     lines.push(
-        "Those rows stay not-enforced until a hop lease sets enforced and convey call --agent allows the capability. Identity stays parked. Not a gateway."
+        "Uncertain: these rows are declarations on the estate file. Plan does not mediate a worker. `estate convey call --agent` is a separate check, and we do not know if that check sits on the worker path. Identity stays parked. Not a gateway."
             .into(),
     );
     lines.push(format!(
-        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` prints enforced versus not-enforced. Identity stays parked. Not a gateway.",
+        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` is a file check (would-allow, would-deny, not-enforced). It does not prove mediation. Identity stays parked. Not a gateway.",
         if populations.is_empty() {
             "no placements".to_string()
         } else {
@@ -798,6 +798,7 @@ mod tests {
         assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
         assert!(plan.blast_radius_text.contains("cloud-agent stub"));
         assert!(plan.blast_radius_text.contains("not-enforced: research tool notes-append on cell-one-box"));
+        assert!(plan.blast_radius_text.contains("Uncertain:"));
         assert!(plan.blast_radius_text.contains("Identity stays parked"));
     }
 
