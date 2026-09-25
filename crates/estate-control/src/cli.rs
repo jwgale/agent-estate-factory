@@ -345,8 +345,10 @@ pub(crate) enum ConveyCommand {
     /// Refuses when the estate file is missing or not a file.
     /// Refuses when hop coverage for this hop is deny or deny-default.
     /// `--agent` refuses first on intention deny or deny-default
-    /// (`refuse:intention`). Allow continues to hop coverage, then the lease.
-    /// Allow only when that coverage is allow. Does not spawn. Does not apply.
+    /// (`refuse:intention`). Allow continues to hop coverage, then
+    /// refuses when `--capability` does not match that coverage capability.
+    /// A match continues to the lease. Allow only when that coverage is allow.
+    /// Does not spawn. Does not apply.
     /// `--agent` binds one placed agent. Not an IdP.
     Call {
         #[arg(long)]
@@ -1082,4 +1084,28 @@ pub(crate) enum FeedCommand {
         #[arg(long, default_value = ".cell/feed")]
         feed_dir: PathBuf,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    #[test]
+    fn call_help_refuses_capability_mismatch_after_allow() {
+        let cmd = Cli::command();
+        let help = cmd
+            .find_subcommand("convey")
+            .unwrap()
+            .find_subcommand("call")
+            .unwrap()
+            .clone()
+            .render_help()
+            .to_string();
+        assert!(
+            help.contains("Allow continues to hop coverage, then")
+                && help.contains("does not match that coverage capability"),
+            "{help}"
+        );
+    }
 }

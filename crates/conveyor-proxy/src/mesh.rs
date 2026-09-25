@@ -884,7 +884,8 @@ fn intention_allows(estate: &estate_schema::Estate, agent_id: &str, capability: 
     .is_allow()
 }
 
-/// File check only. `would-allow` and `would-deny` are estate authorize results.
+/// File check only. `would-allow` and `would-deny` name what a later convey
+/// path would do. They are not a mediated call.
 /// `not-enforced` means this row is not a mediated workload.
 /// This report has no status that means the conveyor mediated a call.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -894,6 +895,77 @@ pub struct AuthorityRow {
     pub capability: String,
     pub status: String,
     pub reason: String,
+}
+
+enum HopAuthority {
+    /// Placement hop coverage would refuse. The file check does not mediate.
+    CoverageRefuse(String),
+    /// Allow matched the placement capability, or this hop id is not a placement.
+    Continue,
+}
+
+/// Same gate as `estate convey hop` / `call`: deny, deny-default, or a
+/// capability that does not match placement coverage. `Ok(None)` stays the
+/// lease stub. Does not write and does not spawn.
+fn hop_coverage_authority(
+    estate: &estate_schema::Estate,
+    hop_id: &str,
+    agent: &str,
+    capability: &str,
+) -> HopAuthority {
+    match estate_schema::convey_hop_declared_capability(estate, hop_id, Some(agent), capability) {
+        Ok(_) => HopAuthority::Continue,
+        Err(gate) => HopAuthority::CoverageRefuse(coverage_refuse_reason(&gate)),
+    }
+}
+
+fn lease_authority_status(
+    estate: &estate_schema::Estate,
+    lease: &HopLease,
+    agent: &str,
+) -> (String, String) {
+    if hop_is_cloud(&lease.kind) {
+        return (
+            "not-enforced".into(),
+            "cloud hop is declared, not spawned. Not mediated.".into(),
+        );
+    }
+    if !lease.granted {
+        return (
+            "not-enforced".into(),
+            "lease is not granted. Not mediated.".into(),
+        );
+    }
+    match hop_coverage_authority(estate, &lease.hop_id, agent, &lease.capability) {
+        HopAuthority::CoverageRefuse(reason) => ("would-deny".into(), reason),
+        HopAuthority::Continue => {
+            if intention_allows(estate, agent, &lease.capability) {
+                (
+                    "would-allow".into(),
+                    "estate authorize would allow. A worker can still skip convey call. Not mediated.".into(),
+                )
+            } else {
+                (
+                    "would-deny".into(),
+                    "estate authorize would deny. convey call --agent would refuse:intention. Not mediated unless that call runs.".into(),
+                )
+            }
+        }
+    }
+}
+
+fn coverage_refuse_reason(gate: &estate_schema::HopCoverageGate) -> String {
+    if gate.word == "mismatch" {
+        format!(
+            "hop coverage would refuse:hop-coverage: {} (mismatch). Placement-derived capability is '{}'. Not mediated.",
+            gate.line, gate.capability
+        )
+    } else {
+        format!(
+            "hop coverage would refuse:hop-coverage: {} ({}). Not mediated.",
+            gate.line, gate.word
+        )
+    }
 }
 
 /// Read-only. Does not write the mesh or the estate. Identity is not resolved.
@@ -915,31 +987,13 @@ pub fn authority_report(
             continue;
         }
         for agent in &lease.agents {
-            let allows = intention_allows(estate, agent, &lease.capability);
-            let (status, reason) = if hop_is_cloud(&lease.kind) {
-                (
-                    "not-enforced",
-                    "cloud hop is declared, not spawned. Not mediated.",
-                )
-            } else if !lease.granted {
-                ("not-enforced", "lease is not granted. Not mediated.")
-            } else if allows {
-                (
-                    "would-allow",
-                    "estate authorize would allow. A worker can still skip convey call. Not mediated.",
-                )
-            } else {
-                (
-                    "would-deny",
-                    "estate authorize would deny. convey call --agent would refuse:intention. Not mediated unless that call runs.",
-                )
-            };
+            let (status, reason) = lease_authority_status(estate, lease, agent);
             rows.push(AuthorityRow {
                 agent: agent.clone(),
                 hop_id: lease.hop_id.clone(),
                 capability: lease.capability.clone(),
-                status: status.into(),
-                reason: reason.into(),
+                status,
+                reason,
             });
         }
     }
@@ -2481,6 +2535,202 @@ mod tests {
         assert!(rows.iter().any(|row| {
             row.agent == "horizon" && row.capability == "notes-append" && row.status == "would-deny"
         }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn row<'a>(
+        rows: &'a [AuthorityRow],
+        agent: &str,
+        hop: &str,
+        capability: &str,
+    ) -> &'a AuthorityRow {
+        rows.iter()
+            .find(|row| row.agent == agent && row.hop_id == hop && row.capability == capability)
+            .unwrap_or_else(|| panic!("missing {agent} {hop} {capability}"))
+    }
+
+    #[test]
+    fn authority_cites_hop_coverage_before_intention_allow() {
+        let dir = tmp();
+        let mut allow = example_estate();
+        allow
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        allow.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        allow.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes-append".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+        )
+        .unwrap();
+        let before = std::fs::read(dir.join(MESH_FILE)).unwrap();
+        let rows = authority_report(&dir, &allow).unwrap();
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), before);
+        let mismatch = row(&rows, "research", "cell-one-box", "notes-append");
+        assert_eq!(mismatch.status, "would-deny");
+        assert_ne!(mismatch.status, "would-allow");
+        assert!(
+            mismatch.reason.contains("refuse:hop-coverage")
+                && mismatch.reason.contains("(mismatch)")
+                && mismatch.reason.contains("lane-tool")
+                && mismatch.reason.contains("Not mediated"),
+            "{}",
+            mismatch.reason
+        );
+        assert!(!mismatch.reason.contains("estate authorize would allow"));
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+        )
+        .unwrap();
+        let rows = authority_report(&dir, &allow).unwrap();
+        let matched = row(&rows, "research", "cell-one-box", "lane-tool");
+        assert_eq!(matched.status, "would-allow");
+        assert!(
+            matched.reason.contains("estate authorize would allow")
+                && matched.reason.contains("Not mediated"),
+            "{}",
+            matched.reason
+        );
+        assert!(!matched.reason.contains("refuse:hop-coverage"));
+
+        let mut denied = allow.clone();
+        denied
+            .intentions
+            .retain(|intention| intention.object != "lane-tool");
+        denied.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+        )
+        .unwrap();
+        let rows = authority_report(&dir, &denied).unwrap();
+        let hop_deny = row(&rows, "research", "cell-one-box", "notes-append");
+        assert_eq!(hop_deny.status, "would-deny");
+        assert!(
+            hop_deny.reason.contains("refuse:hop-coverage")
+                && hop_deny.reason.contains("(deny)")
+                && !hop_deny.reason.contains("deny-default")
+                && !hop_deny.reason.contains("(mismatch)")
+                && hop_deny.reason.contains("Not mediated"),
+            "{}",
+            hop_deny.reason
+        );
+
+        let mut defaulted = example_estate();
+        defaulted.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes-append".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let rows = authority_report(&dir, &defaulted).unwrap();
+        let hop_default = row(&rows, "research", "cell-one-box", "notes-append");
+        assert_eq!(hop_default.status, "would-deny");
+        assert!(
+            hop_default.reason.contains("refuse:hop-coverage")
+                && hop_default.reason.contains("(deny-default)")
+                && hop_default.reason.contains("Not mediated"),
+            "{}",
+            hop_default.reason
+        );
+        assert!(!hop_default.reason.contains("estate authorize would allow"));
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cursor-cloud".into(),
+                kind: "cloud-mesh".into(),
+                capability: "mesh-stub".into(),
+                host_class: "any".into(),
+                wired: false,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+        )
+        .unwrap();
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "empty-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: Vec::new(),
+            },
+        )
+        .unwrap();
+        let rows = authority_report(&dir, &allow).unwrap();
+        let cloud = row(&rows, "research", "cursor-cloud", "mesh-stub");
+        assert_eq!(cloud.status, "not-enforced");
+        assert!(
+            cloud.reason.contains("cloud hop is declared, not spawned")
+                && cloud.reason.contains("Not mediated"),
+            "{}",
+            cloud.reason
+        );
+        let empty = row(&rows, "(none)", "empty-box", "lane-tool");
+        assert_eq!(empty.status, "not-enforced");
+        assert!(empty.reason.contains("empty population is not a grant"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
