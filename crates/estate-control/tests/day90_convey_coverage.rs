@@ -207,7 +207,10 @@ fn convey_fails_closed_on_hop_coverage() {
         "{denied_text}"
     );
     assert!(!denied_text.contains("deny-default"), "{denied_text}");
-    assert!(!denied_text.contains("refuse:hop-coverage"), "{denied_text}");
+    assert!(
+        !denied_text.contains("refuse:hop-coverage"),
+        "{denied_text}"
+    );
 
     let cloud = convey(
         &root,
@@ -237,6 +240,35 @@ fn convey_fails_closed_on_hop_coverage() {
     );
     assert!(!cloud_text.contains("deny-default"), "{cloud_text}");
     assert!(!cloud_text.to_ascii_lowercase().contains("spawned a cloud"));
+
+    let cloud_mismatch = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cursor-cloud",
+            "--kind",
+            "cloud-mesh",
+            "--capability",
+            "lane-tool",
+            "--estate",
+            &repo_root()
+                .join("examples/estate.yaml")
+                .display()
+                .to_string(),
+            "--state-dir",
+            &root.join("cloud-mismatch-state").display().to_string(),
+        ],
+    );
+    let cloud_mismatch_text = text(&cloud_mismatch);
+    assert!(!cloud_mismatch.status.success(), "{cloud_mismatch_text}");
+    assert!(
+        cloud_mismatch_text.contains("refuse:hop-coverage")
+            && cloud_mismatch_text.contains("(deny)")
+            && !cloud_mismatch_text.contains("(mismatch)"),
+        "{cloud_mismatch_text}"
+    );
 
     let cloud_named = convey(
         &root,
@@ -270,7 +302,10 @@ fn convey_fails_closed_on_hop_coverage() {
         !cloud_named_text.contains("deny-default"),
         "empty cloud population with --agent must be deny, got {cloud_named_text}"
     );
-    assert!(!root.join("cloud-named-state").join("conveyor-mesh.json").exists());
+    assert!(!root
+        .join("cloud-named-state")
+        .join("conveyor-mesh.json")
+        .exists());
 
     let pair_state = root.join("pair-state");
     let pair = convey(
@@ -563,8 +598,8 @@ fn convey_lane_prefix_allow_continues_past_intention_gate() {
         "{crossed_text}"
     );
 
-    let mut ambiguous = estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml"))
-        .unwrap();
+    let mut ambiguous =
+        estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap();
     ambiguous
         .agents
         .iter_mut()
@@ -634,7 +669,11 @@ fn box_deny_unresolved_capability_is_intention_not_hop_coverage() {
             .find(|p| p.id == "cell-one-box")
             .unwrap()
             .agents = vec!["research".into()];
-        let research = estate.agents.iter_mut().find(|a| a.id == "research").unwrap();
+        let research = estate
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap();
         research.tools.push(estate_schema::ToolDecl {
             id: "lane-tool".into(),
             description: None,
@@ -731,7 +770,11 @@ fn hop_intention_kind_resolves_ambiguous_capability() {
             .find(|p| p.id == "cell-one-box")
             .unwrap()
             .agents = vec!["research".into()];
-        let research = estate.agents.iter_mut().find(|a| a.id == "research").unwrap();
+        let research = estate
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap();
         research.tools.push(estate_schema::ToolDecl {
             id: "lane-tool".into(),
             description: None,
@@ -838,9 +881,76 @@ fn hop_intention_kind_resolves_ambiguous_capability() {
         ],
     );
     let allowed_text = text(&allowed);
-    assert!(allowed.status.success(), "{allowed_text}");
-    assert!(allowed_text.contains("\"kind\": \"box\""), "{allowed_text}");
+    assert!(!allowed.status.success(), "{allowed_text}");
+    assert!(
+        allowed_text.contains("refuse:hop-coverage")
+            && allowed_text.contains("(mismatch)")
+            && allowed_text.contains(
+                "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+            ),
+        "{allowed_text}"
+    );
+    assert!(!allowed_text.contains("(deny)"), "{allowed_text}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+
+    let matched = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cell-one-box",
+            "--kind",
+            "box",
+            "--capability",
+            "lane-tool",
+            "--agent",
+            "research",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+        ],
+    );
+    let matched_text = text(&matched);
+    assert!(matched.status.success(), "{matched_text}");
+    assert!(
+        matched_text.contains("\"capability\": \"lane-tool\""),
+        "{matched_text}"
+    );
     assert!(state.join("conveyor-mesh.json").exists());
+
+    let call_mismatch = convey(
+        &root,
+        &[
+            "convey",
+            "call",
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--kind",
+            "tool",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+            "--policy",
+            &repo_root()
+                .join("examples/fixtures/policy-allow.yaml")
+                .display()
+                .to_string(),
+        ],
+    );
+    let call_mismatch_text = text(&call_mismatch);
+    assert!(!call_mismatch.status.success(), "{call_mismatch_text}");
+    assert!(
+        call_mismatch_text.contains("refuse:hop-coverage")
+            && call_mismatch_text.contains("(mismatch)"),
+        "{call_mismatch_text}"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }

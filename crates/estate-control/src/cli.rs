@@ -333,7 +333,8 @@ pub(crate) enum ConveyCommand {
         intention_kind: Option<String>,
         /// Estate used for intention and placement-derived hop coverage.
         /// A named agent refuses on intention deny or deny-default
-        /// (`refuse:intention`). Allow continues to hop coverage.
+        /// (`refuse:intention`). Allow continues to hop coverage, then
+        /// refuses when `--capability` does not match that coverage capability.
         /// Missing or not a file refuses. Hop deny and deny-default refuse.
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,

@@ -4,11 +4,10 @@ use conveyor_proxy::{
     list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    convey_hop_coverage, convey_intention_coverage, describe_agents_section,
-    describe_declared_coverage,
-    describe_hop_coverage, describe_intention_coverage, describe_model_class_coverage,
-    describe_placements, estate_hash, list_plans, load_estate, load_estate_unvalidated,
-    load_policy, policy_allows,
+    convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
+    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
+    describe_model_class_coverage, describe_placements, estate_hash, list_plans, load_estate,
+    load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -384,7 +383,12 @@ fn refuse_named_intentions(
     Ok(())
 }
 
-fn refuse_convey_coverage(estate_path: &Path, hop_id: &str, agent: Option<&str>) -> Result<()> {
+fn refuse_convey_coverage(
+    estate_path: &Path,
+    hop_id: &str,
+    agent: Option<&str>,
+    capability: &str,
+) -> Result<()> {
     // Coverage is mandatory on convey hop and convey call. A missing path
     // or a non-file (wrong-cwd default examples/estate.yaml included) is
     // not a grant and must not fall through to the lease stub.
@@ -403,7 +407,7 @@ fn refuse_convey_coverage(estate_path: &Path, hop_id: &str, agent: Option<&str>)
     }
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
-    match convey_hop_coverage(&estate, hop_id, agent) {
+    match convey_hop_declared_capability(&estate, hop_id, agent, capability) {
         Ok(_) => Ok(()),
         Err(gate) => bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word),
     }
@@ -432,10 +436,10 @@ pub(crate) fn cmd_convey_hop(
     }
     refuse_named_intentions(estate_path, id, capability, agents, parsed_kind, true)?;
     if agents.is_empty() {
-        refuse_convey_coverage(estate_path, id, None)?;
+        refuse_convey_coverage(estate_path, id, None, capability)?;
     } else {
         for agent in agents {
-            refuse_convey_coverage(estate_path, id, Some(agent.as_str()))?;
+            refuse_convey_coverage(estate_path, id, Some(agent.as_str()), capability)?;
         }
     }
     let lease = declare_hop(
@@ -479,7 +483,7 @@ pub(crate) fn cmd_convey_call(
             false,
         )?;
     }
-    refuse_convey_coverage(estate_path, id, agent)?;
+    refuse_convey_coverage(estate_path, id, agent, capability)?;
     let call = if let Some(agent) = agent {
         let estate = estate_schema::load_estate(estate_path)
             .with_context(|| format!("load {}", estate_path.display()))?;
@@ -816,7 +820,7 @@ mod convey_coverage_tests {
         let path =
             std::env::temp_dir().join(format!("cell-missing-estate-{}.yaml", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let err = refuse_convey_coverage(&path, "ttl-box", None).unwrap_err();
+        let err = refuse_convey_coverage(&path, "ttl-box", None, "lane-tool").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
         assert!(msg.contains("estate missing"), "{msg}");
@@ -829,7 +833,7 @@ mod convey_coverage_tests {
         let path = std::env::temp_dir().join(format!("cell-estate-dir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
-        let err = refuse_convey_coverage(&path, "ttl-box", None).unwrap_err();
+        let err = refuse_convey_coverage(&path, "ttl-box", None, "lane-tool").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
         assert!(msg.contains("estate not a file"), "{msg}");
@@ -840,13 +844,13 @@ mod convey_coverage_tests {
     #[test]
     fn loaded_non_placement_stays_lease_stub() {
         let estate = repo_root().join("examples/estate.yaml");
-        refuse_convey_coverage(&estate, "ttl-box", None).unwrap();
+        refuse_convey_coverage(&estate, "ttl-box", None, "not-a-placement-capability").unwrap();
     }
 
     #[test]
     fn loaded_example_box_still_deny_default() {
         let estate = repo_root().join("examples/estate.yaml");
-        let msg = refuse_convey_coverage(&estate, "cell-one-box", None)
+        let msg = refuse_convey_coverage(&estate, "cell-one-box", None, "not-lane-tool")
             .unwrap_err()
             .to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
@@ -856,7 +860,7 @@ mod convey_coverage_tests {
     #[test]
     fn loaded_example_cloud_still_deny() {
         let estate = repo_root().join("examples/estate.yaml");
-        let msg = refuse_convey_coverage(&estate, "cursor-cloud", None)
+        let msg = refuse_convey_coverage(&estate, "cursor-cloud", None, "lane-tool")
             .unwrap_err()
             .to_string();
         assert!(
