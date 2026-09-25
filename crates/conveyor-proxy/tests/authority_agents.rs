@@ -21,7 +21,7 @@ fn scratch() -> PathBuf {
 }
 
 fn run(args: &[&str]) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_conveyor_proxy"))
+    let out = Command::new(env!("CARGO_BIN_EXE_conveyor-proxy"))
         .args(args)
         .output()
         .unwrap();
