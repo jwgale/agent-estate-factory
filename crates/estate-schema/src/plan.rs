@@ -694,6 +694,16 @@ fn blast_radius(
             .into(),
     );
     lines.push(crate::firewall::describe_declared_coverage(estate));
+    lines.push(
+        "Intention coverage (own-lane memory is allow; cross-lane is deny-default unless an intention covers it; each compiled intention is listed):"
+            .into(),
+    );
+    lines.push(crate::firewall::describe_intention_coverage(estate));
+    lines.push(
+        "Hop coverage (placement-derived; plan does not spawn; empty population is not a grant; cloud-agent is deny):"
+            .into(),
+    );
+    lines.push(crate::firewall::describe_hop_coverage(estate));
     lines.push("Model class delta (who gained or lost which class):".into());
     lines.push(model_class_delta(estate, against));
     lines.push(describe_agents_section(estate));
@@ -761,8 +771,10 @@ fn set_diff(have: BTreeSet<String>, against: BTreeSet<String>) -> Vec<String> {
 /// Per-agent blast block: id, lane, desktop, placement, declared counts,
 /// and that agent's allow / deny / deny-default coverage. Plan does not spawn.
 pub fn describe_agents_section(estate: &Estate) -> String {
-    let model = crate::firewall::describe_model_class_coverage(estate);
-    let declared = crate::firewall::describe_declared_coverage(estate);
+    let model = crate::firewall::model_class_coverage_rows(estate);
+    let declared = crate::firewall::declared_coverage_rows(estate);
+    let intention = crate::firewall::intention_coverage_rows(estate);
+    let hop = crate::firewall::hop_coverage_rows(estate);
     let mut lines = vec![
         "Agents".into(),
         "------".into(),
@@ -792,6 +804,10 @@ pub fn describe_agents_section(estate: &Estate) -> String {
         push_agent_coverage(&mut lines, &model, &agent.id);
         lines.push("  tool mcp mount:".into());
         push_agent_coverage(&mut lines, &declared, &agent.id);
+        lines.push("  intention:".into());
+        push_agent_coverage(&mut lines, &intention, &agent.id);
+        lines.push("  hop:".into());
+        push_agent_coverage(&mut lines, &hop, &agent.id);
     }
     lines.join("\n")
 }
@@ -824,17 +840,19 @@ fn agent_placement_line(estate: &Estate, agent_id: &str) -> String {
     }
 }
 
-fn push_agent_coverage(lines: &mut Vec<String>, coverage: &str, agent_id: &str) {
-    let matched: Vec<&str> = coverage
-        .lines()
-        .filter(|line| line.split_whitespace().next() == Some(agent_id))
-        .collect();
+fn push_agent_coverage(
+    lines: &mut Vec<String>,
+    rows: &[crate::firewall::CoverageRow],
+    agent_id: &str,
+) {
+    let matched: Vec<&crate::firewall::CoverageRow> =
+        crate::firewall::coverage_for_agent(rows, agent_id).collect();
     if matched.is_empty() {
         lines.push("    (none)".into());
         return;
     }
-    for line in matched {
-        lines.push(format!("    {line}"));
+    for row in matched {
+        lines.push(format!("    {}", row.line));
     }
 }
 
@@ -1018,6 +1036,13 @@ mod tests {
         assert!(agents.contains("placement: none"));
         assert!(agents.contains("research tool notes-append: deny-default"));
         assert!(agents.contains("research mount notes: deny-default"));
+        assert!(agents.contains("horizon memory_read lane:horizon: allow"));
+        assert!(agents.contains("horizon memory_read lane:research: deny-default"));
+        assert!(agents.contains("horizon intention model class:frontier: allow"));
+        assert!(agents.contains("horizon intention model local_slm: deny"));
+        assert!(agents.contains("horizon hop cell-one-box lane-tool: deny-default"));
+        assert!(agents.contains("research memory_read lane:research: allow"));
+        assert!(agents.contains("sanctum hop cursor-cloud mesh-stub: deny"));
         assert!(agents.contains("- id: sanctum"));
         assert!(agents.contains(
             "placement: cloud-agent cursor-cloud (declared, not spawned)"
@@ -1040,6 +1065,12 @@ mod tests {
         assert!(text.contains("horizon frontier xai_grok: deny-default"));
         assert!(text.contains("research tool notes-append: deny-default"));
         assert!(text.contains("research mount notes: deny-default"));
+        assert!(text.contains("horizon memory_read lane:horizon: allow"));
+        assert!(text.contains("horizon memory_read lane:research: deny-default"));
+        assert!(text.contains("horizon hop cell-one-box lane-tool: deny-default"));
+        assert!(text.contains("cursor-cloud hop mesh-stub: deny"));
+        assert!(text.contains("Intention coverage"));
+        assert!(text.contains("Hop coverage"));
         assert!(text.contains("+ intentions:"));
         assert!(text.contains("Security-as-IaC"));
     }

@@ -14,8 +14,10 @@ mod validate;
 pub use compile::{compile_intentions, intention_object_errors, CompiledIntention};
 pub use error::EstateError;
 pub use firewall::{
-    authorize, describe_declared_coverage, describe_model_class_coverage, read_lane_file,
-    AccessRequest, Decision, Deny,
+    authorize, coverage_for_agent, declared_coverage_rows, describe_declared_coverage,
+    describe_hop_coverage, describe_intention_coverage, describe_model_class_coverage,
+    hop_coverage_rows, intention_coverage_rows, model_class_coverage_rows, read_lane_file,
+    AccessRequest, CoverageRow, Decision, Deny,
 };
 pub use hash::estate_hash;
 pub use plan::{

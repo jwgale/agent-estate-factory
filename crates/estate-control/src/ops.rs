@@ -4,10 +4,9 @@ use conveyor_proxy::{
     list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    describe_agents_section, describe_declared_coverage, describe_model_class_coverage,
-    describe_placements, estate_hash,
-    list_plans, load_estate,
-    load_estate_unvalidated, load_policy, policy_allows,
+    describe_agents_section, describe_declared_coverage, describe_hop_coverage,
+    describe_intention_coverage, describe_model_class_coverage, describe_placements, estate_hash,
+    list_plans, load_estate, load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -702,6 +701,8 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
     println!("{}", describe_agents_section(&estate));
     println!("model class:\n{}", describe_model_class_coverage(&estate));
     println!("tool mcp mount:\n{}", describe_declared_coverage(&estate));
+    println!("intention:\n{}", describe_intention_coverage(&estate));
+    println!("hop:\n{}", describe_hop_coverage(&estate));
     if !report.in_sync || !models.in_sync {
         bail!("drift detected");
     }

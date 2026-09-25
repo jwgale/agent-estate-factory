@@ -145,6 +145,10 @@ fn doctor_prints_security_iac_coverage() {
     assert!(text.contains("horizon frontier xai_grok: deny-default"), "{text}");
     assert!(text.contains("research tool notes-append: deny-default"), "{text}");
     assert!(text.contains("research mount notes: deny-default"), "{text}");
+    assert!(text.contains("horizon memory_read lane:horizon: allow"), "{text}");
+    assert!(text.contains("horizon memory_read lane:research: deny-default"), "{text}");
+    assert!(text.contains("horizon hop cell-one-box lane-tool: deny-default"), "{text}");
+    assert!(text.contains("cursor-cloud hop mesh-stub: deny"), "{text}");
     assert!(!text.contains("Strict intentions"), "{text}");
 }
 
