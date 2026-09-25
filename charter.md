@@ -9,7 +9,7 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
 ## Locked defaults
 
 1. **Product:** Agent Estate Factory. Next-generation harness and custom AI creator suite. One-box Cell One. Agents are first-class under security-as-IaC. The harness look and feel is Grok Bot–like; shipping that UI may still be deferred. Specialty SLMs are one facet. A central learning brain stays parked. Source of truth: [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory).
-2. **Lanes:** Horizon / Research / Sanctum are separate. Sanctum is not Cyera. Rust classroom is not an estate lane.
+2. **Lanes:** Horizon / Research / Sanctum are separate. Sanctum is not Cyera. Rust classroom is not an estate lane. Whether Sanctum holds credentials is an open design call. It is not decided here. Sanctum is not a credential vault.
 3. **Sacred exclusions (dual-layer through Day 60):** Cyera CI and Rust classroom must never appear as estate agents. The estate declares them; the validator also hard-denies their ids and aliases. An allow intention cannot punch through.
 4. **Models (equal class):** `frontier` and `local` bindings in the same estate. Day 31–60 wires `xai_grok` (frontier-http) and portable `local_slm` (driver `ollama`) with `wired: true` behind swappable traits. Credentials via env (`XAI_API_KEY`, `CELL_LOCAL_ENDPOINT`). Never bake secrets. Never put vendor strings or hardware SKUs in floor-supervisor sources or estate binding ids.
 5. **SLM / local-runtime locks (do not reopen):**
@@ -18,7 +18,7 @@ Fail-closed validator: Rust `estate-schema` (JSON Schema is documentary).
    3. Fail closed for estate-bound local work when local is down. No silent frontier fallback. Audit the deny (`model.local.down`).
    4. Jason curates the first specialist enrich packs. Policy is **manual**. Feed does not auto-promote.
    5. “Supported” = the Ollama (+ llama.cpp) path is green on the box. vLLM / TRT stay experimental until Jason verifies.
-6. **Portability (critical):** The factory must work equally via drivers on (a) consumer-grade RTX, (b) Apple Silicon laptop, (c) rented latest Nvidia. Hardware is a **driver choice**, not a product fork. Estate contracts use `host_class`: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`. Do not encode `5090` / `4090` / `m3-max` in binding ids or drivers. Apple path: Ollama-on-Mac is Supported (same `ollama` card); MLX is a Stub behind the same catalog / route / bind API (live Mac proof may come later).
+6. **Portability (critical):** The factory must work equally via drivers on (a) consumer-grade RTX, (b) Apple Silicon laptop, (c) rented latest Nvidia. Folks may run fully local, bring parts to the cloud, or mix the two by budget and need. Equal-class frontier and local, and `host_class`, carry that placement flexibility. Hardware is a **driver choice**, not a product fork. Estate contracts use `host_class`: `consumer-nvidia` | `apple-silicon` | `rented-nvidia` | `any`. Do not encode `5090` / `4090` / `m3-max` in binding ids or drivers. Apple path: Ollama-on-Mac is Supported (same `ollama` card); MLX is a Stub behind the same catalog / route / bind API (live Mac proof may come later).
 7. **Intentions:** Deny-default for tool, MCP, mount, model, and cross-lane memory. Own-lane memory read is allowed. Model use is a declared allow-list on the agent (`models:`), same class as tools.
 8. **Mixed path:** authorize (A3–A4) → local specialist (A8, policy-precheck) → tool or frontier (A7). Data plane (`model-estate`) only. Control does not complete. Keep A7–A9 thin: Grok + local endpoint drivers in the estate registry. Do not turn Cell One into LM Studio.
 9. **Isolation:** Swappable `IsolationDriver`. Cell One ships a profile-dir driver. Floor core does not hard-code vendor ids.
@@ -62,7 +62,7 @@ The Grok Bot–like look and feel is the harness surface. Agents and controlled 
 
 - Dual PE, vault, multi-box control plane
 - AI-gateway / MCP-catalog product surface (conveyor does not complete)
-- Mesh, Kubernetes, frozen public API
+- Kubernetes, a shipped mesh product, and a frozen public API (the security posture may be akin to a service mesh for agents; the IaC control catalog is not designed yet)
 - Feed auto-promote (feed is one-way scrubbed traces + candidate packs; Jason edits the estate)
 - Treating PIDs or warm desktops as source of truth
 - Cyera CI or Rust classroom as agents

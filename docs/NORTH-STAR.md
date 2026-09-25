@@ -15,6 +15,16 @@ Pillars, in this order:
 3. **On-spot specialty SLMs.** Create, train, enrich, and seat purpose-built small models when specialty work needs them. One facet.
 4. **Optional later.** A central model brain that learns from the user. Parked. Not a commitment to ship now.
 
+## Posture
+
+**Security.** Envision the suite as akin to a giant service mesh for agents. Security-first control keeps agent spin-up, hops, tools, and model seats robust. IaC security controls on that path are a core product surface. The exact control catalog is still being designed. This page states the intent. It does not list that catalog, and it does not ship a mesh. `estate convey` stays a lease-bound hop stub.
+
+**Sanctum credentials.** Whether Sanctum holds credentials is an open design call. This page does not answer yes or no. It does not make Sanctum a credential vault. Sanctum stays a lane. Cyera CI stays out. Sanctum is not Cyera.
+
+**Placement.** Folks may run fully local, bring parts to the cloud, or mix the two by budget and need. Ultimate flexibility of host and placement is a north-star requirement: boxes, rented GPU, frontier, and mixed. Equal-class frontier and local, and `host_class`, already carry that. One estate stays the control plane.
+
+**Horizon.** Keep the planning posture 12–18 months ahead of where the market is going, so the architecture is ready when agent, harness, and security patterns shift. That posture is not a thin clone of today's tools.
+
 ## Cell One
 
 One estate. One box. Lanes: Horizon, Research, Sanctum. You plan, then apply. Control does not complete.
@@ -42,7 +52,7 @@ Day 0–90 (A1–A4, A5–A9, and the A10–A12 beachhead) is on `main`. Day 90+
 - `estate convey` is a lease-bound hop stub.
 - A `cursor-cloud` placement is a declared lease. Floor records the lease.
 - Native MLX, vLLM, and TRT stay parked catalog cards.
-- Anti-shrink: Ollama wrapper-as-product, LM Studio-alone, AI gateway, a thin Grok Bot clone without the estate. The Grok Bot–like look and feel stays. Also MCP catalog, a UI-only shell, weight browser, undirected agent sprawl, frontier-proxy-only, local-studio-only. Agents and controlled spin-up stay first-class. An eval harness stays refused. The suite harness is the creator and control surface.
+- Anti-shrink: Ollama wrapper-as-product, LM Studio-alone, AI gateway, a thin Grok Bot clone without the estate. The Grok Bot–like look and feel stays. Also MCP catalog, a UI-only shell, weight browser, undirected agent sprawl, an undirected agent farm, frontier-proxy-only, local-studio-only. Agents and controlled spin-up stay first-class. The mesh-like security posture, the harness, and the creator suite stay the product. An eval harness stays refused. A Sanctum credential vault stays unshipped. The exact IaC control catalog stays undesigned.
 
 ## Operator loop
 

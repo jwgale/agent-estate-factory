@@ -349,6 +349,12 @@ Pillars, in order:
 - Specialty SLMs. Create, train, enrich, and seat purpose-built small models when the work needs them. One facet.
 - Later, optional. A central model brain that learns from the user. Parked. Not a commitment.
 
+Posture:
+- Security. Akin to a giant service mesh for agents. IaC controls on spin-up, hops, tools, and model seats are a core surface. The control catalog is still being designed. This page does not list it.
+- Sanctum credentials are an open design call. Not yes. Not no. Not a credential vault. Sanctum stays a lane. Cyera CI stays out. Sanctum is not Cyera.
+- Placement. Fully local, cloud, or a mix by budget and need. Boxes, rented GPU, frontier, mixed. Equal-class frontier and local, and host class, carry that. One estate stays the control plane.
+- Horizon. Plan 12–18 months ahead of the market so the architecture is ready when agent, harness, and security patterns shift. Not a thin clone of today's tools.
+
 Beachhead (overnight packing may stay SLM-heavy; this page does not rebalance it):
 - A local runtime is an ecosystem seat. Ollama is today's entrant. Catalog / route / bind take the next process.
 - Integrate the driver. A from-scratch local server waits until the entrant does not already do the job.
@@ -360,7 +366,8 @@ Anti-shrink:
 - Not a gateway. Not an MCP catalog.
 - Not an Ollama wrapper-as-product. Not LM Studio-alone.
 - Not a thin Grok Bot clone without the estate. The look and feel stays.
-- Not a UI-only shell. Not undirected agent sprawl. Agents stay first-class.
+- Not a UI-only shell. Not undirected agent sprawl. Not an undirected agent farm. Agents stay first-class.
+- The mesh-like security posture, the harness, and the creator suite stay the product.
 - Not frontier-proxy-only. Not a local-studio-only shrink.
 - Not a weight browser. Enrich packs stay manual. The curator accepts by hand.
 
