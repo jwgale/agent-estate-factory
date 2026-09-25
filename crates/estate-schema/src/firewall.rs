@@ -540,7 +540,7 @@ fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<In
 /// `lane:` is MemoryRead, and one declared tool, MCP, mount, or model is
 /// that kind. A missing intention is deny-default. More than one declared
 /// kind is still deny-default. Call says `ambiguous capability; pass kind`.
-/// Hop says `pass kind on convey call` so that hint is not HopDecl.kind.
+/// Hop says `pass --intention-kind` so that hint is not hop `--kind`.
 /// An explicit deny wins. An unresolved `mesh-stub` on a cloud-agent
 /// placement stays the hop-coverage gate. A box hop does not.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -580,7 +580,7 @@ pub fn convey_intention_coverage(
         }
         let why = if hits.len() > 1 {
             if on_hop {
-                "ambiguous capability; pass kind on convey call".to_string()
+                "ambiguous capability; pass --intention-kind".to_string()
             } else {
                 "ambiguous capability; pass kind".to_string()
             }
@@ -1369,7 +1369,7 @@ mod tests {
         assert!(
             ambiguous
                 .line
-                .contains("ambiguous capability; pass kind on convey call"),
+                .contains("ambiguous capability; pass --intention-kind"),
             "{}",
             ambiguous.line
         );
@@ -1462,6 +1462,53 @@ mod tests {
             .is_err(),
             "passing kind still fail-closes without an allow intention"
         );
+
+        let hop_ambiguous = convey_intention_coverage(
+            &estate,
+            "ttl-box",
+            "research",
+            "notes-append",
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            hop_ambiguous
+                .line
+                .contains("ambiguous capability; pass --intention-kind"),
+            "{}",
+            hop_ambiguous.line
+        );
+        grant(
+            &mut estate,
+            "research",
+            IntentionKind::Tool,
+            "notes-append",
+            Effect::Allow,
+        );
+        assert!(
+            convey_intention_coverage(
+                &estate,
+                "ttl-box",
+                "research",
+                "notes-append",
+                Some(IntentionKind::Tool),
+                true,
+            )
+            .is_ok(),
+            "hop --intention-kind tool allows when that intention allows"
+        );
+        let mcp = convey_intention_coverage(
+            &estate,
+            "ttl-box",
+            "research",
+            "notes-append",
+            Some(IntentionKind::Mcp),
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(mcp.word, "deny-default");
+        assert!(mcp.line.contains("mcp"), "{}", mcp.line);
     }
 
     #[test]

@@ -76,7 +76,7 @@ GitHub is the source of truth.
 | `make gate-90` local entrypoint; `make feed-loop` fixtures | Actions expansion (Jason lock) |
 | `make real-world` — check + vanilla doctor; live SKIP without an endpoint | Off smoke, gate-90, and Actions |
 | `estate doctor --strict` and the dual-layer sacred demo (Sanctum is not Cyera) | Dual PE |
-| `estate convey` lease-bound hop stub. `sync` stamps placement agents. `hop` and `call` with `--agent` refuse intention deny and deny-default (`refuse:intention`) before hop coverage and the lease. Allow continues. `authority` is a file check (`would-allow`, `would-deny`, `not-enforced`) | Hop transport; whether a hop lease is the right station for authority; identity equation (parked) |
+| `estate convey` lease-bound hop stub. `sync` stamps placement agents. `hop` and `call` with `--agent` refuse intention deny and deny-default (`refuse:intention`) before hop coverage and the lease. Allow continues. Ambiguous hop capability: `hop --intention-kind` (not hop `--kind`). `authority` is a file check (`would-allow`, `would-deny`, `not-enforced`) | Hop transport; whether a hop lease is the right station for authority; identity equation (parked) |
 | `ollama` and llama.cpp on `CELL_LOCAL_ENDPOINT` | Experimental catalog cards — [parked](#parked) |
 | Profile-dir isolation and placement leases under `.cell/` | Containers |
 
