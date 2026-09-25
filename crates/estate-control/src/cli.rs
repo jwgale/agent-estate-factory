@@ -35,7 +35,9 @@ pub(crate) enum Command {
     /// deny-default are cited and do not fail plan by themselves. The
     /// check does not write the mesh, the leases, or the estate. A present
     /// mesh file that does not parse fails with the mesh error and is not
-    /// rewritten. A missing mesh is not a failure.
+    /// rewritten. A missing mesh is not a failure. After the cites, an
+    /// Authority section prints the same file check as `estate convey authority`
+    /// (`would-allow`, `would-deny`, `not-enforced`). It does not claim mediation.
     /// Examples: `estate help plan`
     Plan {
         #[command(subcommand)]

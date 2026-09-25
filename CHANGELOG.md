@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — plan prints an Authority section
+
+- `estate plan` prints an Authority section after the Agents / Security-as-IaC blast and the coverage cites (agent-call, memory, model-class, declared tool / MCP / mount, and hop refuse). The section is `authority_report`, the same rows `estate convey authority` already uses, rendered by `describe_authority_section`: summary counts `would-allow`, `would-deny`, `not-enforced`, and one line per row (agent, capability, hop, status, reason). A missing mesh leaves declared rows `not-enforced` and does not invent a lease. A granted box lease whose hop coverage is deny, deny-default, or a capability mismatch is `would-deny` and cites that hop coverage. The section has no `enforced` status and does not claim a worker called the conveyor. Plan still bails on a hard coverage cite or a hop-coverage mismatch before writing the mesh, the leases, the estate, or a reviewed copy. `estate convey authority` prints the same section. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — known-good heal of two estate-control tests
 
 - `feed_loop_script_asserts_source_drivers_without_live_keys` expected `make feed-loop` to tag `source_drivers` `frontier` then `local` from mock tasks against locked `examples/estate.yaml`. Those tasks are deny-default (`intentions: []`; the frontier model class has no allow Model intention). The script and the test now expect that refuse. Pack, proposal, and enrich-edit keep an empty `source_drivers` list (`drivers=-`). They do not invent frontier or local. Deny-default is unchanged. The estate file is unchanged.
