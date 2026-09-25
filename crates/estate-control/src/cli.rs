@@ -260,6 +260,12 @@ pub(crate) enum Command {
     /// One-page health: .cell layout, schema files, compile-only CI present.
     /// A placement hop capability that disagrees with hop coverage is
     /// `refuse:hop-coverage` (mismatch). The check does not write the mesh.
+    /// After the hop cites, an Authority section prints the same file check
+    /// as `estate plan`, `estate drift`, `estate apply`, and
+    /// `estate convey authority` (`would-allow`, `would-deny`,
+    /// `not-enforced`). It does not claim mediation. A hop-coverage
+    /// mismatch still fails this command after that section. A mesh that
+    /// does not parse is FAIL and does not invent Authority rows.
     Doctor {
         #[arg(long, default_value = ".")]
         root: PathBuf,
