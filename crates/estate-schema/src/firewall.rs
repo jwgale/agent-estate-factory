@@ -330,7 +330,7 @@ pub fn describe_model_class_coverage(estate: &Estate) -> String {
     join_coverage(&model_class_coverage_rows(estate), "(no agent model uses)")
 }
 
-/// One model-class use on apply. `line` is the same row
+/// One model-class use on plan and apply. `line` is the same row
 /// [`describe_model_class_coverage`] prints, except a hard cite, which
 /// prefixes that row with `refuse:model-class`. Allow is omitted (quiet).
 /// Deny and deny-default stay visible. Model rows have no
@@ -344,8 +344,8 @@ pub struct ModelClassCoverageCite {
 /// Every agent `models:` entry. Allow is quiet. Deny and deny-default are
 /// notes. A missing row, a class token other than `frontier` or `local`
 /// (the `undeclared` token these rows already print), or an unrecognized
-/// word fails closed (`refuse:model-class`). Does not read a mesh and does
-/// not write.
+/// word fails closed (`refuse:model-class`). Plan and apply bail on a hard
+/// cite. Does not read a mesh and does not write.
 pub fn model_class_coverage_cites(estate: &Estate) -> Vec<ModelClassCoverageCite> {
     model_class_coverage_cites_from_rows(estate, &model_class_coverage_rows(estate))
 }
