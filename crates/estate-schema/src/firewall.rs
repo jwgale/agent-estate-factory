@@ -479,6 +479,94 @@ pub fn describe_hop_coverage(estate: &Estate) -> String {
     join_coverage(&hop_coverage_rows(estate), "(no hop coverage)")
 }
 
+/// One placement-derived hop row that a convey path would use.
+/// `word` is `allow`, `deny`, or `deny-default` — the same tokens
+/// [`hop_coverage_rows`] prints. Plan, doctor, and drift stay print-only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HopCoverageGate {
+    pub word: &'static str,
+    pub line: String,
+}
+
+/// Coverage for a convey hop target. `Ok(None)` means this hop id is not a
+/// placement, so the lease stub is unchanged. `Ok(Some)` is allow. `Err` is
+/// deny or deny-default and names which. Empty population is not a grant.
+/// A cloud-agent hop is deny. Does not spawn and does not write.
+pub fn convey_hop_coverage(
+    estate: &Estate,
+    hop_id: &str,
+    agent_id: Option<&str>,
+) -> Result<Option<HopCoverageGate>, HopCoverageGate> {
+    let want_hop = normalize_name(hop_id);
+    let rows = hop_coverage_rows(estate);
+    let mut hits: Vec<&CoverageRow> = rows
+        .iter()
+        .filter(|row| hop_row_targets(&row.line, &want_hop))
+        .collect();
+    if hits.is_empty() {
+        return Ok(None);
+    }
+    if let Some(agent) = agent_id {
+        let want = normalize_name(agent);
+        let named: Vec<&CoverageRow> = hits
+            .iter()
+            .copied()
+            .filter(|row| !row.agent_id.is_empty() && normalize_name(&row.agent_id) == want)
+            .collect();
+        if named.is_empty() {
+            return Err(HopCoverageGate {
+                word: "deny-default",
+                line: format!(
+                    "{agent} hop {hop_id}: deny-default (not on the hop population; not a grant)"
+                ),
+            });
+        }
+        hits = named;
+    }
+    if let Some(row) = hits.iter().find(|row| hop_line_word(&row.line) == "deny") {
+        return Err(HopCoverageGate {
+            word: "deny",
+            line: row.line.clone(),
+        });
+    }
+    if let Some(row) = hits
+        .iter()
+        .find(|row| hop_line_word(&row.line) == "deny-default")
+    {
+        return Err(HopCoverageGate {
+            word: "deny-default",
+            line: row.line.clone(),
+        });
+    }
+    let line = hits
+        .first()
+        .map(|row| row.line.clone())
+        .unwrap_or_else(|| format!("{hop_id}: allow"));
+    Ok(Some(HopCoverageGate { word: "allow", line }))
+}
+
+fn hop_row_targets(line: &str, hop_norm: &str) -> bool {
+    let mut parts = line.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    if parts.next() != Some("hop") {
+        return false;
+    }
+    let third = parts.next().unwrap_or("");
+    if third.ends_with(':') {
+        normalize_name(first) == hop_norm
+    } else {
+        normalize_name(third.trim_end_matches(':')) == hop_norm
+    }
+}
+
+fn hop_line_word(line: &str) -> &'static str {
+    match line.rsplit(':').next().unwrap_or("").trim() {
+        "allow" => "allow",
+        "deny" => "deny",
+        _ => "deny-default",
+    }
+}
+
 fn authorize_memory(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
     let object = ObjectRef::parse(req.object);
     let lane_id = object.name();
@@ -965,6 +1053,59 @@ mod tests {
         let cloud = describe_hop_coverage(&hopped);
         assert!(cloud.contains("sanctum hop cursor-cloud mesh-stub: deny"));
         assert!(!cloud.contains("cursor-cloud hop mesh-stub:"));
+    }
+
+    #[test]
+    fn convey_hop_coverage_refuses_deny_and_default_allows_only_allow() {
+        let raw = estate();
+        let empty_cloud = convey_hop_coverage(&raw, "cursor-cloud", None).unwrap_err();
+        assert_eq!(empty_cloud.word, "deny");
+        assert!(empty_cloud.line.contains("deny"));
+        assert!(!empty_cloud.line.contains("deny-default"));
+
+        let populated = convey_hop_coverage(&raw, "cell-one-box", None).unwrap_err();
+        assert_eq!(populated.word, "deny-default");
+        assert!(populated.line.contains("deny-default"));
+
+        let mut empty_box = raw.clone();
+        empty_box
+            .placements
+            .iter_mut()
+            .find(|p| p.id == "cell-one-box")
+            .unwrap()
+            .agents
+            .clear();
+        let empty = convey_hop_coverage(&empty_box, "cell-one-box", None).unwrap_err();
+        assert_eq!(empty.word, "deny-default");
+        assert!(empty.line.contains("cell-one-box hop lane-tool: deny-default"));
+
+        let mut allowed = raw.clone();
+        allowed
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap()
+            .tools
+            .push(crate::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        grant(&mut allowed, "research", IntentionKind::Tool, "lane-tool", Effect::Allow);
+        let allow = convey_hop_coverage(&allowed, "cell-one-box", Some("research")).unwrap();
+        assert_eq!(allow.unwrap().word, "allow");
+        let still = convey_hop_coverage(&allowed, "cell-one-box", None).unwrap_err();
+        assert_eq!(still.word, "deny-default");
+
+        grant(&mut allowed, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
+        let explicit = convey_hop_coverage(&allowed, "cell-one-box", Some("research")).unwrap_err();
+        assert_eq!(explicit.word, "deny");
+        assert!(explicit.line.contains(": deny"));
+        assert!(!explicit.line.contains("deny-default"));
+
+        let cloud_agent = convey_hop_coverage(&allowed, "cursor-cloud", None).unwrap_err();
+        assert_eq!(cloud_agent.word, "deny");
+
+        assert!(convey_hop_coverage(&raw, "ttl-hop", None).unwrap().is_none());
     }
 
     #[test]

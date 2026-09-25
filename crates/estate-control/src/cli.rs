@@ -327,10 +327,15 @@ pub(crate) enum ConveyCommand {
         /// Agent on this hop. Repeat for a population. Empty is not a grant.
         #[arg(long = "agent")]
         agents: Vec<String>,
+        /// Estate used for placement-derived hop coverage. Deny and deny-default refuse.
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
     /// Lease-bound call. Refuses without a granted lease.
+    /// Refuses when hop coverage for this hop is deny or deny-default.
+    /// Allow only when that coverage is allow. Does not spawn. Does not apply.
     /// `--agent` binds one placed agent and checks the estate intention. Not an IdP.
     Call {
         #[arg(long)]

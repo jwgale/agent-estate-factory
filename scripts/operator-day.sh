@@ -207,18 +207,31 @@ echo "PASS  packs propose"
 
 echo "-- convey mesh --"
 cargo run -q -p estate-control -- convey sync --state-dir "$STATE"
-cargo run -q -p estate-control -- convey call --id cell-one-box --capability lane-tool --state-dir "$STATE"
 set +e
-cargo run -q -p estate-control -- convey call --id cursor-cloud --capability mesh-stub --state-dir "$STATE" >/tmp/opday-cloud.out 2>/tmp/opday-cloud.err
+cargo run -q -p estate-control -- convey call --id cell-one-box --capability lane-tool --estate "$ESTATE" --state-dir "$STATE" >/tmp/opday-box.out 2>/tmp/opday-box.err
+box=$?
+cargo run -q -p estate-control -- convey call --id cursor-cloud --capability mesh-stub --estate "$ESTATE" --state-dir "$STATE" >/tmp/opday-cloud.out 2>/tmp/opday-cloud.err
 cloud=$?
-cargo run -q -p estate-control -- convey call --id missing-hop --capability lane-tool --state-dir "$STATE" >/tmp/opday-nolease.out 2>/tmp/opday-nolease.err
+cargo run -q -p estate-control -- convey call --id missing-hop --capability lane-tool --estate "$ESTATE" --state-dir "$STATE" >/tmp/opday-nolease.out 2>/tmp/opday-nolease.err
 nolease=$?
 set -e
-if [[ "$cloud" -eq 0 || "$nolease" -eq 0 ]]; then
-  echo "FAIL  convey must refuse cloud-mesh and missing lease"
+if [[ "$box" -eq 0 || "$cloud" -eq 0 || "$nolease" -eq 0 ]]; then
+  echo "FAIL  convey must refuse deny-default box, cloud deny, and missing lease"
   exit 1
 fi
-if ! grep -q "refuse:" /tmp/opday-cloud.err /tmp/opday-nolease.err; then
+if ! grep -q "deny-default" /tmp/opday-box.err; then
+  echo "FAIL  cell-one-box hop coverage must name deny-default"
+  exit 1
+fi
+if ! grep -q "(deny)" /tmp/opday-cloud.err; then
+  echo "FAIL  cursor-cloud hop coverage must name deny"
+  exit 1
+fi
+if grep -q "deny-default" /tmp/opday-cloud.err; then
+  echo "FAIL  cursor-cloud must not be reported as deny-default"
+  exit 1
+fi
+if ! grep -q "refuse:" /tmp/opday-box.err /tmp/opday-cloud.err /tmp/opday-nolease.err; then
   echo "FAIL  convey refuse reasons must use refuse: prefix"
   exit 1
 fi

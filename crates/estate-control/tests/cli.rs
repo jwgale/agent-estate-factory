@@ -511,12 +511,24 @@ fn convey_lease_bound_and_packs_refuse_promote() {
             "cloud-mesh",
             "--capability",
             "mesh-stub",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
         .output()
         .unwrap();
-    assert!(cloud.status.success());
+    assert!(!cloud.status.success(), "{}", String::from_utf8_lossy(&cloud.stderr));
+    let cloud_err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&cloud.stdout),
+        String::from_utf8_lossy(&cloud.stderr)
+    );
+    assert!(
+        cloud_err.contains("refuse:hop-coverage") && cloud_err.contains("(deny)"),
+        "{cloud_err}"
+    );
+    assert!(!cloud_err.contains("deny-default"), "{cloud_err}");
     let cloud_call = estate_bin()
         .args([
             "convey",
@@ -525,6 +537,8 @@ fn convey_lease_bound_and_packs_refuse_promote() {
             "cursor-cloud",
             "--capability",
             "mesh-stub",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
