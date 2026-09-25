@@ -392,9 +392,9 @@ fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: 
     }
 }
 
-/// Shared with `estate drift` and `estate plan`. `fail` is capability mismatch only.
-/// Deny and deny-default stay visible and do not fail doctor `--strict`,
-/// drift, or plan by themselves.
+/// Shared with `estate drift`, `estate plan`, and `estate apply`. `fail` is
+/// capability mismatch only. Deny and deny-default stay visible and do not
+/// fail doctor `--strict`, drift, plan, or apply by themselves.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
