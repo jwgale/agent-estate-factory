@@ -61,6 +61,9 @@ pub(crate) fn cmd_plan(
     if !plan_is_reviewable(&plan) {
         bail!("plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
     }
+    if let Some(line) = hop_mismatch {
+        bail!(line);
+    }
     if reviewed {
         let stem = written
             .file_stem()
@@ -68,9 +71,6 @@ pub(crate) fn cmd_plan(
             .unwrap_or_default();
         let dest = mark_plan_reviewed(plans_dir, reviewed_dir, Some(stem))?;
         println!("reviewed copy {}", dest.display());
-    }
-    if let Some(line) = hop_mismatch {
-        bail!(line);
     }
     Ok(())
 }
@@ -719,6 +719,49 @@ mod plan_hop_coverage_tests {
         persist_mesh(&state, &matched).unwrap();
         assert!(hop_coverage_cites(&estate, &matched).is_empty());
         plan(&dir, &estate_path, &state).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_reviewed_mismatch_leaves_reviewed_dir_untouched() {
+        let dir = scratch();
+        let estate_path = allow_copy(&dir);
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let reviewed = dir.join("reviewed");
+        fs::create_dir_all(&reviewed).unwrap();
+        fs::write(reviewed.join("keep.txt"), b"sentinel").unwrap();
+        let mismatch = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        persist_mesh(&state, &mismatch).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = cmd_plan(
+            &estate_path,
+            None,
+            &dir.join("plans"),
+            &state,
+            true,
+            &reviewed,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        assert_eq!(fs::read(reviewed.join("keep.txt")).unwrap(), b"sentinel");
+        assert!(!reviewed.join("INDEX.md").exists());
+        let extras: Vec<_> = fs::read_dir(&reviewed)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name != "keep.txt")
+            .collect();
+        assert!(extras.is_empty(), "{extras:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
