@@ -13,7 +13,7 @@ pub use mesh::{
     MESH_FILE, MESH_SCHEMA,
 };
 
-use estate_schema::{authorize, AccessRequest, Decision, Estate, IntentionKind};
+use estate_schema::{authorize, coverage_word, AccessRequest, Decision, Estate, IntentionKind};
 use feed_collector::{append_event, ScrubbedEvent};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -42,16 +42,6 @@ pub fn append_proxy_audit(
         },
     )
     .map_err(|err| MeshError::ProxyAudit(err.to_string()))
-}
-
-fn proxy_decision_word(decision: &Decision) -> &'static str {
-    if decision.is_allow() {
-        "allow"
-    } else if decision.reason().contains("deny-default") {
-        "deny-default"
-    } else {
-        "deny"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -115,7 +105,7 @@ pub fn check(
             dir,
             &format!("proxy.{}", kind.as_str()),
             Some(agent_id),
-            proxy_decision_word(&decision),
+            coverage_word(&decision),
             kind.as_str(),
             Some(decision.reason()),
         )?;
@@ -270,11 +260,16 @@ mod tests {
             .invoke("horizon", IntentionKind::MemoryRead, "lane:sanctum")
             .unwrap();
         assert!(!denied.is_allow());
+        assert!(
+            denied.reason().contains("no intention"),
+            "{}",
+            denied.reason()
+        );
         let lines = feed_collector::proxy_audit_events(&dir).unwrap();
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert_eq!(lines[0].decision.as_deref(), Some("allow"));
         assert_eq!(lines[0].kind, "proxy.tool");
-        assert_eq!(lines[1].decision.as_deref(), Some("deny"));
+        assert_eq!(lines[1].decision.as_deref(), Some("deny-default"));
         assert!(lines[1].kind.starts_with("proxy."));
         let cursor = feed_collector::load_cursor(&dir).unwrap().expect("cursor");
         assert_eq!(cursor.schema, "cell-one.feed-cursor.v0");
@@ -286,6 +281,40 @@ mod tests {
             .starts_with("proxy."));
         assert!(cursor.packed_id.is_none());
         assert!(!dir.join("packs").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hop_cross_lane_no_intention_audits_deny_default() {
+        let dir = scratch("hop-cross-lane");
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "mem-hop".into(),
+                kind: "box".into(),
+                capability: "sanctum".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["horizon".into()],
+            },
+        )
+        .unwrap();
+        let denied = call_hop_for_agent(
+            &dir,
+            "mem-hop",
+            "sanctum",
+            "horizon",
+            Some(IntentionKind::MemoryRead),
+            &estate(),
+        )
+        .unwrap_err();
+        assert!(denied.to_string().contains("no intention"), "{denied}");
+        let lines = feed_collector::proxy_audit_events(&dir.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].kind, "proxy.hop");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny-default"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -764,11 +764,7 @@ fn audit_hop_result(
             agent_id.map(|s| s.to_string()),
         )),
         Err(err) if hop_err_is_decision(err) => {
-            let word = if err.to_string().contains("deny-default") {
-                "deny-default"
-            } else {
-                "deny"
-            };
+            let word = estate_schema::coverage_word_for_reason(false, &err.to_string());
             let agent = match err {
                 MeshError::Intention { agent, .. } => Some(agent.clone()),
                 MeshError::AgentUnbound { agent, .. } if agent != "(unnamed)" => {
