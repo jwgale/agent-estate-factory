@@ -55,9 +55,10 @@ make feed-loop
 ```
 
 Isolated `target/feed-loop-cell`. Scrubbed mock traces → pack → propose →
-`packs accept --curator jason`. The produced pack must tag `source_drivers`
-`frontier` then `local`. Feed cursor stays on disk. `estate.yaml` cksum is
-unchanged. Promote stays refused. No live keys.
+`packs accept --curator jason`. The locked estate is deny-default
+(`intentions: []`), so the pack lists `drivers=-` and does not invent
+`source_drivers` `frontier` or `local`. Feed cursor stays on disk.
+`estate.yaml` cksum is unchanged. Promote stays refused. No live keys.
 
 Not part of `make smoke`. See [`FEED-LOOP.md`](FEED-LOOP.md).
 

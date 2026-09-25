@@ -14,20 +14,22 @@ part of `make smoke` (that gate is already long). Hosted CI never runs it.
 
 ## What the walk proves
 
-1. **Scrubbed traces.** `model-estate task --mock` writes feed events for the
-   mixed path (authorize → local precheck → tool or frontier). Notes are
-   job/byte counts, not prompts or keys. The durability test also appends a
-   secret-shaped note and asserts the stored event is `[redacted]`.
+1. **Scrubbed traces.** `model-estate task --mock` against locked
+   `examples/estate.yaml` (`intentions: []`) is deny-default. Horizon
+   `model` / `xai_grok` refuses because the frontier model class has no
+   allow Model intention. Research `tool` / `notes-append` refuses the same
+   way. The script expects that refuse. It does not add intentions. Feed
+   events are those deny lines. They are not an allow, a local precheck, or
+   a frontier complete. The durability test still appends a secret-shaped
+   note and asserts the stored event is `[redacted]`.
 2. **Pack.** `estate feed pack` materializes a candidate pack
    (`overnight-traces`) and stamps `feed-cursor.json` with
    `schema=cell-one.feed-cursor.v0`, `events > 0`, and `packed_id`.
-   `source_drivers` lists `frontier` and/or `local` and matches `path_counts`.
-   The script asserts the produced pack is exactly `frontier` then `local`,
-   that `INDEX.md` lists `drivers=frontier,local`, and that propose copies
-   the same tag. An empty pack lists `drivers=-` and does not invent a
-   source. `promoted` stays false. Live keys are unset. There is no
-   `make feed-loop-mixed`; this walk already uses mixed frontier and local
-   traces.
+   `source_drivers` stays empty because the locked estate did not authorize
+   frontier or local. `INDEX.md` lists `drivers=-`. The script checks the
+   pack, the proposal, and `enrich-edit.json` carry that empty list and do
+   not invent `frontier` or `local`. `promoted` stays false. Live keys are
+   unset. There is no `make feed-loop-mixed`.
 3. **Propose.** `estate packs propose` writes `packs/proposed/` with
    `auto_apply: false` and copies `source_drivers` onto the diff. The estate
    file is unchanged.

@@ -243,7 +243,18 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     let root = repo_root();
     let script = std::fs::read_to_string(root.join("scripts/feed-loop.sh")).unwrap();
     assert!(script.contains("source_drivers"), "{script}");
-    assert!(script.contains("drivers=frontier,local"), "{script}");
+    assert!(
+        script.contains("deny-default"),
+        "feed-loop must expect the locked estate to refuse"
+    );
+    assert!(
+        script.contains("drivers=-"),
+        "locked estate must list an empty source, not an invented tag"
+    );
+    assert!(
+        !script.contains("drivers=frontier,local"),
+        "feed-loop must not require an invented frontier,local tag"
+    );
     assert!(
         script.contains("source_drivers must survive"),
         "feed-loop must compare pack, proposal, and enrich-edit"
@@ -288,8 +299,9 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     );
     assert!(out.status.success(), "{text}");
     assert!(text.contains("FEED-LOOP GREEN"), "{text}");
+    assert!(text.contains("deny-default"), "{text}");
     assert!(
-        text.contains("source_drivers frontier, local"),
+        text.contains("source_drivers empty"),
         "{text}"
     );
     let pack: serde_json::Value = serde_json::from_str(
@@ -297,27 +309,25 @@ fn feed_loop_script_asserts_source_drivers_without_live_keys() {
     )
     .unwrap();
     assert_eq!(pack["promoted"], false);
-    assert_eq!(pack["source_drivers"], serde_json::json!(["frontier", "local"]));
+    assert_eq!(pack["source_drivers"], serde_json::json!([]));
+    assert_eq!(pack["path_counts"]["frontier"], serde_json::json!(0));
+    assert_eq!(pack["path_counts"]["local"], serde_json::json!(0));
+    assert!(pack["path_counts"]["proxy"].as_u64().unwrap_or(0) >= 1);
     let proposal: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(work.join("packs/proposed/overnight-traces.proposal.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(proposal["auto_apply"], false);
-    assert_eq!(
-        proposal["diff"]["source_drivers"],
-        serde_json::json!(["frontier", "local"])
-    );
+    assert_eq!(proposal["diff"]["source_drivers"], serde_json::json!([]));
     let index = std::fs::read_to_string(work.join("packs/INDEX.md")).unwrap();
-    assert!(index.contains("drivers=frontier,local"), "{index}");
+    assert!(index.contains("drivers=-"), "{index}");
+    assert!(!index.contains("drivers=frontier,local"), "{index}");
     let edit: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(work.join("packs/accepted/overnight-traces.enrich-edit.json"))
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        edit["source_drivers"],
-        serde_json::json!(["frontier", "local"])
-    );
+    assert_eq!(edit["source_drivers"], serde_json::json!([]));
     assert_eq!(pack["source_drivers"], proposal["diff"]["source_drivers"]);
     assert_eq!(proposal["diff"]["source_drivers"], edit["source_drivers"]);
     assert_eq!(edit["applied_to_estate"], false);

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Feed loop fixture walk: scrubbed trace → pack → propose → accept.
+# Locked examples/estate.yaml is deny-default (intentions empty).
+# Mock frontier and tool tasks must refuse. Do not invent source_drivers.
 # Isolated cell. Fixtures only. No live Grok / Mac / GPU.
 # Local only. Do not add to make smoke or GitHub Actions.
 set -euo pipefail
@@ -48,11 +50,37 @@ else:
     counts = doc.get("path_counts") or {}
     if doc.get("promoted") is not False:
         raise SystemExit(f"FAIL  promoted must stay false: {doc.get('promoted')}")
-if drivers != ["frontier", "local"]:
-    raise SystemExit(f"FAIL  source_drivers={drivers} in {sys.argv[1]}")
-if int(counts.get("frontier") or 0) < 1 or int(counts.get("local") or 0) < 1:
-    raise SystemExit(f"FAIL  path_counts={counts} in {sys.argv[1]}")
+# Locked estate intentions are empty. Authorize is deny-default.
+# Do not invent frontier or local source_drivers from that refuse.
+if drivers != []:
+    raise SystemExit(f"FAIL  source_drivers={drivers} invented in {sys.argv[1]} (deny-default)")
+if int(counts.get("frontier") or 0) != 0 or int(counts.get("local") or 0) != 0:
+    raise SystemExit(f"FAIL  path_counts={counts} invented frontier or local in {sys.argv[1]}")
 PY
+}
+
+expect_locked_deny() {
+  local label="$1"
+  shift
+  set +e
+  "$@" >"$WORKDIR/${label}.out" 2>"$WORKDIR/${label}.err"
+  local rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]]; then
+    echo "FAIL  ${label} must refuse on the locked estate (deny-default)"
+    cat "$WORKDIR/${label}.out" "$WORKDIR/${label}.err"
+    exit 1
+  fi
+  if ! grep -q 'deny-default' "$WORKDIR/${label}.out" "$WORKDIR/${label}.err"; then
+    echo "FAIL  ${label} must name deny-default"
+    cat "$WORKDIR/${label}.out" "$WORKDIR/${label}.err"
+    exit 1
+  fi
+  if grep -q '"authorized": true' "$WORKDIR/${label}.out"; then
+    echo "FAIL  ${label} must stay unauthorized"
+    exit 1
+  fi
+  echo "PASS  ${label} deny-default"
 }
 
 rm -rf "$WORKDIR"
@@ -61,12 +89,14 @@ mkdir -p "$FEED" "$DROP" "$STATE"
 echo "== feed-loop (fixtures only) =="
 echo "workdir: $WORKDIR"
 
-echo "-- mock traces (mixed path; no live keys) --"
-model_estate task --estate "$ESTATE" \
+echo "-- mock traces (locked estate deny-default; no live keys) --"
+expect_locked_deny frontier-model \
+  model_estate task --estate "$ESTATE" \
   --agent horizon --act model --object xai_grok --mock \
   --payload "Reply with the single word pong." \
   --feed-dir "$FEED"
-model_estate task --estate "$ESTATE" \
+expect_locked_deny research-tool \
+  model_estate task --estate "$ESTATE" \
   --agent research --act tool --object notes-append --mock \
   --payload "append a note" \
   --feed-dir "$FEED"
@@ -80,7 +110,17 @@ if grep -Eiq 'xai-|sk-|api_key=|XAI_API_KEY|5090|4090' "$FEED/events.jsonl"; the
   cat "$FEED/events.jsonl"
   exit 1
 fi
-echo "PASS  scrubbed traces"
+if ! grep -q '"decision":"deny"' "$FEED/events.jsonl"; then
+  echo "FAIL  feed must record the authorize deny"
+  cat "$FEED/events.jsonl"
+  exit 1
+fi
+if grep -q '"decision":"allow"' "$FEED/events.jsonl" || grep -q 'frontier.complete' "$FEED/events.jsonl"; then
+  echo "FAIL  deny-default must not record an allow or a frontier complete"
+  cat "$FEED/events.jsonl"
+  exit 1
+fi
+echo "PASS  scrubbed deny traces"
 
 echo "-- feed pack --"
 BEFORE="$(cksum "$ESTATE")"
@@ -90,12 +130,12 @@ if [[ ! -f "$DROP/overnight-traces.pack.json" ]]; then
   exit 1
 fi
 assert_source_drivers "$DROP/overnight-traces.pack.json"
-if ! grep -q 'drivers=frontier,local' "$DROP/INDEX.md"; then
-  echo "FAIL  INDEX.md must list source_drivers"
+if ! grep -q 'drivers=-' "$DROP/INDEX.md"; then
+  echo "FAIL  INDEX.md must list drivers=- (deny-default does not invent a source)"
   cat "$DROP/INDEX.md"
   exit 1
 fi
-echo "PASS  pack source_drivers frontier, local"
+echo "PASS  pack source_drivers empty"
 
 echo "-- feed cursor (durable watermark) --"
 estate feed cursor --feed-dir "$FEED" | tee "$WORKDIR/cursor-1.json"
@@ -146,7 +186,7 @@ if ! grep -q '"auto_apply": false' "$DROP/proposed/overnight-traces.proposal.jso
   exit 1
 fi
 assert_source_drivers "$DROP/proposed/overnight-traces.proposal.json"
-echo "PASS  propose source_drivers frontier, local"
+echo "PASS  propose source_drivers empty"
 
 echo "-- packs accept --curator jason (instructions only) --"
 set +e
@@ -186,16 +226,16 @@ survived = [
     (proposal.get("diff") or {}).get("source_drivers"),
     edit.get("source_drivers"),
 ]
-if survived != [["frontier", "local"]] * 3:
-    raise SystemExit(f"FAIL  source_drivers must survive pack -> propose -> enrich-edit: {survived}")
+if survived != [[], [], []]:
+    raise SystemExit(f"FAIL  source_drivers must survive pack -> propose -> enrich-edit as empty: {survived}")
 if edit.get("applied_to_estate") is not False or edit.get("auto_apply") is not False:
     raise SystemExit("FAIL  enrich-edit must stay unapplied")
 PY
-if ! grep -q 'source_drivers: frontier, local' "$DROP/accepted/overnight-traces.enrich-edit.md"; then
-  echo "FAIL  enrich-edit instructions must keep source_drivers"
+if ! grep -q 'source_drivers: -' "$DROP/accepted/overnight-traces.enrich-edit.md"; then
+  echo "FAIL  enrich-edit instructions must keep empty source_drivers"
   exit 1
 fi
-echo "PASS  accept source_drivers frontier, local"
+echo "PASS  accept source_drivers empty"
 
 echo "-- promote refuse + estate unchanged --"
 set +e
@@ -219,4 +259,4 @@ fi
 echo "PASS  promote refused; estate unchanged; cursor durable"
 
 echo
-echo "FEED-LOOP GREEN (fixtures only; no live Grok / Mac / GPU)"
+echo "FEED-LOOP GREEN (locked estate deny-default; fixtures only; no live Grok / Mac / GPU)"
