@@ -2,6 +2,11 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — memory rows flag cross-lane edges
+
+- Memory read already fail-closes. A named-agent `authorize` and `estate convey call --agent` allow `memory_read` across lanes only when an allow memory intention covers that lane. A cross-lane edge with no intention is deny-default. An explicit deny wins. Own-lane memory stays allow. Sacred exclusions stay refused. This slice does not change that gate.
+- `describe_intention_coverage` is the shared cite. Each memory row now names the agent, the lane, `allow` / `deny` / `deny-default`, and `(own-lane)` or `(cross-lane)`. `estate plan`, `estate drift`, and `estate doctor` print that section and stay print-only. Plan does not spawn. Control does not complete. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — apply cites hop-coverage mismatch
 
 - `estate apply` and `estate apply` dry-run cite a placement hop lease, or a box hop declaration that has no lease, when its capability disagrees with placement-derived coverage. The finding quotes `refuse:hop-coverage` in the same shape as `estate plan`, `estate doctor`, and `estate drift`. A capability mismatch fails apply and dry-run before any estate, mesh, lease, or apply-audit write. A matching capability is quiet. Deny and deny-default are cited and do not fail apply by themselves. A hop id that is not a placement stays out. Cloud hops stay out under the same kind match as mesh authority (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase). A present `conveyor-mesh.json` that does not parse fails apply with that mesh parse error and is not rewritten. A missing mesh stays an empty cite list. Gated apply, require-plan, catalog mismatch, unchanged, and `--force` stay as they were when this finding is absent. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
