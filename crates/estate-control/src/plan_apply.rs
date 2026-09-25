@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use conveyor_proxy::load_mesh;
 use estate_schema::{
     blast_grows, covering_plan, describe_placements, diff_estates,
     estate_hash, latest_plan, load_estate, load_plan_json, mark_plan_reviewed, overlay_sacred_ids,
@@ -39,8 +40,29 @@ pub(crate) fn cmd_plan(
     print!("{}", render_plan(&plan));
     println!("{}", model_estate::render_frontier_plan(&frontier_plan));
     println!("Wrote {}", written.display());
+    // Missing mesh is an empty cite list, not a failure. A present file
+    // that does not parse stays the mesh error and is not rewritten.
+    // The plan file above is the plan artifact. Mesh, leases, and the
+    // estate stay unread-only.
+    let mut hop_mismatch: Option<String> = None;
+    match load_mesh(state_dir) {
+        Ok(mesh) => {
+            for cite in crate::watch::hop_coverage_cites(&desired, &mesh) {
+                if cite.fail {
+                    println!("  FAIL  {}", cite.line);
+                    hop_mismatch.get_or_insert(cite.line);
+                } else {
+                    println!("  note  {}", cite.line);
+                }
+            }
+        }
+        Err(err) => bail!("{err}"),
+    }
     if !plan_is_reviewable(&plan) {
         bail!("plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
+    }
+    if let Some(line) = hop_mismatch {
+        bail!(line);
     }
     if reviewed {
         let stem = written
@@ -558,5 +580,357 @@ fn enrich_stage_note(
             )
         }
         _ => Ok(unchanged_note.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod plan_hop_coverage_tests {
+    use super::cmd_plan;
+    use crate::watch::hop_coverage_cites;
+    use conveyor_proxy::{persist_mesh, ConveyorMesh, HopDecl, HopLease, MESH_FILE};
+    use estate_schema::load_estate;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-plan-hop-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn box_lease(hop_id: &str, capability: &str, agents: &[&str]) -> HopLease {
+        HopLease {
+            hop_id: hop_id.into(),
+            kind: "box".into(),
+            capability: capability.into(),
+            host_class: "any".into(),
+            granted: true,
+            spawned: true,
+            durable: true,
+            driver: "box".into(),
+            note: None,
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
+            agents: agents.iter().map(|agent| (*agent).to_string()).collect(),
+        }
+    }
+
+    fn mesh_with(leases: Vec<HopLease>, hops: Vec<HopDecl>) -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops,
+            leases,
+        }
+    }
+
+    fn allow_copy(dir: &Path) -> PathBuf {
+        let path = dir.join("allow.yaml");
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n",
+            "      - id: notes-append\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+        );
+        fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn plan(dir: &Path, estate: &Path, state: &Path) -> anyhow::Result<()> {
+        cmd_plan(
+            estate,
+            None,
+            &dir.join("plans"),
+            state,
+            false,
+            &dir.join("reviewed"),
+        )
+    }
+
+    fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+        [
+            "placement-actual.json",
+            "model-actual.json",
+            MESH_FILE,
+            "conveyor-hops.json",
+            "conveyor-leases.json",
+        ]
+        .into_iter()
+        .filter_map(|name| {
+            let path = state.join(name);
+            path.is_file()
+                .then(|| (name.to_string(), fs::read(&path).unwrap()))
+        })
+        .collect()
+    }
+
+    #[test]
+    fn plan_cites_mismatch_and_stays_quiet_on_a_match() {
+        let dir = scratch();
+        let estate_path = allow_copy(&dir);
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let mismatch = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        persist_mesh(&state, &mismatch).unwrap();
+        let cites = hop_coverage_cites(&estate, &mismatch);
+        assert_eq!(cites.len(), 1);
+        assert!(cites[0].fail);
+        assert!(
+            cites[0].line.contains("refuse:hop-coverage")
+                && cites[0].line.contains("(mismatch)")
+                && cites[0].line.contains(
+                    "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+                ),
+            "{}",
+            cites[0].line
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = plan(&dir, &estate_path, &state).unwrap_err().to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert!(!err.contains("not reviewable"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+
+        let matched = mesh_with(
+            vec![box_lease("cell-one-box", "lane-tool", &["research"])],
+            vec![],
+        );
+        persist_mesh(&state, &matched).unwrap();
+        assert!(hop_coverage_cites(&estate, &matched).is_empty());
+        plan(&dir, &estate_path, &state).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_reviewed_mismatch_leaves_reviewed_dir_untouched() {
+        let dir = scratch();
+        let estate_path = allow_copy(&dir);
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let reviewed = dir.join("reviewed");
+        fs::create_dir_all(&reviewed).unwrap();
+        fs::write(reviewed.join("keep.txt"), b"sentinel").unwrap();
+        let mismatch = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        persist_mesh(&state, &mismatch).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = cmd_plan(
+            &estate_path,
+            None,
+            &dir.join("plans"),
+            &state,
+            true,
+            &reviewed,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        assert_eq!(fs::read(reviewed.join("keep.txt")).unwrap(), b"sentinel");
+        assert!(!reviewed.join("INDEX.md").exists());
+        let extras: Vec<_> = fs::read_dir(&reviewed)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name != "keep.txt")
+            .collect();
+        assert!(extras.is_empty(), "{extras:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_cites_deny_and_deny_default_without_failing_alone() {
+        let dir = scratch();
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let mesh = mesh_with(
+            vec![box_lease("cell-one-box", "notes-append", &["research"])],
+            vec![],
+        );
+        persist_mesh(&state, &mesh).unwrap();
+        let cites = hop_coverage_cites(&estate, &mesh);
+        assert_eq!(cites.len(), 1);
+        assert!(!cites[0].fail);
+        assert!(
+            cites[0].line.contains("refuse:hop-coverage")
+                && cites[0].line.contains("(deny-default)")
+                && !cites[0].line.contains("(mismatch)"),
+            "{}",
+            cites[0].line
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        plan(&dir, &estate_path, &state).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+
+        let deny_path = dir.join("deny.yaml");
+        let mut text = fs::read_to_string(&estate_path).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n",
+            "      - id: notes-append\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: deny\n",
+        );
+        fs::write(&deny_path, text).unwrap();
+        let denied = load_estate(&deny_path).unwrap();
+        let deny = hop_coverage_cites(&denied, &mesh);
+        assert_eq!(deny.len(), 1);
+        assert!(!deny[0].fail);
+        assert!(
+            deny[0].line.contains("refuse:hop-coverage")
+                && deny[0].line.contains("(deny)")
+                && !deny[0].line.contains("(mismatch)"),
+            "{}",
+            deny[0].line
+        );
+        let deny_before = snapshot(&state);
+        let deny_bytes = fs::read(&deny_path).unwrap();
+        plan(&dir, &deny_path, &state).unwrap();
+        assert_eq!(snapshot(&state), deny_before);
+        assert_eq!(fs::read(&deny_path).unwrap(), deny_bytes);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_does_not_cite_a_cloud_kind_variant() {
+        let dir = scratch();
+        let estate_path = allow_copy(&dir);
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        for kind in ["cloud_mesh", " Cloud-Mesh ", "CLOUD-AGENT"] {
+            let mut lease = box_lease("cell-one-box", "notes-append", &["research"]);
+            lease.kind = kind.into();
+            let leased = mesh_with(vec![lease], vec![]);
+            assert!(hop_coverage_cites(&estate, &leased).is_empty(), "{kind}");
+            persist_mesh(&state, &leased).unwrap();
+            plan(&dir, &estate_path, &state).unwrap();
+
+            let declared = mesh_with(
+                vec![],
+                vec![HopDecl {
+                    id: "cell-one-box".into(),
+                    kind: kind.into(),
+                    capability: "notes-append".into(),
+                    host_class: "any".into(),
+                    wired: false,
+                    note: None,
+                    ttl_secs: None,
+                    agents: vec!["research".into()],
+                }],
+            );
+            assert!(hop_coverage_cites(&estate, &declared).is_empty(), "{kind}");
+            persist_mesh(&state, &declared).unwrap();
+            plan(&dir, &estate_path, &state).unwrap();
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_cites_a_hop_declaration_when_no_lease_is_present() {
+        let dir = scratch();
+        let estate_path = allow_copy(&dir);
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let mesh = mesh_with(
+            vec![],
+            vec![HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            }],
+        );
+        persist_mesh(&state, &mesh).unwrap();
+        let cites = hop_coverage_cites(&estate, &mesh);
+        assert!(
+            cites
+                .iter()
+                .any(|cite| cite.fail && cite.line.contains("(mismatch)")),
+            "{cites:?}"
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = plan(&dir, &estate_path, &state).unwrap_err().to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn example_estate_plan_stays_green_without_a_mesh() {
+        let dir = scratch();
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        plan(&dir, &estate_path, &state).unwrap();
+        let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+        assert_eq!(fs::read(&estate_path).unwrap(), locked);
+        assert!(!state.join(MESH_FILE).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_fails_closed_when_the_mesh_file_does_not_parse() {
+        let dir = scratch();
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let mesh_path = state.join(MESH_FILE);
+        let corrupt = b"{not-json";
+        fs::write(&mesh_path, corrupt).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = plan(&dir, &estate_path, &state).unwrap_err().to_string();
+        assert!(err.contains("parse") && err.contains(MESH_FILE), "{err}");
+        assert!(!err.contains("not reviewable"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&mesh_path).unwrap(), corrupt);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

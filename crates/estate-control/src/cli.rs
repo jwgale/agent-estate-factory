@@ -30,6 +30,12 @@ pub(crate) enum Command {
         estate: PathBuf,
     },
     /// Human-readable blast-radius plan; append-only write to plans/.
+    /// A placement hop capability that disagrees with hop coverage is
+    /// `refuse:hop-coverage` (mismatch) and fails this command. Deny and
+    /// deny-default are cited and do not fail plan by themselves. The
+    /// check does not write the mesh, the leases, or the estate. A present
+    /// mesh file that does not parse fails with the mesh error and is not
+    /// rewritten. A missing mesh is not a failure.
     /// Examples: `estate help plan`
     Plan {
         #[command(subcommand)]
