@@ -1,8 +1,9 @@
 //! `estate status` prints the same Agents section as plan, drift, and apply,
-//! then the same Authority section as plan, drift, apply, doctor, and convey
-//! authority. Agents follows the hop expired count and the cloud-agent line.
-//! Print-only. Deny and deny-default notes, and a would-deny row, do not
-//! fail status.
+//! then the same hop coverage cites doctor and drift print, then the same
+//! Authority section as plan, drift, apply, doctor, and convey authority.
+//! Agents follows the hop expired count and the cloud-agent line. The cites
+//! are print-only: mismatch, deny, and deny-default do not fail status.
+//! A would-deny row does not fail status.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -60,6 +61,19 @@ fn no_enforced_status_token(text: &str) -> bool {
         let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
         token == "enforced"
     })
+}
+
+/// Text between the Agents section and the Authority header. Empty when
+/// status printed no hop coverage cite.
+fn between_agents_and_authority<'a>(stdout: &'a str, agents: &str) -> &'a str {
+    let at = stdout
+        .find(agents)
+        .unwrap_or_else(|| panic!("missing Agents section\n{stdout}"));
+    let after = &stdout[at + agents.len()..];
+    let end = after
+        .find("\nAuthority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{after}"));
+    &after[..end]
 }
 
 fn estate_with_lane_tool(effect: &str) -> String {
@@ -340,9 +354,14 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
     assert!(stderr.is_empty(), "{stderr}");
     let cloud = "cloud-agent: declared, not spawned\n";
     let cloud_at = stdout.find(cloud).unwrap();
+    let cite = "  note  refuse:hop-coverage: research hop cell-one-box lane-tool: deny (deny)";
     assert_eq!(
         stdout[cloud_at + cloud.len()..].trim_end(),
-        format!("{agents}\n{section}")
+        format!("{agents}\n{cite}\n{section}")
+    );
+    assert!(
+        !stdout.contains("  FAIL  refuse:hop-coverage:"),
+        "deny stays a note\n{stdout}"
     );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     let (convey_ok, convey_out, convey_err) = convey_authority(&estate_path, &state);
@@ -379,17 +398,130 @@ fn hop_mismatch_stays_a_would_deny_row_and_status_still_exits_zero() {
             && section.contains("(mismatch)"),
         "{section}"
     );
+    let agents = estate_schema::describe_agents_section(&estate);
     let before = snapshot(&state);
     let estate_bytes = std::fs::read(&estate_path).unwrap();
     let (ok, stdout, stderr) = status(&estate_path, &state, &dir);
     assert!(ok, "{stdout}\n{stderr}");
     assert!(stderr.is_empty(), "{stderr}");
     assert!(stdout.contains(&section), "{stdout}");
+    let cites = between_agents_and_authority(&stdout, &agents);
+    assert!(
+        cites.starts_with("\n  FAIL  refuse:hop-coverage:"),
+        "mismatch cite sits between Agents and Authority\n{cites}"
+    );
+    assert!(
+        cites.contains("(mismatch)")
+            && cites.contains(
+                "capability 'notes-append' does not match hop coverage capability 'lane-tool'"
+            ),
+        "{cites}"
+    );
+    assert!(!cites.contains("  note  refuse:hop-coverage:"), "{cites}");
+    assert!(stdout.contains("cloud-agent: declared, not spawned"), "{stdout}");
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert!(no_enforced_status_token(&stderr), "{stderr}");
     assert_eq!(snapshot(&state), before);
     assert!(!state.join("apply-audit.jsonl").exists());
+    assert!(!state.join("sessions.jsonl").exists());
+    assert!(!state.join("placement-actual.json").exists());
     assert_eq!(std::fs::read(&estate_path).unwrap(), estate_bytes);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn status_prints_the_same_deny_default_hop_cite_as_doctor_and_does_not_fail() {
+    let dir = scratch();
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    conveyor_proxy::persist_mesh(&state, &granted_box("notes-append")).unwrap();
+    let estate_path = repo_root().join("examples/estate.yaml");
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
+    let section = conveyor_proxy::describe_authority_section(&rows, &state);
+    assert!(section.contains("would-deny"), "{section}");
+    assert!(no_enforced_status_token(&section), "{section}");
+    let before = snapshot(&state);
+    let estate_bytes = std::fs::read(&estate_path).unwrap();
+    let state_s = state.display().to_string();
+    let root_s = repo_root().display().to_string();
+    let (doctor_ok, doctor_out, doctor_err) =
+        run(&["doctor", "--root", &root_s, "--state-dir", &state_s]);
+    assert!(doctor_ok, "{doctor_out}\n{doctor_err}");
+    assert!(doctor_err.is_empty(), "{doctor_err}");
+    let doctor_cites = between_agents_and_authority(&doctor_out, &agents);
+    assert!(
+        doctor_cites.contains("  note  refuse:hop-coverage:")
+            && doctor_cites.contains("(deny-default)")
+            && !doctor_cites.contains("(mismatch)")
+            && !doctor_cites.contains("  FAIL  "),
+        "{doctor_cites}"
+    );
+    let (ok, stdout, stderr) = status(&estate_path, &state, &dir);
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    let cites = between_agents_and_authority(&stdout, &agents);
+    assert_eq!(cites, doctor_cites, "status cite block\n{cites}");
+    assert!(stdout.contains(&section), "{stdout}");
+    assert!(stdout.contains("cloud-agent: declared, not spawned"), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert_eq!(snapshot(&state), before);
+    assert!(!state.join("apply-audit.jsonl").exists());
+    assert!(!state.join("sessions.jsonl").exists());
+    assert!(!state.join("placement-actual.json").exists());
+    assert_eq!(std::fs::read(&estate_path).unwrap(), estate_bytes);
+    let sum = Command::new("cksum").arg(&estate_path).output().unwrap();
+    let sum_text = String::from_utf8_lossy(&sum.stdout);
+    assert!(
+        sum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {sum_text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn status_stays_quiet_when_hop_coverage_matches_and_writes_nothing() {
+    let dir = scratch();
+    let estate_path = dir.join("allow.yaml");
+    std::fs::write(&estate_path, estate_with_lane_tool("allow")).unwrap();
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    conveyor_proxy::persist_mesh(&state, &granted_box("lane-tool")).unwrap();
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
+    let section = conveyor_proxy::describe_authority_section(&rows, &state);
+    assert!(
+        section.contains("research lane-tool cell-one-box: would-allow --"),
+        "{section}"
+    );
+    let before = snapshot(&state);
+    let estate_bytes = std::fs::read(&estate_path).unwrap();
+    let locked = std::fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+    let (ok, stdout, stderr) = status(&estate_path, &state, &dir);
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    assert_eq!(
+        between_agents_and_authority(&stdout, &agents),
+        "",
+        "a match adds no hop cite\n{stdout}"
+    );
+    let cloud = "cloud-agent: declared, not spawned\n";
+    let cloud_at = stdout.find(cloud).unwrap();
+    assert_eq!(
+        stdout[cloud_at + cloud.len()..].trim_end(),
+        format!("{agents}\n{section}")
+    );
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert_eq!(snapshot(&state), before);
+    assert!(!state.join("sessions.jsonl").exists());
+    assert!(!state.join("apply-audit.jsonl").exists());
+    assert_eq!(std::fs::read(&estate_path).unwrap(), estate_bytes);
+    assert_eq!(
+        std::fs::read(repo_root().join("examples/estate.yaml")).unwrap(),
+        locked
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -414,8 +546,9 @@ fn unreadable_mesh_invents_no_authority_rows_and_writes_nothing() {
             && !stdout.contains("Authority")
             && !stdout.contains("would-allow")
             && !stdout.contains("would-deny")
-            && !stdout.contains("not-enforced"),
-        "a mesh that does not parse must not invent Agents or Authority rows\n{stdout}"
+            && !stdout.contains("not-enforced")
+            && !stdout.contains("refuse:hop-coverage"),
+        "a mesh that does not parse must not invent Agents, cites, or Authority rows\n{stdout}"
     );
     assert!(stderr.contains("parse:"), "{stderr}");
     assert!(stderr.contains("conveyor-mesh.json"), "{stderr}");
@@ -448,8 +581,9 @@ fn unreadable_mesh_invents_no_authority_rows_and_writes_nothing() {
         !stdout.contains("Agents\n------")
             && !stdout.contains("Authority")
             && !stdout.contains("would-allow")
-            && !stdout.contains("not-enforced"),
-        "a mesh authority cannot read must not invent Agents or Authority rows\n{stdout}"
+            && !stdout.contains("not-enforced")
+            && !stdout.contains("refuse:hop-coverage"),
+        "a mesh authority cannot read must not invent Agents, cites, or Authority rows\n{stdout}"
     );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert!(no_enforced_status_token(&stderr), "{stderr}");

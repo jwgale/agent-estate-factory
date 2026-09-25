@@ -388,7 +388,7 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
     // or the apply audit. Does not spawn.
     if let Ok(mesh) = load_mesh(state_dir) {
         println!("{}", describe_agents_section(&estate));
-        print_doctor_hop_coverage_cites(&estate, &mesh, fails);
+        fails.extend(print_hop_coverage_cites(&estate, &mesh));
         if let Ok(text) = doctor_authority_text(&estate, state_dir) {
             println!("{text}");
         }
@@ -404,29 +404,35 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     Ok(describe_authority_section(&rows, state_dir))
 }
 
-/// File check. A granted box lease (or a box hop declaration with no lease)
-/// whose placement hop coverage is deny, deny-default, or a capability
-/// mismatch quotes `refuse:hop-coverage`. Mismatch fails doctor. Deny and
-/// deny-default are cited and do not fail `--strict`: the locked example
-/// stays deny-default. Cloud hops, empty populations, ungranted leases, and
-/// hop ids that are not placements stay out. Cloud kinds stay out of this
-/// cite on purpose: `cloud-mesh`, `cloud_mesh`, and `cloud-agent` (trim,
-/// lowercase) are declared-not-spawned, not a capability mismatch. The
-/// hop describe line already names that. Does not write.
-fn print_doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh, fails: &mut Vec<String>) {
+/// Shared printer for doctor and status. A granted box lease (or a box hop
+/// declaration with no lease) whose placement hop coverage is deny,
+/// deny-default, or a capability mismatch quotes `refuse:hop-coverage`.
+/// `FAIL` when `cite.fail` (capability mismatch). Deny and deny-default are
+/// `note`. Returns the mismatch lines. Doctor appends them and bails at the
+/// end. Status discards them and does not bail. Cloud hops, empty
+/// populations, ungranted leases, and hop ids that are not placements stay
+/// out. Cloud kinds stay out of this cite on purpose: `cloud-mesh`,
+/// `cloud_mesh`, and `cloud-agent` (trim, lowercase) are
+/// declared-not-spawned, not a capability mismatch. The hop describe line
+/// already names that. Does not write.
+fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<String> {
+    let mut mismatches = Vec::new();
     for cite in hop_coverage_cites(estate, mesh) {
         if cite.fail {
             println!("  FAIL  {}", cite.line);
-            fails.push(cite.line);
+            mismatches.push(cite.line);
         } else {
             println!("  note  {}", cite.line);
         }
     }
+    mismatches
 }
 
-/// Shared with `estate drift`, `estate plan`, and `estate apply`. `fail` is
-/// capability mismatch only. Deny and deny-default stay visible and do not
-/// fail doctor `--strict`, drift, plan, or apply by themselves.
+/// Shared with `estate drift`, `estate plan`, `estate apply`, and
+/// `estate status`. `fail` is capability mismatch only. Deny and
+/// deny-default stay visible. They do not fail doctor `--strict`, drift,
+/// plan, apply, or status by themselves. A mismatch fails doctor, drift,
+/// plan, and apply. Status prints it and does not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
@@ -648,27 +654,36 @@ pub(crate) fn cmd_status(
     println!("cloud-agent: declared, not spawned");
     // Same Agents text as plan, drift, apply, doctor, and convey authority.
     // Print-only, after the hop expired count and this cloud-agent line,
-    // and before Authority.
+    // and before hop coverage cites and Authority.
     // Deny and deny-default coverage stay notes and do not add a status
     // fail. Does not spawn. Does not write the mesh, the leases, or the
     // estate. A spawned cloud lease already refused above and does not
     // reach this section.
+    // A missing mesh is the empty mesh from `load_mesh`, so the cite list
+    // is empty. A present mesh that does not parse already refused above
+    // (`list_expired_hop_leases`) and does not reach this section, so it
+    // does not invent cites or Authority rows.
+    let mesh = load_mesh(state_dir)?;
     println!("{}", describe_agents_section(&estate));
-    // Print-only file check after that Agents section. Same text as plan,
-    // drift, apply, doctor, and convey authority. A mesh that does not
-    // parse already refused above (`list_expired_hop_leases`) and does not
-    // reach this section, so it does not invent rows. A missing mesh stays
-    // not-enforced. A would-deny row does not add a hop-coverage fail.
-    // Does not write the mesh, the leases, or the estate. Does not invent
-    // a lease.
+    // Same lines doctor prints (`print_hop_coverage_cites`): `FAIL` on
+    // mismatch, `note` on deny and deny-default. The mismatch lines are
+    // discarded. Status does not bail on them. Spawned cloud, an unreadable
+    // mesh, model-actual, and proposals already refused above. Does not
+    // write the mesh, the leases, or the estate. Does not spawn.
+    let _mismatches = print_hop_coverage_cites(&estate, &mesh);
+    // Print-only file check after those cites. Same text as plan, drift,
+    // apply, doctor, and convey authority. A missing mesh stays
+    // not-enforced. A would-deny row does not fail status. Does not write
+    // the mesh, the leases, or the estate. Does not invent a lease.
     println!("{}", status_authority_text(&estate, state_dir)?);
     Ok(())
 }
 
-/// File check printed after the Agents section. Same text as `estate plan`,
-/// `estate drift`, `estate apply`, `estate doctor`, and `estate convey authority`.
-/// Does not write the mesh, the leases, or the estate. Does not invent a lease.
-/// Does not add a hop-coverage fail.
+/// File check printed after the Agents section and hop coverage cites.
+/// Same text as `estate plan`, `estate drift`, `estate apply`,
+/// `estate doctor`, and `estate convey authority`. Does not write the mesh,
+/// the leases, or the estate. Does not invent a lease. Does not fail status
+/// on a hop-coverage mismatch.
 fn status_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
     Ok(describe_authority_section(&rows, state_dir))
