@@ -366,7 +366,10 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     let (convey_ok, convey_out, convey_err) = convey_authority(&estate_path, &state);
     assert!(convey_ok, "{convey_out}\n{convey_err}");
-    assert_eq!(convey_out.trim_end(), format!("{agents}\n{section}"));
+    assert_eq!(
+        convey_out.trim_end(),
+        format!("{agents}\n{cite}\n{section}")
+    );
     assert_eq!(snapshot(&state), before);
     assert!(!state.join("apply-audit.jsonl").exists());
     assert_eq!(std::fs::read(&estate_path).unwrap(), estate_bytes);

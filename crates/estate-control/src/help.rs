@@ -232,10 +232,15 @@ Authority rows. A would-deny row does not fail status. Status does not
 write the mesh, the leases, or the estate.
 
 `estate convey authority` prints that same Agents section
-(`describe_agents_section`) immediately before that Authority section.
-Deny and deny-default stay notes and do not fail the command. A missing
-or unreadable estate, and a mesh that does not parse, refuse before
-either section. The command does not write and does not spawn.
+(`describe_agents_section`), then hop coverage cites from
+`hop_coverage_cites`, the same lines doctor and status print, before
+that Authority section. A capability mismatch is `FAIL`. Deny and
+deny-default are `note`. Neither fails the command. A match stays
+quiet. A missing mesh is an empty cite list. Deny and deny-default on
+the Agents text stay notes and do not fail the command. A missing or
+unreadable estate, and a mesh that does not parse, refuse before any
+section and do not invent cites. The command does not write and does
+not spawn.
 
   estate status --estate examples/estate.yaml --state-dir .cell
   make day90
