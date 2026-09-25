@@ -463,6 +463,8 @@ fn convey_lease_bound_and_packs_refuse_promote() {
             "notes-append",
             "--host-class",
             "rtx_consumer",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -481,6 +483,8 @@ fn convey_lease_bound_and_packs_refuse_promote() {
             "box-notes",
             "--capability",
             "notes-append",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -495,6 +499,8 @@ fn convey_lease_bound_and_packs_refuse_promote() {
             "no-such-hop",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1046,6 +1052,8 @@ fn wave5_sessions_plan_diff_convey_ttl() {
             "lane-tool",
             "--ttl-secs",
             "1",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1080,6 +1088,8 @@ fn wave5_sessions_plan_diff_convey_ttl() {
             "ttl-box",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1143,6 +1153,8 @@ fn wave5_sessions_plan_diff_convey_ttl() {
             "ttl-box",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1529,6 +1541,8 @@ fn wave7_status_curator_sync() {
             "ttl-box",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1768,6 +1782,8 @@ fn wave8_idempotent_export_pr_sacred_mixed() {
             "lab-notebook",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])

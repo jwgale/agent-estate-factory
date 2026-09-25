@@ -37,6 +37,8 @@ fn hop(sacred: &str, id: &str, state: &str) -> std::process::Output {
             id,
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             state,
         ])

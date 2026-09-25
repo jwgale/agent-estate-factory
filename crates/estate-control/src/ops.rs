@@ -361,10 +361,21 @@ pub(crate) fn cmd_history(state_dir: &Path) -> Result<()> {
 }
 
 fn refuse_convey_coverage(estate_path: &Path, hop_id: &str, agent: Option<&str>) -> Result<()> {
-    // No estate file means no placement rows. The lease stub stays.
-    // A present estate is enforced: deny and deny-default refuse.
+    // Coverage is mandatory on convey hop and convey call. A missing path
+    // or a non-file (wrong-cwd default examples/estate.yaml included) is
+    // not a grant and must not fall through to the lease stub.
+    // A loaded estate still allows only `allow`. A hop id that is not a
+    // placement stays the lease stub.
     if !estate_path.is_file() {
-        return Ok(());
+        let why = if estate_path.exists() {
+            "not a file"
+        } else {
+            "missing"
+        };
+        bail!(
+            "refuse:hop-coverage: estate {why}: {} (coverage is mandatory; not a grant)",
+            estate_path.display()
+        );
     }
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
@@ -744,4 +755,69 @@ pub(crate) fn cmd_models(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod convey_coverage_tests {
+    use super::refuse_convey_coverage;
+    use std::path::PathBuf;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn missing_estate_refuses_convey_coverage() {
+        let path =
+            std::env::temp_dir().join(format!("cell-missing-estate-{}.yaml", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let err = refuse_convey_coverage(&path, "ttl-box", None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("refuse:hop-coverage"), "{msg}");
+        assert!(msg.contains("estate missing"), "{msg}");
+        assert!(msg.contains("coverage is mandatory"), "{msg}");
+        assert!(msg.contains(&path.display().to_string()), "{msg}");
+    }
+
+    #[test]
+    fn non_file_estate_refuses_convey_coverage() {
+        let path = std::env::temp_dir().join(format!("cell-estate-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        let err = refuse_convey_coverage(&path, "ttl-box", None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("refuse:hop-coverage"), "{msg}");
+        assert!(msg.contains("estate not a file"), "{msg}");
+        assert!(msg.contains("coverage is mandatory"), "{msg}");
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn loaded_non_placement_stays_lease_stub() {
+        let estate = repo_root().join("examples/estate.yaml");
+        refuse_convey_coverage(&estate, "ttl-box", None).unwrap();
+    }
+
+    #[test]
+    fn loaded_example_box_still_deny_default() {
+        let estate = repo_root().join("examples/estate.yaml");
+        let msg = refuse_convey_coverage(&estate, "cell-one-box", None)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("refuse:hop-coverage"), "{msg}");
+        assert!(msg.contains("(deny-default)"), "{msg}");
+    }
+
+    #[test]
+    fn loaded_example_cloud_still_deny() {
+        let estate = repo_root().join("examples/estate.yaml");
+        let msg = refuse_convey_coverage(&estate, "cursor-cloud", None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("refuse:hop-coverage") && msg.contains("(deny)"),
+            "{msg}"
+        );
+        assert!(!msg.contains("deny-default"), "{msg}");
+    }
 }
