@@ -869,13 +869,31 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
         }
         Err(err) => bail!("{err}"),
     }
+    // After the Agents section and the coverage lines, including hop
+    // refuse. Same text as `estate plan` and `estate convey authority`.
+    // Print-only. Drift detected and a hop mismatch still bail below.
+    // An authority read error does not hide those. Does not write the
+    // mesh, the leases, or the estate, and does not invent a lease.
+    let authority_text = drift_authority_text(&estate, state_dir);
+    if let Ok(text) = &authority_text {
+        println!("{text}");
+    }
     if !report.in_sync || !models.in_sync {
         bail!("drift detected");
     }
     if let Some(line) = hop_mismatch {
         bail!(line);
     }
+    authority_text?;
     Ok(())
+}
+
+/// File check printed after hop coverage cites. Same text as `estate plan`
+/// and `estate convey authority`. Does not write the mesh, the leases, or
+/// the estate. Does not invent a lease.
+fn drift_authority_text(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+    let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
+    Ok(describe_authority_section(&rows, state_dir))
 }
 
 pub(crate) fn cmd_models(path: &Path) -> Result<()> {
@@ -1441,5 +1459,255 @@ mod drift_hop_coverage_tests {
                 .in_sync
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod drift_authority_section_tests {
+    use super::{cmd_drift, drift_authority_text};
+    use conveyor_proxy::{persist_mesh, ConveyorMesh, HopLease, MESH_FILE};
+    use estate_schema::load_estate;
+    use floor_supervisor::apply_with_profile_dir;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-drift-authority-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn synced_example(dir: &Path) -> (PathBuf, PathBuf) {
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        let roots = dir.join("roots");
+        let estate = load_estate(&estate_path).unwrap();
+        apply_with_profile_dir(&estate, &state, &roots).unwrap();
+        model_estate::record_bindings(&estate, &state).unwrap();
+        (estate_path, state)
+    }
+
+    fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+        [
+            "placement-actual.json",
+            "model-actual.json",
+            MESH_FILE,
+            "conveyor-hops.json",
+            "conveyor-leases.json",
+        ]
+        .into_iter()
+        .filter_map(|name| {
+            let path = state.join(name);
+            path.is_file()
+                .then(|| (name.to_string(), fs::read(&path).unwrap()))
+        })
+        .collect()
+    }
+
+    fn no_enforced_status_token(text: &str) -> bool {
+        !text.split_whitespace().any(|word| {
+            let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+            token == "enforced"
+        })
+    }
+
+    fn granted_box(capability: &str) -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![HopLease {
+                hop_id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: capability.into(),
+                host_class: "any".into(),
+                granted: true,
+                spawned: true,
+                durable: true,
+                driver: "box".into(),
+                note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
+                agents: vec!["research".into()],
+            }],
+        }
+    }
+
+    #[test]
+    fn authority_section_is_not_enforced_when_no_mesh_exists() {
+        let dir = scratch();
+        let (estate_path, state) = synced_example(&dir);
+        let roots = dir.join("roots");
+        assert!(!state.join(MESH_FILE).exists());
+        let estate = load_estate(&estate_path).unwrap();
+        let section = drift_authority_text(&estate, &state).unwrap();
+        assert!(section.starts_with("Authority\n---------\n"), "{section}");
+        assert!(
+            section.contains("authority would-allow=0 would-deny=0 not-enforced="),
+            "{section}"
+        );
+        assert!(
+            !section.contains("would-deny=0 not-enforced=0"),
+            "{section}"
+        );
+        assert!(
+            section.contains("research notes-append cell-one-box: not-enforced --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("no hop lease names this capability"),
+            "{section}"
+        );
+        assert!(
+            section.contains("cursor-cloud") && section.contains("not spawned"),
+            "{section}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        assert!(
+            section.contains(
+                "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+            ),
+            "{section}"
+        );
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        cmd_drift(&estate_path, &state, &roots).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(!state.join(MESH_FILE).exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+        assert_eq!(fs::read(&estate_path).unwrap(), locked);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn authority_section_would_deny_when_hop_coverage_denies_a_granted_box_lease() {
+        let dir = scratch();
+        let estate_path = dir.join("deny.yaml");
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: deny\n",
+        );
+        fs::write(&estate_path, &text).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let state = dir.join("state");
+        let roots = dir.join("roots");
+        apply_with_profile_dir(&estate, &state, &roots).unwrap();
+        model_estate::record_bindings(&estate, &state).unwrap();
+        persist_mesh(&state, &granted_box("lane-tool")).unwrap();
+        let section = drift_authority_text(&estate, &state).unwrap();
+        assert!(
+            section.contains("authority would-allow=0 would-deny="),
+            "{section}"
+        );
+        let denied = section
+            .lines()
+            .find(|line| line.contains("research lane-tool cell-one-box:"))
+            .unwrap_or_else(|| panic!("missing deny row\n{section}"));
+        assert!(
+            denied.contains(": would-deny --")
+                && denied.contains("refuse:hop-coverage")
+                && denied.contains("(deny).")
+                && !denied.contains("deny-default")
+                && !denied.contains("(mismatch)")
+                && denied.contains("Not mediated"),
+            "{denied}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        cmd_drift(&estate_path, &state, &roots).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        assert!(
+            floor_supervisor::drift_with_roots(&estate, &state, Some(&roots))
+                .unwrap()
+                .in_sync
+        );
+        assert!(
+            model_estate::drift_bindings(&estate, &state)
+                .unwrap()
+                .in_sync
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hop_mismatch_still_refuses_and_the_section_never_prints_enforced() {
+        let dir = scratch();
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+        );
+        let mismatch_path = dir.join("mismatch.yaml");
+        fs::write(&mismatch_path, &text).unwrap();
+        let estate = load_estate(&mismatch_path).unwrap();
+        let state = dir.join("state");
+        let roots = dir.join("roots");
+        apply_with_profile_dir(&estate, &state, &roots).unwrap();
+        model_estate::record_bindings(&estate, &state).unwrap();
+        persist_mesh(&state, &granted_box("notes-append")).unwrap();
+        let section = drift_authority_text(&estate, &state).unwrap();
+        assert!(
+            section.contains("research notes-append cell-one-box: would-deny --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("refuse:hop-coverage") && section.contains("(mismatch)"),
+            "{section}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&mismatch_path).unwrap();
+        let err = cmd_drift(&mismatch_path, &state, &roots)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert!(!err.contains("drift detected"), "{err}");
+        assert!(no_enforced_status_token(&err), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&mismatch_path).unwrap(), estate_bytes);
+        assert!(
+            floor_supervisor::drift_with_roots(&estate, &state, Some(&roots))
+                .unwrap()
+                .in_sync
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn examples_estate_yaml_stays_hash_locked() {
+        let path = repo_root().join("examples/estate.yaml");
+        let sum = Command::new("cksum").arg(&path).output().unwrap();
+        let text = String::from_utf8_lossy(&sum.stdout);
+        assert!(
+            text.starts_with("43770130 3391"),
+            "examples/estate.yaml cksum changed: {text}"
+        );
     }
 }
