@@ -661,11 +661,18 @@ pub(crate) fn run() -> Result<()> {
             root,
             state_dir,
             strict,
+            strict_intentions,
         } => {
-            if strict {
+            let doctor = if strict {
                 crate::doctor_strict::cmd_doctor_strict(&root, &state_dir)
             } else {
                 cmd_doctor(&root, &state_dir)
+            };
+            if strict_intentions {
+                doctor?;
+                crate::doctor_strict::cmd_doctor_strict_intentions(&root)
+            } else {
+                doctor
             }
         }
         Command::Sessions { command } => match command {

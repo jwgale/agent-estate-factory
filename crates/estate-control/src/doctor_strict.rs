@@ -3,7 +3,8 @@
 
 use anyhow::{bail, Result};
 use estate_schema::{
-    is_sacred_name, load_estate, load_sacred_file, locked_sacred_ids, normalize_name, ModelClass,
+    describe_declared_coverage, describe_model_class_coverage, is_sacred_name, load_estate,
+    load_sacred_file, locked_sacred_ids, normalize_name, ModelClass,
 };
 use std::fs;
 use std::path::Path;
@@ -38,6 +39,38 @@ pub(crate) fn cmd_doctor_strict(root: &Path, state_dir: &Path) -> Result<()> {
             println!("  FAIL  {fail}");
         }
         bail!("doctor --strict failed ({} check(s))", fails.len());
+    }
+}
+
+/// Opt-in. Deny-default on the locked example is informational for `--strict`.
+pub(crate) fn cmd_doctor_strict_intentions(root: &Path) -> Result<()> {
+    println!("\nStrict intentions");
+    println!("-----------------");
+    let path = root.join("examples/estate.yaml");
+    let estate = match load_estate(&path) {
+        Ok(estate) => estate,
+        Err(err) => bail!("doctor --strict-intentions: examples/estate.yaml: {err}"),
+    };
+    let coverage = format!(
+        "{}\n{}",
+        describe_model_class_coverage(&estate),
+        describe_declared_coverage(&estate)
+    );
+    let gaps: Vec<&str> = coverage
+        .lines()
+        .filter(|line| line.contains("deny-default") || line.contains("undeclared"))
+        .collect();
+    if gaps.is_empty() {
+        println!("  ok    declared tools, mounts, mcp, and models are covered");
+        Ok(())
+    } else {
+        for gap in &gaps {
+            println!("  FAIL  {gap}");
+        }
+        bail!(
+            "doctor --strict-intentions failed ({} deny-default)",
+            gaps.len()
+        );
     }
 }
 

@@ -194,23 +194,7 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         }
     }
 
-    for intention in &estate.intentions {
-        if estate.agent(&intention.subject_agent).is_none() {
-            errors.push(format!(
-                "intention subject_agent '{}' is not an agent",
-                intention.subject_agent
-            ));
-        }
-        if intention.object.trim().is_empty() {
-            errors.push("intention object must not be empty".into());
-        }
-        if matches!(intention.effect, Effect::Allow) && estate.is_sacred(&intention.object) {
-            errors.push(format!(
-                "intention cannot allow sacred exclusion '{}'",
-                intention.object
-            ));
-        }
-    }
+    errors.extend(crate::compile::intention_object_errors(estate));
 
     let mut binding_ids = HashSet::new();
     let mut classes = HashSet::new();

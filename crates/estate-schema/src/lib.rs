@@ -11,7 +11,7 @@ mod sacred;
 mod types;
 mod validate;
 
-pub use compile::{compile_intentions, CompiledIntention};
+pub use compile::{compile_intentions, intention_object_errors, CompiledIntention};
 pub use error::EstateError;
 pub use firewall::{
     authorize, describe_declared_coverage, describe_model_class_coverage, read_lane_file,
