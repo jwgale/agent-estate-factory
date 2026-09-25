@@ -130,6 +130,12 @@ estate classify journey --dataset rust_idiom --expand-tag rev1 --seed 42 --train
 estate classify journey --dual --dataset rust_idiom --expand-tag rev1 --seed 42 --train-size all --print --out .cell/classify-dual
 ```
 
+`--modest` is the short dual gauge on that same expand cache. It is only valid with `--dual`. When `--train-size` is omitted, or still the clap default `all`, the cache token becomes `500` (`parse_split_size` accepts that count). An explicit `--train-size` at or under 500 is kept. A count above 500 is refused. Omitting `--max-steps` writes LLaMA-Factory `max_steps` 50 on both tev1 and glm4-chat. An explicit `--max-steps` is kept. The expand cache must already be `.cell/classify-import/rust_idiom-500-s<seed>-<tag>/` when the default gauge is used. `--print` writes both journey plans and `dual-compare.json` with `"modest": true`, `train_size`, and `max_steps`. It does not call the network or the teacher. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. It does not invent a live PASS. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify journey --dual --modest --dataset rust_idiom --expand-tag rev1 --seed 42 --print --out .cell/classify-dual-modest
+```
+
 ## Rust compile-and-test grade
 
 `estate classify grade` scores MultiPL-E Rust and HumanEvalPack Rust. Those generation tasks are not A/B letter rows, so they stay off `classify import`. `--print` is the default. It writes `grade-plan.json` and does not download or compile. `--run` reads `--from-local` or `--tasks` and scores one completion per task with `rustc` (a `fn main` harness) or `cargo test` (a `#[test]` harness). The report is `grade-report.json`: pass rate and a 95% Wilson interval. `--limit` keeps a stable id prefix, not a random sample. Omit it to score every task. `humanevalpack_rust` is `bigcode/humanevalpack` (MIT, from HumanEval MIT). `multiple_rust` is `nuprl/MultiPL-E` humaneval-rs (BSD-3-Clause translations of HumanEval MIT, not MBPP). Parquet is refused; export JSONL first. This command does not download. Output is for local training proof only. Do not redistribute it. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.

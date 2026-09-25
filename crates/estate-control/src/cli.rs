@@ -606,6 +606,7 @@ pub(crate) enum ClassifyCommand {
     /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     /// `--dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/tev1` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
+    /// `--modest` is only valid with `--dual`. It replaces the `--train-size all` default with `500` (`parse_split_size` count) and writes LLaMA-Factory `max_steps` 50 on both students when `--max-steps` is omitted. An explicit `--train-size` above 500 is refused. This is not a factory live PASS.
     Journey {
         /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Tev1)]
@@ -722,6 +723,12 @@ pub(crate) enum ClassifyCommand {
         /// The compare file is local output. It is not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
         #[arg(long, default_value_t = false)]
         dual: bool,
+        /// Short dual gauge for one 5090-class proof. Only valid with `--dual`.
+        /// Replaces `--train-size all` (the clap default) with `500`. An explicit `--train-size` at or under 500 is kept. A count above 500 is refused.
+        /// Omitting `--max-steps` writes LLaMA-Factory `max_steps` 50 on both tev1 and glm4-chat. An explicit `--max-steps` is kept.
+        /// `dual-compare.json` records `"modest": true` plus `train_size` and `max_steps`. `--print` does not train. Not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
+        #[arg(long, default_value_t = false)]
+        modest: bool,
     },
     /// Grow the rust_idiom FixedClasses curriculum with an OpenAI-compatible coding teacher.
     /// `--print` is the default. It writes `expand-plan.json` and does not call the network.
