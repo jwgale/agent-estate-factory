@@ -587,6 +587,75 @@ fn blast_radius(
     lines.push(format!(
         "Placements declared: {boxes} box, {cloud} cloud-agent stub(s). Floor does not spawn cloud agents."
     ));
+    let populations: Vec<String> = estate
+        .placements
+        .iter()
+        .map(|p| {
+            let who = if p.agents.is_empty() {
+                "(none)".to_string()
+            } else {
+                p.agents.join(",")
+            };
+            format!("{}[{who}]", p.id)
+        })
+        .collect();
+    lines.push("Authority next to the workload (desired; plan does not enforce):".into());
+    let mut authority_lines = Vec::new();
+    for place in &estate.placements {
+        if place.kind != PlacementKind::Box {
+            authority_lines.push(format!(
+                "  not-enforced: {} mesh-stub (cloud placement declared, not spawned)",
+                place.id
+            ));
+            continue;
+        }
+        for agent_id in &place.agents {
+            let Some(agent) = estate.agent(agent_id) else {
+                continue;
+            };
+            for tool in &agent.tools {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} tool {} on {}",
+                    tool.id, place.id
+                ));
+            }
+            for mount in &agent.mounts {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} mount {} on {}",
+                    mount.id, place.id
+                ));
+            }
+            for mcp in &agent.mcp {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} mcp {} on {}",
+                    mcp.id, place.id
+                ));
+            }
+            for model in &agent.models {
+                authority_lines.push(format!(
+                    "  not-enforced: {agent_id} model {} on {}",
+                    model.id, place.id
+                ));
+            }
+        }
+    }
+    if authority_lines.is_empty() {
+        lines.push("  (no placed declarations)".into());
+    } else {
+        lines.extend(authority_lines);
+    }
+    lines.push(
+        "Uncertain: these rows are declarations on the estate file. Plan does not mediate a worker. `estate convey call --agent` is a separate check, and we do not know if that check sits on the worker path. Identity stays parked. Not a gateway."
+            .into(),
+    );
+    lines.push(format!(
+        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` is a file check (would-allow, would-deny, not-enforced). It does not prove mediation. Identity stays parked. Not a gateway.",
+        if populations.is_empty() {
+            "no placements".to_string()
+        } else {
+            populations.join(" ")
+        }
+    ));
     if estate.enrich_packs.packs.is_empty() {
         lines.push("Enrich packs stay empty until Jason curates (manual; no auto-promote).".into());
     } else {
@@ -728,6 +797,9 @@ mod tests {
         assert!(review.contains("+ placements:"));
         assert!(review.contains("cell-one-box") || review.contains("cursor-cloud"));
         assert!(plan.blast_radius_text.contains("cloud-agent stub"));
+        assert!(plan.blast_radius_text.contains("not-enforced: research tool notes-append on cell-one-box"));
+        assert!(plan.blast_radius_text.contains("Uncertain:"));
+        assert!(plan.blast_radius_text.contains("Identity stays parked"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 {
   "schema": "cell-one.conveyor-mesh.v0",
-  "note": "Capability mesh beachhead. Declare a hop, lease-bound call, refuse without a granted lease. Optional hop ttl_secs stamps issued_at/expires_at. Call refuses expired. Cloud-mesh hops are declared, not spawned. Not a gateway.",
+  "note": "Capability mesh beachhead. Declare a hop, lease-bound call, refuse without a granted lease. Optional agents names the population; empty is not a grant. A granted lease is not mediation. Call --agent refuses an unbound agent and an estate intention deny only when that call runs. A lease agent the placement row does not list is refuse:agent-unplaced. Optional hop ttl_secs stamps issued_at/expires_at. Call refuses expired. Cloud-mesh hops are declared, not spawned. Identity stays parked. Not a gateway.",
   "kinds": ["box", "cloud-mesh"],
   "durable": [".cell/conveyor-mesh.json", ".cell/conveyor-hops.json", ".cell/conveyor-leases.json"],
   "hops": [

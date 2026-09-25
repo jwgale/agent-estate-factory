@@ -1,24 +1,21 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    call_hop, declare_hop, forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases,
-    list_hop_leases, list_hops, sync_from_placements, HopDecl,
+    authority_report, call_hop, declare_hop, forget_expired_hop_leases, hop_now_unix,
+    list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    describe_placements,
-    estate_hash, list_plans, load_estate, load_estate_unvalidated,
+    describe_placements, estate_hash, list_plans, load_estate, load_estate_unvalidated,
     load_policy, policy_allows,
 };
 use feed_collector::{
-    import_pack_for, list_drop_packs, load_cursor, materialize_from_feed,
-    propose_enrich, refuse_promote, refuse_propose_frontier_invent, write_pack_index,
-    LOCKED_CURATOR,
+    import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
+    refuse_promote, refuse_propose_frontier_invent, write_pack_index, LOCKED_CURATOR,
 };
 use floor_supervisor::{
-    backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events,
-    list_session_events, load_placements, pause_kit_proof, prune_cell_backups,
-    refuse_lease_host_classes,
-    reconcile_placements, record_placements, render_restore, restore_cell,
-    resume, suspend, tail_session_events, write_reconcile,
+    backup_cell, drift_with_roots, list_apply_audits, list_lifecycle_events, list_session_events,
+    load_placements, pause_kit_proof, prune_cell_backups, reconcile_placements, record_placements,
+    refuse_lease_host_classes, render_restore, restore_cell, resume, suspend, tail_session_events,
+    write_reconcile,
 };
 use std::path::{Path, PathBuf};
 
@@ -109,12 +106,7 @@ pub(crate) fn cmd_backup(
 ) -> Result<()> {
     enforce_policy(policy, "backup", None)?;
     let estate = crate::helpers::load_estate_if_present(estate_path)?;
-    let (dest, meta) = backup_cell(
-        state_dir,
-        Some(plans_dir),
-        out,
-        estate.as_ref(),
-    )?;
+    let (dest, meta) = backup_cell(state_dir, Some(plans_dir), out, estate.as_ref())?;
     println!("{}", serde_json::to_string_pretty(&meta)?);
     println!("Wrote {}", dest.display());
     if let Some(keep) = prune {
@@ -162,8 +154,13 @@ pub(crate) fn cmd_restore(
     Ok(())
 }
 
-pub(crate) fn cmd_pause_proof(estate_path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {
-    let estate = load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+pub(crate) fn cmd_pause_proof(
+    estate_path: &Path,
+    state_dir: &Path,
+    roots_base: &Path,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     crate::plan_apply::refuse_apply_catalog_mismatch(&estate, state_dir)?;
     let proof = pause_kit_proof(&estate, state_dir, roots_base)?;
     // Drift, a spawned cloud lease, or lost leases is a refuse before
@@ -303,9 +300,10 @@ pub(crate) fn cmd_feed_import(
         .with_context(|| format!("read redaction {}", redaction.display()))?;
     let v: serde_json::Value = serde_json::from_str(&text)
         .with_context(|| format!("parse redaction {}", redaction.display()))?;
-    let redacted = v.get("redacted").and_then(|x| x.as_u64()).with_context(|| {
-        format!("redaction {} missing redacted count", redaction.display())
-    })?;
+    let redacted = v
+        .get("redacted")
+        .and_then(|x| x.as_u64())
+        .with_context(|| format!("redaction {} missing redacted count", redaction.display()))?;
     let raw_found = v
         .get("raw_secrets_found")
         .and_then(|x| x.as_u64())
@@ -367,6 +365,7 @@ pub(crate) fn cmd_convey_hop(
     host_class: &str,
     wired: bool,
     ttl_secs: Option<u64>,
+    agents: &[String],
     state_dir: &Path,
 ) -> Result<()> {
     let lease = declare_hop(
@@ -379,15 +378,37 @@ pub(crate) fn cmd_convey_hop(
             wired,
             note: None,
             ttl_secs,
+            agents: agents.to_vec(),
         },
     )?;
     println!("{}", serde_json::to_string_pretty(&lease)?);
     Ok(())
 }
 
-pub(crate) fn cmd_convey_call(id: &str, capability: &str, state_dir: &Path, policy: &Path) -> Result<()> {
+pub(crate) fn cmd_convey_call(
+    id: &str,
+    capability: &str,
+    agent: Option<&str>,
+    kind: Option<&str>,
+    estate_path: &Path,
+    state_dir: &Path,
+    policy: &Path,
+) -> Result<()> {
     enforce_policy(policy, "convey-call", Some(id))?;
-    let call = call_hop(state_dir, id, capability)?;
+    let call = if let Some(agent) = agent {
+        let estate = estate_schema::load_estate(estate_path)
+            .with_context(|| format!("load {}", estate_path.display()))?;
+        let kind = match kind {
+            Some(raw) => Some(conveyor_proxy::parse_kind(raw).map_err(anyhow::Error::msg)?),
+            None => None,
+        };
+        conveyor_proxy::call_hop_for_agent(state_dir, id, capability, agent, kind, &estate)?
+    } else {
+        if kind.is_some() {
+            bail!("refuse:agent-unbound: --kind requires --agent");
+        }
+        call_hop(state_dir, id, capability)?
+    };
     println!("{}", serde_json::to_string_pretty(&call)?);
     if !call.allow {
         bail!("hop call denied");
@@ -420,6 +441,26 @@ pub(crate) fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
 pub(crate) fn cmd_convey_sync(state_dir: &Path) -> Result<()> {
     let mesh = sync_from_placements(state_dir)?;
     println!("{}", serde_json::to_string_pretty(&mesh)?);
+    Ok(())
+}
+
+/// File check. Does not write. Does not claim mediation. Not an identity lookup.
+pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Result<()> {
+    let estate = estate_schema::load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let rows = authority_report(state_dir, &estate)?;
+    let allow = rows.iter().filter(|row| row.status == "would-allow").count();
+    let deny = rows.iter().filter(|row| row.status == "would-deny").count();
+    let pending = rows.iter().filter(|row| row.status == "not-enforced").count();
+    println!("authority would-allow={allow} would-deny={deny} not-enforced={pending}");
+    println!(
+        "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+    );
+    if rows.is_empty() {
+        println!("no hop leases under {}", state_dir.display());
+        return Ok(());
+    }
+    println!("{}", serde_json::to_string_pretty(&rows)?);
     Ok(())
 }
 
@@ -506,8 +547,8 @@ pub(crate) fn cmd_packs_propose(
     let parsed = load_estate_unvalidated(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
     refuse_propose_frontier_invent(drop_dir, accepted_dir, id, &parsed)?;
-    let estate = load_estate(estate_path)
-        .with_context(|| format!("load {}", estate_path.display()))?;
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let before = crate::helpers::read_estate_text(estate_path)?;
     let (proposal, dest) = propose_enrich(drop_dir, accepted_dir, proposed_dir, id, &estate)?;
     let after = crate::helpers::read_estate_text(estate_path)?;
@@ -531,8 +572,8 @@ pub(crate) fn cmd_audit_export(
     out: &Path,
     tar: bool,
 ) -> Result<()> {
-    let estate = load_estate(estate_path)
-        .with_context(|| format!("load {}", estate_path.display()))?;
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let report = reconcile_placements(&estate, state_dir)?;
     write_reconcile(state_dir, &report)?;
     if out.exists() {
@@ -543,7 +584,10 @@ pub(crate) fn cmd_audit_export(
     let mut missing = Vec::new();
     let files = [
         (state_dir.join("lifecycle.json"), out.join("lifecycle.json")),
-        (state_dir.join("lifecycle.jsonl"), out.join("lifecycle.jsonl")),
+        (
+            state_dir.join("lifecycle.jsonl"),
+            out.join("lifecycle.jsonl"),
+        ),
         (
             state_dir.join("apply-audit.jsonl"),
             out.join("apply-audit.jsonl"),
@@ -609,12 +653,18 @@ pub(crate) fn cmd_audit_export(
         "missing": missing.len(),
         "remote": false,
     });
-    std::fs::write(out.join("audit-export.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(
+        out.join("audit-export.json"),
+        serde_json::to_string_pretty(&meta)?,
+    )?;
     println!("{manifest}");
     println!("Wrote {}", out.display());
     if tar {
         let parent = out.parent().unwrap_or_else(|| Path::new("."));
-        let name = out.file_name().and_then(|s| s.to_str()).unwrap_or("audit-export");
+        let name = out
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audit-export");
         let tarball = PathBuf::from(format!("{}.tar.gz", out.display()));
         match std::process::Command::new("tar")
             .arg("-czf")

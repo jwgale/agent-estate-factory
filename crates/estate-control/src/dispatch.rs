@@ -168,6 +168,7 @@ pub(crate) fn run() -> Result<()> {
                 host_class,
                 wired,
                 ttl_secs,
+                agents,
                 state_dir,
             } => cmd_convey_hop(
                 &id,
@@ -176,17 +177,32 @@ pub(crate) fn run() -> Result<()> {
                 &host_class,
                 wired,
                 ttl_secs,
+                &agents,
                 &state_dir,
             ),
             ConveyCommand::Call {
                 id,
                 capability,
+                agent,
+                kind,
+                estate,
                 state_dir,
                 policy,
-            } => cmd_convey_call(&id, &capability, &state_dir, &policy),
+            } => cmd_convey_call(
+                &id,
+                &capability,
+                agent.as_deref(),
+                kind.as_deref(),
+                &estate,
+                &state_dir,
+                &policy,
+            ),
             ConveyCommand::List { state_dir } => cmd_convey_list(&state_dir),
             ConveyCommand::Leases { state_dir } => cmd_convey_leases(&state_dir),
             ConveyCommand::Sync { state_dir } => cmd_convey_sync(&state_dir),
+            ConveyCommand::Authority { state_dir, estate } => {
+                cmd_convey_authority(&state_dir, &estate)
+            }
             ConveyCommand::Expire { state_dir, forget } => cmd_convey_expire(&state_dir, forget),
         },
         Command::Enrich { command } => match command {

@@ -90,6 +90,8 @@ Where agents run. `box` is this Cell One. `cloud-agent` (`cursor-cloud`) is a de
 
 `estate convey` is a lease-bound hop stub. Verbs: hop, call, list, leases, sync, expire. Files: `.cell/conveyor-mesh.json`, `conveyor-hops.json`, `conveyor-leases.json`. Call requires a granted lease. A spawned cloud hop lease refuses before JSON, restamp, or forget. Hop transport stays parked.
 
+`estate convey hop --agent` names the population on the hop lease. Empty agents are not a grant. `estate convey sync` copies `agents` from `placement-actual.json` onto the matching hop. A lease that lists an agent the placement row does not is `refuse:agent-unplaced` and writes nothing. `estate convey call --agent <id>` refuses when that agent is not on the lease (`refuse:agent-unbound`). When the agent is on the lease, the call checks the estate intention for the capability (`refuse:intention` on deny). That check runs only if something invokes the call. `estate convey authority` is a file check: `would-allow`, `would-deny`, or `not-enforced`. It does not write, and it does not show that a worker called the conveyor. `estate plan` lists desired rows as not-enforced. Whether a hop lease is the right shape for authority next to the workload is still uncertain. It is not an identity lookup. The identity equation stays parked. Not a gateway.
+
 ### control
 
 `estate-control`. Validate, plan, apply, drift, compile intentions. Charter sentence: control does not complete. Completion runs on the data plane (`model-estate`). `estate specialist` is a thin delegate into that plane.

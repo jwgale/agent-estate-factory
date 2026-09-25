@@ -320,15 +320,26 @@ pub(crate) enum ConveyCommand {
         wired: bool,
         #[arg(long)]
         ttl_secs: Option<u64>,
+        /// Agent on this hop. Repeat for a population. Empty is not a grant.
+        #[arg(long = "agent")]
+        agents: Vec<String>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
     /// Lease-bound call. Refuses without a granted lease.
+    /// `--agent` binds one placed agent and checks the estate intention. Not an IdP.
     Call {
         #[arg(long)]
         id: String,
         #[arg(long, default_value = "lane-tool")]
         capability: String,
+        #[arg(long)]
+        agent: Option<String>,
+        /// tool | mcp | mount | model | memory_read. Omit to infer from the agent.
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
         #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
@@ -348,6 +359,13 @@ pub(crate) enum ConveyCommand {
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+    },
+    /// File check of hop leases against the estate. Does not write. Does not claim mediation.
+    Authority {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
     },
     /// List expired hop leases. Call refuses them. `--forget` drops leases; hop decls stay so call can restamp.
     Expire {

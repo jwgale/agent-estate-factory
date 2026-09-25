@@ -52,6 +52,19 @@ pub enum MeshError {
     SacredId(String),
     #[error("refuse:cloud-spawned: cloud-agent lease spawned (fail closed): {0}")]
     CloudSpawned(String),
+    /// The lease names a population, or the caller named an agent the lease does not.
+    #[error("refuse:agent-unbound: hop '{hop}' does not bind agent '{agent}'")]
+    AgentUnbound { hop: String, agent: String },
+    /// Lease agents are wider than the placement row. Mesh is ahead of the floor.
+    #[error("refuse:agent-unplaced: hop '{hop}' lists agents the placement does not ({agents})")]
+    AgentUnplaced { hop: String, agents: String },
+    /// Named agent call. Estate authorize denied the capability. Not an identity check.
+    #[error("refuse:intention: agent '{agent}' capability '{capability}': {reason}")]
+    Intention {
+        agent: String,
+        capability: String,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +81,9 @@ pub struct HopDecl {
     /// Optional hop-lease lifetime. Absent = no expiry.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Agents this hop binds. Empty means the stub is not a population grant.
+    #[serde(default)]
+    pub agents: Vec<String>,
 }
 
 fn default_host_class() -> String {
@@ -100,7 +116,21 @@ pub fn refuse_mesh_host_classes(mesh: &ConveyorMesh) -> Result<(), MeshError> {
 fn load_interpreted_mesh(state_dir: &Path) -> Result<ConveyorMesh, MeshError> {
     let mesh = load_mesh(state_dir)?;
     refuse_mesh_host_classes(&mesh)?;
+    refuse_mesh_population(state_dir, &mesh)?;
     Ok(mesh)
+}
+
+/// A hop or lease that names an agent the placement row does not is ahead
+/// of the floor. A missing placement file is not that claim. Writes nothing.
+fn refuse_mesh_population(state_dir: &Path, mesh: &ConveyorMesh) -> Result<(), MeshError> {
+    let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
+    for hop in &mesh.hops {
+        refuse_lease_ahead(&hop.id, &hop.agents, &places)?;
+    }
+    for lease in &mesh.leases {
+        refuse_lease_ahead(&lease.hop_id, &lease.agents, &places)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -121,6 +151,9 @@ pub struct HopLease {
     pub issued_at: Option<u64>,
     #[serde(default)]
     pub expires_at: Option<u64>,
+    /// Copied from the hop decl. Empty is not a grant to every agent.
+    #[serde(default)]
+    pub agents: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -222,6 +255,7 @@ impl ConveyorHop for BoxHop {
             ttl_secs: None,
             issued_at: None,
             expires_at: None,
+            agents: hop.agents.clone(),
         }
     }
 
@@ -267,10 +301,13 @@ impl ConveyorHop for CloudMeshHop {
             spawned: false,
             durable: true,
             driver: self.name().into(),
-            note: Some("declared mesh stub. Conveyor records the hop and does not spawn it.".into()),
+            note: Some(
+                "declared mesh stub. Conveyor records the hop and does not spawn it.".into(),
+            ),
             ttl_secs: None,
             issued_at: None,
             expires_at: None,
+            agents: hop.agents.clone(),
         }
     }
 
@@ -307,8 +344,48 @@ pub fn refuse_hop(hop: &HopDecl) -> Result<(), MeshError> {
     if normalize_host_class(&hop.host_class).is_none() {
         return Err(MeshError::BadHostClass(hop.host_class.clone()));
     }
+    refuse_hop_agents(&hop.agents)?;
     hop_driver(&hop.kind)?;
     Ok(())
+}
+
+fn agent_on(agents: &[String], agent: &str) -> bool {
+    let want = estate_schema::normalize_name(agent);
+    agents
+        .iter()
+        .any(|have| estate_schema::normalize_name(have) == want)
+}
+
+/// Agents on the lease that the placement row does not list.
+/// No placement row for this hop is not a wider claim.
+fn agents_ahead_of_placement<'a>(
+    lease_agents: &'a [String],
+    place: Option<&SlimPlacement>,
+) -> Vec<&'a str> {
+    let Some(place) = place else {
+        return Vec::new();
+    };
+    lease_agents
+        .iter()
+        .filter(|agent| !agent_on(&place.agents, agent))
+        .map(|agent| agent.as_str())
+        .collect()
+}
+
+fn refuse_lease_ahead(
+    hop_id: &str,
+    lease_agents: &[String],
+    places: &[SlimPlacement],
+) -> Result<(), MeshError> {
+    let place = places.iter().find(|p| p.placement_id == hop_id);
+    let ahead = agents_ahead_of_placement(lease_agents, place);
+    if ahead.is_empty() {
+        return Ok(());
+    }
+    Err(MeshError::AgentUnplaced {
+        hop: hop_id.to_string(),
+        agents: ahead.join(", "),
+    })
 }
 
 pub fn mesh_path(state_dir: &Path) -> PathBuf {
@@ -400,6 +477,26 @@ fn refuse_placement_seed(place: &SlimPlacement) -> Result<(), MeshError> {
     Ok(())
 }
 
+fn refuse_hop_agents(agents: &[String]) -> Result<(), MeshError> {
+    let mut seen = Vec::new();
+    for agent in agents {
+        if is_sacred_name(agent) {
+            return Err(MeshError::SacredId(agent.clone()));
+        }
+        if !is_slug(agent) {
+            return Err(MeshError::BadId(agent.clone()));
+        }
+        if contains_sku(agent) {
+            return Err(MeshError::SkuBanned(agent.clone()));
+        }
+        if seen.iter().any(|s: &String| s == agent) {
+            return Err(MeshError::BadId(agent.clone()));
+        }
+        seen.push(agent.clone());
+    }
+    Ok(())
+}
+
 pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
     let kind = hop_kind_for_placement(&place.kind).unwrap_or("box");
     let cloud = kind == "cloud-mesh";
@@ -417,6 +514,7 @@ pub fn hop_from_placement(place: &SlimPlacement) -> HopDecl {
         wired: place.wired,
         note: Some("derived from placement-actual (slim parse)".into()),
         ttl_secs: place.ttl_secs,
+        agents: place.agents.clone(),
     }
 }
 
@@ -465,6 +563,8 @@ pub fn sync_from_placements(state_dir: &Path) -> Result<ConveyorMesh, MeshError>
 
 pub fn declare_hop(state_dir: &Path, hop: HopDecl) -> Result<HopLease, MeshError> {
     refuse_hop(&hop)?;
+    let places = slim_parse_placement_actual(&state_dir.join("placement-actual.json"))?;
+    refuse_lease_ahead(&hop.id, &hop.agents, &places)?;
     // CloudMeshHop::declare hardcodes spawned:false. A spawned placement
     // lease for this hop is still spawned. Refuse before the write.
     // A missing placement file is not a spawned lease.
@@ -504,6 +604,103 @@ fn placement_cloud_spawned(state_dir: &Path, hop_id: &str) -> Result<bool, MeshE
 }
 
 pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopCall, MeshError> {
+    call_hop_inner(state_dir, hop_id, capability, None)
+}
+
+/// Lease-bound call for one agent on the hop population.
+/// The estate intention check runs only after the lease would allow.
+/// This is not an identity lookup. A missing population is `refuse:agent-unbound`.
+pub fn call_hop_for_agent(
+    state_dir: &Path,
+    hop_id: &str,
+    capability: &str,
+    agent_id: &str,
+    kind: Option<estate_schema::IntentionKind>,
+    estate: &estate_schema::Estate,
+) -> Result<HopCall, MeshError> {
+    if estate_schema::is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
+        return Err(MeshError::SacredId(agent_id.to_string()));
+    }
+    let mut call = call_hop_inner(state_dir, hop_id, capability, Some(agent_id))?;
+    let resolved = resolve_intention_kind(estate, agent_id, capability, kind)?;
+    let object =
+        if resolved == estate_schema::IntentionKind::MemoryRead && !capability.contains(':') {
+            format!("lane:{capability}")
+        } else {
+            capability.to_string()
+        };
+    let decision = estate_schema::authorize(
+        estate,
+        &estate_schema::AccessRequest {
+            subject_agent: agent_id,
+            kind: resolved,
+            object: &object,
+        },
+    );
+    if !decision.is_allow() {
+        return Err(MeshError::Intention {
+            agent: agent_id.to_string(),
+            capability: capability.to_string(),
+            reason: decision.reason().to_string(),
+        });
+    }
+    call.reason = format!("agent-bound {agent_id}; {}", decision.reason());
+    Ok(call)
+}
+
+fn resolve_intention_kind(
+    estate: &estate_schema::Estate,
+    agent_id: &str,
+    capability: &str,
+    kind: Option<estate_schema::IntentionKind>,
+) -> Result<estate_schema::IntentionKind, MeshError> {
+    if let Some(kind) = kind {
+        return Ok(kind);
+    }
+    if capability.starts_with("lane:") {
+        return Ok(estate_schema::IntentionKind::MemoryRead);
+    }
+    let Some(agent) = estate.agent(agent_id) else {
+        return Err(MeshError::Intention {
+            agent: agent_id.to_string(),
+            capability: capability.to_string(),
+            reason: format!("unknown subject agent '{agent_id}'"),
+        });
+    };
+    let mut hits = Vec::new();
+    if agent.has_tool(capability) {
+        hits.push(estate_schema::IntentionKind::Tool);
+    }
+    if agent.has_mcp(capability) {
+        hits.push(estate_schema::IntentionKind::Mcp);
+    }
+    if agent.has_mount(capability) {
+        hits.push(estate_schema::IntentionKind::Mount);
+    }
+    if agent.has_model(capability) {
+        hits.push(estate_schema::IntentionKind::Model);
+    }
+    match hits.as_slice() {
+        [one] => Ok(*one),
+        [] => Err(MeshError::Intention {
+            agent: agent_id.to_string(),
+            capability: capability.to_string(),
+            reason: format!("undeclared for agent '{agent_id}' (deny-default)"),
+        }),
+        _ => Err(MeshError::Intention {
+            agent: agent_id.to_string(),
+            capability: capability.to_string(),
+            reason: "ambiguous capability; pass kind".into(),
+        }),
+    }
+}
+
+fn call_hop_inner(
+    state_dir: &Path,
+    hop_id: &str,
+    capability: &str,
+    agent_id: Option<&str>,
+) -> Result<HopCall, MeshError> {
     let mesh = load_interpreted_mesh(state_dir)?;
     let existing = mesh.leases.iter().find(|l| l.hop_id == hop_id).cloned();
     let decl = mesh.hops.iter().find(|h| h.id == hop_id).cloned();
@@ -531,6 +728,23 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
     }
     if hop_lease_is_expired(&lease, hop_now_unix()) {
         return Err(MeshError::Expired(hop_id.to_string()));
+    }
+    // A populated lease is a population grant. An unnamed call skips it.
+    // An agent the lease does not name is not invented onto the grant.
+    match agent_id {
+        Some(agent) if !agent_on(&lease.agents, agent) => {
+            return Err(MeshError::AgentUnbound {
+                hop: hop_id.to_string(),
+                agent: agent.to_string(),
+            });
+        }
+        None if !lease.agents.is_empty() => {
+            return Err(MeshError::AgentUnbound {
+                hop: hop_id.to_string(),
+                agent: "(unnamed)".into(),
+            });
+        }
+        _ => {}
     }
     if !lease.granted {
         return Err(MeshError::Ungranted(hop_id.to_string()));
@@ -613,10 +827,7 @@ fn refuse_expired_spawned_cloud_hop(leases: &[HopLease], now: u64) -> Result<(),
     Err(MeshError::CloudSpawned(spawned.join(", ")))
 }
 
-pub fn list_expired_hop_leases(
-    state_dir: &Path,
-    now: u64,
-) -> Result<Vec<HopLease>, MeshError> {
+pub fn list_expired_hop_leases(state_dir: &Path, now: u64) -> Result<Vec<HopLease>, MeshError> {
     let mesh = load_interpreted_mesh(state_dir)?;
     refuse_expired_spawned_cloud_hop(&mesh.leases, now)?;
     Ok(mesh
@@ -650,6 +861,132 @@ pub fn forget_expired_hop_leases(state_dir: &Path) -> Result<Vec<String>, MeshEr
     Ok(forgotten)
 }
 
+fn intention_allows(estate: &estate_schema::Estate, agent_id: &str, capability: &str) -> bool {
+    if estate_schema::is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
+        return false;
+    }
+    let Ok(kind) = resolve_intention_kind(estate, agent_id, capability, None) else {
+        return false;
+    };
+    let object = if kind == estate_schema::IntentionKind::MemoryRead && !capability.contains(':') {
+        format!("lane:{capability}")
+    } else {
+        capability.to_string()
+    };
+    estate_schema::authorize(
+        estate,
+        &estate_schema::AccessRequest {
+            subject_agent: agent_id,
+            kind,
+            object: &object,
+        },
+    )
+    .is_allow()
+}
+
+/// File check only. `would-allow` and `would-deny` are estate authorize results.
+/// `not-enforced` means this row is not a mediated workload.
+/// This report has no status that means the conveyor mediated a call.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthorityRow {
+    pub agent: String,
+    pub hop_id: String,
+    pub capability: String,
+    pub status: String,
+    pub reason: String,
+}
+
+/// Read-only. Does not write the mesh or the estate. Identity is not resolved.
+pub fn authority_report(
+    state_dir: &Path,
+    estate: &estate_schema::Estate,
+) -> Result<Vec<AuthorityRow>, MeshError> {
+    let mesh = load_interpreted_mesh(state_dir)?;
+    let mut rows = Vec::new();
+    for lease in &mesh.leases {
+        if lease.agents.is_empty() {
+            rows.push(AuthorityRow {
+                agent: "(none)".into(),
+                hop_id: lease.hop_id.clone(),
+                capability: lease.capability.clone(),
+                status: "not-enforced".into(),
+                reason: "empty population is not a grant. This file check is not mediation.".into(),
+            });
+            continue;
+        }
+        for agent in &lease.agents {
+            let allows = intention_allows(estate, agent, &lease.capability);
+            let (status, reason) = if hop_is_cloud(&lease.kind) {
+                (
+                    "not-enforced",
+                    "cloud hop is declared, not spawned. Not mediated.",
+                )
+            } else if !lease.granted {
+                ("not-enforced", "lease is not granted. Not mediated.")
+            } else if allows {
+                (
+                    "would-allow",
+                    "estate authorize would allow. A worker can still skip convey call. Not mediated.",
+                )
+            } else {
+                (
+                    "would-deny",
+                    "estate authorize would deny. convey call --agent would refuse:intention. Not mediated unless that call runs.",
+                )
+            };
+            rows.push(AuthorityRow {
+                agent: agent.clone(),
+                hop_id: lease.hop_id.clone(),
+                capability: lease.capability.clone(),
+                status: status.into(),
+                reason: reason.into(),
+            });
+        }
+    }
+    for place in &estate.placements {
+        if place.kind != estate_schema::PlacementKind::Box {
+            rows.push(AuthorityRow {
+                agent: if place.agents.is_empty() {
+                    "(none)".into()
+                } else {
+                    place.agents.join(",")
+                },
+                hop_id: place.id.clone(),
+                capability: "mesh-stub".into(),
+                status: "not-enforced".into(),
+                reason: "cloud placement is declared, not spawned. Not mediated.".into(),
+            });
+            continue;
+        }
+        for agent_id in &place.agents {
+            let Some(agent) = estate.agent(agent_id) else {
+                continue;
+            };
+            let mut caps = Vec::new();
+            caps.extend(agent.tools.iter().map(|t| t.id.clone()));
+            caps.extend(agent.mounts.iter().map(|m| m.id.clone()));
+            caps.extend(agent.mcp.iter().map(|m| m.id.clone()));
+            caps.extend(agent.models.iter().map(|m| m.id.clone()));
+            for cap in caps {
+                let already = rows.iter().any(|row| {
+                    row.hop_id == place.id && row.capability == cap && row.agent == *agent_id
+                });
+                if already {
+                    continue;
+                }
+                rows.push(AuthorityRow {
+                    agent: agent_id.clone(),
+                    hop_id: place.id.clone(),
+                    capability: cap,
+                    status: "not-enforced".into(),
+                    reason: "declared on the estate; no hop lease names this capability. Not mediated.".into(),
+                });
+            }
+        }
+    }
+    Ok(rows)
+}
+
 /// File SoT committed next to the crate must match the schema snapshot.
 pub fn mesh_file_sot() -> ConveyorMesh {
     ConveyorMesh {
@@ -663,6 +1000,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
             HopDecl {
                 id: "cursor-cloud".into(),
@@ -672,6 +1010,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         ],
         leases: vec![
@@ -688,6 +1027,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 ttl_secs: None,
                 issued_at: None,
                 expires_at: None,
+                agents: Vec::new(),
             },
             HopLease {
                 hop_id: "cursor-cloud".into(),
@@ -702,6 +1042,7 @@ pub fn mesh_file_sot() -> ConveyorMesh {
                 ttl_secs: None,
                 issued_at: None,
                 expires_at: None,
+                agents: Vec::new(),
             },
         ],
     }
@@ -735,6 +1076,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -790,6 +1132,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -811,6 +1154,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -835,6 +1179,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -867,8 +1212,14 @@ mod tests {
             std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
             placement
         );
-        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), mesh_before);
-        assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+            mesh_before
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
+            hops_before
+        );
         assert_eq!(
             std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
             leases_before
@@ -905,7 +1256,10 @@ mod tests {
         std::fs::write(dir.join("placement-actual.json"), &unspawned).unwrap();
         let err = call_hop(&dir, "cursor-cloud", "mesh-stub").unwrap_err();
         assert!(matches!(err, MeshError::CloudNotSpawned(_)), "{err}");
-        assert!(err.to_string().starts_with("refuse:cloud-not-spawned"), "{err}");
+        assert!(
+            err.to_string().starts_with("refuse:cloud-not-spawned"),
+            "{err}"
+        );
 
         std::fs::remove_file(dir.join("placement-actual.json")).unwrap();
         let err = call_hop(&dir, "cursor-cloud", "mesh-stub").unwrap_err();
@@ -926,6 +1280,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -956,6 +1311,7 @@ mod tests {
                     wired: true,
                     note: None,
                     ttl_secs: None,
+                    agents: Vec::new(),
                 },
             )
             .unwrap_err();
@@ -968,8 +1324,14 @@ mod tests {
                 std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
                 placement
             );
-            assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), mesh_before);
-            assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+            assert_eq!(
+                std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+                mesh_before
+            );
+            assert_eq!(
+                std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
+                hops_before
+            );
             assert_eq!(
                 std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
                 leases_before
@@ -998,6 +1360,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1019,6 +1382,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1040,6 +1404,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap_err();
@@ -1108,6 +1473,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1156,8 +1522,14 @@ mod tests {
                 std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
                 placement
             );
-            assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), mesh_before);
-            assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+            assert_eq!(
+                std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+                mesh_before
+            );
+            assert_eq!(
+                std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
+                hops_before
+            );
             assert_eq!(
                 std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
                 leases_before
@@ -1207,10 +1579,7 @@ mod tests {
             matches!(err, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
             "{err}"
         );
-        assert!(
-            err.to_string().contains("refuse:bad-host-class"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("refuse:bad-host-class"), "{err}");
         assert!(
             !dir.join(MESH_FILE).is_file(),
             "sync must not write hops after a host_class refuse"
@@ -1247,6 +1616,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1270,10 +1640,7 @@ mod tests {
             matches!(err, MeshError::BadHostClass(ref h) if h == "rtx-5090"),
             "{err}"
         );
-        assert!(
-            err.to_string().contains("refuse:bad-host-class"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("refuse:bad-host-class"), "{err}");
         assert_eq!(
             std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
             before,
@@ -1295,6 +1662,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1353,12 +1721,16 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap_err();
         assert!(matches!(again, MeshError::BadHostClass(_)));
 
-        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+            before
+        );
         assert_eq!(
             std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
             hops_before
@@ -1385,6 +1757,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1394,7 +1767,10 @@ mod tests {
         let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
         let err = call_hop(&dir, "cell-one-box", "lane-tool").unwrap_err();
         assert!(matches!(err, MeshError::BadHostClass(ref h) if h == "not-a-host"));
-        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+            before
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1406,7 +1782,10 @@ mod tests {
         assert_eq!(file.schema, snap.schema);
         assert_eq!(file.hops.len(), snap.hops.len());
         assert_eq!(file.leases.len(), snap.leases.len());
-        assert!(!file.leases.iter().any(|l| l.kind == "cloud-mesh" && l.spawned));
+        assert!(!file
+            .leases
+            .iter()
+            .any(|l| l.kind == "cloud-mesh" && l.spawned));
     }
 
     #[test]
@@ -1422,6 +1801,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: Some(1),
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1447,11 +1827,7 @@ mod tests {
         assert!(after.leases.is_empty());
         let fresh = call_hop(&dir, "short-hop", "lane-tool").unwrap();
         assert!(fresh.allow);
-        assert!(
-            fresh.reason.contains("lease-refresh"),
-            "{}",
-            fresh.reason
-        );
+        assert!(fresh.reason.contains("lease-refresh"), "{}", fresh.reason);
         let restamped = load_mesh(&dir).unwrap();
         let lease = restamped
             .leases
@@ -1476,6 +1852,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1489,6 +1866,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1496,7 +1874,9 @@ mod tests {
         let unspawned = list_hop_leases(&dir).unwrap();
         assert_eq!(unspawned.len(), 2);
         assert!(unspawned.iter().any(|l| l.hop_id == "cursor-cloud"));
-        assert!(!unspawned.iter().any(|l| l.kind == "cloud-mesh" && l.spawned));
+        assert!(!unspawned
+            .iter()
+            .any(|l| l.kind == "cloud-mesh" && l.spawned));
 
         let mut mesh = load_mesh(&dir).unwrap();
         for lease in &mut mesh.leases {
@@ -1506,7 +1886,9 @@ mod tests {
         }
         persist_mesh(&dir, &mesh).unwrap();
         let box_up = list_hop_leases(&dir).unwrap();
-        assert!(box_up.iter().any(|l| l.hop_id == "cell-one-box" && l.spawned));
+        assert!(box_up
+            .iter()
+            .any(|l| l.hop_id == "cell-one-box" && l.spawned));
 
         let mut mesh = load_mesh(&dir).unwrap();
         for lease in &mut mesh.leases {
@@ -1521,7 +1903,10 @@ mod tests {
         assert!(matches!(err, MeshError::CloudSpawned(_)), "{err}");
         assert!(err.to_string().starts_with("refuse:cloud-spawned"), "{err}");
         assert!(err.to_string().contains("cursor-cloud"), "{err}");
-        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+            before
+        );
         assert_eq!(
             std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
             leases_before
@@ -1546,6 +1931,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: Some(1),
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1559,6 +1945,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: Some(1),
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1578,12 +1965,24 @@ mod tests {
 
         let listed = list_expired_hop_leases(&dir, now).unwrap_err();
         assert!(matches!(listed, MeshError::CloudSpawned(_)), "{listed}");
-        assert!(listed.to_string().starts_with("refuse:cloud-spawned"), "{listed}");
+        assert!(
+            listed.to_string().starts_with("refuse:cloud-spawned"),
+            "{listed}"
+        );
         assert!(listed.to_string().contains("cursor-cloud"), "{listed}");
         let forgotten = forget_expired_hop_leases(&dir).unwrap_err();
-        assert!(matches!(forgotten, MeshError::CloudSpawned(_)), "{forgotten}");
-        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), before);
-        assert_eq!(std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(), hops_before);
+        assert!(
+            matches!(forgotten, MeshError::CloudSpawned(_)),
+            "{forgotten}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(),
+            before
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap(),
+            hops_before
+        );
         assert_eq!(
             std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap(),
             leases_before
@@ -1628,6 +2027,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: Some(3600),
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1699,6 +2099,7 @@ mod tests {
             wired: true,
             note: None,
             ttl_secs: None,
+            agents: Vec::new(),
         })
         .unwrap_err();
         assert!(matches!(kind, MeshError::Kind(_)));
@@ -1712,6 +2113,7 @@ mod tests {
             wired: true,
             note: None,
             ttl_secs: None,
+            agents: Vec::new(),
         })
         .unwrap_err();
         assert!(matches!(bad_id, MeshError::BadId(_)));
@@ -1725,6 +2127,7 @@ mod tests {
             wired: true,
             note: None,
             ttl_secs: None,
+            agents: Vec::new(),
         })
         .unwrap_err();
         assert!(matches!(host, MeshError::BadHostClass(_)));
@@ -1738,6 +2141,7 @@ mod tests {
             wired: true,
             note: None,
             ttl_secs: None,
+            agents: Vec::new(),
         })
         .unwrap_err();
         assert!(sku.to_string().starts_with("refuse:sku-banned"));
@@ -1753,6 +2157,7 @@ mod tests {
                 wired: true,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1773,6 +2178,7 @@ mod tests {
                 wired: false,
                 note: None,
                 ttl_secs: None,
+                agents: Vec::new(),
             },
         )
         .unwrap();
@@ -1797,6 +2203,250 @@ mod tests {
         let dead = call_hop(&dir, "notes-hop", "notes-append").unwrap_err();
         assert!(matches!(dead, MeshError::NotLive(_)));
         assert!(dead.to_string().starts_with("refuse:not-live"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn example_estate() -> estate_schema::Estate {
+        estate_schema::load_estate_str(include_str!("../../../examples/estate.yaml")).unwrap()
+    }
+
+    #[test]
+    fn population_bind_refuses_ahead_of_placement_and_intention() {
+        let dir = tmp();
+        let placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "cell-one-box",
+                "kind": "box",
+                "host_class": "any",
+                "spawned": true,
+                "wired": true,
+                "agents": ["horizon", "research", "sanctum"]
+            }]
+        })
+        .to_string();
+        std::fs::write(dir.join("placement-actual.json"), &placement).unwrap();
+        let mesh = sync_from_placements(&dir).unwrap();
+        let lease = mesh
+            .leases
+            .iter()
+            .find(|l| l.hop_id == "cell-one-box")
+            .unwrap();
+        assert_eq!(
+            lease.agents,
+            vec![
+                "horizon".to_string(),
+                "research".to_string(),
+                "sanctum".to_string()
+            ]
+        );
+        let unnamed = call_hop(&dir, "cell-one-box", "lane-tool").unwrap_err();
+        assert!(
+            matches!(unnamed, MeshError::AgentUnbound { .. }),
+            "{unnamed}"
+        );
+        assert!(
+            unnamed.to_string().starts_with("refuse:agent-unbound"),
+            "{unnamed}"
+        );
+
+        let estate = example_estate();
+        // Sync stamps `lane-tool`. That string is not an estate tool.
+        let stub = call_hop_for_agent(&dir, "cell-one-box", "lane-tool", "research", None, &estate)
+            .unwrap_err();
+        assert!(matches!(stub, MeshError::Intention { .. }), "{stub}");
+        assert!(stub.to_string().starts_with("refuse:intention"), "{stub}");
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "notes-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into(), "horizon".into()],
+            },
+        )
+        .unwrap();
+        let allowed =
+            call_hop_for_agent(&dir, "notes-hop", "notes-append", "research", None, &estate)
+                .unwrap();
+        assert!(allowed.allow);
+        assert!(
+            allowed.reason.contains("agent-bound research"),
+            "{}",
+            allowed.reason
+        );
+        let denied = call_hop_for_agent(
+            &dir,
+            "notes-hop",
+            "notes-append",
+            "horizon",
+            Some(estate_schema::IntentionKind::Tool),
+            &estate,
+        )
+        .unwrap_err();
+        assert!(matches!(denied, MeshError::Intention { .. }), "{denied}");
+        assert!(
+            denied.to_string().starts_with("refuse:intention"),
+            "{denied}"
+        );
+        let unnamed_notes = call_hop(&dir, "notes-hop", "notes-append").unwrap_err();
+        assert!(
+            matches!(unnamed_notes, MeshError::AgentUnbound { .. }),
+            "{unnamed_notes}"
+        );
+
+        let missing = call_hop_for_agent(
+            &dir,
+            "cell-one-box",
+            "notes-append",
+            "not-placed",
+            None,
+            &estate,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(missing, MeshError::AgentUnbound { .. }),
+            "{missing}"
+        );
+
+        let before = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let mut tampered = load_mesh(&dir).unwrap();
+        tampered.leases[0].agents.push("outsider".into());
+        tampered.hops[0].agents.push("outsider".into());
+        persist_mesh(&dir, &tampered).unwrap();
+        let wider = std::fs::read_to_string(dir.join(MESH_FILE)).unwrap();
+        let listed = list_hop_leases(&dir).unwrap_err();
+        assert!(
+            matches!(listed, MeshError::AgentUnplaced { .. }),
+            "{listed}"
+        );
+        assert!(
+            listed.to_string().starts_with("refuse:agent-unplaced"),
+            "{listed}"
+        );
+        assert!(listed.to_string().contains("outsider"), "{listed}");
+        let sync = sync_from_placements(&dir).unwrap_err();
+        assert!(matches!(sync, MeshError::AgentUnplaced { .. }), "{sync}");
+        assert_eq!(std::fs::read_to_string(dir.join(MESH_FILE)).unwrap(), wider);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
+            placement
+        );
+        let _ = before;
+
+        std::fs::write(dir.join(MESH_FILE), &before).unwrap();
+        let hops_ok = std::fs::read_to_string(dir.join(HOPS_FILE)).unwrap();
+        let leases_ok = std::fs::read_to_string(dir.join(LEASES_FILE)).unwrap();
+        // restore sibling files from the honest sync by rewriting via load of before mesh
+        let honest: ConveyorMesh = serde_json::from_str(&before).unwrap();
+        persist_mesh(&dir, &honest).unwrap();
+        let _ = (hops_ok, leases_ok);
+
+        let ahead = declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["horizon".into(), "outsider".into()],
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(ahead, MeshError::AgentUnplaced { .. }), "{ahead}");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("placement-actual.json")).unwrap(),
+            placement
+        );
+
+        let sacred = declare_hop(
+            &dir,
+            HopDecl {
+                id: "side-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["cyera-ci".into()],
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(sacred, MeshError::SacredId(_)), "{sacred}");
+        assert!(
+            sacred.to_string().starts_with("refuse:sacred-id"),
+            "{sacred}"
+        );
+        assert!(!load_mesh(&dir)
+            .unwrap()
+            .hops
+            .iter()
+            .any(|h| h.id == "side-box"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn authority_does_not_call_a_file_check_enforced() {
+        let dir = tmp();
+        let placement = serde_json::json!({
+            "schema": "cell-one.placement-actual.v0",
+            "leases": [{
+                "placement_id": "cell-one-box",
+                "kind": "box",
+                "host_class": "any",
+                "spawned": true,
+                "wired": true,
+                "agents": ["horizon", "research", "sanctum"]
+            }]
+        })
+        .to_string();
+        std::fs::write(dir.join("placement-actual.json"), &placement).unwrap();
+        let estate = example_estate();
+        let mesh = sync_from_placements(&dir).unwrap();
+        assert!(mesh.leases.iter().any(|l| l.hop_id == "cell-one-box" && l.granted));
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().all(|row| row.status != "enforced"));
+        assert!(rows.iter().any(|row| {
+            row.capability == "lane-tool" && row.status == "would-deny" && row.reason.contains("Not mediated")
+        }));
+        assert!(rows.iter().any(|row| {
+            row.agent == "research"
+                && row.capability == "notes-append"
+                && row.status == "not-enforced"
+                && row.reason.contains("no hop lease")
+        }));
+
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "notes-hop".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into(), "horizon".into()],
+            },
+        )
+        .unwrap();
+        let rows = authority_report(&dir, &estate).unwrap();
+        assert!(rows.iter().all(|row| row.status != "enforced"));
+        assert!(rows.iter().any(|row| {
+            row.agent == "research" && row.capability == "notes-append" && row.status == "would-allow"
+        }));
+        assert!(rows.iter().any(|row| {
+            row.agent == "horizon" && row.capability == "notes-append" && row.status == "would-deny"
+        }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
