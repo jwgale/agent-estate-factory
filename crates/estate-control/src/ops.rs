@@ -804,15 +804,18 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
     // that does not parse stays the mesh error and is not rewritten.
     // Floor and models JSON above are already printed and are not edited.
     let mut hop_mismatch: Option<String> = None;
-    if let Ok(mesh) = load_mesh(state_dir) {
-        for cite in crate::watch::hop_coverage_cites(&estate, &mesh) {
-            if cite.fail {
-                println!("  FAIL  {}", cite.line);
-                hop_mismatch.get_or_insert(cite.line);
-            } else {
-                println!("  note  {}", cite.line);
+    match load_mesh(state_dir) {
+        Ok(mesh) => {
+            for cite in crate::watch::hop_coverage_cites(&estate, &mesh) {
+                if cite.fail {
+                    println!("  FAIL  {}", cite.line);
+                    hop_mismatch.get_or_insert(cite.line);
+                } else {
+                    println!("  note  {}", cite.line);
+                }
             }
         }
+        Err(err) => bail!("{err}"),
     }
     if !report.in_sync || !models.in_sync {
         bail!("drift detected");
@@ -1187,6 +1190,37 @@ mod drift_hop_coverage_tests {
         cmd_drift(&estate_path, &state, &roots).unwrap();
         let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
         assert_eq!(fs::read(&estate_path).unwrap(), locked);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn drift_fails_closed_when_the_mesh_file_does_not_parse() {
+        let dir = scratch();
+        let (estate_path, state) = synced_example(&dir);
+        let roots = dir.join("roots");
+        let mesh_path = state.join(MESH_FILE);
+        let corrupt = b"{not-json";
+        fs::write(&mesh_path, corrupt).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = cmd_drift(&estate_path, &state, &roots)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("parse") && err.contains(MESH_FILE),
+            "{err}"
+        );
+        assert!(!err.contains("drift detected"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&mesh_path).unwrap(), corrupt);
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let estate = load_estate(&estate_path).unwrap();
+        assert!(drift_with_roots(&estate, &state, Some(&roots))
+            .unwrap()
+            .in_sync);
+        assert!(model_estate::drift_bindings(&estate, &state)
+            .unwrap()
+            .in_sync);
         let _ = fs::remove_dir_all(&dir);
     }
 }
