@@ -562,9 +562,14 @@ pub fn convey_hop_coverage(
             .filter(|row| !row.agent_id.is_empty() && normalize_name(&row.agent_id) == want)
             .collect();
         if named.is_empty() {
-            // Empty-population cloud is deny. Do not label it deny-default
-            // just because the named agent is absent from an empty list.
-            if let Some(row) = hits.iter().find(|row| row.word == "deny") {
+            // Only an empty-population cloud row (no agent id, word deny)
+            // is deny for a named outsider. A sibling's explicit deny stays
+            // that sibling's row; the outsider is deny-default, not on the
+            // population.
+            if let Some(row) = hits
+                .iter()
+                .find(|row| row.agent_id.is_empty() && row.word == "deny")
+            {
                 return Err(HopCoverageGate {
                     word: "deny",
                     line: row.line.clone(),
@@ -1139,6 +1144,21 @@ mod tests {
         assert_eq!(explicit.word, "deny");
         assert!(explicit.line.contains(": deny"));
         assert!(!explicit.line.contains("deny-default"));
+
+        let horizon = convey_hop_coverage(&allowed, "cell-one-box", Some("horizon")).unwrap_err();
+        assert_eq!(horizon.word, "deny-default");
+        let outsider = convey_hop_coverage(&allowed, "cell-one-box", Some("not-placed")).unwrap_err();
+        assert_eq!(outsider.word, "deny-default");
+        assert!(
+            outsider.line.contains("not on the hop population"),
+            "{}",
+            outsider.line
+        );
+        assert!(
+            !outsider.line.contains("research"),
+            "outsider must not inherit research deny, got {}",
+            outsider.line
+        );
 
         let cloud_agent = convey_hop_coverage(&allowed, "cursor-cloud", None).unwrap_err();
         assert_eq!(cloud_agent.word, "deny");
