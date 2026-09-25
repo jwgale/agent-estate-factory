@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    authority_report, call_hop, declare_hop, forget_expired_hop_leases, hop_now_unix,
-    list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
+    authority_report, call_hop, declare_hop_covering, forget_expired_hop_leases, hop_now_unix,
+    list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements,
+    sync_from_placements_covering, HopDecl,
 };
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
@@ -442,7 +443,9 @@ pub(crate) fn cmd_convey_hop(
             refuse_convey_coverage(estate_path, id, Some(agent.as_str()), capability)?;
         }
     }
-    let lease = declare_hop(
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let lease = declare_hop_covering(
         state_dir,
         HopDecl {
             id: id.to_string(),
@@ -454,6 +457,7 @@ pub(crate) fn cmd_convey_hop(
             ttl_secs,
             agents: agents.to_vec(),
         },
+        Some(&estate),
     )?;
     println!("{}", serde_json::to_string_pretty(&lease)?);
     Ok(())
@@ -523,8 +527,17 @@ pub(crate) fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_convey_sync(state_dir: &Path) -> Result<()> {
-    let mesh = sync_from_placements(state_dir)?;
+pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()> {
+    // A missing estate keeps the placement-kind restamp. A loaded estate
+    // refuses a placement hop whose stamped capability disagrees with
+    // placement-derived coverage and writes nothing. Deny stays deny.
+    let mesh = if estate_path.is_file() {
+        let estate = load_estate(estate_path)
+            .with_context(|| format!("load {}", estate_path.display()))?;
+        sync_from_placements_covering(state_dir, Some(&estate))?
+    } else {
+        sync_from_placements(state_dir)?
+    };
     println!("{}", serde_json::to_string_pretty(&mesh)?);
     Ok(())
 }

@@ -664,7 +664,7 @@ fn blast_radius(
             .into(),
     );
     lines.push(format!(
-        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` is a file check (would-allow, would-deny, not-enforced). A granted box lease cites hop-coverage deny, deny-default, or a capability mismatch as would-deny. It does not prove mediation. Identity stays parked. Not a gateway.",
+        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey hop` and `estate convey sync` refuse a placement capability that disagrees with hop coverage and do not write that lease. `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. `estate convey authority` is a file check (would-allow, would-deny, not-enforced). A granted box lease cites hop-coverage deny, deny-default, or a capability mismatch as would-deny. It does not prove mediation. Identity stays parked. Not a gateway.",
         if populations.is_empty() {
             "no placements".to_string()
         } else {

@@ -335,6 +335,7 @@ pub(crate) enum ConveyCommand {
         /// A named agent refuses on intention deny or deny-default
         /// (`refuse:intention`). Allow continues to hop coverage, then
         /// refuses when `--capability` does not match that coverage capability.
+        /// The hop write refuses that same mismatch and does not store the lease.
         /// Missing or not a file refuses. Hop deny and deny-default refuse.
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -378,9 +379,17 @@ pub(crate) enum ConveyCommand {
         state_dir: PathBuf,
     },
     /// Derive hops from placement-actual.json (slim parse).
+    /// When `--estate` is a file, a placement hop whose stamped capability
+    /// disagrees with placement-derived coverage (`lane-tool` on box,
+    /// `mesh-stub` on cloud) is `refuse:hop-coverage` and the mesh is not written.
+    /// A hop id that is not a placement stays the lease stub. Does not spawn.
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        /// Estate used for the placement-derived capability check.
+        /// A missing path keeps the lease stub sync (no new refuse).
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
     },
     /// File check of hop leases against the estate. Does not write. Does not claim mediation.
     Authority {
