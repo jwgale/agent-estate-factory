@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — Mount intentions fail closed
+
+- A named-agent `authorize` / `estate convey call --agent` for `IntentionKind::Mount` allows the object only when the agent declares it and an allow Mount intention covers it (bare id or `mount:`). Mounts have no class. Missing coverage is deny-default. An explicit deny wins. `estate plan` Security-as-IaC and `estate drift` name who holds which mount and whether that row is `allow`, `deny`, or `deny-default`, next to the existing tool and MCP lines. This is not a gateway. Cloud-mesh stays declared, not spawned. Sacred exclusions stay refused. Hop population honesty stays. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — Tool and MCP intentions fail closed
 
 - A named-agent `authorize` / `estate convey call --agent` for `IntentionKind::Tool` or `IntentionKind::Mcp` allows the object only when the agent declares it and an allow intention of that kind covers it (bare id, `tool:`, or `mcp:`). Tools and MCP have no class. Missing coverage is deny-default. An explicit deny wins. `Mount` still allows on declaration when no intention matches. `estate plan` Security-as-IaC and `estate drift` name who holds which tool or MCP and whether that row is `allow`, `deny`, or `deny-default`. This is not a gateway. Cloud-mesh stays declared, not spawned. Sacred exclusions stay refused. Hop population honesty stays. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

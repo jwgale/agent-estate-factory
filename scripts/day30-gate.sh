@@ -78,7 +78,7 @@ note "-- A4 deny-default tools --"
 check_deny horizon tool shell "A4 undeclared tool denied"
 check_allow research tool notes-append "A4 declared tool allowed"
 check_deny research mount secrets "A4 undeclared mount denied"
-check_allow research mount notes "A4 declared mount allowed"
+check_deny research mount notes "A4 declared mount without allow intention denied"
 
 note
 note "-- models stay unwired --"
