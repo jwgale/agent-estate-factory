@@ -51,6 +51,10 @@ pub struct Agent {
     /// Declared model-binding allow-list (deny-default, same class as tools).
     #[serde(default)]
     pub models: Vec<ModelUseDecl>,
+    /// Agents this agent may call. Empty is not a grant. Own and peer use the same rule.
+    /// Absent on the wire when empty so the locked example hash stays put.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub calls: Vec<CallDecl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,6 +82,8 @@ pub enum IntentionKind {
     Mcp,
     Mount,
     Model,
+    /// Who may call whom. Object is another estate agent (`agent:` or a bare id).
+    Agent,
 }
 
 impl IntentionKind {
@@ -88,6 +94,7 @@ impl IntentionKind {
             IntentionKind::Mcp => "mcp",
             IntentionKind::Mount => "mount",
             IntentionKind::Model => "model",
+            IntentionKind::Agent => "agent",
         }
     }
 }
@@ -102,6 +109,7 @@ impl FromStr for IntentionKind {
             "mcp" => Ok(IntentionKind::Mcp),
             "mount" => Ok(IntentionKind::Mount),
             "model" | "binding" => Ok(IntentionKind::Model),
+            "agent" | "agent_call" | "agent-call" => Ok(IntentionKind::Agent),
             other => Err(format!("unknown intention kind '{other}'")),
         }
     }
@@ -153,6 +161,14 @@ pub struct MountDecl {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct McpDecl {
+    pub id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// One peer (or self) this agent declares it may call. Not a tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CallDecl {
     pub id: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -314,6 +330,7 @@ pub enum ObjectRef {
     Mount(String),
     Binding(String),
     Exclusion(String),
+    Agent(String),
     Bare(String),
 }
 
@@ -332,6 +349,8 @@ impl ObjectRef {
             ObjectRef::Binding(rest.to_string())
         } else if let Some(rest) = raw.strip_prefix("exclusion:") {
             ObjectRef::Exclusion(rest.to_string())
+        } else if let Some(rest) = raw.strip_prefix("agent:") {
+            ObjectRef::Agent(rest.to_string())
         } else {
             ObjectRef::Bare(raw.to_string())
         }
@@ -345,6 +364,7 @@ impl ObjectRef {
             | ObjectRef::Mount(s)
             | ObjectRef::Binding(s)
             | ObjectRef::Exclusion(s)
+            | ObjectRef::Agent(s)
             | ObjectRef::Bare(s) => s,
         }
     }
@@ -408,5 +428,10 @@ impl Agent {
     pub fn has_model(&self, id: &str) -> bool {
         let n = normalize_name(id);
         self.models.iter().any(|m| normalize_name(&m.id) == n)
+    }
+
+    pub fn has_call(&self, id: &str) -> bool {
+        let n = normalize_name(id);
+        self.calls.iter().any(|c| normalize_name(&c.id) == n)
     }
 }

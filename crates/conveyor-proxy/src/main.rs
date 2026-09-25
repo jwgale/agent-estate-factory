@@ -67,7 +67,8 @@ enum Command {
         capability: String,
         #[arg(long)]
         agent: Option<String>,
-        /// tool | mcp | mount | model | memory_read. Omit to infer from the agent.
+        /// tool | mcp | mount | model | memory_read | agent. Omit to infer from the agent.
+        /// `agent` is who-may-call-whom. Aliases: agent_call, agent-call.
         #[arg(long)]
         kind: Option<String>,
         #[arg(long, default_value = "examples/estate.yaml")]

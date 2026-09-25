@@ -695,6 +695,11 @@ fn blast_radius(
     );
     lines.push(crate::firewall::describe_declared_coverage(estate));
     lines.push(
+        "Agent call coverage (who may call whom; own is the same agent, peer is another; an allow Agent intention covers a declared call; missing coverage is deny-default; an explicit deny wins):"
+            .into(),
+    );
+    lines.push(crate::firewall::describe_agent_edge_coverage(estate));
+    lines.push(
         "Intention coverage (own-lane memory is allow; cross-lane is deny-default unless an intention covers it; each memory row is flagged own-lane or cross-lane; each compiled intention is listed):"
             .into(),
     );
@@ -773,6 +778,7 @@ fn set_diff(have: BTreeSet<String>, against: BTreeSet<String>) -> Vec<String> {
 pub fn describe_agents_section(estate: &Estate) -> String {
     let model = crate::firewall::model_class_coverage_rows(estate);
     let declared = crate::firewall::declared_coverage_rows(estate);
+    let agent_edges = crate::firewall::agent_edge_coverage_rows(estate);
     let intention = crate::firewall::intention_coverage_rows(estate);
     let hop = crate::firewall::hop_coverage_rows(estate);
     let mut lines = vec![
@@ -794,16 +800,19 @@ pub fn describe_agents_section(estate: &Estate) -> String {
             agent_placement_line(estate, &agent.id)
         ));
         lines.push(format!(
-            "  declared: tools={} mcp={} mounts={} models={}",
+            "  declared: tools={} mcp={} mounts={} models={} calls={}",
             agent.tools.len(),
             agent.mcp.len(),
             agent.mounts.len(),
-            agent.models.len()
+            agent.models.len(),
+            agent.calls.len()
         ));
         lines.push("  model class:".into());
         push_agent_coverage(&mut lines, &model, &agent.id);
         lines.push("  tool mcp mount:".into());
         push_agent_coverage(&mut lines, &declared, &agent.id);
+        lines.push("  agent call:".into());
+        push_agent_coverage(&mut lines, &agent_edges, &agent.id);
         lines.push("  intention:".into());
         push_agent_coverage(&mut lines, &intention, &agent.id);
         lines.push("  hop:".into());
@@ -1028,7 +1037,9 @@ mod tests {
         assert!(agents.contains("lane: horizon"));
         assert!(agents.contains("desktop: horizon-desktop"));
         assert!(agents.contains("placement: box cell-one-box"));
-        assert!(agents.contains("declared: tools=0 mcp=1 mounts=0 models=2"));
+        assert!(agents.contains("declared: tools=0 mcp=1 mounts=0 models=2 calls=0"));
+        assert!(agents.contains("horizon agent horizon: deny-default (own)"));
+        assert!(agents.contains("horizon agent research: deny-default (peer)"));
         assert!(agents.contains("horizon frontier xai_grok: allow"));
         assert!(agents.contains("horizon local local_slm: deny"));
         assert!(agents.contains("horizon mcp docs: allow"));

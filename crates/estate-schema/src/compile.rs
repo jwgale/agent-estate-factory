@@ -77,6 +77,11 @@ pub fn intention_object_errors(estate: &Estate) -> Vec<String> {
                     errors.push(err);
                 }
             }
+            IntentionKind::Agent => {
+                if let Some(err) = agent_object_error(estate, agent, &intention.object) {
+                    errors.push(err);
+                }
+            }
         }
     }
     errors
@@ -92,8 +97,50 @@ fn declared_named(agent: &crate::types::Agent, kind: IntentionKind, object: &str
         IntentionKind::Tool => agent.has_tool(name),
         IntentionKind::Mcp => agent.has_mcp(name),
         IntentionKind::Mount => agent.has_mount(name),
+        IntentionKind::Agent => agent.has_call(name),
         IntentionKind::Model | IntentionKind::MemoryRead => false,
     }
+}
+
+fn agent_object_error(estate: &Estate, agent: &crate::types::Agent, object: &str) -> Option<String> {
+    let raw = object.trim();
+    if raw.starts_with("lane:")
+        || raw.starts_with("tool:")
+        || raw.starts_with("mcp:")
+        || raw.starts_with("mount:")
+        || raw.starts_with("binding:")
+        || raw.starts_with("model:")
+        || raw.starts_with("class:")
+        || raw.starts_with("exclusion:")
+    {
+        return Some(format!(
+            "intention agent object '{object}' is not an agent id for agent '{}'",
+            agent.id
+        ));
+    }
+    let name = raw.strip_prefix("agent:").unwrap_or(raw).trim();
+    if name.is_empty() {
+        return Some(format!(
+            "intention agent object '{object}' is not an estate agent"
+        ));
+    }
+    if estate.is_sacred(name) {
+        return Some(format!(
+            "sacred exclusion '{name}' cannot be an agent call target"
+        ));
+    }
+    if estate.agent(name).is_none() {
+        return Some(format!(
+            "intention agent object '{object}' is not an estate agent"
+        ));
+    }
+    if !agent.has_call(name) {
+        return Some(format!(
+            "intention agent object '{object}' is not declared on agent '{}'",
+            agent.id
+        ));
+    }
+    None
 }
 
 fn model_object_error(estate: &Estate, agent: &crate::types::Agent, object: &str) -> Option<String> {
@@ -243,6 +290,65 @@ mod tests {
         let class_text = crate::validate(&bad_class).unwrap_err().join("\n");
         assert!(class_text.contains("not a model class"), "{class_text}");
         assert!(class_text.contains("horizon"), "{class_text}");
+    }
+
+    #[test]
+    fn agent_call_object_must_be_a_real_agent() {
+        let unknown = with_intention(IntentionKind::Agent, "horizon", "ghost", Effect::Allow);
+        let text = compile_intentions(&unknown).unwrap_err().join("\n");
+        assert!(text.contains("not an estate agent"), "{text}");
+        assert!(text.contains("ghost"), "{text}");
+        let sacred = with_intention(IntentionKind::Agent, "horizon", "agent:cyera-ci", Effect::Deny);
+        let sacred_text = compile_intentions(&sacred).unwrap_err().join("\n");
+        assert!(sacred_text.contains("sacred"), "{sacred_text}");
+        let mut declared = load_estate_str(crate::tests::example_yaml()).unwrap();
+        declared
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .calls
+            .push(crate::types::CallDecl {
+                id: "research".into(),
+                description: None,
+            });
+        declared.intentions.push(Intention {
+            subject_agent: "horizon".into(),
+            object: "agent:research".into(),
+            kind: IntentionKind::Agent,
+            effect: Effect::Allow,
+            note: None,
+        });
+        assert!(compile_intentions(&declared).is_ok());
+        assert!(crate::validate(&declared).is_ok());
+
+        let mut unknown_call = load_estate_str(crate::tests::example_yaml()).unwrap();
+        unknown_call
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .calls
+            .push(crate::types::CallDecl {
+                id: "ghost".into(),
+                description: None,
+            });
+        let call_text = crate::validate(&unknown_call).unwrap_err().join("\n");
+        assert!(call_text.contains("not an estate agent"), "{call_text}");
+
+        let mut sacred_call = load_estate_str(crate::tests::example_yaml()).unwrap();
+        sacred_call
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .calls
+            .push(crate::types::CallDecl {
+                id: "rust-classroom".into(),
+                description: None,
+            });
+        let sacred_call_text = crate::validate(&sacred_call).unwrap_err().join("\n");
+        assert!(sacred_call_text.contains("sacred"), "{sacred_call_text}");
     }
 
     #[test]

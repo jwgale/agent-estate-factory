@@ -145,6 +145,8 @@ fn doctor_prints_security_iac_coverage() {
     assert!(text.contains("horizon frontier xai_grok: deny-default"), "{text}");
     assert!(text.contains("research tool notes-append: deny-default"), "{text}");
     assert!(text.contains("research mount notes: deny-default"), "{text}");
+    assert!(text.contains("horizon agent horizon: deny-default (own)"), "{text}");
+    assert!(text.contains("horizon agent research: deny-default (peer)"), "{text}");
     assert!(text.contains("horizon memory_read lane:horizon: allow (own-lane)"), "{text}");
     assert!(
         text.contains("horizon memory_read lane:research: deny-default (cross-lane)"),

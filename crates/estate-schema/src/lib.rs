@@ -15,9 +15,10 @@ pub use compile::{compile_intentions, intention_object_errors, CompiledIntention
 pub use error::EstateError;
 pub use firewall::{
     authorize, convey_hop_coverage, convey_hop_declared_capability, convey_intention_coverage,
-    coverage_for_agent, declared_coverage_rows,
-    describe_declared_coverage, describe_hop_coverage, describe_intention_coverage,
-    describe_model_class_coverage, hop_coverage_rows, intention_coverage_rows,
+    agent_edge_coverage_rows, coverage_for_agent, declared_coverage_rows,
+    describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
+    describe_intention_coverage, describe_model_class_coverage, hop_coverage_rows,
+    intention_coverage_rows,
     coverage_word, coverage_word_for_reason, model_class_coverage_rows, read_lane_file,
     AccessRequest, CoverageRow, Decision, Deny,
     HopCoverageGate, IntentionCoverageGate,
@@ -44,7 +45,8 @@ pub use sacred::{
 pub use types::{
     canonical_host_class, canonical_host_class_opt, host_class_eq, is_host_class,
     normalize_host_class, Agent, Effect,
-    EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl, ModelBinding,
+    CallDecl, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
+    ModelBinding,
     ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,
     ToolDecl,
 };
