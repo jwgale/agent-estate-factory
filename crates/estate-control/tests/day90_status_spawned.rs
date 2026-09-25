@@ -76,6 +76,7 @@ fn status_does_not_call_a_spawned_cloud_lease_not_spawned() {
         text.contains("cloud-agent: declared, not spawned"),
         "{text}"
     );
+    assert_agents_then_authority(&text);
 
     let path = state.join("placement-actual.json");
     let unspawned = placement(false);
@@ -86,6 +87,7 @@ fn status_does_not_call_a_spawned_cloud_lease_not_spawned() {
         text.contains("cloud-agent: declared, not spawned"),
         "{text}"
     );
+    assert_agents_then_authority(&text);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), unspawned);
 
     let spawned = placement(true);
@@ -100,5 +102,29 @@ fn status_does_not_call_a_spawned_cloud_lease_not_spawned() {
         !text.contains("cloud-agent: declared, not spawned"),
         "a spawned lease must not be called not spawned: {text}"
     );
+    assert!(
+        !text.contains("\nAgents\n------\n"),
+        "spawned refuse stays before the Agents section: {text}"
+    );
+    assert!(
+        !text.contains("\nAuthority\n---------\n"),
+        "spawned refuse stays before the Authority section: {text}"
+    );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), spawned);
+}
+
+fn assert_agents_then_authority(text: &str) {
+    let cloud_at = text
+        .find("cloud-agent: declared, not spawned")
+        .unwrap_or_else(|| panic!("missing cloud-agent line\n{text}"));
+    let agents_at = text
+        .find("\nAgents\n------\n")
+        .unwrap_or_else(|| panic!("missing Agents section\n{text}"));
+    let auth_at = text
+        .find("\nAuthority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{text}"));
+    assert!(
+        cloud_at < agents_at && agents_at < auth_at,
+        "Agents follows the cloud-agent line and precedes Authority\n{text}"
+    );
 }

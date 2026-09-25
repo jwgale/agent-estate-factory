@@ -200,9 +200,17 @@ live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
 After the hop expired count and that cloud-agent line, status prints
-an Authority section. The text is `describe_authority_section` over
-`authority_report`, the same section plan, drift, apply, doctor, and
-convey authority print. Counts are would-allow, would-deny, and
+the same Agents section as plan, drift, and apply
+(`describe_agents_section`): id, lane, desktop, placement (box,
+cloud-agent declared-not-spawned, or none), declared tool / mcp /
+mount / model counts, and that agent's allow / deny / deny-default
+coverage, including agent-call own and peer. Deny and deny-default
+are notes and do not fail status. Status does not spawn.
+
+Status then prints an Authority section. The text is
+`describe_authority_section` over `authority_report`, the same
+section plan, drift, apply, doctor, and convey authority print.
+Counts are would-allow, would-deny, and
 not-enforced. One line per row. A missing conveyor-mesh.json stays
 not-enforced, cites that the file is absent, and does not invent a
 lease. A present mesh with no lease for a declared capability stays
