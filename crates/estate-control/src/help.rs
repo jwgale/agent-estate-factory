@@ -203,10 +203,13 @@ After the hop expired count and that cloud-agent line, status prints
 an Authority section. The text is `describe_authority_section` over
 `authority_report`, the same section plan, drift, apply, doctor, and
 convey authority print. Counts are would-allow, would-deny, and
-not-enforced. One line per row. A missing mesh stays not-enforced and
-does not invent a lease. The section has no enforced status and does
-not claim a worker called the conveyor. A mesh that does not parse is
-the existing hop-lease refuse before the page and does not invent
+not-enforced. One line per row. A missing conveyor-mesh.json stays
+not-enforced, cites that the file is absent, and does not invent a
+lease. A present mesh with no lease for a declared capability stays
+not-enforced and says no hop lease names it. The section has no
+enforced status and does not claim a worker called the conveyor. A
+mesh that does not parse is the existing hop-lease refuse before the
+page and does not invent
 Authority rows. A would-deny row does not fail status. Status does not
 write the mesh, the leases, or the estate.
 
@@ -285,6 +288,14 @@ and fails plan. Deny and deny-default are notes and do not fail plan by
 themselves. A match stays quiet. Cloud hops stay out. A missing mesh is
 not a failure. A present mesh that does not parse fails plan and is not
 rewritten. The check does not write the mesh, the leases, or the estate.
+
+After those cites, plan prints an Authority section. The text is
+`describe_authority_section` over `authority_report`, the same section
+drift, apply, doctor, status, and convey authority print. A missing
+conveyor-mesh.json stays not-enforced and cites that the file is
+absent. A present mesh with no lease for a declared capability stays
+not-enforced and says no hop lease names it. The section does not
+write and does not claim a worker called the conveyor.
 ";
 
 const APPLY: &str = "\
@@ -336,9 +347,12 @@ After those cites, including hop refuse, apply and apply --dry-run print
 an Authority section. The text is `describe_authority_section` over
 `authority_report`, the same section plan, drift, and convey authority
 print. Counts are would-allow, would-deny, and not-enforced. One line
-per row. A missing mesh stays not-enforced and does not invent a lease.
-The section has no enforced status and does not claim a worker called
-the conveyor. A hop-coverage mismatch prints that section, then fails
+per row. A missing conveyor-mesh.json stays not-enforced, cites that
+the file is absent, and does not invent a lease. A present mesh with
+no lease for a declared capability stays not-enforced and says no hop
+lease names it. The section has no enforced status and does not claim
+a worker called the conveyor. A hop-coverage mismatch prints that
+section, then fails
 before any estate, mesh, lease, or apply-audit write. A hard agent-call,
 memory, model-class, or declared cite still fails before the section
 and before writes. Dry-run writes nothing. A present mesh that does not

@@ -163,6 +163,14 @@ fn status_prints_the_same_not_enforced_section_as_the_other_surfaces() {
         section.contains("research notes-append cell-one-box: not-enforced --"),
         "{section}"
     );
+    assert!(
+        section.contains("conveyor-mesh.json is absent"),
+        "{section}"
+    );
+    assert!(
+        !section.contains("no hop lease names this capability"),
+        "{section}"
+    );
     assert!(no_enforced_status_token(&section), "{section}");
     let before = snapshot(&state);
     let estate_bytes = std::fs::read(&estate_path).unwrap();
@@ -278,6 +286,18 @@ fn status_prints_would_deny_without_a_new_fail_and_writes_nothing() {
     let section = conveyor_proxy::describe_authority_section(&rows, &state);
     assert!(
         section.contains("research lane-tool cell-one-box: would-deny --"),
+        "{section}"
+    );
+    assert!(
+        section.contains("research notes-append cell-one-box: not-enforced --"),
+        "{section}"
+    );
+    assert!(
+        section.contains("no hop lease names this capability"),
+        "{section}"
+    );
+    assert!(
+        !section.contains("conveyor-mesh.json is absent"),
         "{section}"
     );
     let before = snapshot(&state);

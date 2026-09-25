@@ -1481,7 +1481,11 @@ mod doctor_authority_section_tests {
             "{section}"
         );
         assert!(
-            section.contains("no hop lease names this capability"),
+            section.contains("conveyor-mesh.json is absent"),
+            "{section}"
+        );
+        assert!(
+            !section.contains("no hop lease names this capability"),
             "{section}"
         );
         assert!(
@@ -1750,7 +1754,11 @@ mod status_authority_section_tests {
             "{section}"
         );
         assert!(
-            section.contains("no hop lease names this capability"),
+            section.contains("conveyor-mesh.json is absent"),
+            "{section}"
+        );
+        assert!(
+            !section.contains("no hop lease names this capability"),
             "{section}"
         );
         assert!(

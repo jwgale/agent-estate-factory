@@ -37,7 +37,8 @@ pub(crate) enum Command {
     /// mesh file that does not parse fails with the mesh error and is not
     /// rewritten. A missing mesh is not a failure. After the cites, an
     /// Authority section prints the same file check as `estate convey authority`
-    /// (`would-allow`, `would-deny`, `not-enforced`). It does not claim mediation.
+    /// (`would-allow`, `would-deny`, `not-enforced`). A missing
+    /// conveyor-mesh.json cites that the file is absent. It does not claim mediation.
     /// Examples: `estate help plan`
     Plan {
         #[command(subcommand)]
@@ -66,7 +67,8 @@ pub(crate) enum Command {
     /// mesh is not a failure. After the cites, an Authority section prints
     /// the same file check as `estate plan`, `estate drift`, and
     /// `estate convey authority` (`would-allow`, `would-deny`,
-    /// `not-enforced`), including on `--dry-run`. It does not claim
+    /// `not-enforced`), including on `--dry-run`. A missing
+    /// conveyor-mesh.json cites that the file is absent. It does not claim
     /// mediation. `--dry-run` writes nothing.
     /// Examples: `estate help apply`
     Apply {
@@ -110,7 +112,8 @@ pub(crate) enum Command {
     /// mesh error and is not rewritten. A missing mesh is not a failure.
     /// After the cites, an Authority section prints the same file check as
     /// `estate plan` and `estate convey authority` (`would-allow`,
-    /// `would-deny`, `not-enforced`). It does not claim mediation.
+    /// `would-deny`, `not-enforced`). A missing conveyor-mesh.json cites
+    /// that the file is absent. It does not claim mediation.
     Drift {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -148,8 +151,9 @@ pub(crate) enum Command {
     /// section prints the same file check as `estate plan`, `estate drift`,
     /// `estate apply`, `estate doctor`, and `estate convey authority`
     /// (`would-allow`, `would-deny`, `not-enforced`). It does not claim
-    /// mediation. A missing mesh stays not-enforced. A mesh that does not
-    /// parse does not invent Authority rows. Does not write.
+    /// mediation. A missing mesh stays not-enforced and cites that
+    /// conveyor-mesh.json is absent. A mesh that does not parse does
+    /// not invent Authority rows. Does not write.
     /// Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]
@@ -269,7 +273,8 @@ pub(crate) enum Command {
     /// After the hop cites, an Authority section prints the same file check
     /// as `estate plan`, `estate drift`, `estate apply`, and
     /// `estate convey authority` (`would-allow`, `would-deny`,
-    /// `not-enforced`). It does not claim mediation. A hop-coverage
+    /// `not-enforced`). It does not claim mediation. A missing
+    /// conveyor-mesh.json cites that the file is absent. A hop-coverage
     /// mismatch still fails this command after that section. A mesh that
     /// does not parse is FAIL and does not invent Authority rows.
     Doctor {
@@ -435,6 +440,8 @@ pub(crate) enum ConveyCommand {
         estate: PathBuf,
     },
     /// File check of hop leases against the estate. Does not write. Does not claim mediation.
+    /// A missing conveyor-mesh.json stays not-enforced and cites that the file is absent.
+    /// A present mesh with no lease for a declared capability says no hop lease names it.
     Authority {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

@@ -64,6 +64,11 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
         "{text}"
     );
     assert!(!text.contains("would-deny=0 not-enforced=0"), "{text}");
+    assert!(text.contains("conveyor-mesh.json is absent"), "{text}");
+    assert!(
+        !text.contains("no hop lease names this capability"),
+        "{text}"
+    );
     let hop_at = text.find("hop:\n").expect("hop describe");
     let auth_at = text.find("Authority\n---------\n").unwrap();
     let health_at = text.find("\nHealth\n").expect("health");
