@@ -1207,33 +1207,78 @@ pub fn describe_authority_section(rows: &[AuthorityRow], state_dir: &Path) -> St
     lines.join("\n")
 }
 
+const DECLARED_NO_LEASE_REASON: &str =
+    "declared on the estate; no hop lease names this capability. Not mediated.";
+const CLOUD_PLACEMENT_REASON: &str = "cloud placement is declared, not spawned. Not mediated.";
+
+/// A missing mesh file is not an empty lease list that was read.
+fn mesh_file_absent_cite() -> String {
+    format!("{MESH_FILE} is absent")
+}
+
+fn declared_capability_reason(mesh_absent: bool) -> String {
+    if mesh_absent {
+        format!(
+            "declared on the estate; {}. Not mediated.",
+            mesh_file_absent_cite()
+        )
+    } else {
+        DECLARED_NO_LEASE_REASON.to_string()
+    }
+}
+
+fn cloud_placement_reason(mesh_absent: bool) -> String {
+    if mesh_absent {
+        format!(
+            "cloud placement is declared, not spawned. {}. Not mediated.",
+            mesh_file_absent_cite()
+        )
+    } else {
+        CLOUD_PLACEMENT_REASON.to_string()
+    }
+}
+
 /// Read-only. Does not write the mesh or the estate. Identity is not resolved.
+///
+/// `load_mesh` returns a default mesh when `conveyor-mesh.json` is missing.
+/// That default is not a hop lease. Rows that exist only because the estate
+/// declares a placement stay `not-enforced` and cite that the mesh file is
+/// absent. A present mesh whose leases are empty, or that simply omits a
+/// declared capability, keeps the no-lease reason. This report does not
+/// invent a lease, a hop, or a population, and it has no enforced status.
 pub fn authority_report(
     state_dir: &Path,
     estate: &estate_schema::Estate,
 ) -> Result<Vec<AuthorityRow>, MeshError> {
     let mesh = load_interpreted_mesh(state_dir)?;
+    // Check after the read. A missing file took the default path and wrote
+    // nothing. A present file that does not parse already returned Err.
+    let mesh_absent = !mesh_path(state_dir).exists();
     let mut rows = Vec::new();
-    for lease in &mesh.leases {
-        if lease.agents.is_empty() {
-            rows.push(AuthorityRow {
-                agent: "(none)".into(),
-                hop_id: lease.hop_id.clone(),
-                capability: lease.capability.clone(),
-                status: "not-enforced".into(),
-                reason: "empty population is not a grant. This file check is not mediation.".into(),
-            });
-            continue;
-        }
-        for agent in &lease.agents {
-            let (status, reason) = lease_authority_status(estate, lease, agent);
-            rows.push(AuthorityRow {
-                agent: agent.clone(),
-                hop_id: lease.hop_id.clone(),
-                capability: lease.capability.clone(),
-                status,
-                reason,
-            });
+    // Do not walk the default mesh. It is not a lease list on disk.
+    if !mesh_absent {
+        for lease in &mesh.leases {
+            if lease.agents.is_empty() {
+                rows.push(AuthorityRow {
+                    agent: "(none)".into(),
+                    hop_id: lease.hop_id.clone(),
+                    capability: lease.capability.clone(),
+                    status: "not-enforced".into(),
+                    reason: "empty population is not a grant. This file check is not mediation."
+                        .into(),
+                });
+                continue;
+            }
+            for agent in &lease.agents {
+                let (status, reason) = lease_authority_status(estate, lease, agent);
+                rows.push(AuthorityRow {
+                    agent: agent.clone(),
+                    hop_id: lease.hop_id.clone(),
+                    capability: lease.capability.clone(),
+                    status,
+                    reason,
+                });
+            }
         }
     }
     for place in &estate.placements {
@@ -1247,7 +1292,7 @@ pub fn authority_report(
                 hop_id: place.id.clone(),
                 capability: "mesh-stub".into(),
                 status: "not-enforced".into(),
-                reason: "cloud placement is declared, not spawned. Not mediated.".into(),
+                reason: cloud_placement_reason(mesh_absent),
             });
             continue;
         }
@@ -1272,9 +1317,7 @@ pub fn authority_report(
                     hop_id: place.id.clone(),
                     capability: cap,
                     status: "not-enforced".into(),
-                    reason:
-                        "declared on the estate; no hop lease names this capability. Not mediated."
-                            .into(),
+                    reason: declared_capability_reason(mesh_absent),
                 });
             }
         }
@@ -2808,10 +2851,18 @@ mod tests {
     fn describe_authority_section_counts_rows_and_never_prints_enforced() {
         let dir = tmp();
         let estate = example_estate();
+        let absent = mesh_file_absent_cite();
         let rows = authority_report(&dir, &estate).unwrap();
-        assert!(rows.iter().all(|row| row.status == "not-enforced"));
+        assert!(rows
+            .iter()
+            .all(|row| { row.status == "not-enforced" && row.reason.contains(absent.as_str()) }));
         assert!(!rows.is_empty());
         let text = describe_authority_section(&rows, &dir);
+        assert!(text.contains(absent.as_str()), "{text}");
+        assert!(
+            !text.contains("no hop lease names this capability"),
+            "{text}"
+        );
         assert!(text.starts_with("Authority\n---------\n"));
         assert!(text.contains(&format!(
             "authority would-allow=0 would-deny=0 not-enforced={}",
@@ -2855,6 +2906,132 @@ mod tests {
         assert!(relabeled.contains("research lane-tool cell-one-box: not-enforced --"));
         assert!(!relabeled.contains("would-allow=1"));
         assert!(no_enforced_status_token(&relabeled), "{relabeled}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn dir_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+        let mut rows = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                rows.push((
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    std::fs::read(&path).unwrap(),
+                ));
+            }
+        }
+        rows.sort();
+        rows
+    }
+
+    #[test]
+    fn authority_cites_a_missing_mesh_and_keeps_a_present_no_lease_distinct() {
+        let dir = tmp();
+        let estate = example_estate();
+        let absent = mesh_file_absent_cite();
+        assert!(absent.contains(MESH_FILE));
+        assert!(!dir.join(MESH_FILE).exists());
+        let before = dir_files(&dir);
+        let missing = authority_report(&dir, &estate).unwrap();
+        assert_eq!(dir_files(&dir), before);
+        assert!(!dir.join(MESH_FILE).exists());
+        assert!(load_mesh(&dir).unwrap().leases.is_empty());
+        assert!(load_mesh(&dir).unwrap().hops.is_empty());
+        assert!(!missing.is_empty());
+        let placement_ids: Vec<&str> = estate.placements.iter().map(|p| p.id.as_str()).collect();
+        assert!(missing.iter().all(|row| {
+            row.status == "not-enforced"
+                && row.reason.contains(absent.as_str())
+                && row.reason.contains("Not mediated.")
+                && !row.reason.contains("no hop lease names this capability")
+                && placement_ids.contains(&row.hop_id.as_str())
+        }));
+        let notes = row(&missing, "research", "cell-one-box", "notes-append");
+        assert_eq!(notes.status, "not-enforced");
+        assert_eq!(notes.reason, declared_capability_reason(true));
+        let cloud = missing
+            .iter()
+            .find(|row| row.hop_id == "cursor-cloud" && row.capability == "mesh-stub")
+            .expect("cloud placement row");
+        assert_eq!(cloud.status, "not-enforced");
+        assert_eq!(cloud.reason, cloud_placement_reason(true));
+        assert!(cloud.reason.contains("not spawned"));
+        let text = describe_authority_section(&missing, &dir);
+        assert!(text.contains(&format!(
+            "authority would-allow=0 would-deny=0 not-enforced={}",
+            missing.len()
+        )));
+        assert!(text.contains(
+            "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
+        ));
+        assert!(no_enforced_status_token(&text), "{text}");
+        assert_eq!(dir_files(&dir), before);
+
+        persist_mesh(&dir, &ConveyorMesh::default()).unwrap();
+        assert!(dir.join(MESH_FILE).is_file());
+        let mesh_bytes = std::fs::read(dir.join(MESH_FILE)).unwrap();
+        let present = authority_report(&dir, &estate).unwrap();
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), mesh_bytes);
+        let present_notes = row(&present, "research", "cell-one-box", "notes-append");
+        assert_eq!(present_notes.status, "not-enforced");
+        assert_eq!(present_notes.reason, DECLARED_NO_LEASE_REASON);
+        assert!(!present_notes.reason.contains(absent.as_str()));
+        assert_ne!(notes.reason, present_notes.reason);
+        let present_cloud = present
+            .iter()
+            .find(|row| row.hop_id == "cursor-cloud" && row.capability == "mesh-stub")
+            .expect("cloud placement row");
+        assert_eq!(present_cloud.reason, CLOUD_PLACEMENT_REASON);
+        assert!(!present_cloud.reason.contains(absent.as_str()));
+        let present_text = describe_authority_section(&present, &dir);
+        assert!(present_text.contains("would-allow=0 would-deny=0 not-enforced="));
+        assert!(no_enforced_status_token(&present_text), "{present_text}");
+        assert!(!present_text.contains(absent.as_str()), "{present_text}");
+
+        let omitting = ConveyorMesh {
+            schema: MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![HopLease {
+                hop_id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                granted: true,
+                spawned: true,
+                durable: true,
+                driver: "box".into(),
+                note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
+                agents: vec!["research".into()],
+            }],
+        };
+        persist_mesh(&dir, &omitting).unwrap();
+        let leased_bytes = std::fs::read(dir.join(MESH_FILE)).unwrap();
+        let omitted = authority_report(&dir, &estate).unwrap();
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), leased_bytes);
+        let still_open = row(&omitted, "research", "cell-one-box", "notes-append");
+        assert_eq!(still_open.status, "not-enforced");
+        assert_eq!(still_open.reason, DECLARED_NO_LEASE_REASON);
+        assert!(!still_open.reason.contains(absent.as_str()));
+        let leased = row(&omitted, "research", "cell-one-box", "lane-tool");
+        assert_ne!(leased.status, "not-enforced");
+        assert!(!leased.reason.contains(absent.as_str()));
+        assert!(!leased.reason.contains("no hop lease names this capability"));
+        let omitted_text = describe_authority_section(&omitted, &dir);
+        assert!(no_enforced_status_token(&omitted_text), "{omitted_text}");
+
+        std::fs::write(dir.join(MESH_FILE), "not-json").unwrap();
+        let corrupt = std::fs::read(dir.join(MESH_FILE)).unwrap();
+        let err = authority_report(&dir, &estate).unwrap_err();
+        let err_text = err.to_string();
+        assert!(err_text.contains("parse:"), "{err_text}");
+        assert!(err_text.contains(MESH_FILE), "{err_text}");
+        assert!(!err_text.contains("Authority"), "{err_text}");
+        assert!(!err_text.contains("not-enforced"), "{err_text}");
+        assert!(no_enforced_status_token(&err_text), "{err_text}");
+        assert_eq!(std::fs::read(dir.join(MESH_FILE)).unwrap(), corrupt);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
