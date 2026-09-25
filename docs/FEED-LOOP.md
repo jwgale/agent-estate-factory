@@ -45,6 +45,13 @@ part of `make smoke` (that gate is already long). Hosted CI never runs it.
 `feed pack`) keeps the cursor on disk and does not auto-promote. `estate
 feed cursor` pretty-prints the JSON.
 
+Convey allow and deny lines use that same file. `estate convey call` and a
+coverage or intention refuse on `estate convey hop` append `proxy.hop` to
+`.cell/feed/events.jsonl` and restamp `.cell/feed/feed-cursor.json`.
+`conveyor-proxy check --feed-dir .cell/feed` appends `proxy.{kind}` the same
+way. `estate feed cursor --feed-dir .cell/feed` shows the watermark. Nothing
+in that path promotes a pack.
+
 ## Rails
 
 Jason still pastes pack ids onto `estate.enrich_packs` by hand. Feed never

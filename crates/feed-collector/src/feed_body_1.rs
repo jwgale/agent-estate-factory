@@ -129,6 +129,17 @@ pub fn append_import_audit(accepted_dir: &Path, audit: &ImportAudit) -> Result<P
     Ok(path)
 }
 
+/// Proxy allow/deny lines already stored in `events.jsonl`.
+/// A missing file is an empty list. A line that does not parse refuses.
+/// This does not materialize a pack and does not promote.
+pub fn proxy_audit_events(dir: &Path) -> Result<Vec<ScrubbedEvent>, FeedError> {
+    let events = read_events(dir)?;
+    Ok(events
+        .into_iter()
+        .filter(|ev| ev.kind.starts_with("proxy.") && ev.decision.is_some())
+        .collect())
+}
+
 pub fn read_events(dir: &Path) -> Result<Vec<ScrubbedEvent>, FeedError> {
     let path = dir.join("events.jsonl");
     if !path.exists() {

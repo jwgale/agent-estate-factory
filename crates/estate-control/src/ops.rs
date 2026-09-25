@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    authority_report, call_hop, declare_hop_covering, forget_expired_hop_leases, hop_now_unix,
-    list_expired_hop_leases, list_hop_leases, list_hops, load_mesh, sync_from_placements,
-    sync_from_placements_covering, HopDecl,
+    append_proxy_audit, authority_report, call_hop, declare_hop_covering,
+    forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases, list_hop_leases, list_hops,
+    load_mesh, sync_from_placements, sync_from_placements_covering, HopDecl,
 };
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
@@ -361,8 +361,30 @@ pub(crate) fn cmd_history(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn record_proxy_gate(
+    state_dir: &Path,
+    hop_id: &str,
+    agent: Option<&str>,
+    capability: &str,
+    word: &str,
+    line: &str,
+) -> Result<()> {
+    let note = format!("hop={hop_id} capability={capability} {line}");
+    append_proxy_audit(
+        &state_dir.join("feed"),
+        "proxy.hop",
+        agent,
+        word,
+        "proxy",
+        Some(&note),
+    )
+    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    Ok(())
+}
+
 fn refuse_named_intentions(
     estate_path: &Path,
+    state_dir: &Path,
     hop_id: &str,
     capability: &str,
     agents: &[String],
@@ -378,6 +400,14 @@ fn refuse_named_intentions(
         if let Err(gate) =
             convey_intention_coverage(&estate, hop_id, agent, capability, kind, on_hop)
         {
+            record_proxy_gate(
+                state_dir,
+                hop_id,
+                Some(agent.as_str()),
+                capability,
+                gate.word,
+                &gate.line,
+            )?;
             bail!("refuse:intention: {} ({})", gate.line, gate.word);
         }
     }
@@ -386,6 +416,7 @@ fn refuse_named_intentions(
 
 fn refuse_convey_coverage(
     estate_path: &Path,
+    state_dir: &Path,
     hop_id: &str,
     agent: Option<&str>,
     capability: &str,
@@ -401,6 +432,14 @@ fn refuse_convey_coverage(
         } else {
             "missing"
         };
+        record_proxy_gate(
+            state_dir,
+            hop_id,
+            agent,
+            capability,
+            "deny",
+            &format!("estate {why}"),
+        )?;
         bail!(
             "refuse:hop-coverage: estate {why}: {} (coverage is mandatory; not a grant)",
             estate_path.display()
@@ -410,7 +449,14 @@ fn refuse_convey_coverage(
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     match convey_hop_declared_capability(&estate, hop_id, agent, capability) {
         Ok(_) => Ok(()),
-        Err(gate) => bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word),
+        Err(gate) => {
+            // `mismatch` is the refuse word. The feed decision stays
+            // allow | deny | deny-default, same as hop audit.
+            let decision = estate_schema::coverage_word_for_reason(false, &gate.line);
+            let noted = format!("{} ({})", gate.line, gate.word);
+            record_proxy_gate(state_dir, hop_id, agent, capability, decision, &noted)?;
+            bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word)
+        }
     }
 }
 
@@ -435,12 +481,20 @@ pub(crate) fn cmd_convey_hop(
     if parsed_kind.is_some() && agents.is_empty() {
         bail!("refuse:agent-unbound: --intention-kind requires --agent");
     }
-    refuse_named_intentions(estate_path, id, capability, agents, parsed_kind, true)?;
+    refuse_named_intentions(
+        estate_path,
+        state_dir,
+        id,
+        capability,
+        agents,
+        parsed_kind,
+        true,
+    )?;
     if agents.is_empty() {
-        refuse_convey_coverage(estate_path, id, None, capability)?;
+        refuse_convey_coverage(estate_path, state_dir, id, None, capability)?;
     } else {
         for agent in agents {
-            refuse_convey_coverage(estate_path, id, Some(agent.as_str()), capability)?;
+            refuse_convey_coverage(estate_path, state_dir, id, Some(agent.as_str()), capability)?;
         }
     }
     let estate =
@@ -480,6 +534,7 @@ pub(crate) fn cmd_convey_call(
     if let Some(agent) = agent {
         refuse_named_intentions(
             estate_path,
+            state_dir,
             id,
             capability,
             &[agent.to_string()],
@@ -487,7 +542,7 @@ pub(crate) fn cmd_convey_call(
             false,
         )?;
     }
-    refuse_convey_coverage(estate_path, id, agent, capability)?;
+    refuse_convey_coverage(estate_path, state_dir, id, agent, capability)?;
     let call = if let Some(agent) = agent {
         let estate = estate_schema::load_estate(estate_path)
             .with_context(|| format!("load {}", estate_path.display()))?;
@@ -532,8 +587,8 @@ pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()
     // refuses a placement hop whose stamped capability disagrees with
     // placement-derived coverage and writes nothing. Deny stays deny.
     let mesh = if estate_path.is_file() {
-        let estate = load_estate(estate_path)
-            .with_context(|| format!("load {}", estate_path.display()))?;
+        let estate =
+            load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
         sync_from_placements_covering(state_dir, Some(&estate))?
     } else {
         sync_from_placements(state_dir)?
@@ -848,12 +903,21 @@ mod convey_coverage_tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
+    fn state_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("cell-convey-audit-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn missing_estate_refuses_convey_coverage() {
         let path =
             std::env::temp_dir().join(format!("cell-missing-estate-{}.yaml", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let err = refuse_convey_coverage(&path, "ttl-box", None, "lane-tool").unwrap_err();
+        let state = state_dir("missing");
+        let err = refuse_convey_coverage(&path, &state, "ttl-box", None, "lane-tool").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
         assert!(msg.contains("estate missing"), "{msg}");
@@ -866,7 +930,8 @@ mod convey_coverage_tests {
         let path = std::env::temp_dir().join(format!("cell-estate-dir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
-        let err = refuse_convey_coverage(&path, "ttl-box", None, "lane-tool").unwrap_err();
+        let state = state_dir("non-file");
+        let err = refuse_convey_coverage(&path, &state, "ttl-box", None, "lane-tool").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
         assert!(msg.contains("estate not a file"), "{msg}");
@@ -877,23 +942,43 @@ mod convey_coverage_tests {
     #[test]
     fn loaded_non_placement_stays_lease_stub() {
         let estate = repo_root().join("examples/estate.yaml");
-        refuse_convey_coverage(&estate, "ttl-box", None, "not-a-placement-capability").unwrap();
+        let state = state_dir("stub");
+        refuse_convey_coverage(
+            &estate,
+            &state,
+            "ttl-box",
+            None,
+            "not-a-placement-capability",
+        )
+        .unwrap();
+        assert!(!state.join("feed/events.jsonl").exists());
     }
 
     #[test]
     fn loaded_example_box_still_deny_default() {
         let estate = repo_root().join("examples/estate.yaml");
-        let msg = refuse_convey_coverage(&estate, "cell-one-box", None, "not-lane-tool")
+        let state = state_dir("box-deny");
+        let msg = refuse_convey_coverage(&estate, &state, "cell-one-box", None, "not-lane-tool")
             .unwrap_err()
             .to_string();
         assert!(msg.contains("refuse:hop-coverage"), "{msg}");
         assert!(msg.contains("(deny-default)"), "{msg}");
+        let lines = feed_collector::proxy_audit_events(&state.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny-default"));
+        assert_eq!(lines[0].kind, "proxy.hop");
+        let cursor = feed_collector::load_cursor(&state.join("feed"))
+            .unwrap()
+            .expect("cursor");
+        assert_eq!(cursor.events, 1);
+        assert!(cursor.packed_id.is_none());
     }
 
     #[test]
     fn loaded_example_cloud_still_deny() {
         let estate = repo_root().join("examples/estate.yaml");
-        let msg = refuse_convey_coverage(&estate, "cursor-cloud", None, "lane-tool")
+        let state = state_dir("cloud-deny");
+        let msg = refuse_convey_coverage(&estate, &state, "cursor-cloud", None, "lane-tool")
             .unwrap_err()
             .to_string();
         assert!(
@@ -901,6 +986,63 @@ mod convey_coverage_tests {
             "{msg}"
         );
         assert!(!msg.contains("deny-default"), "{msg}");
+        let lines = feed_collector::proxy_audit_events(&state.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny"));
+        assert_eq!(lines[0].kind, "proxy.hop");
+    }
+
+    #[test]
+    fn capability_mismatch_audits_deny_and_keeps_mismatch_in_the_message() {
+        let mut estate =
+            estate_schema::load_estate(&repo_root().join("examples/estate.yaml")).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let yaml = estate_schema::render_estate_yaml(&estate).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "cell-mismatch-estate-{}.yaml",
+            std::process::id()
+        ));
+        std::fs::write(&path, yaml).unwrap();
+        let state = state_dir("mismatch");
+        refuse_convey_coverage(&path, &state, "cell-one-box", Some("research"), "lane-tool")
+            .unwrap();
+        assert!(!state.join("feed/events.jsonl").exists());
+        let msg = refuse_convey_coverage(
+            &path,
+            &state,
+            "cell-one-box",
+            Some("research"),
+            "notes-append",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("refuse:hop-coverage"), "{msg}");
+        assert!(msg.contains("(mismatch)"), "{msg}");
+        assert!(msg.contains("does not match"), "{msg}");
+        let lines = feed_collector::proxy_audit_events(&state.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny"));
+        assert_eq!(lines[0].kind, "proxy.hop");
+        let note = lines[0].note.as_deref().unwrap_or("");
+        assert!(note.contains("does not match"), "{note}");
+        assert!(note.contains("(mismatch)"), "{note}");
+        let _ = std::fs::remove_file(&path);
     }
 }
 
@@ -965,12 +1107,16 @@ mod drift_hop_coverage_tests {
         let estate = load_estate(&estate_path).unwrap();
         apply_with_profile_dir(&estate, &state, &roots).unwrap();
         model_estate::record_bindings(&estate, &state).unwrap();
-        assert!(drift_with_roots(&estate, &state, Some(&roots))
-            .unwrap()
-            .in_sync);
-        assert!(model_estate::drift_bindings(&estate, &state)
-            .unwrap()
-            .in_sync);
+        assert!(
+            drift_with_roots(&estate, &state, Some(&roots))
+                .unwrap()
+                .in_sync
+        );
+        assert!(
+            model_estate::drift_bindings(&estate, &state)
+                .unwrap()
+                .in_sync
+        );
         (estate_path, state)
     }
 
@@ -995,14 +1141,20 @@ mod drift_hop_coverage_tests {
     }
 
     fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
-        ["placement-actual.json", "model-actual.json", MESH_FILE, "conveyor-hops.json", "conveyor-leases.json"]
-            .into_iter()
-            .filter_map(|name| {
-                let path = state.join(name);
-                path.is_file()
-                    .then(|| (name.to_string(), fs::read(&path).unwrap()))
-            })
-            .collect()
+        [
+            "placement-actual.json",
+            "model-actual.json",
+            MESH_FILE,
+            "conveyor-hops.json",
+            "conveyor-leases.json",
+        ]
+        .into_iter()
+        .filter_map(|name| {
+            let path = state.join(name);
+            path.is_file()
+                .then(|| (name.to_string(), fs::read(&path).unwrap()))
+        })
+        .collect()
     }
 
     #[test]
@@ -1031,7 +1183,9 @@ mod drift_hop_coverage_tests {
         );
         let before = snapshot(&state);
         let estate_bytes = fs::read(&estate_path).unwrap();
-        let err = cmd_drift(&estate_path, &state, &roots).unwrap_err().to_string();
+        let err = cmd_drift(&estate_path, &state, &roots)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
             "{err}"
@@ -1078,12 +1232,16 @@ mod drift_hop_coverage_tests {
         let before = snapshot(&state);
         cmd_drift(&estate_path, &state, &roots).unwrap();
         assert_eq!(snapshot(&state), before);
-        assert!(drift_with_roots(&estate, &state, Some(&roots))
-            .unwrap()
-            .in_sync);
-        assert!(model_estate::drift_bindings(&estate, &state)
-            .unwrap()
-            .in_sync);
+        assert!(
+            drift_with_roots(&estate, &state, Some(&roots))
+                .unwrap()
+                .in_sync
+        );
+        assert!(
+            model_estate::drift_bindings(&estate, &state)
+                .unwrap()
+                .in_sync
+        );
 
         let mut denied = estate.clone();
         denied
@@ -1174,11 +1332,18 @@ mod drift_hop_coverage_tests {
         persist_mesh(&state, &mesh).unwrap();
         let cites = hop_coverage_cites(&estate, &mesh);
         assert!(
-            cites.iter().any(|cite| cite.fail && cite.line.contains("(mismatch)")),
+            cites
+                .iter()
+                .any(|cite| cite.fail && cite.line.contains("(mismatch)")),
             "{cites:?}"
         );
-        let err = cmd_drift(&estate_path, &state, &roots).unwrap_err().to_string();
-        assert!(err.contains("refuse:hop-coverage") && err.contains("(mismatch)"), "{err}");
+        let err = cmd_drift(&estate_path, &state, &roots)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1206,21 +1371,22 @@ mod drift_hop_coverage_tests {
         let err = cmd_drift(&estate_path, &state, &roots)
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains("parse") && err.contains(MESH_FILE),
-            "{err}"
-        );
+        assert!(err.contains("parse") && err.contains(MESH_FILE), "{err}");
         assert!(!err.contains("drift detected"), "{err}");
         assert_eq!(snapshot(&state), before);
         assert_eq!(fs::read(&mesh_path).unwrap(), corrupt);
         assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
         let estate = load_estate(&estate_path).unwrap();
-        assert!(drift_with_roots(&estate, &state, Some(&roots))
-            .unwrap()
-            .in_sync);
-        assert!(model_estate::drift_bindings(&estate, &state)
-            .unwrap()
-            .in_sync);
+        assert!(
+            drift_with_roots(&estate, &state, Some(&roots))
+                .unwrap()
+                .in_sync
+        );
+        assert!(
+            model_estate::drift_bindings(&estate, &state)
+                .unwrap()
+                .in_sync
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

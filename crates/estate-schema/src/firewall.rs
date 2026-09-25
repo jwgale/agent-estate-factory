@@ -222,16 +222,21 @@ fn join_coverage(rows: &[CoverageRow], empty: &str) -> String {
     }
 }
 
-fn coverage_word(decision: &Decision) -> &'static str {
-    match decision {
-        Decision::Allow { .. } => "allow",
-        Decision::Deny(d) if d.reason.contains("explicit deny") => "deny",
-        Decision::Deny(d)
-            if d.reason.contains("deny-default") || d.reason.contains("no intention") =>
-        {
-            "deny-default"
-        }
-        Decision::Deny(_) => "deny",
+pub fn coverage_word(decision: &Decision) -> &'static str {
+    coverage_word_for_reason(decision.is_allow(), decision.reason())
+}
+
+/// Same words as [`coverage_word`]. Explicit deny stays `deny`. A reason that
+/// says `deny-default` or `no intention` is `deny-default`.
+pub fn coverage_word_for_reason(allow: bool, reason: &str) -> &'static str {
+    if allow {
+        "allow"
+    } else if reason.contains("explicit deny") {
+        "deny"
+    } else if reason.contains("deny-default") || reason.contains("no intention") {
+        "deny-default"
+    } else {
+        "deny"
     }
 }
 

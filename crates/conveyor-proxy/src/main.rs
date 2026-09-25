@@ -112,7 +112,7 @@ fn main() -> Result<()> {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
             let kind = parse_kind(&kind).map_err(anyhow::Error::msg)?;
-            let decision = check(&loaded, &agent, kind, &object, feed_dir.as_deref());
+            let decision = check(&loaded, &agent, kind, &object, feed_dir.as_deref())?;
             let resp = response_from(&decision);
             println!("{}", serde_json::to_string_pretty(&resp)?);
             if !decision.is_allow() {
@@ -220,9 +220,15 @@ fn main() -> Result<()> {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
             let rows = authority_report(&state_dir, &loaded)?;
-            let allow = rows.iter().filter(|row| row.status == "would-allow").count();
+            let allow = rows
+                .iter()
+                .filter(|row| row.status == "would-allow")
+                .count();
             let deny = rows.iter().filter(|row| row.status == "would-deny").count();
-            let pending = rows.iter().filter(|row| row.status == "not-enforced").count();
+            let pending = rows
+                .iter()
+                .filter(|row| row.status == "not-enforced")
+                .count();
             println!("authority would-allow={allow} would-deny={deny} not-enforced={pending}");
             println!(
                 "uncertain: a hop lease is a file. This report does not show that a worker called the conveyor."
@@ -265,7 +271,15 @@ fn handle(
             );
         }
     };
-    let decision = check(estate, &req.agent_id, kind, &req.object, feed);
+    let decision = match check(estate, &req.agent_id, kind, &req.object, feed) {
+        Ok(decision) => decision,
+        Err(err) => {
+            return (
+                false,
+                serde_json::json!({"decision":"deny","reason":err.to_string()}).to_string(),
+            );
+        }
+    };
     let resp = response_from(&decision);
     match serde_json::to_string_pretty(&resp) {
         Ok(s) if !s.trim().is_empty() => (decision.is_allow(), s),

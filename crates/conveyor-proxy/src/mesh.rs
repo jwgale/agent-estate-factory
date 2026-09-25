@@ -69,6 +69,9 @@ pub enum MeshError {
     /// the placement-derived capability. Deny and deny-default are not this error.
     #[error("refuse:hop-coverage: {line} (mismatch)")]
     HopCoverage { line: String },
+    /// Allow or deny was decided, then the feed line did not land.
+    #[error("refuse:proxy-audit: {0}")]
+    ProxyAudit(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -663,7 +666,13 @@ fn placement_cloud_spawned(state_dir: &Path, hop_id: &str) -> Result<bool, MeshE
 }
 
 pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopCall, MeshError> {
-    call_hop_inner(state_dir, hop_id, capability, None)
+    audit_hop_result(
+        state_dir,
+        hop_id,
+        capability,
+        None,
+        call_hop_inner(state_dir, hop_id, capability, None),
+    )
 }
 
 /// Lease-bound call for one agent on the hop population.
@@ -680,8 +689,19 @@ pub fn call_hop_for_agent(
     if estate_schema::is_sacred_name(agent_id) || estate.is_sacred(agent_id) {
         return Err(MeshError::SacredId(agent_id.to_string()));
     }
-    let mut call = call_hop_inner(state_dir, hop_id, capability, Some(agent_id))?;
-    let resolved = resolve_intention_kind(estate, agent_id, capability, kind)?;
+    let inner = call_hop_inner(state_dir, hop_id, capability, Some(agent_id));
+    let mut call = match inner {
+        Ok(call) => call,
+        Err(err) => {
+            return audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Err(err));
+        }
+    };
+    let resolved = match resolve_intention_kind(estate, agent_id, capability, kind) {
+        Ok(kind) => kind,
+        Err(err) => {
+            return audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Err(err));
+        }
+    };
     let object =
         if resolved == estate_schema::IntentionKind::MemoryRead && !capability.contains(':') {
             format!("lane:{capability}")
@@ -697,14 +717,77 @@ pub fn call_hop_for_agent(
         },
     );
     if !decision.is_allow() {
-        return Err(MeshError::Intention {
-            agent: agent_id.to_string(),
-            capability: capability.to_string(),
-            reason: decision.reason().to_string(),
-        });
+        return audit_hop_result(
+            state_dir,
+            hop_id,
+            capability,
+            Some(agent_id),
+            Err(MeshError::Intention {
+                agent: agent_id.to_string(),
+                capability: capability.to_string(),
+                reason: decision.reason().to_string(),
+            }),
+        );
     }
     call.reason = format!("agent-bound {agent_id}; {}", decision.reason());
-    Ok(call)
+    audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Ok(call))
+}
+
+fn hop_err_is_decision(err: &MeshError) -> bool {
+    matches!(
+        err,
+        MeshError::Ungranted(_)
+            | MeshError::CloudNotSpawned(_)
+            | MeshError::NotLive(_)
+            | MeshError::Capability { .. }
+            | MeshError::Expired(_)
+            | MeshError::AgentUnbound { .. }
+            | MeshError::Intention { .. }
+            | MeshError::HopCoverage { .. }
+    )
+}
+
+/// One allow or deny line under `{state_dir}/feed`. A non-decision error
+/// (missing lease, parse, sacred id) is returned as it was. An append
+/// failure replaces the decision result so the line is not dropped.
+fn audit_hop_result(
+    state_dir: &Path,
+    hop_id: &str,
+    capability: &str,
+    agent_id: Option<&str>,
+    result: Result<HopCall, MeshError>,
+) -> Result<HopCall, MeshError> {
+    let record = match &result {
+        Ok(call) => Some((
+            "allow".to_string(),
+            call.reason.clone(),
+            agent_id.map(|s| s.to_string()),
+        )),
+        Err(err) if hop_err_is_decision(err) => {
+            let word = estate_schema::coverage_word_for_reason(false, &err.to_string());
+            let agent = match err {
+                MeshError::Intention { agent, .. } => Some(agent.clone()),
+                MeshError::AgentUnbound { agent, .. } if agent != "(unnamed)" => {
+                    Some(agent.clone())
+                }
+                _ => agent_id.map(|s| s.to_string()),
+            };
+            Some((word.to_string(), err.to_string(), agent))
+        }
+        Err(_) => None,
+    };
+    if let Some((decision, note, agent)) = record {
+        let note = format!("hop={hop_id} capability={capability} {note}");
+        crate::append_proxy_audit(
+            &state_dir.join("feed"),
+            "proxy.hop",
+            agent.as_deref(),
+            &decision,
+            "proxy",
+            Some(&note),
+        )?;
+    }
+    result
 }
 
 fn resolve_intention_kind(
@@ -1092,7 +1175,9 @@ pub fn authority_report(
                     hop_id: place.id.clone(),
                     capability: cap,
                     status: "not-enforced".into(),
-                    reason: "declared on the estate; no hop lease names this capability. Not mediated.".into(),
+                    reason:
+                        "declared on the estate; no hop lease names this capability. Not mediated."
+                            .into(),
                 });
             }
         }
@@ -2397,7 +2482,10 @@ mod tests {
                 .contains("not covered by an allow Tool intention"),
             "{uncovered}"
         );
-        assert!(uncovered.to_string().contains("deny-default"), "{uncovered}");
+        assert!(
+            uncovered.to_string().contains("deny-default"),
+            "{uncovered}"
+        );
         let mut granted = estate.clone();
         granted.intentions.push(estate_schema::Intention {
             subject_agent: "research".into(),
@@ -2406,9 +2494,15 @@ mod tests {
             effect: estate_schema::Effect::Allow,
             note: None,
         });
-        let allowed =
-            call_hop_for_agent(&dir, "notes-hop", "notes-append", "research", None, &granted)
-                .unwrap();
+        let allowed = call_hop_for_agent(
+            &dir,
+            "notes-hop",
+            "notes-append",
+            "research",
+            None,
+            &granted,
+        )
+        .unwrap();
         assert!(allowed.allow);
         assert!(
             allowed.reason.contains("agent-bound research"),
@@ -2547,11 +2641,16 @@ mod tests {
         std::fs::write(dir.join("placement-actual.json"), &placement).unwrap();
         let estate = example_estate();
         let mesh = sync_from_placements(&dir).unwrap();
-        assert!(mesh.leases.iter().any(|l| l.hop_id == "cell-one-box" && l.granted));
+        assert!(mesh
+            .leases
+            .iter()
+            .any(|l| l.hop_id == "cell-one-box" && l.granted));
         let rows = authority_report(&dir, &estate).unwrap();
         assert!(rows.iter().all(|row| row.status != "enforced"));
         assert!(rows.iter().any(|row| {
-            row.capability == "lane-tool" && row.status == "would-deny" && row.reason.contains("Not mediated")
+            row.capability == "lane-tool"
+                && row.status == "would-deny"
+                && row.reason.contains("Not mediated")
         }));
         assert!(rows.iter().any(|row| {
             row.agent == "research"
@@ -2577,7 +2676,9 @@ mod tests {
         let rows = authority_report(&dir, &estate).unwrap();
         assert!(rows.iter().all(|row| row.status != "enforced"));
         assert!(rows.iter().any(|row| {
-            row.agent == "research" && row.capability == "notes-append" && row.status == "would-deny"
+            row.agent == "research"
+                && row.capability == "notes-append"
+                && row.status == "would-deny"
         }));
         let mut granted = estate.clone();
         granted.intentions.push(estate_schema::Intention {
@@ -2589,7 +2690,9 @@ mod tests {
         });
         let rows = authority_report(&dir, &granted).unwrap();
         assert!(rows.iter().any(|row| {
-            row.agent == "research" && row.capability == "notes-append" && row.status == "would-allow"
+            row.agent == "research"
+                && row.capability == "notes-append"
+                && row.status == "would-allow"
         }));
         assert!(rows.iter().any(|row| {
             row.agent == "horizon" && row.capability == "notes-append" && row.status == "would-deny"
@@ -2996,7 +3099,11 @@ mod tests {
                 description: None,
             });
         for (hop, capability, kind) in [
-            ("notes-hop", "notes-append", estate_schema::IntentionKind::Tool),
+            (
+                "notes-hop",
+                "notes-append",
+                estate_schema::IntentionKind::Tool,
+            ),
             ("docs-hop", "docs", estate_schema::IntentionKind::Mcp),
             ("mount-hop", "notes", estate_schema::IntentionKind::Mount),
         ] {
@@ -3014,9 +3121,8 @@ mod tests {
                 },
             )
             .unwrap();
-            let denied =
-                call_hop_for_agent(&dir, hop, capability, "research", Some(kind), &estate)
-                    .unwrap_err();
+            let denied = call_hop_for_agent(&dir, hop, capability, "research", Some(kind), &estate)
+                .unwrap_err();
             let text = denied.to_string();
             assert!(text.starts_with("refuse:intention"), "{text}");
             assert!(text.contains("deny-default"), "{text}");
@@ -3072,7 +3178,11 @@ mod tests {
         )
         .unwrap();
         assert!(allowed.allow, "{}", allowed.reason);
-        assert!(allowed.reason.contains("allow intention"), "{}", allowed.reason);
+        assert!(
+            allowed.reason.contains("allow intention"),
+            "{}",
+            allowed.reason
+        );
         mount_allow.intentions.push(estate_schema::Intention {
             subject_agent: "research".into(),
             object: "notes".into(),
@@ -3080,15 +3190,9 @@ mod tests {
             effect: estate_schema::Effect::Deny,
             note: None,
         });
-        let mount_denied = call_hop_for_agent(
-            &dir,
-            "mount-hop",
-            "notes",
-            "research",
-            None,
-            &mount_allow,
-        )
-        .unwrap_err();
+        let mount_denied =
+            call_hop_for_agent(&dir, "mount-hop", "notes", "research", None, &mount_allow)
+                .unwrap_err();
         assert!(
             mount_denied.to_string().contains("explicit deny"),
             "{mount_denied}"
