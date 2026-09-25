@@ -409,10 +409,15 @@ pub fn intention_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
                     object: &object,
                 },
             );
+            let edge = if estate.owns_lane(&agent.id, &lane.id) {
+                "own-lane"
+            } else {
+                "cross-lane"
+            };
             rows.push(CoverageRow::fact(
                 agent.id.clone(),
                 format!(
-                    "{} memory_read {object}: {}",
+                    "{} memory_read {object}: {} ({edge})",
                     agent.id,
                     coverage_word(&decision)
                 ),
@@ -1214,9 +1219,9 @@ mod tests {
     fn intention_and_hop_coverage_name_allow_deny_and_default() {
         let raw = estate();
         let memory = describe_intention_coverage(&raw);
-        assert!(memory.contains("horizon memory_read lane:horizon: allow"));
-        assert!(memory.contains("horizon memory_read lane:research: deny-default"));
-        assert!(memory.contains("research memory_read lane:sanctum: deny-default"));
+        assert!(memory.contains("horizon memory_read lane:horizon: allow (own-lane)"));
+        assert!(memory.contains("horizon memory_read lane:research: deny-default (cross-lane)"));
+        assert!(memory.contains("research memory_read lane:sanctum: deny-default (cross-lane)"));
         assert!(!memory.contains("intention "));
         let hops = describe_hop_coverage(&raw);
         assert!(hops.contains("horizon hop cell-one-box lane-tool: deny-default"));
@@ -1227,12 +1232,12 @@ mod tests {
         let mut granted = raw.clone();
         grant(&mut granted, "horizon", IntentionKind::MemoryRead, "lane:research", Effect::Allow);
         let allowed = describe_intention_coverage(&granted);
-        assert!(allowed.contains("horizon memory_read lane:research: allow"));
+        assert!(allowed.contains("horizon memory_read lane:research: allow (cross-lane)"));
         assert!(allowed.contains("horizon intention memory_read lane:research: allow"));
         let mut denied = granted;
         grant(&mut denied, "horizon", IntentionKind::MemoryRead, "lane:research", Effect::Deny);
         let explicit = describe_intention_coverage(&denied);
-        assert!(explicit.contains("horizon memory_read lane:research: deny"));
+        assert!(explicit.contains("horizon memory_read lane:research: deny (cross-lane)"));
         assert!(!explicit.contains("horizon memory_read lane:research: allow"));
         assert!(explicit.contains("horizon intention memory_read lane:research: deny"));
 

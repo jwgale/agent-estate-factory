@@ -695,7 +695,7 @@ fn blast_radius(
     );
     lines.push(crate::firewall::describe_declared_coverage(estate));
     lines.push(
-        "Intention coverage (own-lane memory is allow; cross-lane is deny-default unless an intention covers it; each compiled intention is listed):"
+        "Intention coverage (own-lane memory is allow; cross-lane is deny-default unless an intention covers it; each memory row is flagged own-lane or cross-lane; each compiled intention is listed):"
             .into(),
     );
     lines.push(crate::firewall::describe_intention_coverage(estate));
@@ -1036,8 +1036,8 @@ mod tests {
         assert!(agents.contains("placement: none"));
         assert!(agents.contains("research tool notes-append: deny-default"));
         assert!(agents.contains("research mount notes: deny-default"));
-        assert!(agents.contains("horizon memory_read lane:horizon: allow"));
-        assert!(agents.contains("horizon memory_read lane:research: deny-default"));
+        assert!(agents.contains("horizon memory_read lane:horizon: allow (own-lane)"));
+        assert!(agents.contains("horizon memory_read lane:research: deny-default (cross-lane)"));
         assert!(agents.contains("horizon intention model class:frontier: allow"));
         assert!(agents.contains("horizon intention model local_slm: deny"));
         assert!(agents.contains("horizon hop cell-one-box lane-tool: deny-default"));
@@ -1065,8 +1065,8 @@ mod tests {
         assert!(text.contains("horizon frontier xai_grok: deny-default"));
         assert!(text.contains("research tool notes-append: deny-default"));
         assert!(text.contains("research mount notes: deny-default"));
-        assert!(text.contains("horizon memory_read lane:horizon: allow"));
-        assert!(text.contains("horizon memory_read lane:research: deny-default"));
+        assert!(text.contains("horizon memory_read lane:horizon: allow (own-lane)"));
+        assert!(text.contains("horizon memory_read lane:research: deny-default (cross-lane)"));
         assert!(text.contains("horizon hop cell-one-box lane-tool: deny-default"));
         assert!(text.contains("cursor-cloud hop mesh-stub: deny"));
         assert!(text.contains("Intention coverage"));
