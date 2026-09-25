@@ -231,6 +231,8 @@ pub(crate) enum Command {
         forget: bool,
     },
     /// One-page health: .cell layout, schema files, compile-only CI present.
+    /// A placement hop capability that disagrees with hop coverage is
+    /// `refuse:hop-coverage` (mismatch). The check does not write the mesh.
     Doctor {
         #[arg(long, default_value = ".")]
         root: PathBuf,

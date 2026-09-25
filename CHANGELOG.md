@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — doctor cites hop-coverage mismatch
+
+- `estate doctor` and `estate doctor --strict` cite a placement hop lease, or a box hop declaration that has no lease, when its capability disagrees with placement-derived coverage. The finding quotes `refuse:hop-coverage: capability '…' does not match hop coverage capability '…' (mismatch)` and fails the doctor. A matching capability is quiet on that finding. Deny and deny-default are cited the same way (`refuse:hop-coverage` with those words) and do not fail `--strict`. A hop id that is not a placement stays out. Cloud hops stay out under the same kind match as mesh authority (`cloud-mesh`, `cloud_mesh`, `cloud-agent`, after trim and lowercase). Empty populations and ungranted leases stay out. The check reads the mesh and does not write it, does not spawn, and does not apply the estate. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — convey write refuses a capability mismatch
 
 - `estate convey hop` and `estate convey sync` refuse before writing when a placement hop's capability disagrees with placement-derived coverage (`lane-tool` on box, `mesh-stub` on cloud). The refusal is `refuse:hop-coverage: capability '…' does not match hop coverage capability '…' (mismatch)`. The mesh and lease files stay as they were. A matching capability still writes. A hop id that is not a placement stays the lease stub. Deny and deny-default stay those words. Sync still restamps a placement hop to `lane-tool` or `mesh-stub` when that stamp matches coverage. A missing `--estate` on sync keeps that restamp. This slice does not spawn, does not apply the estate, and does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
