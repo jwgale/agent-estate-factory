@@ -294,17 +294,21 @@ pub fn coverage_word_for_reason(allow: bool, reason: &str) -> &'static str {
     }
 }
 
+fn binding_class<'a>(estate: &'a Estate, model_id: &str) -> &'a str {
+    estate
+        .model_bindings
+        .iter()
+        .find(|b| normalize_name(&b.id) == normalize_name(model_id))
+        .map(|b| b.class.as_str())
+        .unwrap_or("undeclared")
+}
+
 /// One row per agent `models:` entry. Frontier and local use the same words.
 pub fn model_class_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
     let mut rows = Vec::new();
     for agent in &estate.agents {
         for model in &agent.models {
-            let class = estate
-                .model_bindings
-                .iter()
-                .find(|b| normalize_name(&b.id) == normalize_name(&model.id))
-                .map(|b| b.class.as_str())
-                .unwrap_or("undeclared");
+            let class = binding_class(estate, &model.id);
             let covered = estate
                 .model_bindings
                 .iter()
@@ -324,6 +328,73 @@ pub fn model_class_coverage_rows(estate: &Estate) -> Vec<CoverageRow> {
 /// One line per agent `models:` entry. Frontier and local use the same words.
 pub fn describe_model_class_coverage(estate: &Estate) -> String {
     join_coverage(&model_class_coverage_rows(estate), "(no agent model uses)")
+}
+
+/// One model-class use on apply. `line` is the same row
+/// [`describe_model_class_coverage`] prints, except a hard cite, which
+/// prefixes that row with `refuse:model-class`. Allow is omitted (quiet).
+/// Deny and deny-default stay visible. Model rows have no
+/// capability-mismatch class, so `fail` is false for those words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelClassCoverageCite {
+    pub fail: bool,
+    pub line: String,
+}
+
+/// Every agent `models:` entry. Allow is quiet. Deny and deny-default are
+/// notes. A missing row, a class token other than `frontier` or `local`
+/// (the `undeclared` token these rows already print), or an unrecognized
+/// word fails closed (`refuse:model-class`). Does not read a mesh and does
+/// not write.
+pub fn model_class_coverage_cites(estate: &Estate) -> Vec<ModelClassCoverageCite> {
+    model_class_coverage_cites_from_rows(estate, &model_class_coverage_rows(estate))
+}
+
+fn model_class_coverage_cites_from_rows(
+    estate: &Estate,
+    rows: &[CoverageRow],
+) -> Vec<ModelClassCoverageCite> {
+    let mut cites = Vec::new();
+    for agent in &estate.agents {
+        for model in &agent.models {
+            let class = binding_class(estate, &model.id);
+            let prefix = format!("{} {} {}:", agent.id, class, model.id);
+            let Some(row) = rows.iter().find(|row| {
+                normalize_name(&row.agent_id) == normalize_name(&agent.id)
+                    && row.line.starts_with(&prefix)
+            }) else {
+                cites.push(ModelClassCoverageCite {
+                    fail: true,
+                    line: format!("refuse:model-class: {prefix} deny-default (missing edge)"),
+                });
+                continue;
+            };
+            // `undeclared` is the broken class token, not a coverage word.
+            // Deny and deny-default on frontier or local stay notes.
+            if class != "frontier" && class != "local" {
+                cites.push(ModelClassCoverageCite {
+                    fail: true,
+                    line: format!("refuse:model-class: {}", row.line),
+                });
+                continue;
+            }
+            if row.line.ends_with(": allow") {
+                continue;
+            }
+            // Deny and deny-default are the coverage words. They are not a
+            // capability mismatch. An unrecognized word fails closed.
+            let known = row.line.ends_with(": deny-default") || row.line.ends_with(": deny");
+            cites.push(ModelClassCoverageCite {
+                fail: !known,
+                line: if known {
+                    row.line.clone()
+                } else {
+                    format!("refuse:model-class: {}", row.line)
+                },
+            });
+        }
+    }
+    cites
 }
 
 /// A declared tool, MCP, or mount is not enough. An allow intention of that
@@ -644,31 +715,39 @@ pub fn memory_coverage_cites(estate: &Estate) -> Vec<MemoryCoverageCite> {
     let mut cites = Vec::new();
     for agent in &estate.agents {
         for lane in &estate.lanes {
-            let object = format!("lane:{}", lane.id);
-            let prefix = format!("{} memory_read {object}:", agent.id);
-            let Some(row) = rows.iter().find(|row| {
-                normalize_name(&row.agent_id) == normalize_name(&agent.id)
-                    && row.line.starts_with(&prefix)
-            }) else {
-                cites.push(MemoryCoverageCite {
-                    fail: true,
-                    line: format!("refuse:memory: {prefix} deny-default (missing edge)"),
-                });
-                continue;
-            };
-            if row.line.contains(": allow (") {
-                continue;
-            }
-            // Deny and deny-default are the coverage words. They are not a
-            // capability mismatch. An unrecognized word fails closed.
-            let known = row.line.contains(": deny-default (") || row.line.contains(": deny (");
-            cites.push(MemoryCoverageCite {
-                fail: !known,
-                line: row.line.clone(),
-            });
+            cite_memory_edge(&mut cites, &rows, &agent.id, &lane.id);
         }
     }
     cites
+}
+
+fn cite_memory_edge(
+    cites: &mut Vec<MemoryCoverageCite>,
+    rows: &[CoverageRow],
+    agent_id: &str,
+    lane_id: &str,
+) {
+    let object = format!("lane:{lane_id}");
+    let prefix = format!("{agent_id} memory_read {object}:");
+    let Some(row) = rows.iter().find(|row| {
+        normalize_name(&row.agent_id) == normalize_name(agent_id) && row.line.starts_with(&prefix)
+    }) else {
+        cites.push(MemoryCoverageCite {
+            fail: true,
+            line: format!("refuse:memory: {prefix} deny-default (missing edge)"),
+        });
+        return;
+    };
+    if row.line.contains(": allow (") {
+        return;
+    }
+    // Deny and deny-default are the coverage words. They are not a
+    // capability mismatch. An unrecognized word fails closed.
+    let known = row.line.contains(": deny-default (") || row.line.contains(": deny (");
+    cites.push(MemoryCoverageCite {
+        fail: !known,
+        line: row.line.clone(),
+    });
 }
 
 /// Own-lane memory is allow. Cross-lane memory is deny-default unless an
@@ -1914,6 +1993,148 @@ mod tests {
         assert!(!explicit.is_allow());
         assert!(explicit.reason().contains("explicit deny"));
         assert!(explicit.reason().contains("class frontier"));
+    }
+
+    #[test]
+    fn model_class_coverage_cites_deny_and_stay_quiet_on_allow() {
+        let raw = estate();
+        let described = describe_model_class_coverage(&raw);
+        let cited = model_class_coverage_cites(&raw);
+        assert!(cited.iter().all(|cite| !cite.fail), "{cited:?}");
+        for line in [
+            "horizon frontier xai_grok: deny-default",
+            "horizon local local_slm: deny-default",
+            "research local local_slm: deny-default",
+        ] {
+            assert!(cited.iter().any(|cite| cite.line == line), "{cited:?}");
+            assert!(described.contains(line), "{described}");
+        }
+        assert!(
+            cited.iter().all(|cite| !cite.line.ends_with(": allow")),
+            "{cited:?}"
+        );
+
+        let mut denied = raw.clone();
+        grant(
+            &mut denied,
+            "horizon",
+            IntentionKind::Model,
+            "xai_grok",
+            Effect::Deny,
+        );
+        let explicit = model_class_coverage_cites(&denied);
+        assert!(
+            explicit.iter().any(|cite| {
+                !cite.fail && cite.line == "horizon frontier xai_grok: deny"
+            }),
+            "{explicit:?}"
+        );
+        assert!(describe_model_class_coverage(&denied).contains("horizon frontier xai_grok: deny"));
+        assert!(
+            explicit
+                .iter()
+                .any(|cite| cite.line == "horizon local local_slm: deny-default"),
+            "{explicit:?}"
+        );
+
+        let mut quiet = raw.clone();
+        allow_class(&mut quiet, "horizon", "frontier");
+        allow_class(&mut quiet, "horizon", "local");
+        allow_class(&mut quiet, "research", "local");
+        assert!(model_class_coverage_cites(&quiet).is_empty());
+        assert!(describe_model_class_coverage(&quiet).contains("horizon frontier xai_grok: allow"));
+        assert!(describe_model_class_coverage(&quiet).contains("research local local_slm: allow"));
+    }
+
+    #[test]
+    fn model_class_missing_broken_and_unrecognized_are_refuse_model_class() {
+        let mut broken = estate();
+        broken
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .models
+            .push(crate::ModelUseDecl {
+                id: "ghost_slm".into(),
+                description: None,
+            });
+        let cites = model_class_coverage_cites(&broken);
+        let ghost = cites
+            .iter()
+            .find(|cite| cite.line.contains("ghost_slm"))
+            .expect("ghost model cite");
+        assert!(ghost.fail, "{ghost:?}");
+        assert_eq!(
+            ghost.line,
+            "refuse:model-class: horizon undeclared ghost_slm: deny-default"
+        );
+        assert!(!ghost.line.contains("(mismatch)"), "{}", ghost.line);
+        assert!(describe_model_class_coverage(&broken)
+            .contains("horizon undeclared ghost_slm: deny-default"));
+
+        let missing = model_class_coverage_cites_from_rows(&estate(), &[]);
+        assert!(missing.iter().all(|cite| cite.fail), "{missing:?}");
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line
+                    == "refuse:model-class: horizon frontier xai_grok: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(missing.iter().all(|cite| !cite.line.contains("(mismatch)")));
+
+        let rows = vec![CoverageRow::fact(
+            "horizon",
+            "horizon frontier xai_grok: bogon",
+        )];
+        let unrecognized = model_class_coverage_cites_from_rows(&estate(), &rows);
+        let bogon = unrecognized
+            .iter()
+            .find(|cite| cite.line.contains("bogon"))
+            .expect("unrecognized model word");
+        assert!(bogon.fail, "{bogon:?}");
+        assert_eq!(
+            bogon.line,
+            "refuse:model-class: horizon frontier xai_grok: bogon"
+        );
+        assert!(!bogon.line.contains("(mismatch)"), "{}", bogon.line);
+    }
+
+    #[test]
+    fn memory_and_declared_missing_edges_still_refuse() {
+        let mut quiet = estate();
+        allow_class(&mut quiet, "horizon", "frontier");
+        allow_class(&mut quiet, "horizon", "local");
+        allow_class(&mut quiet, "research", "local");
+        assert!(
+            model_class_coverage_cites(&quiet).is_empty(),
+            "model allow stays quiet while memory and declared missing edges still refuse"
+        );
+        let mut declared = Vec::new();
+        cite_declared_kind(
+            &mut declared,
+            &[],
+            "research",
+            "tool",
+            ["notes-append"].into_iter(),
+        );
+        cite_declared_kind(&mut declared, &[], "research", "mcp", ["docs"].into_iter());
+        cite_declared_kind(&mut declared, &[], "research", "mount", ["notes"].into_iter());
+        assert!(declared.iter().all(|cite| cite.fail), "{declared:?}");
+        assert!(declared.iter().any(|cite| cite.line.contains("refuse:tool")));
+        assert!(declared.iter().any(|cite| cite.line.contains("refuse:mcp")));
+        assert!(declared.iter().any(|cite| cite.line.contains("refuse:mount")));
+
+        let mut memory = Vec::new();
+        cite_memory_edge(&mut memory, &[], "horizon", "research");
+        assert_eq!(memory.len(), 1, "{memory:?}");
+        assert!(memory[0].fail);
+        assert!(
+            memory[0].line.contains("refuse:memory") && memory[0].line.contains("(missing edge)"),
+            "{}",
+            memory[0].line
+        );
     }
 
     #[test]
