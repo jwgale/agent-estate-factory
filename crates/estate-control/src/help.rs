@@ -356,7 +356,9 @@ estate convey call and a convey hop coverage or intention refuse append
 proxy.hop lines to {state-dir}/feed/events.jsonl and restamp feed-cursor.json.
 An Agent allow, deny, or deny-default on those paths appends proxy.agent.
 estate feed cursor --feed-dir .cell/feed prints that watermark. No promote.
-Packs tag source_drivers frontier and/or local. Promote stays locked off.
+Packs tag source_drivers frontier and/or local when those events exist.
+The locked examples/estate.yaml walk is deny-default (intentions empty)
+and lists drivers=-. It does not invent a source. Promote stays locked off.
 Propose and accept refuse a frontier source_driver when the estate has no
 frontier binding (refuse:frontier-invent). They do not invent one.
 Import refuses the same way, before an accepted pack or a redaction report.
