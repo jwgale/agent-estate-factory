@@ -498,6 +498,22 @@ pub fn describe_hop_coverage(estate: &Estate) -> String {
     join_coverage(&hop_coverage_rows(estate), "(no hop coverage)")
 }
 
+/// Same order as conveyor-proxy `resolve_intention_kind`: `lane:` is
+/// MemoryRead before a declared tool, MCP, mount, or model. One hit infers.
+/// Zero or many hits stay unresolved so the caller can name the reason.
+fn infer_convey_intention_kind(
+    capability: &str,
+    hits: &[IntentionKind],
+) -> Option<IntentionKind> {
+    if capability.starts_with("lane:") {
+        return Some(IntentionKind::MemoryRead);
+    }
+    match hits {
+        [one] => Some(*one),
+        _ => None,
+    }
+}
+
 fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<IntentionKind> {
     let Some(agent) = estate.agent(agent_id) else {
         return Vec::new();
@@ -520,9 +536,12 @@ fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<In
 
 /// Named-agent intention for one convey capability. `Ok` is allow and the
 /// caller continues to hop coverage. `Err` is deny or deny-default.
-/// A missing intention on a declared tool, MCP, mount, or model is
-/// deny-default. An explicit deny wins. A cloud hop that is already deny
-/// without a single declared capability stays the hop-coverage gate.
+/// Kind inference matches `resolve_intention_kind`: an explicit kind wins,
+/// `lane:` is MemoryRead, and one declared tool, MCP, mount, or model is
+/// that kind. A missing intention is deny-default. More than one declared
+/// kind is still deny-default, with reason `ambiguous capability; pass kind`.
+/// An explicit deny wins. A cloud hop that is already deny without a
+/// resolved kind stays the hop-coverage gate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentionCoverageGate {
     pub word: &'static str,
@@ -544,10 +563,8 @@ pub fn convey_intention_coverage(
             ),
         });
     }
-    let resolved = kind.or_else(|| match capability_kinds(estate, agent_id, capability).as_slice() {
-        [one] => Some(*one),
-        _ => None,
-    });
+    let hits = capability_kinds(estate, agent_id, capability);
+    let resolved = kind.or_else(|| infer_convey_intention_kind(capability, &hits));
     let Some(kind) = resolved else {
         if matches!(
             convey_hop_coverage(estate, hop_id, Some(agent_id)),
@@ -555,11 +572,14 @@ pub fn convey_intention_coverage(
         ) {
             return Ok(());
         }
+        let why = if hits.len() > 1 {
+            "ambiguous capability; pass kind"
+        } else {
+            "missing intention; not a grant"
+        };
         return Err(IntentionCoverageGate {
             word: "deny-default",
-            line: format!(
-                "{agent_id} intention {capability}: deny-default (missing intention; not a grant)"
-            ),
+            line: format!("{agent_id} intention {capability}: deny-default ({why})"),
         });
     };
     let object = if kind == IntentionKind::MemoryRead && !capability.contains(':') {
@@ -1286,6 +1306,89 @@ mod tests {
         assert!(cloud.is_ok(), "cloud deny stays the hop-coverage gate");
         let off = convey_intention_coverage(&estate, "ttl-box", "research", "not-a-tool", None).unwrap_err();
         assert_eq!(off.word, "deny-default");
+    }
+
+    #[test]
+    fn convey_intention_coverage_lane_prefix_is_memory_read() {
+        let estate = estate();
+        let own = convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:horizon", None);
+        assert!(own.is_ok(), "own-lane MemoryRead continues past the intention gate");
+
+        let crossed =
+            convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:research", None)
+                .unwrap_err();
+        assert_eq!(crossed.word, "deny-default");
+        assert!(
+            crossed.line.contains("memory_read"),
+            "lane: infers MemoryRead, got {}",
+            crossed.line
+        );
+        assert!(
+            !crossed.line.contains("missing intention"),
+            "cross-lane is an authorize deny, got {}",
+            crossed.line
+        );
+
+        let mut allowed = estate.clone();
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::MemoryRead,
+            "lane:research",
+            Effect::Allow,
+        );
+        assert!(
+            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None).is_ok(),
+            "allow memory intention continues past the intention gate"
+        );
+
+        grant(
+            &mut allowed,
+            "horizon",
+            IntentionKind::MemoryRead,
+            "lane:research",
+            Effect::Deny,
+        );
+        let denied =
+            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None)
+                .unwrap_err();
+        assert_eq!(denied.word, "deny");
+        assert!(denied.line.contains("memory_read"), "{}", denied.line);
+    }
+
+    #[test]
+    fn convey_intention_coverage_multi_kind_names_ambiguous() {
+        let mut estate = estate();
+        let research = estate.agents.iter_mut().find(|a| a.id == "research").unwrap();
+        research.mcp.push(crate::McpDecl {
+            id: "notes-append".into(),
+            description: None,
+        });
+        let ambiguous =
+            convey_intention_coverage(&estate, "ttl-box", "research", "notes-append", None)
+                .unwrap_err();
+        assert_eq!(ambiguous.word, "deny-default");
+        assert!(
+            ambiguous.line.contains("ambiguous capability; pass kind"),
+            "{}",
+            ambiguous.line
+        );
+        assert!(
+            !ambiguous.line.contains("missing intention"),
+            "{}",
+            ambiguous.line
+        );
+        assert!(
+            convey_intention_coverage(
+                &estate,
+                "ttl-box",
+                "research",
+                "notes-append",
+                Some(IntentionKind::Tool),
+            )
+            .is_err(),
+            "passing kind still fail-closes without an allow intention"
+        );
     }
 
     #[test]
