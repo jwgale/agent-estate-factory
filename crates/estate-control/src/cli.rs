@@ -694,6 +694,43 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value_t = 0)]
         few_shot: u32,
     },
+    /// Compile-and-test grader for MultiPL-E Rust and HumanEvalPack Rust.
+    /// Generation tasks are not FixedClasses A/B. `--print` is the default and does not compile or download.
+    /// `--run` reads `--from-local` or `--tasks` and scores one completion per task with `rustc` or `cargo test`.
+    /// `humanevalpack_rust` is `bigcode/humanevalpack` (MIT, from HumanEval MIT). `multiple_rust` is `nuprl/MultiPL-E` humaneval-rs (BSD-3-Clause translations of HumanEval MIT, not MBPP).
+    /// Output is for local training proof only. Do not redistribute. Does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
+    Grade {
+        /// `humanevalpack_rust`, `bigcode/humanevalpack`, `multiple_rust`, or `nuprl/MultiPL-E`.
+        #[arg(long)]
+        dataset: Option<String>,
+        /// Local JSONL snapshot, or a directory of JSONL files. Not modified. Parquet is refused.
+        #[arg(long)]
+        from_local: Option<PathBuf>,
+        /// Already materialized task JSONL (`id`, `prompt`, `tests`). Not a letter decision file.
+        #[arg(long)]
+        tasks: Option<PathBuf>,
+        /// Completion JSONL (`id`, `completion`). One row per task.
+        #[arg(long)]
+        completions: Option<PathBuf>,
+        /// Directory for `grade-plan.json` or `grade-report.json` and `tasks.jsonl`.
+        #[arg(long, default_value = crate::classify_grade::DEFAULT_GRADE_OUT)]
+        out: PathBuf,
+        /// Write the plan only. This is the default. Does not compile.
+        #[arg(long, default_value_t = false)]
+        print: bool,
+        /// Load tasks and score completions. Does not download.
+        #[arg(long, default_value_t = false)]
+        run: bool,
+        /// Score a stable prefix of task ids after sorting. Not a random sample. Omit for every task.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Per-task compile and run timeout in seconds.
+        #[arg(long, default_value_t = 30)]
+        timeout_secs: u64,
+        /// Score the canonical completion stored on each task. Still not a live PASS.
+        #[arg(long, default_value_t = false)]
+        use_canonical: bool,
+    },
 }
 
 #[derive(Subcommand)]

@@ -114,6 +114,16 @@ estate classify journey --dataset rust_idiom --from-local "$NAS/datasets/commitp
 estate classify journey --dataset bigcode/commitpackft --train-size all --heldout-size all --seed 42 --print
 ```
 
+## Rust compile-and-test grade
+
+`estate classify grade` scores MultiPL-E Rust and HumanEvalPack Rust. Those generation tasks are not A/B letter rows, so they stay off `classify import`. `--print` is the default. It writes `grade-plan.json` and does not download or compile. `--run` reads `--from-local` or `--tasks` and scores one completion per task with `rustc` (a `fn main` harness) or `cargo test` (a `#[test]` harness). The report is `grade-report.json`: pass rate and a 95% Wilson interval. `--limit` keeps a stable id prefix, not a random sample. Omit it to score every task. `humanevalpack_rust` is `bigcode/humanevalpack` (MIT, from HumanEval MIT). `multiple_rust` is `nuprl/MultiPL-E` humaneval-rs (BSD-3-Clause translations of HumanEval MIT, not MBPP). Parquet is refused; export JSONL first. This command does not download. Output is for local training proof only. Do not redistribute it. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate classify grade --dataset humanevalpack_rust --print
+estate classify grade --dataset multiple_rust --from-local "$NAS/datasets/multipl-e" --completions completions.jsonl --run --out .cell/classify-grade
+estate classify grade --tasks tasks.jsonl --use-canonical --run --out .cell/classify-grade
+```
+
 ## Target C — Qwen QLoRA operator journey
 
 The popular path is one ladder of commands that already exist. LLaMA-Factory trains. llama.cpp converts. Ollama creates. This factory writes the QLoRA recipe and prints the next line. Walk: section 8 of [`operator-enrich-journeys.md`](operator-enrich-journeys.md). `estate help enrich` prints the same ladder. Opt-in check: `make qlora-journey`. `make train-next` is the opt-in middle step: it prepares the same Target C card and prints the `NEXT.md` train recipe. It does not train. Once a merged export and a GGUF exist, `make seat-journey` prints `merge-adapt`, `gguf-convert`, `local-seat`, and `import-trained` against fixture stubs. Walk: section 10 of that same page. `make uniqueness-ladder` runs the qlora and seat print journeys in that order. It does not run `make train-next`. It does not train. It is not in smoke or Actions. It is not a live train. `make uniqueness-full` runs `make qlora-journey`, then `make train-next`, then `make seat-journey`. It does not train. It is not in smoke or Actions. It is not a live train.
