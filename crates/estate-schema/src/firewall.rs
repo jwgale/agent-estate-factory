@@ -45,7 +45,12 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
         ));
     }
 
-    if req.kind != IntentionKind::Model {
+    // Model, Tool, and Mcp decide coverage inside their own path. An early
+    // explicit match would hide deny-default when no intention covers the object.
+    if !matches!(
+        req.kind,
+        IntentionKind::Model | IntentionKind::Tool | IntentionKind::Mcp
+    ) {
         if let Some(decision) = explicit_intention(estate, req) {
             return decision;
         }
@@ -53,9 +58,9 @@ pub fn authorize(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
 
     match req.kind {
         IntentionKind::MemoryRead => authorize_memory(estate, req),
-        IntentionKind::Tool => authorize_declared(estate, req, "tool"),
+        IntentionKind::Tool => authorize_tool_or_mcp(estate, req),
         IntentionKind::Mount => authorize_declared(estate, req, "mount"),
-        IntentionKind::Mcp => authorize_declared(estate, req, "mcp"),
+        IntentionKind::Mcp => authorize_tool_or_mcp(estate, req),
         IntentionKind::Model => authorize_model(estate, req),
     }
 }
@@ -174,6 +179,111 @@ pub fn describe_model_class_coverage(estate: &Estate) -> String {
     }
     if lines.is_empty() {
         "(no agent model uses)".into()
+    } else {
+        lines.join("\n")
+    }
+}
+
+/// A declared tool or MCP is not enough. An allow intention of that kind must
+/// cover the object (bare id, `tool:`, or `mcp:`). Tools and MCP have no class.
+/// Missing coverage is deny-default. An explicit deny wins.
+fn authorize_tool_or_mcp(estate: &Estate, req: &AccessRequest<'_>) -> Decision {
+    let Some(agent) = estate.agent(req.subject_agent) else {
+        return deny(format!("unknown subject agent '{}'", req.subject_agent));
+    };
+    let name = ObjectRef::parse(req.object).name().to_string();
+    let declared = match req.kind {
+        IntentionKind::Tool => agent.has_tool(&name),
+        IntentionKind::Mcp => agent.has_mcp(&name),
+        _ => false,
+    };
+    let label = req.kind.as_str();
+    if !declared {
+        return deny(format!(
+            "{label} '{name}' undeclared for agent '{}' (deny-default)",
+            req.subject_agent
+        ));
+    }
+    match tool_mcp_intention_effect(estate, req.subject_agent, req.kind, &name) {
+        Some(Effect::Deny) => deny(format!(
+            "explicit deny intention: {} {label} {name}",
+            req.subject_agent
+        )),
+        Some(Effect::Allow) => allow(format!(
+            "allow intention: {} {label} {name}",
+            req.subject_agent
+        )),
+        None => deny(format!(
+            "{label} '{name}' is not covered by an allow {} intention for agent '{}' (deny-default)",
+            kind_title(req.kind),
+            req.subject_agent
+        )),
+    }
+}
+
+fn kind_title(kind: IntentionKind) -> &'static str {
+    match kind {
+        IntentionKind::Tool => "Tool",
+        IntentionKind::Mcp => "Mcp",
+        IntentionKind::Model => "Model",
+        IntentionKind::Mount => "Mount",
+        IntentionKind::MemoryRead => "Memory",
+    }
+}
+
+fn intention_covers_named(object: &str, name: &str) -> bool {
+    normalize_name(ObjectRef::parse(object).name()) == normalize_name(name)
+}
+
+fn tool_mcp_intention_effect(
+    estate: &Estate,
+    agent_id: &str,
+    kind: IntentionKind,
+    name: &str,
+) -> Option<Effect> {
+    let subject = normalize_name(agent_id);
+    let mut deny = false;
+    let mut allow = false;
+    for intention in &estate.intentions {
+        if normalize_name(&intention.subject_agent) != subject || intention.kind != kind {
+            continue;
+        }
+        if !intention_covers_named(&intention.object, name) {
+            continue;
+        }
+        match intention.effect {
+            Effect::Deny => deny = true,
+            Effect::Allow => allow = true,
+        }
+    }
+    if deny {
+        Some(Effect::Deny)
+    } else if allow {
+        Some(Effect::Allow)
+    } else {
+        None
+    }
+}
+
+/// One line per agent tool and MCP. Tools and MCP have no class.
+pub fn describe_tool_mcp_coverage(estate: &Estate) -> String {
+    let mut lines = Vec::new();
+    for agent in &estate.agents {
+        for tool in &agent.tools {
+            let covered = tool_mcp_intention_effect(estate, &agent.id, IntentionKind::Tool, &tool.id)
+                .map(|effect| effect.as_str())
+                .unwrap_or("deny-default");
+            lines.push(format!("{} tool {}: {covered}", agent.id, tool.id));
+        }
+        for mcp in &agent.mcp {
+            let covered = tool_mcp_intention_effect(estate, &agent.id, IntentionKind::Mcp, &mcp.id)
+                .map(|effect| effect.as_str())
+                .unwrap_or("deny-default");
+            lines.push(format!("{} mcp {}: {covered}", agent.id, mcp.id));
+        }
+    }
+    if lines.is_empty() {
+        "(no agent tool or mcp uses)".into()
     } else {
         lines.join("\n")
     }
@@ -362,10 +472,119 @@ mod tests {
         assert!(d.reason().contains("undeclared"));
     }
 
+    fn grant(
+        estate: &mut Estate,
+        agent: &str,
+        kind: IntentionKind,
+        object: &str,
+        effect: Effect,
+    ) {
+        estate.intentions.push(Intention {
+            subject_agent: agent.into(),
+            object: object.into(),
+            kind,
+            effect,
+            note: None,
+        });
+    }
+
     #[test]
-    fn declared_tool_allowed() {
+    fn declared_tool_without_allow_is_deny_default() {
         let e = estate();
-        assert!(authorize(&e, &req("research", IntentionKind::Tool, "notes-append")).is_allow());
+        let d = authorize(&e, &req("research", IntentionKind::Tool, "notes-append"));
+        assert!(!d.is_allow());
+        assert!(d.reason().contains("not covered by an allow Tool intention"));
+        assert!(d.reason().contains("deny-default"));
+        assert!(!d.reason().contains("class"));
+    }
+
+    #[test]
+    fn tool_allow_deny_and_prefix_are_symmetric() {
+        let raw = estate();
+        let mut allowed = raw.clone();
+        grant(
+            &mut allowed,
+            "research",
+            IntentionKind::Tool,
+            "tool:notes-append",
+            Effect::Allow,
+        );
+        let ok = authorize(&allowed, &req("research", IntentionKind::Tool, "notes-append"));
+        assert!(ok.is_allow(), "{}", ok.reason());
+        assert!(ok.reason().contains("allow intention"));
+        let mut bare = raw.clone();
+        grant(
+            &mut bare,
+            "research",
+            IntentionKind::Tool,
+            "notes-append",
+            Effect::Allow,
+        );
+        assert!(authorize(&bare, &req("research", IntentionKind::Tool, "tool:notes-append")).is_allow());
+
+        let mut denied = allowed;
+        grant(
+            &mut denied,
+            "research",
+            IntentionKind::Tool,
+            "notes-append",
+            Effect::Deny,
+        );
+        let explicit = authorize(&denied, &req("research", IntentionKind::Tool, "notes-append"));
+        assert!(!explicit.is_allow());
+        assert!(explicit.reason().contains("explicit deny"));
+    }
+
+    #[test]
+    fn mcp_allow_deny_and_missing_are_symmetric() {
+        let mut raw = estate();
+        raw.agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap()
+            .mcp
+            .push(crate::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        let missing = authorize(&raw, &req("research", IntentionKind::Mcp, "docs"));
+        assert!(!missing.is_allow());
+        assert!(missing.reason().contains("not covered by an allow Mcp intention"));
+        assert!(missing.reason().contains("deny-default"));
+        assert!(!missing.reason().contains("class"));
+        let undeclared = authorize(&raw, &req("research", IntentionKind::Mcp, "other"));
+        assert!(undeclared.reason().contains("undeclared"));
+
+        let mut allowed = raw.clone();
+        grant(&mut allowed, "research", IntentionKind::Mcp, "mcp:docs", Effect::Allow);
+        let ok = authorize(&allowed, &req("research", IntentionKind::Mcp, "docs"));
+        assert!(ok.is_allow(), "{}", ok.reason());
+        let mut denied = allowed;
+        grant(&mut denied, "research", IntentionKind::Mcp, "docs", Effect::Deny);
+        let explicit = authorize(&denied, &req("research", IntentionKind::Mcp, "mcp:docs"));
+        assert!(!explicit.is_allow());
+        assert!(explicit.reason().contains("explicit deny"));
+    }
+
+    #[test]
+    fn tool_mcp_coverage_names_allow_deny_and_default() {
+        let mut e = estate();
+        e.agents
+            .iter_mut()
+            .find(|a| a.id == "horizon")
+            .unwrap()
+            .mcp
+            .push(crate::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        grant(&mut e, "horizon", IntentionKind::Mcp, "docs", Effect::Deny);
+        let text = describe_tool_mcp_coverage(&e);
+        assert!(text.contains("research tool notes-append: deny-default"));
+        assert!(text.contains("horizon mcp docs: deny"));
+        grant(&mut e, "research", IntentionKind::Tool, "notes-append", Effect::Allow);
+        let text = describe_tool_mcp_coverage(&e);
+        assert!(text.contains("research tool notes-append: allow"));
     }
 
     #[test]

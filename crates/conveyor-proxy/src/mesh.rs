@@ -2271,8 +2271,30 @@ mod tests {
             },
         )
         .unwrap();
-        let allowed =
+        let uncovered =
             call_hop_for_agent(&dir, "notes-hop", "notes-append", "research", None, &estate)
+                .unwrap_err();
+        assert!(
+            uncovered.to_string().starts_with("refuse:intention"),
+            "{uncovered}"
+        );
+        assert!(
+            uncovered
+                .to_string()
+                .contains("not covered by an allow Tool intention"),
+            "{uncovered}"
+        );
+        assert!(uncovered.to_string().contains("deny-default"), "{uncovered}");
+        let mut granted = estate.clone();
+        granted.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "notes-append".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let allowed =
+            call_hop_for_agent(&dir, "notes-hop", "notes-append", "research", None, &granted)
                 .unwrap();
         assert!(allowed.allow);
         assert!(
@@ -2441,6 +2463,18 @@ mod tests {
         .unwrap();
         let rows = authority_report(&dir, &estate).unwrap();
         assert!(rows.iter().all(|row| row.status != "enforced"));
+        assert!(rows.iter().any(|row| {
+            row.agent == "research" && row.capability == "notes-append" && row.status == "would-deny"
+        }));
+        let mut granted = estate.clone();
+        granted.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "tool:notes-append".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let rows = authority_report(&dir, &granted).unwrap();
         assert!(rows.iter().any(|row| {
             row.agent == "research" && row.capability == "notes-append" && row.status == "would-allow"
         }));
@@ -2635,6 +2669,74 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(classroom, MeshError::SacredId(_)), "{classroom}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tool_and_mcp_intentions_refuse_without_coverage() {
+        let dir = tmp();
+        let mut estate = example_estate();
+        estate
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap()
+            .mcp
+            .push(estate_schema::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        for (hop, capability, kind) in [
+            ("notes-hop", "notes-append", estate_schema::IntentionKind::Tool),
+            ("docs-hop", "docs", estate_schema::IntentionKind::Mcp),
+        ] {
+            declare_hop(
+                &dir,
+                HopDecl {
+                    id: hop.into(),
+                    kind: "box".into(),
+                    capability: capability.into(),
+                    host_class: "any".into(),
+                    wired: true,
+                    note: None,
+                    ttl_secs: None,
+                    agents: vec!["research".into()],
+                },
+            )
+            .unwrap();
+            let denied =
+                call_hop_for_agent(&dir, hop, capability, "research", Some(kind), &estate)
+                    .unwrap_err();
+            let text = denied.to_string();
+            assert!(text.starts_with("refuse:intention"), "{text}");
+            assert!(text.contains("deny-default"), "{text}");
+            assert!(text.contains("not covered by an allow"), "{text}");
+        }
+        let mut granted = estate.clone();
+        granted.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "mcp:docs".into(),
+            kind: estate_schema::IntentionKind::Mcp,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        granted.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "docs".into(),
+            kind: estate_schema::IntentionKind::Mcp,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+        let denied = call_hop_for_agent(
+            &dir,
+            "docs-hop",
+            "docs",
+            "research",
+            Some(estate_schema::IntentionKind::Mcp),
+            &granted,
+        )
+        .unwrap_err();
+        assert!(denied.to_string().contains("explicit deny"), "{denied}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

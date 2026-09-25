@@ -4,7 +4,8 @@ use conveyor_proxy::{
     list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    describe_model_class_coverage, describe_placements, estate_hash, list_plans, load_estate,
+    describe_model_class_coverage, describe_placements, describe_tool_mcp_coverage, estate_hash,
+    list_plans, load_estate,
     load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
@@ -698,6 +699,7 @@ pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Res
     println!("floor:\n{}", serde_json::to_string_pretty(&report)?);
     println!("models:\n{}", serde_json::to_string_pretty(&models)?);
     println!("model class:\n{}", describe_model_class_coverage(&estate));
+    println!("tool mcp:\n{}", describe_tool_mcp_coverage(&estate));
     if !report.in_sync || !models.in_sync {
         bail!("drift detected");
     }

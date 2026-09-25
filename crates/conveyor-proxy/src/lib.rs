@@ -121,12 +121,28 @@ mod tests {
     }
 
     #[test]
-    fn worker_declared_tool_passes() {
+    fn worker_declared_tool_without_allow_refuses() {
         let e = estate();
         let worker = WorkerClient::new(&e);
-        assert!(worker
-            .invoke("research", IntentionKind::Tool, "notes-append")
-            .is_allow());
+        let denied = worker.invoke("research", IntentionKind::Tool, "notes-append");
+        assert!(!denied.is_allow());
+        assert!(denied.reason().contains("not covered by an allow Tool intention"));
+        assert!(denied.reason().contains("deny-default"));
+    }
+
+    #[test]
+    fn worker_tool_allow_intention_passes() {
+        let mut e = estate();
+        e.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "tool:notes-append".into(),
+            kind: IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let worker = WorkerClient::new(&e);
+        let allowed = worker.invoke("research", IntentionKind::Tool, "notes-append");
+        assert!(allowed.is_allow(), "{}", allowed.reason());
     }
 
     #[test]

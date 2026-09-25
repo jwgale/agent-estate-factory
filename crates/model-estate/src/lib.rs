@@ -332,6 +332,17 @@ mod tests {
         }
         estate
     }
+
+    fn with_tool_allow(mut estate: Estate) -> Estate {
+        estate.intentions.push(Intention {
+            subject_agent: "research".into(),
+            object: "tool:notes-append".into(),
+            kind: IntentionKind::Tool,
+            effect: Effect::Allow,
+            note: None,
+        });
+        estate
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn estate() -> Estate {
@@ -616,7 +627,7 @@ mod tests {
 
     #[test]
     fn a8_research_tool_runs_local_before_tool() {
-        let e = estate();
+        let e = with_tool_allow(estate());
         let local = MockLocal {
             id: "local_slm".into(),
         };
@@ -746,7 +757,7 @@ mod tests {
 
     #[test]
     fn local_down_http_frontier_does_not_post() {
-        let e = with_model_class_allows(estate());
+        let e = with_tool_allow(with_model_class_allows(estate()));
         let live = CompatServer::spawn(CompatScript::OpenAi {
             models: vec!["grok-4.7".into()],
         })
