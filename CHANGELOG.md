@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — convey refuses intention deny
+
+- `estate convey hop` and `estate convey call` refuse a named agent when that agent's intention for the capability is deny or deny-default (`refuse:intention: … (deny)` or `(deny-default)`). A missing intention on a declared tool, MCP, mount, or model is deny-default, the same fail-closed rule as `authorize`. Allow continues to hop coverage, then the lease and call checks. An unnamed hop stays the lease stub when it is not a placement. A cloud hop that is already deny stays `refuse:hop-coverage`. Plan, doctor, and drift stay print-only. Convey does not apply the estate and does not spawn. `scripts/operator-day.sh` passes `--estate` on the sacred hop and the TTL hop. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — convey coverage refuses a missing estate
 
 - `estate convey hop` and `estate convey call` refuse when the estate path is missing or not a file (`refuse:hop-coverage: estate missing` / `estate not a file`). Coverage is mandatory on those two paths. A wrong-cwd default `examples/estate.yaml` no longer skips coverage and falls through to the lease stub. When the estate loads, allow still proceeds, deny and deny-default still refuse, and a hop id that is not a placement stays the lease stub. Plan, doctor, and drift stay print-only. Convey does not apply the estate. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

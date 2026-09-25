@@ -481,22 +481,7 @@ fn hop_coverage_word(
     if estate.agent(agent_id).is_none() {
         return "deny-default";
     }
-    let mut hits = Vec::new();
-    if let Some(agent) = estate.agent(agent_id) {
-        if agent.has_tool(capability) {
-            hits.push(IntentionKind::Tool);
-        }
-        if agent.has_mcp(capability) {
-            hits.push(IntentionKind::Mcp);
-        }
-        if agent.has_mount(capability) {
-            hits.push(IntentionKind::Mount);
-        }
-        if agent.has_model(capability) {
-            hits.push(IntentionKind::Model);
-        }
-    }
-    match hits.as_slice() {
+    match capability_kinds(estate, agent_id, capability).as_slice() {
         [kind] => coverage_word(&authorize(
             estate,
             &AccessRequest {
@@ -511,6 +496,96 @@ fn hop_coverage_word(
 
 pub fn describe_hop_coverage(estate: &Estate) -> String {
     join_coverage(&hop_coverage_rows(estate), "(no hop coverage)")
+}
+
+fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<IntentionKind> {
+    let Some(agent) = estate.agent(agent_id) else {
+        return Vec::new();
+    };
+    let mut hits = Vec::new();
+    if agent.has_tool(capability) {
+        hits.push(IntentionKind::Tool);
+    }
+    if agent.has_mcp(capability) {
+        hits.push(IntentionKind::Mcp);
+    }
+    if agent.has_mount(capability) {
+        hits.push(IntentionKind::Mount);
+    }
+    if agent.has_model(capability) {
+        hits.push(IntentionKind::Model);
+    }
+    hits
+}
+
+/// Named-agent intention for one convey capability. `Ok` is allow and the
+/// caller continues to hop coverage. `Err` is deny or deny-default.
+/// A missing intention on a declared tool, MCP, mount, or model is
+/// deny-default. An explicit deny wins. A cloud hop that is already deny
+/// without a single declared capability stays the hop-coverage gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntentionCoverageGate {
+    pub word: &'static str,
+    pub line: String,
+}
+
+pub fn convey_intention_coverage(
+    estate: &Estate,
+    hop_id: &str,
+    agent_id: &str,
+    capability: &str,
+    kind: Option<IntentionKind>,
+) -> Result<(), IntentionCoverageGate> {
+    if estate.agent(agent_id).is_none() {
+        return Err(IntentionCoverageGate {
+            word: "deny-default",
+            line: format!(
+                "{agent_id} intention {capability}: deny-default (unknown agent; not a grant)"
+            ),
+        });
+    }
+    let resolved = kind.or_else(|| match capability_kinds(estate, agent_id, capability).as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    });
+    let Some(kind) = resolved else {
+        if matches!(
+            convey_hop_coverage(estate, hop_id, Some(agent_id)),
+            Err(gate) if gate.word == "deny"
+        ) {
+            return Ok(());
+        }
+        return Err(IntentionCoverageGate {
+            word: "deny-default",
+            line: format!(
+                "{agent_id} intention {capability}: deny-default (missing intention; not a grant)"
+            ),
+        });
+    };
+    let object = if kind == IntentionKind::MemoryRead && !capability.contains(':') {
+        format!("lane:{capability}")
+    } else {
+        capability.to_string()
+    };
+    let decision = authorize(
+        estate,
+        &AccessRequest {
+            subject_agent: agent_id,
+            kind,
+            object: &object,
+        },
+    );
+    let word = coverage_word(&decision);
+    if word == "allow" {
+        return Ok(());
+    }
+    Err(IntentionCoverageGate {
+        word,
+        line: format!(
+            "{agent_id} intention {} {capability}: {word}",
+            kind.as_str()
+        ),
+    })
 }
 
 /// One placement-derived hop row that a convey path would use.
@@ -1177,6 +1252,40 @@ mod tests {
         assert!(off_box.line.contains("not on the hop population"));
 
         assert!(convey_hop_coverage(&raw, "ttl-hop", None).unwrap().is_none());
+    }
+
+    #[test]
+    fn convey_intention_coverage_refuses_deny_and_default_allows_only_allow() {
+        let mut estate = estate();
+        estate
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "research")
+            .unwrap()
+            .tools
+            .push(crate::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        let missing = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None)
+            .unwrap_err();
+        assert_eq!(missing.word, "deny-default");
+        assert!(missing.line.contains("intention"));
+
+        grant(&mut estate, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
+        let denied = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None)
+            .unwrap_err();
+        assert_eq!(denied.word, "deny");
+        assert!(!denied.line.contains("deny-default"));
+
+        estate.intentions.clear();
+        grant(&mut estate, "research", IntentionKind::Tool, "lane-tool", Effect::Allow);
+        assert!(convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None).is_ok());
+
+        let cloud = convey_intention_coverage(&estate, "cursor-cloud", "research", "mesh-stub", None);
+        assert!(cloud.is_ok(), "cloud deny stays the hop-coverage gate");
+        let off = convey_intention_coverage(&estate, "ttl-box", "research", "not-a-tool", None).unwrap_err();
+        assert_eq!(off.word, "deny-default");
     }
 
     #[test]

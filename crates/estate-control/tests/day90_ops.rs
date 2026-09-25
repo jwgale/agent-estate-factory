@@ -327,7 +327,12 @@ fn convey_call_refuses_policy_deny() {
         ])
         .output()
         .unwrap();
-    assert!(hop.status.success(), "{}", text(&hop));
+    let hop_text = text(&hop);
+    assert!(!hop.status.success(), "{hop_text}");
+    assert!(
+        hop_text.contains("refuse:intention") && hop_text.contains("(deny-default)"),
+        "{hop_text}"
+    );
 
     let locked = estate_bin()
         .args([
@@ -351,7 +356,7 @@ fn convey_call_refuses_policy_deny() {
     let locked_text = text(&locked);
     assert!(!locked.status.success(), "{locked_text}");
     assert!(
-        locked_text.contains("not covered by an allow Tool intention"),
+        locked_text.contains("refuse:intention") && locked_text.contains("(deny-default)"),
         "{locked_text}"
     );
 
@@ -370,6 +375,28 @@ fn convey_call_refuses_policy_deny() {
         estate_schema::render_estate_yaml(&granted).unwrap(),
     )
     .unwrap();
+    let granted_hop = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "notes-hop",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--estate",
+            &granted_path.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        granted_hop.status.success(),
+        "allow continues to the lease stub: {}",
+        text(&granted_hop)
+    );
     let allow = estate_bin()
         .args([
             "convey",

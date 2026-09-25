@@ -203,10 +203,11 @@ fn convey_fails_closed_on_hop_coverage() {
     let denied_text = text(&denied);
     assert!(!denied.status.success(), "{denied_text}");
     assert!(
-        denied_text.contains("refuse:hop-coverage") && denied_text.contains("(deny)"),
+        denied_text.contains("refuse:intention") && denied_text.contains("(deny)"),
         "{denied_text}"
     );
     assert!(!denied_text.contains("deny-default"), "{denied_text}");
+    assert!(!denied_text.contains("refuse:hop-coverage"), "{denied_text}");
 
     let cloud = convey(
         &root,
@@ -294,7 +295,7 @@ fn convey_fails_closed_on_hop_coverage() {
     let pair_text = text(&pair);
     assert!(!pair.status.success(), "{pair_text}");
     assert!(
-        pair_text.contains("refuse:hop-coverage") && pair_text.contains("(deny-default)"),
+        pair_text.contains("refuse:intention") && pair_text.contains("(deny-default)"),
         "each --agent is checked; horizon stays deny-default, got {pair_text}"
     );
     assert!(pair_text.contains("horizon"), "{pair_text}");

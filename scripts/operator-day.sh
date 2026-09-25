@@ -107,7 +107,7 @@ echo "PASS  plan export-pr"
 
 echo "-- sacred overlay refuse --"
 set +e
-cargo run -q -p estate-control -- convey hop --id lab-notebook --capability lane-tool --state-dir "$STATE" >/tmp/opday-sacred-hop.out 2>/tmp/opday-sacred-hop.err
+cargo run -q -p estate-control -- convey hop --id lab-notebook --capability lane-tool --estate "$ESTATE" --state-dir "$STATE" >/tmp/opday-sacred-hop.out 2>/tmp/opday-sacred-hop.err
 overlay_hop=$?
 set -e
 if [[ "$overlay_hop" -eq 0 ]]; then
@@ -238,7 +238,7 @@ fi
 echo "PASS  convey hop/call/refuse"
 
 echo "-- convey hop TTL + expire --"
-cargo run -q -p estate-control -- convey hop --id ttl-box --capability lane-tool --ttl-secs 3600 --state-dir "$STATE"
+cargo run -q -p estate-control -- convey hop --id ttl-box --capability lane-tool --ttl-secs 3600 --estate "$ESTATE" --state-dir "$STATE"
 cargo run -q -p estate-control -- convey sync --state-dir "$STATE" >/tmp/opday-resync.out
 if ! grep -q "ttl-box" /tmp/opday-resync.out; then
   echo "FAIL  convey sync must keep manually declared ttl-box"
