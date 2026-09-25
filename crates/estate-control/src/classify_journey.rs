@@ -4084,6 +4084,10 @@ fn dual_report_value(
         (Some(qwen), Some(glm)) => qwen_minus_glm(qwen, glm),
         _ => Value::Null,
     };
+    let note = match mode {
+        "in-progress" => "Dual run started. Scores stay absent until both students finish. A prior compare was cleared. This file is not a completed comparison and is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+        _ => "Local dual comparison of Qwen (tev1) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+    };
     json!({
         "schema": "cell-one.classify-journey-dual.v0",
         "mode": mode,
@@ -4106,7 +4110,7 @@ fn dual_report_value(
         "factory_live_pass": false,
         "live_pass_recorded": false,
         "ready_for_live_test": "no",
-        "note": "Local dual comparison of Qwen (tev1) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no."
+        "note": note
     })
 }
 
@@ -4223,6 +4227,29 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
     println!(
         "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha}",
         cache.display()
+    );
+    // Drop a prior print stub or finished compare before either student starts.
+    // A mid-pair failure must not leave null-score or stale-score JSON an operator can read as current.
+    if compare_path.is_file() {
+        fs::remove_file(&compare_path)?;
+    }
+    let started = dual_report_value(
+        "in-progress",
+        &cache,
+        &held_sha,
+        &expand_tag,
+        req.train_size,
+        req.seed,
+        &tev1,
+        &glm,
+        None,
+        None,
+        None,
+    );
+    write_dual_report(&compare_path, &started)?;
+    println!(
+        "dual-compare: {} in-progress. Scores stay absent until both students finish. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+        compare_path.display()
     );
     for side in [&tev1, &glm] {
         let journey = dual_journey_request(req, side, true);
@@ -6056,6 +6083,32 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("newcombe"));
+        let started = dual_report_value(
+            "in-progress",
+            &cache,
+            "abc",
+            "rev1",
+            "all",
+            42,
+            &tev1,
+            &glm,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(started["mode"], "in-progress");
+        assert!(started["qwen_glm_specialist_delta"].is_null());
+        assert!(started["presets"]["tev1"]["specialist_accuracy"].is_null());
+        assert!(started["presets"]["glm4-chat"]["base_accuracy"].is_null());
+        assert_eq!(started["factory_live_pass"], false);
+        assert_eq!(started["live_pass_recorded"], false);
+        assert_eq!(started["ready_for_live_test"], "no");
+        let started_note = started["note"].as_str().unwrap();
+        assert!(started_note.contains("Scores stay absent"), "{started_note}");
+        assert!(
+            started_note.contains("not a factory live PASS"),
+            "{started_note}"
+        );
         let _ = fs::remove_dir_all(&parent);
     }
 }

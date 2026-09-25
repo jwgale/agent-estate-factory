@@ -245,3 +245,115 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
     let _ = fs::remove_dir_all(&cache);
     let _ = fs::remove_dir_all(&out);
 }
+
+#[test]
+fn dual_run_replaces_a_stale_compare_before_a_student_fails() {
+    let tag = format!("dualfail{}", std::process::id());
+    let cache = PathBuf::from(format!(".cell/classify-import/rust_idiom-all-s42-{tag}"));
+    let _ = fs::remove_dir_all(&cache);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("train.jsonl"), pair("train", 3)).unwrap();
+    fs::write(cache.join("heldout.jsonl"), pair("test", 11)).unwrap();
+
+    let out = std::env::temp_dir().join(format!("classify-dual-fail-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "all",
+            "--print",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        printed.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&printed.stdout),
+        String::from_utf8_lossy(&printed.stderr)
+    );
+    let compare_path = out.join("dual-compare.json");
+    let stub = fs::read_to_string(&compare_path).unwrap();
+    assert!(stub.contains("\"mode\": \"print\""), "{stub}");
+
+    // An older scored compare is the same hazard as a print stub.
+    fs::write(
+        &compare_path,
+        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"tev1\": {\"specialist_accuracy\": 0.99}}\n}\n",
+    )
+    .unwrap();
+
+    let llama = out.join("empty-llama");
+    fs::create_dir_all(&llama).unwrap();
+    let ran = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "all",
+            "--run",
+            "--out",
+            out.to_str().unwrap(),
+            "--llama-cpp-dir",
+            llama.to_str().unwrap(),
+        ])
+        .env_remove("LLAMA_CPP_DIR")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    let stderr = String::from_utf8_lossy(&ran.stderr);
+    assert!(!ran.status.success(), "{stdout}\n{stderr}");
+    assert!(stderr.contains("refuse:classify-journey"), "{stderr}");
+    assert!(stdout.contains("in-progress"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+
+    let compare = fs::read_to_string(&compare_path).unwrap();
+    assert!(compare.contains("\"mode\": \"in-progress\""), "{compare}");
+    assert!(!compare.contains("\"mode\": \"print\""), "{compare}");
+    assert!(!compare.contains("\"mode\": \"run\""), "{compare}");
+    assert!(!compare.contains("0.99"), "{compare}");
+    assert!(
+        compare.contains("\"qwen_glm_specialist_delta\": null"),
+        "{compare}"
+    );
+    assert!(compare.contains("\"base_accuracy\": null"), "{compare}");
+    assert!(
+        compare.contains("\"specialist_accuracy\": null"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"factory_live_pass\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"live_pass_recorded\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"ready_for_live_test\": \"no\""),
+        "{compare}"
+    );
+    assert!(compare.contains("not a factory live PASS"), "{compare}");
+    assert!(compare.contains("Scores stay absent"), "{compare}");
+    assert!(!out.join("glm4-chat/comparison.json").exists());
+
+    let _ = fs::remove_dir_all(&cache);
+    let _ = fs::remove_dir_all(&out);
+}
