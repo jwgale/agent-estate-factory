@@ -621,7 +621,13 @@ fn hop_coverage_word(
     if estate.agent(agent_id).is_none() {
         return "deny-default";
     }
-    match capability_kinds(estate, agent_id, capability).as_slice() {
+    // Agent is who-may-call-whom. It is not a hop grant. A call id that
+    // matches the reserved hop capability must not allow or scramble this word.
+    let kinds: Vec<IntentionKind> = capability_kinds(estate, agent_id, capability)
+        .into_iter()
+        .filter(|kind| *kind != IntentionKind::Agent)
+        .collect();
+    match kinds.as_slice() {
         [kind] => coverage_word(&authorize(
             estate,
             &AccessRequest {
@@ -677,7 +683,19 @@ fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<In
     hits
 }
 
+fn hop_reserved_capability(capability: &str) -> bool {
+    matches!(
+        normalize_name(capability).as_str(),
+        "lane-tool" | "mesh-stub"
+    )
+}
+
 fn declared_agent_call(agent: &crate::types::Agent, capability: &str) -> bool {
+    // Box hops are `lane-tool`. Cloud hops are `mesh-stub`. Those strings
+    // stay tool/hop capabilities. A peer call uses `agent:` or `--kind agent`.
+    if hop_reserved_capability(capability) {
+        return false;
+    }
     let name = capability
         .strip_prefix("agent:")
         .unwrap_or(capability)
@@ -1223,6 +1241,93 @@ mod tests {
         let rows = agent_edge_coverage_rows(&estate());
         assert!(rows.iter().any(|row| row.line.contains("(own)")));
         assert!(rows.iter().any(|row| row.line.contains("(peer)")));
+    }
+
+    #[test]
+    fn hop_coverage_does_not_grant_on_agent_call_named_lane_tool() {
+        let mut estate = estate();
+        let mut peer = estate
+            .agents
+            .iter()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .clone();
+        peer.id = "lane-tool".into();
+        peer.display_name = "Lane Tool".into();
+        peer.calls.clear();
+        estate.agents.push(peer);
+        declare_call(&mut estate, "research", "lane-tool");
+        grant(
+            &mut estate,
+            "research",
+            IntentionKind::Agent,
+            "lane-tool",
+            Effect::Allow,
+        );
+        let hops = describe_hop_coverage(&estate);
+        assert!(
+            hops.contains("research hop cell-one-box lane-tool: deny-default"),
+            "{hops}"
+        );
+        assert!(!hops.contains("research hop cell-one-box lane-tool: allow"), "{hops}");
+        let inferred = convey_intention_coverage(
+            &estate,
+            "cell-one-box",
+            "research",
+            "lane-tool",
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(inferred.word, "deny-default");
+        assert!(
+            inferred.line.contains("undeclared"),
+            "{}",
+            inferred.line
+        );
+        let explicit = convey_intention_coverage(
+            &estate,
+            "cell-one-box",
+            "research",
+            "lane-tool",
+            Some(IntentionKind::Agent),
+            true,
+        );
+        assert!(explicit.is_ok(), "{explicit:?}");
+
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(crate::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        grant(
+            &mut estate,
+            "research",
+            IntentionKind::Tool,
+            "lane-tool",
+            Effect::Allow,
+        );
+        let both = describe_hop_coverage(&estate);
+        assert!(
+            both.contains("research hop cell-one-box lane-tool: allow"),
+            "{both}"
+        );
+        assert!(
+            convey_intention_coverage(
+                &estate,
+                "cell-one-box",
+                "research",
+                "lane-tool",
+                None,
+                true,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
