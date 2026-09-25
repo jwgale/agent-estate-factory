@@ -439,3 +439,196 @@ fn dual_print_replaces_a_stale_compare_before_a_student_fails() {
     let _ = fs::remove_dir_all(&cache);
     let _ = fs::remove_dir_all(&out);
 }
+
+#[test]
+fn dual_modest_print_writes_the_short_gauge_on_both_plans() {
+    let help = bin()
+        .args(["classify", "journey", "--help"])
+        .output()
+        .unwrap();
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help.status.success(), "{help_text}");
+    assert!(help_text.contains("--modest"), "{help_text}");
+    assert!(help_text.contains("500"), "{help_text}");
+    assert!(help_text.contains("max_steps"), "{help_text}");
+
+    let tag = format!("modest{}", std::process::id());
+    let cache = PathBuf::from(format!(".cell/classify-import/rust_idiom-500-s42-{tag}"));
+    let _ = fs::remove_dir_all(&cache);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("train.jsonl"), pair("train", 2)).unwrap();
+    fs::write(cache.join("heldout.jsonl"), pair("test", 8)).unwrap();
+
+    let out = std::env::temp_dir().join(format!("classify-dual-modest-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    let secret = "modest-secret-not-for-logs-91";
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--modest",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--print",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .env("TOGETHER_API_KEY", secret)
+        .env("TEACHER_API_KEY", secret)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("modest: true"), "{stdout}");
+    assert!(stdout.contains("train_size: 500"), "{stdout}");
+    assert!(stdout.contains("max_steps: 50"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains(secret), "{stdout}");
+    assert!(!stderr.contains(secret), "{stderr}");
+
+    let tev1_plan = fs::read_to_string(out.join("tev1/journey-plan.json")).unwrap();
+    let glm_plan = fs::read_to_string(out.join("glm4-chat/journey-plan.json")).unwrap();
+    let compare = fs::read_to_string(out.join("dual-compare.json")).unwrap();
+    for plan in [&tev1_plan, &glm_plan] {
+        assert!(plan.contains("\"train_size\": \"500\""), "{plan}");
+        assert!(plan.contains("\"max_steps\": 50"), "{plan}");
+        assert!(plan.contains("max_steps: 50"), "{plan}");
+        assert!(plan.contains("\"ready_for_live_test\": \"no\""), "{plan}");
+        assert!(plan.contains("\"live_pass_recorded\": false"), "{plan}");
+        assert!(plan.contains("\"network\": false"), "{plan}");
+    }
+    assert!(compare.contains("\"modest\": true"), "{compare}");
+    assert!(compare.contains("\"train_size\": \"500\""), "{compare}");
+    assert!(compare.contains("\"max_steps\": 50"), "{compare}");
+    assert!(
+        compare.contains("\"factory_live_pass\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"live_pass_recorded\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"ready_for_live_test\": \"no\""),
+        "{compare}"
+    );
+    assert!(compare.contains("not a factory live PASS"), "{compare}");
+    assert!(!compare.contains(secret), "{compare}");
+
+    let bare = bin()
+        .args([
+            "classify",
+            "journey",
+            "--modest",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--print",
+            "--out",
+            out.join("bare").to_str().unwrap(),
+        ])
+        .env("TOGETHER_API_KEY", secret)
+        .env("TEACHER_API_KEY", secret)
+        .output()
+        .unwrap();
+    let bare_out = String::from_utf8_lossy(&bare.stdout);
+    let bare_err = String::from_utf8_lossy(&bare.stderr);
+    assert!(!bare.status.success(), "{bare_out}\n{bare_err}");
+    assert!(
+        bare_err.contains("--modest is only valid with --dual"),
+        "{bare_err}"
+    );
+    assert!(!bare_out.contains(secret), "{bare_out}");
+    assert!(!bare_err.contains(secret), "{bare_err}");
+
+    let fat = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--modest",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--train-size",
+            "1000",
+            "--print",
+            "--out",
+            out.join("fat").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let fat_err = String::from_utf8_lossy(&fat.stderr);
+    assert!(!fat.status.success(), "{fat_err}");
+    assert!(fat_err.contains("caps --train-size at 500"), "{fat_err}");
+
+    let small_cache = PathBuf::from(format!(".cell/classify-import/rust_idiom-200-s42-{tag}"));
+    let _ = fs::remove_dir_all(&small_cache);
+    fs::create_dir_all(&small_cache).unwrap();
+    fs::write(small_cache.join("train.jsonl"), pair("train", 4)).unwrap();
+    fs::write(small_cache.join("heldout.jsonl"), pair("test", 6)).unwrap();
+    let small_out = out.join("small");
+    let small = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--modest",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "200",
+            "--max-steps",
+            "10",
+            "--print",
+            "--out",
+            small_out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let small_stdout = String::from_utf8_lossy(&small.stdout);
+    let small_stderr = String::from_utf8_lossy(&small.stderr);
+    assert!(small.status.success(), "{small_stdout}\n{small_stderr}");
+    let small_plan = fs::read_to_string(small_out.join("tev1/journey-plan.json")).unwrap();
+    let small_glm = fs::read_to_string(small_out.join("glm4-chat/journey-plan.json")).unwrap();
+    let small_compare = fs::read_to_string(small_out.join("dual-compare.json")).unwrap();
+    assert!(
+        small_plan.contains("\"train_size\": \"200\""),
+        "{small_plan}"
+    );
+    assert!(small_plan.contains("\"max_steps\": 10"), "{small_plan}");
+    assert!(small_glm.contains("\"train_size\": \"200\""), "{small_glm}");
+    assert!(small_glm.contains("\"max_steps\": 10"), "{small_glm}");
+    assert!(
+        small_compare.contains("\"modest\": true"),
+        "{small_compare}"
+    );
+    assert!(
+        small_compare.contains("\"train_size\": \"200\""),
+        "{small_compare}"
+    );
+    assert!(
+        small_compare.contains("\"max_steps\": 10"),
+        "{small_compare}"
+    );
+    assert!(
+        small_compare.contains("explicit max_steps kept"),
+        "{small_compare}"
+    );
+
+    let _ = fs::remove_dir_all(&cache);
+    let _ = fs::remove_dir_all(&small_cache);
+    let _ = fs::remove_dir_all(&out);
+}

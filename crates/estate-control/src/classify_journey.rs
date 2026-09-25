@@ -47,6 +47,14 @@ pub const GLM4_CHAT_BASE: &str = "zai-org/glm-4-9b-chat";
 pub const GLM4_CHAT_TAG: &str = "glm4-chat-specialist";
 /// Ollama tag created from the built GLM-4 Chat base GGUF. Not a library tag.
 pub const GLM4_CHAT_BUILT_BASE_TAG: &str = "glm4-chat-base";
+/// `--modest` train rows when `--train-size` is omitted or still the clap default `all`.
+/// `parse_split_size` accepts this positive integer. A 5090-class proof, not the full split.
+pub const MODEST_TRAIN_SIZE: &str = "500";
+/// Numeric cap for an explicit `--train-size` under `--modest`. Larger counts are refused.
+pub const MODEST_TRAIN_CAP: usize = 500;
+/// LLaMA-Factory `max_steps` written for both students when `--max-steps` is omitted.
+/// Batch 1 and gradient accumulation 4 see 200 examples, short of one epoch of 500 rows.
+pub const MODEST_MAX_STEPS: u32 = 50;
 /// Compressed Together adapter archive cap. Larger downloads are refused.
 pub const MAX_TOGETHER_ADAPTER_COMPRESSED: usize = 512 * 1024 * 1024;
 /// Decompressed Together adapter tar cap. Larger unpacks are refused.
@@ -2421,6 +2429,9 @@ fn print_plan(
             paths.few_shot_seed
         );
     }
+    if let Some(steps) = req.max_steps {
+        println!("max_steps: {steps}");
+    }
     if let Some(dataset) = req.import_dataset {
         println!(
             "dataset: {dataset} train_size: {} heldout_size: {} seed: {} option_order: fixed no-second-split",
@@ -3772,6 +3783,8 @@ pub struct DualJourneyRequest<'a> {
     pub base_cache: &'a Path,
     pub few_shot: u32,
     pub expand_tag: Option<&'a str>,
+    pub modest: bool,
+    pub modest_note: &'a str,
 }
 
 /// Scored base-vs-specialist counts for one student. Absent on `--print`.
@@ -3981,13 +3994,21 @@ fn journey_plan_value(req: &JourneyRequest<'_>, cache: &Path, held_sha: &str) ->
     let steps: Vec<Value> = steps
         .iter()
         .map(|step| {
+            let detail = if step.name == "recipe" {
+                match req.max_steps {
+                    Some(steps) => format!("{} max_steps: {steps}", step.detail),
+                    None => step.detail.clone(),
+                }
+            } else {
+                step.detail.clone()
+            };
             json!({
                 "name": step.name,
                 "action": match step.action {
                     StepAction::Run => "run",
                     StepAction::Skip => "skip",
                 },
-                "detail": step.detail,
+                "detail": detail,
             })
         })
         .collect();
@@ -4003,6 +4024,11 @@ fn journey_plan_value(req: &JourneyRequest<'_>, cache: &Path, held_sha: &str) ->
         "heldout": cache.join("heldout.jsonl").display().to_string(),
         "heldout_sha256": held_sha,
         "steps": steps,
+        "train_size": req.train_size,
+        "max_steps": match req.max_steps {
+            Some(steps) => json!(steps),
+            None => Value::Null,
+        },
         "would_train": false,
         "network": false,
         "live_pass_recorded": false,
@@ -4075,6 +4101,9 @@ fn dual_report_value(
     tev1_score: Option<&DualPresetScore>,
     glm_score: Option<&DualPresetScore>,
     prepared_sha: Option<&str>,
+    modest: bool,
+    max_steps: Option<u32>,
+    modest_note: &str,
 ) -> Value {
     let cross = match (tev1_score, glm_score) {
         (Some(qwen), Some(glm)) => json!(qwen.specialist_accuracy - glm.specialist_accuracy),
@@ -4094,6 +4123,12 @@ fn dual_report_value(
         "dataset": "rust_idiom",
         "expand_tag": expand_tag,
         "train_size": train_size,
+        "max_steps": match max_steps {
+            Some(steps) => json!(steps),
+            None => Value::Null,
+        },
+        "modest": modest,
+        "modest_note": if modest { json!(modest_note) } else { Value::Null },
         "seed": seed,
         "cache": cache.display().to_string(),
         "heldout": cache.join("heldout.jsonl").display().to_string(),
@@ -4133,6 +4168,9 @@ fn mark_dual_compare_started(
     seed: u64,
     tev1: &DualSide,
     glm: &DualSide,
+    modest: bool,
+    max_steps: Option<u32>,
+    modest_note: &str,
 ) -> Result<()> {
     if compare_path.is_file() {
         fs::remove_file(compare_path)?;
@@ -4149,8 +4187,38 @@ fn mark_dual_compare_started(
         None,
         None,
         None,
+        modest,
+        max_steps,
+        modest_note,
     );
     write_dual_report(compare_path, &started)
+}
+
+/// `--modest` gauge. `all` (the clap default) becomes `500`. A count above 500 is refused.
+/// An omitted `--max-steps` becomes 50. An explicit `--max-steps` is kept.
+pub fn apply_modest_gauge(
+    train_size: &str,
+    max_steps: Option<u32>,
+) -> Result<(String, u32, &'static str)> {
+    let parsed = crate::classify_import::parse_split_size(train_size)?;
+    let (resolved, replaced_all) = match parsed {
+        crate::classify_import::SplitSize::All => (MODEST_TRAIN_SIZE.to_string(), true),
+        crate::classify_import::SplitSize::Count(n) if n > MODEST_TRAIN_CAP => {
+            bail!(
+                "refuse:classify-journey: --modest caps --train-size at {MODEST_TRAIN_CAP}. Omit --modest for a larger gauge."
+            );
+        }
+        crate::classify_import::SplitSize::Count(n) => (n.to_string(), false),
+    };
+    let defaulted_steps = max_steps.is_none();
+    let steps = max_steps.unwrap_or(MODEST_MAX_STEPS);
+    let note = match (replaced_all, defaulted_steps) {
+        (true, true) => "replaced train_size all with 500; max_steps 50",
+        (true, false) => "replaced train_size all with 500; explicit max_steps kept",
+        (false, true) => "explicit train_size at or under 500; max_steps 50",
+        (false, false) => "explicit train_size at or under 500; explicit max_steps kept",
+    };
+    Ok((resolved, steps, note))
 }
 
 fn score_from_out(out: &Path) -> Result<(DualPresetScore, String)> {
@@ -4220,6 +4288,16 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha} no-import dry-run no teacher",
             cache.display()
         );
+        if req.modest {
+            println!(
+                "modest: true train_size: {} max_steps: {} {}",
+                req.train_size,
+                req.max_steps
+                    .map(|steps| steps.to_string())
+                    .unwrap_or_else(|| "unset".into()),
+                req.modest_note
+            );
+        }
         mark_dual_compare_started(
             &compare_path,
             &cache,
@@ -4229,6 +4307,9 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             req.seed,
             &tev1,
             &glm,
+            req.modest,
+            req.max_steps,
+            req.modest_note,
         )?;
         println!(
             "dual-compare: {} in-progress. Scores stay absent until both students finish. This print does not train. It is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
@@ -4259,6 +4340,9 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             None,
             None,
             None,
+            req.modest,
+            req.max_steps,
+            req.modest_note,
         );
         write_dual_report(&compare_path, &report)?;
         println!(
@@ -4281,7 +4365,20 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         req.seed,
         &tev1,
         &glm,
+        req.modest,
+        req.max_steps,
+        req.modest_note,
     )?;
+    if req.modest {
+        println!(
+            "modest: true train_size: {} max_steps: {} {}",
+            req.train_size,
+            req.max_steps
+                .map(|steps| steps.to_string())
+                .unwrap_or_else(|| "unset".into()),
+            req.modest_note
+        );
+    }
     println!(
         "dual-compare: {} in-progress. Scores stay absent until both students finish. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
         compare_path.display()
@@ -4309,6 +4406,9 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         Some(&qwen_score),
         Some(&glm_score),
         Some(&qwen_held),
+        req.modest,
+        req.max_steps,
+        req.modest_note,
     );
     write_dual_report(&compare_path, &report)?;
     println!(
@@ -4321,6 +4421,25 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modest_gauge_replaces_all_caps_larger_sizes_and_defaults_max_steps() {
+        let (size, steps, note) = apply_modest_gauge("all", None).unwrap();
+        assert_eq!(size, "500");
+        assert_eq!(steps, 50);
+        assert!(note.contains("500"), "{note}");
+        let (size, steps, note) = apply_modest_gauge("200", None).unwrap();
+        assert_eq!(size, "200");
+        assert_eq!(steps, 50);
+        assert!(note.contains("explicit train_size"), "{note}");
+        let (size, steps, _) = apply_modest_gauge("all", Some(10)).unwrap();
+        assert_eq!(size, "500");
+        assert_eq!(steps, 10);
+        let err = apply_modest_gauge("501", None).unwrap_err().to_string();
+        assert!(err.contains("caps --train-size at 500"), "{err}");
+        let err = apply_modest_gauge("0", None).unwrap_err().to_string();
+        assert!(err.contains("positive integer"), "{err}");
+    }
 
     #[test]
     fn qwen35_template_comes_from_llamafactory_and_other_bases_use_the_scanner() {
@@ -6099,6 +6218,9 @@ mod tests {
             Some(&qwen),
             Some(&glm_score),
             Some("def"),
+            false,
+            None,
+            "",
         );
         assert_eq!(report["qwen_glm_specialist_delta"], 0.5);
         assert_eq!(report["presets"]["tev1"]["specialist_accuracy"], 0.75);
@@ -6130,8 +6252,14 @@ mod tests {
             None,
             None,
             None,
+            false,
+            None,
+            "",
         );
         assert_eq!(started["mode"], "in-progress");
+        assert_eq!(started["modest"], false);
+        assert!(started["max_steps"].is_null());
+        assert!(started["modest_note"].is_null());
         assert!(started["qwen_glm_specialist_delta"].is_null());
         assert!(started["presets"]["tev1"]["specialist_accuracy"].is_null());
         assert!(started["presets"]["glm4-chat"]["base_accuracy"].is_null());
@@ -6139,7 +6267,10 @@ mod tests {
         assert_eq!(started["live_pass_recorded"], false);
         assert_eq!(started["ready_for_live_test"], "no");
         let started_note = started["note"].as_str().unwrap();
-        assert!(started_note.contains("Scores stay absent"), "{started_note}");
+        assert!(
+            started_note.contains("Scores stay absent"),
+            "{started_note}"
+        );
         assert!(
             started_note.contains("not a factory live PASS"),
             "{started_note}"

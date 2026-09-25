@@ -474,11 +474,22 @@ pub(crate) fn run() -> Result<()> {
                 few_shot,
                 expand_tag,
                 dual,
+                modest,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
                 let llama_cpp_dir =
                     llama_cpp_dir.or_else(|| std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from));
+                if modest && !dual {
+                    bail!("refuse:classify-journey: --modest is only valid with --dual");
+                }
+                let (train_size, max_steps, modest_note) = if modest {
+                    let (size, steps, note) =
+                        crate::classify_journey::apply_modest_gauge(&train_size, max_steps)?;
+                    (size, Some(steps), note)
+                } else {
+                    (train_size, max_steps, "")
+                };
                 if dual {
                     return crate::classify_journey::cmd_classify_journey_dual(
                         &crate::classify_journey::DualJourneyRequest {
@@ -516,6 +527,8 @@ pub(crate) fn run() -> Result<()> {
                             base_cache: &base_cache,
                             few_shot,
                             expand_tag: expand_tag.as_deref(),
+                            modest,
+                            modest_note,
                         },
                     );
                 }
