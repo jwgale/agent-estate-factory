@@ -770,6 +770,10 @@ fn declared_agent_call(agent: &crate::types::Agent, capability: &str) -> bool {
 pub struct IntentionCoverageGate {
     pub word: &'static str,
     pub line: String,
+    /// Resolved intention kind when the gate got that far. `None` when the
+    /// agent or the capability never resolved. Convey uses this so an Agent
+    /// decision is `proxy.agent` on the feed.
+    pub kind: Option<IntentionKind>,
 }
 
 pub fn convey_intention_coverage(
@@ -786,6 +790,7 @@ pub fn convey_intention_coverage(
             line: format!(
                 "{agent_id} intention {capability}: deny-default (unknown agent; not a grant)"
             ),
+            kind: None,
         });
     }
     let hits = capability_kinds(estate, agent_id, capability);
@@ -813,6 +818,7 @@ pub fn convey_intention_coverage(
         return Err(IntentionCoverageGate {
             word: "deny-default",
             line: format!("{agent_id} intention {capability}: deny-default ({why})"),
+            kind: None,
         });
     };
     let object = if kind == IntentionKind::MemoryRead && !capability.contains(':') {
@@ -838,6 +844,7 @@ pub fn convey_intention_coverage(
             "{agent_id} intention {} {capability}: {word}",
             kind.as_str()
         ),
+        kind: Some(kind),
     })
 }
 

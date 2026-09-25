@@ -671,6 +671,8 @@ pub fn call_hop(state_dir: &Path, hop_id: &str, capability: &str) -> Result<HopC
         hop_id,
         capability,
         None,
+        "proxy.hop",
+        "proxy",
         call_hop_inner(state_dir, hop_id, capability, None),
     )
 }
@@ -693,14 +695,35 @@ pub fn call_hop_for_agent(
     let mut call = match inner {
         Ok(call) => call,
         Err(err) => {
-            return audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Err(err));
+            return audit_hop_result(
+                state_dir,
+                hop_id,
+                capability,
+                Some(agent_id),
+                "proxy.hop",
+                "proxy",
+                Err(err),
+            );
         }
     };
     let resolved = match resolve_intention_kind(estate, agent_id, capability, kind) {
         Ok(kind) => kind,
         Err(err) => {
-            return audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Err(err));
+            return audit_hop_result(
+                state_dir,
+                hop_id,
+                capability,
+                Some(agent_id),
+                "proxy.hop",
+                "proxy",
+                Err(err),
+            );
         }
+    };
+    let (feed_kind, object_class) = if resolved == estate_schema::IntentionKind::Agent {
+        ("proxy.agent", "agent")
+    } else {
+        ("proxy.hop", "proxy")
     };
     let object =
         if resolved == estate_schema::IntentionKind::MemoryRead && !capability.contains(':') {
@@ -722,6 +745,8 @@ pub fn call_hop_for_agent(
             hop_id,
             capability,
             Some(agent_id),
+            feed_kind,
+            object_class,
             Err(MeshError::Intention {
                 agent: agent_id.to_string(),
                 capability: capability.to_string(),
@@ -730,7 +755,15 @@ pub fn call_hop_for_agent(
         );
     }
     call.reason = format!("agent-bound {agent_id}; {}", decision.reason());
-    audit_hop_result(state_dir, hop_id, capability, Some(agent_id), Ok(call))
+    audit_hop_result(
+        state_dir,
+        hop_id,
+        capability,
+        Some(agent_id),
+        feed_kind,
+        object_class,
+        Ok(call),
+    )
 }
 
 fn hop_err_is_decision(err: &MeshError) -> bool {
@@ -755,6 +788,8 @@ fn audit_hop_result(
     hop_id: &str,
     capability: &str,
     agent_id: Option<&str>,
+    feed_kind: &str,
+    object_class: &str,
     result: Result<HopCall, MeshError>,
 ) -> Result<HopCall, MeshError> {
     let record = match &result {
@@ -780,10 +815,10 @@ fn audit_hop_result(
         let note = format!("hop={hop_id} capability={capability} {note}");
         crate::append_proxy_audit(
             &state_dir.join("feed"),
-            "proxy.hop",
+            feed_kind,
             agent.as_deref(),
             &decision,
-            "proxy",
+            object_class,
             Some(&note),
         )?;
     }
@@ -829,7 +864,10 @@ fn resolve_intention_kind(
         "lane-tool" | "mesh-stub"
     );
     if !reserved {
-        let call_name = capability.strip_prefix("agent:").unwrap_or(capability).trim();
+        let call_name = capability
+            .strip_prefix("agent:")
+            .unwrap_or(capability)
+            .trim();
         if !call_name.is_empty() && agent.has_call(call_name) {
             hits.push(estate_schema::IntentionKind::Agent);
         }

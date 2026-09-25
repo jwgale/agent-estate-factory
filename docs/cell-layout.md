@@ -27,7 +27,7 @@ placement / lifecycle / sessions, `estate-control` suggest / audit export,
 | `conveyor-mesh.json` | durable | Capability mesh (not a gateway). Also split as hops + leases below. |
 | `conveyor-hops.json` | durable | Declared hops. |
 | `conveyor-leases.json` | durable | Hop leases. Call refuses without a granted lease. Optional hop `ttl_secs` / `issued_at` / `expires_at`. |
-| `feed/events.jsonl` | durable | Scrubbed traces. No prompts, no keys. Convey allow/deny lines (`proxy.hop`, `proxy.tool`, and the other proxy kinds) land here. |
+| `feed/events.jsonl` | durable | Scrubbed traces. No prompts, no keys. Convey allow/deny lines (`proxy.hop`, `proxy.agent`, `proxy.tool`, and the other proxy kinds) land here. |
 | `feed/feed-cursor.json` | durable watermark | Schema `cell-one.feed-cursor.v0`. Survives rematerialize. Does not auto-promote. `estate feed cursor` prints it after a proxy line. |
 | `sessions/` | disposable | Profile-dir desktops. Discarded on suspend. |
 | `runtime/` | disposable | Heartbeats / PIDs (`runtime/pids.json`). Never SoT. |
