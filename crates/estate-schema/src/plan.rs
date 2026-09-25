@@ -775,7 +775,8 @@ fn set_diff(have: BTreeSet<String>, against: BTreeSet<String>) -> Vec<String> {
 
 /// Per-agent blast block: id, lane, desktop, placement, declared counts,
 /// and that agent's allow / deny / deny-default coverage. Plan, drift,
-/// apply, status, and doctor print this text. They do not spawn.
+/// apply, status, doctor, and `estate convey authority` print this text.
+/// They do not spawn.
 pub fn describe_agents_section(estate: &Estate) -> String {
     let model = crate::firewall::model_class_coverage_rows(estate);
     let declared = crate::firewall::declared_coverage_rows(estate);

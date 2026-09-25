@@ -375,7 +375,7 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
     // Missing mesh is empty, not a failure. A present file that does not
     // parse is already FAIL from the hop-lease read above. This cite does
     // not write the mesh. The Agents section is the same text plan, drift,
-    // apply, and status print (`describe_agents_section`), after these hop
+    // apply, status, and convey authority print (`describe_agents_section`), after these hop
     // describe lines and before hop coverage cites and Authority. Authority
     // is the same file check plan, drift, apply, and convey authority print,
     // after those cites. A mesh that does not parse never reaches either
@@ -646,8 +646,9 @@ pub(crate) fn cmd_status(
         );
     }
     println!("cloud-agent: declared, not spawned");
-    // Same Agents text as plan, drift, apply, and doctor. Print-only, after the
-    // hop expired count and this cloud-agent line, and before Authority.
+    // Same Agents text as plan, drift, apply, doctor, and convey authority.
+    // Print-only, after the hop expired count and this cloud-agent line,
+    // and before Authority.
     // Deny and deny-default coverage stay notes and do not add a status
     // fail. Does not spawn. Does not write the mesh, the leases, or the
     // estate. A spawned cloud lease already refused above and does not

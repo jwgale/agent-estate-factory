@@ -200,8 +200,8 @@ live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
 After the hop expired count and that cloud-agent line, status prints
-the same Agents section as plan, drift, apply, and doctor
-(`describe_agents_section`): id, lane, desktop, placement (box,
+the same Agents section as plan, drift, apply, doctor, and convey
+authority (`describe_agents_section`): id, lane, desktop, placement (box,
 cloud-agent declared-not-spawned, or none), declared tool / mcp /
 mount / model counts, and that agent's allow / deny / deny-default
 coverage, including agent-call own and peer. Deny and deny-default
@@ -223,6 +223,12 @@ mesh that does not parse is the existing hop-lease refuse before the
 page and does not invent
 Authority rows. A would-deny row does not fail status. Status does not
 write the mesh, the leases, or the estate.
+
+`estate convey authority` prints that same Agents section
+(`describe_agents_section`) immediately before that Authority section.
+Deny and deny-default stay notes and do not fail the command. A missing
+or unreadable estate, and a mesh that does not parse, refuse before
+either section. The command does not write and does not spawn.
 
   estate status --estate examples/estate.yaml --state-dir .cell
   make day90

@@ -5,6 +5,7 @@ use conveyor_proxy::{
     list_hop_leases, list_hops, parse_kind, response_from, sync_from_placements, HopDecl,
     ProxyRequest,
 };
+use estate_schema::describe_agents_section;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -92,7 +93,14 @@ enum Command {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
-    /// File check against the estate. Does not write. Does not claim mediation.
+    /// File check against the estate. Prints the same Agents section as
+    /// `estate convey authority` (`describe_agents_section`) immediately
+    /// before Authority (`describe_authority_section` over `authority_report`).
+    /// Deny and deny-default on the Agents text are notes and do not fail
+    /// this command. A would-deny row does not fail this command. A missing
+    /// or unreadable estate refuses before either section. A present mesh
+    /// that does not parse refuses before either section. Does not write.
+    /// Does not spawn. Does not claim mediation.
     Authority {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
@@ -221,7 +229,10 @@ fn main() -> Result<()> {
         Command::Authority { state_dir, estate } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
+            // Read first. A mesh that does not parse refuses before either
+            // print and does not invent Agents or Authority rows.
             let rows = authority_report(&state_dir, &loaded)?;
+            println!("{}", describe_agents_section(&loaded));
             println!("{}", describe_authority_section(&rows, &state_dir));
         }
     }

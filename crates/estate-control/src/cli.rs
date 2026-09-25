@@ -151,10 +151,11 @@ pub(crate) enum Command {
     },
     /// Persisted estate + durable lifecycle + disposable runtime.
     /// After the hop expired count and the cloud-agent line, the same
-    /// Agents section as plan, drift, apply, and doctor (`describe_agents_section`)
-    /// prints before an Authority section. That Authority section is the
-    /// same file check as `estate plan`, `estate drift`, `estate apply`,
-    /// `estate doctor`, and `estate convey authority`
+    /// Agents section as plan, drift, apply, doctor, and convey authority
+    /// (`describe_agents_section`) prints before an Authority section. That
+    /// Authority section is the same file check as `estate plan`,
+    /// `estate drift`, `estate apply`, `estate doctor`, and
+    /// `estate convey authority`
     /// (`would-allow`, `would-deny`, `not-enforced`). Deny and deny-default
     /// on the Agents section are notes and do not fail status. A
     /// `not-enforced reasons:` line counts those rows by class and omits
@@ -277,7 +278,7 @@ pub(crate) enum Command {
     },
     /// One-page health: .cell layout, schema files, compile-only CI present.
     /// After the hop describe lines, the same Agents section as plan, drift,
-    /// apply, and status (`describe_agents_section`) prints before hop
+    /// apply, status, and convey authority (`describe_agents_section`) prints before hop
     /// coverage cites and an Authority section. That Authority section is
     /// `describe_authority_section` over `authority_report`, the same file
     /// check as `estate plan`, `estate drift`, `estate apply`,
@@ -452,9 +453,17 @@ pub(crate) enum ConveyCommand {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
-    /// File check of hop leases against the estate. Does not write. Does not claim mediation.
+    /// File check of hop leases against the estate. Prints the same Agents
+    /// section as plan, drift, apply, status, and doctor
+    /// (`describe_agents_section`) immediately before Authority
+    /// (`describe_authority_section` over `authority_report`). Deny and
+    /// deny-default on the Agents text are notes and do not fail this
+    /// command. A would-deny row does not fail this command. Does not write.
+    /// Does not spawn. Does not claim mediation.
+    /// A missing or unreadable estate refuses before either section.
     /// A missing conveyor-mesh.json stays not-enforced and cites that the file is absent.
     /// A present mesh with no lease for a declared capability says no hop lease names it.
+    /// A present mesh that does not parse refuses before either section.
     /// `not-enforced reasons:` counts those rows by class and omits zeros.
     Authority {
         #[arg(long, default_value = ".cell")]
