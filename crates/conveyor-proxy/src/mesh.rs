@@ -328,7 +328,7 @@ pub fn hop_driver(kind: &str) -> Result<Box<dyn ConveyorHop>, MeshError> {
     }
 }
 
-fn hop_is_cloud(kind: &str) -> bool {
+pub fn hop_is_cloud(kind: &str) -> bool {
     matches!(
         kind.trim().to_ascii_lowercase().as_str(),
         "cloud-mesh" | "cloud_mesh" | "cloud-agent"

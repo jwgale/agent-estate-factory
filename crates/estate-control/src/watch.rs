@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    hop_now_unix, list_expired_hop_leases, load_mesh, ConveyorMesh, HopDecl, HopLease,
+    hop_is_cloud, hop_now_unix, list_expired_hop_leases, load_mesh, ConveyorMesh, HopDecl, HopLease,
 };
 use estate_schema::{
     convey_hop_declared_capability, describe_declared_coverage, describe_hop_coverage,
@@ -438,15 +438,11 @@ fn doctor_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<HopCov
 }
 
 fn lease_is_hop_coverage_subject(lease: &HopLease) -> bool {
-    lease.granted && !lease.agents.is_empty() && !hop_kind_is_cloud(&lease.kind)
+    lease.granted && !lease.agents.is_empty() && !hop_is_cloud(&lease.kind)
 }
 
 fn decl_is_hop_coverage_subject(hop: &HopDecl) -> bool {
-    !hop.agents.is_empty() && !hop_kind_is_cloud(&hop.kind)
-}
-
-fn hop_kind_is_cloud(kind: &str) -> bool {
-    kind == "cloud-mesh" || kind == "cloud-agent"
+    !hop.agents.is_empty() && !hop_is_cloud(&hop.kind)
 }
 
 fn push_hop_coverage_cite(
@@ -1235,6 +1231,34 @@ mod tests {
             cites.iter().any(|cite| cite.fail && cite.line.contains("(mismatch)")),
             "{cites:?}"
         );
+    }
+
+    #[test]
+    fn doctor_does_not_cite_a_cloud_kind_variant_as_hop_coverage() {
+        let estate = allow_estate();
+        for kind in ["cloud_mesh", " Cloud-Mesh ", "CLOUD-AGENT"] {
+            let mut lease = box_lease("cell-one-box", "notes-append", &["research"]);
+            lease.kind = kind.into();
+            let leased = mesh_with(vec![lease], vec![]);
+            let cites = doctor_hop_coverage_cites(&estate, &leased);
+            assert!(cites.is_empty(), "{kind}: {cites:?}");
+
+            let declared = mesh_with(
+                vec![],
+                vec![HopDecl {
+                    id: "cell-one-box".into(),
+                    kind: kind.into(),
+                    capability: "notes-append".into(),
+                    host_class: "any".into(),
+                    wired: false,
+                    note: None,
+                    ttl_secs: None,
+                    agents: vec!["research".into()],
+                }],
+            );
+            let decl_cites = doctor_hop_coverage_cites(&estate, &declared);
+            assert!(decl_cites.is_empty(), "{kind} decl: {decl_cites:?}");
+        }
     }
 
     #[test]
