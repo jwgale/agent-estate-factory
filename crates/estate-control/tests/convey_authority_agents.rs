@@ -368,10 +368,7 @@ fn missing_or_unreadable_estate_refuses_before_agents_or_authority() {
     assert!(stdout.trim().is_empty(), "{stdout}");
     assert!(no_sections(&stdout), "{stdout}");
     assert!(no_sections(&stderr), "{stderr}");
-    assert!(
-        stderr.contains("parse") || stderr.contains("failed to parse"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("bad.yaml"), "{stderr}");
     assert_eq!(std::fs::read(&bad).unwrap(), bad_bytes);
     assert_eq!(snapshot(&state), before);
     assert_locked_cksum();
