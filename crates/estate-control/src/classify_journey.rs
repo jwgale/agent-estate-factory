@@ -4085,7 +4085,7 @@ fn dual_report_value(
         _ => Value::Null,
     };
     let note = match mode {
-        "in-progress" => "Dual run started. Scores stay absent until both students finish. A prior compare was cleared. This file is not a completed comparison and is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+        "in-progress" => "Scores stay absent until both students finish. A prior compare was cleared. This file is not a completed comparison and is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
         _ => "Local dual comparison of Qwen (tev1) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
     };
     json!({
@@ -4120,6 +4120,37 @@ fn write_dual_report(path: &Path, report: &Value) -> Result<()> {
     }
     fs::write(path, format!("{}\n", serde_json::to_string_pretty(report)?))?;
     Ok(())
+}
+
+/// Drop a prior print stub or scored compare before either student starts.
+/// A mid-pair failure must not leave that file readable as the current result.
+fn mark_dual_compare_started(
+    compare_path: &Path,
+    cache: &Path,
+    held_sha: &str,
+    expand_tag: &str,
+    train_size: &str,
+    seed: u64,
+    tev1: &DualSide,
+    glm: &DualSide,
+) -> Result<()> {
+    if compare_path.is_file() {
+        fs::remove_file(compare_path)?;
+    }
+    let started = dual_report_value(
+        "in-progress",
+        cache,
+        held_sha,
+        expand_tag,
+        train_size,
+        seed,
+        tev1,
+        glm,
+        None,
+        None,
+        None,
+    );
+    write_dual_report(compare_path, &started)
 }
 
 fn score_from_out(out: &Path) -> Result<(DualPresetScore, String)> {
@@ -4189,7 +4220,20 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha} no-import dry-run no teacher",
             cache.display()
         );
-        println!("compare writes {}", compare_path.display());
+        mark_dual_compare_started(
+            &compare_path,
+            &cache,
+            &held_sha,
+            &expand_tag,
+            req.train_size,
+            req.seed,
+            &tev1,
+            &glm,
+        )?;
+        println!(
+            "dual-compare: {} in-progress. Scores stay absent until both students finish. This print does not train. It is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
+            compare_path.display()
+        );
         for side in [&tev1, &glm] {
             let journey = dual_journey_request(req, side, false);
             let plan = journey_plan_value(&journey, &cache, &held_sha)?;
@@ -4228,13 +4272,8 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha}",
         cache.display()
     );
-    // Drop a prior print stub or finished compare before either student starts.
-    // A mid-pair failure must not leave null-score or stale-score JSON an operator can read as current.
-    if compare_path.is_file() {
-        fs::remove_file(&compare_path)?;
-    }
-    let started = dual_report_value(
-        "in-progress",
+    mark_dual_compare_started(
+        &compare_path,
         &cache,
         &held_sha,
         &expand_tag,
@@ -4242,11 +4281,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         req.seed,
         &tev1,
         &glm,
-        None,
-        None,
-        None,
-    );
-    write_dual_report(&compare_path, &started)?;
+    )?;
     println!(
         "dual-compare: {} in-progress. Scores stay absent until both students finish. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
         compare_path.display()

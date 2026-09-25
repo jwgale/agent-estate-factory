@@ -357,3 +357,85 @@ fn dual_run_replaces_a_stale_compare_before_a_student_fails() {
     let _ = fs::remove_dir_all(&cache);
     let _ = fs::remove_dir_all(&out);
 }
+
+#[test]
+fn dual_print_replaces_a_stale_compare_before_a_student_fails() {
+    let tag = format!("dualprint{}", std::process::id());
+    let cache = PathBuf::from(format!(".cell/classify-import/rust_idiom-all-s42-{tag}"));
+    let _ = fs::remove_dir_all(&cache);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("train.jsonl"), pair("train", 5)).unwrap();
+    fs::write(cache.join("heldout.jsonl"), pair("test", 13)).unwrap();
+
+    let out = std::env::temp_dir().join(format!("classify-dual-print-fail-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    fs::create_dir_all(&out).unwrap();
+    let compare_path = out.join("dual-compare.json");
+    fs::write(
+        &compare_path,
+        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"tev1\": {\"specialist_accuracy\": 0.99}}\n}\n",
+    )
+    .unwrap();
+    // Second student cannot be created, so print stops after tev1.
+    fs::write(out.join("glm4-chat"), b"not-a-directory").unwrap();
+
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--dual",
+            "--dataset",
+            "rust_idiom",
+            "--expand-tag",
+            &tag,
+            "--seed",
+            "42",
+            "--train-size",
+            "all",
+            "--print",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(!printed.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("classify journey dual: print"), "{stdout}");
+    assert!(stdout.contains("in-progress"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(out.join("tev1/journey-plan.json").is_file());
+    assert!(!out.join("glm4-chat/journey-plan.json").exists());
+
+    let compare = fs::read_to_string(&compare_path).unwrap();
+    assert!(compare.contains("\"mode\": \"in-progress\""), "{compare}");
+    assert!(!compare.contains("\"mode\": \"print\""), "{compare}");
+    assert!(!compare.contains("\"mode\": \"run\""), "{compare}");
+    assert!(!compare.contains("0.99"), "{compare}");
+    assert!(
+        compare.contains("\"qwen_glm_specialist_delta\": null"),
+        "{compare}"
+    );
+    assert!(compare.contains("\"base_accuracy\": null"), "{compare}");
+    assert!(
+        compare.contains("\"specialist_accuracy\": null"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"factory_live_pass\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"live_pass_recorded\": false"),
+        "{compare}"
+    );
+    assert!(
+        compare.contains("\"ready_for_live_test\": \"no\""),
+        "{compare}"
+    );
+    assert!(compare.contains("not a factory live PASS"), "{compare}");
+    assert!(compare.contains("Scores stay absent"), "{compare}");
+
+    let _ = fs::remove_dir_all(&cache);
+    let _ = fs::remove_dir_all(&out);
+}
