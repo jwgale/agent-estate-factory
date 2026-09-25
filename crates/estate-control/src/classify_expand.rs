@@ -74,6 +74,7 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
     refuse_parquet(req.heldout, "--heldout")?;
     refuse_parquet(req.from_local, "--from-local")?;
     let (train_path, heldout_path) = resolve_inputs(req)?;
+    let holdout_seed = source_holdout_seed(req.train, req.heldout, train_path.as_deref(), heldout_path.as_deref())?;
     let heldout_rows = match &heldout_path {
         Some(path) => read_jsonl(path)?,
         None => Vec::new(),
@@ -121,6 +122,7 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
             snippets.len(),
             key_env,
             heldout_path.as_deref(),
+            holdout_seed,
         )?;
         return Ok(());
     }
@@ -199,6 +201,11 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
     if train_leaks(&accepted, &holdout) {
         bail!("refuse:classify-expand: expanded train overlaps the held-out commit set");
     }
+    if accepted.is_empty() {
+        bail!(
+            "refuse:classify-expand: expanded train is empty. Nothing accepted from the teacher or the source pairs."
+        );
+    }
     fs::create_dir_all(&out)?;
     write_jsonl(&out.join("train.jsonl"), &accepted)?;
     if let Some(path) = &heldout_path {
@@ -222,7 +229,7 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
         "options": "A=NeedsFix, B=Idiomatic",
         "train_size": train_size.token(),
         "seed": req.seed,
-        "holdout_seed": req.seed,
+        "holdout_seed": holdout_seed,
         "heldout_kind": "seeded-commit-holdout",
         "tag": tag,
         "cache": out.display().to_string(),
@@ -247,7 +254,7 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
         "live_pass_recorded": false,
         "ready_for_live_test": READY,
         "license_note": preset.license_note,
-        "proof": proof_note(req.seed),
+        "proof": proof_note(holdout_seed),
         "note": "classify expand writes a tag-suffixed tev1 cache for local training. It does not train. The held-out file is a copy of the source holdout. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no."
     });
     write_pretty(&out.join("expand-report.json"), &report)?;
@@ -272,6 +279,7 @@ fn write_plan(
     snippets: usize,
     key_env: &str,
     heldout_path: Option<&Path>,
+    holdout_seed: u64,
 ) -> Result<()> {
     let held_hash = heldout_path
         .and_then(|path| fs::read(path).ok())
@@ -287,7 +295,7 @@ fn write_plan(
         "options": "A=NeedsFix, B=Idiomatic",
         "train_size": train_size,
         "seed": req.seed,
-        "holdout_seed": req.seed,
+        "holdout_seed": holdout_seed,
         "heldout_kind": "seeded-commit-holdout",
         "tag": tag,
         "cache": out.display().to_string(),
@@ -305,7 +313,7 @@ fn write_plan(
         "would_call_teacher": false,
         "live_pass_recorded": false,
         "ready_for_live_test": READY,
-        "proof": proof_note(req.seed),
+        "proof": proof_note(holdout_seed),
         "note": "Print does not call the teacher and does not write train.jsonl. --run reads the API key from the named environment variable and never prints the value. Held-out commits stay out of the expanded train. READY_FOR_LIVE_TEST stays no."
     });
     fs::create_dir_all(out)?;
@@ -598,6 +606,63 @@ fn parse_teacher_json(text: &str) -> Option<Value> {
         return None;
     }
     serde_json::from_str(&text[start..=end]).ok()
+}
+
+/// `holdout_seed` comes from the source import cache (`import.json`) or native
+/// cache (`manifest.json`). `--seed` still names the expand cache path.
+fn source_holdout_seed(
+    train_arg: Option<&Path>,
+    heldout_arg: Option<&Path>,
+    train_file: Option<&Path>,
+    heldout_file: Option<&Path>,
+) -> Result<u64> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for path in [train_arg, heldout_arg, train_file, heldout_file]
+        .into_iter()
+        .flatten()
+    {
+        let dir = if path.is_dir() {
+            path.to_path_buf()
+        } else {
+            path.parent().unwrap_or(Path::new(".")).to_path_buf()
+        };
+        if !dirs.iter().any(|seen| seen == &dir) {
+            dirs.push(dir);
+        }
+    }
+    for dir in &dirs {
+        for rel in ["import.json", "manifest.json", "native/manifest.json"] {
+            let path = dir.join(rel);
+            if let Some(seed) = read_holdout_seed(&path)? {
+                return Ok(seed);
+            }
+        }
+    }
+    bail!(
+        "refuse:classify-expand: source holdout_seed is not in the import or native manifest. Re-import rust_idiom so the cache records holdout_seed. This command does not invent one."
+    )
+}
+
+fn read_holdout_seed(path: &Path) -> Result<Option<u64>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-expand: cannot read {}: {err}",
+            path.display()
+        )
+    })?;
+    let value: Value = serde_json::from_str(&text).map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:classify-expand: {} is not json ({err})",
+            path.display()
+        )
+    })?;
+    match value.get("holdout_seed").and_then(Value::as_u64) {
+        Some(seed) => Ok(Some(seed)),
+        None => Ok(None),
+    }
 }
 
 fn resolve_inputs(req: &ExpandRequest<'_>) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
@@ -931,6 +996,11 @@ mod tests {
             "async fn held_only_new() { let _ = channel::unbounded::<u8>(); }",
         );
         fs::write(&held, held_body).unwrap();
+        fs::write(
+            root.join("import.json"),
+            "{\"holdout_seed\":42,\"dataset\":\"rust_idiom\"}\n",
+        )
+        .unwrap();
         (root, train, held)
     }
 
@@ -1046,9 +1116,81 @@ mod tests {
         let source = fs::read(&held).unwrap();
         assert_eq!(copied, source);
         assert_eq!(report["heldout_sha256"], hex_sha(&source));
+        assert_eq!(report["holdout_seed"], 42);
+        assert_eq!(report["seed"], 42);
         assert!(report["proof"].as_str().unwrap().contains("seed 42"));
         let expected = expand_cache_dir("rust_idiom", "all", 42, "rev1");
         assert!(expected.ends_with("rust_idiom-all-s42-rev1"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn holdout_seed_comes_from_the_source_manifest_not_the_cache_seed() {
+        let (root, train, held) = fixture();
+        fs::write(
+            root.join("import.json"),
+            "{\"holdout_seed\":99,\"dataset\":\"rust_idiom\"}\n",
+        )
+        .unwrap();
+        let out = root.join("out");
+        let mut request = req(&train, &held, &out, false, None);
+        request.seed = 7;
+        expand_with(&request, &LiveTeacher).unwrap();
+        let plan: Value =
+            serde_json::from_str(&fs::read_to_string(out.join("expand-plan.json")).unwrap())
+                .unwrap();
+        assert_eq!(plan["seed"], 7);
+        assert_eq!(plan["holdout_seed"], 99);
+        assert!(plan["proof"].as_str().unwrap().contains("seed 99"));
+        assert!(!plan["proof"].as_str().unwrap().contains("seed 7"));
+        fs::write(root.join("import.json"), "{\"dataset\":\"rust_idiom\"}\n").unwrap();
+        fs::create_dir_all(root.join("native")).unwrap();
+        fs::write(
+            root.join("native").join("manifest.json"),
+            "{\"holdout_seed\":42}\n",
+        )
+        .unwrap();
+        expand_with(&request, &LiveTeacher).unwrap();
+        let again: Value =
+            serde_json::from_str(&fs::read_to_string(out.join("expand-plan.json")).unwrap())
+                .unwrap();
+        assert_eq!(again["holdout_seed"], 42);
+        assert_eq!(again["seed"], 7);
+        assert!(again["proof"].as_str().unwrap().contains("seed 42"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_source_holdout_seed_is_refused() {
+        let (root, train, held) = fixture();
+        fs::write(root.join("import.json"), "{\"dataset\":\"rust_idiom\",\"seed\":42}\n").unwrap();
+        let out = root.join("out");
+        let err = expand_with(&req(&train, &held, &out, false, None), &LiveTeacher)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("holdout_seed"), "{err}");
+        assert!(err.contains("does not invent"), "{err}");
+        assert!(!out.join("expand-plan.json").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_refuses_before_write_when_the_accepted_train_is_empty() {
+        let (root, train, held) = fixture();
+        let out = root.join("empty-cache");
+        let teacher = Scripted {
+            key: "teacher-secret-zz".into(),
+            replies: Mutex::new(vec!["{\"keep\":false}".into()]),
+            prompts: Mutex::new(vec![]),
+            saw_key_in_prompt: Mutex::new(false),
+        };
+        let err = expand_with(&req(&train, &held, &out, true, None), &teacher)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expanded train is empty"), "{err}");
+        assert!(!out.join("train.jsonl").exists());
+        assert!(!out.join("expand-report.json").exists());
+        assert!(!out.join("heldout.jsonl").exists());
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -925,6 +925,9 @@ fn journey_import_dir(
     match expand_tag {
         Some(tag) => {
             let tag = crate::classify_expand::validate_expand_tag(tag)?;
+            if alias != "rust_idiom" {
+                bail!("refuse:classify-journey: --expand-tag is the rust_idiom curriculum cache");
+            }
             Ok(crate::classify_import::expand_cache_dir(
                 alias, train_size, seed, &tag,
             ))
@@ -2243,6 +2246,17 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     {
         bail!("refuse:classify-journey: --quant is empty or not a llama-quantize type");
     }
+    if let Some(tag) = req.expand_tag {
+        let _tag = crate::classify_expand::validate_expand_tag(tag)?;
+        let alias = req
+            .import_dataset
+            .map(crate::classify_import::preset_by_name)
+            .transpose()?
+            .map(|preset| preset.alias);
+        if alias != Some("rust_idiom") {
+            bail!("refuse:classify-journey: --expand-tag is the rust_idiom curriculum cache");
+        }
+    }
     let mut paths = JourneyPaths::new(req.out);
     paths.base_cache = req.base_cache.to_path_buf();
     paths.few_shot = req.few_shot;
@@ -2271,7 +2285,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
     };
     if !req.run {
         let steps = plan_with(&ctx);
-        print_plan(req, &paths, template, library, &steps);
+        print_plan(req, &paths, template, library, &steps)?;
         return Ok(());
     }
     let gaps = tool_gaps(
@@ -2339,7 +2353,7 @@ fn print_plan(
     template: &str,
     library: Option<&str>,
     steps: &[StepPlan],
-) {
+) -> Result<()> {
     println!("classify journey: print");
     println!("base: {} template: {template}", req.base);
     let base_seat = library.unwrap_or(req.built_base_tag);
@@ -2413,14 +2427,13 @@ fn print_plan(
             req.train_size, req.heldout_size, req.seed
         );
         if let Some(tag) = req.expand_tag {
-            let cache = crate::classify_import::preset_by_name(dataset)
-                .and_then(|preset| {
-                    let size = crate::classify_import::parse_split_size(req.train_size)?;
-                    journey_import_dir(preset.alias, &size.token(), req.seed, Some(tag))
-                })
-                .map(|dir| dir.display().to_string())
-                .unwrap_or_else(|_| "missing".into());
-            println!("expand_tag: {tag} cache: {cache} no-import dry-run no teacher");
+            let preset = crate::classify_import::preset_by_name(dataset)?;
+            let size = crate::classify_import::parse_split_size(req.train_size)?;
+            let cache = journey_import_dir(preset.alias, &size.token(), req.seed, Some(tag))?;
+            println!(
+                "expand_tag: {tag} cache: {} no-import dry-run no teacher",
+                cache.display()
+            );
         } else if let Some(dir) = req.from_local {
             println!("dataset_source: local {}", dir.display());
         } else if req.import_fetch == crate::classify_import::ImportFetch::RowsApi {
@@ -2444,6 +2457,7 @@ fn print_plan(
     println!("compare writes {}", paths.comparison.display());
     println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
+    Ok(())
 }
 
 fn execute(req: &JourneyRequest<'_>, paths: &JourneyPaths, llama: &LlamaCpp) -> Result<()> {
@@ -5380,5 +5394,62 @@ mod tests {
         assert!(err.contains("tev1-specialist"), "{err}");
         assert!(err.contains("blk.32.attn_norm.weight"), "{err}");
         assert!(err.contains(&gguf.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn expand_tag_on_a_foreign_dataset_is_refused_inside_the_journey() {
+        let err = journey_import_dir("ag_news", "all", 7, Some("rev1"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("rust_idiom"), "{err}");
+        let rust = journey_import_dir("rust_idiom", "all", 7, Some("rev1")).unwrap();
+        assert!(rust.ends_with("rust_idiom-all-s7-rev1"), "{}", rust.display());
+
+        let input = std::env::temp_dir().join("tev1-decisions.jsonl");
+        let out = std::env::temp_dir().join(format!("journey-expand-foreign-{}", std::process::id()));
+        let base_cache = std::env::temp_dir().join("classify-base-cache");
+        let err = cmd_classify_journey(&JourneyRequest {
+            input: &input,
+            out: &out,
+            base: DEFAULT_BASE,
+            base_tag: None,
+            tag: DEFAULT_TAG,
+            endpoint: "http://127.0.0.1:11434",
+            dataset_name: DEFAULT_DATASET,
+            seed: 7,
+            held_out_ratio: 0.2,
+            max_steps: None,
+            quant: DEFAULT_QUANT,
+            llama_cpp_dir: None,
+            force: false,
+            print: true,
+            run: false,
+            min_delta: None,
+            min_accuracy: None,
+            require_significant_lift: false,
+            timeout_secs: 5,
+            together_poll_secs: DEFAULT_TOGETHER_POLL_SECS,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+            together_base_url: DEFAULT_TOGETHER_API,
+            api_key_env: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: "note",
+            preset: JourneyPreset::Tev1,
+            import_dataset: Some("devign"),
+            train_size: "all",
+            heldout_size: "all",
+            from_local: None,
+            import_fetch: crate::classify_import::ImportFetch::Bulk,
+            python: None,
+            base_cache: &base_cache,
+            few_shot: 0,
+            expand_tag: Some("rev1"),
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("rust_idiom"), "{err}");
+        assert!(!err.contains("seed"), "{err}");
     }
 }

@@ -55,6 +55,7 @@ fn expand_help_is_next_to_import_and_print_does_not_echo_the_key() {
         ),
     )
     .unwrap();
+    fs::write(root.join("import.json"), "{\"holdout_seed\":42}\n").unwrap();
     let out = root.join("plan");
     let secret = "expand-secret-not-for-logs-91";
     let printed = bin()

@@ -726,6 +726,13 @@ fn usable_pairs(preset: &DatasetPreset) -> Option<u64> {
     }
 }
 
+fn preset_holdout_seed(preset: &DatasetPreset) -> Option<u64> {
+    match preset.shape {
+        SourceShape::CommitPair { holdout_seed, .. } => Some(holdout_seed),
+        SourceShape::LabeledColumns => None,
+    }
+}
+
 fn heldout_note(preset: &DatasetPreset) -> String {
     match preset.shape {
         SourceShape::CommitPair {
@@ -931,6 +938,10 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
         "live_train": false,
         "note": "classify import writes tev1 JSONL for local training. It does not train. Do not redistribute the rows."
     });
+    let mut manifest = manifest;
+    if let Some(holdout_seed) = preset_holdout_seed(preset) {
+        manifest["holdout_seed"] = json!(holdout_seed);
+    }
     fs::write(
         req.out.join("import.json"),
         format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -4493,6 +4504,7 @@ mod tests {
         assert_eq!(manifest["official_test"], 936);
         assert_eq!(manifest["source_commits"], 2_996);
         assert_eq!(manifest["usable_pairs"], 2_340);
+        assert_eq!(manifest["holdout_seed"], RUST_HOLDOUT_SEED);
         assert_eq!(manifest["option_order"], "fixed");
         let note = manifest["option_order_note"].as_str().unwrap();
         assert!(note.contains("A=NeedsFix, B=Idiomatic"), "{note}");

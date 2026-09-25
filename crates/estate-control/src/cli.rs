@@ -727,7 +727,8 @@ pub(crate) enum ClassifyCommand {
         /// Train-size token recorded on the cache. Same token `classify journey --train-size` uses. Default `all`.
         #[arg(long, default_value = "all")]
         train_size: String,
-        /// Same seed as the rust_idiom import holdout. Default 42.
+        /// Names the expand cache directory, same token as the sampled import path. Default 42.
+        /// The report `holdout_seed` is read from the source import or native manifest, not from this flag.
         #[arg(long, default_value_t = crate::classify_import::DEFAULT_IMPORT_SEED)]
         seed: u64,
         /// Write `expand-plan.json` only. This is the default. Does not call the teacher.
