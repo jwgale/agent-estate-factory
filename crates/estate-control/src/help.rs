@@ -404,8 +404,12 @@ quiet. Those cites do not fail reconcile. Authority follows
 (`describe_authority_section` over `authority_report`). A missing mesh is
 an empty cite list. Authority rows stay not-enforced and cite that the
 mesh file is absent (missing-mesh). A present mesh that does not parse,
-or a bad host_class, refuses before those sections and does not invent
-cites, Agents, or Authority rows. Placement drift still fails closed.
+or a bad host_class on that file, refuses before those sections and does
+not invent cites, Agents, or Authority rows. A placement-actual SKU
+host_class still reaches the placement report (`refuse:bad-host-class`).
+A mesh population ahead of placement-actual is `refuse:agent-unplaced`
+before those sections and before reconcile.json or a suggest patch.
+Placement drift still fails closed.
 The command does not spawn. It does not rewrite leases, the estate, or
 the mesh. --suggest still does not rewrite leases. The Authority section
 has no enforced status.

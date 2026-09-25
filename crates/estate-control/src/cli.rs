@@ -211,7 +211,10 @@ pub(crate) enum Command {
     /// reconcile.json, a suggest patch, or this report. Those cites do not
     /// fail this command. A match stays quiet. A missing mesh is an empty
     /// cite list and stays not-enforced. A present mesh that does not parse,
-    /// or a bad host_class, refuses before those sections. Placement drift
+    /// or a bad host_class on that file, refuses before those sections. A
+    /// placement-actual SKU host_class still reaches the placement report.
+    /// A mesh population ahead of placement-actual is `refuse:agent-unplaced`
+    /// before those sections. Placement drift
     /// still fails closed. `--suggest` writes a patch file and does not
     /// rewrite leases. Does not spawn. Does not rewrite the estate or the mesh.
     /// Examples: `estate help reconcile`

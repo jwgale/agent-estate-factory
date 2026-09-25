@@ -717,6 +717,96 @@ fn placement_sku_still_prints_the_reconcile_report_and_does_not_rewrite_leases()
 }
 
 #[test]
+fn agent_unplaced_refuses_before_sections_and_writes_nothing() {
+    let dir = scratch();
+    let state = dir.join("state");
+    let estate_path = repo_root().join("examples/estate.yaml");
+    apply(&estate_path, &state, &dir);
+    let mut ahead = granted_box("notes-append");
+    ahead.hops.push(conveyor_proxy::HopDecl {
+        id: "cell-one-box".into(),
+        kind: "box".into(),
+        capability: "notes-append".into(),
+        host_class: "any".into(),
+        wired: true,
+        note: None,
+        ttl_secs: None,
+        agents: vec!["research".into(), "outsider".into()],
+    });
+    ahead.leases[0].agents = vec!["research".into(), "outsider".into()];
+    conveyor_proxy::persist_mesh(&state, &ahead).unwrap();
+    let leases_before = std::fs::read(state.join("placement-actual.json")).unwrap();
+    let mesh_before = std::fs::read(state.join("conveyor-mesh.json")).unwrap();
+    let hops_before = std::fs::read(state.join("conveyor-hops.json")).unwrap();
+    let hop_leases_before = std::fs::read(state.join("conveyor-leases.json")).unwrap();
+    let audit_before = std::fs::read(state.join("apply-audit.jsonl")).unwrap();
+    std::fs::write(state.join("reconcile.json"), "sentinel\n").unwrap();
+    std::fs::write(state.join("reconcile-suggest.md"), "sentinel-suggest\n").unwrap();
+
+    let (status_ok, status_out, status_err) = status(&estate_path, &state, &repo_root(), &dir);
+    assert!(!status_ok, "{status_out}\n{status_err}");
+    assert!(
+        status_err.contains("refuse:agent-unplaced") && status_err.contains("outsider"),
+        "{status_err}"
+    );
+    assert!(
+        !status_out.contains("Cell One status") && no_sections(&status_out),
+        "{status_out}"
+    );
+    let (convey_ok, convey_out, convey_err) = convey(&estate_path, &state);
+    assert!(!convey_ok, "{convey_out}\n{convey_err}");
+    assert!(
+        convey_err.contains("refuse:agent-unplaced") && convey_err.contains("outsider"),
+        "{convey_err}"
+    );
+    assert!(convey_out.trim().is_empty() && no_sections(&convey_out), "{convey_out}");
+
+    for suggest in [false, true] {
+        let (ok, stdout, stderr) = reconcile(&estate_path, &state, suggest);
+        assert!(!ok, "suggest={suggest} {stdout}\n{stderr}");
+        assert!(stdout.trim().is_empty(), "{stdout}");
+        assert!(no_sections(&stdout), "{stdout}");
+        assert!(no_sections(&stderr), "{stderr}");
+        assert!(stderr.contains("refuse:agent-unplaced"), "{stderr}");
+        assert!(stderr.contains("outsider"), "{stderr}");
+        assert!(
+            !stderr.contains("reconcile drift"),
+            "agent-unplaced must refuse before the placement report\n{stderr}"
+        );
+        assert_eq!(
+            std::fs::read(state.join("placement-actual.json")).unwrap(),
+            leases_before
+        );
+        assert_eq!(
+            std::fs::read(state.join("conveyor-mesh.json")).unwrap(),
+            mesh_before
+        );
+        assert_eq!(
+            std::fs::read(state.join("conveyor-hops.json")).unwrap(),
+            hops_before
+        );
+        assert_eq!(
+            std::fs::read(state.join("conveyor-leases.json")).unwrap(),
+            hop_leases_before
+        );
+        assert_eq!(
+            std::fs::read(state.join("apply-audit.jsonl")).unwrap(),
+            audit_before
+        );
+        assert_eq!(
+            std::fs::read_to_string(state.join("reconcile.json")).unwrap(),
+            "sentinel\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(state.join("reconcile-suggest.md")).unwrap(),
+            "sentinel-suggest\n"
+        );
+    }
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn reconcile_help_names_the_shared_stack_before_the_report() {
     let (ok, stdout, stderr) = run(&["reconcile", "--help"]);
     assert!(ok, "{stdout}\n{stderr}");
@@ -753,6 +843,8 @@ fn reconcile_help_names_the_shared_stack_before_the_report() {
     assert!(help_out.contains("missing-mesh"), "{help_out}");
     assert!(help_out.contains("does not spawn"), "{help_out}");
     assert!(help_out.contains("does not rewrite leases"), "{help_out}");
+    assert!(help_out.contains("refuse:agent-unplaced"), "{help_out}");
+    assert!(stdout.contains("refuse:agent-unplaced"), "{stdout}");
     assert!(
         help_out.contains("Placement drift still fails closed"),
         "{help_out}"

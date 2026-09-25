@@ -2,7 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
-    authority_report, describe_authority_section, load_mesh, refuse_mesh_host_classes,
+    authority_report, describe_authority_section, load_mesh, refuse_mesh_host_classes, MeshError,
 };
 use estate_schema::{describe_agents_section, load_estate, load_estate_unvalidated};
 use feed_collector::{refuse_accept_frontier_invent, LOCKED_CURATOR};
@@ -120,18 +120,23 @@ pub(crate) fn cmd_reconcile(path: &Path, state_dir: &Path, suggest: bool) -> Res
 /// A missing mesh is the empty mesh from `load_mesh`: the cite list is
 /// empty and Authority stays `not-enforced` (`missing-mesh`).
 ///
-/// `authority_report` also reads placement-actual. A placement host class
-/// or a population that is ahead of the floor is the placement report's
-/// job. This function does not invent sections on that error and does not
-/// replace the drift bail. Capability mismatch prints `FAIL`. Deny and
-/// deny-default print `note`. A match stays quiet. Those cites are
+/// `authority_report` also reads placement-actual. Only
+/// `MeshError::BadHostClass` (a placement-actual SKU or other bad
+/// `host_class` from slim-parse) continues without sections, so the
+/// placement report can still print `refuse:bad-host-class`. Every other
+/// mesh error, including a population ahead of the floor
+/// (`refuse:agent-unplaced`), refuses here before any section and before
+/// `reconcile.json` or a suggest patch. Capability mismatch prints `FAIL`.
+/// Deny and deny-default print `note`. A match stays quiet. Those cites are
 /// discarded here. Does not rewrite the mesh, the leases, the estate, or
 /// the apply audit. Does not spawn. No `enforced` status.
 fn print_reconcile_honesty(estate: &estate_schema::Estate, state_dir: &Path) -> Result<()> {
     let mesh = load_mesh(state_dir)?;
     refuse_mesh_host_classes(&mesh)?;
-    let Ok(rows) = authority_report(state_dir, estate) else {
-        return Ok(());
+    let rows = match authority_report(state_dir, estate) {
+        Ok(rows) => rows,
+        Err(MeshError::BadHostClass(_)) => return Ok(()),
+        Err(err) => return Err(err.into()),
     };
     println!("{}", describe_agents_section(estate));
     let _mismatches = crate::watch::print_hop_coverage_cites(estate, &mesh);
