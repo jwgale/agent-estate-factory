@@ -169,6 +169,7 @@ pub(crate) fn run() -> Result<()> {
                 wired,
                 ttl_secs,
                 agents,
+                estate,
                 state_dir,
             } => cmd_convey_hop(
                 &id,
@@ -178,6 +179,7 @@ pub(crate) fn run() -> Result<()> {
                 wired,
                 ttl_secs,
                 &agents,
+                &estate,
                 &state_dir,
             ),
             ConveyCommand::Call {

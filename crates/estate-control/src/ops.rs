@@ -4,9 +4,10 @@ use conveyor_proxy::{
     list_expired_hop_leases, list_hop_leases, list_hops, sync_from_placements, HopDecl,
 };
 use estate_schema::{
-    describe_agents_section, describe_declared_coverage, describe_hop_coverage,
-    describe_intention_coverage, describe_model_class_coverage, describe_placements, estate_hash,
-    list_plans, load_estate, load_estate_unvalidated, load_policy, policy_allows,
+    convey_hop_coverage, describe_agents_section, describe_declared_coverage,
+    describe_hop_coverage, describe_intention_coverage, describe_model_class_coverage,
+    describe_placements, estate_hash, list_plans, load_estate, load_estate_unvalidated,
+    load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -359,6 +360,20 @@ pub(crate) fn cmd_history(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn refuse_convey_coverage(estate_path: &Path, hop_id: &str, agent: Option<&str>) -> Result<()> {
+    // No estate file means no placement rows. The lease stub stays.
+    // A present estate is enforced: deny and deny-default refuse.
+    if !estate_path.is_file() {
+        return Ok(());
+    }
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    match convey_hop_coverage(&estate, hop_id, agent) {
+        Ok(_) => Ok(()),
+        Err(gate) => bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word),
+    }
+}
+
 pub(crate) fn cmd_convey_hop(
     id: &str,
     kind: &str,
@@ -367,8 +382,16 @@ pub(crate) fn cmd_convey_hop(
     wired: bool,
     ttl_secs: Option<u64>,
     agents: &[String],
+    estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
+    if agents.is_empty() {
+        refuse_convey_coverage(estate_path, id, None)?;
+    } else {
+        for agent in agents {
+            refuse_convey_coverage(estate_path, id, Some(agent.as_str()))?;
+        }
+    }
     let lease = declare_hop(
         state_dir,
         HopDecl {
@@ -396,6 +419,7 @@ pub(crate) fn cmd_convey_call(
     policy: &Path,
 ) -> Result<()> {
     enforce_policy(policy, "convey-call", Some(id))?;
+    refuse_convey_coverage(estate_path, id, agent)?;
     let call = if let Some(agent) = agent {
         let estate = estate_schema::load_estate(estate_path)
             .with_context(|| format!("load {}", estate_path.display()))?;

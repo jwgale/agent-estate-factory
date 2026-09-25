@@ -288,6 +288,8 @@ fn convey_call_refuses_policy_deny() {
             "cell-one-box",
             "--capability",
             "lane-tool",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
             "--policy",
@@ -298,8 +300,12 @@ fn convey_call_refuses_policy_deny() {
     let unbound_text = text(&unbound);
     assert!(!unbound.status.success(), "{unbound_text}");
     assert!(
-        unbound_text.contains("refuse:agent-unbound"),
-        "synced population must refuse an unnamed call, got {unbound_text}"
+        unbound_text.contains("refuse:hop-coverage") && unbound_text.contains("(deny-default)"),
+        "cell-one-box hop coverage is deny-default, got {unbound_text}"
+    );
+    assert!(
+        !unbound_text.contains("(deny)"),
+        "deny-default must not be reported as deny, got {unbound_text}"
     );
 
     let hop = estate_bin()
