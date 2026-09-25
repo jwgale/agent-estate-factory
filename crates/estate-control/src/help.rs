@@ -252,6 +252,12 @@ After `estate expire --forget`, apply restamps leases. That is not `--force`.
 A cell catalog that disagrees with the binding is `refuse:frontier-model`
 before any apply write. The schema card is not the binding. A missing
 catalog is not a disagreement, and `--force` does not overwrite one.
+A declared agent call is cited before any write, in the same line plan,
+drift, and doctor print (`subject agent target: word (own|peer)`).
+Allow is quiet. Deny and deny-default are notes and do not fail apply.
+A call target that is not an estate agent fails before writes. Agent-call
+rows have no capability-mismatch class. A hop-coverage mismatch still
+fails before writes. Undeclared pairs stay on plan, drift, and doctor.
 ";
 
 const RECONCILE: &str = "\
