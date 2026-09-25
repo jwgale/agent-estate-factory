@@ -822,9 +822,17 @@ fn resolve_intention_kind(
     if agent.has_model(capability) {
         hits.push(estate_schema::IntentionKind::Model);
     }
-    let call_name = capability.strip_prefix("agent:").unwrap_or(capability).trim();
-    if !call_name.is_empty() && agent.has_call(call_name) {
-        hits.push(estate_schema::IntentionKind::Agent);
+    // `lane-tool` and `mesh-stub` are hop capabilities. They do not infer Agent.
+    // An explicit kind (including Agent) already returned above.
+    let reserved = matches!(
+        estate_schema::normalize_name(capability).as_str(),
+        "lane-tool" | "mesh-stub"
+    );
+    if !reserved {
+        let call_name = capability.strip_prefix("agent:").unwrap_or(capability).trim();
+        if !call_name.is_empty() && agent.has_call(call_name) {
+            hits.push(estate_schema::IntentionKind::Agent);
+        }
     }
     match hits.as_slice() {
         [one] => Ok(*one),
@@ -2897,6 +2905,79 @@ mod tests {
         let empty = row(&rows, "(none)", "empty-box", "lane-tool");
         assert_eq!(empty.status, "not-enforced");
         assert!(empty.reason.contains("empty population is not a grant"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lane_tool_agent_call_does_not_grant_or_scramble_authority() {
+        let dir = tmp();
+        let mut estate = example_estate();
+        let mut peer = estate
+            .agents
+            .iter()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .clone();
+        peer.id = "lane-tool".into();
+        peer.display_name = "Lane Tool".into();
+        peer.calls.clear();
+        estate.agents.push(peer);
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .calls
+            .push(estate_schema::CallDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Agent,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        declare_hop(
+            &dir,
+            HopDecl {
+                id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "lane-tool".into(),
+                host_class: "any".into(),
+                wired: true,
+                note: None,
+                ttl_secs: None,
+                agents: vec!["research".into()],
+            },
+        )
+        .unwrap();
+        let rows = authority_report(&dir, &estate).unwrap();
+        let only_agent = row(&rows, "research", "cell-one-box", "lane-tool");
+        assert_eq!(only_agent.status, "would-deny");
+        assert_ne!(only_agent.status, "would-allow");
+
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let rows = authority_report(&dir, &estate).unwrap();
+        let both = row(&rows, "research", "cell-one-box", "lane-tool");
+        assert_eq!(both.status, "would-allow", "{}", both.reason);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
