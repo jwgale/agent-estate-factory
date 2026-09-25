@@ -267,8 +267,14 @@ same window, in the line plan, drift, and doctor print
 including own-lane allow. Deny and deny-default, including a cross-lane
 read with no intention, are notes and do not fail apply. A missing or
 unrecognized memory edge fails before writes. Memory rows have no
+capability-mismatch class. A model class row is cited after memory and
+before tool, MCP, and mount, in the line plan, drift, and doctor print
+(`agent frontier|local binding: allow|deny|deny-default`). Allow is quiet.
+Deny and deny-default are notes and do not fail apply. A missing row, a
+class token other than frontier or local, or an unrecognized word fails
+before writes (`refuse:model-class`). Model rows have no
 capability-mismatch class. A declared tool, MCP, or mount is cited after
-memory and before hop, in the line plan, drift, and doctor print
+that model row and before hop, in the line plan, drift, and doctor print
 (`agent tool|mcp|mount id: allow|deny|deny-default`). Allow is quiet.
 Deny and deny-default are notes and do not fail apply. A missing or
 unrecognized row fails before writes (`refuse:tool`, `refuse:mcp`, or

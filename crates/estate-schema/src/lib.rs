@@ -20,9 +20,9 @@ pub use firewall::{
     describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
     describe_intention_coverage, describe_model_class_coverage, hop_coverage_rows,
     intention_coverage_rows,
-    coverage_word, coverage_word_for_reason, model_class_coverage_rows, read_lane_file,
-    AccessRequest, AgentCallCoverageCite, CoverageRow, Decision, DeclaredCoverageCite, Deny,
-    MemoryCoverageCite,
+    coverage_word, coverage_word_for_reason, model_class_coverage_cites, model_class_coverage_rows,
+    read_lane_file, AccessRequest, AgentCallCoverageCite, CoverageRow, Decision,
+    DeclaredCoverageCite, Deny, MemoryCoverageCite, ModelClassCoverageCite,
     HopCoverageGate, IntentionCoverageGate,
 };
 pub use hash::estate_hash;
