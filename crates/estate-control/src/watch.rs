@@ -1473,6 +1473,10 @@ mod doctor_authority_section_tests {
             "{section}"
         );
         assert!(
+            section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+            "{section}"
+        );
+        assert!(
             !section.contains("would-deny=0 not-enforced=0"),
             "{section}"
         );
@@ -1743,6 +1747,10 @@ mod status_authority_section_tests {
         assert!(section.starts_with("Authority\n---------\n"), "{section}");
         assert!(
             section.contains("authority would-allow=0 would-deny=0 not-enforced="),
+            "{section}"
+        );
+        assert!(
+            section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
             "{section}"
         );
         assert!(

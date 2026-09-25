@@ -164,7 +164,8 @@ fn apply_and_dry_run_print_the_plan_agents_section_and_dry_run_writes_nothing() 
     let ok_at = dry_out.find("dry-run ok (no writes)").unwrap();
     assert!(agents_at < auth_at && auth_at < ok_at, "{dry_out}");
     assert!(
-        dry_out.contains("authority would-allow=0 would-deny=0 not-enforced="),
+        dry_out.contains("authority would-allow=0 would-deny=0 not-enforced=")
+            && dry_out.contains("not-enforced reasons: missing-mesh=2 cloud=1"),
         "{dry_out}"
     );
     assert!(
@@ -206,7 +207,8 @@ fn apply_and_dry_run_print_the_plan_agents_section_and_dry_run_writes_nothing() 
         "{stdout}"
     );
     assert!(
-        stdout.contains("authority would-allow=0 would-deny=0 not-enforced="),
+        stdout.contains("authority would-allow=0 would-deny=0 not-enforced=")
+            && stdout.contains("not-enforced reasons: missing-mesh=2 cloud=1"),
         "{stdout}"
     );
     assert!(no_enforced_status_token(&stdout), "{stdout}");

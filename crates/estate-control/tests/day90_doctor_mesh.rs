@@ -63,6 +63,10 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
         text.contains("authority would-allow=0 would-deny=0 not-enforced="),
         "{text}"
     );
+    assert!(
+        text.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+        "{text}"
+    );
     assert!(!text.contains("would-deny=0 not-enforced=0"), "{text}");
     assert!(text.contains("conveyor-mesh.json is absent"), "{text}");
     assert!(
