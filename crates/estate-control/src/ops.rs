@@ -2,8 +2,8 @@ use anyhow::{bail, Context, Result};
 use conveyor_proxy::{
     append_proxy_audit, authority_report, call_hop, declare_hop_covering,
     describe_authority_section, forget_expired_hop_leases, hop_now_unix, list_expired_hop_leases,
-    list_hop_leases, list_hops, load_mesh, sync_from_placements, sync_from_placements_covering,
-    HopDecl,
+    list_hop_leases, list_hops, load_mesh, refuse_mesh_host_classes, sync_from_placements,
+    sync_from_placements_covering, HopDecl, MeshError,
 };
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
@@ -739,6 +739,14 @@ pub(crate) fn cmd_packs_propose(
     Ok(())
 }
 
+/// Local review bundle. After the estate loads, the honesty snapshot is
+/// built before `write_reconcile` and before `out` is wiped or written.
+/// `MANIFEST.md` names `honesty.md`. `conveyor-mesh.json` is copied when
+/// that file is present. A mesh that does not parse, a bad `host_class` on
+/// that file, or `refuse:agent-unplaced` returns before any of those writes
+/// (empty stdout, no partial export). A placement-actual SKU `host_class`
+/// still exports. Does not spawn. Does not rewrite leases, the estate, the
+/// apply audit, or the live mesh beyond `write_reconcile`.
 pub(crate) fn cmd_audit_export(
     estate_path: &Path,
     state_dir: &Path,
@@ -749,6 +757,10 @@ pub(crate) fn cmd_audit_export(
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // Refuse paths return here: no reconcile refresh, no out-dir wipe, no
+    // honesty file, no tar. Cites inside a successful snapshot do not fail
+    // this command.
+    let honesty = audit_export_honesty(&estate, state_dir)?;
     let report = reconcile_placements(&estate, state_dir)?;
     write_reconcile(state_dir, &report)?;
     if out.exists() {
@@ -773,6 +785,10 @@ pub(crate) fn cmd_audit_export(
         ),
         (state_dir.join("reconcile.json"), out.join("reconcile.json")),
         (state_dir.join("reconcile.md"), out.join("reconcile.md")),
+        (
+            state_dir.join("conveyor-mesh.json"),
+            out.join("conveyor-mesh.json"),
+        ),
         (
             state_dir.join("conveyor-leases.json"),
             out.join("conveyor-leases.json"),
@@ -800,7 +816,8 @@ pub(crate) fn cmd_audit_export(
     manifest.push_str(&format!("estate_file: {}\n", estate_path.display()));
     manifest.push_str(&format!("estate_hash: {}\n", estate_hash(&estate)));
     manifest.push_str(&format!("reconcile_in_sync: {}\n", report.in_sync));
-    manifest.push_str(&format!("refuses: {}\n\n", report.refuses.len()));
+    manifest.push_str(&format!("refuses: {}\n", report.refuses.len()));
+    manifest.push_str(&format!("honesty: {AUDIT_HONESTY_FILE}\n\n"));
     manifest.push_str("Copied\n------\n");
     if copied.is_empty() {
         manifest.push_str("(none)\n");
@@ -817,6 +834,10 @@ pub(crate) fn cmd_audit_export(
             manifest.push_str(&format!("  {item}\n"));
         }
     }
+    // Next to MANIFEST.md. Named by the `honesty:` line above. Written
+    // before the manifest and before tar, so the bundle and the archive
+    // both hold the snapshot.
+    std::fs::write(out.join(AUDIT_HONESTY_FILE), &honesty)?;
     std::fs::write(out.join("MANIFEST.md"), &manifest)?;
     let meta = serde_json::json!({
         "schema": "cell-one.audit-export.v0",
@@ -858,6 +879,47 @@ pub(crate) fn cmd_audit_export(
         }
     }
     Ok(())
+}
+
+const AUDIT_HONESTY_FILE: &str = "honesty.md";
+
+/// Agents, hop coverage cites, then Authority, for `honesty.md`.
+///
+/// A present mesh that does not parse, or a bad `host_class` on that file,
+/// refuses before any section. Audit export does not invent cites, Agents,
+/// or Authority rows, and the caller does not wipe or write the out dir.
+/// A missing mesh is the empty mesh from `load_mesh`: the cite list is
+/// empty and Authority stays `not-enforced` (`missing-mesh`). The caller
+/// still writes this file.
+///
+/// `authority_report` also reads placement-actual. Mesh host classes are
+/// already refused above, so the only `MeshError::BadHostClass` that
+/// reaches the match is the placement-actual slim-parse (a SKU or other
+/// bad `host_class`). That one error continues: this snapshot still writes
+/// Agents and hop cites from `load_mesh` and omits Authority rows.
+/// Placement-actual and the reconcile files already surface
+/// `refuse:bad-host-class`. Every other mesh error, including a population
+/// ahead of the floor (`refuse:agent-unplaced`), refuses here before any
+/// section. Capability mismatch is `FAIL`. Deny and deny-default are
+/// `note`. A match stays quiet. Those cites do not fail the export. Does
+/// not rewrite the mesh, the leases, the estate, or the apply audit. Does
+/// not spawn. No `enforced` status.
+fn audit_export_honesty(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+    let mesh = load_mesh(state_dir)?;
+    refuse_mesh_host_classes(&mesh)?;
+    let authority = match authority_report(state_dir, estate) {
+        Ok(rows) => Some(describe_authority_section(&rows, state_dir)),
+        Err(MeshError::BadHostClass(_)) => None,
+        Err(err) => return Err(err.into()),
+    };
+    let mut text = format!("{}\n", describe_agents_section(estate));
+    let (cites, _mismatches) = crate::watch::render_hop_coverage_cites(estate, &mesh);
+    text.push_str(&cites);
+    if let Some(section) = authority {
+        text.push_str(&section);
+        text.push('\n');
+    }
+    Ok(text)
 }
 
 pub(crate) fn cmd_drift(path: &Path, state_dir: &Path, roots_base: &Path) -> Result<()> {

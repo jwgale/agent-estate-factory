@@ -1129,6 +1129,23 @@ pub(crate) enum EnrichCommand {
 #[derive(Subcommand)]
 pub(crate) enum AuditCommand {
     /// Write a reviewable folder (and optional tarball) of local audit files.
+    /// After the estate loads, and before the copy and tar finish, writes
+    /// `honesty.md` next to `MANIFEST.md`. The manifest names that file.
+    /// The snapshot is the same Agents section (`describe_agents_section`),
+    /// hop coverage cites (`hop_coverage_cites`: `FAIL` on mismatch, `note`
+    /// on deny and deny-default), and Authority
+    /// (`describe_authority_section` over `authority_report`) that status,
+    /// doctor, reconcile, and convey authority print. Those cites do not
+    /// fail this command. A match stays quiet. A missing mesh is an empty
+    /// cite list and stays not-enforced. `conveyor-mesh.json` is copied
+    /// when present. A present mesh that does not parse, or a bad
+    /// host_class on that file, refuses before the snapshot and before the
+    /// out dir is wiped. A placement-actual SKU host_class still exports;
+    /// `honesty.md` keeps Agents and hop cites and omits Authority rows.
+    /// A mesh population ahead of placement-actual is `refuse:agent-unplaced`
+    /// before the snapshot and before the out dir is written. Does not
+    /// spawn. Does not rewrite leases, the estate, the apply audit, or the
+    /// live mesh beyond the reconcile files this command already writes.
     Export {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,

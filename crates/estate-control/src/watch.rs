@@ -404,39 +404,54 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     Ok(describe_authority_section(&rows, state_dir))
 }
 
-/// Shared printer for doctor, status, `estate convey authority`, and
-/// `estate reconcile`. A granted box lease (or a box hop declaration with
-/// no lease) whose placement hop coverage is deny, deny-default, or a
-/// capability mismatch quotes `refuse:hop-coverage`. `FAIL` when `cite.fail`
+/// Shared printer for doctor, status, `estate convey authority`,
+/// `estate reconcile`, and the `honesty.md` snapshot `estate audit export`
+/// writes. A granted box lease (or a box hop declaration with no lease)
+/// whose placement hop coverage is deny, deny-default, or a capability
+/// mismatch quotes `refuse:hop-coverage`. `FAIL` when `cite.fail`
 /// (capability mismatch). Deny and deny-default are `note`. Returns the
 /// mismatch lines. Doctor appends them and bails at the end. Status, convey
-/// authority, and reconcile discard them and do not bail. Cloud hops, empty
-/// populations, ungranted
+/// authority, reconcile, and audit export discard them and do not bail.
+/// Cloud hops, empty populations, ungranted
 /// leases, and hop ids that are not placements stay out. Cloud kinds stay
 /// out of this cite on purpose: `cloud-mesh`, `cloud_mesh`, and
 /// `cloud-agent` (trim, lowercase) are declared-not-spawned, not a
 /// capability mismatch. The hop describe line already names that. Does not
 /// write.
 pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> Vec<String> {
-    let mut mismatches = Vec::new();
-    for cite in hop_coverage_cites(estate, mesh) {
-        if cite.fail {
-            println!("  FAIL  {}", cite.line);
-            mismatches.push(cite.line);
-        } else {
-            println!("  note  {}", cite.line);
-        }
-    }
+    let (text, mismatches) = render_hop_coverage_cites(estate, mesh);
+    print!("{text}");
     mismatches
 }
 
+/// The lines `print_hop_coverage_cites` prints, plus the mismatch lines it
+/// returns. `estate audit export` writes the text into `honesty.md`. Empty
+/// when every subject matches. Does not write.
+pub(crate) fn render_hop_coverage_cites(
+    estate: &Estate,
+    mesh: &ConveyorMesh,
+) -> (String, Vec<String>) {
+    let mut text = String::new();
+    let mut mismatches = Vec::new();
+    for cite in hop_coverage_cites(estate, mesh) {
+        if cite.fail {
+            text.push_str(&format!("  FAIL  {}\n", cite.line));
+            mismatches.push(cite.line);
+        } else {
+            text.push_str(&format!("  note  {}\n", cite.line));
+        }
+    }
+    (text, mismatches)
+}
+
 /// Shared with `estate drift`, `estate plan`, `estate apply`,
-/// `estate status`, `estate convey authority`, and `estate reconcile`.
-/// `fail` is capability mismatch only. Deny and deny-default stay visible.
-/// They do not fail doctor `--strict`, drift, plan, apply, status, convey
-/// authority, or reconcile by themselves. A mismatch fails doctor, drift,
-/// plan, and apply. Status, convey authority, and reconcile print it and
-/// do not bail.
+/// `estate status`, `estate convey authority`, `estate reconcile`, and
+/// `estate audit export`. `fail` is capability mismatch only. Deny and
+/// deny-default stay visible. They do not fail doctor `--strict`, drift,
+/// plan, apply, status, convey authority, reconcile, or audit export by
+/// themselves. A mismatch fails doctor, drift, plan, and apply. Status,
+/// convey authority, reconcile, and audit export keep the line and do not
+/// bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
