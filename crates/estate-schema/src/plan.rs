@@ -1041,7 +1041,7 @@ mod tests {
         assert!(agents.contains("horizon intention model class:frontier: allow"));
         assert!(agents.contains("horizon intention model local_slm: deny"));
         assert!(agents.contains("horizon hop cell-one-box lane-tool: deny-default"));
-        assert!(agents.contains("research memory_read lane:research: allow"));
+        assert!(agents.contains("research memory_read lane:research: allow (own-lane)"));
         assert!(agents.contains("sanctum hop cursor-cloud mesh-stub: deny"));
         assert!(agents.contains("- id: sanctum"));
         assert!(agents.contains(
