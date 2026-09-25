@@ -450,7 +450,11 @@ fn refuse_convey_coverage(
     match convey_hop_declared_capability(&estate, hop_id, agent, capability) {
         Ok(_) => Ok(()),
         Err(gate) => {
-            record_proxy_gate(state_dir, hop_id, agent, capability, gate.word, &gate.line)?;
+            // `mismatch` is the refuse word. The feed decision stays
+            // allow | deny | deny-default, same as hop audit.
+            let decision = estate_schema::coverage_word_for_reason(false, &gate.line);
+            let noted = format!("{} ({})", gate.line, gate.word);
+            record_proxy_gate(state_dir, hop_id, agent, capability, decision, &noted)?;
             bail!("refuse:hop-coverage: {} ({})", gate.line, gate.word)
         }
     }
@@ -986,6 +990,59 @@ mod convey_coverage_tests {
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0].decision.as_deref(), Some("deny"));
         assert_eq!(lines[0].kind, "proxy.hop");
+    }
+
+    #[test]
+    fn capability_mismatch_audits_deny_and_keeps_mismatch_in_the_message() {
+        let mut estate =
+            estate_schema::load_estate(&repo_root().join("examples/estate.yaml")).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .tools
+            .push(estate_schema::ToolDecl {
+                id: "lane-tool".into(),
+                description: None,
+            });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Allow,
+            note: None,
+        });
+        let yaml = estate_schema::render_estate_yaml(&estate).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "cell-mismatch-estate-{}.yaml",
+            std::process::id()
+        ));
+        std::fs::write(&path, yaml).unwrap();
+        let state = state_dir("mismatch");
+        refuse_convey_coverage(&path, &state, "cell-one-box", Some("research"), "lane-tool")
+            .unwrap();
+        assert!(!state.join("feed/events.jsonl").exists());
+        let msg = refuse_convey_coverage(
+            &path,
+            &state,
+            "cell-one-box",
+            Some("research"),
+            "notes-append",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("refuse:hop-coverage"), "{msg}");
+        assert!(msg.contains("(mismatch)"), "{msg}");
+        assert!(msg.contains("does not match"), "{msg}");
+        let lines = feed_collector::proxy_audit_events(&state.join("feed")).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].decision.as_deref(), Some("deny"));
+        assert_eq!(lines[0].kind, "proxy.hop");
+        let note = lines[0].note.as_deref().unwrap_or("");
+        assert!(note.contains("does not match"), "{note}");
+        assert!(note.contains("(mismatch)"), "{note}");
+        let _ = std::fs::remove_file(&path);
     }
 }
 
