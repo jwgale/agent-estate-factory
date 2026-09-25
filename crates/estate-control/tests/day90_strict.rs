@@ -31,6 +31,11 @@ fn doctor_strict_passes_on_repo() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(out.status.success(), "{text}");
+    assert!(text.contains("Authority\n---------\n"), "{text}");
+    assert!(text.contains("deny-default"), "{text}");
+    let auth_at = text.find("Authority\n---------\n").unwrap();
+    let strict_at = text.find("Strict (pre-merge)").expect("strict");
+    assert!(auth_at < strict_at, "{text}");
     assert!(text.contains("pre-merge operator checks"));
     assert!(text.contains("compile-only"));
     assert!(text.contains("Sanctum is not Cyera"));
@@ -157,6 +162,13 @@ fn doctor_prints_security_iac_coverage() {
         text.contains("cursor-cloud hop mesh-stub: deny (declared, not spawned)"),
         "{text}"
     );
+    let hop_at = text
+        .find("horizon hop cell-one-box lane-tool: deny-default")
+        .unwrap();
+    let auth_at = text.find("Authority\n---------\n").expect("authority");
+    let health_at = text.find("\nHealth\n").expect("health");
+    assert!(hop_at < auth_at && auth_at < health_at, "{text}");
+    assert!(text.contains("not-enforced"), "{text}");
     assert!(!text.contains("Strict intentions"), "{text}");
 }
 

@@ -58,6 +58,20 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
     assert!(text.contains("factory ready"), "{text}");
     assert!(text.contains("no expired hop leases"), "{text}");
     assert!(text.contains("note  no placement-actual.json"), "{text}");
+    assert!(text.contains("Authority\n---------\n"), "{text}");
+    assert!(
+        text.contains("authority would-allow=0 would-deny=0 not-enforced="),
+        "{text}"
+    );
+    assert!(!text.contains("would-deny=0 not-enforced=0"), "{text}");
+    let hop_at = text.find("hop:\n").expect("hop describe");
+    let auth_at = text.find("Authority\n---------\n").unwrap();
+    let health_at = text.find("\nHealth\n").expect("health");
+    assert!(hop_at < auth_at && auth_at < health_at, "{text}");
+    assert!(no_enforced_status_token(&text), "{text}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert!(!state.join("apply-audit.jsonl").exists());
+    assert!(!state.join("conveyor-leases.json").exists());
 
     let mesh = state.join("conveyor-mesh.json");
     std::fs::write(&mesh, "not-json").unwrap();
@@ -76,6 +90,10 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
     assert!(text.contains("conveyor-mesh.json"), "{text}");
     assert!(!text.contains("note  hop leases"), "{text}");
     assert!(!text.contains("factory ready"), "{text}");
+    assert!(
+        !text.contains("Authority\n---------\n"),
+        "a mesh that does not parse must not invent Authority rows\n{text}"
+    );
     assert_eq!(std::fs::read_to_string(&mesh).unwrap(), "not-json");
 
     std::fs::write(
@@ -97,4 +115,15 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
     assert!(text.contains("refuse:bad-host-class"), "{text}");
     assert!(!text.contains("factory ready"), "{text}");
     assert!(!text.contains("note  hop leases"), "{text}");
+    assert!(
+        !text.contains("Authority\n---------\n"),
+        "a mesh authority cannot read must not invent Authority rows\n{text}"
+    );
+}
+
+fn no_enforced_status_token(text: &str) -> bool {
+    !text.split_whitespace().any(|word| {
+        let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+        token == "enforced"
+    })
 }
