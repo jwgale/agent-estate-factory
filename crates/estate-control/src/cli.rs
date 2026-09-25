@@ -144,6 +144,12 @@ pub(crate) enum Command {
         roots_base: PathBuf,
     },
     /// Persisted estate + durable lifecycle + disposable runtime.
+    /// After the hop expired count and the cloud-agent line, an Authority
+    /// section prints the same file check as `estate plan`, `estate drift`,
+    /// `estate apply`, `estate doctor`, and `estate convey authority`
+    /// (`would-allow`, `would-deny`, `not-enforced`). It does not claim
+    /// mediation. A missing mesh stays not-enforced. A mesh that does not
+    /// parse does not invent Authority rows. Does not write.
     /// Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]

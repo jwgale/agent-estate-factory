@@ -642,7 +642,24 @@ pub(crate) fn cmd_status(
         );
     }
     println!("cloud-agent: declared, not spawned");
+    // Print-only file check after the hop expired count and this
+    // cloud-agent line. Same text as plan, drift, apply, doctor, and
+    // convey authority. A mesh that does not parse already refused above
+    // (`list_expired_hop_leases`) and does not reach this section, so it
+    // does not invent rows. A missing mesh stays not-enforced. A
+    // would-deny row does not add a hop-coverage fail. Does not write
+    // the mesh, the leases, or the estate. Does not invent a lease.
+    println!("{}", status_authority_text(&estate, state_dir)?);
     Ok(())
+}
+
+/// File check printed after the status one-pager. Same text as `estate plan`,
+/// `estate drift`, `estate apply`, `estate doctor`, and `estate convey authority`.
+/// Does not write the mesh, the leases, or the estate. Does not invent a lease.
+/// Does not add a hop-coverage fail.
+fn status_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
+    let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
+    Ok(describe_authority_section(&rows, state_dir))
 }
 
 fn print_catalog_frontier(source: &str, path: &Path) {
@@ -1599,5 +1616,263 @@ mod doctor_authority_section_tests {
             text.starts_with("43770130 3391"),
             "examples/estate.yaml cksum changed: {text}"
         );
+    }
+}
+
+#[cfg(test)]
+mod status_authority_section_tests {
+    use super::{cmd_status, status_authority_text};
+    use conveyor_proxy::{persist_mesh, ConveyorMesh, HopLease, MESH_FILE};
+    use estate_schema::load_estate;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-status-authority-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+        let mut rows = Vec::new();
+        if state.is_dir() {
+            for entry in fs::read_dir(state).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    rows.push((
+                        path.file_name().unwrap().to_string_lossy().into_owned(),
+                        fs::read(&path).unwrap(),
+                    ));
+                }
+            }
+        }
+        rows.sort();
+        rows
+    }
+
+    fn no_enforced_status_token(text: &str) -> bool {
+        !text.split_whitespace().any(|word| {
+            let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+            token == "enforced"
+        })
+    }
+
+    fn granted_box(capability: &str) -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![HopLease {
+                hop_id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: capability.into(),
+                host_class: "any".into(),
+                granted: true,
+                spawned: true,
+                durable: true,
+                driver: "box".into(),
+                note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
+                agents: vec!["research".into()],
+            }],
+        }
+    }
+
+    fn estate_with_lane_tool(effect: &str) -> String {
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+            "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+        );
+        text = text.replace(
+            "intentions: []\n",
+            &format!(
+                "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: {effect}\n"
+            ),
+        );
+        text
+    }
+
+    fn run_status(estate: &Path, state: &Path) -> anyhow::Result<()> {
+        let dir = state.parent().unwrap();
+        let plans = dir.join("plans");
+        let packs = dir.join("packs");
+        fs::create_dir_all(&plans).unwrap();
+        fs::create_dir_all(&packs).unwrap();
+        let root = repo_root();
+        cmd_status(
+            estate,
+            state,
+            state,
+            &plans,
+            &packs,
+            &root.join("policy/cell-one.policy.v0.yaml"),
+            &root,
+        )
+    }
+
+    #[test]
+    fn authority_section_is_not_enforced_when_no_mesh_exists() {
+        let dir = scratch();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate_path = repo_root().join("examples/estate.yaml");
+        let estate = load_estate(&estate_path).unwrap();
+        assert!(!state.join(MESH_FILE).exists());
+        let section = status_authority_text(&estate, &state).unwrap();
+        let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
+        assert_eq!(
+            section,
+            conveyor_proxy::describe_authority_section(&rows, &state)
+        );
+        assert!(section.starts_with("Authority\n---------\n"), "{section}");
+        assert!(
+            section.contains("authority would-allow=0 would-deny=0 not-enforced="),
+            "{section}"
+        );
+        assert!(
+            !section.contains("would-deny=0 not-enforced=0"),
+            "{section}"
+        );
+        assert!(
+            section.contains("research notes-append cell-one-box: not-enforced --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("no hop lease names this capability"),
+            "{section}"
+        );
+        assert!(
+            section.contains("cursor-cloud") && section.contains("not spawned"),
+            "{section}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        run_status(&estate_path, &state).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(!state.join(MESH_FILE).exists());
+        assert!(!state.join("conveyor-leases.json").exists());
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn authority_section_would_deny_does_not_fail_status_or_write() {
+        let dir = scratch();
+        let estate_path = dir.join("deny.yaml");
+        fs::write(&estate_path, estate_with_lane_tool("deny")).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        persist_mesh(&state, &granted_box("lane-tool")).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let section = status_authority_text(&estate, &state).unwrap();
+        let denied = section
+            .lines()
+            .find(|line| line.contains("research lane-tool cell-one-box:"))
+            .unwrap_or_else(|| panic!("missing deny row\n{section}"));
+        assert!(
+            denied.contains(": would-deny --")
+                && denied.contains("refuse:hop-coverage")
+                && denied.contains("(deny).")
+                && !denied.contains("deny-default")
+                && !denied.contains("(mismatch)")
+                && denied.contains("Not mediated"),
+            "{denied}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+        run_status(&estate_path, &state).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        assert_eq!(
+            fs::read(repo_root().join("examples/estate.yaml")).unwrap(),
+            locked
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hop_mismatch_prints_would_deny_and_status_still_succeeds() {
+        let mut text = estate_with_lane_tool("allow");
+        text = text.replace(
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: allow\n",
+        );
+        let dir = scratch();
+        let estate_path = dir.join("mismatch.yaml");
+        fs::write(&estate_path, text).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        persist_mesh(&state, &granted_box("notes-append")).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let section = status_authority_text(&estate, &state).unwrap();
+        assert!(
+            section.contains("research notes-append cell-one-box: would-deny --"),
+            "{section}"
+        );
+        assert!(
+            section.contains("refuse:hop-coverage") && section.contains("(mismatch)"),
+            "{section}"
+        );
+        assert!(no_enforced_status_token(&section), "{section}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        run_status(&estate_path, &state).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unreadable_mesh_does_not_invent_authority_rows_or_write() {
+        let dir = scratch();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let mesh = state.join(MESH_FILE);
+        fs::write(&mesh, "not-json").unwrap();
+        let estate_path = repo_root().join("examples/estate.yaml");
+        let estate = load_estate(&estate_path).unwrap();
+        let err_text = status_authority_text(&estate, &state)
+            .unwrap_err()
+            .to_string();
+        assert!(err_text.contains("parse:"), "{err_text}");
+        assert!(err_text.contains("conveyor-mesh.json"), "{err_text}");
+        assert!(!err_text.contains("Authority"), "{err_text}");
+        assert!(!err_text.contains("would-allow"), "{err_text}");
+        assert!(!err_text.contains("not-enforced"), "{err_text}");
+        assert!(no_enforced_status_token(&err_text), "{err_text}");
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&estate_path).unwrap();
+        let err = run_status(&estate_path, &state).unwrap_err().to_string();
+        assert!(err.contains("parse:"), "{err}");
+        assert!(err.contains("conveyor-mesh.json"), "{err}");
+        assert!(!err.contains("Authority"), "{err}");
+        assert!(!err.contains("would-allow"), "{err}");
+        assert!(!err.contains("would-deny"), "{err}");
+        assert!(!err.contains("not-enforced"), "{err}");
+        assert!(no_enforced_status_token(&err), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&mesh).unwrap(), b"not-json");
+        assert!(!state.join("apply-audit.jsonl").exists());
+        assert!(!state.join("conveyor-leases.json").exists());
+        assert_eq!(fs::read(&estate_path).unwrap(), estate_bytes);
+        let _ = fs::remove_dir_all(&dir);
     }
 }
