@@ -610,21 +610,31 @@ pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()
 }
 
 /// File check. Same Agents section as plan, drift, apply, status, and doctor
-/// (`describe_agents_section`), immediately before the same Authority section
-/// those commands print. Does not write the mesh, the leases, the estate, or
-/// the apply audit. Does not spawn. Does not claim mediation. Not an identity
-/// lookup. A missing or unreadable estate refuses before either section. A
-/// present mesh that does not parse refuses before either section and does
-/// not invent Agents or Authority rows. Deny and deny-default stay notes. A
-/// would-deny row does not fail this command.
+/// (`describe_agents_section`), then the same hop coverage cites those
+/// commands print (`print_hop_coverage_cites`), then the same Authority
+/// section. A capability mismatch prints `FAIL`. Deny and deny-default print
+/// `note`. Those cites do not fail this command. A match stays quiet. A
+/// missing mesh is an empty cite list. Does not write the mesh, the leases,
+/// the estate, or the apply audit. Does not spawn. Does not claim mediation.
+/// Not an identity lookup. A missing or unreadable estate refuses before any
+/// section. A present mesh that does not parse refuses before any section and
+/// does not invent cites, Agents, or Authority rows. A would-deny row does
+/// not fail this command.
 pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Result<()> {
     let estate = estate_schema::load_estate(estate_path)
         .with_context(|| format!("load {}", estate_path.display()))?;
-    // Read first. A mesh that does not parse refuses before either print
-    // and does not invent Agents or Authority rows. A missing mesh stays
-    // not-enforced inside the Authority section.
+    // Read first. A mesh that does not parse, including a bad host class,
+    // refuses before any print and does not invent cites, Agents, or
+    // Authority rows. A missing mesh stays not-enforced inside the Authority
+    // section. `load_mesh` then feeds the shared cite printer: a missing
+    // file is the empty mesh, so the cite list is empty.
     let rows = authority_report(state_dir, &estate)?;
+    let mesh = load_mesh(state_dir)?;
     println!("{}", describe_agents_section(&estate));
+    // Same lines doctor and status print. Mismatch is `FAIL`. Deny and
+    // deny-default are `note`. Discard the mismatch lines. This command
+    // does not bail on them. Does not write. Does not spawn.
+    let _mismatches = crate::watch::print_hop_coverage_cites(&estate, &mesh);
     println!("{}", describe_authority_section(&rows, state_dir));
     Ok(())
 }

@@ -1,7 +1,8 @@
 //! `estate convey authority` prints the same Agents section as plan, drift,
-//! apply, status, and doctor, from `describe_agents_section`, immediately
-//! before Authority. Print-only. Deny and deny-default notes, and a
-//! would-deny row, do not fail the command.
+//! apply, status, and doctor, from `describe_agents_section`, then hop
+//! coverage cites when the mesh names a subject, then Authority. Print-only.
+//! Deny and deny-default notes, a hop cite, and a would-deny row do not fail
+//! the command.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -285,7 +286,12 @@ fn would_deny_stays_a_note_and_convey_authority_writes_nothing() {
     let (ok, stdout, stderr) = convey(&estate_path, &state);
     assert!(ok, "{stdout}\n{stderr}");
     assert!(stderr.is_empty(), "{stderr}");
-    assert_eq!(stdout.trim_end(), format!("{section}\n{authority}"));
+    let cite = "  note  refuse:hop-coverage: research hop cell-one-box lane-tool: deny (deny)";
+    assert_eq!(stdout.trim_end(), format!("{section}\n{cite}\n{authority}"));
+    assert!(
+        !stdout.contains("  FAIL  refuse:hop-coverage:"),
+        "deny stays a note\n{stdout}"
+    );
     assert!(no_enforced_status_token(&stdout), "{stdout}");
     assert_no_writes(&state, &before, &estate_path, &estate_bytes);
     assert!(state.join("conveyor-mesh.json").is_file());
@@ -382,11 +388,15 @@ fn convey_authority_help_names_the_shared_agents_section_before_authority() {
     let agents = stdout
         .find("describe_agents_section")
         .unwrap_or_else(|| panic!("help omits describe_agents_section\n{stdout}"));
+    let cites = stdout
+        .find("hop_coverage_cites")
+        .unwrap_or_else(|| panic!("help omits hop_coverage_cites\n{stdout}"));
     let authority = stdout
         .find("describe_authority_section")
         .unwrap_or_else(|| panic!("help omits describe_authority_section\n{stdout}"));
-    assert!(agents < authority, "{stdout}");
+    assert!(agents < cites && cites < authority, "{stdout}");
     assert!(stdout.contains("do not fail"), "{stdout}");
+    assert!(stdout.contains("empty cite list"), "{stdout}");
     assert!(stdout.contains("Does not spawn"), "{stdout}");
     assert!(stdout.contains("Does not write"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
@@ -395,9 +405,14 @@ fn convey_authority_help_names_the_shared_agents_section_before_authority() {
     assert!(help_ok, "{help_out}\n{help_err}");
     assert!(
         help_out.contains("estate convey authority")
-            && help_out.contains("immediately before that Authority section"),
+            && help_out.contains("hop_coverage_cites")
+            && help_out.contains("empty cite list"),
         "{help_out}"
     );
     assert!(help_out.contains("do not fail the command"), "{help_out}");
+    assert!(
+        help_out.contains("Neither fails the command."),
+        "{help_out}"
+    );
     assert!(help_out.contains("does not spawn"), "{help_out}");
 }

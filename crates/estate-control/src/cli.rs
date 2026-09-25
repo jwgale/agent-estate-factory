@@ -457,15 +457,18 @@ pub(crate) enum ConveyCommand {
     },
     /// File check of hop leases against the estate. Prints the same Agents
     /// section as plan, drift, apply, status, and doctor
-    /// (`describe_agents_section`) immediately before Authority
-    /// (`describe_authority_section` over `authority_report`). Deny and
-    /// deny-default on the Agents text are notes and do not fail this
-    /// command. A would-deny row does not fail this command. Does not write.
-    /// Does not spawn. Does not claim mediation.
-    /// A missing or unreadable estate refuses before either section.
+    /// (`describe_agents_section`), then the same hop coverage cites doctor
+    /// and status print (`hop_coverage_cites`: `FAIL` on mismatch, `note`
+    /// on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`). Those cites
+    /// do not fail this command. A match stays quiet. A missing mesh is an
+    /// empty cite list. Deny and deny-default on the Agents text are notes
+    /// and do not fail this command. A would-deny row does not fail this
+    /// command. Does not write. Does not spawn. Does not claim mediation.
+    /// A missing or unreadable estate refuses before any section.
     /// A missing conveyor-mesh.json stays not-enforced and cites that the file is absent.
     /// A present mesh with no lease for a declared capability says no hop lease names it.
-    /// A present mesh that does not parse refuses before either section.
+    /// A present mesh that does not parse refuses before cites or either section.
     /// `not-enforced reasons:` counts those rows by class and omits zeros.
     Authority {
         #[arg(long, default_value = ".cell")]
