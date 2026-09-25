@@ -229,14 +229,22 @@ sets none. It does not copy the schema card. An estate with no frontier
 binding refuses (refuse:frontier-invent) instead of inventing a frontier
 source_driver or catalog model. No live key.
 
-A model-class row is cited after that blast and before hop. The line is
-the same row the blast prints (`agent frontier|local binding:
-allow|deny|deny-default`), from `model_class_coverage_cites`. Allow is
-quiet. Deny and deny-default are notes and do not fail plan by
-themselves. A missing row, a class other than frontier or local, or an
-unrecognized word fails plan (`refuse:model-class`). Model rows have no
-capability-mismatch class. Plan does not yet refuse agent-call, memory,
-or declared tool, MCP, and mount rows. The check does not write the
+A model-class row is cited after that blast and before declared tool,
+MCP, and mount rows. The line is the same row the blast prints (`agent
+frontier|local binding: allow|deny|deny-default`), from
+`model_class_coverage_cites`. Allow is quiet. Deny and deny-default are
+notes and do not fail plan by themselves. A missing row, a class other
+than frontier or local, or an unrecognized word fails plan
+(`refuse:model-class`). Model rows have no capability-mismatch class.
+
+A declared tool, MCP, or mount row is cited after that model-class row
+and before hop. The line is the same row the blast prints (`agent
+tool|mcp|mount id: allow|deny|deny-default`), from
+`declared_coverage_cites`. Allow is quiet. Deny and deny-default are
+notes and do not fail plan by themselves. A missing row or an
+unrecognized word fails plan (`refuse:tool`, `refuse:mcp`, or
+`refuse:mount`). These rows have no capability-mismatch class. Plan
+does not yet refuse agent-call or memory. The check does not write the
 mesh, the leases, or the estate. A reviewed copy stays unwritten on bail.
 
 A granted box hop lease, or a box hop declaration with no lease, that

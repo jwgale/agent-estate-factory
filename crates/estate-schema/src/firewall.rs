@@ -524,10 +524,12 @@ pub fn describe_declared_coverage(estate: &Estate) -> String {
     )
 }
 
-/// One declared tool, MCP, or mount on apply. `line` is the same row
-/// [`describe_declared_coverage`] prints. Allow is omitted (quiet).
-/// Deny and deny-default stay visible. These rows have no
-/// capability-mismatch class, so `fail` is false for those words.
+/// One declared tool, MCP, or mount on plan and apply. `line` is the same
+/// row [`describe_declared_coverage`] prints, except a hard cite, which
+/// prefixes that row with `refuse:tool`, `refuse:mcp`, or `refuse:mount`.
+/// Allow is omitted (quiet). Deny and deny-default stay visible. These
+/// rows have no capability-mismatch class, so `fail` is false for those
+/// words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeclaredCoverageCite {
     pub fail: bool,
@@ -536,29 +538,38 @@ pub struct DeclaredCoverageCite {
 
 /// Every declared tool, MCP, and mount. Allow is quiet. Deny and
 /// deny-default are notes. A missing row or an unrecognized word fails
-/// closed (`refuse:tool`, `refuse:mcp`, or `refuse:mount`). Does not read
-/// a mesh and does not write.
+/// closed (`refuse:tool`, `refuse:mcp`, or `refuse:mount`). Plan and apply
+/// bail on a hard cite. Does not read a mesh and does not write.
 pub fn declared_coverage_cites(estate: &Estate) -> Vec<DeclaredCoverageCite> {
-    let rows = declared_coverage_rows(estate);
+    declared_coverage_cites_from_rows(estate, &declared_coverage_rows(estate))
+}
+
+/// Same cites as [`declared_coverage_cites`], over a supplied row list.
+/// A declaration with no row is a missing edge. A row whose word is not
+/// allow, deny, or deny-default is unrecognized. Both fail closed.
+pub fn declared_coverage_cites_from_rows(
+    estate: &Estate,
+    rows: &[CoverageRow],
+) -> Vec<DeclaredCoverageCite> {
     let mut cites = Vec::new();
     for agent in &estate.agents {
         cite_declared_kind(
             &mut cites,
-            &rows,
+            rows,
             &agent.id,
             "tool",
             agent.tools.iter().map(|tool| tool.id.as_str()),
         );
         cite_declared_kind(
             &mut cites,
-            &rows,
+            rows,
             &agent.id,
             "mcp",
             agent.mcp.iter().map(|mcp| mcp.id.as_str()),
         );
         cite_declared_kind(
             &mut cites,
-            &rows,
+            rows,
             &agent.id,
             "mount",
             agent.mounts.iter().map(|mount| mount.id.as_str()),
@@ -594,7 +605,11 @@ fn cite_declared_kind<'a>(
         let known = row.line.ends_with(": deny-default") || row.line.ends_with(": deny");
         cites.push(DeclaredCoverageCite {
             fail: !known,
-            line: row.line.clone(),
+            line: if known {
+                row.line.clone()
+            } else {
+                format!("refuse:{kind}: {}", row.line)
+            },
         });
     }
 }
@@ -2135,6 +2150,53 @@ mod tests {
             "{}",
             memory[0].line
         );
+    }
+
+    #[test]
+    fn declared_missing_and_unrecognized_are_refuse_kind() {
+        let missing = declared_coverage_cites_from_rows(&estate(), &[]);
+        assert!(missing.iter().all(|cite| cite.fail), "{missing:?}");
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line
+                    == "refuse:tool: research tool notes-append: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line == "refuse:mount: research mount notes: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(missing.iter().all(|cite| !cite.line.contains("(mismatch)")));
+
+        let mut with_mcp = estate();
+        with_mcp
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .mcp
+            .push(crate::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        let rows = vec![
+            CoverageRow::fact("research", "research tool notes-append: bogon"),
+            CoverageRow::fact("research", "research mcp docs: bogon"),
+            CoverageRow::fact("research", "research mount notes: bogon"),
+        ];
+        let unrecognized = declared_coverage_cites_from_rows(&with_mcp, &rows);
+        for (kind, id) in [("tool", "notes-append"), ("mcp", "docs"), ("mount", "notes")] {
+            let line = format!("refuse:{kind}: research {kind} {id}: bogon");
+            let cite = unrecognized
+                .iter()
+                .find(|cite| cite.line == line)
+                .unwrap_or_else(|| panic!("missing {line} in {unrecognized:?}"));
+            assert!(cite.fail, "{cite:?}");
+            assert!(!cite.line.contains("(mismatch)"), "{}", cite.line);
+        }
     }
 
     #[test]

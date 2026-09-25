@@ -40,14 +40,15 @@ pub(crate) fn cmd_plan(
     print!("{}", render_plan(&plan));
     println!("{}", model_estate::render_frontier_plan(&frontier_plan));
     println!("Wrote {}", written.display());
-    // Model-class cites sit after the Agents / Security-as-IaC blast
-    // already printed by render_plan, and before hop refuse. Allow is
-    // quiet. Deny and deny-default are notes. A hard cite bails. Plan
-    // does not yet refuse agent-call, memory, or declared tool/mcp/mount.
-    // Missing mesh is an empty hop cite list, not a failure. A present
-    // file that does not parse stays the mesh error and is not rewritten.
-    // The plan file above is the plan artifact. Mesh, leases, and the
-    // estate stay unread-only. A reviewed copy stays unwritten on bail.
+    // Model-class cites, then declared tool / MCP / mount cites, sit after
+    // the Agents / Security-as-IaC blast already printed by render_plan,
+    // and before hop refuse. Allow is quiet. Deny and deny-default are
+    // notes. A hard cite bails. Plan does not yet refuse agent-call or
+    // memory. Missing mesh is an empty hop cite list, not a failure. A
+    // present file that does not parse stays the mesh error and is not
+    // rewritten. The plan file above is the plan artifact. Mesh, leases,
+    // and the estate stay unread-only. A reviewed copy stays unwritten
+    // on bail.
     let hop_mismatch = plan_cites_before_hop(&desired, state_dir)?;
     if !plan_is_reviewable(&plan) {
         bail!("plan is not reviewable (need schema cell-one.plan.v0 + blast radius)");
@@ -544,14 +545,34 @@ fn refuse_model_class_coverage(estate: &estate_schema::Estate) -> Result<()> {
     Ok(())
 }
 
-/// Model-class cites, then hop cites. A hard model-class cite bails before
-/// hop is read. Hop mismatch is returned so an unreviewable plan can still
-/// fail first. Does not write the mesh, the leases, or the estate.
+/// Model-class cites, then declared tool / MCP / mount cites, then hop.
+/// A hard model-class or declared cite bails before hop is read. Hop
+/// mismatch is returned so an unreviewable plan can still fail first.
+/// Does not write the mesh, the leases, or the estate.
 fn plan_cites_before_hop(
     estate: &estate_schema::Estate,
     state_dir: &Path,
 ) -> Result<Option<String>> {
     refuse_plan_model_class_coverage(estate)?;
+    refuse_plan_declared_coverage(estate)?;
+    hop_cites(estate, state_dir)
+}
+
+/// Same order as [`plan_cites_before_hop`], with a supplied declared-cite
+/// list. Production uses [`plan_cites_before_hop`]. A test passes a missing
+/// row or an unrecognized word, which the row builder does not emit.
+#[cfg(test)]
+fn plan_cites_before_hop_with(
+    estate: &estate_schema::Estate,
+    state_dir: &Path,
+    declared: &[estate_schema::DeclaredCoverageCite],
+) -> Result<Option<String>> {
+    refuse_plan_model_class_coverage(estate)?;
+    refuse_declared_cites(declared)?;
+    hop_cites(estate, state_dir)
+}
+
+fn hop_cites(estate: &estate_schema::Estate, state_dir: &Path) -> Result<Option<String>> {
     let mut hop_mismatch: Option<String> = None;
     match load_mesh(state_dir) {
         Ok(mesh) => {
@@ -571,13 +592,36 @@ fn plan_cites_before_hop(
 
 /// Declared tool, MCP, and mount rows. The line matches plan, drift, and
 /// doctor. Allow is quiet. Deny and deny-default do not fail apply. A
-/// missing row or an unrecognized word fails before writes. Does not write.
+/// missing row or an unrecognized word fails before writes
+/// (`refuse:tool`, `refuse:mcp`, or `refuse:mount`). Does not write.
 fn refuse_apply_declared_coverage(estate: &estate_schema::Estate) -> Result<()> {
+    refuse_declared_coverage(estate)
+}
+
+/// Declared tool, MCP, and mount rows on plan, after model-class cites and
+/// before hop. Same lines as apply. Allow is quiet. Deny and deny-default
+/// are notes and do not fail plan. A missing row or an unrecognized word
+/// fails closed (`refuse:tool`, `refuse:mcp`, or `refuse:mount`). Does not
+/// write the mesh, the leases, or the estate. These rows have no
+/// capability-mismatch class.
+fn refuse_plan_declared_coverage(estate: &estate_schema::Estate) -> Result<()> {
+    refuse_declared_coverage(estate)
+}
+
+/// Shared FAIL / note printer. Lines come from `declared_coverage_cites`
+/// (the describe row, with `refuse:tool`, `refuse:mcp`, or `refuse:mount`
+/// on a hard cite). Allow is omitted by that citer.
+fn refuse_declared_coverage(estate: &estate_schema::Estate) -> Result<()> {
+    let cites = estate_schema::declared_coverage_cites(estate);
+    refuse_declared_cites(&cites)
+}
+
+fn refuse_declared_cites(cites: &[estate_schema::DeclaredCoverageCite]) -> Result<()> {
     let mut hard: Option<String> = None;
-    for cite in estate_schema::declared_coverage_cites(estate) {
+    for cite in cites {
         if cite.fail {
             println!("  FAIL  {}", cite.line);
-            hard.get_or_insert(cite.line);
+            hard.get_or_insert_with(|| cite.line.clone());
         } else {
             println!("  note  {}", cite.line);
         }
@@ -3145,6 +3189,443 @@ mod plan_model_class_coverage_tests {
         assert!(
             text.starts_with("43770130 3391"),
             "examples/estate.yaml cksum changed: {text}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod plan_declared_coverage_tests {
+    use super::{
+        cmd_plan, plan_cites_before_hop, plan_cites_before_hop_with, refuse_declared_cites,
+        refuse_plan_declared_coverage,
+    };
+    use conveyor_proxy::{persist_mesh, ConveyorMesh, HopLease, MESH_FILE};
+    use estate_schema::{
+        declared_coverage_cites, declared_coverage_cites_from_rows, describe_declared_coverage,
+        load_estate, CoverageRow, DeclaredCoverageCite,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-plan-declared-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_estate(dir: &Path, name: &str, intentions: &str) -> PathBuf {
+        let path = dir.join(name);
+        let mut text = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+        let needle = "    mcp: []\n    models:\n      - id: local_slm\n";
+        let insert = "    mcp:\n      - id: docs\n    models:\n      - id: local_slm\n";
+        assert!(text.contains(needle), "research mcp block missing");
+        text = text.replacen(needle, insert, 1);
+        text = text.replace("intentions: []\n", intentions);
+        fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn plan(dir: &Path, estate: &Path, state: &Path, reviewed: bool) -> anyhow::Result<()> {
+        cmd_plan(
+            estate,
+            None,
+            &dir.join("plans"),
+            state,
+            reviewed,
+            &dir.join("reviewed"),
+        )
+    }
+
+    fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+        [
+            "placement-actual.json",
+            "model-actual.json",
+            MESH_FILE,
+            "conveyor-hops.json",
+            "conveyor-leases.json",
+        ]
+        .into_iter()
+        .filter_map(|name| {
+            let path = state.join(name);
+            path.is_file()
+                .then(|| (name.to_string(), fs::read(&path).unwrap()))
+        })
+        .collect()
+    }
+
+    fn box_mesh() -> ConveyorMesh {
+        ConveyorMesh {
+            schema: conveyor_proxy::MESH_SCHEMA.into(),
+            hops: vec![],
+            leases: vec![HopLease {
+                hop_id: "cell-one-box".into(),
+                kind: "box".into(),
+                capability: "notes-append".into(),
+                host_class: "any".into(),
+                granted: true,
+                spawned: true,
+                durable: true,
+                driver: "box".into(),
+                note: None,
+                ttl_secs: None,
+                issued_at: None,
+                expires_at: None,
+                agents: vec!["research".into()],
+            }],
+        }
+    }
+
+    fn allow_declared() -> &'static str {
+        "intentions:\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: notes\n    kind: mount\n    effect: allow\n  - subject_agent: research\n    object: mcp:docs\n    kind: mcp\n    effect: allow\n"
+    }
+
+    fn reviewed_sentinel(dir: &Path) -> PathBuf {
+        let reviewed = dir.join("reviewed");
+        fs::create_dir_all(&reviewed).unwrap();
+        fs::write(reviewed.join("keep.txt"), b"sentinel").unwrap();
+        reviewed
+    }
+
+    fn assert_reviewed_untouched(reviewed: &Path) {
+        assert_eq!(fs::read(reviewed.join("keep.txt")).unwrap(), b"sentinel");
+        assert!(!reviewed.join("INDEX.md").exists());
+        let extras: Vec<_> = fs::read_dir(reviewed)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name != "keep.txt")
+            .collect();
+        assert!(extras.is_empty(), "{extras:?}");
+    }
+
+    fn fact(agent: &str, line: &str) -> CoverageRow {
+        CoverageRow {
+            agent_id: agent.into(),
+            line: line.into(),
+            hop_id: String::new(),
+            word: "",
+            capability: String::new(),
+        }
+    }
+
+    fn with_docs(estate: &estate_schema::Estate) -> estate_schema::Estate {
+        let mut estate = estate.clone();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .mcp
+            .push(estate_schema::McpDecl {
+                id: "docs".into(),
+                description: None,
+            });
+        estate
+    }
+
+    #[test]
+    fn plan_cites_deny_and_deny_default_without_failing_and_stays_quiet_on_allow() {
+        let dir = scratch();
+        let deny_path = write_estate(
+            &dir,
+            "deny.yaml",
+            "intentions:\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: deny\n",
+        );
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&deny_path).unwrap();
+        let described = describe_declared_coverage(&estate);
+        let cites = declared_coverage_cites(&estate);
+        assert!(cites.iter().all(|cite| !cite.fail), "{cites:?}");
+        for line in [
+            "research tool notes-append: deny",
+            "research mount notes: deny-default",
+            "research mcp docs: deny-default",
+        ] {
+            assert!(cites.iter().any(|cite| cite.line == line), "{cites:?}");
+            assert!(described.contains(line), "{described}");
+            assert!(!line.contains("(mismatch)"), "{line}");
+        }
+        assert!(
+            cites.iter().all(|cite| !cite.line.ends_with(": allow")),
+            "{cites:?}"
+        );
+        refuse_plan_declared_coverage(&estate).unwrap();
+        persist_mesh(&state, &box_mesh()).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&deny_path).unwrap();
+        let reviewed = reviewed_sentinel(&dir);
+        plan(&dir, &deny_path, &state, false).unwrap();
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&deny_path).unwrap(), estate_bytes);
+        assert_reviewed_untouched(&reviewed);
+
+        let allow_path = write_estate(&dir, "allow.yaml", allow_declared());
+        let allowed = load_estate(&allow_path).unwrap();
+        assert!(declared_coverage_cites(&allowed).is_empty());
+        assert!(describe_declared_coverage(&allowed).contains("research tool notes-append: allow"));
+        assert!(describe_declared_coverage(&allowed).contains("research mount notes: allow"));
+        assert!(describe_declared_coverage(&allowed).contains("research mcp docs: allow"));
+        refuse_plan_declared_coverage(&allowed).unwrap();
+        let allow_before = snapshot(&state);
+        let allow_bytes = fs::read(&allow_path).unwrap();
+        plan(&dir, &allow_path, &state, false).unwrap();
+        assert_eq!(snapshot(&state), allow_before);
+        assert_eq!(fs::read(&allow_path).unwrap(), allow_bytes);
+        assert_reviewed_untouched(&reviewed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuse_declared_bails_before_hop_and_leaves_dirs_untouched() {
+        let dir = scratch();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = with_docs(&load_estate(&repo_root().join("examples/estate.yaml")).unwrap());
+        assert!(
+            declared_coverage_cites(&estate)
+                .iter()
+                .all(|cite| !cite.fail),
+            "a loaded estate's own rows are deny or deny-default, not a hard cite"
+        );
+        refuse_plan_declared_coverage(&estate).unwrap();
+        persist_mesh(&state, &box_mesh()).unwrap();
+        let before = snapshot(&state);
+        let reviewed = reviewed_sentinel(&dir);
+
+        let missing = declared_coverage_cites_from_rows(&estate, &[]);
+        assert!(missing.iter().all(|cite| cite.fail), "{missing:?}");
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line == "refuse:tool: research tool notes-append: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(
+            missing
+                .iter()
+                .any(|cite| cite.line.contains("refuse:mcp") && cite.line.contains("docs")),
+            "{missing:?}"
+        );
+        assert!(
+            missing.iter().any(|cite| {
+                cite.line == "refuse:mount: research mount notes: deny-default (missing edge)"
+            }),
+            "{missing:?}"
+        );
+        assert!(missing.iter().all(|cite| !cite.line.contains("(mismatch)")));
+        let err = plan_cites_before_hop_with(&estate, &state, &missing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:tool")
+                && err.contains("notes-append")
+                && err.contains("(missing edge)"),
+            "{err}"
+        );
+        assert!(!err.contains("refuse:hop-coverage"), "{err}");
+        assert!(!err.contains("(mismatch)"), "{err}");
+        assert!(!err.contains("refuse:model-class"), "{err}");
+        assert!(!err.contains("refuse:memory"), "{err}");
+        assert!(!err.contains("refuse:agent-call"), "{err}");
+        let helper = refuse_declared_cites(&missing).unwrap_err().to_string();
+        assert!(helper.contains("refuse:tool"), "{helper}");
+        assert_eq!(snapshot(&state), before);
+        assert_reviewed_untouched(&reviewed);
+
+        let mcp_rows = vec![
+            fact("research", "research tool notes-append: allow"),
+            fact("research", "research mcp docs: bogon"),
+            fact("research", "research mount notes: allow"),
+        ];
+        let mcp = declared_coverage_cites_from_rows(&estate, &mcp_rows);
+        let mcp_hard: Vec<_> = mcp.iter().filter(|cite| cite.fail).collect();
+        assert_eq!(mcp_hard.len(), 1, "{mcp:?}");
+        assert_eq!(mcp_hard[0].line, "refuse:mcp: research mcp docs: bogon");
+        assert!(!mcp_hard[0].line.contains("(mismatch)"));
+        let err = plan_cites_before_hop_with(&estate, &state, &mcp)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refuse:mcp") && err.contains("bogon"), "{err}");
+        assert!(!err.contains("refuse:tool"), "{err}");
+        assert!(!err.contains("refuse:mount"), "{err}");
+        assert!(!err.contains("refuse:hop-coverage"), "{err}");
+        assert!(!err.contains("(mismatch)"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_reviewed_untouched(&reviewed);
+
+        let mount_rows = vec![
+            fact("research", "research tool notes-append: allow"),
+            fact("research", "research mcp docs: allow"),
+            fact("research", "research mount notes: bogon"),
+        ];
+        let mount = declared_coverage_cites_from_rows(&estate, &mount_rows);
+        let mount_hard: Vec<_> = mount.iter().filter(|cite| cite.fail).collect();
+        assert_eq!(mount_hard.len(), 1, "{mount:?}");
+        assert_eq!(
+            mount_hard[0].line,
+            "refuse:mount: research mount notes: bogon"
+        );
+        let err = plan_cites_before_hop_with(&estate, &state, &mount)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:mount") && err.contains("bogon"),
+            "{err}"
+        );
+        assert!(!err.contains("refuse:hop-coverage"), "{err}");
+        assert!(!err.contains("(mismatch)"), "{err}");
+        assert!(!err.contains("refuse:memory"), "{err}");
+        assert!(!err.contains("refuse:agent-call"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_reviewed_untouched(&reviewed);
+
+        let mut ghost = estate.clone();
+        ghost
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .models
+            .push(estate_schema::ModelUseDecl {
+                id: "ghost_slm".into(),
+                description: None,
+            });
+        let err = plan_cites_before_hop_with(&ghost, &state, &missing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("refuse:model-class") && err.contains("ghost_slm"),
+            "{err}"
+        );
+        assert!(!err.contains("refuse:tool"), "{err}");
+        assert!(!err.contains("refuse:hop-coverage"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_reviewed_untouched(&reviewed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hop_mismatch_still_bails_when_declared_rows_are_allow() {
+        let dir = scratch();
+        let intentions = "intentions:\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: notes\n    kind: mount\n    effect: allow\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: mcp:docs\n    kind: mcp\n    effect: allow\n";
+        let path = write_estate(&dir, "clean.yaml", intentions);
+        let mut text = fs::read_to_string(&path).unwrap();
+        text = text.replace(
+            "      - id: notes-append\n",
+            "      - id: notes-append\n      - id: lane-tool\n",
+        );
+        fs::write(&path, text).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&path).unwrap();
+        assert!(
+            declared_coverage_cites(&estate).is_empty(),
+            "tool mcp mount allow stays quiet"
+        );
+        assert!(describe_declared_coverage(&estate).contains("research tool notes-append: allow"));
+        assert!(describe_declared_coverage(&estate).contains("research tool lane-tool: allow"));
+        assert!(describe_declared_coverage(&estate).contains("research mount notes: allow"));
+        assert!(describe_declared_coverage(&estate).contains("research mcp docs: allow"));
+        refuse_plan_declared_coverage(&estate).unwrap();
+        persist_mesh(&state, &box_mesh()).unwrap();
+        let before = snapshot(&state);
+        let estate_bytes = fs::read(&path).unwrap();
+        let reviewed = reviewed_sentinel(&dir);
+        let cited = plan_cites_before_hop(&estate, &state).unwrap();
+        let hop = cited.expect("hop mismatch is returned after quiet declared rows");
+        assert!(
+            hop.contains("refuse:hop-coverage") && hop.contains("(mismatch)"),
+            "{hop}"
+        );
+        assert!(!hop.contains("refuse:tool"), "{hop}");
+        assert!(!hop.contains("refuse:mcp"), "{hop}");
+        assert!(!hop.contains("refuse:mount"), "{hop}");
+        let err = plan(&dir, &path, &state, true).unwrap_err().to_string();
+        assert!(
+            err.contains("refuse:hop-coverage") && err.contains("(mismatch)"),
+            "{err}"
+        );
+        assert!(!err.contains("refuse:tool"), "{err}");
+        assert!(!err.contains("refuse:mcp"), "{err}");
+        assert!(!err.contains("refuse:mount"), "{err}");
+        assert!(!err.contains("refuse:model-class"), "{err}");
+        assert!(!err.contains("refuse:memory"), "{err}");
+        assert!(!err.contains("refuse:agent-call"), "{err}");
+        assert!(!err.contains("not reviewable"), "{err}");
+        assert_eq!(snapshot(&state), before);
+        assert_eq!(fs::read(&path).unwrap(), estate_bytes);
+        assert_reviewed_untouched(&reviewed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn example_estate_plan_stays_green_without_a_mesh() {
+        let dir = scratch();
+        let estate_path = dir.join("estate.yaml");
+        fs::copy(repo_root().join("examples/estate.yaml"), &estate_path).unwrap();
+        let state = dir.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let estate = load_estate(&estate_path).unwrap();
+        let cites = declared_coverage_cites(&estate);
+        assert!(cites.iter().all(|cite| !cite.fail), "{cites:?}");
+        assert!(
+            cites
+                .iter()
+                .any(|cite| cite.line == "research tool notes-append: deny-default"),
+            "{cites:?}"
+        );
+        assert!(
+            cites
+                .iter()
+                .any(|cite| cite.line == "research mount notes: deny-default"),
+            "{cites:?}"
+        );
+        refuse_plan_declared_coverage(&estate).unwrap();
+        plan(&dir, &estate_path, &state, false).unwrap();
+        let locked = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+        assert_eq!(fs::read(&estate_path).unwrap(), locked);
+        assert!(!state.join(MESH_FILE).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn examples_estate_yaml_stays_hash_locked() {
+        let path = repo_root().join("examples/estate.yaml");
+        let sum = Command::new("cksum").arg(&path).output().unwrap();
+        let text = String::from_utf8_lossy(&sum.stdout);
+        assert!(
+            text.starts_with("43770130 3391"),
+            "examples/estate.yaml cksum changed: {text}"
+        );
+    }
+
+    #[test]
+    fn hard_cite_line_is_the_bail_not_a_note() {
+        let note = DeclaredCoverageCite {
+            fail: false,
+            line: "research mount notes: deny".into(),
+        };
+        let hard = DeclaredCoverageCite {
+            fail: true,
+            line: "refuse:tool: research tool notes-append: deny-default (missing edge)".into(),
+        };
+        let err = refuse_declared_cites(&[note, hard])
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "refuse:tool: research tool notes-append: deny-default (missing edge)"
         );
     }
 }
