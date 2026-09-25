@@ -367,6 +367,7 @@ fn refuse_named_intentions(
     capability: &str,
     agents: &[String],
     kind: Option<estate_schema::IntentionKind>,
+    on_hop: bool,
 ) -> Result<()> {
     if agents.is_empty() || !estate_path.is_file() {
         return Ok(());
@@ -375,7 +376,7 @@ fn refuse_named_intentions(
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     for agent in agents {
         if let Err(gate) =
-            convey_intention_coverage(&estate, hop_id, agent, capability, kind)
+            convey_intention_coverage(&estate, hop_id, agent, capability, kind, on_hop)
         {
             bail!("refuse:intention: {} ({})", gate.line, gate.word);
         }
@@ -419,7 +420,7 @@ pub(crate) fn cmd_convey_hop(
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
-    refuse_named_intentions(estate_path, id, capability, agents, None)?;
+    refuse_named_intentions(estate_path, id, capability, agents, None, true)?;
     if agents.is_empty() {
         refuse_convey_coverage(estate_path, id, None)?;
     } else {
@@ -465,6 +466,7 @@ pub(crate) fn cmd_convey_call(
             capability,
             &[agent.to_string()],
             parsed_kind,
+            false,
         )?;
     }
     refuse_convey_coverage(estate_path, id, agent)?;

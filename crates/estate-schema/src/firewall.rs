@@ -539,9 +539,10 @@ fn capability_kinds(estate: &Estate, agent_id: &str, capability: &str) -> Vec<In
 /// Kind inference matches `resolve_intention_kind`: an explicit kind wins,
 /// `lane:` is MemoryRead, and one declared tool, MCP, mount, or model is
 /// that kind. A missing intention is deny-default. More than one declared
-/// kind is still deny-default, with reason `ambiguous capability; pass kind`.
-/// An explicit deny wins. A cloud hop that is already deny without a
-/// resolved kind stays the hop-coverage gate.
+/// kind is still deny-default. Call says `ambiguous capability; pass kind`.
+/// Hop says `pass kind on convey call` so that hint is not HopDecl.kind.
+/// An explicit deny wins. An unresolved `mesh-stub` on a cloud-agent
+/// placement stays the hop-coverage gate. A box hop does not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentionCoverageGate {
     pub word: &'static str,
@@ -554,6 +555,7 @@ pub fn convey_intention_coverage(
     agent_id: &str,
     capability: &str,
     kind: Option<IntentionKind>,
+    on_hop: bool,
 ) -> Result<(), IntentionCoverageGate> {
     if estate.agent(agent_id).is_none() {
         return Err(IntentionCoverageGate {
@@ -566,16 +568,24 @@ pub fn convey_intention_coverage(
     let hits = capability_kinds(estate, agent_id, capability);
     let resolved = kind.or_else(|| infer_convey_intention_kind(capability, &hits));
     let Some(kind) = resolved else {
-        if matches!(
-            convey_hop_coverage(estate, hop_id, Some(agent_id)),
-            Err(gate) if gate.word == "deny"
-        ) {
+        // Cloud mesh-stub only. A box row whose word is deny (explicit
+        // lane-tool deny) must not hide an unresolved capability.
+        if capability == "mesh-stub"
+            && estate.placements.iter().any(|place| {
+                normalize_name(&place.id) == normalize_name(hop_id)
+                    && place.kind == crate::PlacementKind::CloudAgent
+            })
+        {
             return Ok(());
         }
         let why = if hits.len() > 1 {
-            "ambiguous capability; pass kind"
+            if on_hop {
+                "ambiguous capability; pass kind on convey call".to_string()
+            } else {
+                "ambiguous capability; pass kind".to_string()
+            }
         } else {
-            "missing intention; not a grant"
+            format!("undeclared for agent '{agent_id}' (deny-default)")
         };
         return Err(IntentionCoverageGate {
             word: "deny-default",
@@ -1287,35 +1297,97 @@ mod tests {
                 id: "lane-tool".into(),
                 description: None,
             });
-        let missing = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None)
+        let missing = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None, false)
             .unwrap_err();
         assert_eq!(missing.word, "deny-default");
         assert!(missing.line.contains("intention"));
 
         grant(&mut estate, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
-        let denied = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None)
+        let denied = convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None, false)
             .unwrap_err();
         assert_eq!(denied.word, "deny");
         assert!(!denied.line.contains("deny-default"));
 
         estate.intentions.clear();
         grant(&mut estate, "research", IntentionKind::Tool, "lane-tool", Effect::Allow);
-        assert!(convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None).is_ok());
+        assert!(convey_intention_coverage(&estate, "cell-one-box", "research", "lane-tool", None, false).is_ok());
 
-        let cloud = convey_intention_coverage(&estate, "cursor-cloud", "research", "mesh-stub", None);
+        let cloud = convey_intention_coverage(&estate, "cursor-cloud", "research", "mesh-stub", None, false);
         assert!(cloud.is_ok(), "cloud deny stays the hop-coverage gate");
-        let off = convey_intention_coverage(&estate, "ttl-box", "research", "not-a-tool", None).unwrap_err();
+        let off = convey_intention_coverage(&estate, "ttl-box", "research", "not-a-tool", None, false).unwrap_err();
         assert_eq!(off.word, "deny-default");
+        assert!(
+            off.line.contains("undeclared for agent 'research' (deny-default)"),
+            "{}",
+            off.line
+        );
+    }
+
+    #[test]
+    fn box_deny_does_not_hide_unresolved_intention() {
+        let mut estate = estate();
+        let research = estate.agents.iter_mut().find(|a| a.id == "research").unwrap();
+        research.tools.push(crate::ToolDecl {
+            id: "lane-tool".into(),
+            description: None,
+        });
+        research.mcp.push(crate::McpDecl {
+            id: "notes-append".into(),
+            description: None,
+        });
+        grant(&mut estate, "research", IntentionKind::Tool, "lane-tool", Effect::Deny);
+        let hop = convey_hop_coverage(&estate, "cell-one-box", Some("research")).unwrap_err();
+        assert_eq!(hop.word, "deny");
+
+        let undeclared = convey_intention_coverage(
+            &estate,
+            "cell-one-box",
+            "research",
+            "not-a-tool",
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(undeclared.word, "deny-default");
+        assert!(
+            undeclared
+                .line
+                .contains("undeclared for agent 'research' (deny-default)"),
+            "{}",
+            undeclared.line
+        );
+
+        let ambiguous = convey_intention_coverage(
+            &estate,
+            "cell-one-box",
+            "research",
+            "notes-append",
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            ambiguous
+                .line
+                .contains("ambiguous capability; pass kind on convey call"),
+            "{}",
+            ambiguous.line
+        );
+        assert!(
+            !ambiguous.line.contains("refuse:hop-coverage"),
+            "{}",
+            ambiguous.line
+        );
     }
 
     #[test]
     fn convey_intention_coverage_lane_prefix_is_memory_read() {
         let estate = estate();
-        let own = convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:horizon", None);
+        let own = convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:horizon", None, false);
         assert!(own.is_ok(), "own-lane MemoryRead continues past the intention gate");
 
         let crossed =
-            convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:research", None)
+            convey_intention_coverage(&estate, "ttl-box", "horizon", "lane:research", None, false)
                 .unwrap_err();
         assert_eq!(crossed.word, "deny-default");
         assert!(
@@ -1338,7 +1410,7 @@ mod tests {
             Effect::Allow,
         );
         assert!(
-            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None).is_ok(),
+            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None, false).is_ok(),
             "allow memory intention continues past the intention gate"
         );
 
@@ -1350,7 +1422,7 @@ mod tests {
             Effect::Deny,
         );
         let denied =
-            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None)
+            convey_intention_coverage(&allowed, "ttl-box", "horizon", "lane:research", None, false)
                 .unwrap_err();
         assert_eq!(denied.word, "deny");
         assert!(denied.line.contains("memory_read"), "{}", denied.line);
@@ -1365,7 +1437,7 @@ mod tests {
             description: None,
         });
         let ambiguous =
-            convey_intention_coverage(&estate, "ttl-box", "research", "notes-append", None)
+            convey_intention_coverage(&estate, "ttl-box", "research", "notes-append", None, false)
                 .unwrap_err();
         assert_eq!(ambiguous.word, "deny-default");
         assert!(
@@ -1385,6 +1457,7 @@ mod tests {
                 "research",
                 "notes-append",
                 Some(IntentionKind::Tool),
+                false,
             )
             .is_err(),
             "passing kind still fail-closes without an allow intention"

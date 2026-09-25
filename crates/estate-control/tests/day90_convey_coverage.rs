@@ -610,7 +610,108 @@ fn convey_lane_prefix_allow_continues_past_intention_gate() {
         "{multi_text}"
     );
     assert!(!multi_text.contains("missing intention"), "{multi_text}");
+    assert!(
+        !multi_text.contains("pass kind on convey call"),
+        "call keeps pass kind, got {multi_text}"
+    );
     assert!(!ambiguous_state.join("conveyor-mesh.json").exists());
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn box_deny_unresolved_capability_is_intention_not_hop_coverage() {
+    let root = repo_root().join(format!(
+        "target/test-convey-box-unresolved-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let estate = fixture_estate(&root, "box-deny.yaml", |estate| {
+        estate
+            .placements
+            .iter_mut()
+            .find(|p| p.id == "cell-one-box")
+            .unwrap()
+            .agents = vec!["research".into()];
+        let research = estate.agents.iter_mut().find(|a| a.id == "research").unwrap();
+        research.tools.push(estate_schema::ToolDecl {
+            id: "lane-tool".into(),
+            description: None,
+        });
+        research.mcp.push(estate_schema::McpDecl {
+            id: "notes-append".into(),
+            description: None,
+        });
+        estate.intentions.push(estate_schema::Intention {
+            subject_agent: "research".into(),
+            object: "lane-tool".into(),
+            kind: estate_schema::IntentionKind::Tool,
+            effect: estate_schema::Effect::Deny,
+            note: None,
+        });
+    });
+    let estate_s = estate.display().to_string();
+    let state = root.join("state");
+    let state_s = state.display().to_string();
+
+    let undeclared = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "not-a-tool",
+            "--agent",
+            "research",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+        ],
+    );
+    let undeclared_text = text(&undeclared);
+    assert!(!undeclared.status.success(), "{undeclared_text}");
+    assert!(
+        undeclared_text.contains("refuse:intention")
+            && undeclared_text.contains("undeclared for agent 'research' (deny-default)"),
+        "{undeclared_text}"
+    );
+    assert!(
+        !undeclared_text.contains("refuse:hop-coverage"),
+        "{undeclared_text}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
+
+    let multi = convey(
+        &root,
+        &[
+            "convey",
+            "hop",
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+        ],
+    );
+    let multi_text = text(&multi);
+    assert!(!multi.status.success(), "{multi_text}");
+    assert!(
+        multi_text.contains("refuse:intention")
+            && multi_text.contains("ambiguous capability; pass kind on convey call")
+            && multi_text.contains("(deny-default)"),
+        "{multi_text}"
+    );
+    assert!(!multi_text.contains("refuse:hop-coverage"), "{multi_text}");
+    assert!(!state.join("conveyor-mesh.json").exists());
 
     let _ = std::fs::remove_dir_all(&root);
 }
