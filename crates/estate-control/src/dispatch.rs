@@ -399,6 +399,29 @@ pub(crate) fn run() -> Result<()> {
                     shot.as_ref(),
                 )
             }
+            ClassifyCommand::Grade {
+                dataset,
+                from_local,
+                tasks,
+                completions,
+                out,
+                print,
+                run,
+                limit,
+                timeout_secs,
+                use_canonical,
+            } => crate::classify_grade::cmd_classify_grade(&crate::classify_grade::GradeRequest {
+                dataset: dataset.as_deref(),
+                from_local: from_local.as_deref(),
+                tasks: tasks.as_deref(),
+                completions: completions.as_deref(),
+                out: &out,
+                print,
+                run,
+                limit,
+                timeout_secs,
+                use_canonical,
+            }),
             ClassifyCommand::Journey {
                 input,
                 out,
