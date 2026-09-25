@@ -228,6 +228,13 @@ The plan line prints the bound frontier model, or model=- when the binding
 sets none. It does not copy the schema card. An estate with no frontier
 binding refuses (refuse:frontier-invent) instead of inventing a frontier
 source_driver or catalog model. No live key.
+
+A granted box hop lease, or a box hop declaration with no lease, that
+disagrees with placement hop coverage is `refuse:hop-coverage` (mismatch)
+and fails plan. Deny and deny-default are notes and do not fail plan by
+themselves. A match stays quiet. Cloud hops stay out. A missing mesh is
+not a failure. A present mesh that does not parse fails plan and is not
+rewritten. The check does not write the mesh, the leases, or the estate.
 ";
 
 const APPLY: &str = "\
