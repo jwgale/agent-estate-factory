@@ -151,7 +151,7 @@ pub(crate) enum Command {
     },
     /// Persisted estate + durable lifecycle + disposable runtime.
     /// After the hop expired count and the cloud-agent line, the same
-    /// Agents section as plan, drift, and apply (`describe_agents_section`)
+    /// Agents section as plan, drift, apply, and doctor (`describe_agents_section`)
     /// prints before an Authority section. That Authority section is the
     /// same file check as `estate plan`, `estate drift`, `estate apply`,
     /// `estate doctor`, and `estate convey authority`
@@ -276,16 +276,20 @@ pub(crate) enum Command {
         forget: bool,
     },
     /// One-page health: .cell layout, schema files, compile-only CI present.
-    /// A placement hop capability that disagrees with hop coverage is
-    /// `refuse:hop-coverage` (mismatch). The check does not write the mesh.
-    /// After the hop cites, an Authority section prints the same file check
-    /// as `estate plan`, `estate drift`, `estate apply`, and
-    /// `estate convey authority` (`would-allow`, `would-deny`,
-    /// `not-enforced`). A `not-enforced reasons:` line counts those rows by
-    /// class and omits zeros. It does not claim mediation. A missing
-    /// conveyor-mesh.json cites that the file is absent. A hop-coverage
-    /// mismatch still fails this command after that section. A mesh that
-    /// does not parse is FAIL and does not invent Authority rows.
+    /// After the hop describe lines, the same Agents section as plan, drift,
+    /// apply, and status (`describe_agents_section`) prints before hop
+    /// coverage cites and an Authority section. That Authority section is
+    /// `describe_authority_section` over `authority_report`, the same file
+    /// check as `estate plan`, `estate drift`, `estate apply`,
+    /// `estate status`, and `estate convey authority` (`would-allow`,
+    /// `would-deny`, `not-enforced`). Deny and deny-default on the Agents
+    /// section and on hop cites are notes and do not fail doctor, including
+    /// `--strict` on the locked example. A `not-enforced reasons:` line
+    /// counts those rows by class and omits zeros. It does not claim
+    /// mediation. A missing conveyor-mesh.json cites that the file is
+    /// absent. A hop-coverage mismatch still fails this command after those
+    /// sections. A mesh that does not parse is FAIL and does not invent
+    /// Agents or Authority rows. Does not write. Does not spawn.
     Doctor {
         #[arg(long, default_value = ".")]
         root: PathBuf,

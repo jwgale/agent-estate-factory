@@ -374,15 +374,20 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
     }
     // Missing mesh is empty, not a failure. A present file that does not
     // parse is already FAIL from the hop-lease read above. This cite does
-    // not write the mesh. Authority is the same file check plan, drift,
-    // apply, and convey authority print, after these hop cites. A mesh
-    // that does not parse never reaches that section and does not invent
-    // rows. An authority read error does not add a doctor fail and does
-    // not invent a lease. A hop mismatch stays a collected fail; the
-    // section still prints so the would-deny row is visible. Doctor bails
-    // at the end when fails is non-empty. Does not write the mesh, the
-    // leases, the estate, or the apply audit.
+    // not write the mesh. The Agents section is the same text plan, drift,
+    // apply, and status print (`describe_agents_section`), after these hop
+    // describe lines and before hop coverage cites and Authority. Authority
+    // is the same file check plan, drift, apply, and convey authority print,
+    // after those cites. A mesh that does not parse never reaches either
+    // section and does not invent Agents or Authority rows. An authority
+    // read error does not add a doctor fail and does not invent a lease.
+    // A hop mismatch stays a collected fail; both sections still print so
+    // the would-deny row is visible. Doctor bails at the end when fails is
+    // non-empty. Deny and deny-default stay notes and do not fail doctor,
+    // including `--strict`. Does not write the mesh, the leases, the estate,
+    // or the apply audit. Does not spawn.
     if let Ok(mesh) = load_mesh(state_dir) {
+        println!("{}", describe_agents_section(&estate));
         print_doctor_hop_coverage_cites(&estate, &mesh, fails);
         if let Ok(text) = doctor_authority_text(&estate, state_dir) {
             println!("{text}");
@@ -390,10 +395,10 @@ fn print_doctor_intention_coverage(root: &Path, state_dir: &Path, fails: &mut Ve
     }
 }
 
-/// File check printed after hop coverage cites. Same text as `estate plan`,
-/// `estate drift`, `estate apply`, and `estate convey authority`.
-/// Does not write the mesh, the leases, the estate, or the apply audit.
-/// Does not invent a lease.
+/// File check printed after the Agents section and hop coverage cites.
+/// Same text as `estate plan`, `estate drift`, `estate apply`, and
+/// `estate convey authority`. Does not write the mesh, the leases, the
+/// estate, or the apply audit. Does not invent a lease.
 fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
     Ok(describe_authority_section(&rows, state_dir))
@@ -641,7 +646,7 @@ pub(crate) fn cmd_status(
         );
     }
     println!("cloud-agent: declared, not spawned");
-    // Same Agents text as plan, drift, and apply. Print-only, after the
+    // Same Agents text as plan, drift, apply, and doctor. Print-only, after the
     // hop expired count and this cloud-agent line, and before Authority.
     // Deny and deny-default coverage stay notes and do not add a status
     // fail. Does not spawn. Does not write the mesh, the leases, or the

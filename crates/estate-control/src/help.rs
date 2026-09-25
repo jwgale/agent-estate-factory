@@ -200,7 +200,7 @@ live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
 After the hop expired count and that cloud-agent line, status prints
-the same Agents section as plan, drift, and apply
+the same Agents section as plan, drift, apply, and doctor
 (`describe_agents_section`): id, lane, desktop, placement (box,
 cloud-agent declared-not-spawned, or none), declared tool / mcp /
 mount / model counts, and that agent's allow / deny / deny-default

@@ -133,6 +133,7 @@ fn doctor_prints_would_deny_for_a_granted_box_lease_with_hop_coverage_deny() {
     std::fs::create_dir_all(&state).unwrap();
     conveyor_proxy::persist_mesh(&state, &granted_box("lane-tool")).unwrap();
     let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
     let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
     let section = conveyor_proxy::describe_authority_section(&rows, &state);
     let before = snapshot(&state);
@@ -140,14 +141,16 @@ fn doctor_prints_would_deny_for_a_granted_box_lease_with_hop_coverage_deny() {
     let locked = std::fs::read(repo_root().join("examples/estate.yaml")).unwrap();
     let (ok, stdout, stderr) = doctor(&root, &state);
     assert!(ok, "{stdout}\n{stderr}");
+    assert!(stdout.contains(&agents), "{stdout}");
     assert!(stdout.contains(&section), "{stdout}");
     assert!(stdout.contains("factory ready"), "{stdout}");
     let hop_at = stdout.find("hop:\n").unwrap();
+    let agents_at = stdout.find(&agents).unwrap();
     let note_at = stdout.find("  note  refuse:hop-coverage:").unwrap();
     let auth_at = stdout.find("Authority\n---------\n").unwrap();
     let health_at = stdout.find("\nHealth\n").unwrap();
     assert!(
-        hop_at < note_at && note_at < auth_at && auth_at < health_at,
+        hop_at < agents_at && agents_at < note_at && note_at < auth_at && auth_at < health_at,
         "{stdout}"
     );
     let denied = section
@@ -188,8 +191,10 @@ fn hop_mismatch_prints_authority_then_fails_and_writes_nothing() {
     std::fs::create_dir_all(&state).unwrap();
     conveyor_proxy::persist_mesh(&state, &granted_box("notes-append")).unwrap();
     let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
     let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
     let section = conveyor_proxy::describe_authority_section(&rows, &state);
+    assert!(agents.starts_with("Agents\n------\n"), "{agents}");
     assert!(
         section.contains("research notes-append cell-one-box: would-deny --"),
         "{section}"
@@ -202,14 +207,19 @@ fn hop_mismatch_prints_authority_then_fails_and_writes_nothing() {
     let estate_bytes = std::fs::read(&estate_path).unwrap();
     let (ok, stdout, stderr) = doctor(&root, &state);
     assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.contains(&agents), "{stdout}");
     assert!(stdout.contains(&section), "{stdout}");
     assert!(!stdout.contains("factory ready"), "{stdout}");
     let hop_at = stdout.find("hop:\n").unwrap();
+    let agents_at = stdout.find(&agents).unwrap();
     let fail_at = stdout.find("  FAIL  refuse:hop-coverage:").unwrap();
     let auth_at = stdout.find("Authority\n---------\n").unwrap();
     let health_at = stdout.find("\nHealth\n").unwrap();
     assert!(
-        hop_at < fail_at && fail_at < auth_at && auth_at < health_at,
+        hop_at < agents_at
+            && agents_at < fail_at
+            && fail_at < auth_at
+            && auth_at < health_at,
         "{stdout}"
     );
     assert!(stderr.contains("doctor failed (1 check(s))"), "{stderr}");

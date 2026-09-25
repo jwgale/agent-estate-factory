@@ -74,9 +74,13 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
         "{text}"
     );
     let hop_at = text.find("hop:\n").expect("hop describe");
+    let agents_at = text.find("Agents\n------\n").expect("agents");
     let auth_at = text.find("Authority\n---------\n").unwrap();
     let health_at = text.find("\nHealth\n").expect("health");
-    assert!(hop_at < auth_at && auth_at < health_at, "{text}");
+    assert!(
+        hop_at < agents_at && agents_at < auth_at && auth_at < health_at,
+        "{text}"
+    );
     assert!(no_enforced_status_token(&text), "{text}");
     assert!(!state.join("conveyor-mesh.json").exists());
     assert!(!state.join("apply-audit.jsonl").exists());
@@ -100,9 +104,36 @@ fn doctor_refuses_an_unreadable_mesh_before_factory_ready() {
     assert!(!text.contains("note  hop leases"), "{text}");
     assert!(!text.contains("factory ready"), "{text}");
     assert!(
+        !text.contains("Agents\n------\n"),
+        "a mesh that does not parse must not invent Agents rows\n{text}"
+    );
+    assert!(
         !text.contains("Authority\n---------\n"),
         "a mesh that does not parse must not invent Authority rows\n{text}"
     );
+    assert_eq!(std::fs::read_to_string(&mesh).unwrap(), "not-json");
+    let (strict_ok, strict_text) = run(
+        bin,
+        &[
+            "doctor",
+            "--strict",
+            "--root",
+            &root.display().to_string(),
+            "--state-dir",
+            &state.display().to_string(),
+        ],
+    );
+    assert!(!strict_ok, "{strict_text}");
+    assert!(strict_text.contains("parse:"), "{strict_text}");
+    assert!(
+        !strict_text.contains("Agents\n------\n"),
+        "a mesh that does not parse must not invent Agents rows\n{strict_text}"
+    );
+    assert!(
+        !strict_text.contains("Authority\n---------\n"),
+        "a mesh that does not parse must not invent Authority rows\n{strict_text}"
+    );
+    assert!(no_enforced_status_token(&strict_text), "{strict_text}");
     assert_eq!(std::fs::read_to_string(&mesh).unwrap(), "not-json");
 
     std::fs::write(
