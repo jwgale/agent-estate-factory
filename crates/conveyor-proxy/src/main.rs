@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use conveyor_proxy::{
-    call_hop, check, declare_hop, list_hop_leases, list_hops, parse_kind, response_from,
-    sync_from_placements, HopDecl, ProxyRequest,
+    call_hop, call_hop_for_agent, check, declare_hop, list_hop_leases, list_hops, parse_kind,
+    response_from, sync_from_placements, HopDecl, ProxyRequest,
 };
 use std::path::PathBuf;
 
@@ -52,15 +52,26 @@ enum Command {
         wired: bool,
         #[arg(long)]
         ttl_secs: Option<u64>,
+        /// Agent on this hop. Repeat for a population. Empty is not a grant.
+        #[arg(long = "agent")]
+        agents: Vec<String>,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
     /// Lease-bound hop call. Refuses without a granted lease.
+    /// `--agent` binds one agent and checks the estate intention. Not an IdP.
     Call {
         #[arg(long)]
         id: String,
         #[arg(long, default_value = "lane-tool")]
         capability: String,
+        #[arg(long)]
+        agent: Option<String>,
+        /// tool | mcp | mount | model | memory_read. Omit to infer from the agent.
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
@@ -94,13 +105,7 @@ fn main() -> Result<()> {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
             let kind = parse_kind(&kind).map_err(anyhow::Error::msg)?;
-            let decision = check(
-                &loaded,
-                &agent,
-                kind,
-                &object,
-                feed_dir.as_deref(),
-            );
+            let decision = check(&loaded, &agent, kind, &object, feed_dir.as_deref());
             let resp = response_from(&decision);
             println!("{}", serde_json::to_string_pretty(&resp)?);
             if !decision.is_allow() {
@@ -114,20 +119,19 @@ fn main() -> Result<()> {
         } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
-            let server = tiny_http::Server::http(&bind)
-                .map_err(|e| anyhow::anyhow!("bind {bind}: {e}"))?;
+            let server =
+                tiny_http::Server::http(&bind).map_err(|e| anyhow::anyhow!("bind {bind}: {e}"))?;
             eprintln!("conveyor-proxy listening on http://{bind}  POST /v0/check");
             for mut request in server.incoming_requests() {
                 let mut body = String::new();
                 let _ = std::io::Read::read_to_string(request.as_reader(), &mut body);
                 let reply = handle(&loaded, request.url(), &body, feed_dir.as_deref());
                 let status = if reply.0 { 200 } else { 403 };
-                let mut response = tiny_http::Response::from_string(reply.1).with_status_code(status);
-                let header = tiny_http::Header::from_bytes(
-                    &b"Content-Type"[..],
-                    &b"application/json"[..],
-                )
-                .expect("header");
+                let mut response =
+                    tiny_http::Response::from_string(reply.1).with_status_code(status);
+                let header =
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                        .expect("header");
                 response = response.with_header(header);
                 let _ = request.respond(response);
             }
@@ -139,6 +143,7 @@ fn main() -> Result<()> {
             host_class,
             wired,
             ttl_secs,
+            agents,
             state_dir,
         } => {
             let lease = declare_hop(
@@ -151,6 +156,7 @@ fn main() -> Result<()> {
                     wired,
                     note: None,
                     ttl_secs,
+                    agents,
                 },
             )?;
             println!("{}", serde_json::to_string_pretty(&lease)?);
@@ -158,9 +164,25 @@ fn main() -> Result<()> {
         Command::Call {
             id,
             capability,
+            agent,
+            kind,
+            estate,
             state_dir,
         } => {
-            let call = call_hop(&state_dir, &id, &capability)?;
+            let call = if let Some(agent) = agent {
+                let loaded = estate_schema::load_estate(&estate)
+                    .with_context(|| format!("load {}", estate.display()))?;
+                let kind = match kind {
+                    Some(raw) => Some(parse_kind(&raw).map_err(anyhow::Error::msg)?),
+                    None => None,
+                };
+                call_hop_for_agent(&state_dir, &id, &capability, &agent, kind, &loaded)?
+            } else {
+                if kind.is_some() {
+                    bail!("refuse:agent-unbound: --kind requires --agent");
+                }
+                call_hop(&state_dir, &id, &capability)?
+            };
             println!("{}", serde_json::to_string_pretty(&call)?);
             if !call.allow {
                 bail!("hop call denied");
@@ -191,7 +213,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle(estate: &estate_schema::Estate, url: &str, body: &str, feed: Option<&std::path::Path>) -> (bool, String) {
+fn handle(
+    estate: &estate_schema::Estate,
+    url: &str,
+    body: &str,
+    feed: Option<&std::path::Path>,
+) -> (bool, String) {
     if url != "/v0/check" && url != "/v0/check/" {
         return (
             false,

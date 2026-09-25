@@ -587,6 +587,26 @@ fn blast_radius(
     lines.push(format!(
         "Placements declared: {boxes} box, {cloud} cloud-agent stub(s). Floor does not spawn cloud agents."
     ));
+    let populations: Vec<String> = estate
+        .placements
+        .iter()
+        .map(|p| {
+            let who = if p.agents.is_empty() {
+                "(none)".to_string()
+            } else {
+                p.agents.join(",")
+            };
+            format!("{}[{who}]", p.id)
+        })
+        .collect();
+    lines.push(format!(
+        "Capability mesh bind: `estate convey sync` stamps placement agents onto hop leases ({}). `estate convey call --agent` refuses an agent the lease does not name, and refuses a capability the estate does not allow. Identity stays parked. Not a gateway.",
+        if populations.is_empty() {
+            "no placements".to_string()
+        } else {
+            populations.join(" ")
+        }
+    ));
     if estate.enrich_packs.packs.is_empty() {
         lines.push("Enrich packs stay empty until Jason curates (manual; no auto-promote).".into());
     } else {

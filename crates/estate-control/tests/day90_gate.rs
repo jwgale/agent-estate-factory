@@ -92,10 +92,16 @@ fn a11_suspend_resume_survives_restart() {
     let state = root.join("state");
     apply_with_profile_dir(&e, &state, &root).unwrap();
     suspend(&state).unwrap();
-    assert_eq!(load_lifecycle(&state).unwrap().state, LifecycleState::Suspended);
+    assert_eq!(
+        load_lifecycle(&state).unwrap().state,
+        LifecycleState::Suspended
+    );
     assert!(state.join("lifecycle.json").is_file());
     resume(&e, &state, &root).unwrap();
-    assert_eq!(load_lifecycle(&state).unwrap().state, LifecycleState::Running);
+    assert_eq!(
+        load_lifecycle(&state).unwrap().state,
+        LifecycleState::Running
+    );
     let places = load_placements(&state).unwrap().expect("placement-actual");
     let cloud = places
         .leases
@@ -105,7 +111,9 @@ fn a11_suspend_resume_survives_restart() {
     assert!(!cloud.spawned);
     let history = list_lifecycle_events(&state).unwrap();
     assert!(history.iter().any(|e| e.action == "suspend"));
-    assert!(history.iter().any(|e| e.action == "resume" || e.action == "apply"));
+    assert!(history
+        .iter()
+        .any(|e| e.action == "resume" || e.action == "apply"));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -167,7 +175,10 @@ fn wave2_security_iac_and_strict_fresh_plan() {
     let plan = diff_estates(&e, None);
     assert!(plan_is_reviewable(&plan));
     assert!(render_security_iac(&plan).contains("Security-as-IaC"));
-    assert!(!plan_against_is_fresh_strict(&plan, Some(&plan.desired_hash)));
+    assert!(!plan_against_is_fresh_strict(
+        &plan,
+        Some(&plan.desired_hash)
+    ));
     let fixture = load_plan_json(std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../examples/valid/covering-plan.json"
@@ -192,10 +203,7 @@ fn wave2_host_matrix_and_convey_mesh() {
         "hosts/apple-silicon.yaml",
         "hosts/nvidia-rental.yaml",
     ] {
-        let path = format!(
-            "{}/../../examples/{rel}",
-            env!("CARGO_MANIFEST_DIR")
-        );
+        let path = format!("{}/../../examples/{rel}", env!("CARGO_MANIFEST_DIR"));
         let estate = estate_schema::load_estate(std::path::Path::new(&path)).unwrap();
         assert!(estate.placements.iter().any(|p| p.id == "cell-one-box"));
     }
@@ -210,13 +218,16 @@ fn wave2_host_matrix_and_convey_mesh() {
             wired: true,
             note: None,
             ttl_secs: None,
+            agents: Vec::new(),
         },
     )
     .unwrap();
     assert!(lease.granted);
-    assert!(conveyor_proxy::call_hop(&root, "box-notes", "notes-append")
-        .unwrap()
-        .allow);
+    assert!(
+        conveyor_proxy::call_hop(&root, "box-notes", "notes-append")
+            .unwrap()
+            .allow
+    );
     assert!(conveyor_proxy::call_hop(&root, "missing", "lane-tool").is_err());
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -328,6 +339,7 @@ fn wave5_journal_hop_ttl_plan_diff_apiver() {
             wired: true,
             note: None,
             ttl_secs: Some(30),
+            agents: Vec::new(),
         },
     )
     .unwrap();
@@ -372,7 +384,10 @@ fn wave6_backup_policy_pause_catalog() {
 
     let snap = model_estate::catalog_file();
     assert!(snap.cards.iter().all(|c| c.caps.context_tokens > 0));
-    assert!(snap.cards.iter().any(|c| c.driver_id == "mlx" && c.caps.streaming));
+    assert!(snap
+        .cards
+        .iter()
+        .any(|c| c.driver_id == "mlx" && c.caps.streaming));
     assert!(snap
         .cards
         .iter()
@@ -387,10 +402,7 @@ fn wave7_curator_sync_status() {
         .unwrap_err()
         .to_string()
         .contains("refuse:curator"));
-    assert_eq!(
-        conveyor_proxy::hop_kind_for_placement("box"),
-        Some("box")
-    );
+    assert_eq!(conveyor_proxy::hop_kind_for_placement("box"), Some("box"));
     assert_eq!(
         conveyor_proxy::hop_kind_for_placement("cloud-agent"),
         Some("cloud-mesh")
@@ -410,6 +422,7 @@ fn wave7_curator_sync_status() {
             wired: true,
             note: None,
             ttl_secs: Some(60),
+            agents: Vec::new(),
         },
     )
     .unwrap();

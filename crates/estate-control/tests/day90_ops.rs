@@ -17,11 +17,7 @@ fn fixture(rel: &str) -> String {
 }
 
 fn tmp(name: &str) -> PathBuf {
-    let p = repo_root().join(format!(
-        "target/test-ops-{}-{}",
-        name,
-        std::process::id()
-    ));
+    let p = repo_root().join(format!("target/test-ops-{}-{}", name, std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p
@@ -80,13 +76,13 @@ fn help_topics_cover_day90_loop() {
     let mixed = estate_bin().args(["help", "day90-mixed"]).output().unwrap();
     let mixed_text = text(&mixed);
     assert!(mixed_text.contains("make day90-mixed"), "{mixed_text}");
-    assert!(mixed_text.contains("Not part of make smoke"), "{mixed_text}");
+    assert!(
+        mixed_text.contains("Not part of make smoke"),
+        "{mixed_text}"
+    );
     assert!(mixed_text.contains("--require-plan"), "{mixed_text}");
 
-    let apply = estate_bin()
-        .args(["apply", "--help"])
-        .output()
-        .unwrap();
+    let apply = estate_bin().args(["apply", "--help"]).output().unwrap();
     let apply_text = text(&apply);
     assert!(apply.status.success(), "{apply_text}");
     assert!(apply_text.contains("estate help apply"));
@@ -160,7 +156,11 @@ fn backup_prune_keeps_last_n() {
         .filter(|e| {
             e.as_ref()
                 .ok()
-                .and_then(|d| d.file_name().to_str().map(|n| n.starts_with("cell-backup-")))
+                .and_then(|d| {
+                    d.file_name()
+                        .to_str()
+                        .map(|n| n.starts_with("cell-backup-"))
+                })
                 .unwrap_or(false)
         })
         .count();
@@ -211,7 +211,11 @@ fn backup_prune_keeps_last_n() {
         .filter(|e| {
             e.as_ref()
                 .ok()
-                .and_then(|d| d.file_name().to_str().map(|n| n.starts_with("cell-backup-")))
+                .and_then(|d| {
+                    d.file_name()
+                        .to_str()
+                        .map(|n| n.starts_with("cell-backup-"))
+                })
                 .unwrap_or(false)
         })
         .count();
@@ -267,13 +271,16 @@ fn convey_call_refuses_policy_deny() {
         .output()
         .unwrap();
     let deny_text = text(&deny);
-    assert!(!deny.status.success(), "policy-deny must refuse convey-call");
+    assert!(
+        !deny.status.success(),
+        "policy-deny must refuse convey-call"
+    );
     assert!(
         deny_text.contains("refuse:policy"),
         "expected refuse:policy, got {deny_text}"
     );
 
-    let allow = estate_bin()
+    let unbound = estate_bin()
         .args([
             "convey",
             "call",
@@ -288,6 +295,54 @@ fn convey_call_refuses_policy_deny() {
         ])
         .output()
         .unwrap();
+    let unbound_text = text(&unbound);
+    assert!(!unbound.status.success(), "{unbound_text}");
+    assert!(
+        unbound_text.contains("refuse:agent-unbound"),
+        "synced population must refuse an unnamed call, got {unbound_text}"
+    );
+
+    let hop = estate_bin()
+        .args([
+            "convey",
+            "hop",
+            "--id",
+            "notes-hop",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--state-dir",
+            &state.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(hop.status.success(), "{}", text(&hop));
+
+    let allow = estate_bin()
+        .args([
+            "convey",
+            "call",
+            "--id",
+            "notes-hop",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+            "--policy",
+            &fixture("examples/fixtures/policy-allow.yaml"),
+        ])
+        .output()
+        .unwrap();
     assert!(allow.status.success(), "{}", text(&allow));
+    assert!(
+        text(&allow).contains("agent-bound research"),
+        "{}",
+        text(&allow)
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

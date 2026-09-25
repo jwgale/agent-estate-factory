@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — agent population on the capability mesh
+
+- `estate convey hop --agent` records who may use the hop. `estate convey sync` copies placement `agents` onto that hop lease. An unnamed `estate convey call` against a populated lease is `refuse:agent-unbound`. `estate convey call --agent` then checks the estate intention for the capability (`refuse:intention` on deny). A lease that lists an agent the placement row does not is `refuse:agent-unplaced` and writes nothing. `estate plan` names that bind. Identity stays parked. Not a gateway. This slice does not invent a live PASS. `factory_live_pass` / `live_pass_recorded` stay false. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — dual Qwen and GLM-4 Chat classify journey
 
 - `estate classify journey --dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache. Both students use that cache's held-out file. `--print` writes `journey-plan.json` under `{out}/tev1` and `{out}/glm4-chat` and does not call the network. `--print` and `--run` both clear any prior `dual-compare.json` and write an `in-progress` marker with null scores before either student starts. `--print` writes the compare stub only after both plans succeed. `--run` fills the compare file with base vs specialist metrics and the Qwen↔GLM specialist delta only after both finish. A mid-pair failure leaves that marker, not a print stub or an older scored compare. The report is not a factory live PASS. `live_pass_recorded` stays false. This slice does not wire the path into `make smoke`, `make gate-90`, or GitHub Actions. It does not add Kimi. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
