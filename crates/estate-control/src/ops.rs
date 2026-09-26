@@ -1003,6 +1003,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate convey call` (printed before `call_hop` / `call_hop_for_agent`
 /// and before the call JSON; intention, hop-coverage, missing-estate, and
 /// `--kind` without `--agent` stay before this stack),
+/// `estate status` (printed after the page header and the pre-stack
+/// refuses, including the hop expired count and the cloud-agent line; a
+/// placement-actual SKU does not reach this stack),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list),
 /// `estate expire` (printed before the expired placement lease list and
@@ -1069,7 +1072,16 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// no second placement refuse before those lists. `estate convey authority`
 /// prints this text and stops. That SKU omits Authority and the file check
 /// succeeds. There is no later reader, so the command does not refuse after
-/// the stack and does not write. Every other
+/// the stack and does not write. `estate status` prints the page header,
+/// then this text, and stops when the stack is reached. A placement-actual
+/// SKU does not reach this text: `refuse_lease_host_classes` refuses before
+/// the header, and `list_expired_hop_leases` would also refuse that SKU
+/// (`load_interpreted_mesh` slim-parses placement-actual) before the page.
+/// There is no later mesh reader after this stack. The page does not print,
+/// and the command does not succeed with Authority omitted. That diverges
+/// from convey authority, from leases and sync (a later reader refuses
+/// after this stack), and from audits and history (those readers still
+/// print a body). Every other
 /// mesh error, including a population ahead of the floor
 /// (`refuse:agent-unplaced`) and a placement-actual parse failure
 /// (`MeshError::Parse`), refuses here before any section. Capability

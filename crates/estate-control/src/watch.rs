@@ -712,38 +712,33 @@ pub(crate) fn cmd_status(
         );
     }
     println!("cloud-agent: declared, not spawned");
-    // Same Agents text as plan, drift, apply, doctor, and convey authority.
-    // Print-only, after the hop expired count and this cloud-agent line,
-    // and before hop coverage cites and Authority.
-    // Deny and deny-default coverage stay notes and do not add a status
-    // fail. Does not spawn. Does not write the mesh, the leases, or the
-    // estate. A spawned cloud lease already refused above and does not
-    // reach this section.
-    // A missing mesh is the empty mesh from `load_mesh`, so the cite list
-    // is empty. A present mesh that does not parse already refused above
-    // (`list_expired_hop_leases`) and does not reach this section, so it
-    // does not invent cites or Authority rows.
-    let mesh = load_mesh(state_dir)?;
-    println!("{}", describe_agents_section(&estate));
-    // Same lines doctor prints (`print_hop_coverage_cites`): `FAIL` on
-    // mismatch, `note` on deny and deny-default. The mismatch lines are
-    // discarded. Status does not bail on them. Spawned cloud, an unreadable
-    // mesh, and model-actual already refused above. Does not
-    // write the mesh, the leases, or the estate. Does not spawn.
-    let _mismatches = print_hop_coverage_cites(&estate, &mesh);
-    // Print-only file check after those cites. Same text as plan, drift,
-    // apply, doctor, and convey authority. A missing mesh stays
-    // not-enforced. A would-deny row does not fail status. Does not write
-    // the mesh, the leases, or the estate. Does not invent a lease.
-    println!("{}", status_authority_text(&estate, state_dir)?);
+    // Same stack as convey authority and the other honesty callers:
+    // Agents (`describe_agents_section`), hop coverage cites
+    // (`render_hop_coverage_cites`: `FAIL` on mismatch, `note` on deny
+    // and deny-default), then Authority when that report is available.
+    // Print-only, after the hop expired count and this cloud-agent line.
+    // Those cites do not fail status. A match stays quiet. A missing mesh
+    // is an empty cite list and Authority stays not-enforced
+    // (`missing-mesh`). Does not spawn. Does not write the mesh, the
+    // leases, or the estate.
+    // A placement-actual SKU does not reach this stack.
+    // `refuse_lease_host_classes` already returned before the page.
+    // `list_expired_hop_leases` would also refuse that SKU
+    // (`load_interpreted_mesh` slim-parses placement-actual) and does not
+    // run once the lease check has returned. The page does not print.
+    // There is no later mesh reader after this stack. The command does
+    // not succeed with Authority omitted.
+    // A present mesh that does not parse, a bad host_class on that file,
+    // and `refuse:agent-unplaced` already refused above and do not invent
+    // cites or Authority rows. Spawned cloud and model-actual already
+    // refused above.
+    print!("{}", crate::ops::honesty_stack(&estate, state_dir)?);
     Ok(())
 }
 
-/// File check printed after the Agents section and hop coverage cites.
-/// Same text as `estate plan`, `estate drift`, `estate apply`,
-/// `estate doctor`, and `estate convey authority`. Does not write the mesh,
-/// the leases, or the estate. Does not invent a lease. Does not fail status
-/// on a hop-coverage mismatch.
+/// Authority text the status unit tests compare to `describe_authority_section`.
+/// `cmd_status` prints that section from `honesty_stack`.
+#[cfg(test)]
 fn status_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
     let rows = authority_report(state_dir, estate).map_err(|err| anyhow::anyhow!("{err}"))?;
     Ok(describe_authority_section(&rows, state_dir))

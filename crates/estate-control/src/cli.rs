@@ -150,21 +150,33 @@ pub(crate) enum Command {
         roots_base: PathBuf,
     },
     /// Persisted estate + durable lifecycle + disposable runtime.
-    /// After the hop expired count and the cloud-agent line, the same
-    /// Agents section as plan, drift, apply, doctor, and convey authority
-    /// (`describe_agents_section`) prints, then the same hop coverage cites
-    /// doctor prints (`hop_coverage_cites`: `FAIL` on mismatch, `note` on
-    /// deny and deny-default). Those cites do not fail status. An Authority
-    /// section follows. That Authority section is the same file check as
-    /// `estate plan`, `estate drift`, `estate apply`, `estate doctor`, and
-    /// `estate convey authority`
-    /// (`would-allow`, `would-deny`, `not-enforced`). Deny and deny-default
-    /// on the Agents section are notes and do not fail status. A
+    /// After the hop expired count and the cloud-agent line, prints the
+    /// shared honesty stack (`honesty_stack`): the same Agents section as
+    /// plan, drift, apply, doctor, and convey authority
+    /// (`describe_agents_section`), then hop coverage cites
+    /// (`render_hop_coverage_cites` / `hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`:
+    /// `would-allow`, `would-deny`, `not-enforced`). Those cites do not
+    /// fail status. A match stays quiet. Deny and deny-default on the
+    /// Agents section are notes and do not fail status. A
     /// `not-enforced reasons:` line counts those rows by class and omits
-    /// zeros. It does not claim mediation. A missing mesh stays
-    /// not-enforced, cites that conveyor-mesh.json is absent, and adds no
-    /// hop coverage cite. A mesh that does not parse does not invent cites
-    /// or Authority rows. Does not write. Does not spawn.
+    /// zeros. It does not claim mediation. A missing mesh is an empty cite
+    /// list and stays not-enforced (`missing-mesh`), cites that
+    /// conveyor-mesh.json is absent, and adds no hop coverage cite. A mesh
+    /// that does not parse, a bad host_class on that file, or
+    /// `refuse:agent-unplaced` does not invent cites or Authority rows.
+    /// Estate load, lifecycle parse,
+    /// `refuse_lease_host_classes`, model-actual, catalog disagree, and
+    /// spawned cloud stay before the page. A placement-actual SKU
+    /// host_class does not reach the stack: `refuse_lease_host_classes`
+    /// refuses before the page, and `list_expired_hop_leases` would also
+    /// refuse that SKU (`load_interpreted_mesh` slim-parses
+    /// placement-actual) before the page. The page does not print. There
+    /// is no later mesh reader after the stack. The command does not
+    /// succeed with Authority omitted. That diverges from `estate convey
+    /// authority`, from `estate leases` and `estate convey sync`, and from
+    /// `estate audits` and `estate history`. Does not write. Does not spawn.
     /// Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]
