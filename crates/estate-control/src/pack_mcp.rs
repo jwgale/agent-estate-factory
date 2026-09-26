@@ -230,6 +230,18 @@ pub(crate) fn complete_tool(ident: &McpIdentity) -> Value {
                 "object": {
                     "type": "string",
                     "description": "Optional binding id for estate complete --object"
+                },
+                "session": {
+                    "type": "string",
+                    "description": "Pack-scoped session id (alias session_id). Resume or create. Env: CELL_PACK_SESSION."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Alias for session"
+                },
+                "session_create": {
+                    "type": "boolean",
+                    "description": "Mint a new pack-scoped session id, then complete"
                 }
             },
             "required": ["prompt"]
@@ -266,7 +278,23 @@ fn call_tool(ident: &McpIdentity, params: &Value) -> Value {
         _ => ident.mock,
     };
     let object = args.get("object").and_then(Value::as_str);
-    let (ok, text) = invoke_complete(ident, prompt, mock, object);
+    let session = args
+        .get("session")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            args.get("session_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        });
+    let session_create = match args.get("session_create") {
+        Some(Value::Bool(v)) => *v,
+        Some(Value::String(s)) => env_truthy(Some(s)),
+        _ => false,
+    };
+    let (ok, text) = invoke_complete(ident, prompt, mock, object, session, session_create);
     if ok {
         tool_text(&text, false)
     } else {
@@ -279,6 +307,8 @@ fn invoke_complete(
     prompt: &str,
     mock: bool,
     object: Option<&str>,
+    session: Option<&str>,
+    session_create: bool,
 ) -> (bool, String) {
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("estate"));
     let mut cmd = Command::new(exe);
@@ -298,6 +328,12 @@ fn invoke_complete(
     }
     if let Some(object) = object {
         cmd.arg("--object").arg(object);
+    }
+    if let Some(session) = session {
+        cmd.arg("--session").arg(session);
+    }
+    if session_create {
+        cmd.arg("--session-create");
     }
     match run_command_with_timeout(&mut cmd, ident.complete_timeout) {
         Ok(cap) if cap.timed_out => (

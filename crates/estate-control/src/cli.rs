@@ -431,9 +431,14 @@ pub(crate) enum Command {
     /// JSON. A journal write that fails after complete has committed
     /// prints `decision receipt: journal write failed after complete
     /// commit` and still prints the completion. `--mock` uses in-process
-    /// drivers. `{state-dir}/decision-select.json` is an optional hint
-    /// and is not a grant. No honesty stack. No hop lease. No promote.
-    /// No auto-apply. Does not spawn. Does not invent a live PASS.
+    /// drivers. Optional `--session` / `--session-create` (or
+    /// `CELL_PACK_SESSION`) is pack-scoped multi-hop memory: prior turns
+    /// prepend into the specialist prompt and this turn appends after
+    /// success. Receipts surface `session_id`, turn count, and whether
+    /// context was applied. `{state-dir}/decision-select.json` is an
+    /// optional hint and is not a grant. No honesty stack. No hop lease.
+    /// No promote. No auto-apply. Does not spawn. Does not invent a live
+    /// PASS.
     Complete {
         #[arg(long)]
         agent: String,
@@ -478,6 +483,18 @@ pub(crate) enum Command {
         /// eligible. Same word as agent `select: equal-class`.
         #[arg(long)]
         select: Option<String>,
+        /// Pack-scoped session id. Requires `--pack`. Resume if the file
+        /// exists; create if missing. Env fallback: `CELL_PACK_SESSION`.
+        /// Prior turns prepend into the specialist prompt. After success
+        /// this turn is appended. Bound by max turns / bytes
+        /// (`CELL_PACK_SESSION_MAX_TURNS` / `_MAX_BYTES`). Ended or
+        /// expired sessions refuse.
+        #[arg(long)]
+        session: Option<String>,
+        /// Mint a new pack-scoped session id, then complete. Combine with
+        /// `--session <id>` to create that exact id (refuse if it exists).
+        #[arg(long, default_value_t = false)]
+        session_create: bool,
     },
     /// Estate agent packs: list / show / export-plugin / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
@@ -1067,6 +1084,51 @@ pub(crate) enum PackCommand {
         #[arg(long)]
         complete_timeout_secs: Option<u64>,
     },
+    /// Pack-scoped crew session: create / show / end a short transcript
+    /// so successive complete hops share context. Throwaway files under
+    /// `{state-dir}/pack-sessions/`. Not estate SoT. Not Grok Bot sync.
+    Session {
+        #[command(subcommand)]
+        command: PackSessionCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum PackSessionCommand {
+    /// Create an empty pack-scoped session and print its id.
+    Create {
+        #[arg(long)]
+        pack: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Optional explicit id. Omit to mint `sess-<hex>`.
+        #[arg(long)]
+        id: Option<String>,
+        /// TTL in seconds from now. 0 means no expiry. Default 86400
+        /// (or `CELL_PACK_SESSION_TTL_SECS`).
+        #[arg(long)]
+        ttl_secs: Option<i64>,
+    },
+    /// Show one session (turns, ended, expired).
+    Show {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        pack: Option<String>,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// End a session. Resume after this is `refuse:session-ended`.
+    End {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        pack: Option<String>,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1110,6 +1172,12 @@ pub(crate) enum PackageCommand {
         /// Run ordered hops from package or pack `chain:` / `steps:`.
         #[arg(long, default_value_t = false)]
         chain: bool,
+        /// Pack-scoped session id shared across this run (and chain hops).
+        #[arg(long)]
+        session: Option<String>,
+        /// Mint a new pack-scoped session, then run.
+        #[arg(long, default_value_t = false)]
+        session_create: bool,
     },
 }
 
@@ -1151,6 +1219,12 @@ pub(crate) enum RoutineCommand {
         /// Run the package chain when declared.
         #[arg(long, default_value_t = false)]
         chain: bool,
+        /// Pack-scoped session id shared across this run.
+        #[arg(long)]
+        session: Option<String>,
+        /// Mint a new pack-scoped session, then run.
+        #[arg(long, default_value_t = false)]
+        session_create: bool,
     },
     /// Show schedule, last_run, next_due, enabled from local state-dir.
     Status {

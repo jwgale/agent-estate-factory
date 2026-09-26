@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::{
     AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, DecisionsCommand, EnrichCommand,
-    FeedCommand, PackCommand, PackageCommand, PacksCommand, PlanAction, PolicyCommand,
+    FeedCommand,     PackCommand, PackSessionCommand, PackageCommand, PacksCommand, PlanAction, PolicyCommand,
     RoutineCommand, SessionsCommand,
 };
 use crate::ops::*;
@@ -242,6 +242,8 @@ pub(crate) fn run() -> Result<()> {
             pack,
             package,
             select,
+            session,
+            session_create,
         } => cmd_complete(
             &agent,
             prompt,
@@ -257,6 +259,8 @@ pub(crate) fn run() -> Result<()> {
             mock,
             None,
             select.as_deref(),
+            session.as_deref(),
+            session_create,
         ),
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
@@ -279,6 +283,31 @@ pub(crate) fn run() -> Result<()> {
                 mock,
                 complete_timeout_secs,
             ),
+            PackCommand::Session { command } => match command {
+                PackSessionCommand::Create {
+                    pack,
+                    estate,
+                    state_dir,
+                    id,
+                    ttl_secs,
+                } => crate::pack_session::cmd_pack_session_create(
+                    &pack,
+                    &estate,
+                    &state_dir,
+                    ttl_secs,
+                    id.as_deref(),
+                ),
+                PackSessionCommand::Show {
+                    id,
+                    pack,
+                    state_dir,
+                } => crate::pack_session::cmd_pack_session_show(&id, pack.as_deref(), &state_dir),
+                PackSessionCommand::End {
+                    id,
+                    pack,
+                    state_dir,
+                } => crate::pack_session::cmd_pack_session_end(&id, pack.as_deref(), &state_dir),
+            },
         },
         Command::Package { command } => match command {
             PackageCommand::List { estate } => cmd_package_list(&estate),
@@ -294,6 +323,8 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                session,
+                session_create,
             } => cmd_package_run(
                 &id,
                 agent.as_deref(),
@@ -305,6 +336,8 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                session.as_deref(),
+                session_create,
             ),
         },
         Command::Routine { command } => match command {
@@ -383,6 +416,8 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                session,
+                session_create,
             } => cmd_routine_run(
                 &id,
                 agent.as_deref(),
@@ -394,6 +429,8 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                session.as_deref(),
+                session_create,
             ),
         },
         Command::Decisions { command } => match command {

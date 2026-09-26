@@ -30,7 +30,8 @@ fn estate_bin() -> Command {
         .env_remove("CELL_FRONTIER_ENDPOINT")
         .env_remove("CELL_LOCAL_ENDPOINT")
         .env_remove("CELL_FRONTIER_MODEL")
-        .env_remove("CELL_LOCAL_LIVE");
+        .env_remove("CELL_LOCAL_LIVE")
+        .env_remove("CELL_PACK_SESSION");
     cmd
 }
 
@@ -261,5 +262,106 @@ fn mcp_serve_refuses_zero_complete_timeout() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("refuse:mcp-complete-timeout"), "{stderr}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn mcp_serve_complete_session_two_hops_share_context() {
+    assert_locked_cksum();
+    let dir = scratch("session");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = fixture().canonicalize().unwrap();
+
+    let mut child = estate_bin()
+        .args(["pack", "mcp-serve"])
+        .env("CELL_ESTATE_PACK", "research-crew")
+        .env("CELL_ESTATE_MEMBER", "horizon")
+        .env("CELL_ESTATE_ROLE", "orchestrator")
+        .env("CELL_ESTATE_PATH", estate.display().to_string())
+        .env("CELL_ESTATE_STATE_DIR", state.display().to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    write_frame(
+        &mut stdin,
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+    );
+    let _init = read_frame(&mut stdout);
+    write_frame(
+        &mut stdin,
+        &json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    );
+
+    write_frame(
+        &mut stdin,
+        &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+    );
+    let listed = read_frame(&mut stdout);
+    let props = &listed["result"]["tools"][0]["inputSchema"]["properties"];
+    assert!(props.get("session").is_some(), "{listed}");
+    assert!(props.get("session_create").is_some(), "{listed}");
+
+    write_frame(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "complete",
+                "arguments": {
+                    "prompt": "mcp-hop-alpha-token",
+                    "mock": true,
+                    "session": "sess-mcpshare0001"
+                }
+            }
+        }),
+    );
+    let first = read_frame(&mut stdout);
+    assert_eq!(first["result"]["isError"], false, "{first}");
+    let text_a = first["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text_a.contains("session=sess-mcpshare0001"), "{text_a}");
+    assert!(!text_a.contains("live PASS"), "{text_a}");
+
+    write_frame(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "complete",
+                "arguments": {
+                    "prompt": "mcp-follow-up",
+                    "mock": true,
+                    "session": "sess-mcpshare0001"
+                }
+            }
+        }),
+    );
+    let second = read_frame(&mut stdout);
+    assert_eq!(second["result"]["isError"], false, "{second}");
+    let text_b = second["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text_b.contains("context=applied"), "{text_b}");
+    assert!(
+        text_b.contains("mcp-hop-alpha-token"),
+        "MCP hop 2 must see hop 1: {text_b}"
+    );
+    assert!(!text_b.contains("live PASS"), "{text_b}");
+
+    drop(stdin);
+    let status = child.wait().unwrap();
+    assert!(status.success(), "mcp-serve exit {status}");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[0]["session_id"], "sess-mcpshare0001");
+    assert_eq!(rows[1]["session_context"], true);
     assert_locked_cksum();
 }

@@ -257,6 +257,49 @@ when the estate path cannot be canonicalized — it does not write a
 relative `CELL_ESTATE_PATH`. Cargo test `pack_mcp_serve` covers the mock
 path. Not a live PASS.
 
+## 3g. Crew session / multi-hop pack memory (fixture)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
+[`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml).
+Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
+`READY_FOR_LIVE_TEST`: no.
+
+A pack-scoped session holds a short transcript so successive
+`estate complete --pack` (or pack MCP `complete`) hops share context
+the way a crew holds a thread. Files live under
+`{state-dir}/pack-sessions/{pack}/{id}.json`. Not estate SoT. No secrets.
+
+```bash
+estate pack session create --pack research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-session-cell --id sess-crewdemo01
+
+estate complete --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-session-cell --agent horizon --pack research-crew \
+  --session sess-crewdemo01 --prompt "unique-hop-alpha-token" --mock
+
+estate complete --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-session-cell --agent horizon --pack research-crew \
+  --session sess-crewdemo01 --prompt "follow-up that should see prior turn" --mock
+
+estate pack session show --id sess-crewdemo01 --state-dir target/pack-session-cell
+estate decisions report --state-dir target/pack-session-cell --pack research-crew
+estate pack session end --id sess-crewdemo01 --state-dir target/pack-session-cell
+```
+
+Hop 1 journals `session_id`, `turns=1`, `context=none`. Hop 2 prepends
+the prior turn into the specialist prompt (mock completion contains
+`unique-hop-alpha-token`) and journals `turns=2`, `context=applied`.
+A new session id does not leak the prior transcript. End is
+`refuse:session-ended` on resume. TTL expiry is `refuse:session-expired`.
+Max turns / bytes (`CELL_PACK_SESSION_MAX_TURNS` default 8,
+`CELL_PACK_SESSION_MAX_BYTES` default 16384) refuse with
+`refuse:session-bound`. `--session` without `--pack` is
+`refuse:session-requires-pack`. MCP tool `complete` accepts `session` /
+`session_id` / `session_create`. `live_sync` stays false. Not Grok Bot
+server sync. Not a live PASS. Prove notes for the 5090 parent:
+`.cell/cohesion-agnews-20260926/crew-session-prove.md`.
+
 ## 4. Enrich prepare (opt-in, not a train)
 
 Not part of `make smoke` or `make gate-90`.
