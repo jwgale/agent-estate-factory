@@ -150,8 +150,9 @@ estate decisions report --state-dir target/pack-routines-cell
 `package run` defaults `--agent` to the pack orchestrator, runs
 `complete --pack`, and journals `package_id` (plus pack handoff fields).
 `routine run` resolves the declared package and also stamps `routine_id`.
-Authorize still uses existing model intentions. No Cursor plugin spin. No
-live Grok Bot routine sync. No multi-step DAG.
+Authorize still uses existing model intentions. Plugin scaffold is
+`estate pack export-plugin` (next). No live Cursor / Grok Bot routine sync.
+No multi-step DAG.
 
 ## 3d. Scheduled tick + multi-hop chain (fixture)
 
@@ -183,6 +184,26 @@ estate decisions report --state-dir target/pack-chain-cell
 package/chain ids, receipt ids, and `completion_label` when a receipt has
 one. They read `{state-dir}/routine-state.json` plus the decision journal.
 They do not sync to Grok Bot.
+
+## 3f. Pack export-plugin scaffold (fixture)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
+[`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml).
+Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
+`READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate pack export-plugin --id research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --out target/pack-plugin-stub
+```
+
+Writes an Agent Plugin stub Cursor can load: `plugin.json` (pack → group),
+`mcp.json` (one no-op stdio server per member; orchestrator noted in env),
+`skills/<package>/SKILL.md` (package → skill body stub), and commented
+cron/trigger notes for `standing-classify` (`@hourly` → `0 * * * *`).
+MCP is `command: true`. It does not wire `estate complete`. It does not
+install a Cursor or Grok Bot trigger. Not a cron daemon.
 
 ## 4. Enrich prepare (opt-in, not a train)
 

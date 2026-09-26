@@ -479,7 +479,7 @@ pub(crate) enum Command {
         #[arg(long)]
         select: Option<String>,
     },
-    /// Estate agent packs: list / show group membership and orchestrator.
+    /// Estate agent packs: list / show / export-plugin.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1019,6 +1019,18 @@ pub(crate) enum PackCommand {
     Show {
         #[arg(long)]
         id: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Export a Cursor/Agent plugin stub from one estate pack.
+    /// Writes plugin.json + mcp.json + skills/ (Agent Plugins floor).
+    /// MCP is a no-op stub. Routine schedules become comments only.
+    /// Not live Cursor / Grok Bot sync. Not a cron daemon.
+    ExportPlugin {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        out: PathBuf,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },

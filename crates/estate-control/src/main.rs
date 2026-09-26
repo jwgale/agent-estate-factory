@@ -9,6 +9,7 @@ mod decisions;
 mod dispatch;
 mod doctor_strict;
 mod enrich;
+mod export_plugin;
 mod export_repair;
 mod heal;
 mod help;
