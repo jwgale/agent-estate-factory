@@ -2711,6 +2711,8 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
