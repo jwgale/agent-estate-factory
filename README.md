@@ -120,6 +120,9 @@ export CELL_LOCAL_ENDPOINT=http://127.0.0.1:47831
 cargo run -p estate-control -- specialist --driver ollama --prompt "hello from the factory"
 # live box (opt-in; not in smoke): make live-specialist
 cargo run -p model-estate -- specialist --job complete --prompt "hello from the factory"
+# estate-bound select → complete → receipt (throwaway estate with one eligible seat)
+cargo run -p estate-control -- complete --estate <throwaway.yaml> \
+  --state-dir .cell --agent research --prompt "hello from the factory" --mock
 cargo run -p model-estate -- task --estate examples/estate.yaml \
   --agent research --act tool --object notes-append --payload "append a note"
 
@@ -131,7 +134,7 @@ cargo run -p model-estate -- task --estate examples/estate.yaml \
   --payload "Reply with the single word pong."
 ```
 
-`estate-control` lists bindings and env *names* only. The thin `estate specialist` complete delegate is `HttpLocal` on the data plane. See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
+`estate-control` lists bindings and env *names* only. The thin `estate specialist` complete delegate is `HttpLocal` on the data plane. `estate complete` is the estate-bound host → select → authorize → complete → receipt path (`complete_via_binding`). See [`docs/day60-gate.md`](docs/day60-gate.md) and [`docs/operator-local.md`](docs/operator-local.md).
 
 | Gate | What you should see |
 | --- | --- |
@@ -191,7 +194,7 @@ make gate
 | Crate | Plane | Role |
 | --- | --- | --- |
 | `estate-schema` | shared | types, validate, hash, compiled intentions, plan, firewall, SKU ban |
-| `estate-control` | control | `estate` CLI: validate, plan, apply, drift, models (no complete) |
+| `estate-control` | control | `estate` CLI: validate, plan, apply, drift, models; `complete` is a thin data-plane delegate |
 | `isolation-driver` | data | `IsolationDriver` trait + profile-dir + in-memory |
 | `floor-supervisor` | data | bind sessions; snapshot + drift; stop runtime |
 | `conveyor-proxy` | data | deny-default tool/mcp/mount/memory/model; not a completer |

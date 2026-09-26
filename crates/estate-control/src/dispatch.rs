@@ -228,6 +228,27 @@ pub(crate) fn run() -> Result<()> {
             &state_dir,
             feed_dir.as_deref(),
         ),
+        Command::Complete {
+            agent,
+            prompt,
+            text,
+            object,
+            estate,
+            state_dir,
+            feed_dir,
+            endpoint,
+            mock,
+        } => cmd_complete(
+            &agent,
+            prompt,
+            text,
+            object.as_deref(),
+            &estate,
+            &state_dir,
+            feed_dir.as_deref(),
+            endpoint,
+            mock,
+        ),
         Command::Decisions { command } => match command {
             DecisionsCommand::Export { state_dir, out } => {
                 crate::decisions::cmd_decisions_export(&state_dir, &out)

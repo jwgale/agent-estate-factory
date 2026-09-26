@@ -46,7 +46,7 @@ pub use local_seat::{
 pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
 };
-pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
+pub use path::{complete_via_binding, run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
     driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
@@ -900,5 +900,69 @@ mod tests {
         .unwrap();
         assert_eq!(result.output.as_deref(), Some("pong"));
         assert_eq!(local.runtime(), LocalRuntime::Ollama);
+    }
+
+    #[test]
+    fn complete_via_binding_mock_local_and_frontier() {
+        let e = estate();
+        let local = complete_via_binding(&e, "local_slm", "research", "hello from the factory", None, true)
+            .unwrap();
+        assert!(local.allow);
+        assert_eq!(local.job, "complete");
+        assert_eq!(local.completion, "mock:hello from the factory");
+
+        let frontier = complete_via_binding(&e, "xai_grok", "horizon", "Reply with the single word pong.", None, true)
+            .unwrap();
+        assert!(frontier.allow);
+        assert_eq!(frontier.completion, "pong");
+        assert_eq!(frontier.reason, "frontier completion");
+    }
+
+    #[test]
+    fn complete_via_binding_fail_closes_without_endpoint_or_key() {
+        let e = estate();
+        let local_was = std::env::var("CELL_LOCAL_ENDPOINT").ok();
+        let key_was = std::env::var("XAI_API_KEY").ok();
+        std::env::remove_var("CELL_LOCAL_ENDPOINT");
+        std::env::remove_var("XAI_API_KEY");
+        let missing_local = complete_via_binding(&e, "local_slm", "research", "ping", None, false);
+        let missing_key = complete_via_binding(&e, "xai_grok", "horizon", "ping", None, false);
+        if let Some(value) = local_was {
+            std::env::set_var("CELL_LOCAL_ENDPOINT", value);
+        }
+        if let Some(value) = key_was {
+            std::env::set_var("XAI_API_KEY", value);
+        }
+        let missing_local = missing_local.unwrap_err();
+        assert!(
+            missing_local.to_string().contains("CELL_LOCAL_ENDPOINT"),
+            "{missing_local}"
+        );
+        let text = missing_key.unwrap_err().to_string();
+        assert!(
+            text.contains("XAI_API_KEY") || text.contains("credential"),
+            "{text}"
+        );
+        assert!(!text.contains("xai-"), "{text}");
+    }
+
+    #[test]
+    fn complete_via_binding_refuses_empty_unknown_and_sacred() {
+        let e = estate();
+        let empty = complete_via_binding(&e, "local_slm", "research", "   ", None, true).unwrap_err();
+        assert!(empty.to_string().contains("empty"), "{empty}");
+
+        let unknown = complete_via_binding(&e, "missing_seat", "research", "ping", None, true)
+            .unwrap_err();
+        assert!(
+            matches!(unknown, ModelError::Unknown(_)),
+            "{unknown}"
+        );
+
+        let sacred = complete_via_binding(&e, "xai_grok", "horizon", "talk about cyera", None, true)
+            .unwrap();
+        assert!(!sacred.allow);
+        assert!(sacred.completion.is_empty());
+        assert!(sacred.reason.contains("sacred"), "{sacred:?}");
     }
 }
