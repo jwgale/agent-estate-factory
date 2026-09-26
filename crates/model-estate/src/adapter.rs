@@ -17,7 +17,8 @@ use std::time::Duration;
 
 const PING_TIMEOUT: Duration = Duration::from_millis(800);
 const SPECIALIST_TIMEOUT: Duration = Duration::from_secs(30);
-const COMPLETE_MAX_TOKENS: u32 = 64;
+/// Local complete can think and run long on-box; not a billed frontier path.
+const COMPLETE_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveFlavor {
@@ -236,6 +237,23 @@ fn prove_compat_runtime(endpoint: &str, text: &str) -> Result<(), ModelError> {
 
 fn compat_chat(endpoint: &str, text: &str) -> Result<String, ModelError> {
     let model = resolve_model(endpoint)?;
+    // Ollama `/v1` rejects boolean `think`. When thinking is on, prefer
+    // native `/api/chat` so `think: true` is actually sent.
+    if complete_think() {
+        match post_ollama_chat(endpoint, &model, text) {
+            Ok(content) => return accepted_completion(&content),
+            Err(ollama_err) => match post_openai_chat(endpoint, &model, text) {
+                Ok(content) => return accepted_completion(&content),
+                Err(openai_err) => {
+                    return Err(ModelError::Unreachable(both_chat_fail(
+                        &openai_err,
+                        &ollama_err,
+                        &model,
+                    )));
+                }
+            },
+        }
+    }
     match post_openai_chat(endpoint, &model, text) {
         Ok(content) => accepted_completion(&content),
         Err(openai_err) => match post_ollama_chat(endpoint, &model, text) {
@@ -368,19 +386,78 @@ fn post_v0_specialist(
     }
 }
 
+
+/// Local specialty complete is on-box GPU, not billed. Default: omit the
+/// token cap so Ollama decides. Set `CELL_COMPLETE_MAX_TOKENS` to a positive
+/// integer for an explicit budget (e.g. short-letter `8` or old `64`).
+/// `0` / `omit` / empty also omits. Frontier keeps `FRONTIER_COMPLETION_TOKENS`.
+fn complete_max_tokens() -> Option<u32> {
+    match std::env::var("CELL_COMPLETE_MAX_TOKENS") {
+        Err(_) => None,
+        Ok(raw) => {
+            let v = raw.trim();
+            if v.is_empty()
+                || v == "0"
+                || v.eq_ignore_ascii_case("omit")
+                || v.eq_ignore_ascii_case("unlimited")
+            {
+                None
+            } else {
+                v.parse::<u32>().ok().filter(|n| *n > 0)
+            }
+        }
+    }
+}
+
+/// Thinking for local Ollama `/api/chat`. Default off (parity with classify
+/// `think: false`). Set `CELL_COMPLETE_THINK=1` (or `true`/`on`/`yes`) to on.
+fn complete_think() -> bool {
+    match std::env::var("CELL_COMPLETE_THINK") {
+        Ok(raw) => {
+            let v = raw.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "on" | "yes")
+        }
+        Err(_) => false,
+    }
+}
+
+fn complete_openai_body(model: &str, text: &str) -> Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": [{"role":"user","content": text}],
+    });
+    if let Some(n) = complete_max_tokens() {
+        body["max_tokens"] = Value::from(n);
+    }
+    // Ollama `/v1` ignores boolean `think`; `reasoning_effort: "none"` maps off.
+    if !complete_think() {
+        body["reasoning_effort"] = Value::from("none");
+    }
+    body
+}
+
+fn complete_ollama_body(model: &str, text: &str) -> Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": [{"role":"user","content": text}],
+        "stream": false,
+        "think": complete_think(),
+    });
+    if let Some(n) = complete_max_tokens() {
+        body["options"] = serde_json::json!({"num_predict": n});
+    }
+    body
+}
+
 fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<String, String> {
     let url = format!(
         "{}/v1/chat/completions",
         endpoint.trim().trim_end_matches('/')
     );
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [{"role":"user","content": text}],
-        "max_tokens": COMPLETE_MAX_TOKENS,
-    });
+    let body = complete_openai_body(model, text);
     let resp = ureq::post(&url)
         .set("Content-Type", "application/json")
-        .timeout(SPECIALIST_TIMEOUT)
+        .timeout(COMPLETE_TIMEOUT)
         .send_json(body)
         .map_err(|e| format!("openai chat: {e}"))?;
     let status = resp.status();
@@ -395,15 +472,10 @@ fn post_openai_chat(endpoint: &str, model: &str, text: &str) -> Result<String, S
 
 fn post_ollama_chat(endpoint: &str, model: &str, text: &str) -> Result<String, String> {
     let url = format!("{}/api/chat", endpoint.trim().trim_end_matches('/'));
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [{"role":"user","content": text}],
-        "stream": false,
-        "options": {"num_predict": COMPLETE_MAX_TOKENS},
-    });
+    let body = complete_ollama_body(model, text);
     let resp = ureq::post(&url)
         .set("Content-Type", "application/json")
-        .timeout(SPECIALIST_TIMEOUT)
+        .timeout(COMPLETE_TIMEOUT)
         .send_json(body)
         .map_err(|e| format!("ollama chat: {e}"))?;
     let status = resp.status();
@@ -474,13 +546,26 @@ fn extract_openai_text(v: &Value) -> Option<String> {
     choice.get("text").and_then(extract_text_value)
 }
 
+fn fold_thinking(content: Option<String>, thinking: Option<&str>) -> Option<String> {
+    let thinking = thinking.map(str::trim).filter(|s| !s.is_empty());
+    match (thinking, content) {
+        (Some(thinking), Some(content)) => {
+            Some(format!("<think>\n{thinking}\n</think>\n{content}"))
+        }
+        (Some(thinking), None) => Some(format!("<think>\n{thinking}\n</think>")),
+        (None, Some(content)) => Some(content),
+        (None, None) => None,
+    }
+}
+
 fn extract_ollama_text(v: &Value) -> Option<String> {
-    if let Some(text) = v
-        .get("message")
+    let message = v.get("message");
+    let content = message
         .and_then(|m| m.get("content"))
-        .and_then(extract_text_value)
-    {
-        return Some(text);
+        .and_then(extract_text_value);
+    let thinking = message.and_then(|m| m.get("thinking")).and_then(Value::as_str);
+    if let Some(folded) = fold_thinking(content, thinking) {
+        return Some(folded);
     }
     v.get("response").and_then(extract_text_value)
 }
@@ -920,5 +1005,157 @@ mod tests {
         assert!(extract_openai_text(&empty).is_none());
         let missing = serde_json::json!({"choices":[{"index":0}]});
         assert!(extract_openai_text(&missing).is_none());
+    }
+
+    #[test]
+    fn complete_bodies_default_think_off_and_omit_budget() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", None),
+            ("CELL_COMPLETE_MAX_TOKENS", None),
+        ]);
+        let openai = complete_openai_body("specialist-agnews-all", "ping");
+        assert_eq!(openai["reasoning_effort"], "none");
+        assert!(openai.get("max_tokens").is_none(), "{openai}");
+        assert!(openai.get("think").is_none(), "{openai}");
+        let native = complete_ollama_body("specialist-agnews-all", "ping");
+        assert_eq!(native["think"], false);
+        assert!(native.get("options").is_none(), "{native}");
+    }
+
+    #[test]
+    fn complete_bodies_think_on_and_explicit_budget() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", Some("1")),
+            ("CELL_COMPLETE_MAX_TOKENS", Some("64")),
+        ]);
+        let openai = complete_openai_body("specialist-agnews-all", "ping");
+        assert!(openai.get("reasoning_effort").is_none(), "{openai}");
+        assert_eq!(openai["max_tokens"], 64);
+        let native = complete_ollama_body("specialist-agnews-all", "ping");
+        assert_eq!(native["think"], true);
+        assert_eq!(native["options"]["num_predict"], 64);
+    }
+
+    #[test]
+    fn complete_bodies_short_letter_budget() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", Some("0")),
+            ("CELL_COMPLETE_MAX_TOKENS", Some("8")),
+        ]);
+        let native = complete_ollama_body("specialist-agnews-all", "ping");
+        assert_eq!(native["think"], false);
+        assert_eq!(native["options"]["num_predict"], 8);
+        let openai = complete_openai_body("specialist-agnews-all", "ping");
+        assert_eq!(openai["reasoning_effort"], "none");
+        assert_eq!(openai["max_tokens"], 8);
+    }
+
+    #[test]
+    fn specialist_complete_ollama_body_think_off_omits_num_predict() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", None),
+            ("CELL_COMPLETE_MAX_TOKENS", None),
+        ]);
+        let srv = CompatServer::spawn(CompatScript::Ollama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        assert_eq!(result.completion, "ok");
+        let (path, body) = srv.last_post().expect("ollama chat POST");
+        assert_eq!(path, "/api/chat");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["think"], false);
+        assert!(v.get("options").is_none(), "{body}");
+    }
+
+    #[test]
+    fn specialist_complete_ollama_body_think_on_with_budget() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", Some("true")),
+            ("CELL_COMPLETE_MAX_TOKENS", Some("64")),
+        ]);
+        let srv = CompatServer::spawn(CompatScript::Ollama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let _ = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        let (_, body) = srv.last_post().expect("ollama chat POST");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["think"], true);
+        assert_eq!(v["options"]["num_predict"], 64);
+    }
+
+    #[test]
+    fn specialist_complete_think_on_prefers_ollama_native() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", Some("1")),
+            ("CELL_COMPLETE_MAX_TOKENS", Some("256")),
+        ]);
+        // OpenAI chat returns empty content; native succeeds. Think-on must
+        // hit `/api/chat` first so boolean `think` is sent.
+        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyThenOllama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        assert_eq!(result.completion, "ok");
+        let (path, body) = srv.last_post().expect("ollama chat POST");
+        assert_eq!(path, "/api/chat");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["think"], true);
+        assert_eq!(v["options"]["num_predict"], 256);
+    }
+
+    #[test]
+    fn extract_ollama_text_folds_thinking() {
+        let folded = serde_json::json!({
+            "message": {"content": "D", "thinking": "Sci/Tech chip"}
+        });
+        assert_eq!(
+            extract_ollama_text(&folded).as_deref(),
+            Some("<think>\nSci/Tech chip\n</think>\nD")
+        );
+        let plain = serde_json::json!({"message": {"content": "D"}});
+        assert_eq!(extract_ollama_text(&plain).as_deref(), Some("D"));
+    }
+
+    /// Holds the process-env lock and restores prior values on drop.
+    /// One guard per test (nested set would deadlock on the same mutex).
+    struct EnvLock {
+        prev: Vec<(&'static str, Option<String>)>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl EnvLock {
+        fn lock(pairs: &[(&'static str, Option<&str>)]) -> Self {
+            use std::sync::{Mutex, OnceLock};
+            static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+            let guard = LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let mut prev = Vec::with_capacity(pairs.len());
+            for (key, value) in pairs {
+                prev.push((*key, std::env::var(key).ok()));
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+            Self {
+                prev,
+                _lock: guard,
+            }
+        }
+    }
+    impl Drop for EnvLock {
+        fn drop(&mut self) {
+            for (key, prev) in self.prev.iter().rev() {
+                match prev {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
     }
 }
