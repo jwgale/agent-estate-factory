@@ -639,12 +639,23 @@ pub(crate) fn cmd_convey_leases(estate_path: &Path, state_dir: &Path) -> Result<
 }
 
 pub(crate) fn cmd_convey_sync(state_dir: &Path, estate_path: &Path) -> Result<()> {
-    // A missing estate keeps the placement-kind restamp. A loaded estate
-    // refuses a placement hop whose stamped capability disagrees with
-    // placement-derived coverage and writes nothing. Deny stays deny.
+    // A missing estate keeps the placement-kind restamp and does not invent
+    // this stack. A loaded estate prints the stack, then syncs. Deny stays
+    // deny: a hop-coverage mismatch still writes nothing.
     let mesh = if estate_path.is_file() {
         let estate =
             load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+        // After the estate loads, before `sync_from_placements_covering`
+        // writes the mesh and before the mesh JSON. Same stack as convey
+        // list, convey leases, and convey expire. Hop cites do not change
+        // this command's exit code. The stack reads placement-actual for
+        // mesh interpretation and Authority. A placement-actual SKU omits
+        // Authority. Sync then slim-parses that file and loads the
+        // interpreted mesh before `persist_mesh`, so that SKU still refuses
+        // before the mesh JSON and before the write. A hop-coverage
+        // mismatch and a spawned cloud placement refuse there too and write
+        // nothing. Audits and history do not take that second refuse.
+        print!("{}", honesty_stack(&estate, state_dir)?);
         sync_from_placements_covering(state_dir, Some(&estate))?
     } else {
         sync_from_placements(state_dir)?
@@ -947,6 +958,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate convey list` (printed before the hop decl list),
 /// `estate convey expire` (printed before the expired hop lease list and
 /// before `--forget` writes),
+/// `estate convey sync` (printed before the mesh write and before the mesh
+/// JSON when the estate file is present; a missing estate file does not
+/// print this stack),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
@@ -968,6 +982,10 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate convey expire` then still refuses that SKU before the expired
 /// list, because `list_expired_hop_leases` calls `load_interpreted_mesh`.
 /// `--forget` is not reached, so that SKU does not rewrite the mesh.
+/// `estate convey sync` then still refuses that SKU before the mesh JSON
+/// and before the write, because `sync_from_placements_covering` slim-parses
+/// placement-actual before `persist_mesh`. A hop-coverage mismatch and a
+/// spawned cloud placement also refuse after this stack and write nothing.
 /// `estate audits` then still prints the apply-audit list. `estate history`
 /// then still prints the lifecycle history list. There is no second
 /// placement refuse before those two lists. Every other

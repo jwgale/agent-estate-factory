@@ -555,10 +555,31 @@ pub(crate) enum ConveyCommand {
         state_dir: PathBuf,
     },
     /// Derive hops from placement-actual.json (slim parse).
-    /// When `--estate` is a file, a placement hop whose stamped capability
-    /// disagrees with placement-derived coverage (`lane-tool` on box,
-    /// `mesh-stub` on cloud) is `refuse:hop-coverage` and the mesh is not written.
-    /// A hop id that is not a placement stays the lease stub. Does not spawn.
+    /// When `--estate` is a file, loads that estate and prints the same
+    /// Agents section as status, doctor, reconcile, and `estate convey expire`
+    /// (`describe_agents_section`), then the same hop coverage cites
+    /// (`hop_coverage_cites`: `FAIL` on mismatch, `note` on deny and
+    /// deny-default), then Authority (`describe_authority_section` over
+    /// `authority_report`: `would-allow`, `would-deny`, `not-enforced`, and
+    /// `not-enforced reasons:`), before the mesh write and before the mesh
+    /// JSON. Those cites do not fail this command. A match stays quiet. A
+    /// missing mesh is an empty cite list and stays not-enforced. The shared
+    /// stack still reads placement-actual for mesh interpretation and
+    /// Authority. A present mesh that does not parse, a bad host_class on
+    /// that file, `refuse:agent-unplaced`, or any other mesh error including
+    /// a placement-actual parse failure, refuses before those sections and
+    /// before the mesh write. A placement-actual SKU host_class still
+    /// continues: Agents and hop cites print and Authority rows are omitted.
+    /// Sync still refuses that SKU before the mesh JSON
+    /// (`sync_from_placements_covering` slim-parses placement-actual before
+    /// it writes). That diverges from `estate audits` and `estate history`,
+    /// whose readers still print the body. A placement hop whose stamped
+    /// capability disagrees with placement-derived coverage (`lane-tool` on
+    /// box, `mesh-stub` on cloud) is `refuse:hop-coverage` after the stack
+    /// and writes nothing. A spawned cloud placement still refuses after the
+    /// stack and writes nothing. A missing estate file keeps the lease stub
+    /// sync and does not invent this stack. A hop id that is not a placement
+    /// stays the lease stub. Does not spawn. Does not claim mediation.
     Sync {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
