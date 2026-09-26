@@ -31,7 +31,7 @@ placement / lifecycle / sessions, `estate-control` suggest / audit export,
 | `feed/feed-cursor.json` | durable watermark | Schema `cell-one.feed-cursor.v0`. Survives rematerialize. Does not auto-promote. `estate feed cursor` prints it after a proxy line. |
 | `sessions/` | disposable | Profile-dir desktops. Discarded on suspend. |
 | `runtime/` | disposable | Heartbeats / PIDs (`runtime/pids.json`). Never SoT. |
-| `audit-export/` | local review bundle | `estate audit export`. Plans + lifecycle + import-audit + convey leases. Not uploaded. |
+| `audit-export/` | local review bundle | `estate audit export`. Plans + lifecycle + import-audit + convey leases + `conveyor-mesh.json` when present + `honesty.md` (Agents, hop cites, Authority) next to `MANIFEST.md`. Not uploaded. |
 
 `estate backup` copies the durable / regenerable files listed in
 `floor-supervisor` `DURABLE_FILES` plus `feed/` into
