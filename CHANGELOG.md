@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — local complete think + budget knobs
+
+- Local `estate complete` / compat specialty chat no longer hard-caps at 64 tokens. On-box GPU is not billed: default omits `num_predict` / `max_tokens` so Ollama decides. `CELL_COMPLETE_MAX_TOKENS` sets an explicit budget when wanted (short-letter `8`, old `64`, or any positive int; `0`/`omit`/`unlimited` omits). `CELL_COMPLETE_THINK` defaults off (`think: false` on Ollama `/api/chat`, `reasoning_effort: none` on `/v1`) for classify parity; set `1`/`true`/`on`/`yes` for think-on. Ollama thinking text folds into the completion when present. Frontier keeps `FRONTIER_COMPLETION_TOKENS` (64). Complete HTTP timeout is 180s. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — human-legible purpose seat names
 
 - Purpose classify journeys with the default `--tag` mint human Ollama seats `specialist-{slug}-{size}` (for example `specialist-agnews-3000`), matching live seats after the Tev→classify scrub and the docs/tests that already named those tags. Fixture-only default tag stays `classify-specialist` when no dataset suffix applies. Preset-replaced stems (deepseek / glm4-chat) keep their applied tag. Docs and `estate help enrich` name the three layers: binding id (`ag_news`), Ollama seat (`specialist-agnews-all` / `classify-base`), enrich create name (`cell-enrich-{pack}`, API lock unchanged). Align throwaway `params.model` to the live Ollama seat when those differ. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
