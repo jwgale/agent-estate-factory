@@ -4,8 +4,11 @@
 //! floor that Cursor loads). Pack → group metadata, package → skill body
 //! that instructs calling the wired member MCP tool `complete` with the
 //! package prompt (mock/live notes as appropriate), routine schedule →
-//! commented cron/trigger notes. MCP servers run `estate pack mcp-serve`
-//! so member tools call `estate complete` against the source estate.
+//! commented cron/trigger notes. MCP `command` is the absolute `estate`
+//! binary resolved from `current_exe` at export time; args stay
+//! `pack mcp-serve` so member tools call `estate complete` against the
+//! source estate. Export refuses (`refuse:export-estate-bin`) when that
+//! binary cannot be resolved — no silent PATH name `estate`.
 //! live_sync stays false. Not live Cursor / Grok Bot sync. Not a cron daemon.
 
 use anyhow::{bail, Context, Result};
@@ -18,6 +21,7 @@ pub(crate) const EXPORT_SCHEMA: &str = "cell-one.pack-plugin-export.v0";
 
 pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -> Result<()> {
     let estate_abs = estate_path_for_export(estate_path)?;
+    let estate_bin = estate_bin_for_export()?;
     let estate = estate_schema::load_estate(Path::new(&estate_abs))
         .with_context(|| format!("load {estate_abs}"))?;
     let pack = estate
@@ -36,10 +40,10 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
     let orch = pack.orchestrator.as_deref().unwrap_or("-");
 
     write_plugin_json(out, pack, orch)?;
-    write_mcp_json(out, pack, orch, &estate_abs)?;
+    write_mcp_json(out, pack, orch, &estate_abs, &estate_bin)?;
     write_skills(out, pack, &packages, &routines)?;
-    write_readme(out, pack, orch, &packages, &routines, &estate_abs)?;
-    write_mapping_sidecar(out, pack, orch, &packages, &routines, &estate_abs)?;
+    write_readme(out, pack, orch, &packages, &routines, &estate_abs, &estate_bin)?;
+    write_mapping_sidecar(out, pack, orch, &packages, &routines, &estate_abs, &estate_bin)?;
 
     println!("pack plugin stub: {}", pack.id);
     println!("  out: {}", out.display());
@@ -73,6 +77,7 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
             .collect();
         println!("  routines (commented): {}", notes.join(", "));
     }
+    println!("  estate_bin: {estate_bin}");
     println!("  wired_mcp: yes");
     println!("  live_sync: no");
     Ok(())
@@ -91,6 +96,41 @@ pub(crate) fn estate_path_for_export(estate_path: &Path) -> Result<String> {
     if !canonical.is_absolute() {
         bail!(
             "refuse:export-estate-path: refused relative estate path '{}'",
+            canonical.display()
+        );
+    }
+    Ok(canonical.display().to_string())
+}
+
+/// Absolute `estate` binary for exported `mcp.json` `command`.
+/// Resolves `std::env::current_exe` and canonicalizes it at export time.
+/// Refuses when current_exe or canonicalize fails, the result is not a
+/// file, or the result is not absolute. Never silently embeds `estate`.
+pub(crate) fn estate_bin_for_export() -> Result<String> {
+    let exe = std::env::current_exe().map_err(|err| {
+        anyhow::anyhow!("refuse:export-estate-bin: cannot resolve current estate binary: {err}")
+    })?;
+    resolve_estate_bin_path(&exe)
+}
+
+/// Canonicalize a candidate estate binary. Shared so tests can refuse
+/// missing/relative paths without stubbing `current_exe`.
+pub(crate) fn resolve_estate_bin_path(path: &Path) -> Result<String> {
+    let canonical = path.canonicalize().map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:export-estate-bin: cannot resolve estate binary '{}': {err}",
+            path.display()
+        )
+    })?;
+    if !canonical.is_file() {
+        bail!(
+            "refuse:export-estate-bin: estate binary '{}' is not a file",
+            canonical.display()
+        );
+    }
+    if !canonical.is_absolute() {
+        bail!(
+            "refuse:export-estate-bin: refused relative estate binary '{}'",
             canonical.display()
         );
     }
@@ -135,7 +175,13 @@ fn write_plugin_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
     write_pretty_json(&out.join("plugin.json"), &body)
 }
 
-fn write_mcp_json(out: &Path, pack: &AgentPack, orch: &str, estate_path: &str) -> Result<()> {
+fn write_mcp_json(
+    out: &Path,
+    pack: &AgentPack,
+    orch: &str,
+    estate_path: &str,
+    estate_bin: &str,
+) -> Result<()> {
     let mut servers = serde_json::Map::new();
     for member in &pack.members {
         let role = crate::pack_mcp::pack_role(Some(orch).filter(|s| *s != "-"), member);
@@ -144,7 +190,7 @@ fn write_mcp_json(out: &Path, pack: &AgentPack, orch: &str, estate_path: &str) -
             member.clone(),
             json!({
                 "type": "stdio",
-                "command": "estate",
+                "command": estate_bin,
                 "args": ["pack", "mcp-serve"],
                 "env": env,
             }),
@@ -308,6 +354,7 @@ fn write_readme(
     packages: &[&PackPackage],
     routines: &[&Routine],
     estate_path: &str,
+    estate_bin: &str,
 ) -> Result<()> {
     let mut md = String::new();
     md.push_str(&format!("# {} plugin stub\n\n", pack.id));
@@ -318,11 +365,13 @@ fn write_readme(
     md.push_str("against the source estate. Skill bodies instruct calling the\n");
     md.push_str("wired member MCP tool `complete` with the package prompt\n");
     md.push_str("(mock / live notes as appropriate). They are not stubs.\n");
-    md.push_str("`estate` must be on PATH.\n");
+    md.push_str("Exported `mcp.json` `command` is the absolute estate binary\n");
+    md.push_str("resolved at export time — Cursor does not need `estate` on PATH.\n");
     md.push_str("`live_sync: false`. `wired_mcp: true`. Routines stay comments.\n");
     md.push_str("This directory does not install a Cursor/Grok Bot plugin, does\n");
     md.push_str("not start a cron daemon, and does not rank mixed-select.\n\n");
-    md.push_str(&format!("Estate file: `{estate_path}`\n\n"));
+    md.push_str(&format!("Estate file: `{estate_path}`\n"));
+    md.push_str(&format!("Estate binary: `{estate_bin}`\n\n"));
     md.push_str("## Mapping\n\n");
     md.push_str("| Estate | Plugin stub |\n");
     md.push_str("| --- | --- |\n");
@@ -354,7 +403,8 @@ fn write_readme(
         }
     }
     md.push_str("\n## MCP (wired to estate complete)\n\n");
-    md.push_str("One stdio server per pack member. `command` is `estate`;\n");
+    md.push_str("One stdio server per pack member. `command` is the absolute\n");
+    md.push_str("estate binary resolved at export (`current_exe` + canonicalize);\n");
     md.push_str("`args` are `pack mcp-serve`. Each process exposes tool\n");
     md.push_str("`complete`, which runs:\n\n");
     md.push_str("    estate complete --agent <member> --pack <pack-id> \\\n");
@@ -400,6 +450,7 @@ fn write_mapping_sidecar(
     packages: &[&PackPackage],
     routines: &[&Routine],
     estate_path: &str,
+    estate_bin: &str,
 ) -> Result<()> {
     let orch_val = if orch == "-" {
         Value::Null
@@ -443,10 +494,11 @@ fn write_mapping_sidecar(
         "packages": pkgs,
         "routines": rows,
         "estate_path": estate_path,
+        "estate_bin": estate_bin,
         "live_sync": false,
         "wired_mcp": true,
         "mcp": {
-            "command": "estate",
+            "command": estate_bin,
             "args": ["pack", "mcp-serve"],
             "tool": "complete",
             "invokes": "estate complete --agent <member> --pack <pack-id>",
@@ -479,8 +531,8 @@ fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_tool_args_line, cron_comment, estate_path_for_export, skill_complete_member,
-        skill_markdown,
+        complete_tool_args_line, cron_comment, estate_bin_for_export, estate_path_for_export,
+        resolve_estate_bin_path, skill_complete_member, skill_markdown,
     };
     use estate_schema::{AgentPack, PackPackage};
     use std::path::{Path, PathBuf};
@@ -537,6 +589,45 @@ mod tests {
         let err = estate_path_for_export(&rel).unwrap_err().to_string();
         assert!(err.contains("refuse:export-estate-path"), "{err}");
         assert!(err.contains("cannot canonicalize"), "{err}");
+    }
+
+    #[test]
+    fn estate_bin_for_export_resolves_current_exe() {
+        let abs = estate_bin_for_export().unwrap();
+        let path = Path::new(&abs);
+        assert!(path.is_absolute(), "{abs}");
+        assert!(path.is_file(), "{abs}");
+    }
+
+    #[test]
+    fn resolve_estate_bin_path_canonicalizes_existing_file() {
+        let exe = std::env::current_exe().unwrap();
+        let abs = resolve_estate_bin_path(&exe).unwrap();
+        assert!(Path::new(&abs).is_absolute(), "{abs}");
+        assert!(Path::new(&abs).is_file(), "{abs}");
+    }
+
+    #[test]
+    fn resolve_estate_bin_path_refuses_missing_relative_path() {
+        let rel = PathBuf::from("no-such-cell-estate-bin-for-export");
+        assert!(!rel.is_absolute());
+        let err = resolve_estate_bin_path(&rel).unwrap_err().to_string();
+        assert!(err.contains("refuse:export-estate-bin"), "{err}");
+        assert!(err.contains("cannot resolve estate binary"), "{err}");
+    }
+
+    #[test]
+    fn resolve_estate_bin_path_refuses_directory() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-export-estate-bin-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = resolve_estate_bin_path(&dir).unwrap_err().to_string();
+        assert!(err.contains("refuse:export-estate-bin"), "{err}");
+        assert!(err.contains("is not a file"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

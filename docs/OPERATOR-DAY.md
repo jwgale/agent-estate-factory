@@ -228,7 +228,8 @@ estate pack export-plugin --id research-crew \
 ```
 
 Writes an Agent Plugin stub Cursor can load: `plugin.json` (pack → group),
-`mcp.json` (one stdio server per member: `estate pack mcp-serve`),
+`mcp.json` (one stdio server per member: absolute `estate` `command` +
+`pack mcp-serve` args),
 `skills/<package>/SKILL.md` (package → skill body that calls the wired
 member MCP tool `complete` with the package prompt), and commented
 cron/trigger notes for `standing-classify` (`@hourly` → `0 * * * *`).
@@ -238,8 +239,11 @@ Non-orchestrator members refuse `refuse:pack-orchestrator` the same as
 pack complete. Skill bodies are not stubs: mock uses
 `{ "prompt": "ping", "mock": true, "object": "ag_news" }`; live omits
 `mock` when endpoints/keys are set. `wired_mcp: true`. `live_sync: false`.
-`estate` must be on PATH. This is a bridge, not a live Cursor or Grok Bot
-install. Routines stay comments. Not a cloud cron daemon.
+Exported `mcp.json` `command` is the absolute `estate` binary resolved
+from `current_exe` at export time — Cursor does not need `estate` on
+PATH. Export refuses (`refuse:export-estate-bin`) when that binary cannot
+be resolved and writes nothing. This is a bridge, not a live Cursor or
+Grok Bot install. Routines stay comments. Not a cloud cron daemon.
 `estate routine watch` is the local operator loop (see 3e).
 
 `estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
