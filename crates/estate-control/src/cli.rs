@@ -365,6 +365,13 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ConveyCommand,
     },
+    /// Decision journal written by `estate convey call`.
+    /// `export` writes JSONL replay cases. `report` counts stage, validation,
+    /// and fallback. Selectors do not grant permission. No promote. No auto-apply.
+    Decisions {
+        #[command(subcommand)]
+        command: DecisionsCommand,
+    },
     /// Pack curator path: list / import / refuse promote + INDEX.
     Packs {
         #[command(subcommand)]
@@ -498,6 +505,23 @@ pub(crate) enum Command {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum DecisionsCommand {
+    /// Write JSONL replay cases from the decision journal. Missing journal writes an empty file.
+    Export {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Replay JSONL path. Does not train, promote, or apply.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Print counts by stage, validation, and fallback.
+    Report {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum PolicyCommand {
     Check {
         #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
@@ -606,6 +630,21 @@ pub(crate) enum ConveyCommand {
     /// second mesh write.
     /// Does not spawn. Does not apply. Does not claim mediation.
     /// `--agent` binds one placed agent. Not an IdP.
+    /// After the stack, a placement-actual SKU host_class refuses before a
+    /// decision receipt and before an allow. A mesh that does not parse and
+    /// `refuse:agent-unplaced` already refused before the stack and write no
+    /// receipt. A call that passes those refuses appends one versioned
+    /// receipt at `{state-dir}/decisions/receipts.jsonl` before the allow or
+    /// restamp JSON. Eligible candidates are opaque model-binding ids. The
+    /// selector chooses one id or abstains. The host re-validates (`ok`,
+    /// `stale`, `ineligible`, `expired`) and may record a fallback. The
+    /// selector does not grant permission. Success prints one
+    /// `decision receipt:` cite. A journal write that fails after the hop
+    /// has already committed prints `decision receipt: journal write failed
+    /// after hop commit` and still prints the allow or restamp JSON. The hop
+    /// exit stands. Binding digests cover id, class, driver, and binding
+    /// params, so param drift marks a hint stale. Unread `estate decisions
+    /// export` does not fail the call. No promote. No auto-apply.
     Call {
         #[arg(long)]
         id: String,

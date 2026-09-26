@@ -800,7 +800,18 @@ fn help_names_the_stack_and_locks_hold() {
     assert!(head.contains("load_interpreted_mesh"), "{head}");
     assert!(head.contains("before `--forget` writes"), "{head}");
     assert!(!head.contains("reader still refuses"), "{head}");
-    assert!(!head.contains("list_expired_hop_leases"), "{head}");
+    let expire_at = changelog
+        .find("## This slice — estate expire prints the honesty stack")
+        .unwrap_or_else(|| panic!("missing expire slice\n{changelog}"));
+    let expire_body = &changelog[expire_at..];
+    let expire_end = expire_body
+        .find("\n## This slice — estate convey authority")
+        .unwrap_or_else(|| panic!("expire slice did not end\n{expire_body}"));
+    let expire_slice = &expire_body[..expire_end];
+    assert!(
+        !expire_slice.contains("list_expired_hop_leases"),
+        "{expire_slice}"
+    );
     assert!(!head.contains("no second placement refuse"), "{head}");
     assert!(!head.contains("body still prints"), "{head}");
     assert!(!head.contains("do not depend on placement"), "{head}");

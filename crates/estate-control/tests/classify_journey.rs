@@ -3078,10 +3078,16 @@ fn print_import_trained_does_not_invent_a_proposal() {
         "{enrich_text}"
     );
     let changelog = fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
-    let head = changelog
-        .split("## This slice —")
-        .nth(1)
-        .unwrap_or_else(|| panic!("missing This slice heading\n{changelog}"));
+    let marker = "## This slice — beachhead: a purpose-built local SLM binds into the multi-local and frontier chain";
+    let at = changelog
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing SLM beachhead slice\n{changelog}"));
+    let head = &changelog[at..];
+    let end = head[marker.len()..]
+        .find("\n## ")
+        .map(|i| marker.len() + i)
+        .unwrap_or(head.len());
+    let head = &head[..end];
     assert!(
         head.contains(
             "beachhead: a purpose-built local SLM binds into the multi-local and frontier chain"

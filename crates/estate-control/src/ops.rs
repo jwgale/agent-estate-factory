@@ -6,11 +6,10 @@ use conveyor_proxy::{
     sync_from_placements_covering, HopDecl, MeshError,
 };
 use estate_schema::{
-    convey_hop_declared_capability, convey_intention_coverage, describe_agents_section,
-    describe_agent_edge_coverage, describe_declared_coverage, describe_hop_coverage,
+    convey_hop_declared_capability, convey_intention_coverage, describe_agent_edge_coverage,
+    describe_agents_section, describe_declared_coverage, describe_hop_coverage,
     describe_intention_coverage, describe_model_class_coverage, describe_placements, estate_hash,
-    list_plans, load_estate,
-    load_estate_unvalidated, load_policy, policy_allows,
+    list_plans, load_estate, load_estate_unvalidated, load_policy, policy_allows,
 };
 use feed_collector::{
     import_pack_for, list_drop_packs, load_cursor, materialize_from_feed, propose_enrich,
@@ -623,16 +622,86 @@ pub(crate) fn cmd_convey_call(
     // write. Audits and history do not
     // take that second placement refuse.
     print!("{}", honesty_stack(&estate, state_dir)?);
-    let call = if let Some(agent) = agent {
-        conveyor_proxy::call_hop_for_agent(state_dir, id, capability, agent, parsed_kind, &estate)?
-    } else {
-        call_hop(state_dir, id, capability)?
-    };
-    println!("{}", serde_json::to_string_pretty(&call)?);
-    if !call.allow {
-        bail!("hop call denied");
+    // Placement-actual SKU is swallowed by the stack (Authority omitted) and
+    // `call_hop` would still refuse it before an allow and before a restamp.
+    // Refuse here so that SKU writes no decision receipt. Mesh parse and
+    // `refuse:agent-unplaced` already returned from the stack.
+    if let Err(err) =
+        conveyor_proxy::slim_parse_placement_actual(&state_dir.join("placement-actual.json"))
+    {
+        return Err(err.into());
     }
-    Ok(())
+    // A selector hint is not a grant. A bad file refuses before the call
+    // and before the receipt.
+    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let call_result = if let Some(agent) = agent {
+        conveyor_proxy::call_hop_for_agent(state_dir, id, capability, agent, parsed_kind, &estate)
+    } else {
+        call_hop(state_dir, id, capability)
+    };
+    match call_result {
+        Err(err) if !records_call_receipt(&err) => Err(err.into()),
+        Err(err) => {
+            let outcome = crate::decisions::outcome_stub_from_text(&err.to_string());
+            let expired = matches!(err, MeshError::Expired(_));
+            crate::decisions::record_convey_receipt(
+                &estate,
+                state_dir,
+                id,
+                capability,
+                agent,
+                hint.as_ref(),
+                &outcome,
+                expired,
+            )?;
+            Err(err.into())
+        }
+        Ok(call) => {
+            let outcome = if call.allow { "allow" } else { "refuse:denied" };
+            // `call_hop` may already have restamped the mesh and appended the
+            // feed. A journal miss after that commit must not hide the allow
+            // or turn the hop into a failed CLI outcome.
+            match crate::decisions::record_convey_receipt(
+                &estate,
+                state_dir,
+                id,
+                capability,
+                agent,
+                hint.as_ref(),
+                outcome,
+                false,
+            ) {
+                Ok(receipt) => {
+                    // Cite on the allow path only. Unread `estate decisions
+                    // export` does not fail this call.
+                    if call.allow {
+                        println!("{}", crate::decisions::cite_line(&receipt));
+                    }
+                }
+                Err(err) => {
+                    eprintln!("decision receipt: journal write failed after hop commit: {err}");
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&call)?);
+            if !call.allow {
+                bail!("hop call denied");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Structural refuses that already stop the call before a decision.
+/// Placement-actual SKU, mesh parse, and `refuse:agent-unplaced` write no receipt.
+fn records_call_receipt(err: &MeshError) -> bool {
+    !matches!(
+        err,
+        MeshError::BadHostClass(_)
+            | MeshError::Parse(_)
+            | MeshError::AgentUnplaced { .. }
+            | MeshError::Io(_)
+            | MeshError::ProxyAudit(_)
+    )
 }
 
 pub(crate) fn cmd_convey_list(estate_path: &Path, state_dir: &Path) -> Result<()> {
@@ -1315,10 +1384,8 @@ mod convey_coverage_tests {
             note: None,
         });
         let yaml = estate_schema::render_estate_yaml(&estate).unwrap();
-        let path = std::env::temp_dir().join(format!(
-            "cell-mismatch-estate-{}.yaml",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("cell-mismatch-estate-{}.yaml", std::process::id()));
         std::fs::write(&path, yaml).unwrap();
         let state = state_dir("mismatch");
         refuse_convey_coverage(&path, &state, "cell-one-box", Some("research"), "lane-tool")
