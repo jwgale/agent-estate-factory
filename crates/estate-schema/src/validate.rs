@@ -581,4 +581,96 @@ mod tests {
         estate.api_version = Some("v0".into());
         validate(&estate).unwrap();
     }
+
+    #[test]
+    fn multi_local_specialty_ids_are_first_class() {
+        use crate::types::{Effect, Intention, IntentionKind, ModelClass, ModelUseDecl};
+        use crate::{authorize, AccessRequest};
+
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        let local = estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap()
+            .clone();
+        let mut policy = local.clone();
+        policy.id = "policy_precheck".into();
+        let mut ag = local.clone();
+        ag.id = "ag_news".into();
+        estate.model_bindings.push(policy);
+        estate.model_bindings.push(ag);
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .models
+            .push(ModelUseDecl {
+                id: "ag_news".into(),
+                description: Some("function-scoped local seat".into()),
+            });
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .models
+            .push(ModelUseDecl {
+                id: "policy_precheck".into(),
+                description: None,
+            });
+        estate.intentions.push(Intention {
+            subject_agent: "horizon".into(),
+            object: "ag_news".into(),
+            kind: IntentionKind::Model,
+            effect: Effect::Allow,
+            note: None,
+        });
+        estate.intentions.push(Intention {
+            subject_agent: "research".into(),
+            object: "policy_precheck".into(),
+            kind: IntentionKind::Model,
+            effect: Effect::Allow,
+            note: None,
+        });
+        validate(&estate).unwrap();
+        let locals: Vec<_> = estate
+            .model_bindings
+            .iter()
+            .filter(|binding| binding.class == ModelClass::Local)
+            .map(|binding| binding.id.as_str())
+            .collect();
+        assert_eq!(locals, ["local_slm", "policy_precheck", "ag_news"]);
+        assert!(estate
+            .model_bindings
+            .iter()
+            .any(|binding| binding.class == ModelClass::Frontier));
+        let allow = authorize(
+            &estate,
+            &AccessRequest {
+                subject_agent: "horizon",
+                kind: IntentionKind::Model,
+                object: "ag_news",
+            },
+        );
+        assert!(allow.is_allow(), "{allow:?}");
+        let untouched = authorize(
+            &estate,
+            &AccessRequest {
+                subject_agent: "horizon",
+                kind: IntentionKind::Model,
+                object: "local_slm",
+            },
+        );
+        assert!(!untouched.is_allow(), "{untouched:?}");
+        let mut sku = local;
+        sku.id = "rtx-5090".into();
+        estate.model_bindings.push(sku);
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|line| line.contains("hardware SKU")),
+            "{err:?}"
+        );
+    }
 }

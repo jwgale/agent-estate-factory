@@ -5549,6 +5549,81 @@ pub fn render_prepared_index(enrich_root: &Path, rows: &[PreparedEntry]) -> Stri
     lines.join("\n")
 }
 
+/// Portable seat id. Empty means `local_slm`. A hardware SKU, a sacred name,
+/// and the class tokens `frontier` and `local` are refused.
+pub fn resolve_portable_binding_id(raw: Option<&str>) -> Result<String, ModelError> {
+    let id = raw
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(SEAT_ID);
+    if !estate_schema::is_slug(id) {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: '{id}' is not a portable binding id"
+        )));
+    }
+    if id == "frontier" || id == "local" {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: '{id}' is a model class token, not a seat id"
+        )));
+    }
+    refuse_sacred_and_sku("binding id", id)?;
+    Ok(id.to_string())
+}
+
+struct ImportSeat<'a> {
+    template: &'a estate_schema::ModelBinding,
+    binding_id: String,
+    /// True when `binding_id` is not already a local seat. The new seat is
+    /// copied from `local_slm` and appended. `local_slm` is not removed.
+    add_beside: bool,
+}
+
+fn import_seat<'a>(
+    estate: &'a Estate,
+    raw_id: Option<&str>,
+) -> Result<ImportSeat<'a>, ModelError> {
+    let binding_id = resolve_portable_binding_id(raw_id)?;
+    if let Some(existing) = estate
+        .model_bindings
+        .iter()
+        .find(|binding| name_eq(&binding.id, &binding_id))
+    {
+        if existing.class != estate_schema::ModelClass::Local {
+            let message = if name_eq(&existing.id, SEAT_ID) {
+                "refuse:binding: local_slm class is not local".to_string()
+            } else {
+                format!("refuse:binding: '{binding_id}' is not a local seat")
+            };
+            return Err(ModelError::Other(message));
+        }
+        return Ok(ImportSeat {
+            template: existing,
+            binding_id,
+            add_beside: false,
+        });
+    }
+    if binding_id == SEAT_ID {
+        return Err(ModelError::Other(
+            "refuse:binding: estate has no local_slm seat".into(),
+        ));
+    }
+    let template = estate
+        .model_bindings
+        .iter()
+        .find(|binding| binding.id == SEAT_ID && binding.class == estate_schema::ModelClass::Local)
+        .ok_or_else(|| {
+            ModelError::Other(
+                "refuse:binding: a new specialty seat is copied from local_slm, and this estate has no local_slm seat"
+                    .into(),
+            )
+        })?;
+    Ok(ImportSeat {
+        template,
+        binding_id,
+        add_beside: true,
+    })
+}
+
 /// Operator-supplied join. Validates prepare.json and writes a proposal for the
 /// existing `local_slm` seat. Does not apply and does not rewrite the estate.
 pub struct ImportPreparedRequest<'a> {
@@ -5592,16 +5667,19 @@ pub struct EnrichBindingProposal {
 pub fn import_prepared(
     req: &ImportPreparedRequest<'_>,
 ) -> Result<EnrichBindingProposal, ModelError> {
-    let proposal = compose_import_proposal(req, None)?;
+    let proposal = compose_import_proposal(req, None, None)?;
     persist_binding_proposal(req.prepared_dir, &proposal)?;
     Ok(proposal)
 }
 
-/// Build the `local_slm` proposal. `scanned_override` skips a second open of
-/// the operator file when `import_trained` already pinned that handle.
+/// Build the local-seat proposal. `binding_id` `None` keeps `local_slm`.
+/// A new id is added beside existing local seats. An existing local id is
+/// replaced in place. `scanned_override` skips a second open of the operator
+/// file when `import_trained` already pinned that handle.
 fn compose_import_proposal(
     req: &ImportPreparedRequest<'_>,
     scanned_override: Option<bool>,
+    binding_id: Option<&str>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
@@ -5622,35 +5700,40 @@ fn compose_import_proposal(
         Some(scanned) => scanned,
         None => scan_operator_file(req.path)?,
     };
-    let seat = req
-        .estate
-        .model_bindings
-        .iter()
-        .find(|binding| binding.id == "local_slm")
-        .ok_or_else(|| ModelError::Other("refuse:binding: estate has no local_slm seat".into()))?;
-    if seat.class != estate_schema::ModelClass::Local {
-        return Err(ModelError::Other(
-            "refuse:binding: local_slm class is not local".into(),
-        ));
+    let seat = import_seat(req.estate, binding_id)?;
+    let template = seat.template;
+    if template.driver.trim().is_empty() {
+        return Err(ModelError::Other(if template.id == SEAT_ID {
+            "refuse:binding: local_slm driver is empty".into()
+        } else {
+            format!("refuse:binding: '{}' driver is empty", template.id)
+        }));
     }
-    if seat.driver.trim().is_empty() {
-        return Err(ModelError::Other(
-            "refuse:binding: local_slm driver is empty".into(),
-        ));
-    }
-    refuse_sacred_and_sku("seated driver", &seat.driver)?;
-    let mut params = match &seat.params {
+    refuse_sacred_and_sku("seated driver", &template.driver)?;
+    let mut params = match &template.params {
         serde_json::Value::Object(map) => serde_json::Value::Object(map.clone()),
         serde_json::Value::Null => serde_json::json!({}),
         _ => {
-            return Err(ModelError::Other(
-                "refuse:binding: local_slm params must be an object".into(),
-            ))
+            return Err(ModelError::Other(if template.id == SEAT_ID {
+                "refuse:binding: local_slm params must be an object".into()
+            } else {
+                format!(
+                    "refuse:binding: '{}' params must be an object",
+                    template.id
+                )
+            }))
         }
     };
     {
         let obj = params.as_object_mut().ok_or_else(|| {
-            ModelError::Other("refuse:binding: local_slm params must be an object".into())
+            ModelError::Other(if template.id == SEAT_ID {
+                "refuse:binding: local_slm params must be an object".into()
+            } else {
+                format!(
+                    "refuse:binding: '{}' params must be an object",
+                    template.id
+                )
+            })
         })?;
         obj.insert(
             "model".into(),
@@ -5670,14 +5753,18 @@ fn compose_import_proposal(
             }
         }
     }
+    let binding_id = seat.binding_id.clone();
+    let seated_driver = template.driver.clone();
+    let wired = template.wired;
+    let add_beside = seat.add_beside;
     let proposed_binding = serde_json::json!({
-        "id": "local_slm",
+        "id": binding_id.clone(),
         "class": "local",
-        "driver": seat.driver,
-        "wired": seat.wired,
+        "driver": seated_driver.clone(),
+        "wired": wired,
         "params": params,
     });
-    let paste_yaml = binding_paste_yaml(&proposed_binding)?;
+    let paste_yaml = binding_paste_yaml(&proposed_binding, add_beside)?;
     let proposal = EnrichBindingProposal {
         schema: BINDING_PROPOSAL_SCHEMA.into(),
         curator: "jason".into(),
@@ -5695,8 +5782,8 @@ fn compose_import_proposal(
         local_path: path_text,
         trained_shape: None,
         trained_paths: None,
-        binding_id: "local_slm".into(),
-        seated_driver: seat.driver.clone(),
+        binding_id,
+        seated_driver,
         content_scanned,
         proposed_binding,
         paste_yaml,
@@ -5738,6 +5825,16 @@ pub struct ImportTrainedRequest<'a> {
 }
 
 pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingProposal, ModelError> {
+    import_trained_for_seat(req, None)
+}
+
+/// `binding_id` `None` keeps `local_slm`. A new portable id is added as
+/// `class: local` beside existing local seats. An existing local id is
+/// replaced in place. Does not apply.
+pub fn import_trained_for_seat(
+    req: &ImportTrainedRequest<'_>,
+    binding_id: Option<&str>,
+) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
@@ -5777,11 +5874,25 @@ pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingPro
             curator: req.curator,
         },
         Some(content_scanned),
+        binding_id,
     )?;
     proposal.trained_shape = Some(artifact.shape.to_string());
     proposal.trained_paths = Some(artifact.paths.clone());
+    let posture = if proposal.binding_id == SEAT_ID {
+        String::new()
+    } else if proposal.paste_yaml.starts_with("# Add this class:local") {
+        format!(
+            " binding_id is {}, class local. A new id is added beside local_slm. local_slm is not deleted.",
+            proposal.binding_id
+        )
+    } else {
+        format!(
+            " binding_id is {}, class local. An existing local id is replaced in place.",
+            proposal.binding_id
+        )
+    };
     proposal.note = format!(
-        "Proposal only. auto_apply=false. Trained shape is {shape}. Paths: {paths}. Next: estate enrich apply-proposal, then estate plan and estate apply --require-plan. import-trained does not apply, does not promote, and does not rewrite the estate. Operator file content_scanned={scanned}.",
+        "Proposal only. auto_apply=false. Trained shape is {shape}. Paths: {paths}.{posture} Next: estate enrich apply-proposal, then estate plan and estate apply --require-plan. import-trained does not apply, does not promote, and does not rewrite the estate. Operator file content_scanned={scanned}.",
         shape = artifact.shape,
         paths = artifact.paths.join(", "),
         scanned = proposal.content_scanned,
@@ -6642,10 +6753,14 @@ fn scan_operator_file(path: &Path) -> Result<bool, ModelError> {
     Ok(true)
 }
 
-fn binding_paste_yaml(binding: &serde_json::Value) -> Result<String, ModelError> {
+fn binding_paste_yaml(
+    binding: &serde_json::Value,
+    add_beside: bool,
+) -> Result<String, ModelError> {
     let obj = binding.as_object().ok_or_else(|| {
         ModelError::Other("refuse:binding: proposed binding is not an object".into())
     })?;
+    let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let driver = obj
         .get("driver")
         .and_then(|v| v.as_str())
@@ -6660,10 +6775,20 @@ fn binding_paste_yaml(binding: &serde_json::Value) -> Result<String, ModelError>
     let params = params.as_object().ok_or_else(|| {
         ModelError::Other("refuse:binding: local_slm params must be an object".into())
     })?;
-    let mut out = String::from(
-        "# Replace the existing local_slm binding. The id stays local_slm. This file is not applied.\n",
-    );
-    out.push_str("- id: local_slm\n");
+    let header = if id == SEAT_ID && !add_beside {
+        "# Replace the existing local_slm binding. The id stays local_slm. This file is not applied.\n"
+            .to_string()
+    } else if add_beside {
+        format!(
+            "# Add this class:local seat beside existing local bindings. The id is {id}. local_slm stays. This file is not applied.\n"
+        )
+    } else {
+        format!(
+            "# Replace the existing {id} local binding in place. local_slm stays. This file is not applied.\n"
+        )
+    };
+    let mut out = header;
+    out.push_str(&format!("- id: {id}\n"));
     out.push_str("  class: local\n");
     out.push_str(&format!("  driver: {}\n", yaml_quote(driver)));
     out.push_str(&format!(
@@ -6704,8 +6829,25 @@ fn trained_proposal_lines(proposal: &EnrichBindingProposal) -> String {
 }
 
 fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
+    let seat_line = if proposal.binding_id == SEAT_ID {
+        "Agents that already allow local_slm keep that id.\n".to_string()
+    } else if proposal.paste_yaml.starts_with("# Add this class:local") {
+        format!(
+            "Agents that already allow local_slm keep that id.\n\
+             This seat is added beside local_slm. local_slm is not deleted.\n\
+             An agent models allow-list and a Model intention can name {}.\n",
+            proposal.binding_id
+        )
+    } else {
+        format!(
+            "Agents that already allow local_slm keep that id.\n\
+             This seat replaces {} in place. local_slm stays.\n\
+             An agent models allow-list and a Model intention can name {}.\n",
+            proposal.binding_id, proposal.binding_id
+        )
+    };
     format!(
-        "# Binding proposal (local_slm)\n\
+        "# Binding proposal ({binding})\n\
          \n\
          schema: {schema}\n\
          auto_apply: false\n\
@@ -6723,7 +6865,7 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
          content_scanned: {scanned}\n\
          \n\
          This file is not applied. It does not rewrite estate.yaml and it does not write catalog.json.\n\
-         Agents that already allow local_slm keep that id.\n\
+         {seat_line}\
          Next: estate enrich apply-proposal stages this binding for estate plan and estate apply --require-plan.\n\
          The source estate is written only when that apply succeeds. import-prepared does not run plan or apply.\n\
          \n\
@@ -6732,6 +6874,7 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
          ```\n\
          \n\
          {note}\n",
+        binding = proposal.binding_id,
         schema = proposal.schema,
         name = proposal.estate_name,
         hash = proposal.estate_hash,
@@ -6744,6 +6887,7 @@ fn render_binding_proposal(proposal: &EnrichBindingProposal) -> String {
         prepared = proposal.prepared_dir,
         seated = proposal.seated_driver,
         scanned = proposal.content_scanned,
+        seat_line = seat_line,
         paste = proposal.paste_yaml,
         note = proposal.note,
     )
@@ -6995,20 +7139,24 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
     let operator_path = Path::new(&proposal.local_path);
     refuse_sacred_and_sku("operator path", &proposal.local_path)?;
     let _scanned = scan_operator_file(operator_path)?;
-    let seat = req
-        .estate
-        .model_bindings
-        .iter()
-        .find(|binding| binding.id == "local_slm")
-        .ok_or_else(|| ModelError::Other("refuse:binding: estate has no local_slm seat".into()))?;
-    let proposed = proposed_model_binding(seat, &proposal, req.tag)?;
+    let seat = import_seat(req.estate, Some(&proposal.binding_id))?;
+    let proposed = proposed_model_binding(&seat, &proposal, req.tag)?;
     let mut staged_estate = req.estate.clone();
-    let index = staged_estate
-        .model_bindings
-        .iter()
-        .position(|binding| binding.id == "local_slm")
-        .ok_or_else(|| ModelError::Other("refuse:binding: estate has no local_slm seat".into()))?;
-    staged_estate.model_bindings[index] = proposed.clone();
+    if seat.add_beside {
+        staged_estate.model_bindings.push(proposed.clone());
+    } else {
+        let index = staged_estate
+            .model_bindings
+            .iter()
+            .position(|binding| name_eq(&binding.id, &seat.binding_id))
+            .ok_or_else(|| {
+                ModelError::Other(format!(
+                    "refuse:binding: estate has no {} seat",
+                    seat.binding_id
+                ))
+            })?;
+        staged_estate.model_bindings[index] = proposed.clone();
+    }
     estate_schema::validate(&staged_estate).map_err(|errors| {
         ModelError::Other(format!(
             "refuse:binding: staged estate invalid: {}",
@@ -7018,9 +7166,9 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
     if let Some(endpoint) = req.verify_endpoint {
         crate::runtime_lists_model(endpoint, req.tag).map_err(ModelError::Other)?;
     }
-    if seat == &proposed {
+    if !seat.add_beside && seat.template == &proposed {
         return Ok(ApplyProposalOutcome::Noop {
-            reason: format!("no-op: local_slm already bound to {}", req.tag),
+            reason: format!("no-op: {} already bound to {}", seat.binding_id, req.tag),
         });
     }
     let current_hash = estate_schema::estate_hash(req.estate);
@@ -7029,14 +7177,14 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
         let same_intent = stage.local_tag == req.tag
             && stage.binding_fingerprint == fingerprint
             && stage.source_estate_hash == current_hash
-            && stage.binding_id == "local_slm"
+            && stage.binding_id == seat.binding_id
             && !stage.auto_apply
             && !stage.promoted;
         if same_intent && staged_file_matches(&stage)? {
             return Ok(ApplyProposalOutcome::Noop {
                 reason: format!(
-                    "no-op: enrich stage already holds tag={} binding=local_slm",
-                    req.tag
+                    "no-op: enrich stage already holds tag={} binding={}",
+                    req.tag, seat.binding_id
                 ),
             });
         }
@@ -7089,7 +7237,7 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
         driver: proposal.driver,
         job: proposal.job,
         local_tag: expected,
-        binding_id: "local_slm".into(),
+        binding_id: seat.binding_id.clone(),
         seated_driver: proposal.seated_driver,
         source_estate_hash: current_hash,
         staged_estate_hash: staged_hash,
@@ -7234,10 +7382,17 @@ fn parse_binding_proposal(path: &Path) -> Result<EnrichBindingProposal, ModelErr
             "refuse:curator: binding proposal curator must be jason and policy manual".into(),
         ));
     }
-    if proposal.binding_id != "local_slm" {
-        return Err(ModelError::Other(
-            "refuse:binding: binding proposal id is not local_slm".into(),
-        ));
+    resolve_portable_binding_id(Some(&proposal.binding_id))?;
+    let proposed_id = proposal
+        .proposed_binding
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if proposed_id != proposal.binding_id {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: proposed id '{proposed_id}' does not match binding_id '{}'",
+            proposal.binding_id
+        )));
     }
     refuse_sacred_and_sku("tag", &proposal.local_tag)?;
     refuse_sacred_and_sku("pack id", &proposal.pack_id)?;
@@ -7255,18 +7410,32 @@ fn parse_binding_proposal(path: &Path) -> Result<EnrichBindingProposal, ModelErr
 }
 
 fn proposed_model_binding(
-    seat: &estate_schema::ModelBinding,
+    seat: &ImportSeat<'_>,
     proposal: &EnrichBindingProposal,
     tag: &str,
 ) -> Result<estate_schema::ModelBinding, ModelError> {
+    let template = seat.template;
     let obj = proposal.proposed_binding.as_object().ok_or_else(|| {
         ModelError::Other("refuse:binding: proposed binding is not an object".into())
     })?;
     let id = obj.get("id").and_then(|value| value.as_str()).unwrap_or("");
-    if id != "local_slm" || seat.id != "local_slm" {
+    if id != proposal.binding_id || id != seat.binding_id {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: proposed id '{id}' must stay {}",
+            seat.binding_id
+        )));
+    }
+    if seat.add_beside && (template.id != SEAT_ID || id == SEAT_ID) {
         return Err(ModelError::Other(
-            "refuse:binding: proposed id must stay local_slm".into(),
+            "refuse:binding: a new specialty seat is copied from local_slm and does not replace it"
+                .into(),
         ));
+    }
+    if !seat.add_beside && !name_eq(&template.id, id) {
+        return Err(ModelError::Other(format!(
+            "refuse:binding: proposed id '{id}' must stay {}",
+            template.id
+        )));
     }
     let class = obj
         .get("class")
@@ -7277,7 +7446,7 @@ fn proposed_model_binding(
             "refuse:frontier-invent: binding proposal class is frontier".into(),
         ));
     }
-    if class != "local" || seat.class != estate_schema::ModelClass::Local {
+    if class != "local" || template.class != estate_schema::ModelClass::Local {
         return Err(ModelError::Other(
             "refuse:binding: local_slm class is not local".into(),
         ));
@@ -7286,9 +7455,10 @@ fn proposed_model_binding(
         .get("driver")
         .and_then(|value| value.as_str())
         .unwrap_or("");
-    if driver != seat.driver || proposal.seated_driver != seat.driver || driver.trim().is_empty() {
+    if driver != template.driver || proposal.seated_driver != template.driver || driver.trim().is_empty()
+    {
         return Err(ModelError::Other(
-            "refuse:binding: proposed driver must stay the seated local_slm driver".into(),
+            "refuse:binding: proposed driver must stay the seated local driver".into(),
         ));
     }
     refuse_sacred_and_sku("seated driver", driver)?;
@@ -7296,7 +7466,7 @@ fn proposed_model_binding(
         .get("wired")
         .and_then(|value| value.as_bool())
         .ok_or_else(|| ModelError::Other("refuse:binding: wired must be a bool".into()))?;
-    if wired != seat.wired {
+    if wired != template.wired {
         return Err(ModelError::Other(
             "refuse:binding: proposed wired does not match the seat".into(),
         ));
@@ -7307,7 +7477,7 @@ fn proposed_model_binding(
         .ok_or_else(|| {
             ModelError::Other("refuse:binding: local_slm params must be an object".into())
         })?;
-    let seat_params = match &seat.params {
+    let seat_params = match &template.params {
         serde_json::Value::Object(map) => map.clone(),
         serde_json::Value::Null => serde_json::Map::new(),
         _ => {
@@ -7376,11 +7546,11 @@ fn proposed_model_binding(
         }
     }
     Ok(estate_schema::ModelBinding {
-        id: "local_slm".into(),
+        id: seat.binding_id.clone(),
         class: estate_schema::ModelClass::Local,
-        driver: seat.driver.clone(),
+        driver: template.driver.clone(),
         params: serde_json::Value::Object(params.clone()),
-        wired: seat.wired,
+        wired: template.wired,
     })
 }
 
@@ -7421,11 +7591,7 @@ fn load_stage(state_dir: &Path) -> Result<Option<EnrichBindingStage>, ModelError
             "refuse:stage: auto_apply and promoted must stay false".into(),
         ));
     }
-    if stage.binding_id != "local_slm" {
-        return Err(ModelError::Other(
-            "refuse:binding: stage binding_id is not local_slm".into(),
-        ));
-    }
+    resolve_portable_binding_id(Some(&stage.binding_id))?;
     refuse_sacred_and_sku("tag", &stage.local_tag)?;
     Ok(Some(stage))
 }
@@ -21924,5 +22090,288 @@ mod tests {
         assert_eq!(snap.schema, BINDING_STAGE_SCHEMA);
         assert!(!snap.auto_apply && !snap.promoted && !snap.applied && !snap.estate_rewritten);
         assert_eq!(snap.binding_id, "local_slm");
+    }
+
+    fn copy_prepare_tree(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with("binding-proposal") {
+                continue;
+            }
+            let dest = to.join(&name);
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                copy_prepare_tree(&entry.path(), &dest);
+            } else if kind.is_file() {
+                std::fs::copy(entry.path(), dest).unwrap();
+            }
+        }
+    }
+
+    fn push_local(estate: &mut Estate, id: &str, job: &str) {
+        let mut seat = estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap()
+            .clone();
+        seat.id = id.into();
+        seat.params
+            .as_object_mut()
+            .unwrap()
+            .insert("job".into(), serde_json::Value::String(job.into()));
+        estate.model_bindings.push(seat);
+    }
+
+    fn local_ids(estate: &Estate) -> Vec<String> {
+        estate
+            .model_bindings
+            .iter()
+            .filter(|binding| binding.class == ModelClass::Local)
+            .map(|binding| binding.id.clone())
+            .collect()
+    }
+
+    fn binding_job(estate: &Estate, id: &str) -> String {
+        estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == id)
+            .unwrap()
+            .params["job"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn import_trained_adds_a_specialty_seat_beside_local_slm() {
+        let root = tmp("specialty-seat");
+        let pack = fixture_pack();
+        let mut estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        push_local(&mut estate, "policy_precheck", "policy-precheck");
+        let prepared = root.join("qlora");
+        run(
+            LLAMAFACTORY_QLORA_ID,
+            &pack,
+            &estate,
+            &prepared,
+            "train",
+            "jason",
+        )
+        .unwrap();
+        let gguf = root.join("specialist.gguf");
+        std::fs::write(&gguf, "gguf-fixture").unwrap();
+        let tag = "cell-enrich-overnight-traces";
+
+        let sku = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &prepared,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("rtx-5090"),
+        )
+        .unwrap_err();
+        assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
+        assert!(!prepared.join("binding-proposal.json").is_file());
+
+        let class_token = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &prepared,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("frontier"),
+        )
+        .unwrap_err();
+        assert!(
+            class_token.to_string().contains("model class token"),
+            "{class_token}"
+        );
+
+        let frontier = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &prepared,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("xai_grok"),
+        )
+        .unwrap_err();
+        assert!(
+            frontier.to_string().contains("is not a local seat"),
+            "{frontier}"
+        );
+        assert!(!prepared.join("binding-proposal.json").is_file());
+
+        let source = root.join("estate.yaml");
+        let source_yaml = estate_schema::render_estate_yaml(&estate).unwrap();
+        std::fs::write(&source, &source_yaml).unwrap();
+        let before = std::fs::read(&source).unwrap();
+        let proposal = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &prepared,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+        )
+        .unwrap();
+        assert_eq!(proposal.binding_id, "ag_news");
+        assert!(!proposal.auto_apply && !proposal.promoted && !proposal.estate_rewritten);
+        assert_eq!(proposal.trained_shape.as_deref(), Some("gguf"));
+        assert!(proposal.paste_yaml.contains("id: ag_news"), "{proposal:?}");
+        assert!(
+            proposal.paste_yaml.contains("Add this class:local"),
+            "{}",
+            proposal.paste_yaml
+        );
+        assert!(proposal.note.contains("local_slm is not deleted"), "{}", proposal.note);
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+
+        let state = root.join("state");
+        let outcome = apply_proposal(&ApplyProposalRequest {
+            estate: &estate,
+            estate_path: &source,
+            prepared_dir: &prepared,
+            tag,
+            curator: "jason",
+            state_dir: &state,
+            verify_endpoint: None,
+        })
+        .unwrap();
+        let stage = match outcome {
+            ApplyProposalOutcome::Staged(stage) => stage,
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        };
+        assert_eq!(stage.binding_id, "ag_news");
+        assert!(!stage.auto_apply && !stage.applied && !stage.estate_rewritten);
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+        let staged_yaml =
+            std::fs::read_to_string(state.join("enrich-stage/staged-estate.yaml")).unwrap();
+        let staged = estate_schema::load_estate_str(&staged_yaml).unwrap();
+        assert_eq!(
+            local_ids(&staged),
+            ["local_slm", "policy_precheck", "ag_news"]
+        );
+        assert_eq!(
+            local_slm_model_param(&staged).as_deref(),
+            Some("llama3")
+        );
+        assert_eq!(
+            staged
+                .model_bindings
+                .iter()
+                .find(|binding| binding.id == "ag_news")
+                .unwrap()
+                .params["model"]
+                .as_str(),
+            Some(tag)
+        );
+        assert_eq!(binding_job(&staged, "policy_precheck"), "policy-precheck");
+        assert_eq!(binding_job(&staged, "ag_news"), "policy-precheck");
+        assert!(staged
+            .model_bindings
+            .iter()
+            .any(|binding| binding.id == "xai_grok" && binding.class == ModelClass::Frontier));
+        let held = commit_enrich_stage(
+            &state.join("enrich-stage/staged-estate.yaml"),
+            &state,
+            false,
+            &stage.staged_estate_hash,
+        )
+        .unwrap();
+        assert_eq!(held, EnrichStageCommit::Held);
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+        let wrote = commit_enrich_stage(
+            &state.join("enrich-stage/staged-estate.yaml"),
+            &state,
+            true,
+            &stage.staged_estate_hash,
+        )
+        .unwrap();
+        assert!(matches!(wrote, EnrichStageCommit::Wrote { .. }));
+        let written = estate_schema::load_estate_str(&std::fs::read_to_string(&source).unwrap()).unwrap();
+        assert_eq!(local_ids(&written), ["local_slm", "policy_precheck", "ag_news"]);
+
+        let mut replacing = estate.clone();
+        push_local(&mut replacing, "ag_news", "classify");
+        let replace_dir = root.join("replace");
+        copy_prepare_tree(&prepared, &replace_dir);
+        let replaced = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &replacing,
+                prepared_dir: &replace_dir,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+        )
+        .unwrap();
+        assert!(
+            replaced.paste_yaml.contains("Replace the existing ag_news"),
+            "{}",
+            replaced.paste_yaml
+        );
+        assert!(!replaced.paste_yaml.contains("Add this class:local"));
+        let replace_source = root.join("replace-estate.yaml");
+        std::fs::write(
+            &replace_source,
+            estate_schema::render_estate_yaml(&replacing).unwrap(),
+        )
+        .unwrap();
+        let replace_before = std::fs::read(&replace_source).unwrap();
+        let replace_state = root.join("replace-state");
+        let replace_outcome = apply_proposal(&ApplyProposalRequest {
+            estate: &replacing,
+            estate_path: &replace_source,
+            prepared_dir: &replace_dir,
+            tag,
+            curator: "jason",
+            state_dir: &replace_state,
+            verify_endpoint: None,
+        })
+        .unwrap();
+        let replace_stage = match replace_outcome {
+            ApplyProposalOutcome::Staged(stage) => stage,
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        };
+        assert_eq!(replace_stage.binding_id, "ag_news");
+        assert_eq!(std::fs::read(&replace_source).unwrap(), replace_before);
+        let replace_staged = estate_schema::load_estate_str(
+            &std::fs::read_to_string(replace_state.join("enrich-stage/staged-estate.yaml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            local_ids(&replace_staged),
+            ["local_slm", "policy_precheck", "ag_news"]
+        );
+        assert_eq!(binding_job(&replace_staged, "ag_news"), "classify");
+        assert_eq!(
+            local_slm_model_param(&replace_staged).as_deref(),
+            Some("llama3")
+        );
+        assert_eq!(
+            replace_staged
+                .model_bindings
+                .iter()
+                .find(|binding| binding.id == "ag_news")
+                .unwrap()
+                .params["model"]
+                .as_str(),
+            Some(tag)
+        );
     }
 }

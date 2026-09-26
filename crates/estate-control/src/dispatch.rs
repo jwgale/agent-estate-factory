@@ -289,9 +289,15 @@ pub(crate) fn run() -> Result<()> {
                 prepared,
                 tag,
                 adapter,
+                binding_id,
                 curator,
             } => crate::enrich::cmd_enrich_import_trained(
-                &estate, &prepared, &tag, &adapter, &curator,
+                &estate,
+                &prepared,
+                &tag,
+                &adapter,
+                &curator,
+                binding_id.as_deref(),
             ),
             EnrichCommand::ApplyProposal {
                 estate,
@@ -495,6 +501,7 @@ pub(crate) fn run() -> Result<()> {
                 prepared,
                 enrich_tag,
                 import_trained,
+                binding_id,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -553,6 +560,7 @@ pub(crate) fn run() -> Result<()> {
                             prepared: prepared.as_deref(),
                             enrich_tag: enrich_tag.as_deref(),
                             import_trained,
+                            binding_id: binding_id.as_deref(),
                         },
                     );
                 }
@@ -619,6 +627,7 @@ pub(crate) fn run() -> Result<()> {
                         prepared: prepared.as_deref(),
                         enrich_tag: enrich_tag.as_deref(),
                         import_trained,
+                        binding_id: binding_id.as_deref(),
                     },
                 )
             }

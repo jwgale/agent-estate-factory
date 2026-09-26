@@ -1047,7 +1047,7 @@ pub(crate) enum ClassifyCommand {
     /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     /// After compare, a successful run prints `estate enrich import-trained` for the specialist GGUF (`trained_shape` gguf, `auto_apply=false`), then Standing next (estate): `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile`. It does not execute them. `--print` prints those lines as planned steps and does not write a proposal. `--import-trained` records the proposal only on `--run` when that GGUF is a regular file and `--estate`, `--prepared`, and `--enrich-tag` are set. A missing specialist GGUF refuses or skips the handoff and does not invent a proposal. The factory does not claim it trained.
-    /// The proposal is one `local_slm` specialty seat (`class` local, `binding_id` stays `local_slm`) for that function. `--dataset ag_news` names the function `ag_news`. Frontier bindings stay peers. Other local specialty bindings stay beside it. Equal-class frontier and local stays. `make ag-news-journey` prints `--dataset ag_news` at `--train-size` 3000.
+    /// The proposal is one local specialty seat (`class` local). `--binding-id` names that seat. The default stays `local_slm`. A new id is added beside existing local seats. An existing local id is replaced in place. `--dataset ag_news` names the function `ag_news`. Frontier bindings stay peers. Other local specialty bindings stay beside it. Equal-class frontier and local stays. `make ag-news-journey` prints `--dataset ag_news` at `--train-size` 3000.
     /// `--dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/tev1` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
     /// `--modest` is only valid with `--dual`. It replaces the `--train-size all` default with `500` (`parse_split_size` count) and writes LLaMA-Factory `max_steps` 50 on both students when `--max-steps` is omitted. An explicit `--train-size` above 500 is refused. This is not a factory live PASS.
     Journey {
@@ -1192,6 +1192,12 @@ pub(crate) enum ClassifyCommand {
         /// `--dual` prints each student's handoff and does not record a proposal.
         #[arg(long, default_value_t = false)]
         import_trained: bool,
+        /// Portable local binding id on the import-trained handoff. Omit to keep `local_slm`.
+        /// A new id is added as class local beside existing local seats, including `local_slm`.
+        /// An existing local id is replaced in place. A hardware SKU is refused.
+        /// The proposal stays `auto_apply=false`. This command does not apply the estate.
+        #[arg(long)]
+        binding_id: Option<String>,
     },
     /// Grow the rust_idiom FixedClasses curriculum with an OpenAI-compatible coding teacher.
     /// `--print` is the default. It writes `expand-plan.json` and does not call the network.
@@ -1378,7 +1384,9 @@ pub(crate) enum EnrichCommand {
         #[arg(long, default_value = "jason")]
         curator: String,
     },
-    /// Record a trained adapter dir, merged export dir, or GGUF on the local_slm proposal. Does not apply.
+    /// Record a trained adapter dir, merged export dir, or GGUF on a local seat proposal. Does not apply.
+    /// `--binding-id` defaults to `local_slm`. A new id is added as class local beside existing local seats.
+    /// An existing local id is replaced in place.
     ImportTrained {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
@@ -1391,6 +1399,12 @@ pub(crate) enum EnrichCommand {
         /// Adapter output_dir (adapter_config.json), merged export_dir (config.json and a non-adapter .safetensors file, optional Modelfile), or one .gguf file (a directory must hold exactly one).
         #[arg(long)]
         adapter: PathBuf,
+        /// Portable local binding id. Omit to keep `local_slm`.
+        /// A new id is added as class local beside existing local seats, including `local_slm`.
+        /// An existing local id is replaced in place. A hardware SKU is refused.
+        /// The proposal stays `auto_apply=false`. This command does not apply.
+        #[arg(long)]
+        binding_id: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,

@@ -1300,7 +1300,10 @@ estate classify journey prints that same import-trained line after
 compare when the specialist GGUF is the seated file
 (specialist.<quant>.gguf, or specialist.f16.gguf when --quant is f16).
 The recorded proposal is binding_id local_slm, class local, for that
-function. Equal-class frontier and local stays. Other local specialty
+function. --binding-id names another portable local seat. The default
+stays local_slm. A new id is added beside local_slm. An existing local
+id is replaced in place. A hardware SKU in the id is refused.
+Equal-class frontier and local stays. Other local specialty
 bindings stay beside it. make ag-news-journey prints this coda for
 --dataset ag_news at train-size 3000. It stays off make smoke, make
 gate-90, and GitHub Actions.
