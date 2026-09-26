@@ -27,6 +27,9 @@ pub const QWEN35_TEMPLATE: &str = "qwen3_5";
 /// Ollama tag created from the built base GGUF. Not a library tag.
 pub const DEFAULT_BUILT_BASE_TAG: &str = "classify-base";
 pub const DEFAULT_TAG: &str = "classify-specialist";
+/// Purpose-dataset Ollama stem when `--tag` is left at [`DEFAULT_TAG`].
+/// Yields `specialist-agnews-3000`, matching live seats (not `classify-specialist-agnews-3000`).
+pub const PURPOSE_TAG_STEM: &str = "specialist";
 pub const DEFAULT_DATASET: &str = "classify_decisions";
 /// Default quant for both seats. `f16` skips `llama-quantize`.
 pub const DEFAULT_QUANT: &str = "Q4_K_M";
@@ -2221,7 +2224,15 @@ pub fn apply_dataset_layout(
         suffix = format!("{suffix}-{tag}");
     }
     let tag = if requested_tag == DEFAULT_TAG {
-        format!("{applied_tag}{suffix}")
+        // Fixture default stays classify-specialist. Purpose datasets use the human
+        // stem `specialist-{slug}-{size}` so ag_news / rust_idiom match live Ollama.
+        // Preset-replaced tags (deepseek / glm4-chat) keep their applied stem.
+        let stem = if applied_tag == DEFAULT_TAG {
+            PURPOSE_TAG_STEM
+        } else {
+            applied_tag
+        };
+        format!("{stem}{suffix}")
     } else {
         applied_tag.to_string()
     };
@@ -6555,6 +6566,59 @@ mod tests {
         assert!(!prepared.join("binding-proposal.json").is_file());
         assert!(!out.join("specialist.Q4_K_M.gguf").is_file());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn purpose_dataset_default_tag_mints_specialist_stem() {
+        let (tag, out, name) = apply_dataset_layout(
+            "ag_news",
+            "3000",
+            DEFAULT_TAG,
+            DEFAULT_TAG,
+            Path::new(DEFAULT_JOURNEY_OUT),
+            DEFAULT_DATASET,
+            None,
+        )
+        .unwrap();
+        assert_eq!(tag, "specialist-agnews-3000");
+        assert_eq!(out, PathBuf::from(".cell/classify-journey-agnews-3000"));
+        assert_eq!(name, "ag_news");
+
+        let (devign_tag, _, _) = apply_dataset_layout(
+            "devign",
+            "3000",
+            DEFAULT_TAG,
+            DEFAULT_TAG,
+            Path::new(DEFAULT_JOURNEY_OUT),
+            DEFAULT_DATASET,
+            None,
+        )
+        .unwrap();
+        assert_eq!(devign_tag, "specialist-devign-3000");
+
+        let (glm_tag, _, _) = apply_dataset_layout(
+            "rust_idiom",
+            "500",
+            "glm4-chat-specialist",
+            DEFAULT_TAG,
+            Path::new(DEFAULT_JOURNEY_OUT),
+            "rust_idiom",
+            Some("rev1"),
+        )
+        .unwrap();
+        assert_eq!(glm_tag, "glm4-chat-specialist-rustidiom-500-rev1");
+
+        let (explicit, _, _) = apply_dataset_layout(
+            "ag_news",
+            "all",
+            "my-custom-seat",
+            "my-custom-seat",
+            Path::new(DEFAULT_JOURNEY_OUT),
+            DEFAULT_DATASET,
+            None,
+        )
+        .unwrap();
+        assert_eq!(explicit, "my-custom-seat");
     }
 
     #[test]

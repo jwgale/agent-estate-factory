@@ -98,6 +98,18 @@ estate classify journey --dataset ag_news --train-size 30000 --heldout-size all 
 estate classify journey --dataset ag_news --train-size all --heldout-size all --seed 42 --run --llama-cpp-dir "$LLAMA_CPP_DIR" --quant Q4_K_M
 ```
 
+## Naming layers (binding / Ollama seat / enrich tag)
+
+Operator-facing ids stay sayable aloud. Three layers stay distinct:
+
+| Layer | Example | Who sets it |
+| --- | --- | --- |
+| Estate binding id | `ag_news`, `local_slm`, `xai_grok` | estate YAML / `--binding-id` |
+| Ollama seat tag | `specialist-agnews-all`, `classify-base` | `ollama create` / journey `--tag` |
+| Enrich import tag | `cell-enrich-{pack_id}` | `estate enrich import-trained --tag` (API lock) |
+
+Purpose classify journeys with the default `--tag` mint `specialist-{slug}-{size}` (for example `specialist-agnews-3000`). The fixture-only default tag stays `classify-specialist` when no dataset suffix applies. Live cohesion seats prefer purpose words (`specialist-agnews-all`) over the enrich create name. Align throwaway `params.model` to the live Ollama seat when those differ; do not pass a non-`cell-enrich-*` value as `--tag` (CLI refuses). Renaming the enrich-tag convention is a separate tip.
+
 The 3,000-row specialist tag is `specialist-agnews-3000` and the journey directory is `.cell/classify-journey-agnews-3000`. The 10,000, 30,000, and all runs use `-agnews-10000`, `-agnews-30000`, and `-agnews-all`.
 
 ## devign letter runs

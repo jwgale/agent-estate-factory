@@ -1195,6 +1195,11 @@ unsloth-qlora seats the merged 16-bit directory or a GGUF file.
 --adapter on that prepare is refuse:adapter. Unsloth documents Ollama
 through a GGUF, not an Ollama adapter line for the PEFT directory.
 A missing UNSLOTH.md or train base is refuse:train-base.
+Ollama purpose seats prefer human tags such as specialist-agnews-all
+or classify-base. The enrich create name stays cell-enrich-{pack} (API
+lock). Binding ids (ag_news) are a third layer. Align params.model to
+the live Ollama seat on throwaway estates when those differ.
+
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays
 llama.cpp convert_hf_to_gguf.py, outside this factory. On llamafactory-lora,

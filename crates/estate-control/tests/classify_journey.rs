@@ -2440,7 +2440,7 @@ fn devign_import_and_journey_print_reuse_the_qwen_path() {
     let printed_err = String::from_utf8_lossy(&printed.stderr);
     assert!(printed.status.success(), "{printed_out}\n{printed_err}");
     assert!(
-        printed_out.contains("classify-specialist-devign-3000"),
+        printed_out.contains("specialist-devign-3000"),
         "{printed_out}"
     );
     assert!(
