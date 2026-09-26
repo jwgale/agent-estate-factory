@@ -207,7 +207,11 @@ pub(crate) fn run() -> Result<()> {
             ConveyCommand::Authority { state_dir, estate } => {
                 cmd_convey_authority(&state_dir, &estate)
             }
-            ConveyCommand::Expire { state_dir, forget } => cmd_convey_expire(&state_dir, forget),
+            ConveyCommand::Expire {
+                estate,
+                state_dir,
+                forget,
+            } => cmd_convey_expire(&estate, &state_dir, forget),
         },
         Command::Enrich { command } => match command {
             EnrichCommand::Prepare {

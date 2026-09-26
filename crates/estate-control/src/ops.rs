@@ -683,10 +683,23 @@ pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Resu
     Ok(())
 }
 
-pub(crate) fn cmd_convey_expire(state_dir: &Path, forget: bool) -> Result<()> {
+pub(crate) fn cmd_convey_expire(estate_path: &Path, state_dir: &Path, forget: bool) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the expired hop lease list and before
+    // `--forget` writes. Same stack as convey list and convey leases. Hop
+    // cites do not change this command's exit code. The stack reads
+    // placement-actual for mesh interpretation and Authority. A
+    // placement-actual SKU omits Authority. `list_expired_hop_leases` then
+    // loads the interpreted mesh, which slim-parses placement-actual, so
+    // that SKU still refuses before the expired list and before `--forget`
+    // rewrites the mesh. An expired spawned cloud hop still refuses there
+    // too. Audits and history do not take that second refuse.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let expired = list_expired_hop_leases(state_dir, hop_now_unix())?;
     if expired.is_empty() {
         println!("no expired hop leases under {}", state_dir.display());
+        // `--forget` does not rewrite when nothing is expired.
         return Ok(());
     }
     println!("expired hop leases ({})", expired.len());
@@ -932,6 +945,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// Shared by `estate leases` (printed before the placement list),
 /// `estate convey leases` (printed before the hop lease list),
 /// `estate convey list` (printed before the hop decl list),
+/// `estate convey expire` (printed before the expired hop lease list and
+/// before `--forget` writes),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
@@ -950,6 +965,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// placement JSON. `estate convey leases` then still refuses that SKU before
 /// the hop lease JSON. `estate convey list` then still refuses that SKU
 /// before the hop JSON, because `list_hops` calls `load_interpreted_mesh`.
+/// `estate convey expire` then still refuses that SKU before the expired
+/// list, because `list_expired_hop_leases` calls `load_interpreted_mesh`.
+/// `--forget` is not reached, so that SKU does not rewrite the mesh.
 /// `estate audits` then still prints the apply-audit list. `estate history`
 /// then still prints the lifecycle history list. There is no second
 /// placement refuse before those two lists. Every other
