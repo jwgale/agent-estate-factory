@@ -1,7 +1,9 @@
 //! `estate pack export-plugin` — Agent Plugin stub from a pack.
 //!
 //! Fixture: examples/fixtures/agent-pack-handoff.yaml.
-//! Does not invent a live PASS. Locked examples/estate.yaml stays untouched.
+//! MCP is wired to `estate pack mcp-serve` → `estate complete`.
+//! live_sync stays false. Does not invent a live PASS.
+//! Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -77,18 +79,24 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         &out_s,
     ]);
     assert!(ok, "stderr={stderr}\nstdout={stdout}");
-    assert!(stdout.contains("pack plugin stub: research-crew"), "{stdout}");
+    assert!(
+        stdout.contains("pack plugin stub: research-crew"),
+        "{stdout}"
+    );
     assert!(stdout.contains("orchestrator: horizon"), "{stdout}");
     assert!(stdout.contains("members: horizon, research"), "{stdout}");
-    assert!(stdout.contains("skills: classify-once, classify-ping"), "{stdout}");
+    assert!(
+        stdout.contains("skills: classify-once, classify-ping"),
+        "{stdout}"
+    );
     assert!(stdout.contains("standing-classify @hourly"), "{stdout}");
+    assert!(stdout.contains("wired_mcp: yes"), "{stdout}");
     assert!(stdout.contains("live_sync: no"), "{stdout}");
     assert!(!stdout.contains("live PASS"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
     assert!(!stderr.contains("live PASS"), "{stderr}");
 
-    let plugin: serde_json::Value =
-        serde_json::from_str(&read(&out.join("plugin.json"))).unwrap();
+    let plugin: serde_json::Value = serde_json::from_str(&read(&out.join("plugin.json"))).unwrap();
     assert_eq!(plugin["name"], "research-crew");
     assert_eq!(plugin["version"], "0.0.0");
     let desc = plugin["description"].as_str().unwrap();
@@ -101,14 +109,41 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     let servers = mcp["mcpServers"].as_object().expect("mcpServers");
     assert!(servers.contains_key("horizon"), "{servers:?}");
     assert!(servers.contains_key("research"), "{servers:?}");
-    assert_eq!(servers["horizon"]["command"], "true");
+    assert_eq!(servers["horizon"]["command"], "estate");
     assert_eq!(servers["horizon"]["type"], "stdio");
-    assert_eq!(servers["horizon"]["env"]["CELL_ESTATE_ROLE"], "orchestrator");
-    assert_eq!(servers["horizon"]["env"]["CELL_ESTATE_PACK"], "research-crew");
+    assert_eq!(
+        servers["horizon"]["args"],
+        serde_json::json!(["pack", "mcp-serve"])
+    );
+    assert_eq!(
+        servers["horizon"]["env"]["CELL_ESTATE_ROLE"],
+        "orchestrator"
+    );
+    assert_eq!(
+        servers["horizon"]["env"]["CELL_ESTATE_PACK"],
+        "research-crew"
+    );
+    assert_eq!(servers["horizon"]["env"]["CELL_ESTATE_MEMBER"], "horizon");
     assert_eq!(servers["research"]["env"]["CELL_ESTATE_ROLE"], "member");
+    assert_eq!(servers["research"]["env"]["CELL_ESTATE_MEMBER"], "research");
+    let estate_env = servers["horizon"]["env"]["CELL_ESTATE_PATH"]
+        .as_str()
+        .unwrap();
+    assert!(
+        estate_env.ends_with("agent-pack-handoff.yaml"),
+        "{estate_env}"
+    );
+    assert!(
+        std::path::Path::new(estate_env).is_absolute(),
+        "{estate_env}"
+    );
+    assert_eq!(
+        servers["research"]["env"]["CELL_ESTATE_PATH"],
+        servers["horizon"]["env"]["CELL_ESTATE_PATH"]
+    );
     let mcp_text = read(&out.join("mcp.json"));
-    assert!(!mcp_text.contains("estate complete"), "{mcp_text}");
-    assert!(!mcp_text.contains("complete"), "{mcp_text}");
+    assert!(mcp_text.contains("mcp-serve"), "{mcp_text}");
+    assert!(!mcp_text.contains("\"command\": \"true\""), "{mcp_text}");
 
     let ping = read(&out.join("skills/classify-ping/SKILL.md"));
     assert!(ping.contains("name: classify-ping"), "{ping}");
@@ -117,8 +152,12 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(ping.contains("prompt: ping"), "{ping}");
     assert!(ping.contains("research -> ag_news"), "{ping}");
     assert!(ping.contains("horizon -> frontier_http"), "{ping}");
-    assert!(ping.contains("estate package run --id classify-ping"), "{ping}");
-    assert!(ping.contains("does not call `estate complete`"), "{ping}");
+    assert!(
+        ping.contains("estate package run --id classify-ping"),
+        "{ping}"
+    );
+    assert!(ping.contains("estate pack mcp-serve"), "{ping}");
+    assert!(ping.contains("estate complete"), "{ping}");
     assert!(ping.contains("standing-classify"), "{ping}");
     assert!(ping.contains("schedule=@hourly"), "{ping}");
     assert!(ping.contains("0 * * * *"), "{ping}");
@@ -133,14 +172,38 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["pack_id"], "research-crew");
     assert_eq!(mapping["group"]["orchestrator"], "horizon");
     assert_eq!(mapping["live_sync"], false);
-    assert_eq!(mapping["wired_mcp"], false);
+    assert_eq!(mapping["wired_mcp"], true);
+    assert_eq!(mapping["mcp"]["command"], "estate");
+    assert_eq!(mapping["mcp"]["tool"], "complete");
+    assert!(
+        mapping["mcp"]["invokes"]
+            .as_str()
+            .unwrap()
+            .contains("estate complete"),
+        "{mapping}"
+    );
+    assert!(
+        mapping["estate_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("agent-pack-handoff.yaml"),
+        "{mapping}"
+    );
     assert_eq!(mapping["routines"][0]["id"], "standing-classify");
     assert_eq!(mapping["routines"][0]["cron_note"], "0 * * * *");
     assert_eq!(mapping["routines"][0]["live_trigger"], false);
 
     let readme = read(&out.join("README.md"));
-    assert!(readme.contains("Not live Cursor / Grok Bot sync"), "{readme}");
-    assert!(readme.contains("command: true"), "{readme}");
+    assert!(
+        readme.contains("not live Cursor / Grok Bot sync"),
+        "{readme}"
+    );
+    assert!(readme.contains("estate pack mcp-serve"), "{readme}");
+    assert!(readme.contains("wired_mcp: true"), "{readme}");
+    assert!(readme.contains("live_sync: false"), "{readme}");
+    assert!(readme.contains("CELL_ESTATE_PATH"), "{readme}");
+    assert!(readme.contains("refuse:pack-orchestrator"), "{readme}");
+    assert!(!readme.contains("command: true"), "{readme}");
     assert!(readme.contains("standing-classify"), "{readme}");
     assert!(readme.contains("0 * * * *"), "{readme}");
     assert!(!readme.contains("live PASS"), "{readme}");

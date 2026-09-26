@@ -264,6 +264,13 @@ pub(crate) fn run() -> Result<()> {
             PackCommand::ExportPlugin { id, out, estate } => {
                 crate::export_plugin::cmd_pack_export_plugin(&id, &out, &estate)
             }
+            PackCommand::McpServe {
+                estate,
+                pack,
+                agent,
+                state_dir,
+                mock,
+            } => crate::pack_mcp::cmd_pack_mcp_serve(estate, pack, agent, state_dir, mock),
         },
         Command::Package { command } => match command {
             PackageCommand::List { estate } => cmd_package_list(&estate),

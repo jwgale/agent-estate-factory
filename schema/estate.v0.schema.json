@@ -42,7 +42,7 @@
     },
     "packs": {
       "type": "array",
-      "description": "Agent packs: named group membership with optional orchestrator. Distinct from enrich_packs. estate pack export-plugin writes an Agent Plugin stub (plugin.json + mcp.json + skills/) from one pack. Mapping comments only. Not live Cursor/Grok Bot sync.",
+      "description": "Agent packs: named group membership with optional orchestrator. Distinct from enrich_packs. estate pack export-plugin writes an Agent Plugin stub (plugin.json + mcp.json + skills/) from one pack. Exported MCP runs estate pack mcp-serve → estate complete. live_sync stays false. Not live Cursor/Grok Bot sync.",
       "items": { "$ref": "#/definitions/agent_pack" }
     },
     "pack_packages": {

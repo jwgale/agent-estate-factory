@@ -151,7 +151,8 @@ estate decisions report --state-dir target/pack-routines-cell
 `complete --pack`, and journals `package_id` (plus pack handoff fields).
 `routine run` resolves the declared package and also stamps `routine_id`.
 Authorize still uses existing model intentions. Plugin scaffold is
-`estate pack export-plugin` (next). No live Cursor / Grok Bot routine sync.
+`estate pack export-plugin` (MCP wired to `estate complete`; `live_sync`
+stays false). No live Cursor / Grok Bot routine sync.
 No multi-step DAG.
 
 ## 3d. Scheduled tick + multi-hop chain (fixture)
@@ -199,11 +200,21 @@ estate pack export-plugin --id research-crew \
 ```
 
 Writes an Agent Plugin stub Cursor can load: `plugin.json` (pack → group),
-`mcp.json` (one no-op stdio server per member; orchestrator noted in env),
+`mcp.json` (one stdio server per member: `estate pack mcp-serve`),
 `skills/<package>/SKILL.md` (package → skill body stub), and commented
 cron/trigger notes for `standing-classify` (`@hourly` → `0 * * * *`).
-MCP is `command: true`. It does not wire `estate complete`. It does not
-install a Cursor or Grok Bot trigger. Not a cron daemon.
+Each member tool runs `estate complete --agent <member> --pack research-crew`
+against the source estate. Env carries pack / member / role / estate path.
+Non-orchestrator members refuse `refuse:pack-orchestrator` the same as
+pack complete. `wired_mcp: true`. `live_sync: false`. `estate` must be
+on PATH. This is a bridge, not a live Cursor or Grok Bot install. Routines
+stay comments. Not a cron daemon.
+
+`estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
+is not an interactive complete. Inspect `target/pack-plugin-stub/mcp.json`,
+then call tool `complete` with `{ "prompt": "ping", "mock": true }`.
+That writes a decision receipt on the source estate state-dir. Cargo
+test `pack_mcp_serve` covers the mock path. Not a live PASS.
 
 ## 4. Enrich prepare (opt-in, not a train)
 
