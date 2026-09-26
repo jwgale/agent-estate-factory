@@ -317,7 +317,13 @@ fn catalog_and_leases_are_file_sot() {
     assert!(audits.status.success());
     assert!(String::from_utf8_lossy(&audits.stdout).contains("require_plan=true"));
     let history = estate_bin()
-        .args(["history", "--state-dir", &state.display().to_string()])
+        .args([
+            "history",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
         .output()
         .unwrap();
     assert!(history.status.success());

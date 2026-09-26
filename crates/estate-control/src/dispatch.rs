@@ -149,7 +149,7 @@ pub(crate) fn run() -> Result<()> {
                 tar,
             } => cmd_audit_export(&estate, &state_dir, &plans_dir, &packs_dir, &out, tar),
         },
-        Command::History { state_dir } => cmd_history(&state_dir),
+        Command::History { estate, state_dir } => cmd_history(&estate, &state_dir),
         Command::Probes { live } => crate::heal::cmd_probes(live),
         Command::Specialist {
             endpoint,
