@@ -599,7 +599,17 @@ pub(crate) fn cmd_convey_call(
     Ok(())
 }
 
-pub(crate) fn cmd_convey_list(state_dir: &Path) -> Result<()> {
+pub(crate) fn cmd_convey_list(estate_path: &Path, state_dir: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the hop decl list. Same stack as
+    // estate leases, convey leases, audits, and history. Hop cites do not
+    // change this command's exit code. The stack reads placement-actual for
+    // mesh interpretation and Authority. A placement-actual SKU omits
+    // Authority. `list_hops` then loads the interpreted mesh, which
+    // slim-parses placement-actual, so that SKU still refuses before the
+    // hop JSON. Audits and history do not take that second refuse.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let hops = list_hops(state_dir)?;
     if hops.is_empty() {
         println!("no hops under {}", state_dir.display());
@@ -921,6 +931,7 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 ///
 /// Shared by `estate leases` (printed before the placement list),
 /// `estate convey leases` (printed before the hop lease list),
+/// `estate convey list` (printed before the hop decl list),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
@@ -937,9 +948,11 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// this text still includes Agents and hop cites from `load_mesh` and omits
 /// Authority rows. `estate leases` then still refuses that SKU before the
 /// placement JSON. `estate convey leases` then still refuses that SKU before
-/// the hop lease JSON. `estate audits` then still prints the apply-audit
-/// list. `estate history` then still prints the lifecycle history list.
-/// There is no second placement refuse before that list. Every other
+/// the hop lease JSON. `estate convey list` then still refuses that SKU
+/// before the hop JSON, because `list_hops` calls `load_interpreted_mesh`.
+/// `estate audits` then still prints the apply-audit list. `estate history`
+/// then still prints the lifecycle history list. There is no second
+/// placement refuse before those two lists. Every other
 /// mesh error, including a population ahead of the floor
 /// (`refuse:agent-unplaced`) and a placement-actual parse failure
 /// (`MeshError::Parse`), refuses here before any section. Capability

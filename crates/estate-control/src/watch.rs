@@ -406,7 +406,8 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
 
 /// Shared printer for doctor, status, `estate convey authority`,
 /// `estate reconcile`, `estate leases`, `estate convey leases`,
-/// `estate audits`, `estate history`, and the `honesty.md` snapshot
+/// `estate audits`, `estate history`, `estate convey list`, and the
+/// `honesty.md` snapshot
 /// `estate audit export` writes. A granted box lease (or a box hop
 /// declaration with no lease)
 /// whose placement hop coverage is deny, deny-default, or a capability
@@ -414,7 +415,7 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
 /// (capability mismatch). Deny and deny-default are `note`. Returns the
 /// mismatch lines. Doctor appends them and bails at the end. Status,
 /// convey authority, reconcile, leases, convey leases, audits, history,
-/// and audit export discard them and do not bail.
+/// convey list, and audit export discard them and do not bail.
 /// Cloud hops, empty populations, ungranted
 /// leases, and hop ids that are not placements stay out. Cloud kinds stay
 /// out of this cite on purpose: `cloud-mesh`, `cloud_mesh`, and
@@ -432,6 +433,7 @@ pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> 
 /// `estate convey leases` prints the text before the hop lease list.
 /// `estate audits` prints the text before the apply-audit list.
 /// `estate history` prints the text before the lifecycle history list.
+/// `estate convey list` prints the text before the hop decl list.
 /// `estate audit export` writes the text into `honesty.md`. Empty when
 /// every subject matches. Does not write.
 pub(crate) fn render_hop_coverage_cites(
@@ -454,13 +456,14 @@ pub(crate) fn render_hop_coverage_cites(
 /// Shared with `estate drift`, `estate plan`, `estate apply`,
 /// `estate status`, `estate convey authority`, `estate reconcile`,
 /// `estate leases`, `estate convey leases`, `estate audits`,
-/// `estate history`, and `estate audit export`. `fail` is capability
-/// mismatch only. Deny and deny-default stay visible. They do not fail
-/// doctor `--strict`, drift, plan, apply, status, convey authority,
-/// reconcile, leases, convey leases, audits, history, or audit export by
-/// themselves. A mismatch fails doctor, drift, plan, and apply. Status,
-/// convey authority, reconcile, leases, convey leases, audits, history,
-/// and audit export keep the line and do not bail.
+/// `estate history`, `estate convey list`, and `estate audit export`.
+/// `fail` is capability mismatch only. Deny and deny-default stay visible.
+/// They do not fail doctor `--strict`, drift, plan, apply, status, convey
+/// authority, reconcile, leases, convey leases, audits, history, convey
+/// list, or audit export by themselves. A mismatch fails doctor, drift,
+/// plan, and apply. Status, convey authority, reconcile, leases, convey
+/// leases, audits, history, convey list, and audit export keep the line
+/// and do not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,

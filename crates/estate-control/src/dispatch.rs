@@ -201,7 +201,7 @@ pub(crate) fn run() -> Result<()> {
                 &state_dir,
                 &policy,
             ),
-            ConveyCommand::List { state_dir } => cmd_convey_list(&state_dir),
+            ConveyCommand::List { estate, state_dir } => cmd_convey_list(&estate, &state_dir),
             ConveyCommand::Leases { estate, state_dir } => cmd_convey_leases(&estate, &state_dir),
             ConveyCommand::Sync { state_dir, estate } => cmd_convey_sync(&state_dir, &estate),
             ConveyCommand::Authority { state_dir, estate } => {
