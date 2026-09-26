@@ -783,6 +783,14 @@ pub(crate) fn cmd_pack_show(id: &str, estate_path: &Path) -> Result<()> {
     for member in &pack.members {
         println!("    - {member}");
     }
+    if pack.chain.is_empty() {
+        println!("  chain: -");
+    } else {
+        println!("  chain:");
+        for hop in &pack.chain {
+            println!("    - {} -> {}", hop.agent, hop.binding);
+        }
+    }
     Ok(())
 }
 
@@ -801,8 +809,9 @@ pub(crate) fn cmd_package_list(estate_path: &Path) -> Result<()> {
         } else {
             "set"
         };
+        let chain = if pkg.chain.is_empty() { 0 } else { pkg.chain.len() };
         println!(
-            "  {} pack={} binding={} prompt={}",
+            "  {} pack={} binding={} prompt={} chain={chain}",
             pkg.id, pkg.pack, binding, prompt
         );
     }
@@ -819,6 +828,14 @@ pub(crate) fn cmd_package_show(id: &str, estate_path: &Path) -> Result<()> {
     println!("  pack: {}", pkg.pack);
     println!("  binding: {}", pkg.binding.as_deref().unwrap_or("-"));
     println!("  prompt: {}", pkg.prompt.as_deref().unwrap_or("-"));
+    if pkg.chain.is_empty() {
+        println!("  chain: -");
+    } else {
+        println!("  chain:");
+        for hop in &pkg.chain {
+            println!("    - {} -> {}", hop.agent, hop.binding);
+        }
+    }
     if let Some(note) = &pkg.note {
         println!("  note: {note}");
     }
@@ -835,7 +852,22 @@ pub(crate) fn cmd_package_run(
     feed_dir: Option<&Path>,
     endpoint: Option<String>,
     mock: bool,
+    chain: bool,
 ) -> Result<()> {
+    if chain {
+        return cmd_package_run_chain(
+            id,
+            None,
+            agent,
+            prompt,
+            text,
+            estate_path,
+            state_dir,
+            feed_dir,
+            endpoint,
+            mock,
+        );
+    }
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let hint = crate::decisions::load_select_hint(state_dir)?;
@@ -858,6 +890,7 @@ pub(crate) fn cmd_package_run(
         feed_dir,
         endpoint,
         mock,
+        None,
     )
 }
 
@@ -870,7 +903,12 @@ pub(crate) fn cmd_routine_list(estate_path: &Path) -> Result<()> {
     }
     println!("standing routines ({})", estate.routines.len());
     for routine in &estate.routines {
-        println!("  {} package={}", routine.id, routine.package);
+        let schedule = routine.schedule.as_deref().unwrap_or("-");
+        let enabled = if routine.is_enabled() { "true" } else { "false" };
+        println!(
+            "  {} package={} schedule={schedule} enabled={enabled}",
+            routine.id, routine.package
+        );
     }
     Ok(())
 }
@@ -883,6 +921,8 @@ pub(crate) fn cmd_routine_show(id: &str, estate_path: &Path) -> Result<()> {
     })?;
     println!("routine {}", routine.id);
     println!("  package: {}", routine.package);
+    println!("  schedule: {}", routine.schedule.as_deref().unwrap_or("-"));
+    println!("  enabled: {}", routine.is_enabled());
     if let Some(note) = &routine.note {
         println!("  note: {note}");
     }
@@ -899,9 +939,27 @@ pub(crate) fn cmd_routine_run(
     feed_dir: Option<&Path>,
     endpoint: Option<String>,
     mock: bool,
+    chain: bool,
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let routine = estate.routine(id).ok_or_else(|| {
+        anyhow::anyhow!("refuse:unknown-routine: routine '{id}' not on estate")
+    })?;
+    if chain {
+        return cmd_package_run_chain(
+            &routine.package,
+            Some(routine.id.as_str()),
+            agent,
+            prompt,
+            text,
+            estate_path,
+            state_dir,
+            feed_dir,
+            endpoint,
+            mock,
+        );
+    }
     let hint = crate::decisions::load_select_hint(state_dir)?;
     let (handoff, resolved_agent, pkg_prompt, pkg_binding) =
         crate::decisions::resolve_routine_handoff(&estate, id, agent, hint.as_ref())
@@ -922,7 +980,172 @@ pub(crate) fn cmd_routine_run(
         feed_dir,
         endpoint,
         mock,
+        None,
     )
+}
+
+pub(crate) fn cmd_routine_status(
+    id: Option<&str>,
+    estate_path: &Path,
+    state_dir: &Path,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let state = crate::routines::load_state(state_dir)?;
+    let rows: Vec<&estate_schema::Routine> = match id {
+        Some(want) => {
+            let routine = estate.routine(want).ok_or_else(|| {
+                anyhow::anyhow!("refuse:unknown-routine: routine '{want}' not on estate")
+            })?;
+            vec![routine]
+        }
+        None => estate.routines.iter().collect(),
+    };
+    if rows.is_empty() {
+        println!("no standing routines on {}", estate_path.display());
+        return Ok(());
+    }
+    println!("routine status ({})", rows.len());
+    for routine in rows {
+        let row = crate::routines::row_for(&state, &routine.id);
+        println!("  {}", crate::routines::status_line(&estate, routine, row));
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_routine_tick(
+    id: Option<&str>,
+    agent: Option<&str>,
+    prompt: Option<String>,
+    text: Option<String>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+    chain: bool,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let mut state = crate::routines::load_state(state_dir)?;
+    let now = crate::routines::now_unix();
+    let targets: Vec<estate_schema::Routine> = match id {
+        Some(want) => {
+            let routine = estate.routine(want).ok_or_else(|| {
+                anyhow::anyhow!("refuse:unknown-routine: routine '{want}' not on estate")
+            })?;
+            vec![routine.clone()]
+        }
+        None => estate.routines.clone(),
+    };
+    if targets.is_empty() {
+        println!("no standing routines on {}", estate_path.display());
+        return Ok(());
+    }
+    let mut ran = 0usize;
+    let mut skipped = 0usize;
+    for routine in &targets {
+        let row = crate::routines::row_for(&state, &routine.id);
+        let due = crate::routines::is_due(routine, row, now).map_err(|e| anyhow::anyhow!("{e}"))?;
+        if !due {
+            skipped += 1;
+            println!(
+                "skip {} ({})",
+                routine.id,
+                skip_reason(routine, row)
+            );
+            continue;
+        }
+        cmd_routine_run(
+            &routine.id,
+            agent,
+            prompt.clone(),
+            text.clone(),
+            estate_path,
+            state_dir,
+            feed_dir,
+            endpoint.clone(),
+            mock,
+            chain,
+        )?;
+        crate::routines::mark_ran(&mut state, routine, now).map_err(|e| anyhow::anyhow!("{e}"))?;
+        ran += 1;
+        println!(
+            "ticked {} last_run={} next_due={}",
+            routine.id,
+            crate::routines::format_unix(Some(now)),
+            crate::routines::format_unix(state.routines.get(&routine.id).and_then(|r| r.next_due))
+        );
+    }
+    crate::routines::save_state(state_dir, &state)?;
+    println!("routine tick ran={ran} skipped={skipped}");
+    Ok(())
+}
+
+fn skip_reason(routine: &estate_schema::Routine, row: Option<&crate::routines::RoutineRow>) -> String {
+    if !routine.is_enabled() {
+        return "disabled".into();
+    }
+    if routine.schedule.is_none() {
+        return "no schedule".into();
+    }
+    match row.and_then(|r| r.next_due) {
+        Some(due) => format!("next_due={}", crate::routines::format_unix(Some(due))),
+        None => "not due".into(),
+    }
+}
+
+fn cmd_package_run_chain(
+    package_id: &str,
+    routine_id: Option<&str>,
+    agent: Option<&str>,
+    prompt: Option<String>,
+    text: Option<String>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let now = crate::routines::now_unix();
+    let chain_id = crate::decisions::mint_chain_id(package_id, now);
+    let (hops, _caller, pkg_prompt) = crate::decisions::resolve_package_chain(
+        &estate,
+        package_id,
+        agent,
+        &chain_id,
+        routine_id,
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let payload = prompt.or(text).or(pkg_prompt).ok_or_else(|| {
+        anyhow::anyhow!("set --prompt or --text, or declare prompt on the package")
+    })?;
+    println!("chain {chain_id} hops={}", hops.len());
+    for hop in &hops {
+        let binding = hop
+            .handoffs
+            .iter()
+            .find(|h| h.handoff_from == hop.handoff_from && h.handoff_to == hop.handoff_to)
+            .and_then(|h| h.binding.clone());
+        cmd_complete(
+            &hop.handoff_from,
+            Some(payload.clone()),
+            None,
+            binding.as_deref(),
+            Some(hop.pack_id.as_str()),
+            hop.package_id.as_deref(),
+            hop.routine_id.as_deref(),
+            estate_path,
+            state_dir,
+            feed_dir,
+            endpoint.clone(),
+            mock,
+            Some(hop),
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn cmd_complete(
@@ -938,6 +1161,7 @@ pub(crate) fn cmd_complete(
     feed_dir: Option<&Path>,
     endpoint: Option<String>,
     mock: bool,
+    forced_handoff: Option<&crate::decisions::PackHandoff>,
 ) -> Result<()> {
     let payload = prompt
         .or(text)
@@ -945,13 +1169,16 @@ pub(crate) fn cmd_complete(
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let hint = crate::decisions::load_select_hint(state_dir)?;
-    if package.is_some() && pack.is_none() {
+    if package.is_some() && pack.is_none() && forced_handoff.is_none() {
         bail!("refuse:package-requires-pack: --package requires --pack");
     }
-    if routine.is_some() && package.is_none() {
+    if routine.is_some() && package.is_none() && forced_handoff.is_none() {
         bail!("refuse:routine-requires-package: routine stamp requires package");
     }
-    let pack_handoff = match pack {
+    let pack_handoff = if let Some(h) = forced_handoff {
+        Some(h.clone())
+    } else {
+        match pack {
         Some(pack_id) => {
             let mut handoff = crate::decisions::resolve_pack_handoff(
                 &estate,
@@ -997,6 +1224,7 @@ pub(crate) fn cmd_complete(
             Some(handoff)
         }
         None => None,
+        }
     };
     let complete_agent = pack_handoff
         .as_ref()

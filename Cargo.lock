@@ -267,6 +267,7 @@ name = "estate-control"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "conveyor-proxy",
  "estate-schema",

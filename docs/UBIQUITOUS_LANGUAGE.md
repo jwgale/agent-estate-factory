@@ -34,11 +34,11 @@ Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids),
 
 ### pack package
 
-Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note`. `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not a Cursor plugin spin.
+Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not a Cursor plugin spin.
 
 ### standing routine
 
-Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note`. `estate routine list` / `show` / `run`. Run stamps `routine_id` and `package_id`. Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
+Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note` / `schedule` / `enabled`. `estate routine list` / `show` / `run` / `tick` / `status`. Run stamps `routine_id` and `package_id`. `tick` runs due schedules (5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`, min 5m) and persists `last_run` / `next_due` under the estate state-dir. Not a cron daemon. Not live Grok Bot sync.
 
 ### curator
 

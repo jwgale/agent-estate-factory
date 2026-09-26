@@ -120,6 +120,28 @@ estate decisions report --state-dir target/pack-routines-cell
 Authorize still uses existing model intentions. No Cursor plugin spin. No
 live Grok Bot routine sync. No multi-step DAG.
 
+## 3d. Scheduled tick + multi-hop chain (fixture)
+
+Same throwaway fixture. Optional `schedule` on `standing-classify` (`@hourly`).
+`estate routine tick` runs it when due and writes `{state-dir}/routine-state.json`
+(`last_run` / `next_due`). A second tick in the same hour is a skip (idempotent).
+`estate package run --chain` wakes specialty then frontier and journals one
+`chain_id` plus ordered `handoffs` (`handoff_from` / `handoff_to` / `binding`).
+That is the Grok Bot shape — a routine waking a group skill — without claiming
+live Grok Bot sync. `--mock` stays in-process. Locked `examples/estate.yaml`
+untouched. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate routine status --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell
+estate routine tick --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell --mock
+estate package run --id classify-ping --chain \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-chain-cell --mock
+estate decisions report --state-dir target/pack-chain-cell
+```
+
 ## 4. Enrich prepare (opt-in, not a train)
 
 Not part of `make smoke` or `make gate-90`.

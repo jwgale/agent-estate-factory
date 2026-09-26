@@ -8,6 +8,7 @@ mod hash;
 mod plan;
 mod policy;
 mod sacred;
+mod schedule;
 mod types;
 mod validate;
 
@@ -45,9 +46,10 @@ pub use sacred::{
     locked_sacred_ids, overlay_sacred_ids, parse_sacred_yaml, set_sacred_overlays, normalize_name,
     SacredFile, SacredFileEntry, LOCKED_SACRED,
 };
+pub use schedule::{RoutineSchedule, MIN_INTERVAL_SECS};
 pub use types::{
     canonical_host_class, canonical_host_class_opt, host_class_eq, is_host_class,
-    normalize_host_class, Agent, AgentPack, Effect,
+    normalize_host_class, Agent, AgentPack, ChainHop, Effect,
     CallDecl, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
     ModelBinding,
     ModelClass, ModelUseDecl, MountDecl, ObjectRef, PackPackage, Placement, PlacementKind,

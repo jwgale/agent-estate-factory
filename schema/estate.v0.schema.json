@@ -52,7 +52,7 @@
     },
     "routines": {
       "type": "array",
-      "description": "Standing routines: declare + run a pack package (automation analog). Minimal bridge — no cron, no multi-step DAG.",
+      "description": "Standing routines: declare + run a pack package (automation analog). Optional schedule is local tick state (estate routine tick). Not live Grok Bot sync. No DAG daemon.",
       "items": { "$ref": "#/definitions/routine" }
     }
   },
@@ -71,7 +71,24 @@
           "minItems": 1,
           "items": { "$ref": "#/definitions/slug" }
         },
-        "orchestrator": { "$ref": "#/definitions/slug" }
+        "orchestrator": { "$ref": "#/definitions/slug" },
+        "chain": {
+          "type": "array",
+          "description": "Ordered multi-hop policy (alias steps). Each hop is agent → model binding.",
+          "items": { "$ref": "#/definitions/chain_hop" }
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/chain_hop" }
+        }
+      }
+    },
+    "chain_hop": {
+      "type": "object",
+      "required": ["agent", "binding"],
+      "properties": {
+        "agent": { "$ref": "#/definitions/slug" },
+        "binding": { "$ref": "#/definitions/slug" }
       }
     },
     "pack_package": {
@@ -82,7 +99,16 @@
         "pack": { "$ref": "#/definitions/slug" },
         "prompt": { "type": "string" },
         "binding": { "$ref": "#/definitions/slug" },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "chain": {
+          "type": "array",
+          "description": "Ordered multi-hop (alias steps). estate package run --chain.",
+          "items": { "$ref": "#/definitions/chain_hop" }
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/chain_hop" }
+        }
       }
     },
     "routine": {
@@ -91,7 +117,12 @@
       "properties": {
         "id": { "$ref": "#/definitions/slug" },
         "package": { "$ref": "#/definitions/slug" },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "schedule": {
+          "type": "string",
+          "description": "5-field cron or @daily / @hourly / @every Nh / @every Nm. Minimum interval 5m. Local tick only."
+        },
+        "enabled": { "type": "boolean" }
       }
     },
     "agent": {
