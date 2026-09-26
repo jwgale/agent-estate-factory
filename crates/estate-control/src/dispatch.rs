@@ -133,7 +133,7 @@ pub(crate) fn run() -> Result<()> {
         },
         Command::Catalog { out } => cmd_catalog(&out),
         Command::Leases { estate, state_dir } => cmd_leases(&estate, &state_dir),
-        Command::Audits { state_dir } => cmd_audits(&state_dir),
+        Command::Audits { estate, state_dir } => cmd_audits(&estate, &state_dir),
         Command::Reconcile {
             estate,
             state_dir,

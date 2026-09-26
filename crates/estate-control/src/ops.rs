@@ -214,7 +214,15 @@ pub(crate) fn cmd_leases(estate_path: &Path, state_dir: &Path) -> Result<()> {
     }
 }
 
-pub(crate) fn cmd_audits(state_dir: &Path) -> Result<()> {
+pub(crate) fn cmd_audits(estate_path: &Path, state_dir: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the apply-audit list. Same stack as
+    // estate leases, convey leases, status, doctor, reconcile, and audit
+    // export. Hop cites do not change this command's exit code. A
+    // placement-actual SKU omits Authority inside the stack and still
+    // reaches the audit list below. Audits do not read placement JSON.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let audits = list_apply_audits(state_dir)?;
     if audits.is_empty() {
         println!("no apply-audit.jsonl under {}", state_dir.display());
@@ -900,7 +908,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// Agents, hop coverage cites, then Authority.
 ///
 /// Shared by `estate leases` (printed before the placement list),
-/// `estate convey leases` (printed before the hop lease list), and
+/// `estate convey leases` (printed before the hop lease list),
+/// `estate audits` (printed before the apply-audit list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
 /// or a bad `host_class` on that file, refuses before any section. Callers
 /// do not invent cites, Agents, or Authority rows. A missing mesh is the
@@ -914,12 +923,13 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// Agents and hop cites from `load_mesh` and omits Authority rows.
 /// `estate leases` then still refuses that SKU before the placement JSON.
 /// `estate convey leases` then still refuses that SKU before the hop lease
-/// JSON. Every other mesh error, including a population ahead of the floor
-/// (`refuse:agent-unplaced`), refuses here before any section. Capability
-/// mismatch is `FAIL`. Deny and deny-default are `note`. A match stays
-/// quiet. Those cites do not fail the caller. Does not rewrite the mesh,
-/// the leases, the estate, or the apply audit. Does not spawn. No
-/// `enforced` status.
+/// JSON. `estate audits` then still prints the apply-audit list. Audits do
+/// not depend on placement JSON. Every other mesh error, including a
+/// population ahead of the floor (`refuse:agent-unplaced`), refuses here
+/// before any section. Capability mismatch is `FAIL`. Deny and deny-default
+/// are `note`. A match stays quiet. Those cites do not fail the caller.
+/// Does not rewrite the mesh, the leases, the estate, or the apply audit.
+/// Does not spawn. No `enforced` status.
 fn honesty_stack(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
     let mesh = load_mesh(state_dir)?;
     refuse_mesh_host_classes(&mesh)?;

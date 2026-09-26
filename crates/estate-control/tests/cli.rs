@@ -305,7 +305,13 @@ fn catalog_and_leases_are_file_sot() {
     assert!(stdout.contains("cloud-agent"));
     assert!(stdout.contains("\"spawned\": false") || stdout.contains("spawned\": false"));
     let audits = estate_bin()
-        .args(["audits", "--state-dir", &state.display().to_string()])
+        .args([
+            "audits",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
         .output()
         .unwrap();
     assert!(audits.status.success());
