@@ -74,7 +74,7 @@ fn model_name_matches(listed: &str, tag: &str) -> bool {
     listed == tag || listed.strip_suffix(":latest") == Some(tag)
 }
 
-fn list_runtime_model_names(endpoint: &str) -> Result<Vec<String>, String> {
+pub(crate) fn list_runtime_model_names(endpoint: &str) -> Result<Vec<String>, String> {
     let base = endpoint.trim().trim_end_matches('/');
     if base.is_empty() {
         return Err("refuse:local-tag: empty endpoint".into());

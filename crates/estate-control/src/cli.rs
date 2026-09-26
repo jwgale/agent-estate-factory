@@ -483,8 +483,8 @@ pub(crate) enum Command {
         command: PackageCommand,
     },
     /// Standing routines: declare + run a pack package (automation analog).
-    /// Optional `schedule` + `estate routine tick` / `status`. Local
-    /// last_run / next_due under --state-dir. Not live Grok Bot sync.
+    /// Optional `schedule` + `estate routine tick` / `status` / `digest`.
+    /// Local last_run / next_due under --state-dir. Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1129,6 +1129,20 @@ pub(crate) enum RoutineCommand {
         /// Run each due routine's package chain when declared.
         #[arg(long, default_value_t = false)]
         chain: bool,
+        /// After the tick, print the local digest (ran/skipped + receipt ids).
+        #[arg(long, default_value_t = false)]
+        report: bool,
+    },
+    /// Summarize the last local wake: ran/skipped, package/chain ids,
+    /// receipt ids, completion_label when present. Reads routine-state
+    /// + receipts only. Not live Grok Bot sync.
+    Digest {
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
     },
 }
 
@@ -1670,7 +1684,9 @@ pub(crate) enum EnrichCommand {
         #[arg(long)]
         binding_id: Option<String>,
         /// Live Ollama seat name for `params.model` when it differs from `--tag`.
-        /// `--tag` stays `cell-enrich-{pack}` (API lock). Omit to keep `params.model` equal to the enrich tag.
+        /// `--tag` stays `cell-enrich-{pack}` (API lock). Explicit override.
+        /// Omit to auto-bind a unique live seat from enrich tag or journey
+        /// metadata (`specialist-*` / `classify-*`). Ambiguous live matches refuse.
         /// Example: `--tag cell-enrich-qwen3-instruct-lora --seat-model specialist-agnews-all`.
         #[arg(long)]
         seat_model: Option<String>,
@@ -1833,15 +1849,15 @@ mod tests {
     use clap::CommandFactory;
 
     #[test]
-    fn call_help_refuses_capability_mismatch_after_allow() {
+    fn hop_help_refuses_capability_mismatch_after_allow() {
         let cmd = Cli::command();
         let help = cmd
             .find_subcommand("convey")
             .unwrap()
-            .find_subcommand("call")
+            .find_subcommand("hop")
             .unwrap()
             .clone()
-            .render_help()
+            .render_long_help()
             .to_string();
         assert!(
             help.contains("Allow continues to hop coverage, then")

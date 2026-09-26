@@ -1138,6 +1138,8 @@ fn wave5_sessions_plan_diff_convey_ttl() {
         .args([
             "convey",
             "expire",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
@@ -1149,6 +1151,8 @@ fn wave5_sessions_plan_diff_convey_ttl() {
             "convey",
             "expire",
             "--forget",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])

@@ -186,6 +186,80 @@ fn routine_status_and_tick_due_then_not_due() {
 }
 
 #[test]
+fn routine_digest_and_tick_report_shape() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("digest");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "digest",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("routine digest ran=0 skipped=1"), "{stdout}");
+    assert!(stdout.contains("standing-classify status=skipped"), "{stdout}");
+    assert!(stdout.contains("package=classify-ping"), "{stdout}");
+    assert!(stdout.contains("receipts=0"), "{stdout}");
+    assert!(!stdout.contains("Grok Bot sync"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "tick",
+        "--id",
+        "standing-classify",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--report",
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("ticked standing-classify"), "{stdout}");
+    assert!(stdout.contains("routine digest ran=1 skipped=0"), "{stdout}");
+    assert!(stdout.contains("standing-classify status=ran package=classify-ping"), "{stdout}");
+    assert!(stdout.contains("receipt="), "{stdout}");
+    assert!(stdout.contains("package=classify-ping"), "{stdout}");
+    assert!(stdout.contains("chain=-") || stdout.contains("chain=chain-"), "{stdout}");
+    assert!(stdout.contains("completion_label=-"), "{stdout}");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    let receipt_id = rows[0]["id"].as_str().expect("id");
+    assert!(stdout.contains(&format!("receipt={receipt_id}")), "{stdout}");
+
+    // Operator-written label still prints (local journal only).
+    let mut labeled = rows[0].clone();
+    labeled["completion_label"] = serde_json::json!("Sci/Tech");
+    std::fs::write(
+        journal(&state),
+        format!("{}\n", serde_json::to_string(&labeled).unwrap()),
+    )
+    .unwrap();
+    let (ok, digest, stderr) = run(&[
+        "routine",
+        "digest",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "{stderr}");
+    assert!(digest.contains("completion_label=Sci/Tech"), "{digest}");
+    assert!(digest.contains(&format!("receipt={receipt_id}")), "{digest}");
+    assert_locked_cksum();
+}
+
+#[test]
 fn package_run_chain_stamps_chain_id_and_ordered_handoffs() {
     assert_locked_cksum();
     let estate = fixture();

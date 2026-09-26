@@ -129,6 +129,97 @@ fn chrono_utc(ts: i64) -> String {
     }
 }
 
+/// One journal row the digest can print. Local receipts only.
+#[derive(Debug, Clone)]
+pub(crate) struct DigestReceipt {
+    pub id: String,
+    pub routine_id: Option<String>,
+    pub package_id: Option<String>,
+    pub chain_id: Option<String>,
+    pub completion_label: Option<String>,
+}
+
+/// Glance at the last local wake: ran/skipped plus receipt ids.
+/// Not Grok Bot sync.
+pub(crate) fn render_digest(
+    estate: &Estate,
+    file: &RoutineStateFile,
+    receipts: &[DigestReceipt],
+    only: Option<&str>,
+) -> String {
+    let rows: Vec<&Routine> = match only {
+        Some(want) => estate.routine(want).into_iter().collect(),
+        None => estate.routines.iter().collect(),
+    };
+    let mut ran = 0usize;
+    let mut skipped = 0usize;
+    let mut body = String::new();
+    for routine in &rows {
+        let row = row_for(file, &routine.id);
+        let ran_this = row.and_then(|r| r.last_run).is_some();
+        if ran_this {
+            ran += 1;
+        } else {
+            skipped += 1;
+        }
+        let status = if ran_this { "ran" } else { "skipped" };
+        let reason = if ran_this {
+            String::new()
+        } else {
+            format!(" reason={}", skip_reason_text(routine, row))
+        };
+        let pkg = estate
+            .pack_package(&routine.package)
+            .map(|p| p.id.as_str())
+            .unwrap_or(routine.package.as_str());
+        body.push_str(&format!(
+            "  {} status={status} package={pkg}{reason} last_run={} next_due={}\n",
+            routine.id,
+            format_unix(row.and_then(|r| r.last_run)),
+            format_unix(row.and_then(|r| r.next_due)),
+        ));
+        let matched: Vec<&DigestReceipt> = receipts
+            .iter()
+            .filter(|r| {
+                r.routine_id
+                    .as_deref()
+                    .map(|id| estate_schema::normalize_name(id) == estate_schema::normalize_name(&routine.id))
+                    .unwrap_or(false)
+            })
+            .collect();
+        if matched.is_empty() {
+            body.push_str("    receipts=0\n");
+            continue;
+        }
+        for rec in matched {
+            let chain = rec.chain_id.as_deref().unwrap_or("-");
+            let pkg_id = rec.package_id.as_deref().unwrap_or(pkg);
+            let label = rec.completion_label.as_deref().unwrap_or("-");
+            body.push_str(&format!(
+                "    receipt={} package={pkg_id} chain={chain} completion_label={label}\n",
+                rec.id
+            ));
+        }
+    }
+    if rows.is_empty() {
+        return "routine digest ran=0 skipped=0\n  no standing routines\n".into();
+    }
+    format!("routine digest ran={ran} skipped={skipped}\n{body}")
+}
+
+fn skip_reason_text(routine: &Routine, row: Option<&RoutineRow>) -> String {
+    if !routine.is_enabled() {
+        return "disabled".into();
+    }
+    if routine.schedule.is_none() {
+        return "no schedule".into();
+    }
+    match row.and_then(|r| r.next_due) {
+        Some(due) => format!("next_due={}", format_unix(Some(due))),
+        None => "not due".into(),
+    }
+}
+
 pub(crate) fn status_line(estate: &Estate, routine: &Routine, row: Option<&RoutineRow>) -> String {
     let schedule = routine.schedule.as_deref().unwrap_or("-");
     let enabled = if routine.is_enabled() { "true" } else { "false" };
@@ -180,5 +271,45 @@ mod tests {
         assert!(!is_due(&off, None, 1_000).unwrap());
         let on_demand = routine("once", None, None);
         assert!(!is_due(&on_demand, None, 1_000).unwrap());
+    }
+
+    #[test]
+    fn digest_shape_names_ran_skipped_package_chain_receipt_and_label() {
+        let estate = estate_schema::load_estate_unvalidated(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/fixtures/agent-pack-handoff.yaml"),
+        )
+        .unwrap();
+        let mut file = RoutineStateFile {
+            schema: STATE_SCHEMA.into(),
+            routines: BTreeMap::new(),
+        };
+        file.routines.insert(
+            "standing-classify".into(),
+            RoutineRow {
+                last_run: Some(1_700_000_000),
+                next_due: Some(1_700_003_600),
+            },
+        );
+        let text = render_digest(
+            &estate,
+            &file,
+            &[DigestReceipt {
+                id: "r-1-digest".into(),
+                routine_id: Some("standing-classify".into()),
+                package_id: Some("classify-ping".into()),
+                chain_id: Some("chain-classify-ping-1".into()),
+                completion_label: Some("Sci/Tech".into()),
+            }],
+            None,
+        );
+        assert!(text.starts_with("routine digest ran=1 skipped=0\n"), "{text}");
+        assert!(text.contains("standing-classify status=ran package=classify-ping"), "{text}");
+        assert!(
+            text.contains("receipt=r-1-digest package=classify-ping chain=chain-classify-ping-1 completion_label=Sci/Tech"),
+            "{text}"
+        );
+        assert!(!text.contains("Grok Bot sync"), "{text}");
+        assert!(!text.contains("live PASS"), "{text}");
     }
 }

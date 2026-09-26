@@ -13,6 +13,7 @@ mod local_seat;
 mod merge_adapt;
 mod mock;
 mod path;
+mod seat_bind;
 mod train_enrich;
 
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
@@ -52,10 +53,16 @@ pub use category_label::{
     codec_by_name, completion_label_for, decode_letter, resolve_codec, CategoryCodec, CategoryLetter,
     CODECS,
 };
+pub use seat_bind::{
+    canonical_seat_name, discover_purpose_seat_hints, looks_like_purpose_seat,
+    resolve_import_seat_model, try_list_live_seats, write_purpose_seat_sidecar, SeatBind,
+    REFUSE_SEAT_HINT,
+};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
     driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
-    import_prepared, import_trained, import_trained_for_seat, list_prepared,
+    import_prepared, import_trained, import_trained_for_seat, import_trained_for_seat_with,
+    list_prepared,
     llamafactory_template_name, load_enrich_pack, resolve_portable_binding_id,
     local_enrich_tag,
     local_slm_model_param, parse_enrich_job, prepare_enrich, prepare_enrich_set, read_enrich_stage,
