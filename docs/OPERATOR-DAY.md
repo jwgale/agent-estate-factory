@@ -76,6 +76,26 @@ make day90-mixed
 
 `make day90-mixed` walks `examples/fixtures/mixed-frontier-local.yaml` on an isolated cell: status, plan, apply with a plan, status, doctor. It then validates `examples/hosts/frontier-http.yaml` and prints status. Both name `model: grok-4.7` on the frontier `http-remote` binding. The host file is not applied and is not a host-class alias. It is not on `make smoke` or fixtures-check. `examples/estate.yaml` stays hash-locked and does not invent a binding model. No live key. A sacred prompt still refuses when `CELL_FRONTIER_MODEL` is a hardware SKU; the SKU model path is not the refusal.
 
+## 3b. Agent pack list / orchestrator handoff (fixture)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Uses throwaway
+[`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml).
+Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
+
+```bash
+estate pack list --estate examples/fixtures/agent-pack-handoff.yaml
+estate pack show --id research-crew --estate examples/fixtures/agent-pack-handoff.yaml
+estate complete --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-handoff-cell --agent horizon --pack research-crew \
+  --prompt "ping" --mock
+estate decisions report --state-dir target/pack-handoff-cell --pack research-crew
+```
+
+`--agent` is the pack orchestrator. Complete hands off to the other member
+(`research`) and journals `pack_id`, `handoff_from`, `handoff_to` on the
+`surface=complete` receipt. `--mock` stays in-process. No live key. No
+group-chat runtime. Free mixed select without `--pack` stays out.
+
 ## 4. Enrich prepare (opt-in, not a train)
 
 Not part of `make smoke` or `make gate-90`.

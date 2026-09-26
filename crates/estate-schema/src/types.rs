@@ -34,6 +34,11 @@ pub struct Estate {
     /// Where agents run. `box` is Cell One today. `cloud-agent` is declared, not spawned.
     #[serde(default)]
     pub placements: Vec<Placement>,
+    /// Agent packs: named group membership with an optional orchestrator.
+    /// Distinct from enrich_packs (curator SLM packs). Absent/empty stays off the
+    /// wire so the locked example hash is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packs: Vec<AgentPack>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -201,6 +206,17 @@ impl ModelClass {
             ModelClass::Local => "local",
         }
     }
+}
+
+/// Named agent group. Members are estate agent ids. Optional orchestrator
+/// is the host that may hand off via `estate complete --pack`.
+/// Not an enrich pack (`enrich_packs` / `estate packs`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentPack {
+    pub id: String,
+    pub members: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orchestrator: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -377,6 +393,11 @@ impl Estate {
     pub fn agent(&self, id: &str) -> Option<&Agent> {
         let n = normalize_name(id);
         self.agents.iter().find(|a| normalize_name(&a.id) == n)
+    }
+
+    pub fn pack(&self, id: &str) -> Option<&AgentPack> {
+        let n = normalize_name(id);
+        self.packs.iter().find(|p| normalize_name(&p.id) == n)
     }
 
     pub fn lane(&self, id: &str) -> Option<&Lane> {

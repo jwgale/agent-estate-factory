@@ -47,7 +47,7 @@ pub use sacred::{
 };
 pub use types::{
     canonical_host_class, canonical_host_class_opt, host_class_eq, is_host_class,
-    normalize_host_class, Agent, Effect,
+    normalize_host_class, Agent, AgentPack, Effect,
     CallDecl, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
     ModelBinding,
     ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,

@@ -66,18 +66,21 @@ Cell One aims at Grok Bot–class multi-agent utility on the same middle layer: 
 
 | Pillar | Today (this tip / middle layer) | Next tips (deferred) |
 |--------|----------------------------------|----------------------|
-| **Agent groups / segmentation** | Named agents (`research`, `horizon`) with model allow-lists and Model intentions; specialty bindings join the chain as equal-class local seats | Named packs / group membership (research vs horizon vs specialty workers) like Grok Bot group chats |
-| **Master orchestrator + subagent pack** | Host → select → receipt; `estate complete` is one binding per turn; receipts name agent + capability + surface; `decisions report` lists recent rows | One host agent coordinating specialists with clear handoffs and multi-seat one-turn select |
+| **Agent groups / segmentation** | Estate `packs:` (id, members, optional orchestrator); `estate pack list` / `estate pack show`; members are agent ids beside purpose seats | Full group-chat runtime like Grok Bot group chats |
+| **Master orchestrator + subagent pack** | `estate complete --pack <id>`: orchestrator hands off to one member under pack policy; receipt fields `pack_id`, `handoff_from`, `handoff_to`; `decisions report --pack` filters | Free mixed select without a pack; multi-seat one-turn select across mixed local+frontier |
 | **Spin off packages + routines** | Enrich packs, classify journeys, purpose seats (`specialist-{slug}-{size}`), least-privilege intentions | Reusable skills/routines as first-class package objects with baked-in security |
 | **Work with or train SLMs** | Train/enrich/seat path; `--seat-model` aligns enrich tag ↔ live Ollama name; opt-in category `completion_label` for letter-trained seats | Broader purpose codecs, auto seat-select across mixed local+frontier in one agent turn |
 
 Agents share equal-class seats: frontier and one or more purpose-built local SLMs stay the same class. The control plane does not invent completions. Security stays intentions + authorize/complete receipts + fail-closed endpoints.
 
+**Packs ↔ groups / orchestrator / purpose seats.** An estate `packs:` row names a group (`id`, `members`, optional `orchestrator`). That is segmentation, not a chat room. `estate complete --pack` is the orchestrator path: `--agent` must be the pack orchestrator (or a member when no orchestrator is set); the host selects one other member under pack policy, then completes as that member through the usual host → select → receipt loop on their purpose seat. Receipts record `pack_id`, `handoff_from`, and `handoff_to`. Fixture: [`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml). Walk: [`OPERATOR-DAY.md`](OPERATOR-DAY.md) (agent pack handoff). Distinct from enrich packs (`enrich_packs` / `estate packs`).
+
 ### Still not claimed
 
 - A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
 - Keel UI, ACP workspace clone, or a full group-chat runtime
-- Master orchestrator / multi-agent one-turn select across mixed seats
+- Free mixed select without `--pack`; multi-seat one-turn select across mixed seats outside a pack
+- Package spin-off, routine mint, or think-fold labels
 - Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
 - A dual rust_idiom launch
 - `estate convey` as more than a lease-bound hop stub

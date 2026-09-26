@@ -39,12 +39,30 @@
     "placements": {
       "type": "array",
       "items": { "$ref": "#/definitions/placement" }
+    },
+    "packs": {
+      "type": "array",
+      "description": "Agent packs: named group membership with optional orchestrator. Distinct from enrich_packs.",
+      "items": { "$ref": "#/definitions/agent_pack" }
     }
   },
   "definitions": {
     "slug": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "agent_pack": {
+      "type": "object",
+      "required": ["id", "members"],
+      "properties": {
+        "id": { "$ref": "#/definitions/slug" },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/slug" }
+        },
+        "orchestrator": { "$ref": "#/definitions/slug" }
+      }
     },
     "agent": {
       "type": "object",

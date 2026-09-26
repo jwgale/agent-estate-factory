@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::{
     AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, DecisionsCommand, EnrichCommand,
-    FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
+    FeedCommand, PackCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
 };
 use crate::ops::*;
 use crate::plan_apply::*;
@@ -238,23 +238,29 @@ pub(crate) fn run() -> Result<()> {
             feed_dir,
             endpoint,
             mock,
+            pack,
         } => cmd_complete(
             &agent,
             prompt,
             text,
             object.as_deref(),
+            pack.as_deref(),
             &estate,
             &state_dir,
             feed_dir.as_deref(),
             endpoint,
             mock,
         ),
+        Command::Pack { command } => match command {
+            PackCommand::List { estate } => cmd_pack_list(&estate),
+            PackCommand::Show { id, estate } => cmd_pack_show(&id, &estate),
+        },
         Command::Decisions { command } => match command {
             DecisionsCommand::Export { state_dir, out } => {
                 crate::decisions::cmd_decisions_export(&state_dir, &out)
             }
-            DecisionsCommand::Report { state_dir } => {
-                crate::decisions::cmd_decisions_report(&state_dir)
+            DecisionsCommand::Report { state_dir, pack } => {
+                crate::decisions::cmd_decisions_report(&state_dir, pack.as_deref())
             }
         },
         Command::Enrich { command } => match command {

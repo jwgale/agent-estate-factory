@@ -2,6 +2,14 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — agent packs + orchestrator handoff
+
+- Estate schema `packs:` (`id`, `members`, optional `orchestrator`). Distinct from `enrich_packs`. Empty stays off the wire so locked `examples/estate.yaml` hash and cksum (`43770130 3391`) hold.
+- `estate pack list` / `estate pack show` read agent packs. `estate complete --pack <id>` is the orchestrator path: `--agent` must match the pack orchestrator (or a member when none is set); selects one other member under pack policy; completes as that member; journals `pack_id`, `handoff_from`, `handoff_to` on `cell-one.decision-receipt.v0`.
+- `estate decisions report --pack <id>` filters receipts by `pack_id` when present. Recent rows cite pack and handoff.
+- Docs: `NORTH-STAR` packs ↔ groups / orchestrator / purpose seats; `OPERATOR-DAY` fixture walk; `UBIQUITOUS_LANGUAGE` agent pack. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
+- Out of scope: group-chat runtime, package spin-off, routine mint, free mixed select without `--pack`, think-fold labels. Does not invent a live PASS. Not wired into `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — category labels, seat-model align, agent-mix UX
 
 - **A. Category label surface (opt-in).** `estate complete` can add `completion_label` beside raw `completion` when a short category code maps to a human label. AG News A–D (World / Sports / Business / Sci/Tech) is the first codec; `devign` and `rust_idiom` register beside it. Enable with binding `params.category_codec` or `CELL_COMPLETE_LABEL=1` when the binding id matches a codec. Default off so letter-trained seats stay raw.

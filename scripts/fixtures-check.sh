@@ -23,6 +23,7 @@ happy=(
   "$ROOT/examples/fixtures/mixed-frontier-local.yaml"
   "$ROOT/examples/fixtures/dual-layer-demo.yaml"
   "$ROOT/examples/fixtures/ttl-short.yaml"
+  "$ROOT/examples/fixtures/agent-pack-handoff.yaml"
 )
 for f in "${happy[@]}"; do
   echo "-- validate ok  ${f#$ROOT/}"
