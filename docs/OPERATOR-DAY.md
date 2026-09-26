@@ -150,10 +150,11 @@ estate decisions report --state-dir target/pack-routines-cell
 `package run` defaults `--agent` to the pack orchestrator, runs
 `complete --pack`, and journals `package_id` (plus pack handoff fields).
 `routine run` resolves the declared package and also stamps `routine_id`.
-Authorize still uses existing model intentions. Plugin scaffold is
+Authorize still uses existing model intentions. Plugin export is
 `estate pack export-plugin` (MCP wired to `estate complete`; skill
 bodies call tool `complete` with the package prompt; `live_sync`
-stays false). No live Cursor / Grok Bot routine sync.
+stays false). Human gate before Cursor install is
+`estate pack plugin-prove`. No live Cursor / Grok Bot routine sync.
 No multi-step DAG.
 
 ## 3d. Scheduled tick + multi-hop chain (fixture)
@@ -214,7 +215,7 @@ CELL_ROUTINE_WATCH_INTERVAL_SECS=0 estate routine watch \
 is a test hook and requires `--max-cycles`. Standing operators use the
 5m default and Ctrl-C.
 
-## 3f. Pack export-plugin scaffold (fixture)
+## 3f. Pack export-plugin (fixture)
 
 Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
 [`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml).
@@ -224,21 +225,25 @@ Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
 ```bash
 estate pack export-plugin --id research-crew \
   --estate examples/fixtures/agent-pack-handoff.yaml \
-  --out target/pack-plugin-stub
+  --out target/pack-plugin
 ```
 
-Writes an Agent Plugin stub Cursor can load: `plugin.json` (pack → group),
+Writes an Agent Plugin Cursor can load: `plugin.json` (pack → group),
 `mcp.json` (one stdio server per member: absolute `estate` `command` +
 `pack mcp-serve` args),
 `skills/<package>/SKILL.md` (package → skill body that calls the wired
-member MCP tool `complete` with the package prompt), and commented
-cron/trigger notes for `standing-classify` (`@hourly` → `0 * * * *`).
+member MCP tool `complete` with the package prompt), `INSTALL.md`
+(literal Cursor smoke steps), and commented cron/trigger notes for
+`standing-classify` (`@hourly` → `0 * * * *`).
 Each member tool runs `estate complete --agent <member> --pack research-crew`
-against the source estate. Env carries pack / member / role / estate path.
+against the source estate. Env carries pack / member / role / estate path
+and `CELL_MCP_COMPLETE_TIMEOUT_SECS` so Cursor-spawned MCP inherits the
+same complete cap as CLI prove.
 Non-orchestrator members refuse `refuse:pack-orchestrator` the same as
 pack complete. Skill bodies are not stubs: mock uses
 `{ "prompt": "ping", "mock": true, "object": "ag_news" }`; live omits
 `mock` when endpoints/keys are set. `wired_mcp: true`. `live_sync: false`.
+Labels say pack plugin / Agent Plugin export — not "pack plugin stub".
 Exported `mcp.json` `command` is the absolute `estate` binary resolved
 from `current_exe` at export time — Cursor does not need `estate` on
 PATH. Export refuses (`refuse:export-estate-bin`) when that binary cannot
@@ -247,7 +252,7 @@ Grok Bot install. Routines stay comments. Not a cloud cron daemon.
 `estate routine watch` is the local operator loop (see 3e).
 
 `estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
-is not an interactive complete. Inspect `target/pack-plugin-stub/mcp.json`,
+is not an interactive complete. Inspect `target/pack-plugin/mcp.json`,
 then call tool `complete` with `{ "prompt": "ping", "mock": true }`.
 That writes a decision receipt on the source estate state-dir. Child
 `estate complete` is capped at 120s (`CELL_MCP_COMPLETE_TIMEOUT_SECS` or
@@ -299,6 +304,36 @@ Max turns / bytes (`CELL_PACK_SESSION_MAX_TURNS` default 8,
 `session_id` / `session_create`. `live_sync` stays false. Not Grok Bot
 server sync. Not a live PASS. Prove notes for the 5090 parent:
 `.cell/cohesion-agnews-20260926/crew-session-prove.md`.
+
+## 3h. Pack plugin-prove (human gate)
+
+Same throwaway fixture. This is the human gate before Cursor install.
+Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
+`READY_FOR_LIVE_TEST`: no. Not a live PASS.
+
+```bash
+estate pack plugin-prove --id research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --out target/pack-plugin
+```
+
+Default `--id research-crew` and the handoff fixture. Omit `--out` for
+a throwaway directory (kept so you can point Cursor at it). The command:
+
+1. Exports the pack plugin (absolute baked `estate` bin, timeout env,
+   `INSTALL.md`).
+2. Asserts `mcp.json` `command` is an absolute file — not bare `estate`.
+3. Mock MCP `complete` as horizon → expects a decision receipt.
+4. Mock MCP `complete` as research → expects `refuse:pack-orchestrator`.
+5. Optionally reports a cheap session two-hop (create + two MCP hops).
+   That check does not block the prove.
+6. Prints a compact JSON/summary prove report. Exit non-zero on any
+   required fail.
+
+`--check-only` re-proves an existing `--out` without rewriting it.
+5090 parent live-prove notes: `.cell/cohesion-agnews-20260926/plugin-prove.md`
+(local throwaway estate; gitignored). Not live Grok Bot sync. `live_sync`
+stays false.
 
 ## 4. Enrich prepare (opt-in, not a train)
 
