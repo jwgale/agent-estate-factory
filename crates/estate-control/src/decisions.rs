@@ -75,6 +75,9 @@ pub(crate) struct DecisionReceipt {
     pub validation: String,
     pub fallback: Option<String>,
     pub outcome: String,
+    /// Opt-in category label from `estate complete` when a codec decoded the letter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -512,6 +515,7 @@ fn record_receipt(
         validation,
         fallback,
         outcome: outcome.to_string(),
+        completion_label: None,
     };
     check_receipt(&receipt)?;
     let line = serde_json::to_string(&receipt)?;

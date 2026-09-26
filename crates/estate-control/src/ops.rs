@@ -1013,6 +1013,34 @@ pub(crate) fn cmd_routine_status(
     Ok(())
 }
 
+pub(crate) fn cmd_routine_digest(
+    id: Option<&str>,
+    estate_path: &Path,
+    state_dir: &Path,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    if let Some(want) = id {
+        if estate.routine(want).is_none() {
+            anyhow::bail!("refuse:unknown-routine: routine '{want}' not on estate");
+        }
+    }
+    let state = crate::routines::load_state(state_dir)?;
+    let receipts = crate::decisions::load_receipts(state_dir)?;
+    let rows: Vec<crate::routines::DigestReceipt> = receipts
+        .iter()
+        .map(|r| crate::routines::DigestReceipt {
+            id: r.id.clone(),
+            routine_id: r.routine_id.clone(),
+            package_id: r.package_id.clone(),
+            chain_id: r.chain_id.clone(),
+            completion_label: r.completion_label.clone(),
+        })
+        .collect();
+    print!("{}", crate::routines::render_digest(&estate, &state, &rows, id));
+    Ok(())
+}
+
 pub(crate) fn cmd_routine_tick(
     id: Option<&str>,
     agent: Option<&str>,
@@ -1024,6 +1052,7 @@ pub(crate) fn cmd_routine_tick(
     endpoint: Option<String>,
     mock: bool,
     chain: bool,
+    report: bool,
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
@@ -1079,6 +1108,9 @@ pub(crate) fn cmd_routine_tick(
     }
     crate::routines::save_state(state_dir, &state)?;
     println!("routine tick ran={ran} skipped={skipped}");
+    if report {
+        cmd_routine_digest(id, estate_path, state_dir)?;
+    }
     Ok(())
 }
 

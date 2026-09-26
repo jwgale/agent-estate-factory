@@ -136,11 +136,20 @@ estate routine status --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir target/pack-routines-cell
 estate routine tick --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir target/pack-routines-cell --mock
+estate routine digest --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell
+estate routine tick --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell --mock --report
 estate package run --id classify-ping --chain \
   --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir target/pack-chain-cell --mock
 estate decisions report --state-dir target/pack-chain-cell
 ```
+
+`digest` and `tick --report` glance at the last local wake: ran/skipped,
+package/chain ids, receipt ids, and `completion_label` when a receipt has
+one. They read `{state-dir}/routine-state.json` plus the decision journal.
+They do not sync to Grok Bot.
 
 ## 4. Enrich prepare (opt-in, not a train)
 

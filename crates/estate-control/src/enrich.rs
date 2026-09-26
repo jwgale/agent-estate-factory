@@ -5,7 +5,7 @@ use anyhow::{bail, Context, Result};
 use estate_schema::load_estate_unvalidated;
 use model_estate::{
     default_enrich_out, default_train_enrich_driver_id, driver_default_job,
-    enrich_host_class_affinity, import_prepared, import_trained_for_seat, list_prepared,
+    enrich_host_class_affinity, import_prepared, import_trained_for_seat_with, list_prepared,
     load_enrich_pack,
     plan_adapter_seat_for, plan_gguf_convert, plan_local_seat_for, plan_merge_adapt,
     prepare_enrich_set, render_prepared_index, render_train_enrich_catalog,
@@ -252,12 +252,16 @@ pub(crate) fn cmd_enrich_import_trained(
     curator: &str,
     binding_id: Option<&str>,
     seat_model: Option<&str>,
+    purpose_seat: Option<&str>,
 ) -> Result<()> {
     let before = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
     let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
-    let proposal = import_trained_for_seat(
+    if let Some(seat) = purpose_seat.map(str::trim).filter(|s| !s.is_empty()) {
+        model_estate::write_purpose_seat_sidecar(prepared_dir, seat)?;
+    }
+    let proposal = import_trained_for_seat_with(
         &ImportTrainedRequest {
             estate: &estate,
             prepared_dir,
@@ -267,6 +271,8 @@ pub(crate) fn cmd_enrich_import_trained(
         },
         binding_id,
         seat_model,
+        purpose_seat,
+        None,
     )?;
     let after = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;

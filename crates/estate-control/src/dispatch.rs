@@ -306,6 +306,7 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                report,
             } => cmd_routine_tick(
                 id.as_deref(),
                 agent.as_deref(),
@@ -317,7 +318,13 @@ pub(crate) fn run() -> Result<()> {
                 endpoint,
                 mock,
                 chain,
+                report,
             ),
+            RoutineCommand::Digest {
+                id,
+                estate,
+                state_dir,
+            } => cmd_routine_digest(id.as_deref(), &estate, &state_dir),
             RoutineCommand::Run {
                 id,
                 agent,
@@ -429,6 +436,7 @@ pub(crate) fn run() -> Result<()> {
                 &curator,
                 binding_id.as_deref(),
                 seat_model.as_deref(),
+                None,
             ),
             EnrichCommand::ApplyProposal {
                 estate,

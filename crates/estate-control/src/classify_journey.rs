@@ -2768,6 +2768,7 @@ fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Resul
             "jason",
             Some(display.binding_id.as_str()),
             None,
+            Some(req.tag),
         )?;
     } else {
         println!("This command prints the import-trained line and does not write a proposal.");
@@ -6806,7 +6807,7 @@ mod tests {
             out: parent.join("glm4-chat"),
             dataset_name: "rust_idiom".into(),
         };
-        let qwen = DualPresetScore {
+        let qwen_score = DualPresetScore {
             base_accuracy: 0.5,
             specialist_accuracy: 0.75,
             delta: 0.25,
@@ -6834,7 +6835,7 @@ mod tests {
             42,
             &qwen,
             &glm,
-            Some(&qwen),
+            Some(&qwen_score),
             Some(&glm_score),
             Some("def"),
             false,

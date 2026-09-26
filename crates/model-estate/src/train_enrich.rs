@@ -5667,7 +5667,7 @@ pub struct EnrichBindingProposal {
 pub fn import_prepared(
     req: &ImportPreparedRequest<'_>,
 ) -> Result<EnrichBindingProposal, ModelError> {
-    let proposal = compose_import_proposal(req, None, None, None)?;
+    let proposal = compose_import_proposal(req, None, None, None, None, None)?;
     persist_binding_proposal(req.prepared_dir, &proposal)?;
     Ok(proposal)
 }
@@ -5681,6 +5681,8 @@ fn compose_import_proposal(
     scanned_override: Option<bool>,
     binding_id: Option<&str>,
     seat_model: Option<&str>,
+    purpose_seat: Option<&str>,
+    live_seats: Option<&[String]>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
@@ -5736,23 +5738,21 @@ fn compose_import_proposal(
                 )
             })
         })?;
-        let model_name = match seat_model.map(str::trim).filter(|s| !s.is_empty()) {
-            Some(name) => {
-                refuse_sacred_and_sku("seat-model", name)?;
-                if !is_seated_model_name(req.estate, name) {
-                    return Err(ModelError::Other(format!(
-                        "refuse:seat-model: '{name}' is not a seated model tag. Use the live Ollama name (for example specialist-agnews-all), not a binding id or reserved word."
-                    )));
-                }
-                if name == expected {
-                    return Err(ModelError::Other(format!(
-                        "refuse:seat-model: '{name}' is the enrich tag. Omit --seat-model when params.model should stay {expected}."
-                    )));
-                }
-                name.to_string()
-            }
-            None => req.tag.to_string(),
-        };
+        let hints = crate::seat_bind::discover_purpose_seat_hints(
+            req.prepared_dir,
+            req.tag,
+            purpose_seat,
+        );
+        let listed = live_seats.map(|names| names.to_vec());
+        let listed = listed.or_else(crate::seat_bind::try_list_live_seats);
+        let resolved = crate::seat_bind::resolve_import_seat_model(
+            req.estate,
+            req.tag,
+            seat_model,
+            &hints,
+            listed.as_deref(),
+        )?;
+        let model_name = resolved.model_name().to_string();
         obj.insert(
             "model".into(),
             serde_json::Value::String(model_name),
@@ -5850,13 +5850,25 @@ pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingPro
 /// `class: local` beside existing local seats. An existing local id is
 /// replaced in place. Does not apply.
 ///
-/// `seat_model` `None` keeps today's behavior: `params.model` is the enrich
-/// tag `cell-enrich-{pack}`. When set, that live Ollama seat name is recorded
-/// as `params.model` while `--tag` stays the enrich create name (API lock).
+/// `seat_model` `None` auto-binds a unique live (or unique metadata) purpose
+/// seat onto `params.model`. `--tag` stays the enrich create name (API lock).
+/// Ambiguous live matches refuse. No purpose hint keeps `params.model` equal
+/// to the enrich tag.
 pub fn import_trained_for_seat(
     req: &ImportTrainedRequest<'_>,
     binding_id: Option<&str>,
     seat_model: Option<&str>,
+) -> Result<EnrichBindingProposal, ModelError> {
+    import_trained_for_seat_with(req, binding_id, seat_model, None, None)
+}
+
+/// Test/CLI hook: inject `purpose_seat` metadata and a live listing.
+pub fn import_trained_for_seat_with(
+    req: &ImportTrainedRequest<'_>,
+    binding_id: Option<&str>,
+    seat_model: Option<&str>,
+    purpose_seat: Option<&str>,
+    live_seats: Option<&[String]>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
@@ -5899,6 +5911,8 @@ pub fn import_trained_for_seat(
         Some(content_scanned),
         binding_id,
         seat_model,
+        purpose_seat,
+        live_seats,
     )?;
     proposal.trained_shape = Some(artifact.shape.to_string());
     proposal.trained_paths = Some(artifact.paths.clone());
@@ -7125,6 +7139,52 @@ pub enum EnrichStageCommit {
     Already { source: PathBuf },
 }
 
+/// When the proposal still records the enrich tag as `params.model` and
+/// journey/prepare metadata names a unique purpose seat, rewrite that model
+/// onto the live seat before staging. Already-bound live names stay put.
+fn rebind_proposal_live_seat(
+    proposal: &mut EnrichBindingProposal,
+    estate: &Estate,
+    tag: &str,
+    prepared_dir: &Path,
+    live_seats: Option<&[String]>,
+) -> Result<(), ModelError> {
+    let current = proposal
+        .proposed_binding
+        .get("params")
+        .and_then(|p| p.get("model"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if current != tag && current != proposal.local_tag {
+        return Ok(());
+    }
+    let hints = crate::seat_bind::discover_purpose_seat_hints(prepared_dir, tag, None);
+    if hints.is_empty() {
+        return Ok(());
+    }
+    let listed = live_seats.map(|names| names.to_vec());
+    let listed = listed.or_else(crate::seat_bind::try_list_live_seats);
+    let resolved = crate::seat_bind::resolve_import_seat_model(
+        estate,
+        tag,
+        None,
+        &hints,
+        listed.as_deref(),
+    )?;
+    let name = resolved.model_name();
+    if name == tag || name == current {
+        return Ok(());
+    }
+    if let Some(obj) = proposal
+        .proposed_binding
+        .get_mut("params")
+        .and_then(|p| p.as_object_mut())
+    {
+        obj.insert("model".into(), serde_json::Value::String(name.to_string()));
+    }
+    Ok(())
+}
+
 /// Validate `binding-proposal.json` and write a staged estate that `estate plan`
 /// and `estate apply --require-plan` already consume. Does not apply. Does not
 /// write the source estate.
@@ -7138,7 +7198,8 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
     let proposal_path = req.prepared_dir.join(BINDING_PROPOSAL_JSON);
-    let proposal = parse_binding_proposal(&proposal_path)?;
+    let mut proposal = parse_binding_proposal(&proposal_path)?;
+    rebind_proposal_live_seat(&mut proposal, req.estate, req.tag, req.prepared_dir, None)?;
     let doc = load_prepare_doc(&req.prepared_dir.join("prepare.json"))?;
     refuse_recipe_train_record(&doc, req.prepared_dir)?;
     if doc.pack_id != proposal.pack_id || doc.driver != proposal.driver || doc.job != proposal.job {
@@ -22391,6 +22452,62 @@ mod tests {
                 .as_str(),
             Some(live)
         );
+        // Auto-bind: unique live listing + journey metadata, no --seat-model.
+        let auto_dir = root.join("auto-bind");
+        copy_prepare_tree(&prepared, &auto_dir);
+        std::fs::write(
+            auto_dir.join("purpose-seat.json"),
+            "{\"purpose_seat\":\"specialist-agnews-all\"}\n",
+        )
+        .unwrap();
+        let auto_bound = import_trained_for_seat_with(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &auto_dir,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+            None,
+            None,
+            Some(&[
+                "llama3".to_string(),
+                "specialist-agnews-all".to_string(),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(auto_bound.local_tag, tag);
+        assert_eq!(
+            auto_bound.proposed_binding["params"]["model"].as_str(),
+            Some(live)
+        );
+        // Ambiguous live prefix refuses; no silent wrong bind.
+        let amb_dir = root.join("ambiguous");
+        copy_prepare_tree(&prepared, &amb_dir);
+        let _ = std::fs::remove_file(amb_dir.join("binding-proposal.json"));
+        let _ = std::fs::remove_file(amb_dir.join("binding-proposal.md"));
+        let amb = import_trained_for_seat_with(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &amb_dir,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+            None,
+            Some("specialist-agnews"),
+            Some(&[
+                "specialist-agnews-all".to_string(),
+                "specialist-agnews-3000".to_string(),
+            ]),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(amb.contains("refuse:seat-model: ambiguous live seats"), "{amb}");
+        assert!(amb.contains("--seat-model"), "{amb}");
+        assert!(!amb_dir.join("binding-proposal.json").is_file());
         assert_eq!(binding_job(&staged, "policy_precheck"), "policy-precheck");
         assert_eq!(binding_job(&staged, "ag_news"), "policy-precheck");
         assert!(staged
