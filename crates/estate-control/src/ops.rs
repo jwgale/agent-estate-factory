@@ -598,14 +598,34 @@ pub(crate) fn cmd_convey_call(
         )?;
     }
     refuse_convey_coverage(estate_path, state_dir, id, agent, capability)?;
+    if agent.is_none() && kind.is_some() {
+        bail!("refuse:agent-unbound: --kind requires --agent");
+    }
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After intention, hop-coverage, missing-estate, and `--kind` without
+    // `--agent`, and after the estate loads, before `call_hop` /
+    // `call_hop_for_agent` and before the call JSON. Same stack as convey
+    // hop, convey list, and convey sync. Hop cites do not change this
+    // command's exit code. The stack reads placement-actual for mesh
+    // interpretation and Authority. A placement-actual SKU omits Authority.
+    // `call_hop` and `call_hop_for_agent` then load the interpreted mesh,
+    // which slim-parses placement-actual before `restamp_hop_from_decl`, so
+    // that SKU still refuses before an allow and before any restamp. Those
+    // pre-stack refuses already returned and do not print this stack. An
+    // estate cloud-agent placement is that coverage deny. A hop id that is
+    // not an estate placement stays the lease stub. A missing lease is
+    // `refuse:no-lease` after this stack and does not invent a mesh. A
+    // present hop decl with no lease restamps once after this stack. A
+    // populated lease with no agent, or an agent the lease does not name,
+    // is `refuse:agent-unbound` from `call_hop` after this stack and does
+    // not print the call JSON. This command does not add a second mesh
+    // write. Audits and history do not
+    // take that second placement refuse.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let call = if let Some(agent) = agent {
-        let estate = estate_schema::load_estate(estate_path)
-            .with_context(|| format!("load {}", estate_path.display()))?;
         conveyor_proxy::call_hop_for_agent(state_dir, id, capability, agent, parsed_kind, &estate)?
     } else {
-        if kind.is_some() {
-            bail!("refuse:agent-unbound: --kind requires --agent");
-        }
         call_hop(state_dir, id, capability)?
     };
     println!("{}", serde_json::to_string_pretty(&call)?);
@@ -704,8 +724,8 @@ pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Resu
     // Authority. There is no later reader: this file check does not call
     // `load_interpreted_mesh` again, so that SKU succeeds and writes
     // nothing. Audits and history still print a body after the same omit.
-    // Convey list, convey leases, convey expire, convey sync, and convey hop
-    // still refuse that SKU after the stack.
+    // Convey list, convey leases, convey expire, convey sync, convey hop,
+    // and convey call still refuse that SKU after the stack.
     print!("{}", honesty_stack(&estate, state_dir)?);
     Ok(())
 }
@@ -980,6 +1000,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate convey hop` (printed before `declare_hop_covering` writes the
 /// mesh and before the lease JSON; intention, hop-coverage, and
 /// agent-unbound refuses stay before this stack),
+/// `estate convey call` (printed before `call_hop` / `call_hop_for_agent`
+/// and before the call JSON; intention, hop-coverage, missing-estate, and
+/// `--kind` without `--agent` stay before this stack),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list),
 /// `estate expire` (printed before the expired placement lease list and
@@ -1023,6 +1046,20 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// and write nothing. The mismatch inside `refuse_stamped_capability` is
 /// the same gate coverage already applied, so this command does not reach
 /// a second mismatch after the stack.
+/// `estate convey call` then still refuses that SKU before an allow and
+/// before any restamp, because `call_hop` and `call_hop_for_agent` load
+/// the interpreted mesh (`load_interpreted_mesh` slim-parses
+/// placement-actual) before `restamp_hop_from_decl`. Intention deny,
+/// hop-coverage deny, deny-default, and capability mismatch, a missing
+/// estate, and `refuse:agent-unbound` for `--kind` without `--agent`,
+/// already returned and do not print this stack. An estate cloud-agent
+/// placement is that coverage deny. A hop id that is not an estate
+/// placement stays the lease stub. A missing lease is `refuse:no-lease`
+/// after this stack and does not invent a mesh. A present hop decl with
+/// no lease restamps once after this stack. A populated lease with no
+/// agent, or an agent the lease does not name, is `refuse:agent-unbound`
+/// after this stack and does not print the call JSON. This command does
+/// not add a second mesh write.
 /// `estate audits` then still prints the apply-audit list. `estate history`
 /// then still prints the lifecycle history list. `estate expire` then still
 /// prints the expired placement list. `list_expired_leases` and
