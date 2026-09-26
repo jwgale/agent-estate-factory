@@ -1007,6 +1007,7 @@ pub(crate) enum ClassifyCommand {
     /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek and GLM-4 Chat presets, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
     /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
+    /// After compare, a successful run prints `estate enrich import-trained` for the specialist GGUF (`trained_shape` gguf, `auto_apply=false`), then Standing next (estate): `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile`. It does not execute them. `--print` prints those lines as planned steps and does not write a proposal. `--import-trained` records the proposal only on `--run` when that GGUF is a regular file and `--estate`, `--prepared`, and `--enrich-tag` are set. A missing specialist GGUF refuses or skips the handoff and does not invent a proposal. The factory does not claim it trained.
     /// `--dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/tev1` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
     /// `--modest` is only valid with `--dual`. It replaces the `--train-size all` default with `500` (`parse_split_size` count) and writes LLaMA-Factory `max_steps` 50 on both students when `--max-steps` is omitted. An explicit `--train-size` above 500 is refused. This is not a factory live PASS.
     Journey {
@@ -1131,6 +1132,26 @@ pub(crate) enum ClassifyCommand {
         /// `dual-compare.json` records `"modest": true` plus `train_size` and `max_steps`. `--print` does not train. Not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
         #[arg(long, default_value_t = false)]
         modest: bool,
+        /// Estate file named on the import-trained handoff. Omit to print `<estate.yaml>`.
+        /// `--import-trained` reads this file and does not rewrite it.
+        #[arg(long)]
+        estate: Option<PathBuf>,
+        /// Enrich prepare directory (`prepare.json`, job train) for the import-trained handoff.
+        /// Omit to print `<prepared>`.
+        #[arg(long)]
+        prepared: Option<PathBuf>,
+        /// Tag for import-trained. Must be `cell-enrich-{pack_id}` when `--import-trained` records.
+        /// Omit to print `cell-enrich-<pack-id>`.
+        #[arg(long)]
+        enrich_tag: Option<String>,
+        /// After a successful `--run`, record the specialist GGUF with `estate enrich import-trained`.
+        /// `trained_shape` is `gguf`. The proposal stays `auto_apply=false`. Does not apply the estate and does not promote.
+        /// `--print` prints the same line and Standing next and does not write a proposal.
+        /// Needs `--estate`, `--prepared`, and `--enrich-tag` when recording.
+        /// A missing specialist GGUF refuses and does not invent a proposal.
+        /// `--dual` prints each student's handoff and does not record a proposal.
+        #[arg(long, default_value_t = false)]
+        import_trained: bool,
     },
     /// Grow the rust_idiom FixedClasses curriculum with an OpenAI-compatible coding teacher.
     /// `--print` is the default. It writes `expand-plan.json` and does not call the network.

@@ -1,5 +1,7 @@
 //! tev1 reproduce journey: prepare, LoRA recipe, train, merge, GGUF, quant, Ollama seat, scored eval.
 //! `--print` is the default. `--run` executes. A comparison file is local output only.
+//! After compare, the command prints the `import-trained` line for the specialist GGUF, then Standing next (estate).
+//! `--import-trained` records that proposal (`auto_apply=false`) only when the GGUF is a regular file.
 //!
 //! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
 //! `--base-tag` is an opt-in library tag and skips that base build.
@@ -2183,6 +2185,14 @@ pub struct JourneyRequest<'a> {
     pub few_shot: u32,
     /// Tag-suffixed rust_idiom cache from `classify expand`. Prepare reads that cache and does not import again.
     pub expand_tag: Option<&'a str>,
+    /// Estate file named on the import-trained line. Unset prints `<estate.yaml>`.
+    pub estate: Option<&'a Path>,
+    /// Enrich prepare directory. Unset prints `<prepared>`.
+    pub prepared: Option<&'a Path>,
+    /// `cell-enrich-{pack_id}` when `--import-trained` records. Unset prints `cell-enrich-<pack-id>`.
+    pub enrich_tag: Option<&'a str>,
+    /// Record the specialist GGUF after a successful `--run`. The proposal stays `auto_apply=false`.
+    pub import_trained: bool,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -2264,6 +2274,11 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         if alias != Some("rust_idiom") {
             bail!("refuse:classify-journey: --expand-tag is the rust_idiom curriculum cache");
         }
+    }
+    if req.run && req.import_trained && !import_trained_args_ready(req) {
+        bail!(
+            "refuse:classify-journey: --import-trained needs --estate, --prepared, and --enrich-tag. no proposal written."
+        );
     }
     let mut paths = JourneyPaths::new(req.out);
     paths.base_cache = req.base_cache.to_path_buf();
@@ -2352,6 +2367,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         Some(true) => println!("classify-journey: threshold met"),
         None => {}
     }
+    seat_handoff(req, &paths, HandoffMode::AfterRun)?;
     Ok(())
 }
 
@@ -2468,6 +2484,227 @@ fn print_plan(
     println!("compare writes {}", paths.comparison.display());
     println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
+    seat_handoff(req, paths, HandoffMode::Plan)?;
+    Ok(())
+}
+
+enum HandoffMode {
+    Plan,
+    AfterRun,
+}
+
+enum SpecialistGguf {
+    Ready,
+    Missing,
+    Symlink,
+}
+
+struct HandoffDisplay {
+    estate: String,
+    prepared: String,
+    tag: String,
+    adapter_path: PathBuf,
+    line: String,
+}
+
+fn import_trained_args_ready(req: &JourneyRequest<'_>) -> bool {
+    req.estate.is_some_and(|path| !path.as_os_str().is_empty())
+        && req
+            .prepared
+            .is_some_and(|path| !path.as_os_str().is_empty())
+        && req
+            .enrich_tag
+            .map(str::trim)
+            .is_some_and(|tag| !tag.is_empty())
+}
+
+fn specialist_gguf_status(path: &Path) -> SpecialistGguf {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => SpecialistGguf::Symlink,
+        Ok(meta) if meta.is_file() => SpecialistGguf::Ready,
+        _ => SpecialistGguf::Missing,
+    }
+}
+
+fn shell_quote(text: &str) -> String {
+    if text.chars().any(shell_quote_char) {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    } else {
+        text.to_string()
+    }
+}
+
+fn shell_quote_char(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(
+            c,
+            '"' | '\''
+                | '\\'
+                | '$'
+                | '`'
+                | ';'
+                | '|'
+                | '&'
+                | '<'
+                | '>'
+                | '('
+                | ')'
+                | '!'
+                | '*'
+                | '?'
+        )
+}
+
+fn display_token(text: &str, placeholder: bool) -> String {
+    if placeholder {
+        text.to_string()
+    } else {
+        shell_quote(text)
+    }
+}
+
+fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDisplay {
+    let adapter_path = paths.seated_gguf("specialist", req.quant);
+    let (estate_raw, estate_placeholder) = match req.estate {
+        Some(path) if !path.as_os_str().is_empty() => (path.display().to_string(), false),
+        _ => ("<estate.yaml>".to_string(), true),
+    };
+    let (prepared_raw, prepared_placeholder) = match req.prepared {
+        Some(path) if !path.as_os_str().is_empty() => (path.display().to_string(), false),
+        _ => ("<prepared>".to_string(), true),
+    };
+    let (tag_raw, tag_placeholder) =
+        match req.enrich_tag.map(str::trim).filter(|tag| !tag.is_empty()) {
+            Some(tag) => (tag.to_string(), false),
+            None => ("cell-enrich-<pack-id>".to_string(), true),
+        };
+    let estate = display_token(&estate_raw, estate_placeholder);
+    let prepared = display_token(&prepared_raw, prepared_placeholder);
+    let tag = display_token(&tag_raw, tag_placeholder);
+    let adapter = shell_quote(&adapter_path.display().to_string());
+    let line = format!(
+        "estate enrich import-trained --estate {estate} --prepared {prepared} --tag {tag} --adapter {adapter}"
+    );
+    HandoffDisplay {
+        estate,
+        prepared,
+        tag,
+        adapter_path,
+        line,
+    }
+}
+
+fn print_standing_next(display: &HandoffDisplay) {
+    println!(
+        "Standing next (estate) — after import-trained (trained_shape gguf, auto_apply=false):"
+    );
+    println!("The proposal stays auto_apply=false.");
+    println!(
+        "The factory does not apply the estate without an explicit operator --require-plan path."
+    );
+    println!("No promote. No auto-promote.");
+    println!(
+        "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan."
+    );
+    println!("Existing entrypoints (print only; this command does not execute them):");
+    println!(
+        "estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir .cell",
+        display.estate, display.prepared, display.tag
+    );
+    println!(
+        "estate plan --estate {} --plans-dir plans --state-dir .cell",
+        display.estate
+    );
+    println!(
+        "estate apply --estate {} --state-dir .cell --require-plan --curator jason",
+        display.estate
+    );
+    println!(
+        "estate reconcile --estate {} --state-dir .cell",
+        display.estate
+    );
+    println!("This command does not execute them.");
+    println!("This print is not a live PASS. READY_FOR_LIVE_TEST: no.");
+    println!("The factory does not claim it trained.");
+    println!("The factory does not apply the estate.");
+}
+
+fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMode) -> Result<()> {
+    let display = handoff_display(req, paths);
+    match mode {
+        HandoffMode::Plan => {
+            println!("import-trained handoff (planned):");
+            println!("{}", display.line);
+            println!("trained_shape gguf. auto_apply=false.");
+            match specialist_gguf_status(&display.adapter_path) {
+                SpecialistGguf::Ready => {
+                    println!("This print does not write a proposal.");
+                }
+                SpecialistGguf::Missing => {
+                    println!(
+                        "specialist GGUF is not on disk. This print does not invent that file and does not write a proposal."
+                    );
+                }
+                SpecialistGguf::Symlink => {
+                    println!(
+                        "specialist GGUF is a symlink. import-trained does not follow it. This print does not write a proposal."
+                    );
+                }
+            }
+            if req.import_trained {
+                println!(
+                    "--import-trained records only after --run when the specialist GGUF is a regular file. This print does not write a proposal."
+                );
+            }
+            print_standing_next(&display);
+            Ok(())
+        }
+        HandoffMode::AfterRun => finish_after_run(req, &display),
+    }
+}
+
+fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Result<()> {
+    let skip = match specialist_gguf_status(&display.adapter_path) {
+        SpecialistGguf::Ready => None,
+        SpecialistGguf::Missing => Some(format!(
+            "specialist GGUF {} is missing. no proposal written.",
+            display.adapter_path.display()
+        )),
+        SpecialistGguf::Symlink => Some(format!(
+            "specialist GGUF {} is a symlink. import-trained does not follow it. no proposal written.",
+            display.adapter_path.display()
+        )),
+    };
+    if let Some(detail) = skip {
+        if req.import_trained {
+            bail!("refuse:classify-journey: {detail}");
+        }
+        println!("import-trained handoff skipped: {detail}");
+        return Ok(());
+    }
+    println!("import-trained handoff:");
+    println!("{}", display.line);
+    println!("trained_shape gguf. auto_apply=false.");
+    if req.import_trained {
+        let estate = req.estate.filter(|path| !path.as_os_str().is_empty());
+        let prepared = req.prepared.filter(|path| !path.as_os_str().is_empty());
+        let tag = req.enrich_tag.map(str::trim).filter(|tag| !tag.is_empty());
+        let (Some(estate), Some(prepared), Some(tag)) = (estate, prepared, tag) else {
+            bail!(
+                "refuse:classify-journey: --import-trained needs --estate, --prepared, and --enrich-tag. no proposal written."
+            );
+        };
+        crate::enrich::cmd_enrich_import_trained(
+            estate,
+            prepared,
+            tag,
+            &display.adapter_path,
+            "jason",
+        )?;
+    } else {
+        println!("This command prints the import-trained line and does not write a proposal.");
+    }
+    print_standing_next(display);
     Ok(())
 }
 
@@ -3785,6 +4022,10 @@ pub struct DualJourneyRequest<'a> {
     pub expand_tag: Option<&'a str>,
     pub modest: bool,
     pub modest_note: &'a str,
+    pub estate: Option<&'a Path>,
+    pub prepared: Option<&'a Path>,
+    pub enrich_tag: Option<&'a str>,
+    pub import_trained: bool,
 }
 
 /// Scored base-vs-specialist counts for one student. Absent on `--print`.
@@ -3962,6 +4203,10 @@ fn dual_journey_request<'a>(
         base_cache: req.base_cache,
         few_shot: req.few_shot,
         expand_tag: req.expand_tag,
+        estate: req.estate,
+        prepared: req.prepared,
+        enrich_tag: req.enrich_tag,
+        import_trained: req.import_trained,
     }
 }
 
@@ -4350,6 +4595,11 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             compare_path.display()
         );
         return Ok(());
+    }
+    if req.import_trained {
+        bail!(
+            "refuse:classify-journey: --dual prints each student's import-trained handoff and Standing next. It does not record a proposal. Omit --import-trained."
+        );
     }
     println!("classify journey dual: run");
     println!(
@@ -6152,11 +6402,97 @@ mod tests {
             base_cache: &base_cache,
             few_shot: 0,
             expand_tag: Some("rev1"),
+            estate: None,
+            prepared: None,
+            enrich_tag: None,
+            import_trained: false,
         })
         .unwrap_err()
         .to_string();
         assert!(err.contains("rust_idiom"), "{err}");
         assert!(!err.contains("seed"), "{err}");
+    }
+
+    #[test]
+    fn missing_specialist_gguf_does_not_invent_a_proposal() {
+        let root = std::env::temp_dir().join(format!(
+            "cell-one-classify-missing-gguf-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let out = root.join("out");
+        let prepared = root.join("prepared");
+        fs::create_dir_all(&out).unwrap();
+        fs::create_dir_all(&prepared).unwrap();
+        fs::write(prepared.join("prepare.json"), "{}\n").unwrap();
+        let estate = root.join("estate.yaml");
+        fs::write(&estate, "name: lab\n").unwrap();
+        let input = root.join("in.jsonl");
+        let base_cache = root.join("cache");
+        let req = JourneyRequest {
+            input: &input,
+            out: &out,
+            base: DEFAULT_BASE,
+            base_tag: None,
+            tag: DEFAULT_TAG,
+            endpoint: "http://127.0.0.1:11434",
+            dataset_name: DEFAULT_DATASET,
+            seed: 1,
+            held_out_ratio: 0.2,
+            max_steps: None,
+            quant: DEFAULT_QUANT,
+            llama_cpp_dir: None,
+            force: false,
+            print: false,
+            run: true,
+            min_delta: None,
+            min_accuracy: None,
+            require_significant_lift: false,
+            timeout_secs: 5,
+            together_poll_secs: DEFAULT_TOGETHER_POLL_SECS,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+            together_base_url: DEFAULT_TOGETHER_API,
+            api_key_env: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: "note",
+            preset: JourneyPreset::Tev1,
+            import_dataset: None,
+            train_size: "all",
+            heldout_size: "all",
+            from_local: None,
+            import_fetch: crate::classify_import::ImportFetch::Bulk,
+            python: None,
+            base_cache: &base_cache,
+            few_shot: 0,
+            expand_tag: None,
+            estate: Some(&estate),
+            prepared: Some(&prepared),
+            enrich_tag: Some("cell-enrich-overnight-traces"),
+            import_trained: true,
+        };
+        let paths = JourneyPaths::new(&out);
+        let err = seat_handoff(&req, &paths, HandoffMode::AfterRun)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refuse:classify-journey"), "{err}");
+        assert!(err.contains("is missing"), "{err}");
+        assert!(err.contains("no proposal written"), "{err}");
+        assert!(!prepared.join("binding-proposal.json").is_file());
+        assert!(!out.join("specialist.Q4_K_M.gguf").is_file());
+        assert_eq!(
+            fs::read_to_string(prepared.join("prepare.json")).unwrap(),
+            "{}\n"
+        );
+
+        let mut skip = req;
+        skip.import_trained = false;
+        seat_handoff(&skip, &paths, HandoffMode::AfterRun).unwrap();
+        assert!(!prepared.join("binding-proposal.json").is_file());
+        assert!(!out.join("specialist.Q4_K_M.gguf").is_file());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
