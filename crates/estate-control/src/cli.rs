@@ -470,7 +470,26 @@ pub(crate) enum ConveyCommand {
         state_dir: PathBuf,
     },
     /// Print hop leases. Cloud-mesh must stay unspawned.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, reconcile, and `estate leases` (`describe_agents_section`),
+    /// then the same hop coverage cites (`hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// the hop lease list. Those cites do not fail this command. A match
+    /// stays quiet. A missing mesh is an empty cite list and stays
+    /// not-enforced. A present mesh that does not parse, or a bad host_class
+    /// on that file, refuses before those sections and before the hop lease
+    /// JSON. A placement-actual SKU host_class still continues: Agents and
+    /// hop cites print and Authority rows are omitted. The hop lease reader
+    /// still refuses that SKU before the hop lease JSON. A mesh population
+    /// ahead of placement-actual is `refuse:agent-unplaced` before those
+    /// sections and before the hop lease JSON. A spawned cloud hop still
+    /// refuses before the JSON. Does not spawn. Does not write the mesh, the
+    /// leases, the estate, or the apply audit. Does not claim mediation.
     Leases {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
