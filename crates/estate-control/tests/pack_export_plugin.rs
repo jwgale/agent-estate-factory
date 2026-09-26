@@ -307,7 +307,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(install.contains("refuse:pack-orchestrator"), "{install}");
     assert!(install.contains("READY_FOR_LIVE_TEST: no"), "{install}");
     assert!(install.contains("live_sync: false"), "{install}");
-    assert!(!install.contains("live PASS"), "{install}");
+    assert!(install.contains("Not a live PASS"), "{install}");
+    assert!(!install.contains("READY_FOR_LIVE_TEST: yes"), "{install}");
     assert!(!install.contains("plugin stub"), "{install}");
     assert!(!install.contains("pack plugin stub"), "{install}");
     assert!(!install.contains("XAI_API_KEY"), "{install}");

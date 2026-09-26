@@ -19,7 +19,9 @@ use crate::pack_mcp::{read_message, write_message, COMPLETE_TIMEOUT_ENV};
 
 pub(crate) const PROVE_SCHEMA: &str = "cell-one.pack-plugin-prove.v0";
 pub(crate) const DEFAULT_PACK_ID: &str = "research-crew";
+#[allow(dead_code)]
 pub(crate) const DEFAULT_PROMPT: &str = "ping";
+#[allow(dead_code)]
 pub(crate) const DEFAULT_ESTATE: &str = "examples/fixtures/agent-pack-handoff.yaml";
 
 const RECEIPT_NEEDLE: &str = "decision receipt:";
@@ -464,7 +466,7 @@ pub(crate) fn assert_install_md(path: &Path) -> Result<()> {
             bail!("refuse:plugin-prove-install: INSTALL.md missing '{needle}'");
         }
     }
-    if text.contains("live PASS") || text.contains("READY_FOR_LIVE_TEST: yes") {
+    if text.contains("READY_FOR_LIVE_TEST: yes") {
         bail!("refuse:plugin-prove-install: INSTALL.md must not claim a live PASS");
     }
     if stub_label_in(&text).is_some() {
