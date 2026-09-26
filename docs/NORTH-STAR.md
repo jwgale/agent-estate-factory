@@ -45,13 +45,13 @@ On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and 
 
 3. **Select and validate.** A selector chooses one id or abstains. `{state-dir}/decision-select.json` is an optional hint and is not a grant. A bad hint is `refuse:decision-select` before the check and before the receipt. The host re-validates that choice as `ok`, `stale`, `ineligible`, or `expired`. A fallback id may be recorded. The selector does not grant permission. A fallback is not a grant.
 
-4. **Receipt.** `estate authorize` (#281), `estate convey call` (#279), and `estate complete` append one `cell-one.decision-receipt.v0` line at `{state-dir}/decisions/receipts.jsonl`. Authorize sets `surface=authorize`, `hop_id` to the intention kind, and `capability` to the object. Complete sets `surface=complete`, `hop_id` `model`, and `capability` to the binding complete targeted. Convey-call lines omit `surface` and keep the hop id. `estate convey hop` remains the lease-bound hop stub that names the population. Success prints one `decision receipt:` cite. `estate decisions export` writes JSONL replay cases. `estate decisions report` counts stage, validation, and fallback.
+4. **Receipt.** `estate authorize` (#281), `estate convey call` (#279), and `estate complete` append one `cell-one.decision-receipt.v0` line at `{state-dir}/decisions/receipts.jsonl`. Authorize sets `surface=authorize`, `hop_id` to the intention kind, and `capability` to the object. Complete sets `surface=complete`, `hop_id` `model`, and `capability` to the binding complete targeted. Convey-call lines omit `surface` and keep the hop id. `estate convey hop` remains the lease-bound hop stub that names the population. Success prints one `decision receipt:` cite. `estate decisions export` writes JSONL replay cases. `estate decisions report` counts stage, validation, and fallback, and lists recent rows with agent, capability, and surface for multi-agent journals.
 
 5. **Bounded execute, or fail closed.** Authorize still decides allow or deny. A convey call still needs a granted hop lease and an allow intention. `estate complete` is the thin host → select → receipt operator path that then drives a real complete: it authorizes, delegates to the data-plane driver for the chosen binding (`complete_via_binding`: local Ollama or frontier), and journals `surface=complete`. Control does not invent the text. Omit `--object` when the selector chooses one eligible id. Name `--object` to complete a specific binding; the selector still does not grant. Equal-class abstain without `--object` is `refuse:decision-abstain`. Missing `CELL_LOCAL_ENDPOINT` or `XAI_API_KEY` fail-closes. `estate specialist` stays the unbound delegate and does not journal. Coverage deny, intention deny, `model.local.down`, a placement-actual SKU, a mesh that does not parse, and `refuse:agent-unplaced` stop before a grant. A journal write that fails after commit still prints the allow, deny, or completion JSON. The hop, authorize, or complete exit stands. Authority stays a file check (`would-allow` / `would-deny` / `not-enforced`) and does not claim mediation. Control does not complete. `estate convey` stays a lease-bound hop stub.
 
 ### Honest demo (AG News cohesion)
 
-Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained` → `apply-proposal` → `plan` → `apply --require-plan`. Align throwaway `params.model` to the live Ollama seat `specialist-agnews-all`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class.
+Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained --seat-model specialist-agnews-all` (enrich tag stays `cell-enrich-{pack}`; `params.model` records the live Ollama seat) → `apply-proposal` → `plan` → `apply --require-plan`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class. Opt-in `CELL_COMPLETE_LABEL=1` or binding `params.category_codec=ag_news` adds `completion_label` (for example `Sci/Tech`) beside raw letter `completion` on `estate complete`.
 
 Receipts in that throwaway journal:
 
@@ -60,10 +60,24 @@ Receipts in that throwaway journal:
 
 `estate decisions report` after both: receipts=2, validate=2, validation ok=2, fallback none=2. Convey is lease and select. It is not a live model ping. `estate complete` is the one operator path that can add a `surface=complete` line after that select. This page does not invent that live generate. Report track: `cohesion-agnews-20260926.md`. `READY_FOR_LIVE_TEST` stays no. Not a live PASS.
 
+### Experience target (Grok Bot–class utility)
+
+Cell One aims at Grok Bot–class multi-agent utility on the same middle layer: equal-class seats, intentions, authorize/complete receipts, and purpose SLMs — not a chat-UI clone. Four pillars map onto what exists today and what stays follow-up:
+
+| Pillar | Today (this tip / middle layer) | Next tips (deferred) |
+|--------|----------------------------------|----------------------|
+| **Agent groups / segmentation** | Named agents (`research`, `horizon`) with model allow-lists and Model intentions; specialty bindings join the chain as equal-class local seats | Named packs / group membership (research vs horizon vs specialty workers) like Grok Bot group chats |
+| **Master orchestrator + subagent pack** | Host → select → receipt; `estate complete` is one binding per turn; receipts name agent + capability + surface; `decisions report` lists recent rows | One host agent coordinating specialists with clear handoffs and multi-seat one-turn select |
+| **Spin off packages + routines** | Enrich packs, classify journeys, purpose seats (`specialist-{slug}-{size}`), least-privilege intentions | Reusable skills/routines as first-class package objects with baked-in security |
+| **Work with or train SLMs** | Train/enrich/seat path; `--seat-model` aligns enrich tag ↔ live Ollama name; opt-in category `completion_label` for letter-trained seats | Broader purpose codecs, auto seat-select across mixed local+frontier in one agent turn |
+
+Agents share equal-class seats: frontier and one or more purpose-built local SLMs stay the same class. The control plane does not invent completions. Security stays intentions + authorize/complete receipts + fail-closed endpoints.
+
 ### Still not claimed
 
 - A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
-- Keel UI, or an ACP workspace clone
+- Keel UI, ACP workspace clone, or a full group-chat runtime
+- Master orchestrator / multi-agent one-turn select across mixed seats
 - Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
 - A dual rust_idiom launch
 - `estate convey` as more than a lease-bound hop stub

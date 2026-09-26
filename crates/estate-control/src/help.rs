@@ -1197,8 +1197,11 @@ through a GGUF, not an Ollama adapter line for the PEFT directory.
 A missing UNSLOTH.md or train base is refuse:train-base.
 Ollama purpose seats prefer human tags such as specialist-agnews-all
 or classify-base. The enrich create name stays cell-enrich-{pack} (API
-lock). Binding ids (ag_news) are a third layer. Align params.model to
-the live Ollama seat on throwaway estates when those differ.
+lock). Binding ids (ag_news) are a third layer. On import-trained, pass
+--seat-model <live-ollama-name> so params.model records the live seat
+without a hand edit after apply. Omit --seat-model to keep params.model
+equal to the enrich tag. estate complete prefers binding params.model
+when calling the local runtime.
 
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays

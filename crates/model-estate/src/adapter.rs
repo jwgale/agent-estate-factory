@@ -173,6 +173,7 @@ pub fn ping_live_endpoint(endpoint: &str) -> Result<LiveFlavor, String> {
 pub fn specialist_via_adapter(
     endpoint: &str,
     req: &SpecialistRequest,
+    preferred_model: Option<&str>,
 ) -> Result<SpecialistResult, ModelError> {
     let policy = builtin_specialist(&SpecialistRequest {
         job: SpecialistJob::PolicyPrecheck,
@@ -184,6 +185,7 @@ pub fn specialist_via_adapter(
         return Ok(SpecialistResult {
             job: req.job.as_str().into(),
             completion: String::new(),
+            completion_label: String::new(),
             ..policy
         });
     }
@@ -196,20 +198,22 @@ pub fn specialist_via_adapter(
     }
     match req.job {
         SpecialistJob::Complete => {
-            let completion = compat_chat(endpoint, &req.text)?;
+            let completion = compat_chat(endpoint, &req.text, preferred_model)?;
             Ok(SpecialistResult {
                 allow: true,
                 redacted_text: policy.redacted_text,
                 reason: "compat completion".into(),
                 job: req.job.as_str().into(),
                 completion,
+                completion_label: String::new(),
             })
         }
         SpecialistJob::PolicyPrecheck | SpecialistJob::Redact => {
-            prove_compat_runtime(endpoint, &req.text)?;
+            prove_compat_runtime(endpoint, &req.text, preferred_model)?;
             Ok(SpecialistResult {
                 job: req.job.as_str().into(),
                 completion: String::new(),
+                completion_label: String::new(),
                 ..policy
             })
         }
@@ -231,12 +235,20 @@ fn finish_v0(
     Ok(result)
 }
 
-fn prove_compat_runtime(endpoint: &str, text: &str) -> Result<(), ModelError> {
-    compat_chat(endpoint, text).map(|_| ())
+fn prove_compat_runtime(
+    endpoint: &str,
+    text: &str,
+    preferred_model: Option<&str>,
+) -> Result<(), ModelError> {
+    compat_chat(endpoint, text, preferred_model).map(|_| ())
 }
 
-fn compat_chat(endpoint: &str, text: &str) -> Result<String, ModelError> {
-    let model = resolve_model(endpoint)?;
+fn compat_chat(
+    endpoint: &str,
+    text: &str,
+    preferred_model: Option<&str>,
+) -> Result<String, ModelError> {
+    let model = resolve_model(endpoint, preferred_model)?;
     // Ollama `/v1` rejects boolean `think`. When thinking is on, prefer
     // native `/api/chat` so `think: true` is actually sent.
     if complete_think() {
@@ -288,7 +300,11 @@ fn accepted_completion(raw: &str) -> Result<String, ModelError> {
     Ok(v.to_string())
 }
 
-fn resolve_model(endpoint: &str) -> Result<String, ModelError> {
+fn resolve_model(endpoint: &str, preferred_model: Option<&str>) -> Result<String, ModelError> {
+    // Binding params.model (estate complete) wins over listing, then CELL_LOCAL_MODEL.
+    if let Some(v) = preferred_model.map(str::trim).filter(|s| !s.is_empty()) {
+        return accepted_model_id(v);
+    }
     if let Ok(v) = std::env::var("CELL_LOCAL_MODEL") {
         let v = v.trim();
         if !v.is_empty() {
@@ -726,7 +742,7 @@ mod tests {
         })
         .unwrap();
         let marker = "roundtrip-marker-not-a-dummy-ping";
-        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker)).unwrap();
+        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker), None).unwrap();
         assert!(allow.allow, "{}", allow.reason);
         let (path, body) = srv.last_post().expect("compat chat POST");
         assert_eq!(path, "/v1/chat/completions");
@@ -735,7 +751,7 @@ mod tests {
             !body.contains("\"content\":\"ping\""),
             "must not send dummy ping: {body}"
         );
-        let deny = specialist_via_adapter(&srv.endpoint(), &req("cyera")).unwrap();
+        let deny = specialist_via_adapter(&srv.endpoint(), &req("cyera"), None).unwrap();
         assert!(!deny.allow, "{}", deny.reason);
         assert!(deny.reason.contains("sacred"), "{}", deny.reason);
     }
@@ -747,7 +763,7 @@ mod tests {
         })
         .unwrap();
         let marker = "ollama-roundtrip-marker";
-        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker)).unwrap();
+        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker), None).unwrap();
         assert!(allow.allow, "{}", allow.reason);
         let (path, body) = srv.last_post().expect("ollama chat POST");
         assert_eq!(path, "/api/chat");
@@ -757,14 +773,14 @@ mod tests {
     #[test]
     fn specialist_without_models_fail_closed() {
         let srv = CompatServer::spawn(CompatScript::OpenAi { models: vec![] }).unwrap();
-        let err = specialist_via_adapter(&srv.endpoint(), &req("hello")).unwrap_err();
+        let err = specialist_via_adapter(&srv.endpoint(), &req("hello"), None).unwrap_err();
         assert!(err.is_local_down(), "{err}");
     }
 
     #[test]
     fn specialist_v0_unparseable_refuses_no_compat_fallback() {
         let srv = CompatServer::spawn(CompatScript::V0Unparseable).unwrap();
-        let err = specialist_via_adapter(&srv.endpoint(), &req("hello")).unwrap_err();
+        let err = specialist_via_adapter(&srv.endpoint(), &req("hello"), None).unwrap_err();
         assert!(err.is_local_down(), "{err}");
         assert!(
             err.to_string().contains("v0 specialist"),
@@ -779,7 +795,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let err = specialist_via_adapter(&srv.endpoint(), &req("hello")).unwrap_err();
+        let err = specialist_via_adapter(&srv.endpoint(), &req("hello"), None).unwrap_err();
         assert!(err.is_local_down(), "{err}");
         let msg = err.to_string();
         assert!(msg.contains("message.content"), "{err}");
@@ -796,6 +812,7 @@ mod tests {
             id: "local_slm".into(),
             endpoint: srv.endpoint(),
             runtime: LocalRuntime::Ollama,
+            model: None,
         };
         let allow = local.specialist(&req("hello from the factory")).unwrap();
         assert!(allow.allow, "{}", allow.reason);
@@ -821,6 +838,7 @@ mod tests {
             id: "local_slm".into(),
             endpoint: srv.endpoint(),
             runtime: LocalRuntime::LlamaCpp,
+            model: None,
         };
         let marker = "llamacpp-openai-roundtrip";
         let result = local.specialist(&req(marker)).unwrap();
@@ -846,7 +864,7 @@ mod tests {
             models: vec!["rtx-5090-chat".into()],
         })
         .unwrap();
-        let err = specialist_via_adapter(&srv.endpoint(), &req("hello")).unwrap_err();
+        let err = specialist_via_adapter(&srv.endpoint(), &req("hello"), None).unwrap_err();
         assert!(err.is_local_down(), "{err}");
         assert!(err.to_string().contains("no model id"), "{err}");
     }
@@ -858,7 +876,7 @@ mod tests {
         })
         .unwrap();
         let marker = "skip-sku-use-llama3";
-        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker)).unwrap();
+        let allow = specialist_via_adapter(&srv.endpoint(), &req(marker), None).unwrap();
         assert!(allow.allow, "{}", allow.reason);
         let (_, body) = srv.last_post().expect("chat");
         assert!(body.contains("llama3"), "{body}");
@@ -883,7 +901,7 @@ mod tests {
         })
         .unwrap();
         let marker = "complete-openai-marker";
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker)).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker), None).unwrap();
         assert!(result.allow, "{}", result.reason);
         assert_eq!(result.job, "complete");
         assert_eq!(result.completion, "ok");
@@ -899,7 +917,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping"), None).unwrap();
         assert!(result.allow, "{}", result.reason);
         assert_eq!(result.completion, "ok");
         let (path, _) = srv.last_post().expect("ollama chat POST");
@@ -912,7 +930,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let deny = specialist_via_adapter(&srv.endpoint(), &complete_req("cyera")).unwrap();
+        let deny = specialist_via_adapter(&srv.endpoint(), &complete_req("cyera"), None).unwrap();
         assert!(!deny.allow, "{}", deny.reason);
         assert!(deny.completion.is_empty(), "{deny:?}");
         assert!(srv.last_post().is_none(), "must not send sacred text");
@@ -926,7 +944,7 @@ mod tests {
         })
         .unwrap();
         let marker = "empty-openai-then-ollama";
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker)).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req(marker), None).unwrap();
         assert!(result.allow, "{}", result.reason);
         assert_eq!(result.completion, "ok");
         let (path, body) = srv.last_post().expect("ollama chat POST");
@@ -942,7 +960,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let err = specialist_via_adapter(&srv.endpoint(), &complete_req("hello")).unwrap_err();
+        let err = specialist_via_adapter(&srv.endpoint(), &complete_req("hello"), None).unwrap_err();
         assert!(err.is_local_down(), "{err}");
         let msg = err.to_string();
         assert!(msg.contains("openai="), "{err}");
@@ -963,7 +981,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("parts")).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("parts"), None).unwrap();
         assert_eq!(result.completion, "ok");
         let (path, _) = srv.last_post().expect("openai chat POST");
         assert_eq!(path, "/v1/chat/completions");
@@ -979,6 +997,7 @@ mod tests {
             id: "local_slm".into(),
             endpoint: srv.endpoint(),
             runtime: LocalRuntime::LlamaCpp,
+            model: None,
         };
         let result = local.specialist(&complete_req("llamacpp-complete")).unwrap();
         assert_eq!(result.completion, "ok");
@@ -1083,7 +1102,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping"), None).unwrap();
         assert_eq!(result.completion, "ok");
         let (path, body) = srv.last_post().expect("ollama chat POST");
         // Think-off prefers OpenAI `/v1` first; empty OpenAI falls through to native.
@@ -1103,7 +1122,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let _ = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        let _ = specialist_via_adapter(&srv.endpoint(), &complete_req("ping"), None).unwrap();
         let (_, body) = srv.last_post().expect("ollama chat POST");
         let v: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["think"], true);
@@ -1122,7 +1141,7 @@ mod tests {
             models: vec!["llama3".into()],
         })
         .unwrap();
-        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping"), None).unwrap();
         assert_eq!(result.completion, "ok");
         let (path, body) = srv.last_post().expect("ollama chat POST");
         assert_eq!(path, "/api/chat");

@@ -2,6 +2,13 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — category labels, seat-model align, agent-mix UX
+
+- **A. Category label surface (opt-in).** `estate complete` can add `completion_label` beside raw `completion` when a short category code maps to a human label. AG News A–D (World / Sports / Business / Sci/Tech) is the first codec; `devign` and `rust_idiom` register beside it. Enable with binding `params.category_codec` or `CELL_COMPLETE_LABEL=1` when the binding id matches a codec. Default off so letter-trained seats stay raw.
+- **B. Enrich tag ↔ live seat.** `estate enrich import-trained --seat-model <live-ollama-name>` records that name as `params.model` while `--tag` stays `cell-enrich-{pack}` (API lock). Removes the throwaway hand-edit of `params.model` after apply for purpose seats such as `specialist-agnews-all`. Local complete prefers binding `params.model` when calling the seated runtime (then `CELL_LOCAL_MODEL`, then listing).
+- **C. Agent-mix UX (light).** `estate decisions report` lists recent receipt rows with agent, capability, and surface. `docs/NORTH-STAR.md` adds an Experience target table mapping Grok Bot–class pillars (agent groups, orchestrator+subagents, packages/routines, purpose SLMs) onto today's host→select→receipt middle layer vs deferred tips. Equal-class seats stay the rule.
+- Does not invent a live PASS. Does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no. Full group-chat runtime / multi-agent one-turn orchestrator stay follow-ups.
+
 ## This slice — local complete think defaults on
 
 - Local `estate complete` / compat specialty chat flips `CELL_COMPLETE_THINK` to **default on** (`think: true` on Ollama `/api/chat`; omit `reasoning_effort` on `/v1`). Opt out for short letter checks with `CELL_COMPLETE_THINK=0` (or `false`/`off`/`no`). Default think-on prefers native `/api/chat` because `/v1` rejects boolean `think`. `CELL_COMPLETE_MAX_TOKENS` is unchanged (default omit; seat Modelfile may still bake `num_predict`; set `512` to lift a seat `num_predict 8` for coherent think-on). Classify stays `think: false` on its own path. Frontier keeps `FRONTIER_COMPLETION_TOKENS` (64). This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

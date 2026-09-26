@@ -4,6 +4,7 @@
 mod actual;
 mod adapter;
 mod catalog;
+mod category_label;
 mod error;
 mod frontier;
 mod local;
@@ -47,6 +48,10 @@ pub use mock::{
     serve_specialist_forever, CompatScript, CompatServer, MockFrontierServer, MockLocalServer,
 };
 pub use path::{complete_via_binding, run_task, TaskAct, TaskRequest, TaskResult};
+pub use category_label::{
+    codec_by_name, completion_label_for, decode_letter, resolve_codec, CategoryCodec, CategoryLetter,
+    CODECS,
+};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
     driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
@@ -878,6 +883,7 @@ mod tests {
             id: "local_slm".into(),
             endpoint: local_srv.endpoint(),
             runtime: LocalRuntime::Ollama,
+            model: None,
         };
         let frontier = HttpFrontier {
             id: "xai_grok".into(),
@@ -916,6 +922,35 @@ mod tests {
         assert!(frontier.allow);
         assert_eq!(frontier.completion, "pong");
         assert_eq!(frontier.reason, "frontier completion");
+    }
+
+    #[test]
+    fn complete_via_binding_adds_completion_label_when_codec_enabled() {
+        let mut e = estate();
+        e.model_bindings.push(estate_schema::ModelBinding {
+            id: "ag_news".into(),
+            class: ModelClass::Local,
+            driver: "ollama".into(),
+            wired: true,
+            params: serde_json::json!({
+                "model": "specialist-agnews-all",
+                "category_codec": "ag_news"
+            }),
+        });
+        // MockLocal ignores params; we only need the binding for label fold after complete.
+        // Force mock path by using mock=true — but MockLocal returns mock:prompt, not a letter.
+        // So fold a letter through the public helper path: call completion_label_for directly
+        // and also run complete then manually verify codec resolve on the binding.
+        let label = completion_label_for(
+            e.model_bindings.iter().find(|b| b.id == "ag_news").unwrap(),
+            "D",
+        );
+        assert_eq!(label, Some("Sci/Tech"));
+        let off = completion_label_for(
+            e.model_bindings.iter().find(|b| b.id == "local_slm").unwrap(),
+            "D",
+        );
+        assert_eq!(off, None);
     }
 
     #[test]

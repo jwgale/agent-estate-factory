@@ -218,6 +218,10 @@ pub struct SpecialistResult {
     /// Model text for `complete`. Empty (and omitted in JSON) for policy jobs.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub completion: String,
+    /// Opt-in human label for a short category code in `completion`.
+    /// Empty (and omitted in JSON) when decode is off or the raw text is not a mapped letter.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub completion_label: String,
 }
 
 pub struct UnwiredLocal {
@@ -324,6 +328,8 @@ pub struct HttpLocal {
     pub id: String,
     pub endpoint: String,
     pub runtime: LocalRuntime,
+    /// Prefer this Ollama / compat model id when set (binding `params.model`).
+    pub model: Option<String>,
 }
 
 impl HttpLocal {
@@ -332,6 +338,7 @@ impl HttpLocal {
             id: id.into(),
             endpoint: endpoint.into(),
             runtime: LocalRuntime::HttpRemote,
+            model: None,
         }
     }
 }
@@ -346,7 +353,7 @@ impl LocalDriver for HttpLocal {
     }
 
     fn specialist(&self, req: &SpecialistRequest) -> Result<SpecialistResult, ModelError> {
-        specialist_via_adapter(&self.endpoint, req)
+        specialist_via_adapter(&self.endpoint, req, self.model.as_deref())
     }
 }
 
@@ -366,6 +373,7 @@ pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
             reason: "payload exceeds 16KiB bound".into(),
             job: req.job.as_str().into(),
             completion: String::new(),
+            completion_label: String::new(),
         };
     }
     let lower = req.text.to_ascii_lowercase();
@@ -377,6 +385,7 @@ pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
                 reason: format!("policy-precheck denied sacred token '{token}'"),
                 job: req.job.as_str().into(),
                 completion: String::new(),
+                completion_label: String::new(),
             };
         }
     }
@@ -395,6 +404,7 @@ pub fn builtin_specialist(req: &SpecialistRequest) -> SpecialistResult {
         reason: reason.into(),
         job: req.job.as_str().into(),
         completion,
+        completion_label: String::new(),
     }
 }
 
@@ -482,6 +492,7 @@ pub fn run_http_specialist(
             return Ok(SpecialistResult {
                 job: job.as_str().into(),
                 completion: String::new(),
+                completion_label: String::new(),
                 ..policy
             });
         }
@@ -500,6 +511,7 @@ pub fn run_http_specialist(
             reason: "frontier completion".into(),
             job: job.as_str().into(),
             completion,
+            completion_label: String::new(),
         });
     }
     let endpoint = resolve_specialist_endpoint(endpoint)?;
@@ -521,6 +533,7 @@ pub fn run_http_specialist(
         id: "cli".into(),
         endpoint,
         runtime,
+        model: None,
     }
     .specialist(&SpecialistRequest {
         job,

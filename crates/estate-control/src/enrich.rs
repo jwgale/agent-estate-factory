@@ -251,6 +251,7 @@ pub(crate) fn cmd_enrich_import_trained(
     adapter: &Path,
     curator: &str,
     binding_id: Option<&str>,
+    seat_model: Option<&str>,
 ) -> Result<()> {
     let before = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
@@ -265,6 +266,7 @@ pub(crate) fn cmd_enrich_import_trained(
             curator,
         },
         binding_id,
+        seat_model,
     )?;
     let after = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
@@ -273,11 +275,18 @@ pub(crate) fn cmd_enrich_import_trained(
     }
     let json_path = prepared_dir.join("binding-proposal.json");
     let md_path = prepared_dir.join("binding-proposal.md");
+    let model = proposal
+        .proposed_binding
+        .get("params")
+        .and_then(|p| p.get("model"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(proposal.local_tag.as_str());
     println!(
-        "enrich import-trained: pack={} binding={} tag={} seated_driver={} driver={} shape={}",
+        "enrich import-trained: pack={} binding={} tag={} seat_model={} seated_driver={} driver={} shape={}",
         proposal.pack_id,
         proposal.binding_id,
         proposal.local_tag,
+        model,
         proposal.seated_driver,
         proposal.driver,
         proposal.trained_shape.as_deref().unwrap_or("")
