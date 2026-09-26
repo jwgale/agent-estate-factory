@@ -2,6 +2,7 @@
 //!
 //! Fixture: examples/fixtures/agent-pack-handoff.yaml.
 //! MCP is wired to `estate pack mcp-serve` → `estate complete`.
+//! `mcp.json` `command` is the absolute estate binary resolved at export.
 //! Skill bodies instruct calling tool `complete` with the package prompt
 //! (not stubs). live_sync stays false. Does not invent a live PASS.
 //! Locked examples/estate.yaml stays untouched.
@@ -68,6 +69,10 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     let out = dir.join("plugin");
     let estate = fixture().display().to_string();
     let out_s = out.display().to_string();
+    let expected_bin = std::fs::canonicalize(env!("CARGO_BIN_EXE_estate"))
+        .unwrap()
+        .display()
+        .to_string();
 
     let (ok, stdout, stderr) = run(&[
         "pack",
@@ -93,6 +98,10 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(stdout.contains("standing-classify @hourly"), "{stdout}");
     assert!(stdout.contains("wired_mcp: yes"), "{stdout}");
     assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("estate_bin: {expected_bin}")),
+        "{stdout}"
+    );
     assert!(!stdout.contains("live PASS"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
     assert!(!stderr.contains("live PASS"), "{stderr}");
@@ -111,7 +120,14 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     let servers = mcp["mcpServers"].as_object().expect("mcpServers");
     assert!(servers.contains_key("horizon"), "{servers:?}");
     assert!(servers.contains_key("research"), "{servers:?}");
-    assert_eq!(servers["horizon"]["command"], "estate");
+    assert_eq!(servers["horizon"]["command"], expected_bin);
+    assert_eq!(servers["research"]["command"], expected_bin);
+    assert!(
+        Path::new(servers["horizon"]["command"].as_str().unwrap()).is_absolute(),
+        "{}",
+        servers["horizon"]["command"]
+    );
+    assert_ne!(servers["horizon"]["command"], "estate");
     assert_eq!(servers["horizon"]["type"], "stdio");
     assert_eq!(
         servers["horizon"]["args"],
@@ -200,7 +216,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["group"]["orchestrator"], "horizon");
     assert_eq!(mapping["live_sync"], false);
     assert_eq!(mapping["wired_mcp"], true);
-    assert_eq!(mapping["mcp"]["command"], "estate");
+    assert_eq!(mapping["mcp"]["command"], expected_bin);
+    assert_eq!(mapping["estate_bin"], expected_bin);
     assert_eq!(mapping["mcp"]["tool"], "complete");
     assert_eq!(mapping["packages"][0]["mcp_tool"], "complete");
     assert_eq!(mapping["packages"][0]["skill_stub"], false);
@@ -235,6 +252,9 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(readme.contains("wired_mcp: true"), "{readme}");
     assert!(readme.contains("live_sync: false"), "{readme}");
     assert!(readme.contains("CELL_ESTATE_PATH"), "{readme}");
+    assert!(readme.contains("absolute estate binary"), "{readme}");
+    assert!(readme.contains(&expected_bin), "{readme}");
+    assert!(!readme.contains("must be on PATH"), "{readme}");
     assert!(readme.contains("refuse:pack-orchestrator"), "{readme}");
     assert!(!readme.contains("command: true"), "{readme}");
     assert!(readme.contains("standing-classify"), "{readme}");
