@@ -151,7 +151,8 @@ estate decisions report --state-dir target/pack-routines-cell
 `complete --pack`, and journals `package_id` (plus pack handoff fields).
 `routine run` resolves the declared package and also stamps `routine_id`.
 Authorize still uses existing model intentions. Plugin scaffold is
-`estate pack export-plugin` (MCP wired to `estate complete`; `live_sync`
+`estate pack export-plugin` (MCP wired to `estate complete`; skill
+bodies call tool `complete` with the package prompt; `live_sync`
 stays false). No live Cursor / Grok Bot routine sync.
 No multi-step DAG.
 
@@ -228,15 +229,18 @@ estate pack export-plugin --id research-crew \
 
 Writes an Agent Plugin stub Cursor can load: `plugin.json` (pack → group),
 `mcp.json` (one stdio server per member: `estate pack mcp-serve`),
-`skills/<package>/SKILL.md` (package → skill body stub), and commented
+`skills/<package>/SKILL.md` (package → skill body that calls the wired
+member MCP tool `complete` with the package prompt), and commented
 cron/trigger notes for `standing-classify` (`@hourly` → `0 * * * *`).
 Each member tool runs `estate complete --agent <member> --pack research-crew`
 against the source estate. Env carries pack / member / role / estate path.
 Non-orchestrator members refuse `refuse:pack-orchestrator` the same as
-pack complete. `wired_mcp: true`. `live_sync: false`. `estate` must be
-on PATH. This is a bridge, not a live Cursor or Grok Bot install. Routines
-stay comments. Not a cloud cron daemon. `estate routine watch` is the
-local operator loop (see 3e).
+pack complete. Skill bodies are not stubs: mock uses
+`{ "prompt": "ping", "mock": true, "object": "ag_news" }`; live omits
+`mock` when endpoints/keys are set. `wired_mcp: true`. `live_sync: false`.
+`estate` must be on PATH. This is a bridge, not a live Cursor or Grok Bot
+install. Routines stay comments. Not a cloud cron daemon.
+`estate routine watch` is the local operator loop (see 3e).
 
 `estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
 is not an interactive complete. Inspect `target/pack-plugin-stub/mcp.json`,
