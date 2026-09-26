@@ -120,7 +120,7 @@
         "note": { "type": "string" },
         "schedule": {
           "type": "string",
-          "description": "5-field cron or @daily / @hourly / @every Nh / @every Nm. Minimum interval 5m. Local tick only."
+          "description": "5-field cron or @daily / @hourly / @every Nh / @every Nm. Minimum interval 5m. Local tick and watch only."
         },
         "enabled": { "type": "boolean" }
       }

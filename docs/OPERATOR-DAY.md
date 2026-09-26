@@ -186,6 +186,33 @@ package/chain ids, receipt ids, and `completion_label` when a receipt has
 one. They read `{state-dir}/routine-state.json` plus the decision journal.
 They do not sync to Grok Bot.
 
+## 3e. Standing routine watch (fixture)
+
+Same throwaway fixture. `estate routine watch` is the local operator loop:
+it calls the same idempotent `tick` path and prints a digest each cycle.
+Default interval is 5m (same as the schedule minimum). Stop with SIGINT
+(Ctrl-C) or `--max-cycles`. State stays in `{state-dir}/routine-state.json`.
+`--mock` stays in-process. This is not a cloud cron and does not claim
+Cursor / Grok Bot install or sync. `live_sync` stays false. Locked
+`examples/estate.yaml` untouched. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+# One cycle: tick + digest, then quit (5090 live-prove / no 5m wait)
+estate routine watch --id standing-classify \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell --mock --max-cycles 1
+
+# Short two-cycle hook (tests / local prove; not an operator default)
+CELL_ROUTINE_WATCH_INTERVAL_SECS=0 estate routine watch \
+  --id standing-classify \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell --mock --max-cycles 2
+```
+
+`--interval 1m` refuses (`refuse:watch-interval`). The env short interval
+is a test hook and requires `--max-cycles`. Standing operators use the
+5m default and Ctrl-C.
+
 ## 3f. Pack export-plugin scaffold (fixture)
 
 Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
@@ -208,7 +235,8 @@ against the source estate. Env carries pack / member / role / estate path.
 Non-orchestrator members refuse `refuse:pack-orchestrator` the same as
 pack complete. `wired_mcp: true`. `live_sync: false`. `estate` must be
 on PATH. This is a bridge, not a live Cursor or Grok Bot install. Routines
-stay comments. Not a cron daemon.
+stay comments. Not a cloud cron daemon. `estate routine watch` is the
+local operator loop (see 3e).
 
 `estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
 is not an interactive complete. Inspect `target/pack-plugin-stub/mcp.json`,

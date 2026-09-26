@@ -1,5 +1,6 @@
 //! Routine schedule parse: 5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`.
-//! Minimum interval is 5 minutes. Tick CLI uses this; there is no cron daemon.
+//! Minimum interval is 5 minutes. Tick and watch CLI use this; there is no
+//! cloud cron daemon.
 
 use chrono::{Datelike, TimeZone, Timelike, Utc};
 use std::collections::BTreeSet;

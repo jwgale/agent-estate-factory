@@ -2,7 +2,7 @@
 //! last_run / next_due are throwaway-local. Not Grok Bot sync.
 
 use anyhow::{bail, Context, Result};
-use estate_schema::{Estate, Routine, RoutineSchedule};
+use estate_schema::{Estate, Routine, RoutineSchedule, MIN_INTERVAL_SECS};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -11,6 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) const STATE_SCHEMA: &str = "cell-one.routine-state.v0";
 pub(crate) const STATE_FILE: &str = "routine-state.json";
+/// Test hook: integer seconds. Below 5m requires `--max-cycles`.
+pub(crate) const WATCH_INTERVAL_ENV: &str = "CELL_ROUTINE_WATCH_INTERVAL_SECS";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub(crate) struct RoutineStateFile {
@@ -220,6 +222,188 @@ fn skip_reason_text(routine: &Routine, row: Option<&RoutineRow>) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WatchPlan {
+    pub interval_secs: i64,
+    pub interval_label: String,
+    pub max_cycles: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WatchStopReason {
+    MaxCycles,
+    Signal,
+}
+
+impl WatchStopReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::MaxCycles => "max-cycles",
+            Self::Signal => "sigint",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WatchStop {
+    pub cycles: u32,
+    pub reason: WatchStopReason,
+}
+
+pub(crate) fn parse_watch_interval(raw: &str) -> Result<i64, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("refuse:watch-interval: interval is empty".into());
+    }
+    if let Ok(secs) = raw.parse::<i64>() {
+        if secs < 0 {
+            return Err("refuse:watch-interval: interval must be ≥ 0".into());
+        }
+        return Ok(secs);
+    }
+    parse_watch_duration(raw)
+}
+
+fn parse_watch_duration(raw: &str) -> Result<i64, String> {
+    let compact = raw.replace(' ', "");
+    let mut digits = String::new();
+    let mut unit = None;
+    let last = compact.chars().count().saturating_sub(1);
+    for (i, ch) in compact.chars().enumerate() {
+        if ch.is_ascii_digit() && unit.is_none() {
+            digits.push(ch);
+            continue;
+        }
+        if i == last && matches!(ch, 'h' | 'H' | 'm' | 'M' | 's' | 'S') {
+            unit = Some(ch);
+            continue;
+        }
+        return Err(format!(
+            "refuse:watch-interval: '{raw}' must be 5m / 15m / 1h or integer seconds"
+        ));
+    }
+    let Some(unit) = unit else {
+        return Err(format!(
+            "refuse:watch-interval: '{raw}' must be 5m / 15m / 1h or integer seconds"
+        ));
+    };
+    if digits.is_empty() {
+        return Err(format!("refuse:watch-interval: '{raw}' needs a count"));
+    }
+    let num: i64 = digits
+        .parse()
+        .map_err(|_| format!("refuse:watch-interval: '{raw}' count is not a number"))?;
+    if num <= 0 {
+        return Err("refuse:watch-interval: count must be ≥ 1".into());
+    }
+    match unit {
+        'h' | 'H' => Ok(num.saturating_mul(3600)),
+        'm' | 'M' => Ok(num.saturating_mul(60)),
+        's' | 'S' => Ok(num),
+        _ => unreachable!(),
+    }
+}
+
+pub(crate) fn format_watch_interval_secs(secs: i64) -> String {
+    if secs > 0 && secs % 3600 == 0 {
+        format!("{}h ({}s)", secs / 3600, secs)
+    } else if secs > 0 && secs % 60 == 0 {
+        format!("{}m ({}s)", secs / 60, secs)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+pub(crate) fn resolve_watch_plan(
+    interval: &str,
+    max_cycles: Option<u32>,
+    env_interval_secs: Option<&str>,
+) -> Result<WatchPlan, String> {
+    if let Some(0) = max_cycles {
+        return Err("refuse:watch-max-cycles: --max-cycles must be ≥ 1".into());
+    }
+    let cli_secs = parse_watch_interval(interval)?;
+    if cli_secs < MIN_INTERVAL_SECS {
+        return Err(format!(
+            "refuse:watch-interval: {cli_secs}s; minimum is {MIN_INTERVAL_SECS}s (5m)"
+        ));
+    }
+    let interval_secs = if let Some(raw) = env_interval_secs {
+        let env_secs = raw.trim().parse::<i64>().map_err(|_| {
+            format!("refuse:watch-interval: {WATCH_INTERVAL_ENV} must be integer seconds")
+        })?;
+        if env_secs < 0 {
+            return Err(format!(
+                "refuse:watch-interval: {WATCH_INTERVAL_ENV} must be ≥ 0"
+            ));
+        }
+        if env_secs < MIN_INTERVAL_SECS && max_cycles.is_none() {
+            return Err(format!(
+                "refuse:watch-interval: {WATCH_INTERVAL_ENV}={env_secs}s is below {MIN_INTERVAL_SECS}s (5m); set --max-cycles to use the test hook"
+            ));
+        }
+        env_secs
+    } else {
+        cli_secs
+    };
+    Ok(WatchPlan {
+        interval_secs,
+        interval_label: format_watch_interval_secs(interval_secs),
+        max_cycles,
+    })
+}
+
+pub(crate) fn watch_status_line(plan: &WatchPlan) -> String {
+    let max = plan
+        .max_cycles
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "-".into());
+    format!(
+        "routine watch interval={} max_cycles={max} stop=SIGINT (Ctrl-C) live_sync=false",
+        plan.interval_label
+    )
+}
+
+/// Tick-cycle loop with injectable sleep / stop. No real 5m wait in tests.
+pub(crate) fn run_watch_loop<E, Tick, Sleep, Stopped>(
+    plan: &WatchPlan,
+    mut tick: Tick,
+    mut sleep_secs: Sleep,
+    mut stopped: Stopped,
+) -> Result<WatchStop, E>
+where
+    Tick: FnMut(u32) -> Result<(), E>,
+    Sleep: FnMut(i64),
+    Stopped: FnMut() -> bool,
+{
+    let mut cycles = 0u32;
+    loop {
+        if stopped() {
+            return Ok(WatchStop {
+                cycles,
+                reason: WatchStopReason::Signal,
+            });
+        }
+        cycles = cycles.saturating_add(1);
+        tick(cycles)?;
+        if let Some(max) = plan.max_cycles {
+            if cycles >= max {
+                return Ok(WatchStop {
+                    cycles,
+                    reason: WatchStopReason::MaxCycles,
+                });
+            }
+        }
+        if stopped() {
+            return Ok(WatchStop {
+                cycles,
+                reason: WatchStopReason::Signal,
+            });
+        }
+        sleep_secs(plan.interval_secs);
+    }
+}
+
 pub(crate) fn status_line(estate: &Estate, routine: &Routine, row: Option<&RoutineRow>) -> String {
     let schedule = routine.schedule.as_deref().unwrap_or("-");
     let enabled = if routine.is_enabled() { "true" } else { "false" };
@@ -311,5 +495,81 @@ mod tests {
         );
         assert!(!text.contains("Grok Bot sync"), "{text}");
         assert!(!text.contains("live PASS"), "{text}");
+    }
+
+    #[test]
+    fn watch_plan_default_is_five_minutes() {
+        let plan = resolve_watch_plan("5m", None, None).unwrap();
+        assert_eq!(plan.interval_secs, MIN_INTERVAL_SECS);
+        assert_eq!(plan.interval_label, "5m (300s)");
+        assert_eq!(plan.max_cycles, None);
+        let line = watch_status_line(&plan);
+        assert!(line.contains("interval=5m (300s)"), "{line}");
+        assert!(line.contains("max_cycles=-"), "{line}");
+        assert!(line.contains("stop=SIGINT (Ctrl-C)"), "{line}");
+        assert!(line.contains("live_sync=false"), "{line}");
+        assert!(!line.contains("Grok Bot sync"), "{line}");
+    }
+
+    #[test]
+    fn watch_plan_refuses_sub_five_minute_interval() {
+        let err = resolve_watch_plan("1m", Some(1), None).unwrap_err();
+        assert!(err.contains("refuse:watch-interval"), "{err}");
+        assert!(err.contains("60s"), "{err}");
+        let err = resolve_watch_plan("5m", Some(0), None).unwrap_err();
+        assert!(err.contains("refuse:watch-max-cycles"), "{err}");
+        let err = resolve_watch_plan("5m", None, Some("0")).unwrap_err();
+        assert!(err.contains("CELL_ROUTINE_WATCH_INTERVAL_SECS"), "{err}");
+        assert!(err.contains("--max-cycles"), "{err}");
+    }
+
+    #[test]
+    fn watch_plan_test_hook_allows_zero_with_max_cycles() {
+        let plan = resolve_watch_plan("5m", Some(2), Some("0")).unwrap();
+        assert_eq!(plan.interval_secs, 0);
+        assert_eq!(plan.max_cycles, Some(2));
+        assert_eq!(plan.interval_label, "0s");
+    }
+
+    #[test]
+    fn watch_loop_two_cycles_fake_sleep_no_wall_clock() {
+        let plan = resolve_watch_plan("5m", Some(2), Some("0")).unwrap();
+        let mut ticks = Vec::new();
+        let mut sleeps = Vec::new();
+        let stop = run_watch_loop(
+            &plan,
+            |cycle| {
+                ticks.push(cycle);
+                Ok::<(), String>(())
+            },
+            |secs| sleeps.push(secs),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(stop.cycles, 2);
+        assert_eq!(stop.reason, WatchStopReason::MaxCycles);
+        assert_eq!(stop.reason.as_str(), "max-cycles");
+        assert_eq!(ticks, vec![1, 2]);
+        assert_eq!(sleeps, vec![0]);
+    }
+
+    #[test]
+    fn watch_loop_stops_on_signal_after_first_cycle() {
+        let plan = resolve_watch_plan("15m", Some(9), Some("7")).unwrap();
+        let mut ticks = 0u32;
+        let stop = run_watch_loop(
+            &plan,
+            |_cycle| {
+                ticks += 1;
+                Ok::<(), String>(())
+            },
+            |_secs| panic!("signal stop must not sleep"),
+            || ticks >= 1,
+        )
+        .unwrap();
+        assert_eq!(ticks, 1);
+        assert_eq!(stop.cycles, 1);
+        assert_eq!(stop.reason, WatchStopReason::Signal);
+        assert_eq!(stop.reason.as_str(), "sigint");
     }
 }

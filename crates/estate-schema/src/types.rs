@@ -275,7 +275,7 @@ pub struct PackPackage {
 
 /// Standing automation that declares + runs one pack package.
 /// Analogous to a Grok Bot routine. Optional `schedule` is local tick
-/// state under the estate state-dir. Not live Grok Bot sync.
+/// / watch state under the estate state-dir. Not live Grok Bot sync.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Routine {
     pub id: String,
@@ -285,7 +285,7 @@ pub struct Routine {
     /// 5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<String>,
-    /// Absent = enabled. `false` skips `estate routine tick`.
+    /// Absent = enabled. `false` skips `estate routine tick` / `watch`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }

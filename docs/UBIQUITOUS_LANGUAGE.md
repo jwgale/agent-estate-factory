@@ -38,7 +38,7 @@ Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt
 
 ### standing routine
 
-Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note` / `schedule` / `enabled`. `estate routine list` / `show` / `run` / `tick` / `status` / `digest`. Run stamps `routine_id` and `package_id`. `tick` runs due schedules (5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`, min 5m) and persists `last_run` / `next_due` under the estate state-dir. `digest` and `tick --report` summarize that last local wake (ran/skipped, package/chain ids, receipt ids, `completion_label` when present). `estate pack export-plugin` copies `schedule` as a commented cron/trigger note only. Not a cron daemon. Not live Grok Bot sync.
+Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note` / `schedule` / `enabled`. `estate routine list` / `show` / `run` / `tick` / `watch` / `status` / `digest`. Run stamps `routine_id` and `package_id`. `tick` runs due schedules (5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`, min 5m) and persists `last_run` / `next_due` under the estate state-dir. `watch` is the local operator loop: same idempotent tick + digest, interval ≥5m, stop SIGINT / `--max-cycles`. `digest` and `tick --report` summarize that last local wake (ran/skipped, package/chain ids, receipt ids, `completion_label` when present). `estate pack export-plugin` copies `schedule` as a commented cron/trigger note only. Not a cloud cron daemon. Not live Grok Bot sync. `live_sync` stays false.
 
 ### curator
 

@@ -319,17 +319,19 @@ fn write_readme(
         for r in routines {
             let sched = r.schedule.as_deref().unwrap_or("-");
             md.push_str(&format!(
-                "# {} → package {}\n# schedule: {sched}\n# suggested cron/trigger: {}\n# live-local wake: estate routine tick --id {}\n",
+                "# {} → package {}\n# schedule: {sched}\n# suggested cron/trigger: {}\n# live-local wake: estate routine tick --id {}\n# standing loop: estate routine watch --id {}\n",
                 r.id,
                 r.package,
                 cron_comment(sched),
+                r.id,
                 r.id
             ));
         }
     }
     md.push_str("```\n");
-    md.push_str("\n`estate routine tick` remains the local wake. This file does\n");
-    md.push_str("not install a Cursor or Grok Bot trigger.\n");
+    md.push_str("\n`estate routine tick` remains the local wake.\n");
+    md.push_str("`estate routine watch` is the local operator loop (tick + digest).\n");
+    md.push_str("This file does not install a Cursor or Grok Bot trigger.\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
 }

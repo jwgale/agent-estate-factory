@@ -494,8 +494,9 @@ pub(crate) enum Command {
         command: PackageCommand,
     },
     /// Standing routines: declare + run a pack package (automation analog).
-    /// Optional `schedule` + `estate routine tick` / `status` / `digest`.
-    /// Local last_run / next_due under --state-dir. Not live Grok Bot sync.
+    /// Optional `schedule` + `estate routine tick` / `watch` / `status` /
+    /// `digest`. Local last_run / next_due under --state-dir. Watch is the
+    /// local operator loop (tick + digest). Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1156,7 +1157,8 @@ pub(crate) enum RoutineCommand {
         state_dir: PathBuf,
     },
     /// Run due scheduled routines. Idempotent. Writes receipts.
-    /// Unscheduled or disabled routines skip. Not a long-running daemon.
+    /// Unscheduled or disabled routines skip. One-shot. Use `watch` for
+    /// the local operator loop. Not a cloud cron.
     Tick {
         #[arg(long)]
         id: Option<String>,
@@ -1182,6 +1184,42 @@ pub(crate) enum RoutineCommand {
         /// After the tick, print the local digest (ran/skipped + receipt ids).
         #[arg(long, default_value_t = false)]
         report: bool,
+    },
+    /// Local operator loop: tick + digest on an interval (≥5m).
+    /// Same idempotent tick path and `routine-state.json` as `tick`.
+    /// Stop with SIGINT (Ctrl-C) or `--max-cycles`. Not a cloud cron.
+    /// Not live Grok Bot sync. `live_sync` stays false.
+    Watch {
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        /// Run each due routine's package chain when declared.
+        #[arg(long, default_value_t = false)]
+        chain: bool,
+        /// Poll interval. Default 5m. Minimum 5m (same as schedule min).
+        /// Forms: `5m` / `15m` / `1h` or integer seconds ≥ 300.
+        #[arg(long, default_value = "5m")]
+        interval: String,
+        /// Stop after N tick cycles (≥ 1). Documented quit and test hook.
+        /// Pair with `CELL_ROUTINE_WATCH_INTERVAL_SECS` for a short fake
+        /// interval in tests (0 is allowed then). Operator default stays 5m.
+        #[arg(long)]
+        max_cycles: Option<u32>,
     },
     /// Summarize the last local wake: ran/skipped, package/chain ids,
     /// receipt ids, completion_label when present. Reads routine-state

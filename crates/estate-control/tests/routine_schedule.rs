@@ -1,6 +1,7 @@
-//! Routine schedule tick + multi-hop package chain.
+//! Routine schedule tick + watch + multi-hop package chain.
 //!
-//! Tick is idempotent (due / not-due). Chain receipts share chain_id and
+//! Tick is idempotent (due / not-due). Watch loops that tick with a
+//! max-cycles / env interval test hook. Chain receipts share chain_id and
 //! ordered handoffs. Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};
@@ -29,6 +30,7 @@ fn run(args: &[&str]) -> (bool, String, String) {
         .env_remove("CELL_LOCAL_ENDPOINT")
         .env_remove("CELL_FRONTIER_MODEL")
         .env_remove("CELL_LOCAL_LIVE")
+        .env_remove("CELL_ROUTINE_WATCH_INTERVAL_SECS")
         .output()
         .unwrap();
     (
@@ -370,5 +372,145 @@ fn package_run_without_chain_stays_single_hop() {
     );
     assert_eq!(rows[0]["handoff_from"], "horizon");
     assert_eq!(rows[0]["handoff_to"], "research");
+    assert_locked_cksum();
+}
+
+#[test]
+fn routine_watch_two_cycles_test_hook_no_five_minute_sleep() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("watch");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args([
+            "routine",
+            "watch",
+            "--id",
+            "standing-classify",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+            "--mock",
+            "--interval",
+            "5m",
+            "--max-cycles",
+            "2",
+        ])
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_FRONTIER_MODEL")
+        .env_remove("CELL_LOCAL_LIVE")
+        .env("CELL_ROUTINE_WATCH_INTERVAL_SECS", "0")
+        .output()
+        .unwrap();
+    let ok = out.status.success();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(
+        stdout.contains("routine watch interval=0s max_cycles=2 stop=SIGINT (Ctrl-C) live_sync=false"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("routine watch cycle=1"), "{stdout}");
+    assert!(stdout.contains("routine watch cycle=2"), "{stdout}");
+    assert!(!stdout.contains("routine watch cycle=3"), "{stdout}");
+    assert!(stdout.contains("ticked standing-classify"), "{stdout}");
+    assert!(stdout.contains("skip standing-classify"), "{stdout}");
+    assert!(stdout.contains("routine digest ran=1 skipped=0"), "{stdout}");
+    assert!(
+        stdout.contains("standing-classify status=ran package=classify-ping"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("receipt="), "{stdout}");
+    assert!(
+        stdout.contains("routine watch stopped cycles=2 reason=max-cycles"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Grok Bot sync"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 1, "second cycle must skip; idempotent tick {rows:?}");
+    assert_eq!(rows[0]["routine_id"], "standing-classify");
+    let saved = load_routine_state(&state);
+    assert_eq!(saved["schema"], "cell-one.routine-state.v0");
+    assert!(saved["routines"]["standing-classify"]["last_run"].is_number());
+    assert!(saved["routines"]["standing-classify"]["next_due"].is_number());
+    assert_locked_cksum();
+}
+
+#[test]
+fn routine_watch_refuses_sub_five_minute_interval_without_hook() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("watch-refuse");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "watch",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--interval",
+        "1m",
+        "--max-cycles",
+        "1",
+    ]);
+    assert!(!ok, "stdout={stdout}");
+    assert!(stderr.contains("refuse:watch-interval"), "{stderr}");
+    assert!(!state.join("routine-state.json").exists());
+    assert_locked_cksum();
+}
+
+#[test]
+fn routine_watch_one_cycle_is_tick_plus_digest() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("watch-once");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "watch",
+        "--id",
+        "standing-classify",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--max-cycles",
+        "1",
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(
+        stdout.contains("routine watch interval=5m (300s) max_cycles=1"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("routine watch cycle=1"), "{stdout}");
+    assert!(stdout.contains("ticked standing-classify"), "{stdout}");
+    assert!(stdout.contains("routine digest ran=1 skipped=0"), "{stdout}");
+    assert!(
+        stdout.contains("routine watch stopped cycles=1 reason=max-cycles"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Grok Bot sync"), "{stdout}");
+    assert_eq!(load_receipts(&state).len(), 1);
     assert_locked_cksum();
 }
