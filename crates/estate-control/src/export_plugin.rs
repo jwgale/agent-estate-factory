@@ -3,8 +3,9 @@
 //! Emits `plugin.json` + `mcp.json` + `skills/*/SKILL.md` (Agent Plugins 1.0
 //! floor that Cursor loads). Pack → group metadata, package → skill body
 //! stub, routine schedule → commented cron/trigger notes.
-//! MCP servers are no-op stubs. Not live Cursor / Grok Bot sync.
-//! Does not call `estate complete`. Not a cron daemon.
+//! MCP servers run `estate pack mcp-serve` so member tools call
+//! `estate complete` against the source estate. live_sync stays false.
+//! Not live Cursor / Grok Bot sync. Not a cron daemon.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{normalize_name, AgentPack, Estate, PackPackage, Routine};
@@ -15,11 +16,11 @@ use std::path::Path;
 pub(crate) const EXPORT_SCHEMA: &str = "cell-one.pack-plugin-export.v0";
 
 pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -> Result<()> {
-    let estate =
-        estate_schema::load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
-    let pack = estate.pack(id).ok_or_else(|| {
-        anyhow::anyhow!("refuse:unknown-pack: pack '{id}' not on estate")
-    })?;
+    let estate = estate_schema::load_estate(estate_path)
+        .with_context(|| format!("load {}", estate_path.display()))?;
+    let pack = estate
+        .pack(id)
+        .ok_or_else(|| anyhow::anyhow!("refuse:unknown-pack: pack '{id}' not on estate"))?;
     if out.exists() && !out.is_dir() {
         bail!(
             "refuse:export-plugin-out: --out '{}' exists and is not a directory",
@@ -32,11 +33,13 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
     let routines = routines_for_packages(&estate, &packages);
     let orch = pack.orchestrator.as_deref().unwrap_or("-");
 
+    let estate_abs = estate_path_for_export(estate_path);
+
     write_plugin_json(out, pack, orch)?;
-    write_mcp_json(out, pack, orch)?;
+    write_mcp_json(out, pack, orch, &estate_abs)?;
     write_skills(out, pack, &packages, &routines)?;
-    write_readme(out, pack, orch, &packages, &routines, estate_path)?;
-    write_mapping_sidecar(out, pack, orch, &packages, &routines)?;
+    write_readme(out, pack, orch, &packages, &routines, &estate_abs)?;
+    write_mapping_sidecar(out, pack, orch, &packages, &routines, &estate_abs)?;
 
     println!("pack plugin stub: {}", pack.id);
     println!("  out: {}", out.display());
@@ -70,8 +73,17 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
             .collect();
         println!("  routines (commented): {}", notes.join(", "));
     }
+    println!("  wired_mcp: yes");
     println!("  live_sync: no");
     Ok(())
+}
+
+fn estate_path_for_export(estate_path: &Path) -> String {
+    estate_path
+        .canonicalize()
+        .unwrap_or_else(|_| estate_path.to_path_buf())
+        .display()
+        .to_string()
 }
 
 fn packages_for_pack<'a>(estate: &'a Estate, pack: &AgentPack) -> Vec<&'a PackPackage> {
@@ -103,7 +115,7 @@ fn write_plugin_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
         "name": pack.id,
         "version": "0.0.0",
         "description": format!(
-            "Estate pack {} exported as an Agent Plugin stub. Group members: {members}. Orchestrator: {orch}. Scaffold only — not live Cursor or Grok Bot sync.",
+            "Estate pack {} exported as an Agent Plugin stub. Group members: {members}. Orchestrator: {orch}. MCP tools call estate complete on the source estate. live_sync is false — not live Cursor or Grok Bot sync.",
             pack.id
         ),
         "author": { "name": "cell-one" },
@@ -112,25 +124,18 @@ fn write_plugin_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
     write_pretty_json(&out.join("plugin.json"), &body)
 }
 
-fn write_mcp_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
+fn write_mcp_json(out: &Path, pack: &AgentPack, orch: &str, estate_path: &str) -> Result<()> {
     let mut servers = serde_json::Map::new();
     for member in &pack.members {
-        let role = if orch != "-" && normalize_name(member) == normalize_name(orch) {
-            "orchestrator"
-        } else {
-            "member"
-        };
+        let role = crate::pack_mcp::pack_role(Some(orch).filter(|s| *s != "-"), member);
+        let env = crate::pack_mcp::export_mcp_env(&pack.id, member, &role, estate_path);
         servers.insert(
             member.clone(),
             json!({
                 "type": "stdio",
-                "command": "true",
-                "args": [],
-                "env": {
-                    "CELL_ESTATE_PACK": pack.id,
-                    "CELL_ESTATE_MEMBER": member,
-                    "CELL_ESTATE_ROLE": role
-                }
+                "command": "estate",
+                "args": ["pack", "mcp-serve"],
+                "env": env,
             }),
         );
     }
@@ -204,12 +209,12 @@ fn skill_markdown(pack: &AgentPack, pkg: &PackPackage, routines: &[&Routine]) ->
          - chain: {chain}\n\
          - note: {note}\n\
          \n\
-         Run on the estate (not via this plugin):\n\
+         Run on the estate (not a live Cursor/Grok Bot install):\n\
          \n\
              estate package run --id {id} --estate <estate.yaml> --mock\n\
          \n\
-         This skill body is a stub. It does not call `estate complete` and is\n\
-         not live Cursor/Grok Bot sync.\n\
+         Pack member MCP tools call `estate complete` via `estate pack mcp-serve`.\n\
+         This skill body stays a stub. live_sync is false.\n\
          \n",
         id = pkg.id,
         pack = pack.id,
@@ -238,16 +243,19 @@ fn write_readme(
     orch: &str,
     packages: &[&PackPackage],
     routines: &[&Routine],
-    estate_path: &Path,
+    estate_path: &str,
 ) -> Result<()> {
     let mut md = String::new();
     md.push_str(&format!("# {} plugin stub\n\n", pack.id));
-    md.push_str("Agent Plugin scaffold from an estate pack. Cursor loads this\n");
+    md.push_str("Agent Plugin scaffold from an estate pack. Cursor can load this\n");
     md.push_str("layout (`plugin.json` + `mcp.json` + `skills/`).\n\n");
-    md.push_str("**Not live Cursor / Grok Bot sync.** MCP servers are no-op stubs\n");
-    md.push_str("(`command: true`). This directory does not wire `estate complete`,\n");
-    md.push_str("does not install a cron daemon, and does not rank mixed-select.\n\n");
-    md.push_str(&format!("Estate file: `{}`\n\n", estate_path.display()));
+    md.push_str("**Bridge, not live Cursor / Grok Bot sync.** MCP servers run\n");
+    md.push_str("`estate pack mcp-serve` so member tools call `estate complete`\n");
+    md.push_str("against the source estate. `estate` must be on PATH.\n");
+    md.push_str("`live_sync: false`. `wired_mcp: true`. Routines stay comments.\n");
+    md.push_str("This directory does not install a Cursor/Grok Bot plugin, does\n");
+    md.push_str("not start a cron daemon, and does not rank mixed-select.\n\n");
+    md.push_str(&format!("Estate file: `{estate_path}`\n\n"));
     md.push_str("## Mapping\n\n");
     md.push_str("| Estate | Plugin stub |\n");
     md.push_str("| --- | --- |\n");
@@ -278,17 +286,19 @@ fn write_readme(
             ));
         }
     }
-    md.push_str("\n## MCP (stub)\n\n");
-    md.push_str("One stdio server per pack member. `command` is `true` (no-op).\n");
-    md.push_str("Env records pack / member / role. Orchestrator is a comment in\n");
-    md.push_str("env `CELL_ESTATE_ROLE=orchestrator` when set. Not a live MCP\n");
-    md.push_str("bridge to `estate complete`.\n\n");
+    md.push_str("\n## MCP (wired to estate complete)\n\n");
+    md.push_str("One stdio server per pack member. `command` is `estate`;\n");
+    md.push_str("`args` are `pack mcp-serve`. Each process exposes tool\n");
+    md.push_str("`complete`, which runs:\n\n");
+    md.push_str("    estate complete --agent <member> --pack <pack-id> \\\n");
+    md.push_str("      --estate $CELL_ESTATE_PATH --prompt <tool input>\n\n");
+    md.push_str("Env carries `CELL_ESTATE_PACK`, `CELL_ESTATE_MEMBER`,\n");
+    md.push_str("`CELL_ESTATE_ROLE`, and `CELL_ESTATE_PATH`. Non-orchestrator\n");
+    md.push_str("members refuse `refuse:pack-orchestrator` the same as\n");
+    md.push_str("`estate complete --pack`. Pass `mock: true` on the tool to\n");
+    md.push_str("use in-process drivers. Not a live Cursor/Grok Bot install.\n\n");
     for member in &pack.members {
-        let role = if orch != "-" && normalize_name(member) == normalize_name(orch) {
-            "orchestrator"
-        } else {
-            "member"
-        };
+        let role = crate::pack_mcp::pack_role(Some(orch).filter(|s| *s != "-"), member);
         md.push_str(&format!("- `{member}` ({role})\n"));
     }
     md.push_str("\n## Routine schedule notes (comment only)\n\n");
@@ -320,6 +330,7 @@ fn write_mapping_sidecar(
     orch: &str,
     packages: &[&PackPackage],
     routines: &[&Routine],
+    estate_path: &str,
 ) -> Result<()> {
     let orch_val = if orch == "-" {
         Value::Null
@@ -360,8 +371,15 @@ fn write_mapping_sidecar(
         },
         "packages": pkgs,
         "routines": rows,
+        "estate_path": estate_path,
         "live_sync": false,
-        "wired_mcp": false,
+        "wired_mcp": true,
+        "mcp": {
+            "command": "estate",
+            "args": ["pack", "mcp-serve"],
+            "tool": "complete",
+            "invokes": "estate complete --agent <member> --pack <pack-id>",
+        },
     });
     write_pretty_json(&out.join("estate-pack.json"), &body)
 }
@@ -383,8 +401,7 @@ pub(crate) fn cron_comment(schedule: &str) -> String {
 
 fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
     let body = serde_json::to_string_pretty(value)?;
-    fs::write(path, format!("{body}\n"))
-        .with_context(|| format!("write {}", path.display()))?;
+    fs::write(path, format!("{body}\n")).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 

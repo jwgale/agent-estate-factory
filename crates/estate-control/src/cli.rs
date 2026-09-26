@@ -479,7 +479,7 @@ pub(crate) enum Command {
         #[arg(long)]
         select: Option<String>,
     },
-    /// Estate agent packs: list / show / export-plugin.
+    /// Estate agent packs: list / show / export-plugin / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1024,8 +1024,10 @@ pub(crate) enum PackCommand {
     },
     /// Export a Cursor/Agent plugin stub from one estate pack.
     /// Writes plugin.json + mcp.json + skills/ (Agent Plugins floor).
-    /// MCP is a no-op stub. Routine schedules become comments only.
-    /// Not live Cursor / Grok Bot sync. Not a cron daemon.
+    /// MCP servers run `estate pack mcp-serve` so member tools call
+    /// `estate complete` against the source estate. Routine schedules
+    /// stay comments only. live_sync stays false. Not live Cursor /
+    /// Grok Bot sync. Not a cron daemon.
     ExportPlugin {
         #[arg(long)]
         id: String,
@@ -1033,6 +1035,23 @@ pub(crate) enum PackCommand {
         out: PathBuf,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
+    },
+    /// Stdio MCP bridge: one pack member per process. Tool `complete`
+    /// runs `estate complete --agent <member> --pack <pack-id>` against
+    /// the source estate. Env: CELL_ESTATE_PACK / MEMBER / ROLE / PATH.
+    /// Non-orchestrator members refuse pack-orchestrator the same as
+    /// pack complete. Not live Cursor / Grok Bot sync.
+    McpServe {
+        #[arg(long)]
+        estate: Option<PathBuf>,
+        #[arg(long)]
+        pack: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
     },
 }
 
