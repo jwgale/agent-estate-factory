@@ -588,21 +588,35 @@ pub(crate) enum ConveyCommand {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
-    /// File check of hop leases against the estate. Prints the same Agents
-    /// section as plan, drift, apply, status, and doctor
-    /// (`describe_agents_section`), then the same hop coverage cites doctor
-    /// and status print (`hop_coverage_cites`: `FAIL` on mismatch, `note`
-    /// on deny and deny-default), then Authority
-    /// (`describe_authority_section` over `authority_report`). Those cites
-    /// do not fail this command. A match stays quiet. A missing mesh is an
-    /// empty cite list. Deny and deny-default on the Agents text are notes
-    /// and do not fail this command. A would-deny row does not fail this
-    /// command. Does not write. Does not spawn. Does not claim mediation.
-    /// A missing or unreadable estate refuses before any section.
-    /// A missing conveyor-mesh.json stays not-enforced and cites that the file is absent.
-    /// A present mesh with no lease for a declared capability says no hop lease names it.
-    /// A present mesh that does not parse refuses before cites or either section.
-    /// `not-enforced reasons:` counts those rows by class and omits zeros.
+    /// File check of hop leases against the estate. After the estate loads,
+    /// prints the same Agents section as plan, drift, apply, status, and
+    /// doctor (`describe_agents_section`), then the same hop coverage cites
+    /// (`hop_coverage_cites`: `FAIL` on mismatch, `note` on deny and
+    /// deny-default), then Authority (`describe_authority_section` over
+    /// `authority_report`: `would-allow`, `would-deny`, `not-enforced`, and
+    /// `not-enforced reasons:`). Those cites do not fail this command. A
+    /// match stays quiet. A missing mesh is an empty cite list and stays
+    /// not-enforced. The shared stack reads placement-actual for mesh
+    /// interpretation and Authority. A present mesh that does not parse, a
+    /// bad host_class on that file, `refuse:agent-unplaced`, or any other
+    /// mesh error including a placement-actual parse failure, refuses before
+    /// those sections. A placement-actual SKU host_class still continues:
+    /// Agents and hop cites print and Authority rows are omitted, and this
+    /// file check succeeds. There is no later reader. That diverges from
+    /// `estate convey list`, `estate convey leases`, `estate convey expire`,
+    /// and `estate convey sync`, whose readers still refuse that SKU after
+    /// the stack. Deny and deny-default on the Agents text are notes and do
+    /// not fail this command. A would-deny row does not fail this command.
+    /// A missing conveyor-mesh.json stays not-enforced and cites that the
+    /// file is absent. A present mesh with no lease for a declared
+    /// capability says no hop lease names it. Does not write. Does not
+    /// spawn. Does not claim mediation. A missing or unreadable estate
+    /// refuses before any section. `conveyor-proxy authority` does not call
+    /// this stack: `render_hop_coverage_cites` lives in estate-control. The
+    /// proxy still refuses a mesh that does not parse, a bad host_class on
+    /// that file, `refuse:agent-unplaced`, and a placement-actual parse
+    /// failure before Agents. A placement-actual SKU omits Authority and the
+    /// proxy command succeeds, without hop cites.
     Authority {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

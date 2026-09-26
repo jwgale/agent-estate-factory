@@ -232,6 +232,57 @@ fn proxy_unreadable_mesh_and_missing_estate_invent_no_rows() {
 }
 
 #[test]
+fn proxy_placement_sku_omits_authority_and_mesh_sku_refuses_before_agents() {
+    let dir = scratch();
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate_path = repo_root().join("examples/estate.yaml");
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let section = estate_schema::describe_agents_section(&estate);
+    let mesh = state.join("conveyor-mesh.json");
+    std::fs::write(
+        &mesh,
+        r#"{"schema":"cell-one.conveyor-mesh.v0","hops":[],"leases":[{"hop_id":"box","kind":"box","capability":"lane-tool","host_class":"rtx-5090","granted":true,"spawned":false,"durable":true,"driver":"box","agents":["research"]}]}"#,
+    )
+    .unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = authority(&estate_path, &state);
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(
+        no_sections(&stdout) && no_sections(&stderr),
+        "{stdout}\n{stderr}"
+    );
+    assert!(stderr.contains("refuse:bad-host-class"), "{stderr}");
+    assert!(stderr.contains("rtx-5090"), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+
+    std::fs::write(
+        &mesh,
+        r#"{"schema":"cell-one.conveyor-mesh.v0","hops":[],"leases":[{"hop_id":"cell-one-box","kind":"box","capability":"notes-append","host_class":"any","granted":true,"spawned":true,"durable":true,"driver":"box","agents":["research"]}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        state.join("placement-actual.json"),
+        r#"{"leases":[{"placement_id":"cell-one-box","kind":"box","host_class":"rtx-5090","agents":["research"]}]}"#,
+    )
+    .unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = authority(&estate_path, &state);
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    assert_eq!(stdout.trim_end(), section);
+    assert!(!stdout.contains("Authority\n---------"), "{stdout}");
+    assert!(!stdout.contains("would-allow="), "{stdout}");
+    assert!(!stdout.contains("refuse:hop-coverage"), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert_eq!(snapshot(&state), before);
+    assert!(!state.join("apply-audit.jsonl").exists());
+    assert!(!state.join("sessions.jsonl").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn proxy_authority_help_names_the_shared_agents_section_before_authority() {
     let (ok, stdout, stderr) = run(&["authority", "--help"]);
     assert!(ok, "{stdout}\n{stderr}");

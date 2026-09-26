@@ -2,8 +2,8 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use conveyor_proxy::{
     authority_report, call_hop, call_hop_for_agent, check, declare_hop, describe_authority_section,
-    list_hop_leases, list_hops, parse_kind, response_from, sync_from_placements, HopDecl,
-    ProxyRequest,
+    list_hop_leases, list_hops, load_mesh, parse_kind, refuse_mesh_host_classes, response_from,
+    sync_from_placements, HopDecl, MeshError, ProxyRequest,
 };
 use estate_schema::describe_agents_section;
 use std::path::PathBuf;
@@ -94,13 +94,18 @@ enum Command {
         state_dir: PathBuf,
     },
     /// File check against the estate. Prints the same Agents section as
-    /// `estate convey authority` (`describe_agents_section`) immediately
-    /// before Authority (`describe_authority_section` over `authority_report`).
-    /// Deny and deny-default on the Agents text are notes and do not fail
-    /// this command. A would-deny row does not fail this command. A missing
-    /// or unreadable estate refuses before either section. A present mesh
-    /// that does not parse refuses before either section. Does not write.
-    /// Does not spawn. Does not claim mediation.
+    /// `estate convey authority` (`describe_agents_section`), then Authority
+    /// (`describe_authority_section` over `authority_report`) when that
+    /// report is available. Does not print hop coverage cites:
+    /// `render_hop_coverage_cites` lives in estate-control, and this binary
+    /// does not call `honesty_stack`. Deny and deny-default on the Agents
+    /// text are notes and do not fail this command. A would-deny row does
+    /// not fail this command. A missing or unreadable estate refuses before
+    /// either section. A present mesh that does not parse, a bad host_class
+    /// on that file, `refuse:agent-unplaced`, or a placement-actual parse
+    /// failure refuses before Agents. A placement-actual SKU host_class
+    /// omits Authority and this command succeeds. Does not write. Does not
+    /// spawn. Does not claim mediation.
     Authority {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
@@ -229,11 +234,24 @@ fn main() -> Result<()> {
         Command::Authority { state_dir, estate } => {
             let loaded = estate_schema::load_estate(&estate)
                 .with_context(|| format!("load {}", estate.display()))?;
-            // Read first. A mesh that does not parse refuses before either
-            // print and does not invent Agents or Authority rows.
-            let rows = authority_report(&state_dir, &loaded)?;
+            // Same refuse-before-print as `honesty_stack` for a mesh that
+            // does not parse and for a bad host_class on that file. Hop
+            // cites stay on `estate convey authority`: this crate cannot
+            // call `render_hop_coverage_cites`. After the mesh host-class
+            // refuse, `MeshError::BadHostClass` is the placement-actual
+            // slim-parse. Agents still print. Authority is omitted. The
+            // command succeeds. Does not write. Does not spawn.
+            let mesh = load_mesh(&state_dir)?;
+            refuse_mesh_host_classes(&mesh)?;
+            let authority = match authority_report(&state_dir, &loaded) {
+                Ok(rows) => Some(describe_authority_section(&rows, &state_dir)),
+                Err(MeshError::BadHostClass(_)) => None,
+                Err(err) => return Err(err.into()),
+            };
             println!("{}", describe_agents_section(&loaded));
-            println!("{}", describe_authority_section(&rows, &state_dir));
+            if let Some(section) = authority {
+                println!("{section}");
+            }
         }
     }
     Ok(())
