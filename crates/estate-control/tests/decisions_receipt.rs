@@ -719,3 +719,76 @@ fn malformed_hint_refuses_before_the_receipt_and_before_restamp() {
     assert_locked_cksum();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn journal_write_failure_after_a_committed_hop_still_prints_the_allow() {
+    let dir = scratch("journal-fail");
+    let state = dir.join("state");
+    let estate = repo_root().join("examples/estate.yaml");
+    apply(&estate, &state, &dir);
+    let mut mesh = granted_box("notes-append");
+    mesh.hops.push(ttl_decl(vec![]));
+    conveyor_proxy::persist_mesh(&state, &mesh).unwrap();
+    let mesh_before = std::fs::read(state.join("conveyor-mesh.json")).unwrap();
+    let feed = state.join("feed/events.jsonl");
+    let feed_before = if feed.is_file() {
+        std::fs::read(&feed).unwrap()
+    } else {
+        Vec::new()
+    };
+    // The journal path cannot be created. The hop restamp and feed append
+    // still commit before that write.
+    std::fs::write(state.join("decisions"), "not-a-directory\n").unwrap();
+    let (ok, stdout, stderr) = convey_call(
+        &estate,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(
+        stderr.contains("decision receipt: journal write failed after hop commit:"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("refuse:"), "{stderr}");
+    assert!(
+        !stderr.split_whitespace().any(|word| word == "enforced"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("decision receipt:"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    let start = stdout
+        .rfind("{\n")
+        .unwrap_or_else(|| panic!("missing call JSON\n{stdout}"));
+    let call: serde_json::Value = serde_json::from_str(stdout[start..].trim()).unwrap();
+    assert_eq!(call["allow"], true);
+    assert_eq!(call["hop_id"], "ttl-hop");
+    let reason = call["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("lease-refresh") && reason.contains("lease-bound box hop"),
+        "{reason}"
+    );
+    let mesh_after = std::fs::read(state.join("conveyor-mesh.json")).unwrap();
+    assert_ne!(mesh_after, mesh_before);
+    let body = String::from_utf8(mesh_after).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let leases = parsed["leases"].as_array().unwrap();
+    assert!(
+        leases.iter().any(|lease| lease["hop_id"] == "ttl-hop"),
+        "{body}"
+    );
+    let feed_after = std::fs::read(&feed).unwrap();
+    assert!(
+        feed_after.len() > feed_before.len(),
+        "feed was not appended"
+    );
+    let added = String::from_utf8_lossy(&feed_after[feed_before.len()..]);
+    assert!(added.contains("ttl-hop"), "{added}");
+    assert!(added.contains("allow"), "{added}");
+    assert_eq!(
+        std::fs::read_to_string(state.join("decisions")).unwrap(),
+        "not-a-directory\n"
+    );
+    assert!(!journal(&state).exists());
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}

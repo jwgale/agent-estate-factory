@@ -658,7 +658,10 @@ pub(crate) fn cmd_convey_call(
         }
         Ok(call) => {
             let outcome = if call.allow { "allow" } else { "refuse:denied" };
-            let receipt = crate::decisions::record_convey_receipt(
+            // `call_hop` may already have restamped the mesh and appended the
+            // feed. A journal miss after that commit must not hide the allow
+            // or turn the hop into a failed CLI outcome.
+            match crate::decisions::record_convey_receipt(
                 &estate,
                 state_dir,
                 id,
@@ -667,11 +670,17 @@ pub(crate) fn cmd_convey_call(
                 hint.as_ref(),
                 outcome,
                 false,
-            )?;
-            // Cite on the success path only. The receipt is already on disk.
-            // Unread `estate decisions export` does not fail this call.
-            if call.allow {
-                println!("{}", crate::decisions::cite_line(&receipt));
+            ) {
+                Ok(receipt) => {
+                    // Cite on the allow path only. Unread `estate decisions
+                    // export` does not fail this call.
+                    if call.allow {
+                        println!("{}", crate::decisions::cite_line(&receipt));
+                    }
+                }
+                Err(err) => {
+                    eprintln!("decision receipt: journal write failed after hop commit: {err}");
+                }
             }
             println!("{}", serde_json::to_string_pretty(&call)?);
             if !call.allow {

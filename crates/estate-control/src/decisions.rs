@@ -58,6 +58,29 @@ fn journal_path(state_dir: &Path) -> std::path::PathBuf {
     state_dir.join("decisions").join(JOURNAL_FILE)
 }
 
+/// Object keys are sorted so YAML key order is not param drift.
+fn canonical_json(value: &serde_json::Value) -> String {
+    fn canon(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                let mut out = serde_json::Map::new();
+                for key in keys {
+                    out.insert(key.clone(), canon(&map[key]));
+                }
+                serde_json::Value::Object(out)
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.iter().map(canon).collect())
+            }
+            other => other.clone(),
+        }
+    }
+    serde_json::to_string(&canon(value)).unwrap_or_else(|err| format!("\"unserializable:{err}\""))
+}
+
+/// Id, class, driver, and binding params. Param drift changes the digest.
 fn binding_digest(binding: &ModelBinding) -> String {
     let mut hasher = Sha256::new();
     hasher.update(binding.id.as_bytes());
@@ -65,6 +88,8 @@ fn binding_digest(binding: &ModelBinding) -> String {
     hasher.update(binding.class.as_str().as_bytes());
     hasher.update(b"\n");
     hasher.update(binding.driver.as_bytes());
+    hasher.update(b"\n");
+    hasher.update(canonical_json(&binding.params).as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
@@ -519,5 +544,73 @@ mod tests {
         assert_eq!(expired, "expired");
         assert!(no_fallback.is_none());
         assert_eq!(stage_name(&result, &expired), "validate");
+    }
+
+    fn digest_without_params(binding: &ModelBinding) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(binding.id.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(binding.class.as_str().as_bytes());
+        hasher.update(b"\n");
+        hasher.update(binding.driver.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    #[test]
+    fn param_drift_changes_the_digest_and_marks_the_hint_stale() {
+        let mut estate = example();
+        allow_local(&mut estate, "research");
+        let binding = estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap();
+        let with_params = binding_digest(binding);
+        assert_ne!(with_params, digest_without_params(binding));
+
+        let mut reversed = binding.clone();
+        let mut flipped = serde_json::Map::new();
+        let mut keys: Vec<&String> = match &binding.params {
+            serde_json::Value::Object(map) => map.keys().collect(),
+            other => panic!("local_slm params are an object, got {other}"),
+        };
+        keys.reverse();
+        for key in keys {
+            flipped.insert(key.clone(), binding.params[key].clone());
+        }
+        reversed.params = serde_json::Value::Object(flipped);
+        assert_eq!(binding_digest(&reversed), with_params);
+
+        let prepared = prepare_candidates(&estate, Some("research"));
+        let hint = SelectHint {
+            select: Some("local_slm".into()),
+            digest: Some(with_params.clone()),
+        };
+        let (result, digest) = select(&prepared, Some(&hint));
+        let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
+        assert_eq!(result, "local_slm");
+        assert_eq!(validation, "ok");
+        assert!(fallback.is_none());
+
+        let binding = estate
+            .model_bindings
+            .iter_mut()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap();
+        binding.params["model"] = serde_json::json!("drifted-model");
+        binding.params["path"] = serde_json::json!("/tmp/drifted");
+        let drifted = binding_digest(binding);
+        assert_ne!(drifted, with_params);
+        let prepared = prepare_candidates(&estate, Some("research"));
+        let hint = SelectHint {
+            select: Some("local_slm".into()),
+            digest: Some(with_params),
+        };
+        let (result, digest) = select(&prepared, Some(&hint));
+        let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
+        assert_eq!(result, "local_slm");
+        assert_eq!(validation, "stale");
+        assert_eq!(fallback.as_deref(), Some("local_slm"));
+        assert_eq!(stage_name(&result, &validation), "fallback");
     }
 }

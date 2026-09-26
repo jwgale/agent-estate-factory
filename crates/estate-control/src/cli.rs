@@ -639,8 +639,12 @@ pub(crate) enum ConveyCommand {
     /// selector chooses one id or abstains. The host re-validates (`ok`,
     /// `stale`, `ineligible`, `expired`) and may record a fallback. The
     /// selector does not grant permission. Success prints one
-    /// `decision receipt:` cite. Unread `estate decisions export` does not
-    /// fail the call. No promote. No auto-apply.
+    /// `decision receipt:` cite. A journal write that fails after the hop
+    /// has already committed prints `decision receipt: journal write failed
+    /// after hop commit` and still prints the allow or restamp JSON. The hop
+    /// exit stands. Binding digests cover id, class, driver, and binding
+    /// params, so param drift marks a hint stale. Unread `estate decisions
+    /// export` does not fail the call. No promote. No auto-apply.
     Call {
         #[arg(long)]
         id: String,
