@@ -1,6 +1,7 @@
 //! Agent packs + orchestrator handoff on `estate complete --pack`.
 //!
-//! Membership scopes handoff. Free mixed select without `--pack` stays out.
+//! Membership scopes handoff. Opt-in mixed select without `--pack` is
+//! `--select equal-class` / agent `select: equal-class`.
 //! Does not invent a live PASS. Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};

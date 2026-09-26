@@ -486,6 +486,110 @@ fn equal_class_abstain_refuses_without_object() {
 }
 
 #[test]
+fn equal_class_mixed_select_chooses_specialty_and_names_rejected_peers() {
+    let dir = scratch("mixed-select");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let mut estate = base_estate();
+    push_local(&mut estate, "ag_news");
+    let research = estate
+        .agents
+        .iter_mut()
+        .find(|agent| agent.id == "research")
+        .unwrap();
+    research.models = vec![
+        estate_schema::ModelUseDecl {
+            id: "ag_news".into(),
+            description: None,
+        },
+        estate_schema::ModelUseDecl {
+            id: "xai_grok".into(),
+            description: None,
+        },
+    ];
+    research.select = Some("equal-class".into());
+    allow_model(&mut estate, "research", "ag_news");
+    allow_model(&mut estate, "research", "class:frontier");
+    let estate_path = write_estate(&dir, &estate);
+    let (ok, stdout, stderr) = complete(
+        &estate_path,
+        &state,
+        &[
+            "--agent",
+            "research",
+            "--prompt",
+            "hello from the factory",
+            "--mock",
+        ],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    let cite = cite_line(&stdout);
+    assert!(cite.contains("result=ag_news"), "{cite}");
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 1);
+    assert_receipt_shape(&rows[0]);
+    assert_eq!(rows[0]["result"], "ag_news");
+    assert_eq!(
+        rows[0]["rejected"],
+        serde_json::json!([{"id": "xai_grok"}])
+    );
+    assert_eq!(
+        rows[0]["candidates"],
+        serde_json::json!([{"id": "xai_grok"}, {"id": "ag_news"}])
+    );
+    no_invented_pass(&stdout, &stderr);
+
+    let default_state = dir.join("default-state");
+    std::fs::create_dir_all(&default_state).unwrap();
+    estate
+        .agents
+        .iter_mut()
+        .find(|agent| agent.id == "research")
+        .unwrap()
+        .select = None;
+    let default_estate = write_estate(&dir.join("default"), &estate);
+    let (ok, stdout, stderr) = complete(
+        &default_estate,
+        &default_state,
+        &[
+            "--agent",
+            "research",
+            "--prompt",
+            "ping",
+            "--mock",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stderr.contains("refuse:decision-abstain"), "{stderr}");
+    assert_eq!(load_receipts(&default_state)[0]["result"], "abstain");
+
+    let flag_state = dir.join("flag-state");
+    std::fs::create_dir_all(&flag_state).unwrap();
+    let (ok, stdout, stderr) = complete(
+        &default_estate,
+        &flag_state,
+        &[
+            "--agent",
+            "research",
+            "--select",
+            "equal-class",
+            "--prompt",
+            "hello from the factory",
+            "--mock",
+        ],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    let rows = load_receipts(&flag_state);
+    assert_eq!(rows[0]["result"], "ag_news");
+    assert_eq!(
+        rows[0]["rejected"],
+        serde_json::json!([{"id": "xai_grok"}])
+    );
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn named_object_completes_when_selector_abstains() {
     let dir = scratch("named");
     let state = dir.join("state");

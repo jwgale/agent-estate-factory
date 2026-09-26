@@ -10,7 +10,7 @@
 //! A fallback id is recorded and not applied.
 
 use anyhow::{bail, Context, Result};
-use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelBinding};
+use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelBinding, ModelClass};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -22,11 +22,56 @@ pub(crate) const RECEIPT_SCHEMA: &str = "cell-one.decision-receipt.v0";
 pub(crate) const SELECT_SCHEMA: &str = "cell-one.decision-select.v0";
 pub(crate) const SELECT_FILE: &str = "decision-select.json";
 pub(crate) const JOURNAL_FILE: &str = "receipts.jsonl";
+pub(crate) const EQUAL_CLASS_SELECT: &str = "equal-class";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum MixedSelectPolicy {
+    /// Zero or two-or-more eligible ids abstain (existing default).
+    #[default]
+    Disjoint,
+    /// One complete turn may choose a specialty seat among equal-class peers.
+    EqualClass,
+}
+
+impl MixedSelectPolicy {
+    pub(crate) fn parse(raw: &str) -> Result<Self> {
+        match estate_schema::normalize_name(raw).as_str() {
+            "" => Ok(Self::Disjoint),
+            "equal-class" => Ok(Self::EqualClass),
+            other => bail!(
+                "refuse:decision-select: select policy must be {EQUAL_CLASS_SELECT} (got '{other}')"
+            ),
+        }
+    }
+
+    pub(crate) fn is_equal_class(self) -> bool {
+        matches!(self, Self::EqualClass)
+    }
+}
+
+fn merge_policy(left: MixedSelectPolicy, right: MixedSelectPolicy) -> MixedSelectPolicy {
+    if left.is_equal_class() || right.is_equal_class() {
+        MixedSelectPolicy::EqualClass
+    } else {
+        MixedSelectPolicy::Disjoint
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectHint {
     pub select: Option<String>,
     pub digest: Option<String>,
+    pub policy: MixedSelectPolicy,
+}
+
+impl Default for SelectHint {
+    fn default() -> Self {
+        Self {
+            select: None,
+            digest: None,
+            policy: MixedSelectPolicy::Disjoint,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,6 +123,10 @@ pub(crate) struct DecisionReceipt {
     /// Opt-in category label from `estate complete` when a codec decoded the letter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_label: Option<String>,
+    /// Peer candidates considered and not chosen on equal-class mixed select.
+    /// Empty stays off the wire so existing receipts keep their shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rejected: Vec<CandidateSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,21 +207,73 @@ fn prepare_candidates(estate: &Estate, agent: Option<&str>) -> Vec<Prepared> {
     out
 }
 
-/// One eligible id is selected. Zero or more than one abstains: frontier
-/// and local are equal class, and this selector does not rank them.
-/// A hint may name an id. That name is not a grant.
-fn select(prepared: &[Prepared], hint: Option<&SelectHint>) -> (String, Option<String>) {
+fn is_specialty_local(estate: &Estate, binding_id: &str) -> bool {
+    let want = estate_schema::normalize_name(binding_id);
+    if want == "local_slm" {
+        return false;
+    }
+    estate.model_bindings.iter().any(|binding| {
+        estate_schema::normalize_name(&binding.id) == want && binding.class == ModelClass::Local
+    })
+}
+
+fn agent_select_policy(estate: &Estate, agent: Option<&str>) -> MixedSelectPolicy {
+    let Some(agent_id) = agent else {
+        return MixedSelectPolicy::Disjoint;
+    };
+    let Some(row) = estate.agent(agent_id) else {
+        return MixedSelectPolicy::Disjoint;
+    };
+    match row.select.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => MixedSelectPolicy::parse(raw).unwrap_or(MixedSelectPolicy::Disjoint),
+        None => MixedSelectPolicy::Disjoint,
+    }
+}
+
+/// One eligible id is selected. Zero or more than one abstains unless
+/// equal-class mixed select is opted in: then exactly one specialty local
+/// among mixed peers is chosen. A hint may name an id. That name is not a grant.
+fn select(
+    prepared: &[Prepared],
+    hint: Option<&SelectHint>,
+    policy: MixedSelectPolicy,
+    estate: &Estate,
+) -> (String, Option<String>) {
+    let effective = merge_policy(policy, hint.map(|h| h.policy).unwrap_or_default());
     if let Some(hint) = hint {
-        return match &hint.select {
-            Some(id) => (id.clone(), hint.digest.clone()),
-            None => ("abstain".into(), None),
-        };
+        if let Some(id) = &hint.select {
+            return (id.clone(), hint.digest.clone());
+        }
+        if !effective.is_equal_class() {
+            return ("abstain".into(), None);
+        }
     }
     match prepared {
         [] => ("abstain".into(), None),
         [one] => (one.id.clone(), Some(one.digest.clone())),
+        many if effective.is_equal_class() => {
+            let specialties: Vec<&Prepared> = many
+                .iter()
+                .filter(|row| is_specialty_local(estate, &row.id))
+                .collect();
+            match specialties.as_slice() {
+                [one] => (one.id.clone(), Some(one.digest.clone())),
+                _ => ("abstain".into(), None),
+            }
+        }
         _ => ("abstain".into(), None),
     }
+}
+
+fn rejected_peers(prepared: &[Prepared], result: &str) -> Vec<CandidateSummary> {
+    if result == "abstain" || prepared.len() < 2 {
+        return Vec::new();
+    }
+    prepared
+        .iter()
+        .filter(|row| row.id != result)
+        .map(|row| CandidateSummary { id: row.id.clone() })
+        .collect()
 }
 
 fn revalidate(
@@ -220,7 +321,8 @@ pub(crate) fn resolve_selection(
     expired: bool,
 ) -> Selection {
     let prepared = prepare_candidates(estate, agent);
-    let (result, claimed) = select(&prepared, hint);
+    let policy = agent_select_policy(estate, agent);
+    let (result, claimed) = select(&prepared, hint, policy, estate);
     let (validation, fallback) = revalidate(&prepared, &result, claimed.as_deref(), expired);
     let stage = stage_name(&result, &validation).to_string();
     Selection {
@@ -284,18 +386,49 @@ pub(crate) fn load_select_hint(state_dir: &Path) -> Result<Option<SelectHint>> {
     if value.get("schema").and_then(|s| s.as_str()) != Some(SELECT_SCHEMA) {
         bail!("refuse:decision-select: schema must be {SELECT_SCHEMA}");
     }
+    let mut policy = MixedSelectPolicy::Disjoint;
+    if let Some(raw) = value.get("policy").and_then(|v| v.as_str()) {
+        policy = MixedSelectPolicy::parse(raw)?;
+    }
     let select = match value.get("select") {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::String(raw)) if raw == "abstain" => None,
+        Some(serde_json::Value::String(raw)) if estate_schema::normalize_name(raw) == EQUAL_CLASS_SELECT => {
+            policy = MixedSelectPolicy::EqualClass;
+            None
+        }
         Some(serde_json::Value::String(raw)) if !raw.is_empty() => Some(raw.clone()),
-        _ => bail!("refuse:decision-select: select must be an id, abstain, or null"),
+        _ => bail!("refuse:decision-select: select must be an id, abstain, equal-class, or null"),
     };
     let digest = match value.get("digest") {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::String(raw)) if !raw.is_empty() => Some(raw.clone()),
         _ => bail!("refuse:decision-select: digest must be a non-empty string or null"),
     };
-    Ok(Some(SelectHint { select, digest }))
+    Ok(Some(SelectHint {
+        select,
+        digest,
+        policy,
+    }))
+}
+
+/// Merge a CLI `--select equal-class` (or documented flag) into the hint.
+pub(crate) fn apply_select_policy(hint: &mut Option<SelectHint>, raw: Option<&str>) -> Result<()> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(());
+    };
+    let policy = MixedSelectPolicy::parse(raw)?;
+    match hint {
+        Some(existing) => existing.policy = merge_policy(existing.policy, policy),
+        None => {
+            *hint = Some(SelectHint {
+                select: None,
+                digest: None,
+                policy,
+            });
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn record_convey_receipt(
@@ -439,13 +572,15 @@ fn record_receipt(
     pack: Option<&PackHandoff>,
 ) -> Result<DecisionReceipt> {
     let prepared = prepare_candidates(estate, agent);
-    let (result, claimed) = select(&prepared, hint);
+    let policy = agent_select_policy(estate, agent);
+    let (result, claimed) = select(&prepared, hint, policy, estate);
     let (validation, fallback) = revalidate(&prepared, &result, claimed.as_deref(), expired);
     let stage = stage_name(&result, &validation).to_string();
     let candidates = prepared
         .iter()
         .map(|row| CandidateSummary { id: row.id.clone() })
         .collect::<Vec<_>>();
+    let rejected = rejected_peers(&prepared, &result);
     let dir = state_dir.join("decisions");
     fs::create_dir_all(&dir)?;
     let path = dir.join(JOURNAL_FILE);
@@ -455,8 +590,13 @@ fn record_receipt(
         .map(|row| row.id.as_str())
         .collect::<Vec<_>>()
         .join(",");
+    let rejected_ids = rejected
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
     let mut material = format!(
-        "{hop_id}\n{capability}\n{}\n{candidate_ids}\n{result}\n{validation}\n{}\n{outcome}\n{stage}",
+        "{hop_id}\n{capability}\n{}\n{candidate_ids}\n{result}\n{rejected_ids}\n{validation}\n{}\n{outcome}\n{stage}",
         agent.unwrap_or(""),
         fallback.as_deref().unwrap_or("")
     );
@@ -516,6 +656,7 @@ fn record_receipt(
         fallback,
         outcome: outcome.to_string(),
         completion_label: None,
+        rejected,
     };
     check_receipt(&receipt)?;
     let line = serde_json::to_string(&receipt)?;
@@ -659,8 +800,19 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
                 Some(id) => format!(" chain={id}"),
                 None => String::new(),
             };
+            let rejected = if receipt.rejected.is_empty() {
+                String::new()
+            } else {
+                let ids = receipt
+                    .rejected
+                    .iter()
+                    .map(|row| row.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(" rejected={ids}")
+            };
             out.push_str(&format!(
-                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine}{chain} result={result} outcome={outcome}\n",
+                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine}{chain} result={result}{rejected} outcome={outcome}\n",
                 id = receipt.id,
                 cap = receipt.capability,
                 result = receipt.result,
@@ -718,8 +870,8 @@ pub(crate) fn cmd_decisions_report(state_dir: &Path, pack: Option<&str>) -> Resu
 /// `--agent` must be the pack orchestrator when set, else a member.
 /// Handoff candidates are members other than the calling agent.
 /// One candidate selects that member. Multiple need a select hint naming
-/// a member id. Zero candidates refuse. Free mixed select without `--pack`
-/// stays out of scope.
+/// a member id. Zero candidates refuse. Opt-in mixed select without
+/// `--pack` is `--select equal-class` / agent `select: equal-class`.
 pub(crate) fn resolve_pack_handoff(
     estate: &Estate,
     pack_id: &str,
@@ -961,7 +1113,7 @@ mod tests {
         let estate = example();
         let prepared = prepare_candidates(&estate, None);
         assert!(prepared.is_empty());
-        let (result, digest) = select(&prepared, None);
+        let (result, digest) = select(&prepared, None, MixedSelectPolicy::Disjoint, &estate);
         assert_eq!(result, "abstain");
         assert!(digest.is_none());
         let (validation, fallback) = revalidate(&prepared, &result, None, false);
@@ -977,7 +1129,7 @@ mod tests {
         let prepared = prepare_candidates(&estate, Some("research"));
         assert_eq!(prepared.len(), 1);
         assert_eq!(prepared[0].id, "local_slm");
-        let (result, digest) = select(&prepared, None);
+        let (result, digest) = select(&prepared, None, MixedSelectPolicy::Disjoint, &estate);
         assert_eq!(result, "local_slm");
         let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
         assert_eq!(validation, "ok");
@@ -1013,7 +1165,7 @@ mod tests {
         });
         let prepared = prepare_candidates(&estate, Some("research"));
         assert_eq!(prepared.len(), 2);
-        let (result, _) = select(&prepared, None);
+        let (result, _) = select(&prepared, None, MixedSelectPolicy::Disjoint, &estate);
         assert_eq!(result, "abstain");
         let (validation, fallback) = revalidate(&prepared, &result, None, false);
         assert_eq!(validation, "ok");
@@ -1028,8 +1180,9 @@ mod tests {
         let hint = SelectHint {
             select: Some("xai_grok".into()),
             digest: None,
+            policy: MixedSelectPolicy::Disjoint,
         };
-        let (result, digest) = select(&prepared, Some(&hint));
+        let (result, digest) = select(&prepared, Some(&hint), MixedSelectPolicy::Disjoint, &estate);
         assert_eq!(result, "xai_grok");
         let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
         assert_eq!(validation, "ineligible");
@@ -1049,8 +1202,9 @@ mod tests {
         let hint = SelectHint {
             select: Some("local_slm".into()),
             digest: Some("0".into()),
+            policy: MixedSelectPolicy::Disjoint,
         };
-        let (result, digest) = select(&prepared, Some(&hint));
+        let (result, digest) = select(&prepared, Some(&hint), MixedSelectPolicy::Disjoint, &estate);
         let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
         assert_eq!(validation, "stale");
         assert_eq!(fallback.as_deref(), Some("local_slm"));
@@ -1099,8 +1253,9 @@ mod tests {
         let hint = SelectHint {
             select: Some("local_slm".into()),
             digest: Some(with_params.clone()),
+            policy: MixedSelectPolicy::Disjoint,
         };
-        let (result, digest) = select(&prepared, Some(&hint));
+        let (result, digest) = select(&prepared, Some(&hint), MixedSelectPolicy::Disjoint, &estate);
         let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
         assert_eq!(result, "local_slm");
         assert_eq!(validation, "ok");
@@ -1119,8 +1274,9 @@ mod tests {
         let hint = SelectHint {
             select: Some("local_slm".into()),
             digest: Some(with_params),
+            policy: MixedSelectPolicy::Disjoint,
         };
-        let (result, digest) = select(&prepared, Some(&hint));
+        let (result, digest) = select(&prepared, Some(&hint), MixedSelectPolicy::Disjoint, &estate);
         let (validation, fallback) = revalidate(&prepared, &result, digest.as_deref(), false);
         assert_eq!(result, "local_slm");
         assert_eq!(validation, "stale");
@@ -1171,7 +1327,10 @@ mod tests {
             prepared.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
             ["ag_news"]
         );
-        assert_eq!(select(&prepared, None).0, "ag_news");
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::Disjoint, &scoped).0,
+            "ag_news"
+        );
 
         let mut allow_list = example();
         push_local(&mut allow_list, "ag_news");
@@ -1188,7 +1347,10 @@ mod tests {
         allow_local(&mut allow_list, "research");
         let prepared = prepare_candidates(&allow_list, Some("research"));
         assert_eq!(prepared.len(), 1);
-        assert_eq!(select(&prepared, None).0, "ag_news");
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::Disjoint, &allow_list).0,
+            "ag_news"
+        );
 
         let mut peers = example();
         push_local(&mut peers, "ag_news");
@@ -1205,7 +1367,10 @@ mod tests {
         allow_local(&mut peers, "research");
         let prepared = prepare_candidates(&peers, Some("research"));
         assert_eq!(prepared.len(), 2);
-        assert_eq!(select(&prepared, None).0, "abstain");
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::Disjoint, &peers).0,
+            "abstain"
+        );
 
         let mut open = example();
         push_local(&mut open, "ag_news");
@@ -1228,7 +1393,116 @@ mod tests {
         assert!(ids.contains(&"xai_grok"), "{ids:?}");
         assert!(ids.contains(&"local_slm"), "{ids:?}");
         assert!(ids.contains(&"ag_news"), "{ids:?}");
-        assert_eq!(select(&prepared, None).0, "abstain");
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::Disjoint, &open).0,
+            "abstain"
+        );
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::EqualClass, &open).0,
+            "ag_news"
+        );
+        assert_eq!(
+            rejected_peers(&prepared, "ag_news")
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["xai_grok", "local_slm"]
+        );
+    }
+
+    #[test]
+    fn equal_class_mixed_select_chooses_specialty_and_names_rejected_peers() {
+        let mut estate = example();
+        push_local(&mut estate, "ag_news");
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .models = vec![
+            ModelUseDecl {
+                id: "ag_news".into(),
+                description: None,
+            },
+            ModelUseDecl {
+                id: "xai_grok".into(),
+                description: None,
+            },
+        ];
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .select = Some(EQUAL_CLASS_SELECT.into());
+        allow_local(&mut estate, "research");
+        estate.intentions.push(Intention {
+            subject_agent: "research".into(),
+            object: "class:frontier".into(),
+            kind: IntentionKind::Model,
+            effect: Effect::Allow,
+            note: None,
+        });
+        estate_schema::validate(&estate).unwrap();
+
+        let prepared = prepare_candidates(&estate, Some("research"));
+        assert_eq!(
+            prepared.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            ["xai_grok", "ag_news"]
+        );
+        assert_eq!(
+            select(&prepared, None, MixedSelectPolicy::Disjoint, &estate).0,
+            "abstain"
+        );
+        let selection = resolve_selection(&estate, Some("research"), None, false);
+        assert_eq!(selection.result, "ag_news");
+        assert_eq!(selection.validation, "ok");
+        assert!(selection.fallback.is_none());
+
+        let dir = std::env::temp_dir().join(format!(
+            "cell-equal-class-mixed-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let receipt = record_complete_receipt(
+            &estate,
+            &dir,
+            "ag_news",
+            "research",
+            None,
+            "allow",
+        )
+        .unwrap();
+        assert_eq!(receipt.result, "ag_news");
+        assert_eq!(
+            receipt
+                .rejected
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["xai_grok"]
+        );
+        let line = serde_json::to_string(&receipt).unwrap();
+        assert!(line.contains("\"rejected\""), "{line}");
+        assert!(line.contains("xai_grok"), "{line}");
+
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .select = None;
+        let without = resolve_selection(&estate, Some("research"), None, false);
+        assert_eq!(without.result, "abstain");
+        let hint = SelectHint {
+            select: None,
+            digest: None,
+            policy: MixedSelectPolicy::EqualClass,
+        };
+        let with_hint = resolve_selection(&estate, Some("research"), Some(&hint), false);
+        assert_eq!(with_hint.result, "ag_news");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

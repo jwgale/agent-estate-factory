@@ -112,6 +112,19 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
             agent.calls.iter().map(|c| c.id.as_str()),
             &mut errors,
         );
+        if let Some(select) = agent
+            .select
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if normalize_name(select) != "equal-class" {
+                errors.push(format!(
+                    "agent '{}' select must be equal-class (got '{select}')",
+                    agent.id
+                ));
+            }
+        }
         for call in &agent.calls {
             if is_sacred_name(&call.id) || estate.is_sacred(&call.id) {
                 errors.push(format!(
@@ -684,6 +697,29 @@ mod tests {
         let estate = load_estate_str(crate::tests::example_yaml()).unwrap();
         assert!(estate.model_bindings.iter().all(|b| b.wired));
         validate(&estate).unwrap();
+    }
+
+    #[test]
+    fn agent_select_equal_class_is_ok_and_unknown_fails() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .select = Some("equal-class".into());
+        validate(&estate).unwrap();
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .select = Some("rank-frontier".into());
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("select must be equal-class")),
+            "{err:?}"
+        );
     }
 
     #[test]

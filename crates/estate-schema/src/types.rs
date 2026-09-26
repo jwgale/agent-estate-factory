@@ -70,6 +70,11 @@ pub struct Agent {
     /// Absent on the wire when empty so the locked example hash stays put.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub calls: Vec<CallDecl>,
+    /// Opt-in mixed select. `equal-class` lets one `estate complete` turn
+    /// consider specialty + frontier peers and choose one. Absent stays
+    /// off the wire so locked `examples/estate.yaml` hash is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

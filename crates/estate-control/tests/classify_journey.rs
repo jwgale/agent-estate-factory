@@ -29,6 +29,21 @@ fn scratch(name: &str) -> PathBuf {
     path
 }
 
+fn assert_print_wrote_only_purpose_seat(dir: &std::path::Path) {
+    let sidecar = dir.join("purpose-seat.json");
+    assert!(sidecar.is_file(), "print should emit {}", sidecar.display());
+    let text = fs::read_to_string(&sidecar).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let seat = doc["purpose_seat"].as_str().expect(&text);
+    assert!(
+        seat.starts_with("specialist-") || seat.starts_with("classify-"),
+        "{seat}"
+    );
+    assert!(!dir.join("recipe.yaml").exists(), "{}", dir.display());
+    assert!(!dir.join("comparison.json").exists(), "{}", dir.display());
+    assert!(!dir.join("dataset.jsonl").exists(), "{}", dir.display());
+}
+
 fn assert_estate_hash_locked() {
     let out = Command::new("cksum")
         .arg(repo_root().join("examples/estate.yaml"))
@@ -387,7 +402,7 @@ fn journey_print_lists_steps_without_tools() {
         "{stdout}"
     );
     assert_standing_next(&stdout);
-    assert!(!dir.exists(), "print must not write {}", dir.display());
+    assert_print_wrote_only_purpose_seat(&dir);
     assert_estate_hash_locked();
     let shot = bin()
         .args([
@@ -412,7 +427,7 @@ fn journey_print_lists_steps_without_tools() {
     assert!(shot_out.contains("seed 11"), "{shot_out}");
     assert!(shot_out.contains("run eval-base-few-shot"), "{shot_out}");
     assert!(shot_out.contains("--few-shot 3"), "{shot_out}");
-    assert!(!dir.exists(), "few-shot print must not write");
+    assert_print_wrote_only_purpose_seat(&dir);
     let warned = bin()
         .args([
             "classify",
@@ -1489,7 +1504,7 @@ fn journey_print_together_does_not_use_the_network_or_print_the_key() {
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
     assert!(!stdout.contains(secret), "{stdout}");
     assert!(!stderr.contains(secret), "{stderr}");
-    assert!(!dir.exists(), "print must not write {}", dir.display());
+    assert_print_wrote_only_purpose_seat(&dir);
     let help = bin()
         .args(["classify", "journey", "--help"])
         .output()
@@ -1969,7 +1984,7 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
         !stdout.contains("Qwen/Qwen3.5-4B"),
         "qwen default base leaked\n{stdout}"
     );
-    assert!(!dir.exists(), "print must not write {}", dir.display());
+    assert_print_wrote_only_purpose_seat(&dir);
 
     let refused = bin()
         .args([
@@ -2255,10 +2270,12 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
         "{printed_out}"
     );
     assert!(
-        !journey.exists(),
-        "print must not write {}",
+        journey.join("purpose-seat.json").is_file(),
+        "print should emit purpose-seat.json under {}",
         journey.display()
     );
+    assert!(!journey.join("recipe.yaml").exists());
+    assert!(!journey.join("comparison.json").exists());
     assert_estate_hash_locked();
     let _ = fs::remove_dir_all(&root);
 }
@@ -2467,10 +2484,12 @@ fn devign_import_and_journey_print_reuse_the_qwen_path() {
         assert!(printed_out.contains(name), "{name} missing\n{printed_out}");
     }
     assert!(
-        !journey.exists(),
-        "print must not write {}",
+        journey.join("purpose-seat.json").is_file(),
+        "print should emit purpose-seat.json under {}",
         journey.display()
     );
+    assert!(!journey.join("recipe.yaml").exists());
+    assert!(!journey.join("comparison.json").exists());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -2608,10 +2627,12 @@ fn rust_idiom_import_and_journey_print_reuse_the_qwen_path() {
         assert!(printed_out.contains(name), "{name} missing\n{printed_out}");
     }
     assert!(
-        !journey.exists(),
-        "print must not write {}",
+        journey.join("purpose-seat.json").is_file(),
+        "print should emit purpose-seat.json under {}",
         journey.display()
     );
+    assert!(!journey.join("recipe.yaml").exists());
+    assert!(!journey.join("comparison.json").exists());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -2716,7 +2737,7 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
         !stdout.contains("Qwen/Qwen3.5-4B"),
         "qwen default base leaked\n{stdout}"
     );
-    assert!(!dir.exists(), "print must not write {}", dir.display());
+    assert_print_wrote_only_purpose_seat(&dir);
 
     let refused = bin()
         .args([
@@ -2950,9 +2971,11 @@ fn print_import_trained_does_not_invent_a_proposal() {
         "{stdout}"
     );
     assert_standing_next(&stdout);
-    assert!(!out.exists(), "print must not write {}", out.display());
+    assert_print_wrote_only_purpose_seat(&out);
     assert!(!gguf.exists());
     assert!(!prepared.join("binding-proposal.json").is_file());
+    let purpose = fs::read_to_string(prepared.join("purpose-seat.json")).unwrap();
+    assert!(purpose.contains("classify-specialist"), "{purpose}");
     assert_eq!(
         fs::read(prepared.join("prepare.json")).unwrap(),
         prepare_before

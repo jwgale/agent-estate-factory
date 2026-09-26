@@ -1197,13 +1197,19 @@ through a GGUF, not an Ollama adapter line for the PEFT directory.
 A missing UNSLOTH.md or train base is refuse:train-base.
 Ollama purpose seats prefer human tags such as specialist-agnews-all
 or classify-base. The enrich create name stays cell-enrich-{pack} (API
-lock). Binding ids (ag_news) are a third layer. On import-trained, live
-Ollama seat resolution is the default when the enrich tag or journey
-metadata names a purpose seat. A unique live match writes params.model
-to that seat so throwaway AG News does not need a hand patch after
-import. Two or more live matches refuse (pass --seat-model). --seat-model
-<live-ollama-name> stays the explicit override. estate complete prefers
-binding params.model when calling the local runtime.
+lock). Binding ids (ag_news) are a third layer. Classify journey and
+enrich prepare write purpose-seat.json with that live seat
+(specialist-{slug}-{size}) so import-trained can auto-bind without a
+hand-copied sidecar. On import-trained, live Ollama seat resolution is
+the default when that sidecar, the enrich tag, or journey metadata
+names a purpose seat. A unique live match writes params.model to that
+seat. Two or more live matches refuse (pass --seat-model). --seat-model
+<live-ollama-name> stays the explicit override. --purpose-seat writes
+the sidecar on import when prepare did not. estate complete prefers
+binding params.model when calling the local runtime. Opt-in
+--select equal-class (or agent select: equal-class) lets one complete
+turn consider specialty + frontier; the receipt names the chosen
+binding and rejected peers. Default disjoint allow-lists still abstain.
 
 The create name is cell-enrich-{pack}. The seat tag is prepare.json
 seat_tag. The command does not run ollama or llama.cpp. GGUF conversion stays

@@ -481,4 +481,20 @@ mod tests {
         assert_eq!(hints, vec!["specialist-agnews-all".to_string()]);
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn write_purpose_seat_sidecar_uses_canonical_specialist_name() {
+        let root = std::env::temp_dir().join(format!(
+            "cell-seat-bind-write-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_purpose_seat_sidecar(&root, "specialist-agnews-all:latest").unwrap();
+        let text = fs::read_to_string(root.join("purpose-seat.json")).unwrap();
+        assert!(text.contains("\"purpose_seat\": \"specialist-agnews-all\""), "{text}");
+        write_purpose_seat_sidecar(&root, "llama3").unwrap();
+        let still = fs::read_to_string(root.join("purpose-seat.json")).unwrap();
+        assert!(still.contains("specialist-agnews-all"), "{still}");
+        let _ = fs::remove_dir_all(&root);
+    }
 }
