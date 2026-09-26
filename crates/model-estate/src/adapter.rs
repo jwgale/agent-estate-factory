@@ -237,6 +237,23 @@ fn prove_compat_runtime(endpoint: &str, text: &str) -> Result<(), ModelError> {
 
 fn compat_chat(endpoint: &str, text: &str) -> Result<String, ModelError> {
     let model = resolve_model(endpoint)?;
+    // Ollama `/v1` rejects boolean `think`. When thinking is on, prefer
+    // native `/api/chat` so `think: true` is actually sent.
+    if complete_think() {
+        match post_ollama_chat(endpoint, &model, text) {
+            Ok(content) => return accepted_completion(&content),
+            Err(ollama_err) => match post_openai_chat(endpoint, &model, text) {
+                Ok(content) => return accepted_completion(&content),
+                Err(openai_err) => {
+                    return Err(ModelError::Unreachable(both_chat_fail(
+                        &openai_err,
+                        &ollama_err,
+                        &model,
+                    )));
+                }
+            },
+        }
+    }
     match post_openai_chat(endpoint, &model, text) {
         Ok(content) => accepted_completion(&content),
         Err(openai_err) => match post_ollama_chat(endpoint, &model, text) {
@@ -1067,6 +1084,27 @@ mod tests {
         let v: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["think"], true);
         assert_eq!(v["options"]["num_predict"], 64);
+    }
+
+    #[test]
+    fn specialist_complete_think_on_prefers_ollama_native() {
+        let _env = EnvLock::lock(&[
+            ("CELL_COMPLETE_THINK", Some("1")),
+            ("CELL_COMPLETE_MAX_TOKENS", Some("256")),
+        ]);
+        // OpenAI chat returns empty content; native succeeds. Think-on must
+        // hit `/api/chat` first so boolean `think` is sent.
+        let srv = CompatServer::spawn(CompatScript::OpenAiEmptyThenOllama {
+            models: vec!["llama3".into()],
+        })
+        .unwrap();
+        let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
+        assert_eq!(result.completion, "ok");
+        let (path, body) = srv.last_post().expect("ollama chat POST");
+        assert_eq!(path, "/api/chat");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["think"], true);
+        assert_eq!(v["options"]["num_predict"], 256);
     }
 
     #[test]
