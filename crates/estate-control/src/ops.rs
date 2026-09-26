@@ -361,7 +361,17 @@ pub(crate) fn cmd_feed_cursor(feed_dir: &Path) -> Result<()> {
     }
 }
 
-pub(crate) fn cmd_history(state_dir: &Path) -> Result<()> {
+pub(crate) fn cmd_history(estate_path: &Path, state_dir: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the lifecycle history list. Same stack
+    // as estate leases, convey leases, and audits. Hop cites do not change
+    // this command's exit code. The stack reads placement-actual for mesh
+    // interpretation and Authority. A placement-actual SKU omits Authority
+    // and the history body still prints. There is no second placement
+    // refuse before that list. A placement-actual parse failure refuses
+    // here, before the list.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let events = list_lifecycle_events(state_dir)?;
     if events.is_empty() {
         println!("no lifecycle.jsonl under {}", state_dir.display());
@@ -911,7 +921,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 ///
 /// Shared by `estate leases` (printed before the placement list),
 /// `estate convey leases` (printed before the hop lease list),
-/// `estate audits` (printed before the apply-audit list), and
+/// `estate audits` (printed before the apply-audit list),
+/// `estate history` (printed before the lifecycle history list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
 /// or a bad `host_class` on that file, refuses before any section. Callers
 /// do not invent cites, Agents, or Authority rows. A missing mesh is the
@@ -927,7 +938,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// Authority rows. `estate leases` then still refuses that SKU before the
 /// placement JSON. `estate convey leases` then still refuses that SKU before
 /// the hop lease JSON. `estate audits` then still prints the apply-audit
-/// list. There is no second placement refuse before that list. Every other
+/// list. `estate history` then still prints the lifecycle history list.
+/// There is no second placement refuse before that list. Every other
 /// mesh error, including a population ahead of the floor
 /// (`refuse:agent-unplaced`) and a placement-actual parse failure
 /// (`MeshError::Parse`), refuses here before any section. Capability
