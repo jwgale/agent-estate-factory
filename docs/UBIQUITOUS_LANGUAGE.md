@@ -113,11 +113,11 @@ An `agent` intention is who may call whom. Kind `agent` (estate YAML and CLI ali
 Next-generation harness and custom AI creator suite. Pillars, in order:
 
 1. Agents. Spin up and run agents as first-class under security-as-IaC. Sacred isolation, plan/apply, fail closed.
-2. Harness. Grok Bot–like look and feel. The UI may still be deferred.
+2. Harness. Grok Bot-like look and feel. The UI may still be deferred.
 3. On-spot specialty SLMs. Create, train, enrich, and seat purpose-built small models when the work needs them. One facet. A local-runtime seat in the estate flow. Ollama today. Another process tomorrow. Catalog, route, and bind take the entrant. Facilitate training and enrichment of purpose-built small-parameter models. Open-source SLMs will get more common.
 4. Optional later. A central model brain that learns from the user. Parked. Not a commitment.
 
-Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. `llamafactory-lora` facilitates LoRA without quantization by writing a LLaMA-Factory recipe, `llamafactory-qlora` facilitates QLoRA the same way, `axolotl-lora` writes the bf16 Axolotl YAML, and `axolotl-qlora` writes the 4-bit Axolotl YAML; the factory does not run the trainer. Ollama is the local-run seat. That portable seat and facilitation of purpose-built SLMs are one facet of the suite. Integrate the driver that already does the job. `READY_FOR_LIVE_TEST` stays no. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
+Beachhead on `main`: the seated drivers, enrich packs, the specialist path, and `TrainEnrichDriver`. `estate enrich prepare` writes artifacts. `llamafactory-lora` writes a LLaMA-Factory LoRA recipe without quantization, `llamafactory-qlora` writes the QLoRA recipe the same way, `axolotl-lora` writes the bf16 Axolotl YAML, and `axolotl-qlora` writes the 4-bit Axolotl YAML; the factory does not run the trainer. Ollama is the local-run seat. That portable seat and facilitation of purpose-built SLMs are one facet of the suite. Integrate the driver that already does the job. `READY_FOR_LIVE_TEST` stays no. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md).
 
 ## Aliases to avoid
 
