@@ -261,6 +261,9 @@ pub(crate) fn run() -> Result<()> {
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
             PackCommand::Show { id, estate } => cmd_pack_show(&id, &estate),
+            PackCommand::ExportPlugin { id, out, estate } => {
+                crate::export_plugin::cmd_pack_export_plugin(&id, &out, &estate)
+            }
         },
         Command::Package { command } => match command {
             PackageCommand::List { estate } => cmd_package_list(&estate),

@@ -30,15 +30,15 @@ Enrich pack. Curator edit instructions. `policy: manual`. `estate packs propose`
 
 ### agent pack
 
-Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Opt-in mixed select without `--pack` is `--select equal-class` or agent `select: equal-class`. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
+Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate pack export-plugin --id <pack> --out <dir>` writes an Agent Plugin stub (`plugin.json` + `mcp.json` + `skills/`) from one pack. Mapping comments only — not live Cursor / Grok Bot sync. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Opt-in mixed select without `--pack` is `--select equal-class` or agent `select: equal-class`. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
 
 ### pack package
 
-Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not a Cursor plugin spin.
+Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. `estate pack export-plugin` copies each package into `skills/<id>/SKILL.md` as a body stub. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not live Cursor plugin install.
 
 ### standing routine
 
-Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note` / `schedule` / `enabled`. `estate routine list` / `show` / `run` / `tick` / `status` / `digest`. Run stamps `routine_id` and `package_id`. `tick` runs due schedules (5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`, min 5m) and persists `last_run` / `next_due` under the estate state-dir. `digest` and `tick --report` summarize that last local wake (ran/skipped, package/chain ids, receipt ids, `completion_label` when present). Not a cron daemon. Not live Grok Bot sync.
+Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note` / `schedule` / `enabled`. `estate routine list` / `show` / `run` / `tick` / `status` / `digest`. Run stamps `routine_id` and `package_id`. `tick` runs due schedules (5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`, min 5m) and persists `last_run` / `next_due` under the estate state-dir. `digest` and `tick --report` summarize that last local wake (ran/skipped, package/chain ids, receipt ids, `completion_label` when present). `estate pack export-plugin` copies `schedule` as a commented cron/trigger note only. Not a cron daemon. Not live Grok Bot sync.
 
 ### curator
 
