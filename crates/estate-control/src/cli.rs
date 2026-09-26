@@ -536,13 +536,37 @@ pub(crate) enum ConveyCommand {
         state_dir: PathBuf,
     },
     /// Lease-bound call. Refuses without a granted lease.
-    /// Refuses when the estate file is missing or not a file.
-    /// Refuses when hop coverage for this hop is deny or deny-default.
-    /// `--agent` refuses first on intention deny or deny-default
-    /// (`refuse:intention`). Allow continues to hop coverage, then
-    /// refuses when `--capability` does not match that coverage capability.
-    /// A match continues to the lease. Allow only when that coverage is allow.
-    /// Does not spawn. Does not apply.
+    /// After intention, hop-coverage, and agent-unbound refuses, and after
+    /// the estate loads, prints the same Agents section as status, doctor,
+    /// reconcile, and `estate convey hop` (`describe_agents_section`), then
+    /// the same hop coverage cites (`hop_coverage_cites`: `FAIL` on mismatch,
+    /// `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// `call_hop` or `call_hop_for_agent` and before the call JSON.
+    /// Those cites do not fail this command. A match stays quiet. A missing
+    /// mesh is an empty cite list and stays not-enforced. The shared stack
+    /// still reads placement-actual for mesh interpretation and Authority.
+    /// A present mesh that does not parse, a bad host_class on that file,
+    /// `refuse:agent-unplaced` on the mesh already on disk, or a
+    /// placement-actual parse failure, refuses before those sections and
+    /// before the call. A placement-actual SKU host_class still continues:
+    /// Agents and hop cites print and Authority rows are omitted.
+    /// `call_hop` and `call_hop_for_agent` still refuse that SKU before an
+    /// allow and before any restamp (`load_interpreted_mesh` slim-parses
+    /// placement-actual before `restamp_hop_from_decl`). That diverges from
+    /// `estate audits` and `estate history`, whose readers still print the
+    /// body. Intention deny, hop-coverage deny, deny-default, and a
+    /// capability mismatch, a missing estate, and `--kind` without `--agent`,
+    /// refuse before the stack. An estate cloud-agent placement is that
+    /// coverage deny. A hop id that is not an estate placement stays the
+    /// lease stub. A missing lease is `refuse:no-lease` after the stack and
+    /// does not invent a mesh. A present hop decl with no lease restamps
+    /// once after the stack. A populated lease with no `--agent`, or an
+    /// agent the lease does not name, is `refuse:agent-unbound` after the
+    /// stack and does not print the call JSON. This command does not add a
+    /// second mesh write.
+    /// Does not spawn. Does not apply. Does not claim mediation.
     /// `--agent` binds one placed agent. Not an IdP.
     Call {
         #[arg(long)]
@@ -662,10 +686,10 @@ pub(crate) enum ConveyCommand {
     /// Agents and hop cites print and Authority rows are omitted, and this
     /// file check succeeds. There is no later reader. That diverges from
     /// `estate convey list`, `estate convey leases`, `estate convey expire`,
-    /// `estate convey sync`, and `estate convey hop`, whose readers still
-    /// refuse that SKU after the stack. Deny and deny-default on the Agents
-    /// text are notes and do
-    /// not fail this command. A would-deny row does not fail this command.
+    /// `estate convey sync`, `estate convey hop`, and `estate convey call`,
+    /// whose readers still refuse that SKU after the stack. Deny and
+    /// deny-default on the Agents text are notes and do not fail this
+    /// command. A would-deny row does not fail this command.
     /// A missing conveyor-mesh.json stays not-enforced and cites that the
     /// file is absent. A present mesh with no lease for a declared
     /// capability says no hop lease names it. Does not write. Does not

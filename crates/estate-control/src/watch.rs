@@ -430,8 +430,8 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
 /// (capability mismatch). Deny and deny-default are `note`. Returns the
 /// mismatch lines. Doctor appends them and bails at the end. Status,
 /// convey authority, reconcile, leases, convey leases, audits, history,
-/// expire, convey list, convey expire, convey sync, convey hop, and audit
-/// export discard them and do not bail.
+/// expire, convey list, convey expire, convey sync, convey hop, convey call,
+/// and audit export discard them and do not bail.
 /// Cloud hops, empty populations, ungranted
 /// leases, and hop ids that are not placements stay out. Cloud kinds stay
 /// out of this cite on purpose: `cloud-mesh`, `cloud_mesh`, and
@@ -457,6 +457,9 @@ pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> 
 /// `estate convey hop` prints the text before `declare_hop_covering` writes
 /// the mesh and before the lease JSON. Intention, hop-coverage, and
 /// agent-unbound refuses stay before that text.
+/// `estate convey call` prints the text before `call_hop` /
+/// `call_hop_for_agent` and before the call JSON. Intention, hop-coverage,
+/// missing-estate, and `--kind` without `--agent` stay before that text.
 /// `estate audit export` writes the text into `honesty.md`. Empty when
 /// every subject matches. Does not write.
 pub(crate) fn render_hop_coverage_cites(
@@ -480,16 +483,16 @@ pub(crate) fn render_hop_coverage_cites(
 /// `estate status`, `estate convey authority`, `estate reconcile`,
 /// `estate leases`, `estate convey leases`, `estate audits`,
 /// `estate history`, `estate expire`, `estate convey list`,
-/// `estate convey expire`, `estate convey sync`, `estate convey hop`, and
-/// `estate audit export`.
+/// `estate convey expire`, `estate convey sync`, `estate convey hop`,
+/// `estate convey call`, and `estate audit export`.
 /// `fail` is capability mismatch only. Deny and deny-default stay visible.
 /// They do not fail doctor `--strict`, drift, plan, apply, status, convey
 /// authority, reconcile, leases, convey leases, audits, history, expire,
-/// convey list, convey expire, convey sync, convey hop, or audit export by
-/// themselves. A mismatch fails doctor, drift, plan, and apply. Status,
-/// convey authority, reconcile, leases, convey leases, audits, history,
-/// expire, convey list, convey expire, convey sync, convey hop, and audit
-/// export keep the line and do not bail.
+/// convey list, convey expire, convey sync, convey hop, convey call, or
+/// audit export by themselves. A mismatch fails doctor, drift, plan, and
+/// apply. Status, convey authority, reconcile, leases, convey leases,
+/// audits, history, expire, convey list, convey expire, convey sync, convey
+/// hop, convey call, and audit export keep the line and do not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
