@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(
     name = "estate",
     about = "Cell One estate-control: validate, plan, apply, drift. Specialist complete is a thin HttpLocal delegate, not a gateway.",
-    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter | enrich\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
+    after_help = "Day-90 topics: estate help status | plan | apply | reconcile | feed-loop | backup | frontier | day90-mixed | north-star | charter | enrich | models\nEntrypoint: make gate-90   Live boxes: docs/DAY90-PLUS.md (parked, not green)",
     disable_help_subcommand = true
 )]
 pub(crate) struct Cli {
@@ -20,7 +20,7 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Day-90 operator topic pages. `estate help status`.
     Help {
-        /// Topic: status, plan, apply, reconcile, feed-loop, backup, frontier, day90-mixed, north-star, charter. Omit to list.
+        /// Topic: status, plan, apply, reconcile, feed-loop, backup, frontier, day90-mixed, north-star, charter, models. Omit to list.
         #[arg(value_name = "TOPIC")]
         topic: Option<String>,
     },
@@ -126,9 +126,33 @@ pub(crate) enum Command {
         roots_base: PathBuf,
     },
     /// List equal-class bindings. Does not invoke them.
+    /// After bindings, readiness, and per-binding ping lines, prints the
+    /// shared honesty stack (`honesty_stack`): the same Agents section as
+    /// status, doctor, reconcile, and `estate audits`
+    /// (`describe_agents_section`), then hop coverage cites
+    /// (`hop_coverage_cites` / `render_hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`). Those
+    /// cites do not fail this command. A match stays quiet. A missing mesh
+    /// is an empty cite list and stays not-enforced (`missing-mesh`) and
+    /// cites that conveyor-mesh.json is absent. The shared stack reads
+    /// placement-actual for mesh interpretation and Authority. A present
+    /// mesh that does not parse, a bad host_class on that file,
+    /// `refuse:agent-unplaced`, or a placement-actual parse failure, refuses
+    /// before those sections. The models body is already printed. A
+    /// placement-actual SKU host_class still continues: Agents and hop cites
+    /// print and Authority rows are omitted. There is no later mesh reader
+    /// after the stack. The command does not refuse after the stack. A
+    /// missing or unreadable estate refuses before the models body. Does not
+    /// spawn. Does not write the mesh, the leases, the estate, or the apply
+    /// audit. Does not claim mediation. Examples: `estate help models`
     Models {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
+        /// Directory the honesty stack reads for mesh and placement-actual.
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
     },
     /// Append-only plan history (human control surface).
     Plans {

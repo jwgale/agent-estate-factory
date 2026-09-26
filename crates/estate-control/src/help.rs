@@ -15,6 +15,7 @@ const TOPICS: &[&str] = &[
     "north-star",
     "charter",
     "enrich",
+    "models",
 ];
 
 pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
@@ -66,6 +67,10 @@ pub(crate) fn cmd_help(topic: Option<&str>) -> Result<()> {
             print!("{head}{ENRICH_MATRIX_ANCHOR}\n{LF_BEACHHEAD_MATRIX}\n{tail}");
             Ok(())
         }
+        Some("models") => {
+            print!("{MODELS}");
+            Ok(())
+        }
         Some(other) => {
             eprintln!("unknown help topic: {other}");
             eprintln!("topics: {}", TOPICS.join(", "));
@@ -91,6 +96,7 @@ Live Mac / GPU wait in docs/DAY90-PLUS.md. Do not fake them.
   estate help north-star
   estate help charter
   estate help enrich
+  estate help models
 
 Entrypoint: make gate-90
 Loop:       make day90
@@ -142,6 +148,37 @@ GLM-4 LoRA: make glm4-chat-lora-journey
 GLM LoRA chain: make uniqueness-glm-lora
 Matrix:     make lf-beachhead-prepare
 Live prove: make enrich-live-prove
+";
+
+const MODELS: &str = "\
+estate models — equal-class bindings
+====================================
+Lists bindings, credential readiness, and a per-binding ping line.
+Does not invoke a model. Control will not complete.
+
+After bindings, readiness, and those ping lines, models prints one
+honesty stack (`honesty_stack`): the same Agents section as status,
+doctor, reconcile, and audits (`describe_agents_section`), then hop
+coverage cites from `render_hop_coverage_cites` / `hop_coverage_cites`
+(`FAIL` on a capability mismatch, `note` on deny and deny-default),
+then Authority (`describe_authority_section` over `authority_report`:
+`would-allow`, `would-deny`, `not-enforced`, and `not-enforced reasons:`).
+Those cites do not fail the command. A match stays quiet. A missing
+mesh is an empty cite list. Authority stays not-enforced (`missing-mesh`)
+and cites that conveyor-mesh.json is absent. The shared stack reads
+placement-actual for mesh interpretation and Authority. A present mesh
+that does not parse, a bad host_class on that file,
+`refuse:agent-unplaced`, or a placement-actual parse failure, refuses
+before those sections. The models body is already printed. A
+placement-actual SKU host_class continues: Agents and hop cites print
+and Authority rows are omitted. There is no later mesh reader after
+the stack. The command does not refuse after the stack. A missing or
+unreadable estate refuses before the models body.
+Does not spawn. Does not write the mesh, the leases, the estate, or the apply audit.
+Does not claim mediation.
+
+  estate models --estate examples/estate.yaml --state-dir .cell
+  estate help models
 ";
 
 const STATUS: &str = "\
