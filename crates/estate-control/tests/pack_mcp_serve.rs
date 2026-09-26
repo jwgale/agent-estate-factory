@@ -246,3 +246,20 @@ fn mcp_serve_non_orchestrator_refuses_pack_complete() {
     );
     assert_locked_cksum();
 }
+
+#[test]
+fn mcp_serve_refuses_zero_complete_timeout() {
+    assert_locked_cksum();
+    let out = estate_bin()
+        .args(["pack", "mcp-serve"])
+        .env("CELL_ESTATE_PACK", "research-crew")
+        .env("CELL_ESTATE_MEMBER", "horizon")
+        .env("CELL_ESTATE_PATH", fixture().display().to_string())
+        .env("CELL_MCP_COMPLETE_TIMEOUT_SECS", "0")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("refuse:mcp-complete-timeout"), "{stderr}");
+    assert_locked_cksum();
+}

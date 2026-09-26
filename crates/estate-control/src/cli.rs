@@ -1025,9 +1025,10 @@ pub(crate) enum PackCommand {
     /// Export a Cursor/Agent plugin stub from one estate pack.
     /// Writes plugin.json + mcp.json + skills/ (Agent Plugins floor).
     /// MCP servers run `estate pack mcp-serve` so member tools call
-    /// `estate complete` against the source estate. Routine schedules
-    /// stay comments only. live_sync stays false. Not live Cursor /
-    /// Grok Bot sync. Not a cron daemon.
+    /// `estate complete` against the source estate. Refuses if the
+    /// estate path cannot be canonicalized (no relative CELL_ESTATE_PATH).
+    /// Routine schedules stay comments only. live_sync stays false.
+    /// Not live Cursor / Grok Bot sync. Not a cron daemon.
     ExportPlugin {
         #[arg(long)]
         id: String,
@@ -1039,8 +1040,11 @@ pub(crate) enum PackCommand {
     /// Stdio MCP bridge: one pack member per process. Tool `complete`
     /// runs `estate complete --agent <member> --pack <pack-id>` against
     /// the source estate. Env: CELL_ESTATE_PACK / MEMBER / ROLE / PATH.
-    /// Non-orchestrator members refuse pack-orchestrator the same as
-    /// pack complete. Not live Cursor / Grok Bot sync.
+    /// Child complete is capped (default 120s;
+    /// CELL_MCP_COMPLETE_TIMEOUT_SECS / --complete-timeout-secs);
+    /// expiry kills the process tree. Non-orchestrator members refuse
+    /// pack-orchestrator the same as pack complete. Not live Cursor /
+    /// Grok Bot sync.
     McpServe {
         #[arg(long)]
         estate: Option<PathBuf>,
@@ -1052,6 +1056,10 @@ pub(crate) enum PackCommand {
         state_dir: Option<PathBuf>,
         #[arg(long, default_value_t = false)]
         mock: bool,
+        /// Wall-clock timeout in seconds for the child `estate complete`.
+        /// Default 120. Env: CELL_MCP_COMPLETE_TIMEOUT_SECS.
+        #[arg(long)]
+        complete_timeout_secs: Option<u64>,
     },
 }
 
