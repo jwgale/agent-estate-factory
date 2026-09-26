@@ -45,7 +45,7 @@ pub struct Estate {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pack_packages: Vec<PackPackage>,
     /// Standing routines: declare + run a pack package (automation analog).
-    /// Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
+    /// Optional `schedule` is local tick state — not live Grok Bot sync.
     /// Absent/empty stays off the wire so the locked example hash is unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routines: Vec<Routine>,
@@ -220,6 +220,7 @@ impl ModelClass {
 
 /// Named agent group. Members are estate agent ids. Optional orchestrator
 /// is the host that may hand off via `estate complete --pack`.
+/// Optional `chain` / `steps` is an ordered multi-hop policy (agent→binding).
 /// Not an enrich pack (`enrich_packs` / `estate packs`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentPack {
@@ -227,11 +228,26 @@ pub struct AgentPack {
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orchestrator: Option<String>,
+    /// Ordered hops. Alias `steps`. Empty stays off the wire.
+    #[serde(
+        default,
+        alias = "steps",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub chain: Vec<ChainHop>,
+}
+
+/// One hop in a pack or package chain: wake this agent on this binding.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChainHop {
+    pub agent: String,
+    pub binding: String,
 }
 
 /// Named skill on a pack. Analogous to a Grok Bot skill / package.
 /// `pack` names the agent pack. Optional `prompt` / `binding` seed
-/// `estate package run` → `complete --pack`. Not a grant — intentions still decide.
+/// `estate package run` → `complete --pack`. Optional `chain` / `steps`
+/// is an ordered multi-hop. Not a grant — intentions still decide.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PackPackage {
     pub id: String,
@@ -243,16 +259,46 @@ pub struct PackPackage {
     pub binding: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Ordered hops. Alias `steps`. Empty stays off the wire.
+    #[serde(
+        default,
+        alias = "steps",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub chain: Vec<ChainHop>,
 }
 
 /// Standing automation that declares + runs one pack package.
-/// Analogous to a Grok Bot routine. Minimal bridge only.
+/// Analogous to a Grok Bot routine. Optional `schedule` is local tick
+/// state under the estate state-dir. Not live Grok Bot sync.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Routine {
     pub id: String,
     pub package: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// 5-field cron or `@daily` / `@hourly` / `@every Nh` / `@every Nm`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    /// Absent = enabled. `false` skips `estate routine tick`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+impl Routine {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+}
+
+impl PackPackage {
+    pub fn resolved_chain<'a>(&'a self, pack: &'a AgentPack) -> &'a [ChainHop] {
+        if self.chain.is_empty() {
+            &pack.chain
+        } else {
+            &self.chain
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

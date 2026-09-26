@@ -15,6 +15,7 @@ mod help;
 mod helpers;
 mod ops;
 mod plan_apply;
+mod routines;
 mod suggest;
 mod watch;
 

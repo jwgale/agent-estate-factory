@@ -254,6 +254,7 @@ pub(crate) fn run() -> Result<()> {
             feed_dir.as_deref(),
             endpoint,
             mock,
+            None,
         ),
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
@@ -272,6 +273,7 @@ pub(crate) fn run() -> Result<()> {
                 feed_dir,
                 endpoint,
                 mock,
+                chain,
             } => cmd_package_run(
                 &id,
                 agent.as_deref(),
@@ -282,11 +284,40 @@ pub(crate) fn run() -> Result<()> {
                 feed_dir.as_deref(),
                 endpoint,
                 mock,
+                chain,
             ),
         },
         Command::Routine { command } => match command {
             RoutineCommand::List { estate } => cmd_routine_list(&estate),
             RoutineCommand::Show { id, estate } => cmd_routine_show(&id, &estate),
+            RoutineCommand::Status {
+                id,
+                estate,
+                state_dir,
+            } => cmd_routine_status(id.as_deref(), &estate, &state_dir),
+            RoutineCommand::Tick {
+                id,
+                agent,
+                prompt,
+                text,
+                estate,
+                state_dir,
+                feed_dir,
+                endpoint,
+                mock,
+                chain,
+            } => cmd_routine_tick(
+                id.as_deref(),
+                agent.as_deref(),
+                prompt,
+                text,
+                &estate,
+                &state_dir,
+                feed_dir.as_deref(),
+                endpoint,
+                mock,
+                chain,
+            ),
             RoutineCommand::Run {
                 id,
                 agent,
@@ -297,6 +328,7 @@ pub(crate) fn run() -> Result<()> {
                 feed_dir,
                 endpoint,
                 mock,
+                chain,
             } => cmd_routine_run(
                 &id,
                 agent.as_deref(),
@@ -307,6 +339,7 @@ pub(crate) fn run() -> Result<()> {
                 feed_dir.as_deref(),
                 endpoint,
                 mock,
+                chain,
             ),
         },
         Command::Decisions { command } => match command {

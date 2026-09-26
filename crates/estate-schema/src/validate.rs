@@ -335,6 +335,13 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
                     ));
                 }
             }
+            validate_chain(
+                &format!("packs '{}'.chain", pack.id),
+                &pack.chain,
+                Some(&pack.id),
+                estate,
+                &mut errors,
+            );
         }
     }
 
@@ -378,6 +385,13 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
                     ));
                 }
             }
+            validate_chain(
+                &format!("pack_packages '{}'.chain", pkg.id),
+                &pkg.chain,
+                Some(&pkg.pack),
+                estate,
+                &mut errors,
+            );
         }
     }
 
@@ -406,6 +420,11 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
                     "routines '{}' package '{}' is not a pack_package",
                     routine.id, routine.package
                 ));
+            }
+            if let Some(raw) = &routine.schedule {
+                if let Err(err) = crate::schedule::RoutineSchedule::parse(raw) {
+                    errors.push(format!("routines '{}' schedule: {err}", routine.id));
+                }
             }
         }
     }
@@ -487,6 +506,65 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn validate_chain(
+    field: &str,
+    hops: &[crate::types::ChainHop],
+    pack_id: Option<&str>,
+    estate: &Estate,
+    errors: &mut Vec<String>,
+) {
+    if hops.is_empty() {
+        return;
+    }
+    if hops.len() < 2 {
+        errors.push(format!(
+            "{field} must list at least two hops (multi-hop); a single hop uses binding"
+        ));
+    }
+    for (i, hop) in hops.iter().enumerate() {
+        let hop_field = format!("{field}[{i}]");
+        check_slug(&format!("{hop_field}.agent"), &hop.agent, errors);
+        reject_sku(&format!("{hop_field}.agent"), &hop.agent, errors);
+        check_slug(&format!("{hop_field}.binding"), &hop.binding, errors);
+        reject_sku(&format!("{hop_field}.binding"), &hop.binding, errors);
+        if estate.agent(&hop.agent).is_none() {
+            errors.push(format!(
+                "{hop_field} agent '{}' is not an estate agent",
+                hop.agent
+            ));
+        }
+        if estate
+            .model_bindings
+            .iter()
+            .all(|b| normalize_name(&b.id) != normalize_name(&hop.binding))
+        {
+            errors.push(format!(
+                "{hop_field} binding '{}' is not a model_binding",
+                hop.binding
+            ));
+        }
+        if let Some(pid) = pack_id {
+            if let Some(pack) = estate.pack(pid) {
+                let in_pack = pack
+                    .members
+                    .iter()
+                    .any(|m| normalize_name(m) == normalize_name(&hop.agent))
+                    || pack
+                        .orchestrator
+                        .as_deref()
+                        .map(|o| normalize_name(o) == normalize_name(&hop.agent))
+                        .unwrap_or(false);
+                if !in_pack {
+                    errors.push(format!(
+                        "{hop_field} agent '{}' is not a member of pack '{pid}'",
+                        hop.agent
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -653,6 +731,7 @@ mod tests {
             id: "research-crew".into(),
             members: vec!["research".into(), "nope".into()],
             orchestrator: Some("research".into()),
+            chain: Vec::new(),
         });
         let err = validate(&estate).unwrap_err();
         assert!(
@@ -679,6 +758,7 @@ mod tests {
             id: "research-crew".into(),
             members: vec!["research".into(), "horizon".into()],
             orchestrator: Some("horizon".into()),
+            chain: Vec::new(),
         });
         estate.pack_packages.push(crate::types::PackPackage {
             id: "classify-ping".into(),
@@ -686,6 +766,7 @@ mod tests {
             prompt: Some("ping".into()),
             binding: None,
             note: None,
+            chain: Vec::new(),
         });
         let err = validate(&estate).unwrap_err();
         assert!(
@@ -709,6 +790,8 @@ mod tests {
             id: "standing-classify".into(),
             package: "missing-pkg".into(),
             note: None,
+            schedule: None,
+            enabled: None,
         });
         let err = validate(&estate).unwrap_err();
         assert!(
@@ -718,6 +801,36 @@ mod tests {
         );
 
         estate.routines[0].package = "classify-ping".into();
+        validate(&estate).unwrap();
+
+        estate.routines[0].schedule = Some("@every 4m".into());
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("schedule") && e.contains("minimum")),
+            "{err:?}"
+        );
+        estate.routines[0].schedule = Some("@hourly".into());
+        validate(&estate).unwrap();
+
+        estate.pack_packages[0].chain = vec![crate::types::ChainHop {
+            agent: "research".into(),
+            binding: "local_slm".into(),
+        }];
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("at least two hops")),
+            "{err:?}"
+        );
+        estate.pack_packages[0].chain = vec![
+            crate::types::ChainHop {
+                agent: "research".into(),
+                binding: "local_slm".into(),
+            },
+            crate::types::ChainHop {
+                agent: "horizon".into(),
+                binding: "local_slm".into(),
+            },
+        ];
         validate(&estate).unwrap();
     }
 

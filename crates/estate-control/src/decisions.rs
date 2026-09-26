@@ -63,6 +63,12 @@ pub(crate) struct DecisionReceipt {
     /// Standing routine id when `estate routine run` stamps an automation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routine_id: Option<String>,
+    /// Shared id for a multi-hop package/pack chain. Human-legible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<String>,
+    /// Ordered handoffs for a chain. Reuses pack handoff field names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub handoffs: Vec<HandoffHop>,
     pub stage: String,
     pub candidates: Vec<CandidateSummary>,
     pub result: String,
@@ -334,6 +340,15 @@ pub(crate) fn record_authorize_receipt(
 /// binding that complete targeted. `surface` is `complete`. No hop-lease
 /// clock: `expired` stays false. The same host prepare / select /
 /// revalidate path as authorize. The selector does not grant.
+/// One hop in an ordered chain. Same names as a single-hop receipt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct HandoffHop {
+    pub handoff_from: String,
+    pub handoff_to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PackHandoff {
     pub pack_id: String,
@@ -341,6 +356,22 @@ pub(crate) struct PackHandoff {
     pub handoff_to: String,
     pub package_id: Option<String>,
     pub routine_id: Option<String>,
+    pub chain_id: Option<String>,
+    pub handoffs: Vec<HandoffHop>,
+}
+
+impl PackHandoff {
+    pub(crate) fn single(pack_id: String, handoff_from: String, handoff_to: String) -> Self {
+        Self {
+            pack_id,
+            handoff_from,
+            handoff_to,
+            package_id: None,
+            routine_id: None,
+            chain_id: None,
+            handoffs: Vec::new(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -445,6 +476,20 @@ fn record_receipt(
             material.push('\n');
             material.push_str(rid);
         }
+        if let Some(cid) = &pack.chain_id {
+            material.push('\n');
+            material.push_str(cid);
+        }
+        for hop in &pack.handoffs {
+            material.push('\n');
+            material.push_str(&hop.handoff_from);
+            material.push('>');
+            material.push_str(&hop.handoff_to);
+            if let Some(b) = &hop.binding {
+                material.push(':');
+                material.push_str(b);
+            }
+        }
     }
     let receipt = DecisionReceipt {
         schema: RECEIPT_SCHEMA.into(),
@@ -459,6 +504,8 @@ fn record_receipt(
         handoff_to: pack.map(|p| p.handoff_to.clone()),
         package_id: pack.and_then(|p| p.package_id.clone()),
         routine_id: pack.and_then(|p| p.routine_id.clone()),
+        chain_id: pack.and_then(|p| p.chain_id.clone()),
+        handoffs: pack.map(|p| p.handoffs.clone()).unwrap_or_default(),
         stage,
         candidates,
         result,
@@ -604,8 +651,12 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
                 Some(id) => format!(" routine={id}"),
                 None => String::new(),
             };
+            let chain = match &receipt.chain_id {
+                Some(id) => format!(" chain={id}"),
+                None => String::new(),
+            };
             out.push_str(&format!(
-                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine} result={result} outcome={outcome}\n",
+                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine}{chain} result={result} outcome={outcome}\n",
                 id = receipt.id,
                 cap = receipt.capability,
                 result = receipt.result,
@@ -739,13 +790,7 @@ pub(crate) fn resolve_pack_handoff(
             }
         }
     };
-    Ok(PackHandoff {
-        pack_id: pack.id.clone(),
-        handoff_from: agent.to_string(),
-        handoff_to,
-        package_id: None,
-        routine_id: None,
-    })
+    Ok(PackHandoff::single(pack.id.clone(), agent.to_string(), handoff_to))
 }
 
 /// Resolve a pack package (skill) and attach it to a pack handoff.
@@ -802,6 +847,88 @@ pub(crate) fn resolve_routine_handoff(
         resolve_package_handoff(estate, &routine.package, agent, hint)?;
     handoff.routine_id = Some(routine.id.clone());
     Ok((handoff, agent, prompt, binding))
+}
+
+/// Resolve an ordered package/pack chain into per-hop handoffs sharing `chain_id`.
+/// First hop is from the orchestrator (or `--agent`); later hops are from the
+/// previous hop's agent. Each hop completes as `handoff_to` on that binding.
+pub(crate) fn resolve_package_chain(
+    estate: &Estate,
+    package_id: &str,
+    agent: Option<&str>,
+    chain_id: &str,
+    routine_id: Option<&str>,
+) -> Result<(Vec<PackHandoff>, String, Option<String>), String> {
+    let pkg = estate.pack_package(package_id).ok_or_else(|| {
+        format!("refuse:unknown-package: package '{package_id}' not on estate")
+    })?;
+    let pack = estate.pack(&pkg.pack).ok_or_else(|| {
+        format!(
+            "refuse:unknown-pack: pack '{}' for package '{}' not on estate",
+            pkg.pack, pkg.id
+        )
+    })?;
+    let hops = pkg.resolved_chain(pack);
+    if hops.len() < 2 {
+        return Err(format!(
+            "refuse:no-chain: package '{}' (pack '{}') has no chain:/steps: with two or more hops",
+            pkg.id, pack.id
+        ));
+    }
+    let caller = match agent {
+        Some(a) => a.to_string(),
+        None => pack.orchestrator.clone().ok_or_else(|| {
+            format!(
+                "refuse:package-agent: package '{}' pack '{}' has no orchestrator; set --agent",
+                pkg.id, pack.id
+            )
+        })?,
+    };
+    let caller_n = estate_schema::normalize_name(&caller);
+    if let Some(orch) = &pack.orchestrator {
+        if estate_schema::normalize_name(orch) != caller_n {
+            return Err(format!(
+                "refuse:pack-orchestrator: --agent '{caller}' is not orchestrator '{orch}' for pack '{}'",
+                pack.id
+            ));
+        }
+    } else if !pack
+        .members
+        .iter()
+        .any(|m| estate_schema::normalize_name(m) == caller_n)
+    {
+        return Err(format!(
+            "refuse:pack-member: --agent '{caller}' is not a member of pack '{}'",
+            pack.id
+        ));
+    }
+    let mut ordered = Vec::new();
+    let mut from = caller.clone();
+    for hop in hops {
+        ordered.push(HandoffHop {
+            handoff_from: from.clone(),
+            handoff_to: hop.agent.clone(),
+            binding: Some(hop.binding.clone()),
+        });
+        from = hop.agent.clone();
+    }
+    let mut out = Vec::new();
+    for hop in &ordered {
+        out.push(PackHandoff {
+            pack_id: pack.id.clone(),
+            handoff_from: hop.handoff_from.clone(),
+            handoff_to: hop.handoff_to.clone(),
+            package_id: Some(pkg.id.clone()),
+            routine_id: routine_id.map(|s| s.to_string()),
+            chain_id: Some(chain_id.to_string()),
+            handoffs: ordered.clone(),
+        });
+    }
+    Ok((out, caller, pkg.prompt.clone()))
+}
+
+pub(crate) fn mint_chain_id(package_id: &str, now_unix: i64) -> String {
+    format!("chain-{package_id}-{now_unix}")
 }
 
 

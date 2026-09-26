@@ -476,13 +476,15 @@ pub(crate) enum Command {
     },
     /// Pack packages: named skills on a pack (Grok Bot skill analog).
     /// `run` → `complete --pack` and stamps `package_id` on the receipt.
-    /// Security stays existing intentions. Not a Cursor plugin spin.
+    /// `--chain` runs ordered hops when the package or pack declares
+    /// `chain:` / `steps:`. Security stays existing intentions.
     Package {
         #[command(subcommand)]
         command: PackageCommand,
     },
     /// Standing routines: declare + run a pack package (automation analog).
-    /// Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
+    /// Optional `schedule` + `estate routine tick` / `status`. Local
+    /// last_run / next_due under --state-dir. Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1028,6 +1030,7 @@ pub(crate) enum PackageCommand {
     /// Run a pack package: complete --pack with package_id on the receipt.
     /// `--agent` defaults to the pack orchestrator when set.
     /// `--prompt` overrides the package prompt. Security stays intentions.
+    /// `--chain` runs package/pack `chain:` / `steps:` hops in order.
     Run {
         #[arg(long)]
         id: String,
@@ -1048,6 +1051,9 @@ pub(crate) enum PackageCommand {
         endpoint: Option<String>,
         #[arg(long, default_value_t = false)]
         mock: bool,
+        /// Run ordered hops from package or pack `chain:` / `steps:`.
+        #[arg(long, default_value_t = false)]
+        chain: bool,
     },
 }
 
@@ -1086,6 +1092,43 @@ pub(crate) enum RoutineCommand {
         endpoint: Option<String>,
         #[arg(long, default_value_t = false)]
         mock: bool,
+        /// Run the package chain when declared.
+        #[arg(long, default_value_t = false)]
+        chain: bool,
+    },
+    /// Show schedule, last_run, next_due, enabled from local state-dir.
+    Status {
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Run due scheduled routines. Idempotent. Writes receipts.
+    /// Unscheduled or disabled routines skip. Not a long-running daemon.
+    Tick {
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        /// Run each due routine's package chain when declared.
+        #[arg(long, default_value_t = false)]
+        chain: bool,
     },
 }
 

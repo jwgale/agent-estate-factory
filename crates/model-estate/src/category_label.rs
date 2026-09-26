@@ -91,13 +91,33 @@ pub fn codec_by_name(name: &str) -> Option<&'static CategoryCodec> {
 
 /// Map a raw completion to a human label when it is exactly one codec letter
 /// (optional trivial wrappers: whitespace, trailing period, quotes, parens).
+/// A leading `<think>...</think>` fold is stripped so think-on letter
+/// completions still decode. Does not change `CELL_COMPLETE_THINK`.
 pub fn decode_letter(codec: &CategoryCodec, raw: &str) -> Option<&'static str> {
-    let letter = parse_choice_letter(raw, codec)?;
+    let stripped = strip_think_fold(raw);
+    let letter = parse_choice_letter(&stripped, codec)?;
     codec
         .letters
         .iter()
         .find(|row| row.letter == letter)
         .map(|row| row.label)
+}
+
+/// Drop one leading `<think>...</think>` block. Prefer text after the fold;
+/// if that is empty, use the fold interior (think-on letter-only replies).
+fn strip_think_fold(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let Some(rest) = trimmed.strip_prefix("<think>") else {
+        return trimmed.to_string();
+    };
+    if let Some(idx) = rest.find("</think>") {
+        let after = rest[idx + "</think>".len()..].trim();
+        if !after.is_empty() {
+            return after.to_string();
+        }
+        return rest[..idx].trim().to_string();
+    }
+    rest.trim().to_string()
 }
 
 fn parse_choice_letter(raw: &str, codec: &CategoryCodec) -> Option<char> {
@@ -184,6 +204,18 @@ mod tests {
         assert_eq!(decode_letter(codec, "A"), Some("World"));
         assert_eq!(decode_letter(codec, "Sci/Tech"), None);
         assert_eq!(decode_letter(codec, "I pick D"), None);
+        assert_eq!(
+            decode_letter(codec, "<think>\nchip news\n</think>\nD"),
+            Some("Sci/Tech")
+        );
+        assert_eq!(
+            decode_letter(codec, "<think>\nD\n</think>"),
+            Some("Sci/Tech")
+        );
+        assert_eq!(
+            decode_letter(codec, "<think>D</think>"),
+            Some("Sci/Tech")
+        );
     }
 
     #[test]
