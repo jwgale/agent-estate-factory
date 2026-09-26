@@ -219,9 +219,11 @@ pub(crate) fn cmd_audits(estate_path: &Path, state_dir: &Path) -> Result<()> {
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     // After the estate loads, before the apply-audit list. Same stack as
     // estate leases, convey leases, status, doctor, reconcile, and audit
-    // export. Hop cites do not change this command's exit code. A
-    // placement-actual SKU omits Authority inside the stack and still
-    // reaches the audit list below. Audits do not read placement JSON.
+    // export. Hop cites do not change this command's exit code. The stack
+    // reads placement-actual for mesh interpretation and Authority. A
+    // placement-actual SKU omits Authority and the apply-audit list still
+    // prints. There is no second placement refuse before that list. A
+    // placement-actual parse failure refuses here, before the list.
     print!("{}", honesty_stack(&estate, state_dir)?);
     let audits = list_apply_audits(state_dir)?;
     if audits.is_empty() {
@@ -916,18 +918,21 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// empty mesh from `load_mesh`: the cite list is empty and Authority stays
 /// `not-enforced` (`missing-mesh`).
 ///
-/// `authority_report` also reads placement-actual. Mesh host classes are
-/// already refused above, so the only `MeshError::BadHostClass` that
-/// reaches the match is the placement-actual slim-parse (a SKU or other
-/// bad `host_class`). That one error continues: this text still includes
-/// Agents and hop cites from `load_mesh` and omits Authority rows.
-/// `estate leases` then still refuses that SKU before the placement JSON.
-/// `estate convey leases` then still refuses that SKU before the hop lease
-/// JSON. `estate audits` then still prints the apply-audit list. Audits do
-/// not depend on placement JSON. Every other mesh error, including a
-/// population ahead of the floor (`refuse:agent-unplaced`), refuses here
-/// before any section. Capability mismatch is `FAIL`. Deny and deny-default
-/// are `note`. A match stays quiet. Those cites do not fail the caller.
+/// `authority_report` reads placement-actual for mesh interpretation and
+/// Authority (`load_interpreted_mesh` then `slim_parse_placement_actual`).
+/// Mesh host classes are already refused above, so the only
+/// `MeshError::BadHostClass` that reaches the match is the placement-actual
+/// slim-parse (a SKU or other bad `host_class`). That one error continues:
+/// this text still includes Agents and hop cites from `load_mesh` and omits
+/// Authority rows. `estate leases` then still refuses that SKU before the
+/// placement JSON. `estate convey leases` then still refuses that SKU before
+/// the hop lease JSON. `estate audits` then still prints the apply-audit
+/// list. There is no second placement refuse before that list. Every other
+/// mesh error, including a population ahead of the floor
+/// (`refuse:agent-unplaced`) and a placement-actual parse failure
+/// (`MeshError::Parse`), refuses here before any section. Capability
+/// mismatch is `FAIL`. Deny and deny-default are `note`. A match stays
+/// quiet. Those cites do not fail the caller.
 /// Does not rewrite the mesh, the leases, the estate, or the apply audit.
 /// Does not spawn. No `enforced` status.
 fn honesty_stack(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {

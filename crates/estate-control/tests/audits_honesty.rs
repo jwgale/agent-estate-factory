@@ -526,6 +526,11 @@ fn help_names_the_stack_and_locks_hold() {
     assert!(stdout.contains("empty cite list"), "{stdout}");
     assert!(stdout.contains("refuse:agent-unplaced"), "{stdout}");
     assert!(stdout.contains("apply-audit list still prints"), "{stdout}");
+    assert!(stdout.contains("reads placement-actual"), "{stdout}");
+    assert!(stdout.contains("placement-actual parse"), "{stdout}");
+    assert!(stdout.contains("no second placement refuse"), "{stdout}");
+    assert!(!stdout.contains("do not depend on placement"), "{stdout}");
+    assert!(!stdout.contains("do not read placement"), "{stdout}");
     assert!(stdout.contains("examples/estate.yaml"), "{stdout}");
     assert!(stdout.contains("Does not spawn"), "{stdout}");
     assert!(stdout.contains("Does not claim mediation"), "{stdout}");
@@ -539,6 +544,23 @@ fn help_names_the_stack_and_locks_hold() {
         language.contains("the apply-audit list still prints"),
         "{language}"
     );
+    assert!(
+        language.contains("still reads placement-actual"),
+        "{language}"
+    );
+    assert!(
+        language.contains("placement-actual parse failure"),
+        "{language}"
+    );
+    assert!(
+        language.contains("no second placement refuse"),
+        "{language}"
+    );
+    assert!(
+        !language.contains("do not depend on placement"),
+        "{language}"
+    );
+    assert!(!language.contains("do not read placement"), "{language}");
     assert!(!language.contains("READY_FOR_LIVE_TEST: yes"), "{language}");
 
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
@@ -554,6 +576,23 @@ fn help_names_the_stack_and_locks_hold() {
         changelog.contains("the apply-audit list still prints"),
         "{changelog}"
     );
+    assert!(
+        changelog.contains("still reads placement-actual"),
+        "{changelog}"
+    );
+    assert!(
+        changelog.contains("placement-actual parse failure"),
+        "{changelog}"
+    );
+    assert!(
+        changelog.contains("no second placement refuse"),
+        "{changelog}"
+    );
+    assert!(
+        !changelog.contains("do not depend on placement"),
+        "{changelog}"
+    );
+    assert!(!changelog.contains("do not read placement"), "{changelog}");
     assert!(
         !changelog.contains("READY_FOR_LIVE_TEST: yes"),
         "{changelog}"
