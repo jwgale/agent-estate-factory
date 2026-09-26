@@ -213,8 +213,13 @@ stay comments. Not a cron daemon.
 `estate pack mcp-serve` is stdio MCP — it waits for JSON-RPC frames and
 is not an interactive complete. Inspect `target/pack-plugin-stub/mcp.json`,
 then call tool `complete` with `{ "prompt": "ping", "mock": true }`.
-That writes a decision receipt on the source estate state-dir. Cargo
-test `pack_mcp_serve` covers the mock path. Not a live PASS.
+That writes a decision receipt on the source estate state-dir. Child
+`estate complete` is capped at 120s (`CELL_MCP_COMPLETE_TIMEOUT_SECS` or
+`--complete-timeout-secs`); expiry kills the process tree and returns
+`refuse:mcp-complete-timeout`. Export refuses (`refuse:export-estate-path`)
+when the estate path cannot be canonicalized — it does not write a
+relative `CELL_ESTATE_PATH`. Cargo test `pack_mcp_serve` covers the mock
+path. Not a live PASS.
 
 ## 4. Enrich prepare (opt-in, not a train)
 

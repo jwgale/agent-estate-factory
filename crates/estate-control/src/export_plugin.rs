@@ -16,8 +16,9 @@ use std::path::Path;
 pub(crate) const EXPORT_SCHEMA: &str = "cell-one.pack-plugin-export.v0";
 
 pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -> Result<()> {
-    let estate = estate_schema::load_estate(estate_path)
-        .with_context(|| format!("load {}", estate_path.display()))?;
+    let estate_abs = estate_path_for_export(estate_path)?;
+    let estate = estate_schema::load_estate(Path::new(&estate_abs))
+        .with_context(|| format!("load {estate_abs}"))?;
     let pack = estate
         .pack(id)
         .ok_or_else(|| anyhow::anyhow!("refuse:unknown-pack: pack '{id}' not on estate"))?;
@@ -32,8 +33,6 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
     let packages = packages_for_pack(&estate, pack);
     let routines = routines_for_packages(&estate, &packages);
     let orch = pack.orchestrator.as_deref().unwrap_or("-");
-
-    let estate_abs = estate_path_for_export(estate_path);
 
     write_plugin_json(out, pack, orch)?;
     write_mcp_json(out, pack, orch, &estate_abs)?;
@@ -78,12 +77,23 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
     Ok(())
 }
 
-fn estate_path_for_export(estate_path: &Path) -> String {
-    estate_path
-        .canonicalize()
-        .unwrap_or_else(|_| estate_path.to_path_buf())
-        .display()
-        .to_string()
+/// Absolute estate path for exported `CELL_ESTATE_PATH`.
+/// Refuses when canonicalize fails or the result is not absolute.
+/// Never silently embeds a relative path.
+pub(crate) fn estate_path_for_export(estate_path: &Path) -> Result<String> {
+    let canonical = estate_path.canonicalize().map_err(|err| {
+        anyhow::anyhow!(
+            "refuse:export-estate-path: cannot canonicalize '{}': {err}",
+            estate_path.display()
+        )
+    })?;
+    if !canonical.is_absolute() {
+        bail!(
+            "refuse:export-estate-path: refused relative estate path '{}'",
+            canonical.display()
+        );
+    }
+    Ok(canonical.display().to_string())
 }
 
 fn packages_for_pack<'a>(estate: &'a Estate, pack: &AgentPack) -> Vec<&'a PackPackage> {
@@ -407,7 +417,8 @@ fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::cron_comment;
+    use super::{cron_comment, estate_path_for_export};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn cron_comment_maps_shorthands() {
@@ -416,5 +427,30 @@ mod tests {
         assert_eq!(cron_comment("0 6 * * *"), "0 6 * * *");
         assert_eq!(cron_comment("@every 1h"), "@every 1h");
         assert_eq!(cron_comment(""), "(none)");
+    }
+
+    #[test]
+    fn estate_path_for_export_canonicalizes_existing_file() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-export-estate-path-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("estate.yaml");
+        std::fs::write(&file, "agents: []\n").unwrap();
+        let abs = estate_path_for_export(&file).unwrap();
+        assert!(Path::new(&abs).is_absolute(), "{abs}");
+        assert!(abs.ends_with("estate.yaml"), "{abs}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn estate_path_for_export_refuses_missing_relative_path() {
+        let rel = PathBuf::from("no-such-cell-estate-for-export.yaml");
+        assert!(!rel.is_absolute());
+        let err = estate_path_for_export(&rel).unwrap_err().to_string();
+        assert!(err.contains("refuse:export-estate-path"), "{err}");
+        assert!(err.contains("cannot canonicalize"), "{err}");
     }
 }

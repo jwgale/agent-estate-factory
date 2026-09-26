@@ -270,7 +270,15 @@ pub(crate) fn run() -> Result<()> {
                 agent,
                 state_dir,
                 mock,
-            } => crate::pack_mcp::cmd_pack_mcp_serve(estate, pack, agent, state_dir, mock),
+                complete_timeout_secs,
+            } => crate::pack_mcp::cmd_pack_mcp_serve(
+                estate,
+                pack,
+                agent,
+                state_dir,
+                mock,
+                complete_timeout_secs,
+            ),
         },
         Command::Package { command } => match command {
             PackageCommand::List { estate } => cmd_package_list(&estate),

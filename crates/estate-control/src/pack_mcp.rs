@@ -3,14 +3,22 @@
 //! One process is one pack member. Tool `complete` runs
 //! `estate complete --agent <member> --pack <pack-id>` against
 //! `CELL_ESTATE_PATH`. Orchestrator refuse stays the same as pack
-//! complete. Not live Cursor / Grok Bot sync. Not a cron daemon.
+//! complete. Child `estate complete` is bounded by a wall-clock
+//! timeout (default 120s; `CELL_MCP_COMPLETE_TIMEOUT_SECS` or
+//! `--complete-timeout-secs`); expiry kills the process tree.
+//! Not live Cursor / Grok Bot sync. Not a cron daemon.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::normalize_name;
 use serde_json::{json, Value};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+pub(crate) const COMPLETE_TIMEOUT_ENV: &str = "CELL_MCP_COMPLETE_TIMEOUT_SECS";
+pub(crate) const DEFAULT_COMPLETE_TIMEOUT_SECS: u64 = 120;
 
 pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
 pub(crate) const SERVER_NAME: &str = "cell-one-pack-mcp";
@@ -24,6 +32,7 @@ pub(crate) struct McpIdentity {
     pub estate: PathBuf,
     pub state_dir: PathBuf,
     pub mock: bool,
+    pub complete_timeout: Duration,
 }
 
 pub(crate) fn cmd_pack_mcp_serve(
@@ -32,10 +41,17 @@ pub(crate) fn cmd_pack_mcp_serve(
     agent: Option<String>,
     state_dir: Option<PathBuf>,
     mock: bool,
+    complete_timeout_secs: Option<u64>,
 ) -> Result<()> {
-    let mut ident = resolve_identity(estate, pack, agent, state_dir, mock, |k| {
-        std::env::var(k).ok()
-    })?;
+    let mut ident = resolve_identity(
+        estate,
+        pack,
+        agent,
+        state_dir,
+        mock,
+        complete_timeout_secs,
+        |k| std::env::var(k).ok(),
+    )?;
     let loaded = estate_schema::load_estate(&ident.estate)
         .with_context(|| format!("load {}", ident.estate.display()))?;
     let pack = loaded.pack(&ident.pack).ok_or_else(|| {
@@ -62,6 +78,7 @@ pub(crate) fn resolve_identity(
     agent: Option<String>,
     state_dir: Option<PathBuf>,
     mock: bool,
+    complete_timeout_secs: Option<u64>,
     env: impl Fn(&str) -> Option<String>,
 ) -> Result<McpIdentity> {
     let pack = first_nonempty(pack, env("CELL_ESTATE_PACK"))
@@ -77,6 +94,8 @@ pub(crate) fn resolve_identity(
         .unwrap_or_else(|| estate_default_state_dir(&estate));
     let role = env("CELL_ESTATE_ROLE").unwrap_or_default();
     let mock = mock || env_truthy(env("CELL_ESTATE_MOCK").as_deref());
+    let complete_timeout =
+        resolve_complete_timeout(complete_timeout_secs, env(COMPLETE_TIMEOUT_ENV))?;
     Ok(McpIdentity {
         pack,
         member,
@@ -84,7 +103,30 @@ pub(crate) fn resolve_identity(
         estate,
         state_dir,
         mock,
+        complete_timeout,
     })
+}
+
+pub(crate) fn resolve_complete_timeout(flag: Option<u64>, env: Option<String>) -> Result<Duration> {
+    if let Some(secs) = flag {
+        return duration_from_timeout_secs(secs, "--complete-timeout-secs");
+    }
+    if let Some(raw) = env.filter(|s| !s.trim().is_empty()) {
+        let secs: u64 = raw.trim().parse().map_err(|_| {
+            anyhow::anyhow!(
+                "refuse:mcp-complete-timeout: {COMPLETE_TIMEOUT_ENV} must be a positive integer"
+            )
+        })?;
+        return duration_from_timeout_secs(secs, COMPLETE_TIMEOUT_ENV);
+    }
+    Ok(Duration::from_secs(DEFAULT_COMPLETE_TIMEOUT_SECS))
+}
+
+fn duration_from_timeout_secs(secs: u64, source: &str) -> Result<Duration> {
+    if secs == 0 {
+        bail!("refuse:mcp-complete-timeout: {source} must be at least 1");
+    }
+    Ok(Duration::from_secs(secs))
 }
 
 pub(crate) fn pack_role(orchestrator: Option<&str>, member: &str) -> String {
@@ -257,20 +299,103 @@ fn invoke_complete(
     if let Some(object) = object {
         cmd.arg("--object").arg(object);
     }
-    match cmd.output() {
-        Ok(out) => {
-            let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-            let err = String::from_utf8_lossy(&out.stderr);
-            if !err.is_empty() {
+    match run_command_with_timeout(&mut cmd, ident.complete_timeout) {
+        Ok(cap) if cap.timed_out => (
+            false,
+            format!(
+                "refuse:mcp-complete-timeout: estate complete exceeded {}s; killed process tree",
+                ident.complete_timeout.as_secs()
+            ),
+        ),
+        Ok(cap) => {
+            let mut text = cap.stdout;
+            if !cap.stderr.is_empty() {
                 if !text.is_empty() && !text.ends_with('\n') {
                     text.push('\n');
                 }
-                text.push_str(&err);
+                text.push_str(&cap.stderr);
             }
-            (out.status.success(), text)
+            (cap.success, text)
         }
         Err(err) => (false, format!("refuse:mcp-complete: {err}")),
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct CapturedComplete {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+    pub timed_out: bool,
+}
+
+/// Run `cmd` with a wall-clock cap. On expiry, kill the child process
+/// group (Unix) so a hung `estate complete` cannot block `tools/call`.
+pub(crate) fn run_command_with_timeout(
+    cmd: &mut Command,
+    timeout: Duration,
+) -> Result<CapturedComplete> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| anyhow::anyhow!("cannot start estate complete: {err}"))?;
+    let mut stdout = child.stdout.take().expect("stdout");
+    let mut stderr = child.stderr.take().expect("stderr");
+    let out_handle = thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let err_handle = thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        buf
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() > timeout => {
+                kill_process_tree(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = out_handle.join();
+                let _ = err_handle.join();
+                return Ok(CapturedComplete {
+                    success: false,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    timed_out: true,
+                });
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(err) => bail!("estate complete wait failed: {err}"),
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out_handle.join().unwrap_or_default()).into_owned();
+    let stderr = String::from_utf8_lossy(&err_handle.join().unwrap_or_default()).into_owned();
+    Ok(CapturedComplete {
+        success: status.success(),
+        stdout,
+        stderr,
+        timed_out: false,
+    })
+}
+
+fn kill_process_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .output();
+    }
+    let _ = pid;
 }
 
 fn tool_text(text: &str, is_error: bool) -> Value {
@@ -373,6 +498,18 @@ mod tests {
         }
     }
 
+    fn test_ident() -> McpIdentity {
+        McpIdentity {
+            pack: "research-crew".into(),
+            member: "horizon".into(),
+            role: "orchestrator".into(),
+            estate: PathBuf::from("/tmp/fixture.yaml"),
+            state_dir: PathBuf::from("/tmp/.cell"),
+            mock: false,
+            complete_timeout: Duration::from_secs(DEFAULT_COMPLETE_TIMEOUT_SECS),
+        }
+    }
+
     #[test]
     fn resolve_identity_reads_env_and_defaults_state_dir() {
         let ident = resolve_identity(
@@ -381,6 +518,7 @@ mod tests {
             None,
             None,
             false,
+            None,
             env_map(&[
                 ("CELL_ESTATE_PACK", "research-crew"),
                 ("CELL_ESTATE_MEMBER", "horizon"),
@@ -395,6 +533,10 @@ mod tests {
         assert_eq!(ident.estate, PathBuf::from("/tmp/fixture.yaml"));
         assert_eq!(ident.state_dir, PathBuf::from("/tmp/.cell"));
         assert!(!ident.mock);
+        assert_eq!(
+            ident.complete_timeout,
+            Duration::from_secs(DEFAULT_COMPLETE_TIMEOUT_SECS)
+        );
     }
 
     #[test]
@@ -405,11 +547,79 @@ mod tests {
             Some("horizon".into()),
             None,
             false,
+            None,
             env_map(&[]),
         )
         .unwrap_err()
         .to_string();
         assert!(err.contains("refuse:mcp-estate"), "{err}");
+    }
+
+    #[test]
+    fn resolve_identity_refuses_zero_complete_timeout_env() {
+        let err = resolve_identity(
+            None,
+            Some("crew".into()),
+            Some("horizon".into()),
+            None,
+            false,
+            None,
+            env_map(&[
+                ("CELL_ESTATE_PATH", "/tmp/fixture.yaml"),
+                (COMPLETE_TIMEOUT_ENV, "0"),
+            ]),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("refuse:mcp-complete-timeout"), "{err}");
+    }
+
+    #[test]
+    fn resolve_complete_timeout_flag_beats_env_and_refuses_garbage() {
+        assert_eq!(
+            resolve_complete_timeout(Some(30), Some("90".into()))
+                .unwrap()
+                .as_secs(),
+            30
+        );
+        assert_eq!(
+            resolve_complete_timeout(None, None).unwrap().as_secs(),
+            DEFAULT_COMPLETE_TIMEOUT_SECS
+        );
+        let err = resolve_complete_timeout(None, Some("nope".into()))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refuse:mcp-complete-timeout"), "{err}");
+        let err = resolve_complete_timeout(Some(0), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refuse:mcp-complete-timeout"), "{err}");
+        assert!(err.contains("--complete-timeout-secs"), "{err}");
+    }
+
+    #[test]
+    fn run_command_with_timeout_kills_sleep_and_returns_error() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("30");
+        let started = Instant::now();
+        let cap = run_command_with_timeout(&mut cmd, Duration::from_millis(400)).unwrap();
+        assert!(cap.timed_out, "{cap:?}");
+        assert!(!cap.success);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "timeout path hung: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn run_command_with_timeout_lets_fast_command_succeed() {
+        let mut cmd = Command::new("echo");
+        cmd.arg("ok");
+        let cap = run_command_with_timeout(&mut cmd, Duration::from_secs(5)).unwrap();
+        assert!(!cap.timed_out, "{cap:?}");
+        assert!(cap.success, "{cap:?}");
+        assert!(cap.stdout.contains("ok"), "{cap:?}");
     }
 
     #[test]
@@ -429,14 +639,7 @@ mod tests {
 
     #[test]
     fn complete_tool_names_member_and_estate() {
-        let ident = McpIdentity {
-            pack: "research-crew".into(),
-            member: "horizon".into(),
-            role: "orchestrator".into(),
-            estate: PathBuf::from("/tmp/fixture.yaml"),
-            state_dir: PathBuf::from("/tmp/.cell"),
-            mock: false,
-        };
+        let ident = test_ident();
         let tool = complete_tool(&ident);
         assert_eq!(tool["name"], TOOL_NAME);
         let desc = tool["description"].as_str().unwrap();
@@ -448,14 +651,7 @@ mod tests {
 
     #[test]
     fn handle_initialize_and_unknown_method() {
-        let ident = McpIdentity {
-            pack: "research-crew".into(),
-            member: "horizon".into(),
-            role: "orchestrator".into(),
-            estate: PathBuf::from("/tmp/fixture.yaml"),
-            state_dir: PathBuf::from("/tmp/.cell"),
-            mock: false,
-        };
+        let ident = test_ident();
         let init = handle_message(
             &ident,
             &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),

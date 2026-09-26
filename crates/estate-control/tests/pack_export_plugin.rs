@@ -264,3 +264,44 @@ fn export_plugin_refuses_unknown_pack_and_file_out() {
     assert_eq!(std::fs::read_to_string(&file_out).unwrap(), "nope");
     assert_locked_cksum();
 }
+
+#[test]
+fn export_plugin_refuses_uncanonical_or_relative_estate_path() {
+    assert_locked_cksum();
+    let dir = scratch("nopath");
+    let missing = dir.join("missing-estate.yaml");
+    let out = dir.join("plugin");
+
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "export-plugin",
+        "--id",
+        "research-crew",
+        "--estate",
+        &missing.display().to_string(),
+        "--out",
+        &out.display().to_string(),
+    ]);
+    assert!(!ok, "{stdout}");
+    assert!(stderr.contains("refuse:export-estate-path"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "no write when estate path cannot canonicalize"
+    );
+
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "export-plugin",
+        "--id",
+        "research-crew",
+        "--estate",
+        "no-such-cell-export-estate.yaml",
+        "--out",
+        &out.display().to_string(),
+    ]);
+    assert!(!ok, "{stdout}");
+    assert!(stderr.contains("refuse:export-estate-path"), "{stderr}");
+    assert!(stderr.contains("cannot canonicalize"), "{stderr}");
+    assert!(!out.exists());
+    assert_locked_cksum();
+}
