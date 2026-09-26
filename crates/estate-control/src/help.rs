@@ -200,21 +200,22 @@ live=false. A prepare probe is not live. Cloud-agent
 stays \"declared, not spawned\".
 
 After the hop expired count and that cloud-agent line, status prints
-the same Agents section as plan, drift, apply, doctor, and convey
-authority (`describe_agents_section`): id, lane, desktop, placement (box,
-cloud-agent declared-not-spawned, or none), declared tool / mcp /
-mount / model counts, and that agent's allow / deny / deny-default
-coverage, including agent-call own and peer. Deny and deny-default
-are notes and do not fail status. Status does not spawn.
+one honesty stack (`honesty_stack`): the same Agents section as plan,
+drift, apply, doctor, and convey authority (`describe_agents_section`:
+id, lane, desktop, placement (box, cloud-agent declared-not-spawned, or
+none), declared tool / mcp / mount / model counts, and that agent's
+allow / deny / deny-default coverage, including agent-call own and peer),
+then hop coverage cites from `render_hop_coverage_cites` /
+`hop_coverage_cites`, then Authority (`describe_authority_section` over
+`authority_report`). Deny and deny-default on the Agents section are
+notes and do not fail status. Status does not spawn.
 
-Status then prints the shared honesty stack (`honesty_stack`): hop
-coverage cites from `render_hop_coverage_cites` / `hop_coverage_cites`,
-the same lines doctor and drift print, before the Authority section. A
-capability mismatch is `FAIL`. Deny and deny-default are `note`.
-Neither fails status. A match stays quiet. A missing mesh is an empty
-cite list. A present mesh that does not parse is the existing hop-lease
-refuse before the page and does not invent cites. A bad host_class on
-that file and `refuse:agent-unplaced` are the same pre-stack refuse.
+A capability mismatch cite is `FAIL`. Deny and deny-default cites are
+`note`. Neither fails status. A match stays quiet. A missing mesh is an
+empty cite list. A present mesh that does not parse is the existing
+hop-lease refuse before the page header and does not invent cites. A bad
+host_class on that file and `refuse:agent-unplaced` are that same
+pre-header refuse.
 
 A placement-actual SKU host_class does not reach the stack.
 `refuse_lease_host_classes` refuses before the page, and
@@ -225,9 +226,8 @@ The command does not succeed with Authority omitted. That diverges from
 `estate convey authority`, from `estate leases` and `estate convey sync`,
 and from `estate audits` and `estate history`.
 
-Status then prints an Authority section when the stack is reached. The text is
-`describe_authority_section` over `authority_report`, the same
-section plan, drift, apply, doctor, and convey authority print.
+Authority in that stack is the same section plan, drift, apply, doctor,
+and convey authority print.
 Counts are would-allow, would-deny, and
 not-enforced. One line per row. A missing conveyor-mesh.json stays
 not-enforced, cites that the file is absent, and does not invent a

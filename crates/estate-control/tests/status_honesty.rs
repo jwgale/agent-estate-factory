@@ -426,8 +426,14 @@ fn help_names_the_stack_and_locks_hold() {
     assert!(stdout.contains("refuse_lease_host_classes"), "{stdout}");
     assert!(stdout.contains("list_expired_hop_leases"), "{stdout}");
     assert!(stdout.contains("load_interpreted_mesh"), "{stdout}");
+    assert!(stdout.contains("before the page header"), "{stdout}");
+    assert!(stdout.contains("before the honesty stack"), "{stdout}");
     assert!(stdout.contains("before the page"), "{stdout}");
     assert!(stdout.contains("The page does not print"), "{stdout}");
+    assert!(
+        !stdout.contains("spawned cloud stay before the page"),
+        "{stdout}"
+    );
     assert!(
         stdout.contains("does not succeed with Authority omitted"),
         "{stdout}"
@@ -453,7 +459,13 @@ fn help_names_the_stack_and_locks_hold() {
         .find("`estate convey authority`")
         .unwrap_or_else(|| panic!("help status section did not end\n{help_tail}"));
     let help_mine = &help_tail[..help_end];
+    assert!(help_mine.contains("one honesty stack"), "{help_mine}");
     assert!(help_mine.contains("honesty_stack"), "{help_mine}");
+    assert!(
+        help_mine.contains("describe_authority_section"),
+        "{help_mine}"
+    );
+    assert!(!help_out.contains("when the stack is reached"), "{help_out}");
     assert!(
         help_mine.contains("render_hop_coverage_cites"),
         "{help_mine}"
@@ -528,6 +540,12 @@ fn help_names_the_stack_and_locks_hold() {
     assert!(head.contains("list_expired_hop_leases"), "{head}");
     assert!(head.contains("load_interpreted_mesh"), "{head}");
     assert!(head.contains("MeshError::BadHostClass"), "{head}");
+    assert!(head.contains("before the page header"), "{head}");
+    assert!(head.contains("before the honesty stack"), "{head}");
+    assert!(
+        !head.contains("catalog disagree, spawned cloud"),
+        "{head}"
+    );
     assert!(head.contains("The page does not print"), "{head}");
     assert!(
         head.contains("does not succeed with Authority omitted"),

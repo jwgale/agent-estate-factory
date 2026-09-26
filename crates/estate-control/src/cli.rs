@@ -167,8 +167,10 @@ pub(crate) enum Command {
     /// that does not parse, a bad host_class on that file, or
     /// `refuse:agent-unplaced` does not invent cites or Authority rows.
     /// Estate load, lifecycle parse,
-    /// `refuse_lease_host_classes`, model-actual, catalog disagree, and
-    /// spawned cloud stay before the page. A placement-actual SKU
+    /// `refuse_lease_host_classes`, and model-actual stay before the page
+    /// header. Catalog disagree and spawned cloud bail after that header
+    /// has started and before Agents, before the honesty stack. A
+    /// placement-actual SKU
     /// host_class does not reach the stack: `refuse_lease_host_classes`
     /// refuses before the page, and `list_expired_hop_leases` would also
     /// refuse that SKU (`load_interpreted_mesh` slim-parses
