@@ -34,7 +34,7 @@ Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids),
 
 ### pack package
 
-Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. `estate pack export-plugin` copies each package into `skills/<id>/SKILL.md` as a body stub. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not live Cursor plugin install.
+Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. `estate pack export-plugin` copies each package into `skills/<id>/SKILL.md` that instructs calling the wired member MCP tool `complete` with the package prompt (mock/live notes as appropriate). Security stays existing intentions — not a new grant. Grok Bot skill analog. Not live Cursor plugin install.
 
 ### standing routine
 

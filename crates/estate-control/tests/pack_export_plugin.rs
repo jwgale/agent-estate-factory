@@ -2,7 +2,8 @@
 //!
 //! Fixture: examples/fixtures/agent-pack-handoff.yaml.
 //! MCP is wired to `estate pack mcp-serve` → `estate complete`.
-//! live_sync stays false. Does not invent a live PASS.
+//! Skill bodies instruct calling tool `complete` with the package prompt
+//! (not stubs). live_sync stays false. Does not invent a live PASS.
 //! Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};
@@ -104,6 +105,7 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(desc.contains("research"), "{desc}");
     assert!(desc.contains("Orchestrator: horizon"), "{desc}");
     assert!(desc.contains("not live"), "{desc}");
+    assert!(desc.contains("complete"), "{desc}");
 
     let mcp: serde_json::Value = serde_json::from_str(&read(&out.join("mcp.json"))).unwrap();
     let servers = mcp["mcpServers"].as_object().expect("mcpServers");
@@ -153,17 +155,42 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(ping.contains("research -> ag_news"), "{ping}");
     assert!(ping.contains("horizon -> frontier_http"), "{ping}");
     assert!(
-        ping.contains("estate package run --id classify-ping"),
+        ping.contains("Call the wired pack member MCP tool `complete`"),
+        "{ping}"
+    );
+    assert!(
+        ping.contains(r#"{ "prompt": "ping", "mock": true, "object": "ag_news" }"#),
+        "{ping}"
+    );
+    assert!(
+        ping.contains(r#"{ "prompt": "ping", "object": "ag_news" }"#),
         "{ping}"
     );
     assert!(ping.contains("estate pack mcp-serve"), "{ping}");
     assert!(ping.contains("estate complete"), "{ping}");
+    assert!(ping.contains("MCP"), "{ping}");
+    assert!(ping.contains("live_sync: false"), "{ping}");
+    assert!(
+        ping.contains("estate package run --id classify-ping"),
+        "{ping}"
+    );
+    assert!(!ping.contains("stays a stub"), "{ping}");
+    assert!(!ping.contains("body stub"), "{ping}");
+    assert!(!ping.contains("Scaffold only"), "{ping}");
     assert!(ping.contains("standing-classify"), "{ping}");
     assert!(ping.contains("schedule=@hourly"), "{ping}");
     assert!(ping.contains("0 * * * *"), "{ping}");
 
     let once = read(&out.join("skills/classify-once/SKILL.md"));
     assert!(once.contains("name: classify-once"), "{once}");
+    assert!(
+        once.contains("Call the wired pack member MCP tool `complete`"),
+        "{once}"
+    );
+    assert!(once.contains("MCP"), "{once}");
+    assert!(once.contains("estate complete"), "{once}");
+    assert!(!once.contains("stays a stub"), "{once}");
+    assert!(!once.contains("body stub"), "{once}");
     assert!(once.contains("no standing routines"), "{once}");
 
     let mapping: serde_json::Value =
@@ -175,6 +202,10 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["wired_mcp"], true);
     assert_eq!(mapping["mcp"]["command"], "estate");
     assert_eq!(mapping["mcp"]["tool"], "complete");
+    assert_eq!(mapping["packages"][0]["mcp_tool"], "complete");
+    assert_eq!(mapping["packages"][0]["skill_stub"], false);
+    assert_eq!(mapping["packages"][1]["mcp_tool"], "complete");
+    assert_eq!(mapping["packages"][1]["skill_stub"], false);
     assert!(
         mapping["mcp"]["invokes"]
             .as_str()
@@ -199,6 +230,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "{readme}"
     );
     assert!(readme.contains("estate pack mcp-serve"), "{readme}");
+    assert!(readme.contains("wired member MCP tool `complete`"), "{readme}");
+    assert!(readme.contains("They are not stubs."), "{readme}");
     assert!(readme.contains("wired_mcp: true"), "{readme}");
     assert!(readme.contains("live_sync: false"), "{readme}");
     assert!(readme.contains("CELL_ESTATE_PATH"), "{readme}");

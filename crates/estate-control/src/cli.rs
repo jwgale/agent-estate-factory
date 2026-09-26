@@ -1026,8 +1026,10 @@ pub(crate) enum PackCommand {
     /// Export a Cursor/Agent plugin stub from one estate pack.
     /// Writes plugin.json + mcp.json + skills/ (Agent Plugins floor).
     /// MCP servers run `estate pack mcp-serve` so member tools call
-    /// `estate complete` against the source estate. Refuses if the
-    /// estate path cannot be canonicalized (no relative CELL_ESTATE_PATH).
+    /// `estate complete` against the source estate. Skill bodies instruct
+    /// calling the wired member MCP tool `complete` with the package
+    /// prompt (mock/live notes as appropriate). Refuses if the estate
+    /// path cannot be canonicalized (no relative CELL_ESTATE_PATH).
     /// Routine schedules stay comments only. live_sync stays false.
     /// Not live Cursor / Grok Bot sync. Not a cron daemon.
     ExportPlugin {

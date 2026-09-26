@@ -2,10 +2,11 @@
 //!
 //! Emits `plugin.json` + `mcp.json` + `skills/*/SKILL.md` (Agent Plugins 1.0
 //! floor that Cursor loads). Pack → group metadata, package → skill body
-//! stub, routine schedule → commented cron/trigger notes.
-//! MCP servers run `estate pack mcp-serve` so member tools call
-//! `estate complete` against the source estate. live_sync stays false.
-//! Not live Cursor / Grok Bot sync. Not a cron daemon.
+//! that instructs calling the wired member MCP tool `complete` with the
+//! package prompt (mock/live notes as appropriate), routine schedule →
+//! commented cron/trigger notes. MCP servers run `estate pack mcp-serve`
+//! so member tools call `estate complete` against the source estate.
+//! live_sync stays false. Not live Cursor / Grok Bot sync. Not a cron daemon.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{normalize_name, AgentPack, Estate, PackPackage, Routine};
@@ -125,7 +126,7 @@ fn write_plugin_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
         "name": pack.id,
         "version": "0.0.0",
         "description": format!(
-            "Estate pack {} exported as an Agent Plugin stub. Group members: {members}. Orchestrator: {orch}. MCP tools call estate complete on the source estate. live_sync is false — not live Cursor or Grok Bot sync.",
+            "Estate pack {} exported as an Agent Plugin stub. Group members: {members}. Orchestrator: {orch}. Skill bodies call the wired member MCP tool complete with the package prompt. MCP tools call estate complete on the source estate. live_sync is false — not live Cursor or Grok Bot sync.",
             pack.id
         ),
         "author": { "name": "cell-one" },
@@ -180,15 +181,52 @@ fn write_skills(
     Ok(())
 }
 
+fn skill_complete_member(pack: &AgentPack) -> &str {
+    pack.orchestrator
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "-")
+        .or_else(|| pack.members.first().map(String::as_str))
+        .unwrap_or("-")
+}
+
+/// Single-line MCP `complete` arguments for the package prompt.
+/// Mock includes `"mock": true`. Binding becomes `object` when present.
+fn complete_tool_args_line(pkg: &PackPackage, mock: bool) -> String {
+    let prompt = pkg
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("<set prompt>");
+    let prompt_json = serde_json::to_string(prompt).unwrap_or_else(|_| "\"<set prompt>\"".into());
+    let mut parts = vec![format!("\"prompt\": {prompt_json}")];
+    if mock {
+        parts.push("\"mock\": true".into());
+    }
+    if let Some(binding) = pkg
+        .binding
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let binding_json = serde_json::to_string(binding).unwrap_or_else(|_| "\"\"".into());
+        parts.push(format!("\"object\": {binding_json}"));
+    }
+    format!("{{ {} }}", parts.join(", "))
+}
+
 fn skill_markdown(pack: &AgentPack, pkg: &PackPackage, routines: &[&Routine]) -> String {
     let binding = pkg.binding.as_deref().unwrap_or("-");
     let prompt = pkg.prompt.as_deref().unwrap_or("-");
     let note = pkg.note.as_deref().unwrap_or("-");
+    let caller = skill_complete_member(pack);
     let desc = if let Some(n) = pkg.note.as_deref().filter(|s| !s.is_empty()) {
-        format!("{n} Scaffold only — not live Cursor/Grok Bot sync.")
+        format!(
+            "{n} Call the wired member MCP tool complete with the package prompt. live_sync is false — not live Cursor/Grok Bot sync."
+        )
     } else {
         format!(
-            "Pack package {} on {}. Binding {binding}. Scaffold only — not live Cursor/Grok Bot sync.",
+            "Pack package {} on {}. Binding {binding}. Call the wired member MCP tool complete with the package prompt. live_sync is false — not live Cursor/Grok Bot sync.",
             pkg.id, pack.id
         )
     };
@@ -203,6 +241,8 @@ fn skill_markdown(pack: &AgentPack, pkg: &PackPackage, routines: &[&Routine]) ->
             .collect();
         chain = hops.join("; ");
     }
+    let mock_args = complete_tool_args_line(pkg, true);
+    let live_args = complete_tool_args_line(pkg, false);
     let mut body = format!(
         "---\n\
          name: {id}\n\
@@ -219,12 +259,26 @@ fn skill_markdown(pack: &AgentPack, pkg: &PackPackage, routines: &[&Routine]) ->
          - chain: {chain}\n\
          - note: {note}\n\
          \n\
-         Run on the estate (not a live Cursor/Grok Bot install):\n\
+         Call the wired pack member MCP tool `complete` with this package prompt.\n\
+         Speak it on member `{caller}` (`mcp.json` server). Non-orchestrator members\n\
+         refuse `refuse:pack-orchestrator` the same as `estate complete --pack`.\n\
+         The server is `estate pack mcp-serve`; tool `complete` runs\n\
+         `estate complete --agent {caller} --pack {pack}` against `CELL_ESTATE_PATH`.\n\
+         \n\
+         Mock (in-process drivers, no live generate):\n\
+         \n\
+             {mock_args}\n\
+         \n\
+         Live (omit `mock` when `CELL_LOCAL_ENDPOINT` / `XAI_API_KEY` are set).\n\
+         Receipts stay on the source estate. Not a live PASS:\n\
+         \n\
+             {live_args}\n\
+         \n\
+         `live_sync: false`. Not live Cursor / Grok Bot sync. Routines stay comments.\n\
+         \n\
+         Estate-side equivalent (not required for the plugin skill):\n\
          \n\
              estate package run --id {id} --estate <estate.yaml> --mock\n\
-         \n\
-         Pack member MCP tools call `estate complete` via `estate pack mcp-serve`.\n\
-         This skill body stays a stub. live_sync is false.\n\
          \n",
         id = pkg.id,
         pack = pack.id,
@@ -261,7 +315,10 @@ fn write_readme(
     md.push_str("layout (`plugin.json` + `mcp.json` + `skills/`).\n\n");
     md.push_str("**Bridge, not live Cursor / Grok Bot sync.** MCP servers run\n");
     md.push_str("`estate pack mcp-serve` so member tools call `estate complete`\n");
-    md.push_str("against the source estate. `estate` must be on PATH.\n");
+    md.push_str("against the source estate. Skill bodies instruct calling the\n");
+    md.push_str("wired member MCP tool `complete` with the package prompt\n");
+    md.push_str("(mock / live notes as appropriate). They are not stubs.\n");
+    md.push_str("`estate` must be on PATH.\n");
     md.push_str("`live_sync: false`. `wired_mcp: true`. Routines stay comments.\n");
     md.push_str("This directory does not install a Cursor/Grok Bot plugin, does\n");
     md.push_str("not start a cron daemon, and does not rank mixed-select.\n\n");
@@ -357,6 +414,8 @@ fn write_mapping_sidecar(
                 "skill": format!("skills/{}/SKILL.md", p.id),
                 "binding": p.binding,
                 "prompt": p.prompt,
+                "mcp_tool": "complete",
+                "skill_stub": false,
             })
         })
         .collect();
@@ -419,8 +478,32 @@ fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cron_comment, estate_path_for_export};
+    use super::{
+        complete_tool_args_line, cron_comment, estate_path_for_export, skill_complete_member,
+        skill_markdown,
+    };
+    use estate_schema::{AgentPack, PackPackage};
     use std::path::{Path, PathBuf};
+
+    fn sample_pack() -> AgentPack {
+        AgentPack {
+            id: "research-crew".into(),
+            members: vec!["horizon".into(), "research".into()],
+            orchestrator: Some("horizon".into()),
+            chain: vec![],
+        }
+    }
+
+    fn sample_pkg() -> PackPackage {
+        PackPackage {
+            id: "classify-ping".into(),
+            pack: "research-crew".into(),
+            prompt: Some("ping".into()),
+            binding: Some("ag_news".into()),
+            note: Some("Skill analog".into()),
+            chain: vec![],
+        }
+    }
 
     #[test]
     fn cron_comment_maps_shorthands() {
@@ -454,5 +537,37 @@ mod tests {
         let err = estate_path_for_export(&rel).unwrap_err().to_string();
         assert!(err.contains("refuse:export-estate-path"), "{err}");
         assert!(err.contains("cannot canonicalize"), "{err}");
+    }
+
+    #[test]
+    fn complete_tool_args_line_includes_prompt_mock_and_object() {
+        let pkg = sample_pkg();
+        assert_eq!(
+            complete_tool_args_line(&pkg, true),
+            r#"{ "prompt": "ping", "mock": true, "object": "ag_news" }"#
+        );
+        assert_eq!(
+            complete_tool_args_line(&pkg, false),
+            r#"{ "prompt": "ping", "object": "ag_news" }"#
+        );
+    }
+
+    #[test]
+    fn skill_markdown_instructs_mcp_complete_not_stub() {
+        let pack = sample_pack();
+        let pkg = sample_pkg();
+        let md = skill_markdown(&pack, &pkg, &[]);
+        assert_eq!(skill_complete_member(&pack), "horizon");
+        assert!(md.contains("Call the wired pack member MCP tool `complete`"), "{md}");
+        assert!(md.contains("estate pack mcp-serve"), "{md}");
+        assert!(
+            md.contains(r#"{ "prompt": "ping", "mock": true, "object": "ag_news" }"#),
+            "{md}"
+        );
+        assert!(md.contains("live_sync: false"), "{md}");
+        assert!(md.contains("no standing routines"), "{md}");
+        assert!(!md.contains("stays a stub"), "{md}");
+        assert!(!md.contains("body stub"), "{md}");
+        assert!(!md.contains("Scaffold only"), "{md}");
     }
 }
