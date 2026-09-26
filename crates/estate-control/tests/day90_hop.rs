@@ -78,7 +78,14 @@ fn hop_ttl_expire_forget_call_restamps() {
     }
 
     let listed = estate_bin()
-        .args(["convey", "expire", "--state-dir", &state_s])
+        .args([
+            "convey",
+            "expire",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state_s,
+        ])
         .output()
         .unwrap();
     let listed_text = text(&listed);
@@ -110,7 +117,15 @@ fn hop_ttl_expire_forget_call_restamps() {
     );
 
     let forgot = estate_bin()
-        .args(["convey", "expire", "--forget", "--state-dir", &state_s])
+        .args([
+            "convey",
+            "expire",
+            "--forget",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state_s,
+        ])
         .output()
         .unwrap();
     let forgot_text = text(&forgot);

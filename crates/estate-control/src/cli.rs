@@ -589,7 +589,32 @@ pub(crate) enum ConveyCommand {
         estate: PathBuf,
     },
     /// List expired hop leases. Call refuses them. `--forget` drops leases; hop decls stay so call can restamp.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, reconcile, and `estate convey list` (`describe_agents_section`),
+    /// then the same hop coverage cites (`hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// the expired hop lease list and before `--forget` writes. Those cites
+    /// do not fail this command. A match stays quiet. A missing mesh is an
+    /// empty cite list and stays not-enforced. The shared stack still reads
+    /// placement-actual for mesh interpretation and Authority. A present mesh
+    /// that does not parse, a bad host_class on that file,
+    /// `refuse:agent-unplaced`, or any other mesh error including a
+    /// placement-actual parse failure, refuses before those sections, before
+    /// the expired list, and before `--forget` writes. A placement-actual SKU
+    /// host_class still continues: Agents and hop cites print and Authority
+    /// rows are omitted. The expired-lease reader still refuses that SKU
+    /// before the expired list (`list_expired_hop_leases` loads the
+    /// interpreted mesh) and before `--forget` rewrites the mesh. That
+    /// diverges from `estate audits` and `estate history`, whose readers
+    /// still print the body. An expired spawned cloud hop still refuses
+    /// before the list and before the rewrite. Without `--forget` this
+    /// command does not write the mesh, the leases, the estate, or the apply
+    /// audit. Does not spawn. Does not claim mediation.
     Expire {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
         #[arg(long, default_value_t = false)]

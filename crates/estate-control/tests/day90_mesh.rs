@@ -127,8 +127,23 @@ fn convey_readers_refuse_tampered_mesh_sku_host_class() {
             "--state-dir",
             &state_s,
         ],
-        vec!["convey", "expire", "--state-dir", &state_s],
-        vec!["convey", "expire", "--forget", "--state-dir", &state_s],
+        vec![
+            "convey",
+            "expire",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state_s,
+        ],
+        vec![
+            "convey",
+            "expire",
+            "--forget",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state_s,
+        ],
         vec!["convey", "sync", "--state-dir", &state_s],
     ] {
         let out = estate_bin().args(&args).output().unwrap();
