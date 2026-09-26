@@ -34,6 +34,7 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 | `placement-actual.v0.json` | `cell-one.placement-actual.v0` | Durable leases |
 | `lifecycle.v0.json` | `cell-one.lifecycle.v0` | Suspend / resume |
 | `session-journal.v0.json` | `cell-one.session-journal.v0` | `.cell/sessions.jsonl` |
+| `pack-session.v0.json` | `cell-one.pack-session.v0` | `{state-dir}/pack-sessions/{pack}/{id}.json` |
 | `apply-dry-run.v0.json` | `cell-one.apply-dry-run.v0` | `estate apply --dry-run` |
 | `reconcile.v0.json` | `cell-one.reconcile.v0` | `estate reconcile` |
 | `conveyor-mesh.v0.json` | `cell-one.conveyor-mesh.v0` | Hop mesh / leases |
@@ -52,5 +53,7 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 Policy files (not schema snapshots): `policy/cell-one.policy.v0.yaml`, `policy/sacred.yaml`.
 
 Documentary ids without a snapshot file: `cell-one.reconcile-suggest.v0` (`reconcile --suggest`), `cell-one.enrich-accept.v0` (`packs accept`), `cell-one.backup-prune.v0` (`backup --prune`). Same freeze rule: additive ok, rename → v1.
+
+`pack-session.v0.json` is the pack-scoped crew session (`cell-one.pack-session.v0`). Throwaway short transcript under `{state-dir}/pack-sessions/`. Not estate SoT. Additive optional fields stay v0. A rename of `session_id` / `pack_id` / `turns` is a v1.
 
 `export_yaml` and `modelfile` are additive optional fields on `cell-one.enrich-prepare.v0`. Prepare writes `export_yaml` when that prepare wrote `export.yaml`, and `modelfile` when that prepare wrote `Modelfile`. The LLaMA-Factory Modelfile inside a later `export_dir` is a separate file. Older prepare files stay valid.

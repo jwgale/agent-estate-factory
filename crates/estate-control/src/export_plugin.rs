@@ -310,6 +310,8 @@ fn skill_markdown(pack: &AgentPack, pkg: &PackPackage, routines: &[&Routine]) ->
          refuse `refuse:pack-orchestrator` the same as `estate complete --pack`.\n\
          The server is `estate pack mcp-serve`; tool `complete` runs\n\
          `estate complete --agent {caller} --pack {pack}` against `CELL_ESTATE_PATH`.\n\
+         Optional `session` / `session_id` is pack-scoped multi-hop memory;\n\
+         `session_create: true` mints a new id. `live_sync` stays false.\n\
          \n\
          Mock (in-process drivers, no live generate):\n\
          \n\
@@ -413,7 +415,8 @@ fn write_readme(
     md.push_str("`CELL_ESTATE_ROLE`, and `CELL_ESTATE_PATH`. Non-orchestrator\n");
     md.push_str("members refuse `refuse:pack-orchestrator` the same as\n");
     md.push_str("`estate complete --pack`. Pass `mock: true` on the tool to\n");
-    md.push_str("use in-process drivers. Not a live Cursor/Grok Bot install.\n\n");
+    md.push_str("use in-process drivers. Optional `session` / `session_id`\n");
+    md.push_str("carries pack-scoped multi-hop memory. Not a live Cursor/Grok Bot install.\n\n");
     for member in &pack.members {
         let role = crate::pack_mcp::pack_role(Some(orch).filter(|s| *s != "-"), member);
         md.push_str(&format!("- `{member}` ({role})\n"));

@@ -29,6 +29,7 @@ placement / lifecycle / sessions, `estate-control` suggest / audit export,
 | `conveyor-leases.json` | durable | Hop leases. Call refuses without a granted lease. Optional hop `ttl_secs` / `issued_at` / `expires_at`. |
 | `feed/events.jsonl` | durable | Scrubbed traces. No prompts, no keys. Convey allow/deny lines (`proxy.hop`, `proxy.agent`, `proxy.tool`, and the other proxy kinds) land here. |
 | `feed/feed-cursor.json` | durable watermark | Schema `cell-one.feed-cursor.v0`. Survives rematerialize. Does not auto-promote. `estate feed cursor` prints it after a proxy line. |
+| `pack-sessions/{pack}/{id}.json` | throwaway transcript | Pack-scoped crew session (`cell-one.pack-session.v0`). Short turn list for multi-hop complete memory. Not estate SoT. Not copied by backup. No secrets. |
 | `sessions/` | disposable | Profile-dir desktops. Discarded on suspend. |
 | `runtime/` | disposable | Heartbeats / PIDs (`runtime/pids.json`). Never SoT. |
 | `audit-export/` | local review bundle | `estate audit export`. Plans + lifecycle + import-audit + convey leases + `conveyor-mesh.json` when present + `honesty.md` (Agents, hop cites, Authority) next to `MANIFEST.md`. Not uploaded. |

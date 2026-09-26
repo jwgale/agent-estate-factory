@@ -853,6 +853,8 @@ pub(crate) fn cmd_package_run(
     endpoint: Option<String>,
     mock: bool,
     chain: bool,
+    session: Option<&str>,
+    session_create: bool,
 ) -> Result<()> {
     if chain {
         return cmd_package_run_chain(
@@ -866,6 +868,8 @@ pub(crate) fn cmd_package_run(
             feed_dir,
             endpoint,
             mock,
+            session,
+            session_create,
         );
     }
     let estate =
@@ -892,6 +896,8 @@ pub(crate) fn cmd_package_run(
         mock,
         None,
         None,
+        session,
+        session_create,
     )
 }
 
@@ -941,6 +947,8 @@ pub(crate) fn cmd_routine_run(
     endpoint: Option<String>,
     mock: bool,
     chain: bool,
+    session: Option<&str>,
+    session_create: bool,
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
@@ -959,6 +967,8 @@ pub(crate) fn cmd_routine_run(
             feed_dir,
             endpoint,
             mock,
+            session,
+            session_create,
         );
     }
     let hint = crate::decisions::load_select_hint(state_dir)?;
@@ -983,6 +993,8 @@ pub(crate) fn cmd_routine_run(
         mock,
         None,
         None,
+        session,
+        session_create,
     )
 }
 
@@ -1098,6 +1110,8 @@ pub(crate) fn cmd_routine_tick(
             endpoint.clone(),
             mock,
             chain,
+            None,
+            false,
         )?;
         crate::routines::mark_ran(&mut state, routine, now).map_err(|e| anyhow::anyhow!("{e}"))?;
         ran += 1;
@@ -1230,6 +1244,8 @@ fn cmd_package_run_chain(
     feed_dir: Option<&Path>,
     endpoint: Option<String>,
     mock: bool,
+    session: Option<&str>,
+    session_create: bool,
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
@@ -1246,6 +1262,27 @@ fn cmd_package_run_chain(
     let payload = prompt.or(text).or(pkg_prompt).ok_or_else(|| {
         anyhow::anyhow!("set --prompt or --text, or declare prompt on the package")
     })?;
+    let session_req = crate::pack_session::SessionRequest::from_flags(session, session_create)?;
+    let shared_session = if session_req.is_none() {
+        None
+    } else {
+        let pack_id = hops
+            .first()
+            .map(|h| h.pack_id.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!("refuse:session-requires-pack: --session requires --pack")
+            })?;
+        let opened = crate::pack_session::open_for_complete(state_dir, pack_id, &session_req)?
+            .ok_or_else(|| anyhow::anyhow!("refuse:session: could not open pack session"))?;
+        if opened.created {
+            println!(
+                "pack session: created id={} pack={} turns=0",
+                opened.session.session_id, opened.session.pack_id
+            );
+        }
+        Some(opened.session.session_id)
+    };
     println!("chain {chain_id} hops={}", hops.len());
     for hop in &hops {
         let binding = hop
@@ -1268,6 +1305,8 @@ fn cmd_package_run_chain(
             mock,
             Some(hop),
             None,
+            shared_session.as_deref(),
+            false,
         )?;
     }
     Ok(())
@@ -1288,10 +1327,13 @@ pub(crate) fn cmd_complete(
     mock: bool,
     forced_handoff: Option<&crate::decisions::PackHandoff>,
     select_policy: Option<&str>,
+    session: Option<&str>,
+    session_create: bool,
 ) -> Result<()> {
-    let payload = prompt
+    let original_prompt = prompt
         .or(text)
         .ok_or_else(|| anyhow::anyhow!("set --prompt or --text"))?;
+    let session_req = crate::pack_session::SessionRequest::from_flags(session, session_create)?;
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let mut hint = crate::decisions::load_select_hint(state_dir)?;
@@ -1353,6 +1395,28 @@ pub(crate) fn cmd_complete(
         None => None,
         }
     };
+    if !session_req.is_none() && pack_handoff.is_none() {
+        bail!("refuse:session-requires-pack: --session requires --pack");
+    }
+    let mut open_session = if let Some(handoff) = pack_handoff.as_ref() {
+        crate::pack_session::open_for_complete(state_dir, &handoff.pack_id, &session_req)?
+    } else {
+        None
+    };
+    if let Some(opened) = open_session.as_ref() {
+        opened.check_can_append(&original_prompt)?;
+        if opened.created {
+            println!(
+                "pack session: created id={} pack={} turns=0",
+                opened.session.session_id, opened.session.pack_id
+            );
+        }
+    }
+    let payload = match open_session.as_ref() {
+        Some(opened) => opened.prepend(&original_prompt),
+        None => original_prompt.clone(),
+    };
+    let session_stamp = open_session.as_ref().map(|s| s.stamp());
     let complete_agent = pack_handoff
         .as_ref()
         .map(|h| h.handoff_to.as_str())
@@ -1404,6 +1468,7 @@ pub(crate) fn cmd_complete(
                 binding_hint,
                 &outcome,
                 pack_handoff.as_ref(),
+                session_stamp.as_ref(),
             ) {
                 Ok(_) => {}
                 Err(err) => {
@@ -1432,6 +1497,7 @@ pub(crate) fn cmd_complete(
             binding_hint,
             &outcome,
             pack_handoff.as_ref(),
+            session_stamp.as_ref(),
         ) {
             Ok(_) => {}
             Err(err) => {
@@ -1460,6 +1526,7 @@ pub(crate) fn cmd_complete(
                 binding_hint,
                 &outcome,
                 pack_handoff.as_ref(),
+                session_stamp.as_ref(),
             ) {
                 Ok(_) => {}
                 Err(journal_err) => {
@@ -1476,6 +1543,22 @@ pub(crate) fn cmd_complete(
             } else {
                 "refuse:denied".to_string()
             };
+            let mut stamp = session_stamp.clone();
+            if result.allow {
+                if let Some(opened) = open_session.as_mut() {
+                    match opened.append_turn(
+                        &original_prompt,
+                        &result.completion,
+                        complete_agent,
+                        None,
+                    ) {
+                        Ok(next) => stamp = Some(next),
+                        Err(err) => {
+                            eprintln!("pack session: append failed after complete commit: {err}");
+                        }
+                    }
+                }
+            }
             match crate::decisions::record_complete_receipt_pack(
                 &estate,
                 state_dir,
@@ -1484,9 +1567,13 @@ pub(crate) fn cmd_complete(
                 binding_hint,
                 &outcome,
                 pack_handoff.as_ref(),
+                stamp.as_ref(),
             ) {
                 Ok(receipt) => {
                     if result.allow {
+                        if let Some(s) = stamp.as_ref() {
+                            println!("{}", crate::pack_session::status_line(s));
+                        }
                         println!("{}", crate::decisions::cite_line(&receipt));
                     }
                 }

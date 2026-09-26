@@ -1,0 +1,29 @@
+{
+  "schema": "cell-one.pack-session.v0",
+  "file": "{state-dir}/pack-sessions/{pack}/{session_id}.json",
+  "throwaway": true,
+  "fields": {
+    "schema": "cell-one.pack-session.v0",
+    "session_id": "sess-<hex> or operator id [A-Za-z0-9_-] 1-64",
+    "pack_id": "estate agent pack id",
+    "created_at": "unix seconds",
+    "updated_at": "unix seconds",
+    "expires_at": "optional unix seconds; absent means no TTL",
+    "ended": "boolean; resume after true is refuse:session-ended",
+    "turns": [
+      {
+        "seq": "1-based",
+        "prompt": "scrubbed user text; no secrets",
+        "result": "compact completion / receipt text; no secrets",
+        "agent": "completing agent",
+        "receipt_id": "optional decision receipt id"
+      }
+    ]
+  },
+  "bounds": {
+    "max_turns": "CELL_PACK_SESSION_MAX_TURNS default 8",
+    "max_bytes": "CELL_PACK_SESSION_MAX_BYTES default 16384",
+    "ttl_secs": "CELL_PACK_SESSION_TTL_SECS / --ttl-secs default 86400; 0 means none"
+  },
+  "note": "Pack-scoped crew session for multi-hop complete memory. Not estate SoT. Not Grok Bot sync. READY_FOR_LIVE_TEST: no."
+}

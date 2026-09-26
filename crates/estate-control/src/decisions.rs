@@ -127,6 +127,15 @@ pub(crate) struct DecisionReceipt {
     /// Empty stays off the wire so existing receipts keep their shape.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rejected: Vec<CandidateSummary>,
+    /// Pack-scoped crew session when `estate complete --session` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Turn count on that session after this receipt (or current on refuse).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_turns: Option<u64>,
+    /// True when prior session turns were prepended into this complete.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_context: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -442,7 +451,7 @@ pub(crate) fn record_convey_receipt(
     expired: bool,
 ) -> Result<DecisionReceipt> {
     record_receipt(
-        estate, state_dir, hop_id, capability, agent, hint, outcome, expired, "", None,
+        estate, state_dir, hop_id, capability, agent, hint, outcome, expired, "", None, None,
     )
 }
 
@@ -468,6 +477,7 @@ pub(crate) fn record_authorize_receipt(
         outcome,
         false,
         "authorize",
+        None,
         None,
     )
 }
@@ -519,7 +529,7 @@ pub(crate) fn record_complete_receipt(
     hint: Option<&SelectHint>,
     outcome: &str,
 ) -> Result<DecisionReceipt> {
-    record_complete_receipt_pack(estate, state_dir, object, agent, hint, outcome, None)
+    record_complete_receipt_pack(estate, state_dir, object, agent, hint, outcome, None, None)
 }
 
 pub(crate) fn record_complete_receipt_pack(
@@ -530,6 +540,7 @@ pub(crate) fn record_complete_receipt_pack(
     hint: Option<&SelectHint>,
     outcome: &str,
     pack: Option<&PackHandoff>,
+    session: Option<&crate::pack_session::SessionStamp>,
 ) -> Result<DecisionReceipt> {
     record_receipt(
         estate,
@@ -542,6 +553,7 @@ pub(crate) fn record_complete_receipt_pack(
         false,
         "complete",
         pack,
+        session,
     )
 }
 
@@ -570,6 +582,7 @@ fn record_receipt(
     expired: bool,
     surface: &str,
     pack: Option<&PackHandoff>,
+    session: Option<&crate::pack_session::SessionStamp>,
 ) -> Result<DecisionReceipt> {
     let prepared = prepare_candidates(estate, agent);
     let policy = agent_select_policy(estate, agent);
@@ -634,6 +647,18 @@ fn record_receipt(
             }
         }
     }
+    if let Some(session) = session {
+        material.push('\n');
+        material.push_str(&session.session_id);
+        material.push('\n');
+        material.push_str(&session.session_turns.to_string());
+        material.push('\n');
+        material.push_str(if session.session_context {
+            "applied"
+        } else {
+            "none"
+        });
+    }
     let receipt = DecisionReceipt {
         schema: RECEIPT_SCHEMA.into(),
         id: receipt_id(seq, &material),
@@ -657,6 +682,9 @@ fn record_receipt(
         outcome: outcome.to_string(),
         completion_label: None,
         rejected,
+        session_id: session.map(|s| s.session_id.clone()),
+        session_turns: session.map(|s| s.session_turns),
+        session_context: session.map(|s| s.session_context),
     };
     check_receipt(&receipt)?;
     let line = serde_json::to_string(&receipt)?;
@@ -701,7 +729,7 @@ fn check_receipt(receipt: &DecisionReceipt) -> Result<()> {
 }
 
 pub(crate) fn cite_line(receipt: &DecisionReceipt) -> String {
-    match &receipt.fallback {
+    let mut line = match &receipt.fallback {
         Some(id) => format!(
             "decision receipt: {} result={} validation={} fallback={id}",
             receipt.id, receipt.result, receipt.validation
@@ -710,7 +738,17 @@ pub(crate) fn cite_line(receipt: &DecisionReceipt) -> String {
             "decision receipt: {} result={} validation={}",
             receipt.id, receipt.result, receipt.validation
         ),
+    };
+    if let Some(sid) = &receipt.session_id {
+        let turns = receipt.session_turns.unwrap_or(0);
+        let context = if receipt.session_context.unwrap_or(false) {
+            "applied"
+        } else {
+            "none"
+        };
+        line.push_str(&format!(" session={sid} turns={turns} context={context}"));
     }
+    line
 }
 
 pub(crate) fn load_receipts(state_dir: &Path) -> Result<Vec<DecisionReceipt>> {
@@ -800,6 +838,18 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
                 Some(id) => format!(" chain={id}"),
                 None => String::new(),
             };
+            let session = match &receipt.session_id {
+                Some(id) => {
+                    let turns = receipt.session_turns.unwrap_or(0);
+                    let context = if receipt.session_context.unwrap_or(false) {
+                        "applied"
+                    } else {
+                        "none"
+                    };
+                    format!(" session={id} turns={turns} context={context}")
+                }
+                None => String::new(),
+            };
             let rejected = if receipt.rejected.is_empty() {
                 String::new()
             } else {
@@ -812,7 +862,7 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
                 format!(" rejected={ids}")
             };
             out.push_str(&format!(
-                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine}{chain} result={result}{rejected} outcome={outcome}\n",
+                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine}{chain}{session} result={result}{rejected} outcome={outcome}\n",
                 id = receipt.id,
                 cap = receipt.capability,
                 result = receipt.result,

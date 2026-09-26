@@ -16,6 +16,7 @@ mod help;
 mod helpers;
 mod ops;
 mod pack_mcp;
+mod pack_session;
 mod plan_apply;
 mod routines;
 mod suggest;
