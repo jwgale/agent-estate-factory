@@ -1116,6 +1116,96 @@ pub(crate) fn cmd_routine_tick(
     Ok(())
 }
 
+pub(crate) fn cmd_routine_watch(
+    id: Option<&str>,
+    agent: Option<&str>,
+    prompt: Option<String>,
+    text: Option<String>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+    chain: bool,
+    interval: &str,
+    max_cycles: Option<u32>,
+) -> Result<()> {
+    let env_override = std::env::var(crate::routines::WATCH_INTERVAL_ENV).ok();
+    let plan = crate::routines::resolve_watch_plan(
+        interval,
+        max_cycles,
+        env_override.as_deref(),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    install_watch_sigint();
+    println!("{}", crate::routines::watch_status_line(&plan));
+    let outcome = crate::routines::run_watch_loop(
+        &plan,
+        |cycle| {
+            println!("routine watch cycle={cycle}");
+            cmd_routine_tick(
+                id,
+                agent,
+                prompt.clone(),
+                text.clone(),
+                estate_path,
+                state_dir,
+                feed_dir,
+                endpoint.clone(),
+                mock,
+                chain,
+                true,
+            )
+        },
+        sleep_watch_interval,
+        watch_stopped,
+    )?;
+    println!(
+        "routine watch stopped cycles={} reason={}",
+        outcome.cycles,
+        outcome.reason.as_str()
+    );
+    Ok(())
+}
+
+static WATCH_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn install_watch_sigint() {
+    use std::sync::atomic::Ordering;
+    WATCH_STOP.store(false, Ordering::SeqCst);
+    #[cfg(unix)]
+    {
+        extern "C" fn handle(_sig: i32) {
+            WATCH_STOP.store(true, Ordering::SeqCst);
+        }
+        unsafe {
+            let _ = watch_signal(2, handle as usize);
+        }
+    }
+}
+
+#[cfg(unix)]
+extern "C" {
+    #[link_name = "signal"]
+    fn watch_signal(sig: i32, handler: usize) -> usize;
+}
+
+fn watch_stopped() -> bool {
+    WATCH_STOP.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn sleep_watch_interval(secs: i64) {
+    use std::sync::atomic::Ordering;
+    if secs <= 0 {
+        return;
+    }
+    let mut left = secs;
+    while left > 0 && !WATCH_STOP.load(Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        left -= 1;
+    }
+}
+
 fn skip_reason(routine: &estate_schema::Routine, row: Option<&crate::routines::RoutineRow>) -> String {
     if !routine.is_enabled() {
         return "disabled".into();
