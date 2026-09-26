@@ -435,6 +435,8 @@ pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> 
 /// `estate history` prints the text before the lifecycle history list.
 /// `estate convey list` prints the text before the hop decl list.
 /// `estate convey expire` prints the text before the expired hop lease list.
+/// `estate convey sync` prints the text before the mesh write when the
+/// estate file is present.
 /// `estate audit export` writes the text into `honesty.md`. Empty when
 /// every subject matches. Does not write.
 pub(crate) fn render_hop_coverage_cites(
@@ -457,15 +459,15 @@ pub(crate) fn render_hop_coverage_cites(
 /// Shared with `estate drift`, `estate plan`, `estate apply`,
 /// `estate status`, `estate convey authority`, `estate reconcile`,
 /// `estate leases`, `estate convey leases`, `estate audits`,
-/// `estate history`, `estate convey list`, `estate convey expire`, and
-/// `estate audit export`.
+/// `estate history`, `estate convey list`, `estate convey expire`,
+/// `estate convey sync`, and `estate audit export`.
 /// `fail` is capability mismatch only. Deny and deny-default stay visible.
 /// They do not fail doctor `--strict`, drift, plan, apply, status, convey
 /// authority, reconcile, leases, convey leases, audits, history, convey
-/// list, convey expire, or audit export by themselves. A mismatch fails
-/// doctor, drift, plan, and apply. Status, convey authority, reconcile,
-/// leases, convey leases, audits, history, convey list, convey expire, and
-/// audit export keep the line and do not bail.
+/// list, convey expire, convey sync, or audit export by themselves. A
+/// mismatch fails doctor, drift, plan, and apply. Status, convey authority,
+/// reconcile, leases, convey leases, audits, history, convey list, convey
+/// expire, convey sync, and audit export keep the line and do not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,
