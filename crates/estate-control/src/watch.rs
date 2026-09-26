@@ -17,7 +17,22 @@ use floor_supervisor::{
 };
 use std::path::Path;
 
-pub(crate) fn cmd_expire(state_dir: &Path, forget: bool) -> Result<()> {
+pub(crate) fn cmd_expire(estate_path: &Path, state_dir: &Path, forget: bool) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the expired placement list and before
+    // `--forget` writes. Same stack as estate audits and estate history.
+    // Hop cites do not change this command's exit code. The stack reads
+    // placement-actual for mesh interpretation and Authority. A
+    // placement-actual SKU omits Authority and the expired placement list
+    // still prints. There is no second placement refuse before that list:
+    // `list_expired_leases` and `forget_expired_leases` load placement-actual
+    // with `load_placements` and do not call `load_interpreted_mesh`.
+    // `--forget` still drops expired rows after that list. An expired
+    // spawned cloud-agent lease still refuses before the list and before
+    // the rewrite. A missing or unreadable estate refuses above, before
+    // this stack and before the list.
+    print!("{}", crate::ops::honesty_stack(&estate, state_dir)?);
     let expired = list_expired_leases(state_dir, now_unix())?;
     if expired.is_empty() {
         println!("no expired leases under {}", state_dir.display());
@@ -415,7 +430,7 @@ fn doctor_authority_text(estate: &Estate, state_dir: &Path) -> Result<String> {
 /// (capability mismatch). Deny and deny-default are `note`. Returns the
 /// mismatch lines. Doctor appends them and bails at the end. Status,
 /// convey authority, reconcile, leases, convey leases, audits, history,
-/// convey list, and audit export discard them and do not bail.
+/// expire, convey list, and audit export discard them and do not bail.
 /// Cloud hops, empty populations, ungranted
 /// leases, and hop ids that are not placements stay out. Cloud kinds stay
 /// out of this cite on purpose: `cloud-mesh`, `cloud_mesh`, and
@@ -435,6 +450,7 @@ pub(crate) fn print_hop_coverage_cites(estate: &Estate, mesh: &ConveyorMesh) -> 
 /// `estate history` prints the text before the lifecycle history list.
 /// `estate convey list` prints the text before the hop decl list.
 /// `estate convey expire` prints the text before the expired hop lease list.
+/// `estate expire` prints the text before the expired placement lease list.
 /// `estate convey sync` prints the text before the mesh write when the
 /// estate file is present.
 /// `estate audit export` writes the text into `honesty.md`. Empty when
@@ -459,15 +475,15 @@ pub(crate) fn render_hop_coverage_cites(
 /// Shared with `estate drift`, `estate plan`, `estate apply`,
 /// `estate status`, `estate convey authority`, `estate reconcile`,
 /// `estate leases`, `estate convey leases`, `estate audits`,
-/// `estate history`, `estate convey list`, `estate convey expire`,
-/// `estate convey sync`, and `estate audit export`.
+/// `estate history`, `estate expire`, `estate convey list`,
+/// `estate convey expire`, `estate convey sync`, and `estate audit export`.
 /// `fail` is capability mismatch only. Deny and deny-default stay visible.
 /// They do not fail doctor `--strict`, drift, plan, apply, status, convey
-/// authority, reconcile, leases, convey leases, audits, history, convey
-/// list, convey expire, convey sync, or audit export by themselves. A
+/// authority, reconcile, leases, convey leases, audits, history, expire,
+/// convey list, convey expire, convey sync, or audit export by themselves. A
 /// mismatch fails doctor, drift, plan, and apply. Status, convey authority,
-/// reconcile, leases, convey leases, audits, history, convey list, convey
-/// expire, convey sync, and audit export keep the line and do not bail.
+/// reconcile, leases, convey leases, audits, history, expire, convey list,
+/// convey expire, convey sync, and audit export keep the line and do not bail.
 #[derive(Debug)]
 pub(crate) struct HopCoverageCite {
     pub(crate) fail: bool,

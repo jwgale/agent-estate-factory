@@ -963,6 +963,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// print this stack),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list),
+/// `estate expire` (printed before the expired placement lease list and
+/// before `--forget` writes),
 /// `estate convey authority` (the whole file check; a placement-actual SKU
 /// omits Authority and the command succeeds because there is no later
 /// reader), and
@@ -990,8 +992,12 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// placement-actual before `persist_mesh`. A hop-coverage mismatch and a
 /// spawned cloud placement also refuse after this stack and write nothing.
 /// `estate audits` then still prints the apply-audit list. `estate history`
-/// then still prints the lifecycle history list. There is no second
-/// placement refuse before those two lists. `estate convey authority`
+/// then still prints the lifecycle history list. `estate expire` then still
+/// prints the expired placement list. `list_expired_leases` and
+/// `forget_expired_leases` load placement-actual with `load_placements` and
+/// do not call `load_interpreted_mesh`, so that SKU does not refuse before
+/// the list or before `--forget` rewrites expired placement rows. There is
+/// no second placement refuse before those lists. `estate convey authority`
 /// prints this text and stops. That SKU omits Authority and the file check
 /// succeeds. There is no later reader, so the command does not refuse after
 /// the stack and does not write. Every other
@@ -1002,7 +1008,7 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// quiet. Those cites do not fail the caller.
 /// Does not rewrite the mesh, the leases, the estate, or the apply audit.
 /// Does not spawn. No `enforced` status.
-fn honesty_stack(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+pub(crate) fn honesty_stack(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
     let mesh = load_mesh(state_dir)?;
     refuse_mesh_host_classes(&mesh)?;
     let authority = match authority_report(state_dir, estate) {

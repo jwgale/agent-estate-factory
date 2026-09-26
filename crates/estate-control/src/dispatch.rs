@@ -664,7 +664,11 @@ pub(crate) fn run() -> Result<()> {
                 crate::heal::cmd_packs_accept(&id, &proposed_dir, &accepted_dir, &estate, &curator)
             }
         },
-        Command::Expire { state_dir, forget } => cmd_expire(&state_dir, forget),
+        Command::Expire {
+            estate,
+            state_dir,
+            forget,
+        } => cmd_expire(&estate, &state_dir, forget),
         Command::Doctor {
             root,
             state_dir,

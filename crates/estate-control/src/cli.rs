@@ -343,7 +343,36 @@ pub(crate) enum Command {
         command: ClassifyCommand,
     },
     /// List expired placement leases. Apply/resume refuse them.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, reconcile, and `estate history` (`describe_agents_section`),
+    /// then the same hop coverage cites (`hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// the expired placement lease list and before `--forget` writes. Those
+    /// cites do not fail this command. A match stays quiet. A missing mesh
+    /// is an empty cite list and stays not-enforced. The shared stack reads
+    /// placement-actual for mesh interpretation and Authority. A present
+    /// mesh that does not parse, a bad host_class on that file,
+    /// `refuse:agent-unplaced`, or any other mesh error including a
+    /// placement-actual parse failure, refuses before those sections, before
+    /// the expired list, and before `--forget` writes. A placement-actual
+    /// SKU host_class still continues: Agents and hop cites print and
+    /// Authority rows are omitted, then the expired placement list still
+    /// prints. There is no second placement refuse before that list, same
+    /// as `estate audits` and `estate history`. `list_expired_leases` and
+    /// `forget_expired_leases` load placement-actual with `load_placements`
+    /// and do not call `load_interpreted_mesh`. `--forget` drops expired
+    /// placement rows after that list prints. An empty expired list does
+    /// not rewrite. An expired spawned cloud-agent lease still refuses
+    /// before the list and before the rewrite. Without `--forget` this
+    /// command does not write the mesh, the leases, the estate, or the
+    /// apply audit. A missing or unreadable estate refuses before any
+    /// section and before the list. Does not spawn. Does not claim
+    /// mediation.
     Expire {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
         /// Drop expired rows so a later apply can record fresh leases. Does not spawn.

@@ -294,7 +294,7 @@ fn readers_refuse_tampered_sku_host_class() {
     );
 
     let expire = estate_bin()
-        .args(["expire", "--state-dir", &state_s])
+        .args(["expire", "--estate", &estate, "--state-dir", &state_s])
         .output()
         .unwrap();
     assert!(expire.status.success(), "{}", text(&expire));

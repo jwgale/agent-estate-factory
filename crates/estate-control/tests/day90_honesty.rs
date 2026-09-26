@@ -94,7 +94,7 @@ fn journals_append_only_under_suspend_resume_expire_forget() {
     assert!(sess2.starts_with(&sess1), "resume truncated sessions.jsonl");
 
     let forget = estate_bin()
-        .args(["expire", "--forget", "--state-dir", &state_s])
+        .args(["expire", "--forget", "--estate", &estate, "--state-dir", &state_s])
         .output()
         .unwrap();
     assert!(
@@ -121,7 +121,7 @@ fn journals_append_only_under_suspend_resume_expire_forget() {
     )
     .unwrap();
     let forget_expired = estate_bin()
-        .args(["expire", "--forget", "--state-dir", &state_s])
+        .args(["expire", "--forget", "--estate", &estate, "--state-dir", &state_s])
         .output()
         .unwrap();
     assert!(forget_expired.status.success(), "{}", text(&forget_expired));
