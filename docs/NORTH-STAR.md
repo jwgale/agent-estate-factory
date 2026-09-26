@@ -33,6 +33,42 @@ Frontier (`xai_grok`) and local (`local_slm`) are equal-class bindings. The loca
 
 Sacred exclusions stay dual-layer. Cyera CI and the Rust classroom stay out. Sanctum stays a lane.
 
+## Real-world middle layer (host → select → receipt)
+
+The steal from Keel is the decision loop, not the UI and not an ACP workspace: host-prepared candidates, a validated select, bounded execute, and versioned receipts the estate can export and report. That loop sits in the estate control plane. Cursor, Keel, and a Grok Bot–like harness stay swappable seats. The problem this fixes is a trustworthy multi-agent estate: frontier and one or more purpose-built local SLMs share the chain, security fails closed, decisions leave receipts, and any harness is a seat. A Rust specialty SLM is only a probe. Specialty locals are any domain.
+
+On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and schema. Honesty, Authority, Agents, and hop cites (#252–#277) already sit on that same tip. Words: [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md) (decision receipt). The five real-world steps:
+
+1. **Fuel seats.** A purpose-built local SLM joins the chain as a bindable `class: local` id beside `local_slm` and beside frontier `xai_grok` (#278, #280). `estate classify journey` prints `estate enrich import-trained`. `import-trained` writes a `cell-one.enrich-binding-proposal.v0` with `trained_shape` `gguf` and `auto_apply=false`. `estate enrich apply-proposal` stages it. `estate plan` then `estate apply --require-plan` writes the source estate. Import does not apply, does not promote, and does not rewrite the locked example. Agent `models` allow-lists and Model intentions can name one specialty seat. Binding ids still refuse a hardware SKU.
+
+2. **Host prepares candidates.** After coverage and intention gates, the host lists eligible model-binding ids as opaque candidates. Frontier and local stay equal class. Zero eligible ids and two or more eligible ids stay an abstain. One scoped specialty seat is the one selectable id.
+
+3. **Select and validate.** A selector chooses one id or abstains. `{state-dir}/decision-select.json` is an optional hint and is not a grant. A bad hint is `refuse:decision-select` before the check and before the receipt. The host re-validates that choice as `ok`, `stale`, `ineligible`, or `expired`. A fallback id may be recorded. The selector does not grant permission. A fallback is not a grant.
+
+4. **Receipt.** `estate authorize` (#281) and `estate convey call` (#279) append one `cell-one.decision-receipt.v0` line at `{state-dir}/decisions/receipts.jsonl`. Authorize sets `surface=authorize`, `hop_id` to the intention kind, and `capability` to the object. Convey-call lines omit `surface` and keep the hop id. `estate convey hop` remains the lease-bound hop stub that names the population. Success prints one `decision receipt:` cite. `estate decisions export` writes JSONL replay cases. `estate decisions report` counts stage, validation, and fallback.
+
+5. **Bounded execute, or fail closed.** Authorize still decides allow or deny. A convey call still needs a granted hop lease and an allow intention. Coverage deny, intention deny, `model.local.down`, a placement-actual SKU, a mesh that does not parse, and `refuse:agent-unplaced` stop before a grant. A journal write that fails after commit still prints the allow or deny JSON. The hop or authorize exit stands. Authority stays a file check (`would-allow` / `would-deny` / `not-enforced`) and does not claim mediation. Control does not complete. `estate convey` stays a lease-bound hop stub.
+
+### Honest demo (AG News cohesion)
+
+Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained` → `apply-proposal` → `plan` → `apply --require-plan`. Align throwaway `params.model` to the live Ollama seat `tev1-specialist-agnews-all`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class.
+
+Receipts in that throwaway journal:
+
+- `r-1-cb40873d` — `result=ag_news` `validation=ok` `surface=authorize`
+- `r-2-a2f05740` — `result=ag_news` `validation=ok` on `estate convey call` (hop `cohesion-agnews-hop`; convey-call lines omit `surface`)
+
+`estate decisions report` after both: receipts=2, validate=2, validation ok=2, fallback none=2. Convey is lease and select. It is not a live model ping. Report track: `cohesion-agnews-20260926.md`. `READY_FOR_LIVE_TEST` stays no. Not a live PASS.
+
+### Still not claimed
+
+- A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
+- Keel UI, or an ACP workspace clone
+- Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
+- Tip sprawl past `9ff2ed50`
+- A dual rust_idiom launch
+- `estate convey` as more than a lease-bound hop stub
+
 ## Beachhead
 
 The beachhead under the suite is still the local seat and purpose-built SLMs. Agents and the harness sit above that work. They are not a later add-on.
