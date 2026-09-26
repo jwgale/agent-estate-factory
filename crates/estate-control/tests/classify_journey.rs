@@ -14,6 +14,143 @@ fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/tev1-decisions.jsonl")
 }
 
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let mut token = std::process::id().to_string();
+    for needle in ["5090", "4090", "4080", "3090"] {
+        token = token.replace(needle, "0000");
+    }
+    let path = std::env::temp_dir().join(format!("cell-one-classify-{name}-{token}"));
+    let _ = fs::remove_dir_all(&path);
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+fn assert_estate_hash_locked() {
+    let out = Command::new("cksum")
+        .arg(repo_root().join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {text}"
+    );
+}
+
+fn write_train_estate(dir: &std::path::Path) -> PathBuf {
+    let needle = "  - id: local_slm\n    class: local\n    driver: ollama\n    params:\n";
+    let src = fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+    assert!(src.contains(needle), "local_slm params block moved");
+    let insert = format!(
+        "{needle}      model: \"llama3\"\n      train_base_model: \"Qwen/Qwen2.5-0.5B-Instruct\"\n"
+    );
+    let path = dir.join("lab-estate.yaml");
+    fs::write(&path, src.replacen(needle, &insert, 1)).unwrap();
+    path
+}
+
+fn prepare_lora(dir: &std::path::Path, estate: &std::path::Path) -> PathBuf {
+    let prepared = dir.join("prepared");
+    let out = bin()
+        .args([
+            "--sacred",
+            repo_root().join("policy/sacred.yaml").to_str().unwrap(),
+            "enrich",
+            "prepare",
+            "--estate",
+            estate.to_str().unwrap(),
+            "--pack",
+            repo_root()
+                .join("examples/fixtures/specialist-overnight.pack.json")
+                .to_str()
+                .unwrap(),
+            "--driver",
+            "llamafactory-lora",
+            "--job",
+            "train",
+            "--out",
+            prepared.to_str().unwrap(),
+            "--state-dir",
+            dir.join("state").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{text}");
+    assert!(prepared.join("prepare.json").is_file(), "{text}");
+    prepared
+}
+
+fn assert_standing_next(stdout: &str) {
+    let handoff = stdout
+        .find("estate enrich import-trained")
+        .unwrap_or_else(|| panic!("missing import-trained line\n{stdout}"));
+    let standing = stdout
+        .find("Standing next (estate)")
+        .unwrap_or_else(|| panic!("missing Standing next\n{stdout}"));
+    assert!(handoff < standing, "{stdout}");
+    let coda = &stdout[standing..];
+    let apply_proposal = coda
+        .find("estate enrich apply-proposal")
+        .unwrap_or_else(|| panic!("{coda}"));
+    let plan = coda
+        .find("estate plan --estate")
+        .unwrap_or_else(|| panic!("{coda}"));
+    let apply = coda
+        .find("estate apply --estate")
+        .unwrap_or_else(|| panic!("{coda}"));
+    let reconcile = coda
+        .find("estate reconcile --estate")
+        .unwrap_or_else(|| panic!("{coda}"));
+    assert!(
+        apply_proposal < plan && plan < apply && apply < reconcile,
+        "{coda}"
+    );
+    assert!(coda[apply..reconcile].contains("--require-plan"), "{coda}");
+    assert!(coda.contains("does not execute them"), "{coda}");
+    assert!(coda.contains("auto_apply=false"), "{coda}");
+    assert!(coda.contains("trained_shape gguf"), "{coda}");
+    assert!(coda.contains("No promote. No auto-promote."), "{coda}");
+    assert!(
+        coda.contains("Specialty seat: local_slm, class local, function "),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("binding_id stays local_slm. trained_shape gguf. auto_apply=false."),
+        "{coda}"
+    );
+    assert!(
+        coda.contains(
+            "Equal-class frontier and local. This local seat is a first-class peer of frontier."
+        ),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("Other local specialty bindings stay beside this one."),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("This function is one specialty local seat among those peers."),
+        "{coda}"
+    );
+    assert!(coda.contains("READY_FOR_LIVE_TEST: no"), "{coda}");
+    assert!(!coda.contains("READY_FOR_LIVE_TEST: yes"), "{coda}");
+    assert!(!coda.contains("enforced"), "{coda}");
+    assert!(!stdout.contains("live PASS recorded"), "{stdout}");
+    assert!(
+        stdout.contains("The factory does not claim it trained."),
+        "{stdout}"
+    );
+}
+
 fn write_tiny_safetensors(path: &std::path::Path) {
     // One F32 tensor. Header length is 8-byte aligned, matching the safetensors spec.
     let bytes: &[u8] = b"p\x00\x00\x00\x00\x00\x00\x00{\"model.language_model.layers.0.input_layernorm.weight\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,4]}}       \x01\x00\x00\x00";
@@ -229,7 +366,29 @@ fn journey_print_lists_steps_without_tools() {
         stdout.contains("Qwen3.5 needs a recent llama.cpp checkout"),
         "{stdout}"
     );
+    let gguf = dir.join("specialist.Q4_K_M.gguf");
+    let planned = format!(
+        "estate enrich import-trained --estate <estate.yaml> --prepared <prepared> --tag cell-enrich-<pack-id> --adapter {}",
+        gguf.display()
+    );
+    let compare_at = stdout.find("compare writes").expect(&stdout);
+    let planned_at = stdout.find(&planned).unwrap_or_else(|| panic!("{stdout}"));
+    assert!(compare_at < planned_at, "{stdout}");
+    assert!(
+        stdout.contains("import-trained handoff (planned):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("trained_shape gguf. auto_apply=false."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("specialist GGUF is not on disk. This print does not invent that file and does not write a proposal."),
+        "{stdout}"
+    );
+    assert_standing_next(&stdout);
     assert!(!dir.exists(), "print must not write {}", dir.display());
+    assert_estate_hash_locked();
     let shot = bin()
         .args([
             "classify",
@@ -637,9 +796,11 @@ fn journey_run_refuses_missing_tools() {
 
 #[test]
 fn journey_run_with_fake_tools_and_mock_endpoint() {
-    let root = std::env::temp_dir().join(format!("journey-e2e-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = scratch("journey-e2e");
+    assert_estate_hash_locked();
+    let lab_estate = write_train_estate(&root);
+    let lab_before = fs::read(&lab_estate).unwrap();
+    let prepared = prepare_lora(&root, &lab_estate);
     let tools = root.join("bin");
     fs::create_dir_all(&tools).unwrap();
     fake_tools(&tools);
@@ -704,6 +865,13 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
             "2",
             "--timeout-secs",
             "5",
+            "--import-trained",
+            "--estate",
+            lab_estate.to_str().unwrap(),
+            "--prepared",
+            prepared.to_str().unwrap(),
+            "--enrich-tag",
+            "cell-enrich-overnight-traces",
         ])
         .env("PATH", format!("{}:/bin:/usr/bin", tools.display()))
         .env("OLLAMA_STAMP", stamp.to_str().unwrap())
@@ -785,6 +953,46 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         serde_json::from_str(&fs::read_to_string(work.join("base-report.json")).unwrap()).unwrap();
     assert!(base_report["few_shot"].is_null());
     assert!(stdout.contains("threshold met"), "{stdout}");
+    let specialist = work.join("specialist.Q4_K_M.gguf");
+    let handoff = format!(
+        "estate enrich import-trained --estate {} --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+        lab_estate.display(),
+        prepared.display(),
+        specialist.display()
+    );
+    let met_at = stdout.find("threshold met").expect(&stdout);
+    let handoff_at = stdout.find(&handoff).unwrap_or_else(|| panic!("{stdout}"));
+    assert!(met_at < handoff_at, "{stdout}");
+    assert!(stdout.contains("import-trained handoff:"), "{stdout}");
+    assert!(
+        stdout.contains("trained_shape gguf. auto_apply=false."),
+        "{stdout}"
+    );
+    assert!(stdout.contains("import-trained did not apply"), "{stdout}");
+    assert_standing_next(&stdout);
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    let proposal: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(prepared.join("binding-proposal.json")).unwrap())
+            .unwrap();
+    assert_eq!(proposal["auto_apply"], false, "{proposal}");
+    assert_eq!(proposal["promoted"], false, "{proposal}");
+    assert_eq!(proposal["estate_rewritten"], false, "{proposal}");
+    assert_eq!(proposal["trained_shape"], "gguf", "{proposal}");
+    assert_eq!(proposal["binding_id"], "local_slm", "{proposal}");
+    assert!(
+        proposal["local_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("specialist.Q4_K_M.gguf"),
+        "{proposal}"
+    );
+    let prepare_doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(prepared.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(prepare_doc["trained_shape"], "gguf", "{prepare_doc}");
+    assert_eq!(prepare_doc["auto_apply"], false, "{prepare_doc}");
+    assert_eq!(fs::read(&lab_estate).unwrap(), lab_before);
+    assert_estate_hash_locked();
+    assert!(!work.join("binding-proposal.json").is_file());
     let heavy = |log: &str| {
         log.lines()
             .filter(|line| {
@@ -2027,12 +2235,98 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
         "{printed_out}"
     );
     assert!(!printed_out.contains("live PASS recorded"), "{printed_out}");
+    assert_standing_next(&printed_out);
+    assert!(
+        printed_out.contains("Specialty seat: local_slm, class local, function ag_news."),
+        "{printed_out}"
+    );
+    let specialist = journey.join("specialist.Q4_K_M.gguf");
+    let handoff = format!(
+        "estate enrich import-trained --estate <estate.yaml> --prepared <prepared> --tag cell-enrich-<pack-id> --adapter {}",
+        specialist.display()
+    );
+    assert!(printed_out.contains(&handoff), "{printed_out}");
+    assert!(
+        printed_out.contains("import-trained handoff (planned):"),
+        "{printed_out}"
+    );
+    assert!(
+        !printed_out.contains("binding-proposal.json"),
+        "{printed_out}"
+    );
     assert!(
         !journey.exists(),
         "print must not write {}",
         journey.display()
     );
+    assert_estate_hash_locked();
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn ag_news_journey_make_target_prints_the_handoff() {
+    let root = repo_root();
+    let makefile = fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("ag-news-journey:"));
+    assert!(makefile.contains("bash scripts/ag-news-journey.sh"));
+    assert!(makefile.contains("AG_NEWS_RUN=1"));
+    assert!(makefile.contains("train-size 3000"));
+    let smoke = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("smoke:"))
+        .take_while(|line| !line.is_empty() && !line.starts_with("live-specialist:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!smoke.contains("ag-news-journey"), "{smoke}");
+    let gate = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("gate-90:"))
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!gate.contains("ag-news-journey"), "{gate}");
+    let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
+    assert!(!ci.contains("ag-news-journey"), "{ci}");
+    let script = fs::read_to_string(root.join("scripts/ag-news-journey.sh")).unwrap();
+    assert!(script.contains("--dataset ag_news"));
+    assert!(script.contains("TRAIN_SIZE:-3000"));
+    assert!(script.contains("AG_NEWS_RUN"));
+    assert!(script.contains("SKIP live train (print)"));
+    assert!(script.contains("READY_FOR_LIVE_TEST: no"));
+    assert!(script.contains("43770130") || script.contains("cksum \"$ESTATE\""));
+    let out = scratch("ag-news-make");
+    let printed = Command::new("bash")
+        .arg(root.join("scripts/ag-news-journey.sh"))
+        .env("ESTATE_BIN", env!("CARGO_BIN_EXE_estate"))
+        .env("OUT", out.to_str().unwrap())
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("SKIP live train (print)"), "{stdout}");
+    assert!(
+        stdout.contains("dataset: ag_news train_size: 3000 heldout_size: all seed: 42"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("tev1-specialist-agnews-3000"), "{stdout}");
+    assert_standing_next(&stdout);
+    assert!(
+        stdout.contains("Specialty seat: local_slm, class local, function ag_news."),
+        "{stdout}"
+    );
+    let specialist = out.join("specialist.Q4_K_M.gguf");
+    assert!(
+        stdout.contains(&format!("--adapter {}", specialist.display())),
+        "{stdout}"
+    );
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert!(!out.join("binding-proposal.json").exists());
+    assert!(!specialist.exists());
+    assert_estate_hash_locked();
+    let _ = fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -2525,6 +2819,8 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
             input.to_str().unwrap(),
             "--out",
             work.to_str().unwrap(),
+            "--base-cache",
+            root.join("base-cache").to_str().unwrap(),
             "--run",
             "--max-steps",
             "1",
@@ -2598,5 +2894,217 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
     assert_eq!(comparison["specialist_tag"], "glm4-chat-specialist");
     assert_eq!(comparison["base_tag"], "glm4-chat-base");
     assert_eq!(comparison["base"], "zai-org/glm-4-9b-chat");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn print_import_trained_does_not_invent_a_proposal() {
+    assert_estate_hash_locked();
+    let root = scratch("handoff-print");
+    let lab = write_train_estate(&root);
+    let lab_before = fs::read(&lab).unwrap();
+    let prepared = prepare_lora(&root, &lab);
+    let prepare_before = fs::read(prepared.join("prepare.json")).unwrap();
+    let out = root.join("journey-out");
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--print",
+            "--import-trained",
+            "--estate",
+            lab.to_str().unwrap(),
+            "--prepared",
+            prepared.to_str().unwrap(),
+            "--enrich-tag",
+            "cell-enrich-overnight-traces",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    let gguf = out.join("specialist.Q4_K_M.gguf");
+    let line = format!(
+        "estate enrich import-trained --estate {} --prepared {} --tag cell-enrich-overnight-traces --adapter {}",
+        lab.display(),
+        prepared.display(),
+        gguf.display()
+    );
+    assert!(
+        stdout.contains("import-trained handoff (planned):"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(&line), "{stdout}");
+    assert!(
+        stdout.contains("--import-trained records only after --run"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("does not invent that file and does not write a proposal"),
+        "{stdout}"
+    );
+    assert_standing_next(&stdout);
+    assert!(!out.exists(), "print must not write {}", out.display());
+    assert!(!gguf.exists());
+    assert!(!prepared.join("binding-proposal.json").is_file());
+    assert_eq!(
+        fs::read(prepared.join("prepare.json")).unwrap(),
+        prepare_before
+    );
+    assert_eq!(fs::read(&lab).unwrap(), lab_before);
+    assert_estate_hash_locked();
+
+    let missing_args = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--run",
+            "--import-trained",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let missing_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&missing_args.stdout),
+        String::from_utf8_lossy(&missing_args.stderr)
+    );
+    assert!(!missing_args.status.success(), "{missing_text}");
+    assert!(
+        missing_text.contains(
+            "refuse:classify-journey: --import-trained needs --estate, --prepared, and --enrich-tag. no proposal written."
+        ),
+        "{missing_text}"
+    );
+    assert!(
+        !missing_text.contains("Standing next (estate)"),
+        "{missing_text}"
+    );
+    assert!(!out.exists());
+    assert!(!prepared.join("binding-proposal.json").is_file());
+
+    let unfinished = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--run",
+            "--import-trained",
+            "--estate",
+            lab.to_str().unwrap(),
+            "--prepared",
+            prepared.to_str().unwrap(),
+            "--enrich-tag",
+            "cell-enrich-overnight-traces",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let unfinished_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&unfinished.stdout),
+        String::from_utf8_lossy(&unfinished.stderr)
+    );
+    assert!(!unfinished.status.success(), "{unfinished_text}");
+    assert!(
+        unfinished_text.contains("refuse:classify-journey"),
+        "{unfinished_text}"
+    );
+    assert!(
+        !unfinished_text.contains("Standing next (estate)"),
+        "{unfinished_text}"
+    );
+    assert!(!prepared.join("binding-proposal.json").is_file());
+    assert!(!out.join("specialist.Q4_K_M.gguf").exists());
+    assert_eq!(
+        fs::read(prepared.join("prepare.json")).unwrap(),
+        prepare_before
+    );
+    assert_eq!(fs::read(&lab).unwrap(), lab_before);
+    assert_estate_hash_locked();
+
+    let help = bin()
+        .args(["classify", "journey", "--help"])
+        .output()
+        .unwrap();
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help.status.success(), "{help_text}");
+    assert!(help_text.contains("--import-trained"), "{help_text}");
+    assert!(help_text.contains("--enrich-tag"), "{help_text}");
+    assert!(help_text.contains("Standing next"), "{help_text}");
+    assert!(help_text.contains("auto_apply=false"), "{help_text}");
+    assert!(help_text.contains("apply --require-plan"), "{help_text}");
+    assert!(
+        !help_text.contains("READY_FOR_LIVE_TEST: yes"),
+        "{help_text}"
+    );
+    let enrich = bin().args(["help", "enrich"]).output().unwrap();
+    let enrich_text = String::from_utf8_lossy(&enrich.stdout);
+    assert!(enrich.status.success(), "{enrich_text}");
+    let bridge = enrich_text
+        .find("estate classify journey prints that same import-trained line")
+        .unwrap_or_else(|| panic!("{enrich_text}"));
+    let coda = enrich_text
+        .find("Then the command prints Standing next (estate):")
+        .unwrap_or_else(|| panic!("{enrich_text}"));
+    assert!(bridge < coda, "{enrich_text}");
+    assert!(
+        enrich_text[coda..].contains("apply-proposal, plan, apply --require-plan, and reconcile"),
+        "{enrich_text}"
+    );
+    assert!(
+        enrich_text.contains("binding_id local_slm, class local"),
+        "{enrich_text}"
+    );
+    assert!(
+        enrich_text.contains("make ag-news-journey"),
+        "{enrich_text}"
+    );
+    assert!(
+        !enrich_text.contains("READY_FOR_LIVE_TEST: yes"),
+        "{enrich_text}"
+    );
+    let changelog = fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice —")
+        .nth(1)
+        .unwrap_or_else(|| panic!("missing This slice heading\n{changelog}"));
+    assert!(
+        head.contains(
+            "beachhead: a purpose-built local SLM binds into the multi-local and frontier chain"
+        ),
+        "{head}"
+    );
+    assert!(head.contains("`READY_FOR_LIVE_TEST`: no"), "{head}");
+    assert!(head.contains("make ag-news-journey"), "{head}");
+    assert!(
+        head.contains("beside frontier and beside other local specialty bindings"),
+        "{head}"
+    );
+    assert!(head.contains("classify→estate join"), "{head}");
+    assert!(!head.contains("READY_FOR_LIVE_TEST: yes"), "{head}");
+    let train = fs::read_to_string(repo_root().join("docs/TRAIN-ENRICH.md")).unwrap();
+    assert!(train.contains("After compare, the same command prints `estate enrich import-trained`"));
+    assert!(train.contains(
+        "Standing next (estate): `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile`"
+    ));
+    let journeys =
+        fs::read_to_string(repo_root().join("docs/operator-enrich-journeys.md")).unwrap();
+    assert!(journeys.contains("`estate classify journey` prints that same coda after compare."));
+    assert!(!journeys.contains("READY_FOR_LIVE_TEST: yes"));
+    assert_estate_hash_locked();
     let _ = fs::remove_dir_all(&root);
 }

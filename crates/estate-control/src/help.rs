@@ -1295,7 +1295,24 @@ ollama create. The standing next step records that GGUF.
 import-trained records trained_shape and trained_paths. The GGUF
 shape is gguf. The proposal stays auto_apply=false. outputs/ records
 adapter. export/ records merged. import-trained does not apply the
-estate and does not promote. Opt-in ladder check:
+estate and does not promote.
+estate classify journey prints that same import-trained line after
+compare when the specialist GGUF is the seated file
+(specialist.<quant>.gguf, or specialist.f16.gguf when --quant is f16).
+The recorded proposal is binding_id local_slm, class local, for that
+function. Equal-class frontier and local stays. Other local specialty
+bindings stay beside it. make ag-news-journey prints this coda for
+--dataset ag_news at train-size 3000. It stays off make smoke, make
+gate-90, and GitHub Actions.
+--print prints the line as a planned step and does not write a proposal.
+--import-trained on --run records trained_shape gguf with auto_apply=false
+when --estate, --prepared, and --enrich-tag are set and that GGUF is a
+regular file. A missing specialist GGUF refuses or skips the handoff and
+does not invent a proposal. Then the command prints Standing next (estate):
+apply-proposal, plan, apply --require-plan, and reconcile. It does not
+execute them. It does not promote. It does not apply the estate. It does
+not claim the factory trained. READY_FOR_LIVE_TEST stays no.
+Opt-in ladder check:
 make qlora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer
 and does not convert. Not in make smoke, make gate-90, or Actions.

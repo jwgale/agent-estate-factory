@@ -483,6 +483,10 @@ pub(crate) fn run() -> Result<()> {
                 expand_tag,
                 dual,
                 modest,
+                estate,
+                prepared,
+                enrich_tag,
+                import_trained,
             } => {
                 let input = input
                     .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
@@ -537,6 +541,10 @@ pub(crate) fn run() -> Result<()> {
                             expand_tag: expand_tag.as_deref(),
                             modest,
                             modest_note,
+                            estate: estate.as_deref(),
+                            prepared: prepared.as_deref(),
+                            enrich_tag: enrich_tag.as_deref(),
+                            import_trained,
                         },
                     );
                 }
@@ -599,6 +607,10 @@ pub(crate) fn run() -> Result<()> {
                         base_cache: &base_cache,
                         few_shot,
                         expand_tag: expand_tag.as_deref(),
+                        estate: estate.as_deref(),
+                        prepared: prepared.as_deref(),
+                        enrich_tag: enrich_tag.as_deref(),
+                        import_trained,
                     },
                 )
             }
