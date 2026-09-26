@@ -3083,15 +3083,18 @@ fn print_import_trained_does_not_invent_a_proposal() {
         .nth(1)
         .unwrap_or_else(|| panic!("missing This slice heading\n{changelog}"));
     assert!(
-        head.contains("classify journey hands the specialist GGUF to import-trained"),
+        head.contains(
+            "beachhead: a purpose-built local SLM binds into the multi-local and frontier chain"
+        ),
         "{head}"
     );
     assert!(head.contains("`READY_FOR_LIVE_TEST`: no"), "{head}");
     assert!(head.contains("make ag-news-journey"), "{head}");
     assert!(
-        head.contains("Other local specialty bindings stay beside it."),
+        head.contains("beside frontier and beside other local specialty bindings"),
         "{head}"
     );
+    assert!(head.contains("classify→estate join"), "{head}");
     assert!(!head.contains("READY_FOR_LIVE_TEST: yes"), "{head}");
     let train = fs::read_to_string(repo_root().join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("After compare, the same command prints `estate enrich import-trained`"));
