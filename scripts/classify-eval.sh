@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opt-in tev1-style classify eval.
+# Opt-in one-letter classify eval.
 # Default is --mock so this target does not call the network.
 # Set CLASSIFY_ENDPOINT and CLASSIFY_MODEL to score a seated or hosted model.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.

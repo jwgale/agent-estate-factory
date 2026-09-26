@@ -1,4 +1,4 @@
-//! Download a public Hugging Face classification set and write tev1 records.
+//! Download a public Hugging Face classification set and write qwen records.
 //!
 //! The default fetch is `hf download --repo-type dataset` into a cache directory,
 //! then a pyarrow read of `train-*.parquet` and `test-*.parquet`. `--from-local`
@@ -38,7 +38,7 @@ pub struct ClassSpec {
     pub description: &'static str,
 }
 
-/// How native labels become tev1 options. A new dataset is one catalog row.
+/// How native labels become qwen options. A new dataset is one catalog row.
 #[derive(Clone, Copy, Debug)]
 pub enum LabelMap {
     /// Options stay in `classes` order. Not shuffled.
@@ -325,7 +325,7 @@ pub fn default_import_dir(alias: &str) -> PathBuf {
     PathBuf::from(DEFAULT_IMPORT_ROOT).join(alias)
 }
 
-/// Sampled tev1 rows for one train size and seed. Concurrent sizes do not share this directory.
+/// Sampled qwen rows for one train size and seed. Concurrent sizes do not share this directory.
 pub fn sampled_import_dir(alias: &str, train_size: &str, seed: u64) -> PathBuf {
     PathBuf::from(DEFAULT_IMPORT_ROOT).join(format!("{alias}-{train_size}-s{seed}"))
 }
@@ -1027,7 +1027,7 @@ fn classify_import_with(req: &ImportRequest<'_>, io: &dyn ImportIo) -> Result<()
         "usable_pairs": usable_pairs(preset),
         "license_note": preset.license_note,
         "live_train": false,
-        "note": "classify import writes tev1 JSONL for local training. It does not train. Do not redistribute the rows."
+        "note": "classify import writes qwen JSONL for local training. It does not train. Do not redistribute the rows."
     });
     let mut manifest = manifest;
     if let Some(holdout_seed) = preset_holdout_seed(preset) {

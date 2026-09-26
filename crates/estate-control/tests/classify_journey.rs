@@ -1,4 +1,4 @@
-//! tev1 classify journey. Fake tools and an in-process chat server. No GPU and no network.
+//! qwen classify journey. Fake tools and an in-process chat server. No GPU and no network.
 
 use std::fs;
 use std::io::Write;
@@ -11,7 +11,7 @@ fn bin() -> Command {
 }
 
 fn fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/tev1-decisions.jsonl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/classify-decisions.jsonl")
 }
 
 fn repo_root() -> PathBuf {
@@ -823,7 +823,7 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         for mut req in server.incoming_requests() {
             let mut body = String::new();
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
-            let content = if body.contains("tev1-specialist") {
+            let content = if body.contains("classify-specialist") {
                 "B"
             } else {
                 "<think>\nhidden\n</think>\nA"
@@ -885,8 +885,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     let recipe = fs::read_to_string(work.join("recipe.yaml")).unwrap();
     let info: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(work.join("dataset_info.json")).unwrap()).unwrap();
-    assert!(info.get("tev1_decisions").is_some(), "{info}");
-    assert!(recipe.contains("dataset: tev1_decisions"), "{recipe}");
+    assert!(info.get("classify_decisions").is_some(), "{info}");
+    assert!(recipe.contains("dataset: classify_decisions"), "{recipe}");
     assert!(recipe.contains("dataset_dir:"), "{recipe}");
     assert!(recipe.contains("template: qwen3_5"), "{recipe}");
     assert!(recipe.contains("enable_thinking: false"), "{recipe}");
@@ -922,8 +922,8 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     assert!(base_hf.join("config.json").is_file());
     assert!(!stdout.contains("super-secret-hf"), "{stdout}");
     assert!(!stderr.contains("super-secret-hf"), "{stderr}");
-    assert!(tool_log.contains("create tev1-base"), "{tool_log}");
-    assert!(tool_log.contains("create tev1-specialist"), "{tool_log}");
+    assert!(tool_log.contains("create classify-base"), "{tool_log}");
+    assert!(tool_log.contains("create classify-specialist"), "{tool_log}");
     let comparison: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(work.join("comparison.json")).unwrap()).unwrap();
     assert_eq!(comparison["live_pass_recorded"], false);
@@ -1162,9 +1162,9 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
         "{reseat_out}"
     );
     let reseat_log = fs::read_to_string(&log).unwrap();
-    assert!(reseat_log.contains("rm tev1-specialist"), "{reseat_log}");
+    assert!(reseat_log.contains("rm classify-specialist"), "{reseat_log}");
     assert!(
-        reseat_log.contains("create tev1-specialist"),
+        reseat_log.contains("create classify-specialist"),
         "{reseat_log}"
     );
     let _ = fs::remove_dir_all(&root);
@@ -1572,20 +1572,20 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
                 assert!(body.windows(8).any(|w| w == b"messages"), "dataset missing");
                 (
                     200,
-                    serde_json::json!({"id":"file-tev1","processing_status":"COMPLETED"})
+                    serde_json::json!({"id":"file-qwen","processing_status":"COMPLETED"})
                         .to_string(),
                     None,
                 )
-            } else if url == "/files/file-tev1" {
+            } else if url == "/files/file-qwen" {
                 (
                     200,
-                    serde_json::json!({"id":"file-tev1","processing_status":"COMPLETED"})
+                    serde_json::json!({"id":"file-qwen","processing_status":"COMPLETED"})
                         .to_string(),
                     None,
                 )
             } else if url == "/fine-tunes" && method == "POST" {
                 let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                assert_eq!(value["training_file"], "file-tev1");
+                assert_eq!(value["training_file"], "file-qwen");
                 assert_eq!(value["model"], "Qwen/Qwen3.5-4B");
                 assert_eq!(value["training_type"]["type"], "Lora");
                 assert_eq!(value["training_type"]["lora_r"], 8);
@@ -1593,7 +1593,7 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
                 assert_eq!(value["n_epochs"], 1);
                 assert_eq!(value["n_checkpoints"], 1);
                 assert!((value["learning_rate"].as_f64().unwrap() - 0.0001).abs() < 1e-9);
-                assert_eq!(value["suffix"], "tev1");
+                assert_eq!(value["suffix"], "qwen");
                 assert!(value.get("lora").is_none(), "{value}");
                 assert!(value.get("lora_r").is_none(), "{value}");
                 assert!(value.get("lora_alpha").is_none(), "{value}");
@@ -1613,20 +1613,20 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
                 );
                 (
                     200,
-                    serde_json::json!({"id":"ft-tev1","status":"pending"}).to_string(),
+                    serde_json::json!({"id":"ft-qwen","status":"pending"}).to_string(),
                     None,
                 )
-            } else if url == "/fine-tunes/ft-tev1" {
+            } else if url == "/fine-tunes/ft-qwen" {
                 polls += 1;
                 let status = if polls == 1 { "running" } else { "completed" };
                 (
                     200,
-                    serde_json::json!({"id":"ft-tev1","status":status}).to_string(),
+                    serde_json::json!({"id":"ft-qwen","status":status}).to_string(),
                     None,
                 )
             } else if url.contains("/finetune/download")
                 && url.contains("checkpoint=adapter")
-                && url.contains("ft-tev1")
+                && url.contains("ft-qwen")
             {
                 (200, String::new(), Some(archive.clone()))
             } else if url.contains("/api/chat") {
@@ -1705,7 +1705,7 @@ fn journey_together_run_uploads_polls_and_downloads_adapter() {
     assert!(work.join("outputs/adapter_config.json").is_file());
     let job: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(work.join("together-job.json")).unwrap()).unwrap();
-    assert_eq!(job["job_id"], "ft-tev1");
+    assert_eq!(job["job_id"], "ft-qwen");
     assert_eq!(job["live_pass_recorded"], false);
     let tool_log = fs::read_to_string(&log).unwrap();
     assert!(
@@ -1967,7 +1967,7 @@ fn deepseek_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tool
     assert!(stdout.contains("load probe POST /api/chat"), "{stdout}");
     assert!(
         !stdout.contains("Qwen/Qwen3.5-4B"),
-        "tev1 default base leaked\n{stdout}"
+        "qwen default base leaked\n{stdout}"
     );
     assert!(!dir.exists(), "print must not write {}", dir.display());
 
@@ -2225,7 +2225,7 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
     let printed_err = String::from_utf8_lossy(&printed.stderr);
     assert!(printed.status.success(), "{printed_out}\n{printed_err}");
     assert!(
-        printed_out.contains("tev1-specialist-agnews-3000"),
+        printed_out.contains("specialist-agnews-3000"),
         "{printed_out}"
     );
     assert!(printed_out.contains("dataset: ag_news"), "{printed_out}");
@@ -2310,7 +2310,7 @@ fn ag_news_journey_make_target_prints_the_handoff() {
         stdout.contains("dataset: ag_news train_size: 3000 heldout_size: all seed: 42"),
         "{stdout}"
     );
-    assert!(stdout.contains("tev1-specialist-agnews-3000"), "{stdout}");
+    assert!(stdout.contains("specialist-agnews-3000"), "{stdout}");
     assert_standing_next(&stdout);
     assert!(
         stdout.contains("Specialty seat: local_slm, class local, function ag_news."),
@@ -2330,7 +2330,7 @@ fn ag_news_journey_make_target_prints_the_handoff() {
 }
 
 #[test]
-fn devign_import_and_journey_print_reuse_the_tev1_path() {
+fn devign_import_and_journey_print_reuse_the_qwen_path() {
     let help = bin()
         .args(["classify", "import", "--help"])
         .output()
@@ -2440,7 +2440,7 @@ fn devign_import_and_journey_print_reuse_the_tev1_path() {
     let printed_err = String::from_utf8_lossy(&printed.stderr);
     assert!(printed.status.success(), "{printed_out}\n{printed_err}");
     assert!(
-        printed_out.contains("tev1-specialist-devign-3000"),
+        printed_out.contains("classify-specialist-devign-3000"),
         "{printed_out}"
     );
     assert!(
@@ -2475,7 +2475,7 @@ fn devign_import_and_journey_print_reuse_the_tev1_path() {
 }
 
 #[test]
-fn rust_idiom_import_and_journey_print_reuse_the_tev1_path() {
+fn rust_idiom_import_and_journey_print_reuse_the_qwen_path() {
     let help = bin()
         .args(["classify", "import", "--help"])
         .output()
@@ -2581,7 +2581,7 @@ fn rust_idiom_import_and_journey_print_reuse_the_tev1_path() {
     let printed_err = String::from_utf8_lossy(&printed.stderr);
     assert!(printed.status.success(), "{printed_out}\n{printed_err}");
     assert!(
-        printed_out.contains("tev1-specialist-rustidiom-3000"),
+        printed_out.contains("specialist-rustidiom-3000"),
         "{printed_out}"
     );
     assert!(
@@ -2624,7 +2624,7 @@ fn glm4_classify_make_wrapper_is_opt_in() {
     assert!(makefile.contains("GLM_CLASSIFY_RUN=1"));
     let script = fs::read_to_string(root.join("scripts/glm4-classify-journey.sh")).unwrap();
     assert!(script.contains("--preset glm4-chat"));
-    assert!(script.contains("examples/fixtures/tev1-decisions.jsonl"));
+    assert!(script.contains("examples/fixtures/classify-decisions.jsonl"));
     assert!(script.contains("zai-org/glm-4-9b-chat"));
     assert!(script.contains("glm4-chat-specialist"));
     assert!(script.contains("GLM_CLASSIFY_RUN"));
@@ -2714,7 +2714,7 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
     );
     assert!(
         !stdout.contains("Qwen/Qwen3.5-4B"),
-        "tev1 default base leaked\n{stdout}"
+        "qwen default base leaked\n{stdout}"
     );
     assert!(!dir.exists(), "print must not write {}", dir.display());
 

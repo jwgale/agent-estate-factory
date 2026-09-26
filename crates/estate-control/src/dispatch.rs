@@ -540,7 +540,7 @@ pub(crate) fn run() -> Result<()> {
                 binding_id,
             } => {
                 let input = input
-                    .unwrap_or_else(|| PathBuf::from("examples/fixtures/tev1-decisions.jsonl"));
+                    .unwrap_or_else(|| PathBuf::from("examples/fixtures/classify-decisions.jsonl"));
                 let llama_cpp_dir =
                     llama_cpp_dir.or_else(|| std::env::var_os("LLAMA_CPP_DIR").map(PathBuf::from));
                 if modest && !dual {

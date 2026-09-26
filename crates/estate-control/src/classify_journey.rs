@@ -1,4 +1,4 @@
-//! tev1 reproduce journey: prepare, LoRA recipe, train, merge, GGUF, quant, Ollama seat, scored eval.
+//! qwen reproduce journey: prepare, LoRA recipe, train, merge, GGUF, quant, Ollama seat, scored eval.
 //! `--print` is the default. `--run` executes. A comparison file is local output only.
 //! After compare, the command prints the `import-trained` line for the specialist GGUF, then Standing next (estate).
 //! `--import-trained` records that proposal (`auto_apply=false`) only when the GGUF is a regular file.
@@ -25,9 +25,9 @@ pub const DEFAULT_BASE: &str = "Qwen/Qwen3.5-4B";
 /// Template name in LLaMA-Factory `constants.py` for that registration (`template="qwen3_5"`).
 pub const QWEN35_TEMPLATE: &str = "qwen3_5";
 /// Ollama tag created from the built base GGUF. Not a library tag.
-pub const DEFAULT_BUILT_BASE_TAG: &str = "tev1-base";
-pub const DEFAULT_TAG: &str = "tev1-specialist";
-pub const DEFAULT_DATASET: &str = "tev1_decisions";
+pub const DEFAULT_BUILT_BASE_TAG: &str = "classify-base";
+pub const DEFAULT_TAG: &str = "classify-specialist";
+pub const DEFAULT_DATASET: &str = "classify_decisions";
 /// Default quant for both seats. `f16` skips `llama-quantize`.
 pub const DEFAULT_QUANT: &str = "Q4_K_M";
 /// Together fine-tune model id. Same Hub-style name as the local base. Override with `--together-model`.
@@ -71,8 +71,8 @@ const GLM4_LLAMA_NOTE: &str =
 /// Which letter-journey defaults `classify journey` fills in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum JourneyPreset {
-    /// `Qwen/Qwen3.5-4B`, template `qwen3_5`, tag `tev1-specialist`. This is the default.
-    Tev1,
+    /// `Qwen/Qwen3.5-4B`, template `qwen3_5`, tag `classify-specialist`. This is the default.
+    Qwen,
     /// `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`, template `deepseekr1`, tag `deepseek-r1-distill-specialist`.
     /// Train stays `llamafactory-cli` unless `--together-model` is set with `--train-driver together`.
     DeepseekR1Distill,
@@ -89,7 +89,7 @@ pub enum SeatChat {
     Glm4,
 }
 
-/// Defaults after `--preset` replaces an untouched tev1 base or tag.
+/// Defaults after `--preset` replaces an untouched default Qwen base or tag.
 #[derive(Debug)]
 pub struct AppliedJourney {
     pub base: String,
@@ -100,8 +100,8 @@ pub struct AppliedJourney {
     pub together_model: String,
 }
 
-/// `--base` and `--tag` left at the tev1 defaults take the preset. An explicit value wins.
-/// Together on the DeepSeek and GLM-4 Chat presets needs `--together-model`. The Qwen default stays the tev1 path.
+/// `--base` and `--tag` left at the default Qwen defaults take the preset. An explicit value wins.
+/// Together on the DeepSeek and GLM-4 Chat presets needs `--together-model`. The Qwen default stays the default Qwen path.
 pub fn apply_preset(
     preset: JourneyPreset,
     base: &str,
@@ -110,7 +110,7 @@ pub fn apply_preset(
     together_model: Option<&str>,
 ) -> Result<AppliedJourney> {
     let (base, tag, built_base_tag, seat, llama_note) = match preset {
-        JourneyPreset::Tev1 => (
+        JourneyPreset::Qwen => (
             base.to_string(),
             tag.to_string(),
             DEFAULT_BUILT_BASE_TAG,
@@ -165,10 +165,10 @@ pub fn apply_preset(
             let which = match preset {
                 JourneyPreset::Glm4Chat => "GLM-4 Chat",
                 JourneyPreset::DeepseekR1Distill => "DeepSeek-R1-Distill",
-                JourneyPreset::Tev1 => "tev1",
+                JourneyPreset::Qwen => "qwen",
             };
             bail!(
-                "refuse:classify-journey: {which} journey uses local llamafactory-cli train. Together stays on the tev1 Qwen path unless --together-model is set"
+                "refuse:classify-journey: {which} journey uses local llamafactory-cli train. Together stays on the default Qwen path unless --together-model is set"
             );
         }
         (_, TrainDriver::Together, Some(model)) if !model.is_empty() => model.to_string(),
@@ -381,7 +381,7 @@ pub fn lora_recipe_yaml(
     format!(
         "\
 # schema: cell-one.classify-journey.v0
-# LoRA recipe for the tev1 one-letter target. Cell One does not train unless classify journey --run.
+# LoRA recipe for the qwen one-letter target. Cell One does not train unless classify journey --run.
 # template {template} is the LLaMA-Factory name for this base.
 # enable_thinking false keeps assistant targets free of think tokens.
 # qwen3_5_nothink is for Instruct-only variants and is not this checkpoint.
@@ -2396,7 +2396,7 @@ fn print_plan(
     if library.is_some() {
         println!("warning: --base-tag skips the shared convert and quant. Precision may differ from the specialist.");
     }
-    if req.preset == JourneyPreset::Tev1 && req.base == DEFAULT_BASE {
+    if req.preset == JourneyPreset::Qwen && req.base == DEFAULT_BASE {
         println!(
             "default base {DEFAULT_BASE} is registered in LLaMA-Factory constants.py as Qwen3.5-4B-Thinking with template {QWEN35_TEMPLATE} and enable_thinking false"
         );
@@ -3414,7 +3414,7 @@ fn write_comparison(
         "template": template,
         "base_tag": library.unwrap_or(req.built_base_tag),
         "preset": match req.preset {
-            JourneyPreset::Tev1 => "tev1",
+            JourneyPreset::Qwen => "qwen",
             JourneyPreset::DeepseekR1Distill => "deepseek-r1-distill",
             JourneyPreset::Glm4Chat => "glm4-chat",
         },
@@ -3724,7 +3724,7 @@ fn together_create_job(
         "n_epochs": 1,
         "n_checkpoints": 1,
         "learning_rate": 0.0001,
-        "suffix": "tev1"
+        "suffix": "qwen"
     });
     let value = together_json("POST", &url, key, Some(&body), timeout_secs)?;
     value
@@ -4040,7 +4040,7 @@ fn run_argv(argv: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `--dual` trains tev1 and glm4-chat on one rust_idiom expand cache.
+/// `--dual` trains qwen and glm4-chat on one rust_idiom expand cache.
 pub struct DualJourneyRequest<'a> {
     pub input: &'a Path,
     pub out: &'a Path,
@@ -4113,7 +4113,7 @@ struct DualSide {
 
 fn preset_token(preset: JourneyPreset) -> &'static str {
     match preset {
-        JourneyPreset::Tev1 => "tev1",
+        JourneyPreset::Qwen => "qwen",
         JourneyPreset::DeepseekR1Distill => "deepseek-r1-distill",
         JourneyPreset::Glm4Chat => "glm4-chat",
     }
@@ -4143,7 +4143,7 @@ fn validate_dual(req: &DualJourneyRequest<'_>) -> Result<String> {
     }
     if req.preset == JourneyPreset::DeepseekR1Distill {
         bail!(
-            "refuse:classify-journey: --dual trains tev1 and glm4-chat on one expand cache. DeepSeek is not in this pair"
+            "refuse:classify-journey: --dual trains qwen and glm4-chat on one expand cache. DeepSeek is not in this pair"
         );
     }
     if req.train_driver == TrainDriver::Together
@@ -4163,7 +4163,7 @@ fn validate_dual(req: &DualJourneyRequest<'_>) -> Result<String> {
     }
     if req.tag != DEFAULT_TAG {
         bail!(
-            "refuse:classify-journey: --dual keeps the tev1 and glm4-chat specialist tags. Omit --tag"
+            "refuse:classify-journey: --dual keeps the qwen and glm4-chat specialist tags. Omit --tag"
         );
     }
     if library_tag(req.base_tag).is_some() {
@@ -4400,26 +4400,26 @@ fn dual_report_value(
     expand_tag: &str,
     train_size: &str,
     seed: u64,
-    tev1: &DualSide,
+    qwen: &DualSide,
     glm: &DualSide,
-    tev1_score: Option<&DualPresetScore>,
+    qwen_score: Option<&DualPresetScore>,
     glm_score: Option<&DualPresetScore>,
     prepared_sha: Option<&str>,
     modest: bool,
     max_steps: Option<u32>,
     modest_note: &str,
 ) -> Value {
-    let cross = match (tev1_score, glm_score) {
+    let cross = match (qwen_score, glm_score) {
         (Some(qwen), Some(glm)) => json!(qwen.specialist_accuracy - glm.specialist_accuracy),
         _ => Value::Null,
     };
-    let cross_detail = match (tev1_score, glm_score) {
+    let cross_detail = match (qwen_score, glm_score) {
         (Some(qwen), Some(glm)) => qwen_minus_glm(qwen, glm),
         _ => Value::Null,
     };
     let note = match mode {
         "in-progress" => "Scores stay absent until both students finish. A prior compare was cleared. This file is not a completed comparison and is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
-        _ => "Local dual comparison of Qwen (tev1) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
+        _ => "Local dual comparison of Qwen (qwen) and GLM-4 Chat on one rust_idiom expand cache. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no.",
     };
     json!({
         "schema": "cell-one.classify-journey-dual.v0",
@@ -4439,9 +4439,9 @@ fn dual_report_value(
         "heldout_sha256": held_sha,
         "holdout_shared": true,
         "prepared_heldout_sha256": prepared_sha,
-        "students": ["tev1", "glm4-chat"],
+        "students": ["qwen", "glm4-chat"],
         "presets": {
-            "tev1": preset_block(tev1, tev1_score),
+            "qwen": preset_block(qwen, qwen_score),
             "glm4-chat": preset_block(glm, glm_score),
         },
         "qwen_glm_specialist_delta": cross,
@@ -4470,7 +4470,7 @@ fn mark_dual_compare_started(
     expand_tag: &str,
     train_size: &str,
     seed: u64,
-    tev1: &DualSide,
+    qwen: &DualSide,
     glm: &DualSide,
     modest: bool,
     max_steps: Option<u32>,
@@ -4486,7 +4486,7 @@ fn mark_dual_compare_started(
         expand_tag,
         train_size,
         seed,
-        tev1,
+        qwen,
         glm,
         None,
         None,
@@ -4572,8 +4572,8 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         )
     })?;
     let parent = dual_parent_out(req.out, req.train_size, &expand_tag)?;
-    let tev1 = dual_side(
-        JourneyPreset::Tev1,
+    let qwen = dual_side(
+        JourneyPreset::Qwen,
         &parent,
         req.train_size,
         &expand_tag,
@@ -4590,7 +4590,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
     if !req.run {
         println!("classify journey dual: print");
         println!(
-            "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha} no-import dry-run no teacher",
+            "students: qwen glm4-chat cache: {} heldout_sha256: {held_sha} no-import dry-run no teacher",
             cache.display()
         );
         if req.modest {
@@ -4610,7 +4610,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             &expand_tag,
             req.train_size,
             req.seed,
-            &tev1,
+            &qwen,
             &glm,
             req.modest,
             req.max_steps,
@@ -4620,7 +4620,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             "dual-compare: {} in-progress. Scores stay absent until both students finish. This print does not train. It is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
             compare_path.display()
         );
-        for side in [&tev1, &glm] {
+        for side in [&qwen, &glm] {
             let journey = dual_journey_request(req, side, false);
             let plan = journey_plan_value(&journey, &cache, &held_sha)?;
             if let Some(dir) = journey.out.parent() {
@@ -4640,7 +4640,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
             &expand_tag,
             req.train_size,
             req.seed,
-            &tev1,
+            &qwen,
             &glm,
             None,
             None,
@@ -4663,7 +4663,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
     }
     println!("classify journey dual: run");
     println!(
-        "students: tev1 glm4-chat cache: {} heldout_sha256: {held_sha}",
+        "students: qwen glm4-chat cache: {} heldout_sha256: {held_sha}",
         cache.display()
     );
     mark_dual_compare_started(
@@ -4673,7 +4673,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         &expand_tag,
         req.train_size,
         req.seed,
-        &tev1,
+        &qwen,
         &glm,
         req.modest,
         req.max_steps,
@@ -4693,15 +4693,15 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         "dual-compare: {} in-progress. Scores stay absent until both students finish. This is not a factory live PASS. READY_FOR_LIVE_TEST: no.",
         compare_path.display()
     );
-    for side in [&tev1, &glm] {
+    for side in [&qwen, &glm] {
         let journey = dual_journey_request(req, side, true);
         cmd_classify_journey(&journey)?;
     }
-    let (qwen_score, qwen_held) = score_from_out(&tev1.out)?;
+    let (qwen_score, qwen_held) = score_from_out(&qwen.out)?;
     let (glm_score, glm_held) = score_from_out(&glm.out)?;
     if qwen_held != glm_held {
         bail!(
-            "refuse:classify-journey: tev1 and glm4-chat held-out files differ ({qwen_held} vs {glm_held})"
+            "refuse:classify-journey: qwen and glm4-chat held-out files differ ({qwen_held} vs {glm_held})"
         );
     }
     let report = dual_report_value(
@@ -4711,7 +4711,7 @@ pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
         &expand_tag,
         req.train_size,
         req.seed,
-        &tev1,
+        &qwen,
         &glm,
         Some(&qwen_score),
         Some(&glm_score),
@@ -4946,7 +4946,7 @@ mod tests {
         fs::write(&paths.dataset_jsonl, "row\n").unwrap();
         fs::write(&paths.heldout, "{}\n").unwrap();
         fs::write(&paths.dataset_info, "{}\n").unwrap();
-        fs::write(&paths.recipe, "dataset: tev1_decisions\n").unwrap();
+        fs::write(&paths.recipe, "dataset: classify_decisions\n").unwrap();
         fs::write(&paths.export_yaml, "export_dir: x\n").unwrap();
         fs::write(paths.adapter_dir.join("adapter_config.json"), "{}\n").unwrap();
         fs::write(paths.export_dir.join("config.json"), "{}\n").unwrap();
@@ -5907,18 +5907,18 @@ mod tests {
         assert_eq!(kept.base, "lab/other");
         assert_eq!(kept.tag, "custom-tag");
         assert_eq!(kept.seat, SeatChat::DeepseekR1);
-        let tev1 = apply_preset(
-            JourneyPreset::Tev1,
+        let qwen = apply_preset(
+            JourneyPreset::Qwen,
             DEFAULT_BASE,
             DEFAULT_TAG,
             TrainDriver::Together,
             None,
         )
         .unwrap();
-        assert_eq!(tev1.base, DEFAULT_BASE);
-        assert_eq!(tev1.tag, DEFAULT_TAG);
-        assert_eq!(tev1.together_model, DEFAULT_TOGETHER_MODEL);
-        assert_eq!(tev1.seat, SeatChat::Qwen35);
+        assert_eq!(qwen.base, DEFAULT_BASE);
+        assert_eq!(qwen.tag, DEFAULT_TAG);
+        assert_eq!(qwen.together_model, DEFAULT_TOGETHER_MODEL);
+        assert_eq!(qwen.seat, SeatChat::Qwen35);
         let err = apply_preset(
             JourneyPreset::DeepseekR1Distill,
             DEFAULT_BASE,
@@ -6021,17 +6021,17 @@ mod tests {
         assert_eq!(kept.base, "lab/other");
         assert_eq!(kept.tag, "custom-tag");
         assert_eq!(kept.seat, SeatChat::Glm4);
-        let tev1 = apply_preset(
-            JourneyPreset::Tev1,
+        let qwen = apply_preset(
+            JourneyPreset::Qwen,
             DEFAULT_BASE,
             DEFAULT_TAG,
             TrainDriver::Local,
             None,
         )
         .unwrap();
-        assert_eq!(tev1.base, DEFAULT_BASE);
-        assert_eq!(tev1.tag, DEFAULT_TAG);
-        assert_eq!(tev1.seat, SeatChat::Qwen35);
+        assert_eq!(qwen.base, DEFAULT_BASE);
+        assert_eq!(qwen.tag, DEFAULT_TAG);
+        assert_eq!(qwen.seat, SeatChat::Qwen35);
         let err = apply_preset(
             JourneyPreset::Glm4Chat,
             DEFAULT_BASE,
@@ -6294,7 +6294,7 @@ mod tests {
         fs::create_dir_all(&paths.export_dir).unwrap();
         fs::write(paths.export_dir.join("config.json"), "{}\n").unwrap();
         fs::write(&paths.dataset_jsonl, "row\n").unwrap();
-        fs::write(&paths.recipe, "dataset: tev1_decisions\n").unwrap();
+        fs::write(&paths.recipe, "dataset: classify_decisions\n").unwrap();
         fs::write(&paths.specialist_f16, "spec-f16").unwrap();
         let seated = paths.seated_gguf("specialist", DEFAULT_QUANT);
         fs::write(&seated, "spec-q").unwrap();
@@ -6395,14 +6395,14 @@ mod tests {
         let gguf = std::env::temp_dir().join(format!("probe-{}.gguf", std::process::id()));
         let err = probe_ollama_load(
             &format!("http://127.0.0.1:{port}"),
-            "tev1-specialist",
+            "classify-specialist",
             &gguf,
             5,
         )
         .unwrap_err()
         .to_string();
         assert!(err.contains("refuse:classify-journey"), "{err}");
-        assert!(err.contains("tev1-specialist"), "{err}");
+        assert!(err.contains("classify-specialist"), "{err}");
         assert!(err.contains("blk.32.attn_norm.weight"), "{err}");
         assert!(err.contains(&gguf.display().to_string()), "{err}");
     }
@@ -6420,7 +6420,7 @@ mod tests {
             rust.display()
         );
 
-        let input = std::env::temp_dir().join("tev1-decisions.jsonl");
+        let input = std::env::temp_dir().join("classify-decisions.jsonl");
         let out =
             std::env::temp_dir().join(format!("journey-expand-foreign-{}", std::process::id()));
         let base_cache = std::env::temp_dir().join("classify-base-cache");
@@ -6452,7 +6452,7 @@ mod tests {
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
             seat: SeatChat::Qwen35,
             llama_note: "note",
-            preset: JourneyPreset::Tev1,
+            preset: JourneyPreset::Qwen,
             import_dataset: Some("devign"),
             train_size: "all",
             heldout_size: "all",
@@ -6519,7 +6519,7 @@ mod tests {
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
             seat: SeatChat::Qwen35,
             llama_note: "note",
-            preset: JourneyPreset::Tev1,
+            preset: JourneyPreset::Qwen,
             import_dataset: None,
             train_size: "all",
             heldout_size: "all",
@@ -6657,7 +6657,7 @@ mod tests {
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
             seat: SeatChat::Qwen35,
             llama_note: "note",
-            preset: JourneyPreset::Tev1,
+            preset: JourneyPreset::Qwen,
             import_dataset: Some("ag_news"),
             train_size: "all",
             heldout_size: "all",
@@ -6717,16 +6717,16 @@ mod tests {
     fn dual_compare_report_records_the_specialist_delta_without_a_live_pass() {
         let parent = std::env::temp_dir().join(format!("dual-compare-unit-{}", std::process::id()));
         let _ = fs::remove_dir_all(&parent);
-        let tev1 = DualSide {
-            preset: JourneyPreset::Tev1,
-            dir_name: "tev1",
+        let qwen = DualSide {
+            preset: JourneyPreset::Qwen,
+            dir_name: "qwen",
             base: DEFAULT_BASE.into(),
-            tag: "tev1-specialist-rustidiom-all-rev1".into(),
+            tag: "specialist-rustidiom-all-rev1".into(),
             built_base_tag: DEFAULT_BUILT_BASE_TAG,
             seat: SeatChat::Qwen35,
             llama_note: QWEN35_RECENT,
             together_model: DEFAULT_TOGETHER_MODEL.into(),
-            out: parent.join("tev1"),
+            out: parent.join("qwen"),
             dataset_name: "rust_idiom".into(),
         };
         let glm = DualSide {
@@ -6767,7 +6767,7 @@ mod tests {
             "rev1",
             "all",
             42,
-            &tev1,
+            &qwen,
             &glm,
             Some(&qwen),
             Some(&glm_score),
@@ -6777,9 +6777,9 @@ mod tests {
             "",
         );
         assert_eq!(report["qwen_glm_specialist_delta"], 0.5);
-        assert_eq!(report["presets"]["tev1"]["specialist_accuracy"], 0.75);
-        assert_eq!(report["presets"]["tev1"]["base_accuracy"], 0.5);
-        assert_eq!(report["presets"]["tev1"]["delta"], 0.25);
+        assert_eq!(report["presets"]["qwen"]["specialist_accuracy"], 0.75);
+        assert_eq!(report["presets"]["qwen"]["base_accuracy"], 0.5);
+        assert_eq!(report["presets"]["qwen"]["delta"], 0.25);
         assert_eq!(report["presets"]["glm4-chat"]["specialist_accuracy"], 0.25);
         assert_eq!(report["presets"]["glm4-chat"]["base_accuracy"], 0.25);
         assert_eq!(report["factory_live_pass"], false);
@@ -6801,7 +6801,7 @@ mod tests {
             "rev1",
             "all",
             42,
-            &tev1,
+            &qwen,
             &glm,
             None,
             None,
@@ -6815,7 +6815,7 @@ mod tests {
         assert!(started["max_steps"].is_null());
         assert!(started["modest_note"].is_null());
         assert!(started["qwen_glm_specialist_delta"].is_null());
-        assert!(started["presets"]["tev1"]["specialist_accuracy"].is_null());
+        assert!(started["presets"]["qwen"]["specialist_accuracy"].is_null());
         assert!(started["presets"]["glm4-chat"]["base_accuracy"].is_null());
         assert_eq!(started["factory_live_pass"], false);
         assert_eq!(started["live_pass_recorded"], false);

@@ -51,7 +51,7 @@ On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and 
 
 ### Honest demo (AG News cohesion)
 
-Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained` → `apply-proposal` → `plan` → `apply --require-plan`. Align throwaway `params.model` to the live Ollama seat `tev1-specialist-agnews-all`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class.
+Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained` → `apply-proposal` → `plan` → `apply --require-plan`. Align throwaway `params.model` to the live Ollama seat `specialist-agnews-all`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class.
 
 Receipts in that throwaway journal:
 
