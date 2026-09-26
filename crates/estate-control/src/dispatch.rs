@@ -326,6 +326,7 @@ pub(crate) fn run() -> Result<()> {
                 tag,
                 adapter,
                 binding_id,
+                seat_model,
                 curator,
             } => crate::enrich::cmd_enrich_import_trained(
                 &estate,
@@ -334,6 +335,7 @@ pub(crate) fn run() -> Result<()> {
                 &adapter,
                 &curator,
                 binding_id.as_deref(),
+                seat_model.as_deref(),
             ),
             EnrichCommand::ApplyProposal {
                 estate,

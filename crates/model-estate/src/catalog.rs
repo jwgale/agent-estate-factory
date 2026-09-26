@@ -322,11 +322,15 @@ pub fn bind_local(binding: &ModelBinding) -> Result<Box<dyn LocalDriver>, ModelE
                 .ok()
                 .or_else(|| param_str(binding, "endpoint"))
             {
-                Some(endpoint) => Ok(Box::new(HttpLocal {
-                    id: binding.id.clone(),
-                    endpoint,
-                    runtime: card.runtime,
-                })),
+                Some(endpoint) => {
+                    let model = param_str(binding, "model").filter(|s| !s.is_empty());
+                    Ok(Box::new(HttpLocal {
+                        id: binding.id.clone(),
+                        endpoint,
+                        runtime: card.runtime,
+                        model,
+                    }))
+                }
                 None => Ok(Box::new(DownLocal {
                     id: binding.id.clone(),
                     reason: ModelError::MissingEndpoint(env_name),

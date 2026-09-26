@@ -416,6 +416,10 @@ pub(crate) enum Command {
     /// Local specialty: `CELL_COMPLETE_THINK` defaults on; set `0` /
     /// `false` / `off` / `no` for short letter checks. Optional
     /// `CELL_COMPLETE_MAX_TOKENS` sets an explicit request budget.
+    /// Opt-in category labels: set binding `params.category_codec` (for
+    /// example `ag_news`) or `CELL_COMPLETE_LABEL=1` when the binding id
+    /// matches a registered codec. Adds `completion_label` beside raw
+    /// `completion`; letter-trained seats stay raw by default.
     /// Missing `CELL_LOCAL_ENDPOINT` or `XAI_API_KEY` fail-closes.
     /// A resolved allow, deny, or fail-closed complete appends one
     /// versioned receipt (`cell-one.decision-receipt.v0`, `surface`
@@ -1494,6 +1498,11 @@ pub(crate) enum EnrichCommand {
         /// The proposal stays `auto_apply=false`. This command does not apply.
         #[arg(long)]
         binding_id: Option<String>,
+        /// Live Ollama seat name for `params.model` when it differs from `--tag`.
+        /// `--tag` stays `cell-enrich-{pack}` (API lock). Omit to keep `params.model` equal to the enrich tag.
+        /// Example: `--tag cell-enrich-qwen3-instruct-lora --seat-model specialist-agnews-all`.
+        #[arg(long)]
+        seat_model: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,

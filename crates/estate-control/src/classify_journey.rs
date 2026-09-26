@@ -2767,6 +2767,7 @@ fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Resul
             &display.adapter_path,
             "jason",
             Some(display.binding_id.as_str()),
+            None,
         )?;
     } else {
         println!("This command prints the import-trained line and does not write a proposal.");

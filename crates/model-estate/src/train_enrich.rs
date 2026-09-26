@@ -5667,7 +5667,7 @@ pub struct EnrichBindingProposal {
 pub fn import_prepared(
     req: &ImportPreparedRequest<'_>,
 ) -> Result<EnrichBindingProposal, ModelError> {
-    let proposal = compose_import_proposal(req, None, None)?;
+    let proposal = compose_import_proposal(req, None, None, None)?;
     persist_binding_proposal(req.prepared_dir, &proposal)?;
     Ok(proposal)
 }
@@ -5680,6 +5680,7 @@ fn compose_import_proposal(
     req: &ImportPreparedRequest<'_>,
     scanned_override: Option<bool>,
     binding_id: Option<&str>,
+    seat_model: Option<&str>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("prepared dir", &req.prepared_dir.display().to_string())?;
@@ -5735,9 +5736,26 @@ fn compose_import_proposal(
                 )
             })
         })?;
+        let model_name = match seat_model.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(name) => {
+                refuse_sacred_and_sku("seat-model", name)?;
+                if !is_seated_model_name(req.estate, name) {
+                    return Err(ModelError::Other(format!(
+                        "refuse:seat-model: '{name}' is not a seated model tag. Use the live Ollama name (for example specialist-agnews-all), not a binding id or reserved word."
+                    )));
+                }
+                if name == expected {
+                    return Err(ModelError::Other(format!(
+                        "refuse:seat-model: '{name}' is the enrich tag. Omit --seat-model when params.model should stay {expected}."
+                    )));
+                }
+                name.to_string()
+            }
+            None => req.tag.to_string(),
+        };
         obj.insert(
             "model".into(),
-            serde_json::Value::String(req.tag.to_string()),
+            serde_json::Value::String(model_name),
         );
         obj.insert(
             "prepared_pack".into(),
@@ -5825,15 +5843,20 @@ pub struct ImportTrainedRequest<'a> {
 }
 
 pub fn import_trained(req: &ImportTrainedRequest<'_>) -> Result<EnrichBindingProposal, ModelError> {
-    import_trained_for_seat(req, None)
+    import_trained_for_seat(req, None, None)
 }
 
 /// `binding_id` `None` keeps `local_slm`. A new portable id is added as
 /// `class: local` beside existing local seats. An existing local id is
 /// replaced in place. Does not apply.
+///
+/// `seat_model` `None` keeps today's behavior: `params.model` is the enrich
+/// tag `cell-enrich-{pack}`. When set, that live Ollama seat name is recorded
+/// as `params.model` while `--tag` stays the enrich create name (API lock).
 pub fn import_trained_for_seat(
     req: &ImportTrainedRequest<'_>,
     binding_id: Option<&str>,
+    seat_model: Option<&str>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
@@ -5875,6 +5898,7 @@ pub fn import_trained_for_seat(
         },
         Some(content_scanned),
         binding_id,
+        seat_model,
     )?;
     proposal.trained_shape = Some(artifact.shape.to_string());
     proposal.trained_paths = Some(artifact.paths.clone());
@@ -7164,11 +7188,22 @@ pub fn apply_proposal(req: &ApplyProposalRequest<'_>) -> Result<ApplyProposalOut
         ))
     })?;
     if let Some(endpoint) = req.verify_endpoint {
-        crate::runtime_lists_model(endpoint, req.tag).map_err(ModelError::Other)?;
+        let verify_name = proposed
+            .params
+            .get("model")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(req.tag);
+        crate::runtime_lists_model(endpoint, verify_name).map_err(ModelError::Other)?;
     }
     if !seat.add_beside && seat.template == &proposed {
+        let bound_model = proposed
+            .params
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or(req.tag);
         return Ok(ApplyProposalOutcome::Noop {
-            reason: format!("no-op: {} already bound to {}", seat.binding_id, req.tag),
+            reason: format!("no-op: {} already bound to {}", seat.binding_id, bound_model),
         });
     }
     let current_hash = estate_schema::estate_hash(req.estate);
@@ -7517,10 +7552,27 @@ fn proposed_model_binding(
         .get("model")
         .and_then(|value| value.as_str())
         .unwrap_or("");
-    if model != tag || model != proposal.local_tag {
+    if model.is_empty() {
+        return Err(ModelError::Other(
+            "refuse:binding: params.model is missing".into(),
+        ));
+    }
+    refuse_sacred_and_sku("params.model", model)?;
+    // Default: params.model equals the enrich tag. Opt-in --seat-model records
+    // a live Ollama name instead while local_tag stays cell-enrich-{pack}.
+    if model != proposal.local_tag && proposal.local_tag != tag {
         return Err(ModelError::Other(format!(
-            "refuse:binding: params.model '{model}' must be {tag}"
+            "refuse:binding: proposal local_tag '{}' must be {tag}",
+            proposal.local_tag
         )));
+    }
+    if model != tag && model != proposal.local_tag {
+        // Live seat name path: model is a seated tag distinct from the enrich create name.
+        if !is_from_token(model) || is_reserved_model_word(model) {
+            return Err(ModelError::Other(format!(
+                "refuse:binding: params.model '{model}' is not a seated model tag"
+            )));
+        }
     }
     let prepared_pack = params
         .get("prepared_pack")
@@ -22175,6 +22227,7 @@ mod tests {
                 curator: "jason",
             },
             Some("rtx-5090"),
+            None,
         )
         .unwrap_err();
         assert!(sku.to_string().contains("refuse:sku-banned"), "{sku}");
@@ -22189,6 +22242,7 @@ mod tests {
                 curator: "jason",
             },
             Some("frontier"),
+            None,
         )
         .unwrap_err();
         assert!(
@@ -22205,6 +22259,7 @@ mod tests {
                 curator: "jason",
             },
             Some("xai_grok"),
+            None,
         )
         .unwrap_err();
         assert!(
@@ -22226,6 +22281,7 @@ mod tests {
                 curator: "jason",
             },
             Some("ag_news"),
+            None,
         )
         .unwrap();
         assert_eq!(proposal.binding_id, "ag_news");
@@ -22279,6 +22335,62 @@ mod tests {
                 .as_str(),
             Some(tag)
         );
+        // --seat-model records live Ollama name; enrich tag stays cell-enrich-*.
+        let seat_dir = root.join("seat-model");
+        copy_prepare_tree(&prepared, &seat_dir);
+        let live = "specialist-agnews-all";
+        let seated = import_trained_for_seat(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &seat_dir,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+            Some(live),
+        )
+        .unwrap();
+        assert_eq!(seated.local_tag, tag);
+        assert_eq!(
+            seated.proposed_binding["params"]["model"].as_str(),
+            Some(live)
+        );
+        let seat_source = root.join("seat-estate.yaml");
+        std::fs::write(
+            &seat_source,
+            estate_schema::render_estate_yaml(&estate).unwrap(),
+        )
+        .unwrap();
+        let seat_state = root.join("seat-state");
+        let seat_outcome = apply_proposal(&ApplyProposalRequest {
+            estate: &estate,
+            estate_path: &seat_source,
+            prepared_dir: &seat_dir,
+            tag,
+            curator: "jason",
+            state_dir: &seat_state,
+            verify_endpoint: None,
+        })
+        .unwrap();
+        match seat_outcome {
+            ApplyProposalOutcome::Staged(stage) => assert_eq!(stage.binding_id, "ag_news"),
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        }
+        let seat_staged = estate_schema::load_estate_str(
+            &std::fs::read_to_string(seat_state.join("enrich-stage/staged-estate.yaml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            seat_staged
+                .model_bindings
+                .iter()
+                .find(|binding| binding.id == "ag_news")
+                .unwrap()
+                .params["model"]
+                .as_str(),
+            Some(live)
+        );
         assert_eq!(binding_job(&staged, "policy_precheck"), "policy-precheck");
         assert_eq!(binding_job(&staged, "ag_news"), "policy-precheck");
         assert!(staged
@@ -22318,6 +22430,7 @@ mod tests {
                 curator: "jason",
             },
             Some("ag_news"),
+            None,
         )
         .unwrap();
         assert!(

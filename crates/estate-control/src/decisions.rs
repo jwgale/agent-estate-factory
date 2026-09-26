@@ -515,8 +515,30 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
     for (id, count) in by_id {
         out.push_str(&format!("fallback {id}={count}\n"));
     }
+    // Recent rows name agent + capability + surface for multi-agent journals.
+    const RECENT: usize = 8;
+    if !receipts.is_empty() {
+        out.push_str("recent:\n");
+        let start = receipts.len().saturating_sub(RECENT);
+        for receipt in &receipts[start..] {
+            let agent = receipt.agent.as_deref().unwrap_or("-");
+            let surface = if receipt.surface.is_empty() {
+                "convey"
+            } else {
+                receipt.surface.as_str()
+            };
+            out.push_str(&format!(
+                "  {id} agent={agent} capability={cap} surface={surface} result={result} outcome={outcome}\n",
+                id = receipt.id,
+                cap = receipt.capability,
+                result = receipt.result,
+                outcome = receipt.outcome,
+            ));
+        }
+    }
     out
 }
+
 
 pub(crate) fn cmd_decisions_export(state_dir: &Path, out: &Path) -> Result<()> {
     let path = journal_path(state_dir);

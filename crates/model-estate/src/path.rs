@@ -205,10 +205,17 @@ pub fn complete_via_binding(
         .iter()
         .find(|row| row.id == binding_id)
         .ok_or_else(|| ModelError::Unknown(binding_id.into()))?;
-    match binding.class {
-        ModelClass::Local => complete_local(binding, agent, text, endpoint, mock),
-        ModelClass::Frontier => complete_frontier(binding, agent, text, endpoint, mock),
+    let mut result = match binding.class {
+        ModelClass::Local => complete_local(binding, agent, text, endpoint, mock)?,
+        ModelClass::Frontier => complete_frontier(binding, agent, text, endpoint, mock)?,
+    };
+    if result.completion_label.is_empty() {
+        if let Some(label) = crate::category_label::completion_label_for(binding, &result.completion)
+        {
+            result.completion_label = label.to_string();
+        }
     }
+    Ok(result)
 }
 
 fn complete_local(
@@ -230,6 +237,13 @@ fn complete_local(
         }
         .specialist(&req);
     }
+    let preferred = binding
+        .params
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     let driver = if let Some(raw) = endpoint {
         let endpoint = resolve_specialist_endpoint(Some(raw))?;
         let runtime = parse_runtime(&binding.driver).ok_or_else(|| {
@@ -242,6 +256,7 @@ fn complete_local(
             id: binding.id.clone(),
             endpoint,
             runtime,
+            model: preferred,
         }) as Box<dyn LocalDriver>
     } else {
         local_from_binding(binding)?
@@ -266,6 +281,7 @@ fn complete_frontier(
         return Ok(SpecialistResult {
             job: SpecialistJob::Complete.as_str().into(),
             completion: String::new(),
+            completion_label: String::new(),
             ..policy
         });
     }
@@ -280,6 +296,7 @@ fn complete_frontier(
             reason: "frontier completion".into(),
             job: SpecialistJob::Complete.as_str().into(),
             completion: frontier.complete(text)?,
+            completion_label: String::new(),
         });
     }
     if endpoint.is_some() {
@@ -298,6 +315,7 @@ fn complete_frontier(
         reason: "frontier completion".into(),
         job: SpecialistJob::Complete.as_str().into(),
         completion,
+        completion_label: String::new(),
     })
 }
 
