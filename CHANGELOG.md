@@ -2,6 +2,10 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## This slice — local complete think defaults on
+
+- Local `estate complete` / compat specialty chat flips `CELL_COMPLETE_THINK` to **default on** (`think: true` on Ollama `/api/chat`; omit `reasoning_effort` on `/v1`). Opt out for short letter checks with `CELL_COMPLETE_THINK=0` (or `false`/`off`/`no`). Default think-on prefers native `/api/chat` because `/v1` rejects boolean `think`. `CELL_COMPLETE_MAX_TOKENS` is unchanged (default omit; seat Modelfile may still bake `num_predict`; set `512` to lift a seat `num_predict 8` for coherent think-on). Classify stays `think: false` on its own path. Frontier keeps `FRONTIER_COMPLETION_TOKENS` (64). This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
 ## This slice — local complete think + budget knobs
 
 - Local `estate complete` / compat specialty chat no longer hard-caps at 64 tokens. On-box GPU is not billed: default omits `num_predict` / `max_tokens` so Ollama decides (a seat Modelfile may still set its own `num_predict`). `CELL_COMPLETE_MAX_TOKENS` sets an explicit request budget when wanted (short-letter `8`, old `64`, or a larger override of the seat; `0`/`omit`/`unlimited` omits). `CELL_COMPLETE_THINK` defaults off (`think: false` on Ollama `/api/chat`, `reasoning_effort: none` on `/v1`) for classify parity; set `1`/`true`/`on`/`yes` for think-on. Think-on prefers native `/api/chat` because `/v1` rejects boolean `think`. Ollama `message.thinking` folds into the completion when present. Frontier keeps `FRONTIER_COMPLETION_TOKENS` (64). Complete HTTP timeout is 180s. This slice does not invent a live PASS. It does not wire into `make smoke`, `make gate-90`, or GitHub Actions. `examples/estate.yaml` stays hash-locked (`43770130 3391`). `READY_FOR_LIVE_TEST`: no.

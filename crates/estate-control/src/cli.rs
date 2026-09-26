@@ -413,6 +413,9 @@ pub(crate) enum Command {
     /// Authorize still decides allow or deny. On allow, complete runs
     /// through the selected binding's local or frontier driver
     /// (`complete_via_binding`). Control does not invent the text.
+    /// Local specialty: `CELL_COMPLETE_THINK` defaults on; set `0` /
+    /// `false` / `off` / `no` for short letter checks. Optional
+    /// `CELL_COMPLETE_MAX_TOKENS` sets an explicit request budget.
     /// Missing `CELL_LOCAL_ENDPOINT` or `XAI_API_KEY` fail-closes.
     /// A resolved allow, deny, or fail-closed complete appends one
     /// versioned receipt (`cell-one.decision-receipt.v0`, `surface`

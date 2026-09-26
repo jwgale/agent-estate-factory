@@ -409,15 +409,16 @@ fn complete_max_tokens() -> Option<u32> {
     }
 }
 
-/// Thinking for local Ollama `/api/chat`. Default off (parity with classify
-/// `think: false`). Set `CELL_COMPLETE_THINK=1` (or `true`/`on`/`yes`) to on.
+/// Thinking for local Ollama `/api/chat`. Default on (on-box, not billed).
+/// Set `CELL_COMPLETE_THINK=0` (or `false`/`off`/`no`) to opt out for
+/// short letter checks. Classify stays `think: false` on its own path.
 fn complete_think() -> bool {
     match std::env::var("CELL_COMPLETE_THINK") {
         Ok(raw) => {
             let v = raw.trim().to_ascii_lowercase();
-            matches!(v.as_str(), "1" | "true" | "on" | "yes")
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
         }
-        Err(_) => false,
+        Err(_) => true,
     }
 }
 
@@ -773,6 +774,7 @@ mod tests {
 
     #[test]
     fn specialist_openai_missing_content_tries_ollama_then_refuses() {
+        let _env = EnvLock::lock(&[("CELL_COMPLETE_THINK", Some("0"))]);
         let srv = CompatServer::spawn(CompatScript::OpenAiNoContent {
             models: vec!["llama3".into()],
         })
@@ -875,6 +877,7 @@ mod tests {
 
     #[test]
     fn specialist_complete_openai_returns_model_text() {
+        let _env = EnvLock::lock(&[("CELL_COMPLETE_THINK", Some("0"))]);
         let srv = CompatServer::spawn(CompatScript::OpenAi {
             models: vec!["llama3".into()],
         })
@@ -917,6 +920,7 @@ mod tests {
 
     #[test]
     fn specialist_openai_empty_falls_through_to_ollama() {
+        let _env = EnvLock::lock(&[("CELL_COMPLETE_THINK", Some("0"))]);
         let srv = CompatServer::spawn(CompatScript::OpenAiEmptyThenOllama {
             models: vec!["llama3".into()],
         })
@@ -932,6 +936,8 @@ mod tests {
 
     #[test]
     fn specialist_openai_and_ollama_empty_refuses_clearly() {
+        // Think-off keeps OpenAI-first then Ollama fallthrough order.
+        let _env = EnvLock::lock(&[("CELL_COMPLETE_THINK", Some("0"))]);
         let srv = CompatServer::spawn(CompatScript::OpenAiEmptyAndOllamaEmpty {
             models: vec!["llama3".into()],
         })
@@ -952,6 +958,7 @@ mod tests {
 
     #[test]
     fn specialist_openai_content_parts_accepted() {
+        let _env = EnvLock::lock(&[("CELL_COMPLETE_THINK", Some("0"))]);
         let srv = CompatServer::spawn(CompatScript::OpenAiContentParts {
             models: vec!["llama3".into()],
         })
@@ -1008,18 +1015,34 @@ mod tests {
     }
 
     #[test]
-    fn complete_bodies_default_think_off_and_omit_budget() {
+    fn complete_bodies_default_think_on_and_omit_budget() {
         let _env = EnvLock::lock(&[
             ("CELL_COMPLETE_THINK", None),
             ("CELL_COMPLETE_MAX_TOKENS", None),
         ]);
         let openai = complete_openai_body("specialist-agnews-all", "ping");
-        assert_eq!(openai["reasoning_effort"], "none");
+        assert!(openai.get("reasoning_effort").is_none(), "{openai}");
         assert!(openai.get("max_tokens").is_none(), "{openai}");
         assert!(openai.get("think").is_none(), "{openai}");
         let native = complete_ollama_body("specialist-agnews-all", "ping");
-        assert_eq!(native["think"], false);
+        assert_eq!(native["think"], true);
         assert!(native.get("options").is_none(), "{native}");
+    }
+
+    #[test]
+    fn complete_bodies_opt_out_think_false_off_no() {
+        for off in ["0", "false", "off", "no", "FALSE", "Off"] {
+            let _env = EnvLock::lock(&[
+                ("CELL_COMPLETE_THINK", Some(off)),
+                ("CELL_COMPLETE_MAX_TOKENS", Some("8")),
+            ]);
+            let openai = complete_openai_body("specialist-agnews-all", "ping");
+            assert_eq!(openai["reasoning_effort"], "none", "off={off}");
+            assert_eq!(openai["max_tokens"], 8, "off={off}");
+            let native = complete_ollama_body("specialist-agnews-all", "ping");
+            assert_eq!(native["think"], false, "off={off}");
+            assert_eq!(native["options"]["num_predict"], 8, "off={off}");
+        }
     }
 
     #[test]
@@ -1053,7 +1076,7 @@ mod tests {
     #[test]
     fn specialist_complete_ollama_body_think_off_omits_num_predict() {
         let _env = EnvLock::lock(&[
-            ("CELL_COMPLETE_THINK", None),
+            ("CELL_COMPLETE_THINK", Some("0")),
             ("CELL_COMPLETE_MAX_TOKENS", None),
         ]);
         let srv = CompatServer::spawn(CompatScript::Ollama {
@@ -1063,6 +1086,7 @@ mod tests {
         let result = specialist_via_adapter(&srv.endpoint(), &complete_req("ping")).unwrap();
         assert_eq!(result.completion, "ok");
         let (path, body) = srv.last_post().expect("ollama chat POST");
+        // Think-off prefers OpenAI `/v1` first; empty OpenAI falls through to native.
         assert_eq!(path, "/api/chat");
         let v: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["think"], false);
@@ -1087,13 +1111,13 @@ mod tests {
     }
 
     #[test]
-    fn specialist_complete_think_on_prefers_ollama_native() {
+    fn specialist_complete_default_think_on_prefers_ollama_native() {
         let _env = EnvLock::lock(&[
-            ("CELL_COMPLETE_THINK", Some("1")),
+            ("CELL_COMPLETE_THINK", None),
             ("CELL_COMPLETE_MAX_TOKENS", Some("256")),
         ]);
-        // OpenAI chat returns empty content; native succeeds. Think-on must
-        // hit `/api/chat` first so boolean `think` is sent.
+        // OpenAI chat returns empty content; native succeeds. Default think-on
+        // must hit `/api/chat` first so boolean `think` is sent.
         let srv = CompatServer::spawn(CompatScript::OpenAiEmptyThenOllama {
             models: vec!["llama3".into()],
         })
