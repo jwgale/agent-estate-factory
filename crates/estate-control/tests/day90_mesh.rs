@@ -111,7 +111,14 @@ fn convey_readers_refuse_tampered_mesh_sku_host_class() {
             "--state-dir",
             &state_s,
         ],
-        vec!["convey", "list", "--state-dir", &state_s],
+        vec![
+            "convey",
+            "list",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state_s,
+        ],
         vec![
             "convey",
             "leases",

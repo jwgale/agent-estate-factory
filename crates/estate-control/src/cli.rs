@@ -505,7 +505,28 @@ pub(crate) enum ConveyCommand {
         policy: PathBuf,
     },
     /// List declared hops.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, reconcile, and `estate history` (`describe_agents_section`),
+    /// then the same hop coverage cites (`hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// the hop decl list. Those cites do not fail this command. A match
+    /// stays quiet. A missing mesh is an empty cite list and stays
+    /// not-enforced. The shared stack reads placement-actual for mesh
+    /// interpretation and Authority. A present mesh that does not parse, a
+    /// bad host_class on that file, `refuse:agent-unplaced`, or any other
+    /// mesh error including a placement-actual parse failure, refuses before
+    /// those sections and before the hop list. A placement-actual SKU
+    /// host_class still continues: Agents and hop cites print and Authority
+    /// rows are omitted. The hop list reader still refuses that SKU before
+    /// the hop JSON (`list_hops` loads the interpreted mesh). That diverges
+    /// from `estate audits` and `estate history`, whose readers still print
+    /// the body. Does not spawn. Does not write the mesh, the leases, the
+    /// estate, or the apply audit. Does not claim mediation.
     List {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
