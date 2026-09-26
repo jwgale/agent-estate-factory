@@ -2294,7 +2294,6 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
         );
     }
     model_estate::resolve_portable_binding_id(req.binding_id)?;
-    emit_purpose_seat_sidecars(req)?;
     let mut paths = JourneyPaths::new(req.out);
     paths.base_cache = req.base_cache.to_path_buf();
     paths.few_shot = req.few_shot;
@@ -2500,11 +2499,7 @@ fn print_plan(
     println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
     if model_estate::looks_like_purpose_seat(req.tag) {
-        println!(
-            "purpose_seat: {} sidecar: {}",
-            req.tag,
-            req.out.join("purpose-seat.json").display()
-        );
+        println!("purpose_seat: {}", req.tag);
         if let Some(prepared) = req.prepared.filter(|path| !path.as_os_str().is_empty()) {
             println!(
                 "purpose_seat prepared: {}",
@@ -2512,14 +2507,18 @@ fn print_plan(
             );
         }
     }
+    emit_purpose_seat_sidecars(req, false)?;
     seat_handoff(req, paths, HandoffMode::Plan)?;
     Ok(())
 }
 
-/// Write `{out}/purpose-seat.json` (and `{prepared}/` when named) so import
-/// auto-bind does not need a hand-copied sidecar.
-fn emit_purpose_seat_sidecars(req: &JourneyRequest<'_>) -> Result<()> {
-    model_estate::write_purpose_seat_sidecar(req.out, req.tag)?;
+/// Write `purpose-seat.json` so import auto-bind needs no hand-copied sidecar.
+/// `--print` writes only `--prepared` so the journey `--out` stays empty for a
+/// later `--run`. `--run` also writes `{out}/purpose-seat.json`.
+fn emit_purpose_seat_sidecars(req: &JourneyRequest<'_>, write_out: bool) -> Result<()> {
+    if write_out {
+        model_estate::write_purpose_seat_sidecar(req.out, req.tag)?;
+    }
     if let Some(prepared) = req.prepared.filter(|path| !path.as_os_str().is_empty()) {
         model_estate::write_purpose_seat_sidecar(prepared, req.tag)?;
     }
@@ -3511,7 +3510,7 @@ fn write_comparison(
         &paths.comparison,
         format!("{}\n", serde_json::to_string_pretty(&report)?),
     )?;
-    emit_purpose_seat_sidecars(req)?;
+    emit_purpose_seat_sidecars(req, true)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -6710,15 +6709,17 @@ mod tests {
             binding_id: None,
         };
         cmd_classify_journey(&req).unwrap();
-        let journey_side = fs::read_to_string(out.join("purpose-seat.json")).unwrap();
+        assert!(
+            !out.exists(),
+            "print must not write journey out {}",
+            out.display()
+        );
         let prepared_side = fs::read_to_string(prepared.join("purpose-seat.json")).unwrap();
         assert!(
-            journey_side.contains("specialist-agnews-all"),
-            "{journey_side}"
+            prepared_side.contains("specialist-agnews-all"),
+            "{prepared_side}"
         );
-        assert_eq!(journey_side, prepared_side);
-        assert!(!out.join("recipe.yaml").exists());
-        assert!(!out.join("comparison.json").exists());
+        assert!(!prepared.join("recipe.yaml").exists());
         let hints = model_estate::discover_purpose_seat_hints(
             &prepared,
             "cell-enrich-overnight-traces",

@@ -107,13 +107,15 @@ Opt-in. Not part of `make smoke` or `make gate-90`. Throwaway only.
 Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
 `READY_FOR_LIVE_TEST`: no.
 
-Classify/enrich prepare write `{out}/purpose-seat.json` with the live
-seat (`specialist-agnews-all` / `specialist-agnews-3000`). Import reads
-that sidecar so throwaway AG News auto-bind needs no hand copy.
+Classify journey `--print` writes `purpose-seat.json` beside `--prepared`
+(the import dir) and names the live seat on stdout. `--run` also writes
+`{out}/purpose-seat.json`. Enrich prepare writes the sidecar when the
+seat tag is already `specialist-*` / `classify-*`. Import reads it so
+throwaway AG News auto-bind needs no hand copy.
 
 ```bash
-# After classify journey --print --dataset ag_news --train-size all
-# {OUT}/purpose-seat.json holds {"purpose_seat":"specialist-agnews-all"}
+# classify journey --print --dataset ag_news --train-size all --prepared $PREPARED
+# $PREPARED/purpose-seat.json holds {"purpose_seat":"specialist-agnews-all"}
 # Keep that file next to prepare.json; import-trained consumes it.
 
 estate complete --estate examples/fixtures/agent-pack-handoff.yaml \

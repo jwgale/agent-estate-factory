@@ -547,7 +547,9 @@ fn equal_class_mixed_select_chooses_specialty_and_names_rejected_peers() {
         .find(|agent| agent.id == "research")
         .unwrap()
         .select = None;
-    let default_estate = write_estate(&dir.join("default"), &estate);
+    let default_root = dir.join("default");
+    std::fs::create_dir_all(&default_root).unwrap();
+    let default_estate = write_estate(&default_root, &estate);
     let (ok, stdout, stderr) = complete(
         &default_estate,
         &default_state,

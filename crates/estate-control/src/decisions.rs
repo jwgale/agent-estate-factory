@@ -209,7 +209,7 @@ fn prepare_candidates(estate: &Estate, agent: Option<&str>) -> Vec<Prepared> {
 
 fn is_specialty_local(estate: &Estate, binding_id: &str) -> bool {
     let want = estate_schema::normalize_name(binding_id);
-    if want == "local_slm" {
+    if want == estate_schema::normalize_name("local_slm") {
         return false;
     }
     estate.model_bindings.iter().any(|binding| {
