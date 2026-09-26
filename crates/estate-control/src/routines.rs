@@ -556,18 +556,18 @@ mod tests {
     #[test]
     fn watch_loop_stops_on_signal_after_first_cycle() {
         let plan = resolve_watch_plan("15m", Some(9), Some("7")).unwrap();
-        let mut ticks = 0u32;
+        let ticks = std::cell::Cell::new(0u32);
         let stop = run_watch_loop(
             &plan,
             |_cycle| {
-                ticks += 1;
+                ticks.set(ticks.get() + 1);
                 Ok::<(), String>(())
             },
             |_secs| panic!("signal stop must not sleep"),
-            || ticks >= 1,
+            || ticks.get() >= 1,
         )
         .unwrap();
-        assert_eq!(ticks, 1);
+        assert_eq!(ticks.get(), 1);
         assert_eq!(stop.cycles, 1);
         assert_eq!(stop.reason, WatchStopReason::Signal);
         assert_eq!(stop.reason.as_str(), "sigint");
