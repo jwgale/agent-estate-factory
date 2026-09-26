@@ -474,6 +474,35 @@ pub(crate) enum PolicyCommand {
 #[derive(Subcommand)]
 pub(crate) enum ConveyCommand {
     /// Declare a hop and write a durable lease.
+    /// After intention, hop-coverage, and agent-unbound refuses, and after
+    /// the estate loads, prints the same Agents section as status, doctor,
+    /// reconcile, and `estate convey sync` (`describe_agents_section`), then
+    /// the same hop coverage cites (`hop_coverage_cites`: `FAIL` on mismatch,
+    /// `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`: `would-allow`,
+    /// `would-deny`, `not-enforced`, and `not-enforced reasons:`), before
+    /// `declare_hop_covering` writes the mesh and before the lease JSON.
+    /// Those cites do not fail this command. A match stays quiet. A missing
+    /// mesh is an empty cite list and stays not-enforced. The shared stack
+    /// still reads placement-actual for mesh interpretation and Authority.
+    /// A present mesh that does not parse, a bad host_class on that file,
+    /// `refuse:agent-unplaced` on the mesh already on disk, or a
+    /// placement-actual parse failure, refuses before those sections and
+    /// before the write. A placement-actual SKU host_class still continues:
+    /// Agents and hop cites print and Authority rows are omitted.
+    /// `declare_hop_covering` still refuses that SKU before the lease JSON
+    /// (`slim_parse_placement_actual` before `persist_mesh`). That diverges
+    /// from `estate audits` and `estate history`, whose readers still print
+    /// the body. Intention deny, hop-coverage deny, deny-default, and a
+    /// capability mismatch, and `--intention-kind` without `--agent`, refuse
+    /// before the stack and write nothing. An estate cloud-agent placement
+    /// is that coverage deny. A hop id that is not an estate placement stays
+    /// the lease stub. When placement-actual marks that id spawned cloud,
+    /// declare refuses `refuse:cloud-spawned` after the stack and writes
+    /// nothing. `refuse_hop` and a new hop ahead of the placement row refuse
+    /// after the stack and write nothing. The mismatch inside declare is the
+    /// same coverage gate and is not reached again. Does not spawn. Does not
+    /// claim mediation.
     Hop {
         #[arg(long)]
         id: String,
@@ -633,8 +662,9 @@ pub(crate) enum ConveyCommand {
     /// Agents and hop cites print and Authority rows are omitted, and this
     /// file check succeeds. There is no later reader. That diverges from
     /// `estate convey list`, `estate convey leases`, `estate convey expire`,
-    /// and `estate convey sync`, whose readers still refuse that SKU after
-    /// the stack. Deny and deny-default on the Agents text are notes and do
+    /// `estate convey sync`, and `estate convey hop`, whose readers still
+    /// refuse that SKU after the stack. Deny and deny-default on the Agents
+    /// text are notes and do
     /// not fail this command. A would-deny row does not fail this command.
     /// A missing conveyor-mesh.json stays not-enforced and cites that the
     /// file is absent. A present mesh with no lease for a declared

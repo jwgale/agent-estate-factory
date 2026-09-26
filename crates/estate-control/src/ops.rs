@@ -538,6 +538,22 @@ pub(crate) fn cmd_convey_hop(
     }
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before `declare_hop_covering` writes the mesh
+    // and before the lease JSON. Same stack as convey sync, convey list, and
+    // convey expire. Hop cites do not change this command's exit code. The
+    // stack reads placement-actual for mesh interpretation and Authority. A
+    // placement-actual SKU omits Authority. Declare then slim-parses that
+    // file before `persist_mesh`, so that SKU still refuses before the lease
+    // JSON and before the write. Intention, hop-coverage (deny,
+    // deny-default, and mismatch), and agent-unbound already returned above
+    // and do not print this stack. An estate cloud-agent placement is that
+    // coverage deny. A hop id that is not an estate placement stays the lease
+    // stub; when placement-actual marks that id spawned cloud, declare
+    // refuses after this stack and writes nothing. `refuse_hop` and a new
+    // hop ahead of the placement row refuse there too. The mismatch inside
+    // declare is the same coverage gate and is not reached again. Audits and
+    // history do not take that second placement refuse.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     let lease = declare_hop_covering(
         state_dir,
         HopDecl {
@@ -688,8 +704,8 @@ pub(crate) fn cmd_convey_authority(state_dir: &Path, estate_path: &Path) -> Resu
     // Authority. There is no later reader: this file check does not call
     // `load_interpreted_mesh` again, so that SKU succeeds and writes
     // nothing. Audits and history still print a body after the same omit.
-    // Convey list, convey leases, convey expire, and convey sync still
-    // refuse that SKU after the stack.
+    // Convey list, convey leases, convey expire, convey sync, and convey hop
+    // still refuse that SKU after the stack.
     print!("{}", honesty_stack(&estate, state_dir)?);
     Ok(())
 }
@@ -961,6 +977,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate convey sync` (printed before the mesh write and before the mesh
 /// JSON when the estate file is present; a missing estate file does not
 /// print this stack),
+/// `estate convey hop` (printed before `declare_hop_covering` writes the
+/// mesh and before the lease JSON; intention, hop-coverage, and
+/// agent-unbound refuses stay before this stack),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list),
 /// `estate expire` (printed before the expired placement lease list and
@@ -991,6 +1010,19 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// and before the write, because `sync_from_placements_covering` slim-parses
 /// placement-actual before `persist_mesh`. A hop-coverage mismatch and a
 /// spawned cloud placement also refuse after this stack and write nothing.
+/// `estate convey hop` then still refuses that SKU before the lease JSON
+/// and before the write, because `declare_hop_covering` slim-parses
+/// placement-actual before `persist_mesh`. Intention deny, hop-coverage
+/// deny, deny-default, and capability mismatch, and `refuse:agent-unbound`
+/// for `--intention-kind` without `--agent`, already returned and do not
+/// print this stack. An estate cloud-agent placement is that coverage deny.
+/// A hop id that is not an estate placement stays the lease stub. When
+/// placement-actual marks that id spawned cloud, declare refuses
+/// `refuse:cloud-spawned` after this stack and writes nothing. `refuse_hop`
+/// and a new hop ahead of the placement row also refuse after this stack
+/// and write nothing. The mismatch inside `refuse_stamped_capability` is
+/// the same gate coverage already applied, so this command does not reach
+/// a second mismatch after the stack.
 /// `estate audits` then still prints the apply-audit list. `estate history`
 /// then still prints the lifecycle history list. `estate expire` then still
 /// prints the expired placement list. `list_expired_leases` and
