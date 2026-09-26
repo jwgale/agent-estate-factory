@@ -407,7 +407,9 @@ pub(crate) enum Command {
     /// `refuse:decision-select` before the check and before the receipt.
     /// The host prepares eligible model-binding ids. A selector chooses
     /// one id or abstains. Zero or two or more eligible ids abstain, so
-    /// frontier and local stay equal class. Omit `--object` when that
+    /// frontier and local stay equal class, unless `--select equal-class`
+    /// or agent `select: equal-class` opts into mixed select (one specialty
+    /// among equal-class peers). Omit `--object` when that
     /// selector chooses one id with validation `ok`. Name `--object` to
     /// complete a specific binding; the selector still does not grant.
     /// Authorize still decides allow or deny. On allow, complete runs
@@ -460,13 +462,22 @@ pub(crate) enum Command {
         /// orchestrator (or a member when no orchestrator is set). Selects a
         /// member under pack policy, then completes as that member. Receipt
         /// records `pack_id`, `handoff_from`, and `handoff_to`. Not enrich packs.
-        /// Free mixed select without `--pack` stays out of scope.
+        /// Opt-in mixed select without `--pack` is `--select equal-class`
+        /// (or agent `select: equal-class`). Default disjoint allow-lists
+        /// stay unchanged.
         #[arg(long)]
         pack: Option<String>,
         /// Pack package id (skill). Requires `--pack` matching the package's
         /// pack. Receipt stamps `package_id`. Prefer `estate package run`.
         #[arg(long)]
         package: Option<String>,
+        /// Opt-in mixed select. `equal-class` lets one turn consider
+        /// specialty + frontier peers and choose the specialty seat.
+        /// Receipt names the chosen binding and rejected peers. Default
+        /// disjoint allow-lists still abstain when two or more ids are
+        /// eligible. Same word as agent `select: equal-class`.
+        #[arg(long)]
+        select: Option<String>,
     },
     /// Estate agent packs: list / show group membership and orchestrator.
     /// Distinct from enrich/feed packs (`estate packs`).
@@ -1690,6 +1701,12 @@ pub(crate) enum EnrichCommand {
         /// Example: `--tag cell-enrich-qwen3-instruct-lora --seat-model specialist-agnews-all`.
         #[arg(long)]
         seat_model: Option<String>,
+        /// Journey / prepare purpose seat (`specialist-{slug}-{size}`).
+        /// Writes `{prepared}/purpose-seat.json` so later import/apply can
+        /// auto-bind without a hand-copied sidecar. Classify/enrich prepare
+        /// emit this file themselves when the live seat name is known.
+        #[arg(long)]
+        purpose_seat: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,

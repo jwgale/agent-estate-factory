@@ -2498,7 +2498,30 @@ fn print_plan(
     println!("compare writes {}", paths.comparison.display());
     println!("export-repair runs after merge-export and copies safetensors tensors and tokenizer files present in the base snapshot but missing from the merged export. Qwen3.5 MTP weights are named mtp.*. A load probe runs after each ollama create.");
     println!("This print does not train, convert, or seat. A later report is local output. It does not record a live PASS. READY_FOR_LIVE_TEST: no.");
+    if model_estate::looks_like_purpose_seat(req.tag) {
+        println!("purpose_seat: {}", req.tag);
+        if let Some(prepared) = req.prepared.filter(|path| !path.as_os_str().is_empty()) {
+            println!(
+                "purpose_seat prepared: {}",
+                prepared.join("purpose-seat.json").display()
+            );
+        }
+    }
+    emit_purpose_seat_sidecars(req, false)?;
     seat_handoff(req, paths, HandoffMode::Plan)?;
+    Ok(())
+}
+
+/// Write `purpose-seat.json` so import auto-bind needs no hand-copied sidecar.
+/// `--print` writes only `--prepared` so the journey `--out` stays empty for a
+/// later `--run`. `--run` also writes `{out}/purpose-seat.json`.
+fn emit_purpose_seat_sidecars(req: &JourneyRequest<'_>, write_out: bool) -> Result<()> {
+    if write_out {
+        model_estate::write_purpose_seat_sidecar(req.out, req.tag)?;
+    }
+    if let Some(prepared) = req.prepared.filter(|path| !path.as_os_str().is_empty()) {
+        model_estate::write_purpose_seat_sidecar(prepared, req.tag)?;
+    }
     Ok(())
 }
 
@@ -3433,6 +3456,7 @@ fn write_comparison(
         },
         "base_seat": base_seat,
         "specialist_tag": req.tag,
+        "purpose_seat": req.tag,
         "quant": req.quant,
         "endpoint": req.endpoint,
         "api": EvalApi::OllamaNative.as_str(),
@@ -3486,6 +3510,7 @@ fn write_comparison(
         &paths.comparison,
         format!("{}\n", serde_json::to_string_pretty(&report)?),
     )?;
+    emit_purpose_seat_sidecars(req, true)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -6621,6 +6646,87 @@ mod tests {
         )
         .unwrap();
         assert_eq!(explicit, "my-custom-seat");
+    }
+
+    #[test]
+    fn classify_print_emits_purpose_seat_sidecar_and_import_reads_it() {
+        let token = std::process::id()
+            .to_string()
+            .replace("5090", "0000")
+            .replace("4090", "0000")
+            .replace("4080", "0000")
+            .replace("3090", "0000");
+        let root = std::env::temp_dir().join(format!("cell-one-purpose-seat-print-{token}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let out = root.join("journey");
+        let prepared = root.join("prepared");
+        let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/fixtures/classify-decisions.jsonl");
+        let base_cache = root.join("cache");
+        let req = JourneyRequest {
+            input: &input,
+            out: &out,
+            base: DEFAULT_BASE,
+            base_tag: None,
+            tag: "specialist-agnews-all",
+            endpoint: "http://127.0.0.1:9",
+            dataset_name: DEFAULT_DATASET,
+            seed: 42,
+            held_out_ratio: 0.2,
+            max_steps: None,
+            quant: DEFAULT_QUANT,
+            llama_cpp_dir: None,
+            force: false,
+            print: true,
+            run: false,
+            min_delta: None,
+            min_accuracy: None,
+            require_significant_lift: false,
+            timeout_secs: 1,
+            together_poll_secs: DEFAULT_TOGETHER_POLL_SECS,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+            together_base_url: DEFAULT_TOGETHER_API,
+            api_key_env: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: QWEN35_RECENT,
+            preset: JourneyPreset::Qwen,
+            import_dataset: None,
+            train_size: "all",
+            heldout_size: "all",
+            from_local: None,
+            import_fetch: crate::classify_import::ImportFetch::Bulk,
+            python: None,
+            base_cache: &base_cache,
+            few_shot: 0,
+            expand_tag: None,
+            estate: None,
+            prepared: Some(&prepared),
+            enrich_tag: None,
+            import_trained: false,
+            binding_id: None,
+        };
+        cmd_classify_journey(&req).unwrap();
+        assert!(
+            !out.exists(),
+            "print must not write journey out {}",
+            out.display()
+        );
+        let prepared_side = fs::read_to_string(prepared.join("purpose-seat.json")).unwrap();
+        assert!(
+            prepared_side.contains("specialist-agnews-all"),
+            "{prepared_side}"
+        );
+        assert!(!prepared.join("recipe.yaml").exists());
+        let hints = model_estate::discover_purpose_seat_hints(
+            &prepared,
+            "cell-enrich-overnight-traces",
+            None,
+        );
+        assert_eq!(hints, vec!["specialist-agnews-all".to_string()]);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

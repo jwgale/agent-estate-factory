@@ -1118,7 +1118,34 @@ pub fn prepare_enrich_set(
     for req in reqs {
         staged.push(stage_prepare(req)?);
     }
-    commit_staged(&staged)
+    let docs = commit_staged(&staged)?;
+    for (req, doc) in reqs.iter().zip(docs.iter()) {
+        emit_prepare_purpose_seat(req, doc)?;
+    }
+    Ok(docs)
+}
+
+/// Sidecar for later import auto-bind. No-op when the seat tag is not a
+/// purpose name (`specialist-*` / `classify-*`).
+fn emit_prepare_purpose_seat(
+    req: &PrepareEnrichRequest<'_>,
+    doc: &EnrichPrepareDoc,
+) -> Result<(), ModelError> {
+    let mut seats = Vec::new();
+    if let Some(hint) = req.pack.model_hint.as_deref() {
+        seats.push(hint);
+    }
+    if let Some(seat) = doc.seat_tag.as_deref() {
+        seats.push(seat);
+    }
+    seats.push(doc.base_model.as_str());
+    for seat in seats {
+        if crate::seat_bind::looks_like_purpose_seat(seat) {
+            crate::seat_bind::write_purpose_seat_sidecar(req.out_dir, seat)?;
+            return Ok(());
+        }
+    }
+    Ok(())
 }
 
 fn stage_prepare(req: &PrepareEnrichRequest<'_>) -> Result<StagedPrepare, ModelError> {
@@ -21784,6 +21811,61 @@ mod tests {
         assert!(
             frontier.to_string().contains("refuse:frontier-invent"),
             "{frontier}"
+        );
+    }
+
+    #[test]
+    fn prepare_emits_purpose_seat_sidecar_for_specialist_and_import_consumes_it() {
+        let root = tmp("purpose-seat-prepare");
+        let estate = seated_estate("specialist-agnews-all");
+        let out = root.join("prepared");
+        let doc = run(
+            "ollama-modelfile",
+            &fixture_pack(),
+            &estate,
+            &out,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert_eq!(doc.seat_tag.as_deref(), Some("specialist-agnews-all"));
+        let sidecar = std::fs::read_to_string(out.join("purpose-seat.json")).unwrap();
+        assert!(
+            sidecar.contains("\"purpose_seat\": \"specialist-agnews-all\""),
+            "{sidecar}"
+        );
+        let hints = crate::seat_bind::discover_purpose_seat_hints(
+            &out,
+            "cell-enrich-overnight-traces",
+            None,
+        );
+        assert_eq!(hints, vec!["specialist-agnews-all".to_string()]);
+        let bind = crate::seat_bind::resolve_import_seat_model(
+            &estate,
+            "cell-enrich-overnight-traces",
+            None,
+            &hints,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            bind,
+            crate::seat_bind::SeatBind::Auto("specialist-agnews-all".into())
+        );
+
+        let llama = root.join("llama-only");
+        run(
+            "ollama-modelfile",
+            &fixture_pack(),
+            &seated_estate("llama3"),
+            &llama,
+            "enrich",
+            "jason",
+        )
+        .unwrap();
+        assert!(
+            !llama.join("purpose-seat.json").exists(),
+            "generic seat tag is not a purpose sidecar"
         );
     }
 

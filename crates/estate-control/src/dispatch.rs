@@ -241,6 +241,7 @@ pub(crate) fn run() -> Result<()> {
             mock,
             pack,
             package,
+            select,
         } => cmd_complete(
             &agent,
             prompt,
@@ -255,6 +256,7 @@ pub(crate) fn run() -> Result<()> {
             endpoint,
             mock,
             None,
+            select.as_deref(),
         ),
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
@@ -427,6 +429,7 @@ pub(crate) fn run() -> Result<()> {
                 adapter,
                 binding_id,
                 seat_model,
+                purpose_seat,
                 curator,
             } => crate::enrich::cmd_enrich_import_trained(
                 &estate,
@@ -436,7 +439,7 @@ pub(crate) fn run() -> Result<()> {
                 &curator,
                 binding_id.as_deref(),
                 seat_model.as_deref(),
-                None,
+                purpose_seat.as_deref(),
             ),
             EnrichCommand::ApplyProposal {
                 estate,

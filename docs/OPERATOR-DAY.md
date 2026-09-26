@@ -94,7 +94,40 @@ estate decisions report --state-dir target/pack-handoff-cell --pack research-cre
 `--agent` is the pack orchestrator. Complete hands off to the other member
 (`research`) and journals `pack_id`, `handoff_from`, `handoff_to` on the
 `surface=complete` receipt. `--mock` stays in-process. No live key. No
-group-chat runtime. Free mixed select without `--pack` stays out.
+group-chat runtime. Opt-in mixed select without `--pack` is
+`--select equal-class` or agent `select: equal-class`: one complete
+turn may consider specialty + frontier and journals the chosen binding
+plus rejected peers. Default disjoint allow-lists still abstain. That
+mirrors waking the specialist then the frontier peer. Not a Grok Bot
+chat UI.
+
+## 3e. Purpose-seat sidecar + equal-class mixed select (fixture)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Throwaway only.
+Does not touch locked `examples/estate.yaml` (cksum `43770130 3391`).
+`READY_FOR_LIVE_TEST`: no.
+
+Classify journey `--print` writes `purpose-seat.json` beside `--prepared`
+(the import dir) and names the live seat on stdout. `--run` also writes
+`{out}/purpose-seat.json`. Enrich prepare writes the sidecar when the
+seat tag is already `specialist-*` / `classify-*`. Import reads it so
+throwaway AG News auto-bind needs no hand copy.
+
+```bash
+# classify journey --print --dataset ag_news --train-size all --prepared $PREPARED
+# $PREPARED/purpose-seat.json holds {"purpose_seat":"specialist-agnews-all"}
+# Keep that file next to prepare.json; import-trained consumes it.
+
+estate complete --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/mixed-select-cell --agent research \
+  --select equal-class --prompt "ping" --mock
+```
+
+On a throwaway estate whose research allow-list names `ag_news` and
+`xai_grok` (or `frontier_http`), that flag chooses the specialty seat
+and the receipt lists the frontier peer under `rejected`. Horizon on
+the locked example (disjoint `xai_grok` + `local_slm`, no policy)
+still abstains. Not live Grok Bot sync.
 
 ## 3c. Pack packages + standing routines (fixture)
 

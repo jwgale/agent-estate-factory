@@ -412,7 +412,7 @@ fn journey_print_lists_steps_without_tools() {
     assert!(shot_out.contains("seed 11"), "{shot_out}");
     assert!(shot_out.contains("run eval-base-few-shot"), "{shot_out}");
     assert!(shot_out.contains("--few-shot 3"), "{shot_out}");
-    assert!(!dir.exists(), "few-shot print must not write");
+    assert!(!dir.exists(), "print must not write {}", dir.display());
     let warned = bin()
         .args([
             "classify",
@@ -2953,6 +2953,8 @@ fn print_import_trained_does_not_invent_a_proposal() {
     assert!(!out.exists(), "print must not write {}", out.display());
     assert!(!gguf.exists());
     assert!(!prepared.join("binding-proposal.json").is_file());
+    let purpose = fs::read_to_string(prepared.join("purpose-seat.json")).unwrap();
+    assert!(purpose.contains("classify-specialist"), "{purpose}");
     assert_eq!(
         fs::read(prepared.join("prepare.json")).unwrap(),
         prepare_before

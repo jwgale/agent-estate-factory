@@ -891,6 +891,7 @@ pub(crate) fn cmd_package_run(
         endpoint,
         mock,
         None,
+        None,
     )
 }
 
@@ -980,6 +981,7 @@ pub(crate) fn cmd_routine_run(
         feed_dir,
         endpoint,
         mock,
+        None,
         None,
     )
 }
@@ -1175,6 +1177,7 @@ fn cmd_package_run_chain(
             endpoint.clone(),
             mock,
             Some(hop),
+            None,
         )?;
     }
     Ok(())
@@ -1194,13 +1197,15 @@ pub(crate) fn cmd_complete(
     endpoint: Option<String>,
     mock: bool,
     forced_handoff: Option<&crate::decisions::PackHandoff>,
+    select_policy: Option<&str>,
 ) -> Result<()> {
     let payload = prompt
         .or(text)
         .ok_or_else(|| anyhow::anyhow!("set --prompt or --text"))?;
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
-    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let mut hint = crate::decisions::load_select_hint(state_dir)?;
+    crate::decisions::apply_select_policy(&mut hint, select_policy)?;
     if package.is_some() && pack.is_none() && forced_handoff.is_none() {
         bail!("refuse:package-requires-pack: --package requires --pack");
     }

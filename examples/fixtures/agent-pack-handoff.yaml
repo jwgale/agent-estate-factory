@@ -1,6 +1,7 @@
 # Agent pack + orchestrator handoff + pack packages + standing routines fixture.
 # Throwaway / test only. Not locked examples/estate.yaml.
-# Pack membership scopes handoff; free mixed select without --pack stays out.
+# Pack membership scopes handoff. Opt-in mixed select without --pack is
+# --select equal-class / agent select: equal-class.
 # Packages ≈ skills; routines ≈ automations. Optional schedule + chain.
 # Security stays existing intentions. Not live Grok Bot sync.
 

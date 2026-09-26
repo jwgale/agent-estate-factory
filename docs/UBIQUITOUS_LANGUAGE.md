@@ -30,7 +30,7 @@ Enrich pack. Curator edit instructions. `policy: manual`. `estate packs propose`
 
 ### agent pack
 
-Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Free mixed select without `--pack` stays out. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
+Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Opt-in mixed select without `--pack` is `--select equal-class` or agent `select: equal-class`. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
 
 ### pack package
 
@@ -47,6 +47,14 @@ Jason. Locked `enrich_packs.curator: jason`. A wrong curator is `refuse:curator`
 ### enrich
 
 Curator work on a pack: edit instructions Jason pastes into the estate. `policy: manual`. `estate enrich prepare` writes artifacts for a purpose-built SLM (`--all-drivers` writes every card the job allows). `estate enrich from-pack` runs that prepare for an accepted pack into `.cell/enrich`. `estate enrich list` reads `.cell/enrich`. `estate enrich import-prepared` writes a `local_slm` binding proposal and does not apply. `estate enrich apply-proposal` stages that proposal under `.cell/enrich-stage/`. `estate apply --require-plan` writes the source estate. The job field is `train` or `enrich`. The default job is `enrich`. `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, and `axolotl-qlora` default to `train`. Prepare does not train, does not POST, and does not rewrite the estate. Modelfile `FROM` is the seated model: `params.model` on the local binding, or a pack `model_hint` that is already a model tag. The binding id `local_slm` is not that tag. A missing seated name is `refuse:base-model`. The train base for `llamafactory-lora`, `llamafactory-qlora`, `axolotl-lora`, and `axolotl-qlora` is a separate field (`train_base_model` on the pack, or `params.train_base_model` on the local binding): a Hugging Face repo id or a local directory of HF weights. A bare Ollama seat tag in that field is `refuse:train-base`. `dataset.jsonl` is a scaffold unless `--from-feed` copies rows already under the cell state directory. A missing file with that flag is `refuse:dataset`. Command surface: [`TRAIN-ENRICH.md`](TRAIN-ENRICH.md). Walks: [`operator-enrich-journeys.md`](operator-enrich-journeys.md). Live handoff: [`LIVE-PROBES.md`](LIVE-PROBES.md).
+
+### purpose seat
+
+Live Ollama (or seated-runtime) name for a purpose-built SLM. Classify and enrich prepare write `{prepared}/purpose-seat.json` as `{"purpose_seat":"<name>"}`. The mint is `specialist-{slug}-{size}` (for example `specialist-agnews-all` / `specialist-agnews-3000`). Fixture-only default stays `classify-specialist`. Import-trained discovers that sidecar (and `prepare.json` / `comparison.json` hints) so throwaway AG News auto-bind needs no hand-copied file. `--seat-model` stays the explicit override.
+
+### equal-class mixed select
+
+Opt-in policy for one `estate complete` turn to consider specialty + frontier candidates together. Set agent `select: equal-class`, pass `--select equal-class`, or write `decision-select.json` `"select":"equal-class"` / `"policy":"equal-class"`. Exactly one specialty local among eligible peers is chosen. The receipt names `result` (chosen binding) and `rejected` (peer candidates). Default disjoint allow-lists still abstain when two or more ids are eligible. Not a Grok Bot chat UI. Not a ranker of frontier over local without the flag.
 
 ### purpose-built SLM
 

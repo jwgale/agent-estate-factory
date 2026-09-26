@@ -41,7 +41,7 @@ On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and 
 
 1. **Fuel seats.** A purpose-built local SLM joins the chain as a bindable `class: local` id beside `local_slm` and beside frontier `xai_grok` (#278, #280). `estate classify journey` prints `estate enrich import-trained`. `import-trained` writes a `cell-one.enrich-binding-proposal.v0` with `trained_shape` `gguf` and `auto_apply=false`. `estate enrich apply-proposal` stages it. `estate plan` then `estate apply --require-plan` writes the source estate. Import does not apply, does not promote, and does not rewrite the locked example. Agent `models` allow-lists and Model intentions can name one specialty seat. Binding ids still refuse a hardware SKU.
 
-2. **Host prepares candidates.** After coverage and intention gates, the host lists eligible model-binding ids as opaque candidates. Frontier and local stay equal class. Zero eligible ids and two or more eligible ids stay an abstain. One scoped specialty seat is the one selectable id.
+2. **Host prepares candidates.** After coverage and intention gates, the host lists eligible model-binding ids as opaque candidates. Frontier and local stay equal class. Zero eligible ids and two or more eligible ids stay an abstain unless equal-class mixed select is opted in (`--select equal-class` or agent `select: equal-class`). Then one specialty seat may be chosen among frontier peers. One scoped specialty seat is the one selectable id without that flag.
 
 3. **Select and validate.** A selector chooses one id or abstains. `{state-dir}/decision-select.json` is an optional hint and is not a grant. A bad hint is `refuse:decision-select` before the check and before the receipt. The host re-validates that choice as `ok`, `stale`, `ineligible`, or `expired`. A fallback id may be recorded. The selector does not grant permission. A fallback is not a grant.
 
@@ -51,7 +51,7 @@ On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and 
 
 ### Honest demo (AG News cohesion)
 
-Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Bind `ag_news` with `estate enrich import-trained` (enrich tag stays `cell-enrich-{pack}`). When journey metadata or the enrich tag names a purpose seat such as `specialist-agnews-all`, live Ollama resolution writes that name as `params.model` so the throwaway no longer needs a hand patch after import. `--seat-model` stays the explicit override. Two or more live matches refuse. Then `apply-proposal` → `plan` → `apply --require-plan`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. The selector chose the one eligible specialty seat. Frontier and local remain equal class. Opt-in `CELL_COMPLETE_LABEL=1` or binding `params.category_codec=ag_news` adds `completion_label` (for example `Sci/Tech`) beside raw letter `completion` on `estate complete`.
+Throwaway estate only: `.cell/cohesion-agnews-20260926/` on the 5090. Not locked `examples/estate.yaml` (cksum `43770130 3391`). Classify/enrich prepare always write `purpose-seat.json` with the live seat name (`specialist-{slug}-{size}`, for example `specialist-agnews-all`) and keep it through import so throwaway AG News auto-bind needs no hand-copied sidecar. Bind `ag_news` with `estate enrich import-trained` (enrich tag stays `cell-enrich-{pack}`). When that sidecar, journey metadata, or the enrich tag names a purpose seat, live Ollama resolution writes that name as `params.model`. `--seat-model` stays the explicit override. Two or more live matches refuse. Then `apply-proposal` → `plan` → `apply --require-plan`. Chain seats: `xai_grok` + `local_slm` + `ag_news`. One `estate complete` turn may consider specialty + frontier under `--select equal-class` or agent `select: equal-class`; the receipt names the chosen binding and rejected peer candidates. Default disjoint allow-lists still abstain. This mirrors waking the specialist then the frontier peer. It is not a Grok Bot chat UI. Opt-in `CELL_COMPLETE_LABEL=1` or binding `params.category_codec=ag_news` adds `completion_label` (for example `Sci/Tech`) beside raw letter `completion` on `estate complete`.
 
 Receipts in that throwaway journal:
 
@@ -67,9 +67,9 @@ Cell One aims at Grok Bot–class multi-agent utility on the same middle layer: 
 | Pillar | Today (this tip / middle layer) | Next tips (deferred) |
 |--------|----------------------------------|----------------------|
 | **Agent groups / segmentation** | Estate `packs:` (id, members, optional orchestrator); `estate pack list` / `estate pack show`; members are agent ids beside purpose seats | Full group-chat runtime like Grok Bot group chats |
-| **Master orchestrator + subagent pack** | `estate complete --pack <id>`: orchestrator hands off to one member under pack policy; receipt fields `pack_id`, `handoff_from`, `handoff_to`; `decisions report --pack` filters | Free mixed select without a pack; multi-seat one-turn select across mixed local+frontier |
+| **Master orchestrator + subagent pack** | `estate complete --pack <id>`: orchestrator hands off to one member under pack policy; receipt fields `pack_id`, `handoff_from`, `handoff_to`; `decisions report --pack` filters. Opt-in equal-class mixed select (`--select equal-class` / agent `select: equal-class`) considers specialty + frontier in one complete turn; receipt names chosen binding + rejected peers | Free mixed select as the default; multi-seat ranking beyond one specialty |
 | **Spin off packages + routines** | Estate `pack_packages:` (skill on a pack) + `routines:` (declare + run a package); optional `schedule` (`@daily` / `@hourly` / `@every Nh` / `@every Nm` / 5-field cron, min 5m); `estate routine tick` / `status` persist `last_run` / `next_due` under the estate state-dir; `estate routine digest` and `tick --report` glance at the last local wake (ran/skipped, package/chain ids, receipt ids, `completion_label` when present); `estate package run --chain` (or pack/package `chain:` / `steps:`) writes `chain_id` + ordered handoffs; security stays existing intentions | Cursor plugin spin; live Grok Bot routine sync; full DAG branching; cron daemon |
-| **Work with or train SLMs** | Train/enrich/seat path; live Ollama seat auto-bind on `import-trained` / apply when enrich tag or journey metadata names a purpose seat; `--seat-model` remains the explicit override; opt-in category `completion_label` for letter-trained seats | Broader purpose codecs, auto seat-select across mixed local+frontier in one agent turn |
+| **Work with or train SLMs** | Train/enrich/seat path; classify/enrich prepare emit `purpose-seat.json` (`specialist-{slug}-{size}`); import consumes that sidecar; `--seat-model` remains the explicit override; opt-in category `completion_label` for letter-trained seats | Broader purpose codecs |
 
 Agents share equal-class seats: frontier and one or more purpose-built local SLMs stay the same class. The control plane does not invent completions. Security stays intentions + authorize/complete receipts + fail-closed endpoints.
 
@@ -81,7 +81,7 @@ Agents share equal-class seats: frontier and one or more purpose-built local SLM
 
 - A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
 - Keel UI, ACP workspace clone, or a full group-chat runtime
-- Free mixed select without `--pack`; multi-seat one-turn select across mixed seats outside a pack
+- Free mixed select as the default (opt-in `--select equal-class` / agent `select: equal-class` is this tip)
 - Cursor plugin spin, live Grok Bot routine sync, full DAG branching, or a cron daemon
 - Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
 - A dual rust_idiom launch
