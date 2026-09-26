@@ -91,7 +91,7 @@ fn apply_short_ttl_expire_forget_reapply() {
     }
 
     let listed = estate_bin()
-        .args(["expire", "--state-dir", &state_s])
+        .args(["expire", "--estate", &estate, "--state-dir", &state_s])
         .output()
         .unwrap();
     let listed_text = text(&listed);
@@ -122,7 +122,14 @@ fn apply_short_ttl_expire_forget_reapply() {
     );
 
     let forgot = estate_bin()
-        .args(["expire", "--forget", "--state-dir", &state_s])
+        .args([
+            "expire",
+            "--forget",
+            "--estate",
+            &estate,
+            "--state-dir",
+            &state_s,
+        ])
         .output()
         .unwrap();
     let forgot_text = text(&forgot);

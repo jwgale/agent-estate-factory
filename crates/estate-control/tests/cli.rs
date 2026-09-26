@@ -801,7 +801,13 @@ fn apply_dry_run_expire_and_doctor() {
     );
 
     let expire = estate_bin()
-        .args(["expire", "--state-dir", &state.display().to_string()])
+        .args([
+            "expire",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -828,7 +834,13 @@ fn apply_dry_run_expire_and_doctor() {
     )
     .unwrap();
     let listed = estate_bin()
-        .args(["expire", "--state-dir", &state.display().to_string()])
+        .args([
+            "expire",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
         .output()
         .unwrap();
     assert!(!listed.status.success());
@@ -869,6 +881,8 @@ fn apply_dry_run_expire_and_doctor() {
         .args([
             "expire",
             "--forget",
+            "--estate",
+            &fixture("examples/estate.yaml"),
             "--state-dir",
             &state.display().to_string(),
         ])
