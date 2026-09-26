@@ -239,7 +239,10 @@ deny-default are `note`. Neither fails the command. A match stays
 quiet. A missing mesh is an empty cite list. Deny and deny-default on
 the Agents text stay notes and do not fail the command. A missing or
 unreadable estate, and a mesh that does not parse, refuse before any
-section and do not invent cites. The command does not write and does
+section and do not invent cites. A bad host_class on the mesh file,
+refuse:agent-unplaced, and a placement-actual parse failure refuse
+before any section. A placement-actual SKU host_class omits Authority
+and this file check succeeds. The command does not write and does
 not spawn.
 
   estate status --estate examples/estate.yaml --state-dir .cell
