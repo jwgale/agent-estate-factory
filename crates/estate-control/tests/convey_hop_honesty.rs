@@ -1,0 +1,1003 @@
+//! `estate convey hop` prints the same Agents, hop-cite, and Authority stack
+//! as status, doctor, reconcile, leases, convey leases, convey list, convey
+//! expire, and convey sync, after the estate loads and before
+//! `declare_hop_covering` writes the mesh and before the lease JSON.
+//! Mismatch is `FAIL`. Deny and deny-default are `note`. A match is quiet.
+//! None of those cites fail the command. Intention, hop-coverage, and
+//! agent-unbound refuse before the stack. A placement-actual SKU omits
+//! Authority. `declare_hop_covering` then still refuses that SKU before the
+//! lease JSON and before the write.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn scratch() -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("cell-convey-hop-honesty-{nanos}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn run(args: &[&str]) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_estate"))
+        .args(args)
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_FRONTIER_ENDPOINT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_FRONTIER_MODEL")
+        .output()
+        .unwrap();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+fn snapshot(state: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut rows = Vec::new();
+    if state.is_dir() {
+        for entry in std::fs::read_dir(state).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                rows.push((
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    std::fs::read(&path).unwrap(),
+                ));
+            }
+        }
+    }
+    rows.sort();
+    rows
+}
+
+fn no_enforced_status_token(text: &str) -> bool {
+    !text.split_whitespace().any(|word| {
+        let token = word.trim_matches(|c: char| c == ':' || c == ',' || c == '.' || c == ';');
+        token == "enforced"
+    })
+}
+
+fn no_stack(text: &str) -> bool {
+    !text.contains("Agents\n------")
+        && !text.contains("Authority\n---------")
+        && !text.contains("\"hop_id\"")
+}
+
+/// Text between the Agents section and the Authority header.
+fn between_agents_and_authority<'a>(stdout: &'a str, agents: &str) -> &'a str {
+    let at = stdout
+        .find(agents)
+        .unwrap_or_else(|| panic!("missing Agents section\n{stdout}"));
+    let after = &stdout[at + agents.len()..];
+    let end = after
+        .find("\nAuthority\n---------\n")
+        .unwrap_or_else(|| panic!("missing Authority section\n{after}"));
+    &after[..end]
+}
+
+fn estate_with_lane_tool(effect: &str) -> String {
+    let mut text = std::fs::read_to_string(repo_root().join("examples/estate.yaml")).unwrap();
+    text = text.replace(
+        "      - id: notes-append\n        description: Append a note inside the Research lane\n",
+        "      - id: notes-append\n        description: Append a note inside the Research lane\n      - id: lane-tool\n",
+    );
+    text = text.replace(
+        "intentions: []\n",
+        &format!(
+            "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: {effect}\n"
+        ),
+    );
+    text
+}
+
+fn doctor_root(estate_text: &str) -> PathBuf {
+    let real = repo_root();
+    let dir = scratch();
+    for entry in std::fs::read_dir(&real).unwrap().flatten() {
+        let name = entry.file_name();
+        let label = name.to_string_lossy();
+        if label == "examples" || label == "target" || label == ".git" {
+            continue;
+        }
+        std::os::unix::fs::symlink(entry.path(), dir.join(name)).unwrap();
+    }
+    std::fs::create_dir_all(dir.join("examples")).unwrap();
+    for entry in std::fs::read_dir(real.join("examples")).unwrap().flatten() {
+        if entry.file_name() == "estate.yaml" {
+            continue;
+        }
+        std::os::unix::fs::symlink(entry.path(), dir.join("examples").join(entry.file_name()))
+            .unwrap();
+    }
+    std::fs::write(dir.join("examples/estate.yaml"), estate_text).unwrap();
+    dir
+}
+
+fn granted_box(capability: &str) -> conveyor_proxy::ConveyorMesh {
+    let mut mesh = conveyor_proxy::ConveyorMesh {
+        schema: conveyor_proxy::MESH_SCHEMA.into(),
+        hops: vec![],
+        leases: vec![conveyor_proxy::HopLease {
+            hop_id: "cell-one-box".into(),
+            kind: "box".into(),
+            capability: capability.into(),
+            host_class: "any".into(),
+            granted: true,
+            spawned: true,
+            durable: true,
+            driver: "box".into(),
+            note: None,
+            ttl_secs: None,
+            issued_at: None,
+            expires_at: None,
+            agents: vec!["research".into()],
+        }],
+    };
+    mesh.hops.push(conveyor_proxy::HopDecl {
+        id: "cell-one-box".into(),
+        kind: "box".into(),
+        capability: capability.into(),
+        host_class: "any".into(),
+        wired: true,
+        note: None,
+        ttl_secs: None,
+        agents: vec!["research".into()],
+    });
+    mesh
+}
+
+fn apply(estate: &Path, state: &Path, scratch_root: &Path) {
+    let plans = scratch_root.join("plans");
+    let roots = scratch_root.join("roots");
+    std::fs::create_dir_all(&plans).unwrap();
+    std::fs::create_dir_all(&roots).unwrap();
+    std::fs::create_dir_all(state).unwrap();
+    let estate_s = estate.display().to_string();
+    let state_s = state.display().to_string();
+    let plans_s = plans.display().to_string();
+    let roots_s = roots.display().to_string();
+    let (ok, stdout, stderr) = run(&[
+        "apply",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--roots-base",
+        &roots_s,
+        "--plans-dir",
+        &plans_s,
+    ]);
+    assert!(ok, "{stdout}\n{stderr}");
+}
+
+fn convey_hop(estate: &Path, state: &Path, extra: &[&str]) -> (bool, String, String) {
+    let mut args = vec![
+        "convey".to_string(),
+        "hop".to_string(),
+        "--estate".to_string(),
+        estate.display().to_string(),
+        "--state-dir".to_string(),
+        state.display().to_string(),
+    ];
+    args.extend(extra.iter().map(|s| (*s).to_string()));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(&refs)
+}
+
+fn convey_authority(estate: &Path, state: &Path) -> (bool, String, String) {
+    let estate_s = estate.display().to_string();
+    let state_s = state.display().to_string();
+    run(&[
+        "convey",
+        "authority",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ])
+}
+
+fn assert_locked_cksum() {
+    let sum = Command::new("cksum")
+        .arg(repo_root().join("examples/estate.yaml"))
+        .output()
+        .unwrap();
+    let sum_text = String::from_utf8_lossy(&sum.stdout);
+    assert!(
+        sum_text.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum changed: {sum_text}"
+    );
+}
+
+fn patch_lease(state: &Path, id: &str, patch: impl FnOnce(&mut serde_json::Value)) {
+    let path = state.join("placement-actual.json");
+    let mut actual: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let rows = actual["leases"].as_array_mut().expect("leases");
+    let lease = rows
+        .iter_mut()
+        .find(|lease| lease["placement_id"] == id)
+        .unwrap_or_else(|| panic!("missing placement {id}"));
+    patch(lease);
+    std::fs::write(&path, serde_json::to_string_pretty(&actual).unwrap()).unwrap();
+}
+
+fn lease_pretty(state: &Path, hop_id: &str) -> String {
+    let mesh = conveyor_proxy::load_mesh(state).unwrap();
+    let lease = mesh
+        .leases
+        .iter()
+        .find(|lease| lease.hop_id == hop_id)
+        .unwrap_or_else(|| panic!("missing lease {hop_id}"));
+    serde_json::to_string_pretty(lease).unwrap()
+}
+
+fn assert_stack_then_lease(stdout: &str, agents: &str, authority_out: &str, lease_body: &str) {
+    assert!(stdout.starts_with(authority_out), "{stdout}");
+    assert_eq!(
+        stdout.strip_prefix(authority_out).unwrap(),
+        format!("{lease_body}\n"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("Agents\n------\n").count(), 1, "{stdout}");
+    assert_eq!(
+        stdout.matches("Authority\n---------\n").count(),
+        1,
+        "{stdout}"
+    );
+    let agents_at = stdout.find(agents).unwrap();
+    let auth_at = stdout.find("Authority\n---------\n").unwrap();
+    let json_at = stdout
+        .find("\"hop_id\"")
+        .unwrap_or_else(|| panic!("missing lease JSON\n{stdout}"));
+    assert!(agents_at < auth_at && auth_at < json_at, "{stdout}");
+    assert!(stdout.contains("would-allow="), "{stdout}");
+    assert!(stdout.contains("would-deny="), "{stdout}");
+    assert!(stdout.contains("not-enforced="), "{stdout}");
+    assert!(
+        stdout.contains("does not show that a worker called the conveyor"),
+        "{stdout}"
+    );
+    assert!(no_enforced_status_token(stdout), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+}
+
+fn box_capability(mesh_body: &str) -> String {
+    let mesh: serde_json::Value = serde_json::from_str(mesh_body).unwrap();
+    mesh["hops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|hop| hop["id"] == "cell-one-box")
+        .unwrap()["capability"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn convey_hop_prints_agents_cites_and_authority_before_the_lease_json() {
+    let dir = scratch();
+    let state = dir.join("state");
+    let estate_path = repo_root().join("examples/estate.yaml");
+    apply(&estate_path, &state, &dir);
+    conveyor_proxy::persist_mesh(&state, &granted_box("notes-append")).unwrap();
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let placement = std::fs::read(state.join("placement-actual.json")).unwrap();
+    let audit = std::fs::read(state.join("apply-audit.jsonl")).unwrap();
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    let cites = between_agents_and_authority(&stdout, &agents);
+    assert!(
+        cites.contains("  note  refuse:hop-coverage:")
+            && cites.contains("(deny-default)")
+            && !cites.contains("(mismatch)")
+            && !cites.contains("  FAIL  "),
+        "{cites}"
+    );
+    assert_eq!(between_agents_and_authority(&authority_out, &agents), cites);
+    let lease_body = lease_pretty(&state, "ttl-hop");
+    assert_stack_then_lease(&stdout, &agents, &authority_out, &lease_body);
+    assert!(
+        lease_body.contains("\"hop_id\": \"ttl-hop\""),
+        "{lease_body}"
+    );
+    assert!(
+        lease_body.contains("\"capability\": \"lane-tool\""),
+        "{lease_body}"
+    );
+    let mesh_body = std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap();
+    assert_eq!(box_capability(&mesh_body), "notes-append", "{mesh_body}");
+    assert!(mesh_body.contains("ttl-hop"), "{mesh_body}");
+    assert!(state.join("conveyor-hops.json").is_file());
+    assert!(state.join("conveyor-leases.json").is_file());
+    assert_eq!(
+        std::fs::read(state.join("placement-actual.json")).unwrap(),
+        placement
+    );
+    assert_eq!(
+        std::fs::read(state.join("apply-audit.jsonl")).unwrap(),
+        audit
+    );
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn hop_mismatch_cite_does_not_fail_convey_hop() {
+    let mut text = estate_with_lane_tool("allow");
+    text = text.replace(
+        "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+        "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: allow\n",
+    );
+    let root = doctor_root(&text);
+    let estate_path = root.join("examples/estate.yaml");
+    let state = root.join("state");
+    apply(&estate_path, &state, &root);
+    conveyor_proxy::persist_mesh(&state, &granted_box("notes-append")).unwrap();
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let placement = std::fs::read(state.join("placement-actual.json")).unwrap();
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &[
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "lane-tool",
+            "--agent",
+            "research",
+        ],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    let cites = between_agents_and_authority(&stdout, &agents);
+    assert!(
+        cites.contains("  FAIL  refuse:hop-coverage:") && cites.contains("(mismatch)"),
+        "{cites}"
+    );
+    let agents_at = stdout.find(&agents).unwrap();
+    let cite_at = stdout.find("  FAIL  refuse:hop-coverage:").unwrap();
+    let auth_at = stdout.find("Authority\n---------\n").unwrap();
+    let json_at = stdout.find("\"hop_id\"").unwrap();
+    assert!(
+        agents_at < cite_at && cite_at < auth_at && auth_at < json_at,
+        "{stdout}"
+    );
+    let lease_body = lease_pretty(&state, "cell-one-box");
+    assert_eq!(
+        stdout.strip_prefix(&authority_out).unwrap(),
+        format!("{lease_body}\n"),
+        "{stdout}"
+    );
+    assert!(
+        lease_body.contains("\"capability\": \"lane-tool\""),
+        "{lease_body}"
+    );
+    let mesh_body = std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap();
+    assert_eq!(box_capability(&mesh_body), "lane-tool", "{mesh_body}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert_eq!(
+        std::fs::read(state.join("placement-actual.json")).unwrap(),
+        placement
+    );
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn coverage_intention_and_agent_unbound_refuse_before_the_stack() {
+    let mut text = estate_with_lane_tool("allow");
+    text = text.replace(
+        "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n",
+        "intentions:\n  - subject_agent: research\n    object: lane-tool\n    kind: tool\n    effect: allow\n  - subject_agent: research\n    object: notes-append\n    kind: tool\n    effect: allow\n",
+    );
+    let root = doctor_root(&text);
+    let estate_path = root.join("examples/estate.yaml");
+    let state = root.join("state");
+    apply(&estate_path, &state, &root);
+    assert!(!state.join("conveyor-mesh.json").exists());
+    let placement = std::fs::read(state.join("placement-actual.json")).unwrap();
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &[
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(
+        stderr.contains("refuse:hop-coverage")
+            && stderr.contains("(mismatch)")
+            && stderr.contains("notes-append")
+            && stderr.contains("lane-tool"),
+        "{stderr}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(
+        std::fs::read(state.join("placement-actual.json")).unwrap(),
+        placement
+    );
+
+    let locked = repo_root().join("examples/estate.yaml");
+    let intend = root.join("intend");
+    apply(&locked, &intend, &root);
+    let before = snapshot(&intend);
+    let (ok, stdout, stderr) = convey_hop(
+        &locked,
+        &intend,
+        &[
+            "--id",
+            "notes-hop",
+            "--capability",
+            "notes-append",
+            "--agent",
+            "research",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(
+        stderr.contains("refuse:intention") && stderr.contains("(deny-default)"),
+        "{stderr}"
+    );
+    assert!(!intend.join("conveyor-mesh.json").exists());
+    // The intention gate appends a feed line. It does not write the mesh.
+    assert!(before.iter().all(|(name, _)| name != "conveyor-mesh.json"));
+
+    let unbound = root.join("unbound");
+    std::fs::create_dir_all(&unbound).unwrap();
+    let (ok, stdout, stderr) = convey_hop(
+        &locked,
+        &unbound,
+        &["--id", "ttl-hop", "--intention-kind", "tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(
+        stderr.contains("refuse:agent-unbound") && stderr.contains("--intention-kind"),
+        "{stderr}"
+    );
+    assert!(!unbound.join("conveyor-mesh.json").exists());
+
+    let missing = root.join("no-such-estate.yaml");
+    let missing_state = root.join("missing-state");
+    std::fs::create_dir_all(&missing_state).unwrap();
+    let (ok, stdout, stderr) = convey_hop(
+        &missing,
+        &missing_state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(
+        stderr.contains("refuse:hop-coverage") && stderr.contains("estate missing"),
+        "{stderr}"
+    );
+    assert!(!missing_state.join("conveyor-mesh.json").exists());
+
+    let cloud = root.join("cloud");
+    apply(&locked, &cloud, &root);
+    patch_lease(&cloud, "cursor-cloud", |lease| {
+        lease["spawned"] = serde_json::Value::Bool(true);
+    });
+    let placement = std::fs::read(cloud.join("placement-actual.json")).unwrap();
+    let (ok, stdout, stderr) = convey_hop(
+        &locked,
+        &cloud,
+        &[
+            "--id",
+            "cursor-cloud",
+            "--kind",
+            "cloud-mesh",
+            "--capability",
+            "mesh-stub",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(
+        stderr.contains("refuse:hop-coverage") && stderr.contains("(deny)"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("refuse:cloud-spawned"), "{stderr}");
+    assert!(!cloud.join("conveyor-mesh.json").exists());
+    assert_eq!(
+        std::fs::read(cloud.join("placement-actual.json")).unwrap(),
+        placement
+    );
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn missing_mesh_is_not_enforced_then_hop_writes() {
+    let dir = scratch();
+    let state = dir.join("state");
+    let estate_path = repo_root().join("examples/estate.yaml");
+    apply(&estate_path, &state, &dir);
+    assert!(!state.join("conveyor-mesh.json").exists());
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let rows = conveyor_proxy::authority_report(&state, &estate).unwrap();
+    let section = conveyor_proxy::describe_authority_section(&rows, &state);
+    assert!(
+        section.contains("not-enforced reasons: missing-mesh=5 cloud=1"),
+        "{section}"
+    );
+    assert!(
+        section.contains("conveyor-mesh.json is absent"),
+        "{section}"
+    );
+    let placement = std::fs::read(state.join("placement-actual.json")).unwrap();
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    assert_eq!(between_agents_and_authority(&stdout, &agents), "");
+    let lease_body = lease_pretty(&state, "ttl-hop");
+    assert_stack_then_lease(&stdout, &agents, &authority_out, &lease_body);
+    assert!(stdout.contains(&section), "{stdout}");
+    assert!(
+        authority_out.contains("conveyor-mesh.json is absent"),
+        "{authority_out}"
+    );
+    assert!(state.join("conveyor-mesh.json").is_file());
+    assert_eq!(
+        std::fs::read(state.join("placement-actual.json")).unwrap(),
+        placement
+    );
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn spawned_cloud_outside_the_estate_prints_the_stack_and_refuses_before_write() {
+    let dir = scratch();
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate_path = repo_root().join("examples/estate.yaml");
+    std::fs::write(
+        state.join("placement-actual.json"),
+        r#"{"schema":"cell-one.placement-actual.v0","desired_hash":"abc","leases":[{"placement_id":"rogue-cloud","kind":"cloud-agent","host_class":"any","spawned":true,"wired":false,"agents":[]}]}"#,
+    )
+    .unwrap();
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &[
+            "--id",
+            "rogue-cloud",
+            "--kind",
+            "cloud-mesh",
+            "--capability",
+            "mesh-stub",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert_eq!(stdout, authority_out, "{stdout}");
+    assert!(
+        stderr.contains("refuse:cloud-spawned") && stderr.contains("rogue-cloud"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("\"hop_id\""), "{stdout}");
+    assert!(stdout.contains("Agents\n------"), "{stdout}");
+    assert!(stdout.contains("Authority\n---------"), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(no_enforced_status_token(&stderr), "{stderr}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(snapshot(&state), before);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agents_ahead_of_placement_print_the_stack_and_refuse_before_write() {
+    let root = doctor_root(&estate_with_lane_tool("allow"));
+    let estate_path = root.join("examples/estate.yaml");
+    let state = root.join("state");
+    apply(&estate_path, &state, &root);
+    assert!(!state.join("conveyor-mesh.json").exists());
+    patch_lease(&state, "cell-one-box", |lease| {
+        lease["agents"] = serde_json::json!([]);
+    });
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &[
+            "--id",
+            "cell-one-box",
+            "--capability",
+            "lane-tool",
+            "--agent",
+            "research",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert_eq!(stdout, authority_out, "{stdout}");
+    assert!(
+        stderr.contains("refuse:agent-unplaced") && stderr.contains("research"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("\"hop_id\""), "{stdout}");
+    assert!(stdout.contains("Agents\n------"), "{stdout}");
+    assert!(stdout.contains("Authority\n---------"), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(snapshot(&state), before);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn declare_refuse_hop_prints_the_stack_and_writes_nothing() {
+    let dir = scratch();
+    let estate_path = repo_root().join("examples/estate.yaml");
+    let state = dir.join("state");
+    apply(&estate_path, &state, &dir);
+    assert!(!state.join("conveyor-mesh.json").exists());
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &[
+            "--id",
+            "ttl-hop",
+            "--capability",
+            "lane-tool",
+            "--host-class",
+            "rtx-5090",
+        ],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert_eq!(stdout, authority_out, "{stdout}");
+    assert!(
+        stderr.contains("refuse:bad-host-class") && stderr.contains("rtx-5090"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("\"hop_id\""), "{stdout}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(snapshot(&state), before);
+
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "cyera-ci", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert_eq!(stdout, authority_out, "{stdout}");
+    assert!(
+        stderr.contains("refuse:sacred-id") && stderr.contains("cyera-ci"),
+        "{stderr}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(snapshot(&state), before);
+
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "local-5090", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert_eq!(stdout, authority_out, "{stdout}");
+    assert!(stderr.contains("refuse:sku-banned"), "{stderr}");
+    assert!(stdout.contains("Agents\n------"), "{stdout}");
+    assert!(stdout.contains("Authority\n---------"), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(no_enforced_status_token(&stderr), "{stderr}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!state.join("conveyor-mesh.json").exists());
+    assert_eq!(snapshot(&state), before);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_unplaced_on_the_mesh_refuses_before_the_stack() {
+    let dir = scratch();
+    let state = dir.join("state");
+    let estate_path = repo_root().join("examples/estate.yaml");
+    apply(&estate_path, &state, &dir);
+    let mut ahead = granted_box("notes-append");
+    ahead.hops[0].agents = vec!["research".into(), "outsider".into()];
+    ahead.leases[0].agents = vec!["research".into(), "outsider".into()];
+    conveyor_proxy::persist_mesh(&state, &ahead).unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(stderr.contains("refuse:agent-unplaced"), "{stderr}");
+    assert!(stderr.contains("outsider"), "{stderr}");
+    assert!(no_enforced_status_token(&stderr), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+    let mesh_body = std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap();
+    assert!(!mesh_body.contains("ttl-hop"), "{mesh_body}");
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mesh_parse_and_mesh_host_class_refuse_before_the_write() {
+    let dir = scratch();
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate_path = repo_root().join("examples/estate.yaml");
+    std::fs::write(
+        state.join("placement-actual.json"),
+        r#"{"schema":"cell-one.placement-actual.v0","desired_hash":"abc","leases":[]}"#,
+    )
+    .unwrap();
+    let mesh = state.join("conveyor-mesh.json");
+    std::fs::write(&mesh, "not-json").unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(stderr.contains("parse:"), "{stderr}");
+    assert!(stderr.contains("conveyor-mesh.json"), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+    assert_eq!(std::fs::read(&mesh).unwrap(), b"not-json");
+
+    std::fs::write(
+        &mesh,
+        r#"{"schema":"cell-one.conveyor-mesh.v0","hops":[{"id":"cell-one-box","kind":"box","capability":"notes-append","host_class":"rtx-5090","wired":true,"agents":["research"]}],"leases":[{"hop_id":"box","kind":"box","capability":"lane-tool","host_class":"rtx-5090","granted":true,"spawned":false,"durable":true,"driver":"box"}]}"#,
+    )
+    .unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(stderr.contains("refuse:bad-host-class"), "{stderr}");
+    assert!(stderr.contains("rtx-5090"), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+
+    std::fs::write(
+        &mesh,
+        r#"{"schema":"cell-one.conveyor-mesh.v0","hops":[{"id":"cell-one-box","kind":"box","capability":"notes-append","host_class":"any","wired":true,"agents":["research"]}],"leases":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(state.join("placement-actual.json"), "{").unwrap();
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stdout.trim().is_empty(), "{stdout}");
+    assert!(no_stack(&stdout), "{stdout}");
+    assert!(no_stack(&stderr), "{stderr}");
+    assert!(stderr.contains("parse:"), "{stderr}");
+    assert!(stderr.contains("placement-actual.json"), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn placement_sku_prints_agents_and_cites_omits_authority_and_refuses_before_json() {
+    let dir = scratch();
+    let state = dir.join("state");
+    let estate_path = repo_root().join("examples/estate.yaml");
+    apply(&estate_path, &state, &dir);
+    conveyor_proxy::persist_mesh(&state, &granted_box("notes-append")).unwrap();
+    let estate = estate_schema::load_estate(&estate_path).unwrap();
+    let agents = estate_schema::describe_agents_section(&estate);
+    let (authority_ok, authority_out, authority_err) = convey_authority(&estate_path, &state);
+    assert!(authority_ok, "{authority_out}\n{authority_err}");
+    let between = between_agents_and_authority(&authority_out, &agents);
+    assert!(
+        between.contains("  note  refuse:hop-coverage:") && between.contains("(deny-default)"),
+        "{between}"
+    );
+
+    patch_lease(&state, "cell-one-box", |lease| {
+        lease["host_class"] = serde_json::Value::String("rtx-5090".into());
+    });
+    let before = snapshot(&state);
+    let (ok, stdout, stderr) = convey_hop(
+        &estate_path,
+        &state,
+        &["--id", "ttl-hop", "--capability", "lane-tool"],
+    );
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(stderr.contains("refuse:bad-host-class"), "{stderr}");
+    assert!(stderr.contains("rtx-5090"), "{stderr}");
+    assert!(stdout.starts_with(&agents), "{stdout}");
+    assert_eq!(&stdout[agents.len()..], format!("{between}\n"));
+    assert!(!stdout.contains("Authority\n---------"), "{stdout}");
+    assert!(!stdout.contains("not-enforced reasons:"), "{stdout}");
+    assert!(!stdout.contains("would-allow="), "{stdout}");
+    assert!(!stdout.contains("\"hop_id\""), "{stdout}");
+    assert!(no_enforced_status_token(&stdout), "{stdout}");
+    assert!(no_enforced_status_token(&stderr), "{stderr}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!stderr.contains("live PASS"), "{stderr}");
+    assert_eq!(snapshot(&state), before);
+    let mesh_body = std::fs::read_to_string(state.join("conveyor-mesh.json")).unwrap();
+    assert_eq!(box_capability(&mesh_body), "notes-append", "{mesh_body}");
+    assert!(!mesh_body.contains("ttl-hop"), "{mesh_body}");
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn help_names_the_stack_and_locks_hold() {
+    let (ok, stdout, stderr) = run(&["convey", "hop", "--help"]);
+    assert!(ok, "{stdout}\n{stderr}");
+    let agents = stdout
+        .find("describe_agents_section")
+        .unwrap_or_else(|| panic!("help omits describe_agents_section\n{stdout}"));
+    let cites = stdout
+        .find("hop_coverage_cites")
+        .unwrap_or_else(|| panic!("help omits hop_coverage_cites\n{stdout}"));
+    let authority = stdout
+        .find("describe_authority_section")
+        .unwrap_or_else(|| panic!("help omits describe_authority_section\n{stdout}"));
+    assert!(agents < cites && cites < authority, "{stdout}");
+    assert!(stdout.contains("would-allow"), "{stdout}");
+    assert!(stdout.contains("would-deny"), "{stdout}");
+    assert!(stdout.contains("not-enforced"), "{stdout}");
+    assert!(stdout.contains("not-enforced reasons:"), "{stdout}");
+    assert!(stdout.contains("do not fail"), "{stdout}");
+    assert!(stdout.contains("empty cite list"), "{stdout}");
+    assert!(stdout.contains("refuse:agent-unplaced"), "{stdout}");
+    assert!(
+        stdout.contains("still refuses that SKU before the lease JSON"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("slim_parse_placement_actual"), "{stdout}");
+    assert!(stdout.contains("reads placement-actual"), "{stdout}");
+    assert!(stdout.contains("placement-actual parse"), "{stdout}");
+    assert!(stdout.contains("diverges"), "{stdout}");
+    assert!(stdout.contains("before the stack"), "{stdout}");
+    assert!(stdout.contains("refuse:cloud-spawned"), "{stdout}");
+    assert!(stdout.contains("refuse_hop"), "{stdout}");
+    assert!(stdout.contains("is not reached again"), "{stdout}");
+    assert!(stdout.contains("examples/estate.yaml"), "{stdout}");
+    assert!(stdout.contains("Does not spawn"), "{stdout}");
+    assert!(stdout.contains("Does not claim mediation"), "{stdout}");
+    assert!(!stdout.contains("body still prints"), "{stdout}");
+    assert!(!stdout.contains("no second placement refuse"), "{stdout}");
+    assert!(!stdout.contains("do not depend on placement"), "{stdout}");
+    assert!(!stdout.contains("do not read placement"), "{stdout}");
+    assert!(!stdout.contains("ignores placement"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+
+    let language =
+        std::fs::read_to_string(repo_root().join("docs/UBIQUITOUS_LANGUAGE.md")).unwrap();
+    let at = language
+        .find("`estate convey hop` prints")
+        .unwrap_or_else(|| panic!("language omits convey hop\n{language}"));
+    let mine = &language[at..];
+    let end = mine
+        .find("Whether a hop lease")
+        .unwrap_or_else(|| panic!("language convey hop sentence did not end\n{mine}"));
+    let mine = &mine[..end];
+    assert!(mine.contains("missing-mesh"), "{mine}");
+    assert!(mine.contains("conveyor-mesh.json"), "{mine}");
+    assert!(mine.contains("still reads placement-actual"), "{mine}");
+    assert!(mine.contains("placement-actual parse failure"), "{mine}");
+    assert!(
+        mine.contains("still refuses that SKU before the lease JSON"),
+        "{mine}"
+    );
+    assert!(mine.contains("slim_parse_placement_actual"), "{mine}");
+    assert!(mine.contains("diverges"), "{mine}");
+    assert!(mine.contains("before the stack"), "{mine}");
+    assert!(mine.contains("refuse:cloud-spawned"), "{mine}");
+    assert!(mine.contains("refuse_hop"), "{mine}");
+    assert!(mine.contains("does not reach a second mismatch"), "{mine}");
+    assert!(!mine.contains("body still prints"), "{mine}");
+    assert!(!mine.contains("no second placement refuse"), "{mine}");
+    assert!(!mine.contains("do not depend on placement"), "{mine}");
+    assert!(!mine.contains("do not read placement"), "{mine}");
+    assert!(!mine.contains("ignores placement"), "{mine}");
+    assert!(!mine.contains("READY_FOR_LIVE_TEST: yes"), "{mine}");
+
+    let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
+    let head = changelog
+        .split("## This slice — estate expire")
+        .next()
+        .unwrap();
+    assert!(
+        head.contains("estate convey hop prints the honesty stack"),
+        "{head}"
+    );
+    assert!(head.contains("render_hop_coverage_cites"), "{head}");
+    assert!(head.contains("still reads placement-actual"), "{head}");
+    assert!(head.contains("placement-actual parse failure"), "{head}");
+    assert!(
+        head.contains("still refuses that SKU before the lease JSON"),
+        "{head}"
+    );
+    assert!(head.contains("slim_parse_placement_actual"), "{head}");
+    assert!(head.contains("diverges"), "{head}");
+    assert!(head.contains("before the stack"), "{head}");
+    assert!(head.contains("refuse:cloud-spawned"), "{head}");
+    assert!(head.contains("refuse_hop"), "{head}");
+    assert!(head.contains("does not reach a second mismatch"), "{head}");
+    assert!(!head.contains("body still prints"), "{head}");
+    assert!(!head.contains("no second placement refuse"), "{head}");
+    assert!(!head.contains("do not depend on placement"), "{head}");
+    assert!(!head.contains("do not read placement"), "{head}");
+    assert!(!head.contains("ignores placement"), "{head}");
+    assert!(head.contains("43770130 3391"), "{head}");
+    assert!(head.contains("`READY_FOR_LIVE_TEST`: no"), "{head}");
+    assert!(!head.contains("READY_FOR_LIVE_TEST: yes"), "{head}");
+    assert!(head.contains("does not invent a live PASS"), "{head}");
+    assert_locked_cksum();
+}
