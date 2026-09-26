@@ -1,10 +1,10 @@
-//! Keel-style middle layer for `estate convey call`.
+//! Keel-style middle layer for `estate convey call` and `estate authorize`.
 //!
 //! The host prepares eligible model-binding candidates, a selector chooses
 //! one opaque id or abstains, and the host re-validates that choice. The
-//! selector does not grant permission. The hop lease and the estate
-//! intention still decide allow or refuse. A fallback id is recorded and
-//! not applied.
+//! selector does not grant permission. A convey call is still decided by
+//! the hop lease and the estate intention. An authorize check is still
+//! decided by `authorize`. A fallback id is recorded and not applied.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelBinding};
@@ -40,6 +40,10 @@ pub(crate) struct DecisionReceipt {
     pub capability: String,
     #[serde(default)]
     pub agent: Option<String>,
+    /// Empty on `estate convey call`. `authorize` on `estate authorize`.
+    /// Omitted from the JSON when empty so convey lines stay the same shape.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub surface: String,
     pub stage: String,
     pub candidates: Vec<CandidateSummary>,
     pub result: String,
@@ -249,6 +253,47 @@ pub(crate) fn record_convey_receipt(
     outcome: &str,
     expired: bool,
 ) -> Result<DecisionReceipt> {
+    record_receipt(
+        estate, state_dir, hop_id, capability, agent, hint, outcome, expired, "",
+    )
+}
+
+/// Authorize check. `hop_id` is the intention kind and `capability` is the
+/// object. `surface` is `authorize`. No hop-lease clock: `expired` stays false.
+/// The same host prepare / select / revalidate path as a convey call.
+pub(crate) fn record_authorize_receipt(
+    estate: &Estate,
+    state_dir: &Path,
+    kind: &str,
+    object: &str,
+    agent: &str,
+    hint: Option<&SelectHint>,
+    outcome: &str,
+) -> Result<DecisionReceipt> {
+    record_receipt(
+        estate,
+        state_dir,
+        kind,
+        object,
+        Some(agent),
+        hint,
+        outcome,
+        false,
+        "authorize",
+    )
+}
+
+fn record_receipt(
+    estate: &Estate,
+    state_dir: &Path,
+    hop_id: &str,
+    capability: &str,
+    agent: Option<&str>,
+    hint: Option<&SelectHint>,
+    outcome: &str,
+    expired: bool,
+    surface: &str,
+) -> Result<DecisionReceipt> {
     let prepared = prepare_candidates(estate, agent);
     let (result, claimed) = select(&prepared, hint);
     let (validation, fallback) = revalidate(&prepared, &result, claimed.as_deref(), expired);
@@ -266,11 +311,15 @@ pub(crate) fn record_convey_receipt(
         .map(|row| row.id.as_str())
         .collect::<Vec<_>>()
         .join(",");
-    let material = format!(
+    let mut material = format!(
         "{hop_id}\n{capability}\n{}\n{candidate_ids}\n{result}\n{validation}\n{}\n{outcome}\n{stage}",
         agent.unwrap_or(""),
         fallback.as_deref().unwrap_or("")
     );
+    if !surface.is_empty() {
+        material.push('\n');
+        material.push_str(surface);
+    }
     let receipt = DecisionReceipt {
         schema: RECEIPT_SCHEMA.into(),
         id: receipt_id(seq, &material),
@@ -278,6 +327,7 @@ pub(crate) fn record_convey_receipt(
         hop_id: hop_id.to_string(),
         capability: capability.to_string(),
         agent: agent.map(|s| s.to_string()),
+        surface: surface.to_string(),
         stage,
         candidates,
         result,
@@ -295,6 +345,10 @@ pub(crate) fn record_convey_receipt(
 fn check_receipt(receipt: &DecisionReceipt) -> Result<()> {
     if receipt.schema != RECEIPT_SCHEMA {
         bail!("refuse:decision-receipt: schema");
+    }
+    match receipt.surface.as_str() {
+        "" | "authorize" => {}
+        _ => bail!("refuse:decision-receipt: surface"),
     }
     if receipt.id.is_empty() || receipt.seq == 0 {
         bail!("refuse:decision-receipt: id");
@@ -715,5 +769,53 @@ mod tests {
         assert!(ids.contains(&"local_slm"), "{ids:?}");
         assert!(ids.contains(&"ag_news"), "{ids:?}");
         assert_eq!(select(&prepared, None).0, "abstain");
+    }
+
+    #[test]
+    fn authorize_receipt_names_the_surface_and_convey_omits_it() {
+        let mut estate = example();
+        allow_local(&mut estate, "research");
+        let dir =
+            std::env::temp_dir().join(format!("cell-decision-surface-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let convey = record_convey_receipt(
+            &estate,
+            &dir,
+            "ttl-hop",
+            "lane-tool",
+            Some("research"),
+            None,
+            "allow",
+            false,
+        )
+        .unwrap();
+        assert!(convey.surface.is_empty());
+        assert_eq!(convey.result, "local_slm");
+        let line = serde_json::to_string(&convey).unwrap();
+        assert!(!line.contains("surface"), "{line}");
+
+        let auth = record_authorize_receipt(
+            &estate,
+            &dir,
+            "model",
+            "local_slm",
+            "research",
+            None,
+            "allow",
+        )
+        .unwrap();
+        assert_eq!(auth.surface, "authorize");
+        assert_eq!(auth.hop_id, "model");
+        assert_eq!(auth.capability, "local_slm");
+        assert_eq!(auth.agent.as_deref(), Some("research"));
+        assert_eq!(auth.result, "local_slm");
+        assert_eq!(auth.validation, "ok");
+        assert_eq!(auth.stage, "validate");
+        assert_eq!(auth.seq, 2);
+        assert!(auth.fallback.is_none());
+        let line = serde_json::to_string(&auth).unwrap();
+        assert!(line.contains("\"surface\":\"authorize\""), "{line}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

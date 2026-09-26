@@ -691,6 +691,60 @@ pub(crate) fn cmd_convey_call(
     }
 }
 
+/// Control-plane intention check. Same `authorize` as `conveyor-proxy check`.
+/// A bad selector hint refuses before that check and before the receipt.
+/// After the check resolves, one receipt is appended, then the allow or deny
+/// JSON is printed. The selector does not grant. Authorize decides allow or
+/// deny. No honesty stack. No hop lease.
+pub(crate) fn cmd_authorize(
+    agent: &str,
+    kind: &str,
+    object: &str,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+) -> Result<()> {
+    let parsed = conveyor_proxy::parse_kind(kind).map_err(anyhow::Error::msg)?;
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // A selector hint is not a grant. A bad file refuses before authorize
+    // and before the receipt, and before any proxy audit append.
+    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let decision = conveyor_proxy::check(&estate, agent, parsed, object, feed_dir)?;
+    let outcome = if decision.is_allow() {
+        "allow".to_string()
+    } else {
+        format!("refuse:{}", estate_schema::coverage_word(&decision))
+    };
+    // The check has already resolved allow or deny, and may have appended
+    // the proxy audit. A journal miss after that must not hide the JSON or
+    // flip the exit.
+    match crate::decisions::record_authorize_receipt(
+        &estate,
+        state_dir,
+        parsed.as_str(),
+        object,
+        agent,
+        hint.as_ref(),
+        &outcome,
+    ) {
+        Ok(receipt) => {
+            if decision.is_allow() {
+                println!("{}", crate::decisions::cite_line(&receipt));
+            }
+        }
+        Err(err) => {
+            eprintln!("decision receipt: journal write failed after authorize commit: {err}");
+        }
+    }
+    let resp = conveyor_proxy::response_from(&decision);
+    println!("{}", serde_json::to_string_pretty(&resp)?);
+    if !decision.is_allow() {
+        bail!("authorize denied");
+    }
+    Ok(())
+}
+
 /// Structural refuses that already stop the call before a decision.
 /// Placement-actual SKU, mesh parse, and `refuse:agent-unplaced` write no receipt.
 fn records_call_receipt(err: &MeshError) -> bool {
