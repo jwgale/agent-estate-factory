@@ -314,9 +314,19 @@ fn assert_stack_then_call(stdout: &str, agents: &str, authority_out: &str) -> se
     let json_at = stdout
         .find("\"hop_id\"")
         .unwrap_or_else(|| panic!("missing call JSON\n{stdout}"));
-    assert!(agents_at < auth_at && auth_at < json_at, "{stdout}");
     let body = stdout.strip_prefix(authority_out).unwrap();
-    let call: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    let (cite, rest) = body
+        .split_once('\n')
+        .unwrap_or_else(|| panic!("missing receipt cite\n{stdout}"));
+    assert!(cite.starts_with("decision receipt: "), "{cite}\n{stdout}");
+    assert!(no_enforced_status_token(cite), "{cite}");
+    assert!(!cite.contains("live PASS"), "{cite}");
+    let cite_at = stdout.find(cite).unwrap();
+    assert!(
+        agents_at < auth_at && auth_at < cite_at && cite_at < json_at,
+        "{stdout}"
+    );
+    let call: serde_json::Value = serde_json::from_str(rest.trim()).unwrap();
     assert_eq!(stdout, format!("{authority_out}{body}"), "{stdout}");
     assert!(stdout.contains("would-allow="), "{stdout}");
     assert!(stdout.contains("would-deny="), "{stdout}");

@@ -4,8 +4,8 @@ use estate_schema::{describe, load_estate_unvalidated, validate};
 use std::path::{Path, PathBuf};
 
 use crate::cli::{
-    AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, EnrichCommand, FeedCommand,
-    PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
+    AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, DecisionsCommand, EnrichCommand,
+    FeedCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
 };
 use crate::ops::*;
 use crate::plan_apply::*;
@@ -212,6 +212,14 @@ pub(crate) fn run() -> Result<()> {
                 state_dir,
                 forget,
             } => cmd_convey_expire(&estate, &state_dir, forget),
+        },
+        Command::Decisions { command } => match command {
+            DecisionsCommand::Export { state_dir, out } => {
+                crate::decisions::cmd_decisions_export(&state_dir, &out)
+            }
+            DecisionsCommand::Report { state_dir } => {
+                crate::decisions::cmd_decisions_report(&state_dir)
+            }
         },
         Command::Enrich { command } => match command {
             EnrichCommand::Prepare {

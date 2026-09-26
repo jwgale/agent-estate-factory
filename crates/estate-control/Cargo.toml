@@ -8,6 +8,7 @@ description = "Control-plane CLI: validate, plan, apply, drift"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
 conveyor-proxy.workspace = true
 estate-schema.workspace = true
 feed-collector.workspace = true

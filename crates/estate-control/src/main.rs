@@ -5,6 +5,7 @@ mod classify_grade;
 mod classify_import;
 mod classify_journey;
 mod cli;
+mod decisions;
 mod dispatch;
 mod doctor_strict;
 mod enrich;

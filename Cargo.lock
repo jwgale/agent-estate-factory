@@ -275,6 +275,7 @@ dependencies = [
  "floor-supervisor",
  "model-estate",
  "safetensors",
+ "serde",
  "serde_json",
  "sha2",
  "tiny_http",
