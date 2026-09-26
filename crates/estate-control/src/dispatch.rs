@@ -89,7 +89,7 @@ pub(crate) fn run() -> Result<()> {
             state_dir,
             roots_base,
         } => cmd_drift(&estate, &state_dir, &roots_base),
-        Command::Models { estate } => cmd_models(&estate),
+        Command::Models { estate, state_dir } => cmd_models(&estate, &state_dir),
         Command::Plans { plans_dir } => cmd_plans(&plans_dir),
         Command::Suspend { state_dir } => cmd_suspend(&state_dir),
         Command::Resume {

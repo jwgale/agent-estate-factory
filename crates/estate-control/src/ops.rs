@@ -1006,6 +1006,9 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// `estate status` (printed after the page header and the pre-stack
 /// refuses, including the hop expired count and the cloud-agent line; a
 /// placement-actual SKU does not reach this stack),
+/// `estate models` (printed after bindings, readiness, and per-binding
+/// ping lines; a placement-actual SKU omits Authority and the command
+/// stops, because there is no later mesh reader),
 /// `estate audits` (printed before the apply-audit list),
 /// `estate history` (printed before the lifecycle history list),
 /// `estate expire` (printed before the expired placement lease list and
@@ -1072,7 +1075,13 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// no second placement refuse before those lists. `estate convey authority`
 /// prints this text and stops. That SKU omits Authority and the file check
 /// succeeds. There is no later reader, so the command does not refuse after
-/// the stack and does not write. `estate status` prints the page header,
+/// the stack and does not write. `estate models` prints bindings,
+/// readiness, and the ping lines, then this text. That SKU omits Authority
+/// and the command succeeds. There is no later mesh reader, so the command
+/// does not refuse after the stack and does not write. A mesh error other
+/// than that SKU returns before this text is printed. The models body is
+/// already on stdout and is not rewritten. A missing or unreadable estate
+/// returns before that body. `estate status` prints the page header,
 /// then this text, and stops when the stack is reached. A placement-actual
 /// SKU does not reach this text: `refuse_lease_host_classes` refuses before
 /// the header, and `list_expired_hop_leases` would also refuse that SKU
@@ -1163,7 +1172,7 @@ fn drift_authority_text(estate: &estate_schema::Estate, state_dir: &Path) -> Res
     Ok(describe_authority_section(&rows, state_dir))
 }
 
-pub(crate) fn cmd_models(path: &Path) -> Result<()> {
+pub(crate) fn cmd_models(path: &Path, state_dir: &Path) -> Result<()> {
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     println!("{}", model_estate::describe_bindings(&estate));
     println!("{}", model_estate::readiness(&estate));
@@ -1173,6 +1182,16 @@ pub(crate) fn cmd_models(path: &Path) -> Result<()> {
             Err(err) => println!("  refuse: {err}"),
         }
     }
+    // After bindings, readiness, and the ping lines. Same stack as audits
+    // and history. Hop cites do not change this command's exit code. The
+    // stack reads placement-actual for mesh interpretation and Authority.
+    // A placement-actual SKU omits Authority. There is no later mesh reader,
+    // so that SKU does not refuse again. A present mesh that does not parse,
+    // a bad host_class on that file, agent-unplaced, or a placement-actual
+    // parse failure returns here, before the stack is printed. The models
+    // body above is already printed and is not rewritten. A missing or
+    // unreadable estate already returned before that body.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     Ok(())
 }
 
