@@ -17,6 +17,7 @@ mod helpers;
 mod ops;
 mod pack_mcp;
 mod plan_apply;
+mod plugin_prove;
 mod routines;
 mod suggest;
 mod watch;

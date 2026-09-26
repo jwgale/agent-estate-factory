@@ -1,15 +1,19 @@
-//! `estate pack export-plugin` — Agent Plugin stub from an estate pack.
+//! `estate pack export-plugin` — Agent Plugin export from an estate pack.
 //!
-//! Emits `plugin.json` + `mcp.json` + `skills/*/SKILL.md` (Agent Plugins 1.0
-//! floor that Cursor loads). Pack → group metadata, package → skill body
-//! that instructs calling the wired member MCP tool `complete` with the
-//! package prompt (mock/live notes as appropriate), routine schedule →
-//! commented cron/trigger notes. MCP `command` is the absolute `estate`
-//! binary resolved from `current_exe` at export time; args stay
-//! `pack mcp-serve` so member tools call `estate complete` against the
-//! source estate. Export refuses (`refuse:export-estate-bin`) when that
-//! binary cannot be resolved — no silent PATH name `estate`.
-//! live_sync stays false. Not live Cursor / Grok Bot sync. Not a cron daemon.
+//! Emits `plugin.json` + `mcp.json` + `skills/*/SKILL.md` + `INSTALL.md`
+//! (Agent Plugins 1.0 floor that Cursor loads). Pack → group metadata,
+//! package → skill body that instructs calling the wired member MCP tool
+//! `complete` with the package prompt (mock/live notes as appropriate),
+//! routine schedule → commented cron/trigger notes. MCP `command` is the
+//! absolute `estate` binary resolved from `current_exe` at export time;
+//! args stay `pack mcp-serve` so member tools call `estate complete`
+//! against the source estate. Env writes `CELL_MCP_COMPLETE_TIMEOUT_SECS`
+//! so Cursor-spawned MCP inherits the same cap as CLI prove. Export
+//! refuses (`refuse:export-estate-bin`) when that binary cannot be
+//! resolved — no silent PATH name `estate`. live_sync stays false. Not
+//! live Cursor / Grok Bot sync. Not a cron daemon. When MCP is wired
+//! and skills are non-stub, labels say pack plugin / Agent Plugin
+//! export — not "pack plugin stub".
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{normalize_name, AgentPack, Estate, PackPackage, Routine};
@@ -19,7 +23,14 @@ use std::path::Path;
 
 pub(crate) const EXPORT_SCHEMA: &str = "cell-one.pack-plugin-export.v0";
 
-pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -> Result<()> {
+pub(crate) fn cmd_pack_export_plugin(
+    id: &str,
+    out: &Path,
+    estate_path: &Path,
+    complete_timeout_secs: Option<u64>,
+) -> Result<()> {
+    let timeout = crate::pack_mcp::resolve_complete_timeout(complete_timeout_secs, None)?;
+    let timeout_secs = timeout.as_secs();
     let estate_abs = estate_path_for_export(estate_path)?;
     let estate_bin = estate_bin_for_export()?;
     let estate = estate_schema::load_estate(Path::new(&estate_abs))
@@ -40,14 +51,32 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
     let orch = pack.orchestrator.as_deref().unwrap_or("-");
 
     write_plugin_json(out, pack, orch)?;
-    write_mcp_json(out, pack, orch, &estate_abs, &estate_bin)?;
+    write_mcp_json(out, pack, orch, &estate_abs, &estate_bin, timeout_secs)?;
     write_skills(out, pack, &packages, &routines)?;
-    write_readme(out, pack, orch, &packages, &routines, &estate_abs, &estate_bin)?;
-    write_mapping_sidecar(out, pack, orch, &packages, &routines, &estate_abs, &estate_bin)?;
+    write_readme(
+        out,
+        pack,
+        orch,
+        &packages,
+        &routines,
+        &estate_abs,
+        &estate_bin,
+    )?;
+    write_install_md(out, pack, orch)?;
+    write_mapping_sidecar(
+        out,
+        pack,
+        orch,
+        &packages,
+        &routines,
+        &estate_abs,
+        &estate_bin,
+        timeout_secs,
+    )?;
 
-    println!("pack plugin stub: {}", pack.id);
+    println!("pack plugin: {}", pack.id);
     println!("  out: {}", out.display());
-    println!("  format: agent-plugin (plugin.json + mcp.json + skills/)");
+    println!("  format: agent-plugin (plugin.json + mcp.json + skills/ + INSTALL.md)");
     println!("  members: {}", pack.members.join(", "));
     println!("  orchestrator: {orch}");
     if packages.is_empty() {
@@ -78,6 +107,7 @@ pub(crate) fn cmd_pack_export_plugin(id: &str, out: &Path, estate_path: &Path) -
         println!("  routines (commented): {}", notes.join(", "));
     }
     println!("  estate_bin: {estate_bin}");
+    println!("  complete_timeout_secs: {timeout_secs}");
     println!("  wired_mcp: yes");
     println!("  live_sync: no");
     Ok(())
@@ -166,7 +196,7 @@ fn write_plugin_json(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
         "name": pack.id,
         "version": "0.0.0",
         "description": format!(
-            "Estate pack {} exported as an Agent Plugin stub. Group members: {members}. Orchestrator: {orch}. Skill bodies call the wired member MCP tool complete with the package prompt. MCP tools call estate complete on the source estate. live_sync is false — not live Cursor or Grok Bot sync.",
+            "Estate pack {} exported as an Agent Plugin. Group members: {members}. Orchestrator: {orch}. Skill bodies call the wired member MCP tool complete with the package prompt. MCP tools call estate complete on the source estate. live_sync is false — not live Cursor or Grok Bot sync.",
             pack.id
         ),
         "author": { "name": "cell-one" },
@@ -181,11 +211,18 @@ fn write_mcp_json(
     orch: &str,
     estate_path: &str,
     estate_bin: &str,
+    complete_timeout_secs: u64,
 ) -> Result<()> {
     let mut servers = serde_json::Map::new();
     for member in &pack.members {
         let role = crate::pack_mcp::pack_role(Some(orch).filter(|s| *s != "-"), member);
-        let env = crate::pack_mcp::export_mcp_env(&pack.id, member, &role, estate_path);
+        let env = crate::pack_mcp::export_mcp_env(
+            &pack.id,
+            member,
+            &role,
+            estate_path,
+            complete_timeout_secs,
+        );
         servers.insert(
             member.clone(),
             json!({
@@ -357,9 +394,9 @@ fn write_readme(
     estate_bin: &str,
 ) -> Result<()> {
     let mut md = String::new();
-    md.push_str(&format!("# {} plugin stub\n\n", pack.id));
-    md.push_str("Agent Plugin scaffold from an estate pack. Cursor can load this\n");
-    md.push_str("layout (`plugin.json` + `mcp.json` + `skills/`).\n\n");
+    md.push_str(&format!("# {} pack plugin\n\n", pack.id));
+    md.push_str("Agent Plugin export from an estate pack. Cursor can load this\n");
+    md.push_str("layout (`plugin.json` + `mcp.json` + `skills/` + `INSTALL.md`).\n\n");
     md.push_str("**Bridge, not live Cursor / Grok Bot sync.** MCP servers run\n");
     md.push_str("`estate pack mcp-serve` so member tools call `estate complete`\n");
     md.push_str("against the source estate. Skill bodies instruct calling the\n");
@@ -373,7 +410,7 @@ fn write_readme(
     md.push_str(&format!("Estate file: `{estate_path}`\n"));
     md.push_str(&format!("Estate binary: `{estate_bin}`\n\n"));
     md.push_str("## Mapping\n\n");
-    md.push_str("| Estate | Plugin stub |\n");
+    md.push_str("| Estate | Agent Plugin |\n");
     md.push_str("| --- | --- |\n");
     md.push_str(&format!(
         "| pack `{}` (members {}, orchestrator {orch}) | `plugin.json` group metadata |\n",
@@ -410,7 +447,8 @@ fn write_readme(
     md.push_str("    estate complete --agent <member> --pack <pack-id> \\\n");
     md.push_str("      --estate $CELL_ESTATE_PATH --prompt <tool input>\n\n");
     md.push_str("Env carries `CELL_ESTATE_PACK`, `CELL_ESTATE_MEMBER`,\n");
-    md.push_str("`CELL_ESTATE_ROLE`, and `CELL_ESTATE_PATH`. Non-orchestrator\n");
+    md.push_str("`CELL_ESTATE_ROLE`, `CELL_ESTATE_PATH`, and\n");
+    md.push_str("`CELL_MCP_COMPLETE_TIMEOUT_SECS`. Non-orchestrator\n");
     md.push_str("members refuse `refuse:pack-orchestrator` the same as\n");
     md.push_str("`estate complete --pack`. Pass `mock: true` on the tool to\n");
     md.push_str("use in-process drivers. Not a live Cursor/Grok Bot install.\n\n");
@@ -439,7 +477,79 @@ fn write_readme(
     md.push_str("\n`estate routine tick` remains the local wake.\n");
     md.push_str("`estate routine watch` is the local operator loop (tick + digest).\n");
     md.push_str("This file does not install a Cursor or Grok Bot trigger.\n");
+    md.push_str("Human Cursor smoke steps: `INSTALL.md`.\n");
+    md.push_str("CLI gate before install: `estate pack plugin-prove`.\n");
     fs::write(out.join("README.md"), md)?;
+    Ok(())
+}
+
+/// Literal human install loop. Mock / Cursor smoke only.
+fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
+    let caller = skill_complete_member(pack);
+    let member = pack
+        .members
+        .iter()
+        .map(String::as_str)
+        .find(|m| *m != caller)
+        .unwrap_or("research");
+    let orch_name = if orch == "-" { caller } else { orch };
+    let md = format!(
+        "# INSTALL\n\
+         \n\
+         Human Cursor smoke for this Agent Plugin export. Mock only.\n\
+         Pack `{pack}`. Orchestrator `{orch}`.\n\
+         \n\
+         ## 1. Plugin folder\n\
+         \n\
+         This directory (the export root). It holds `plugin.json`, `mcp.json`,\n\
+         `skills/`, `INSTALL.md`, and `estate-pack.json`.\n\
+         \n\
+         ## 2. Point Cursor at it\n\
+         \n\
+         Cursor Settings → MCP / Agent Plugins → add this folder, or load the\n\
+         servers from `mcp.json`. Each `mcpServers` key is one pack member.\n\
+         `command` is the absolute `estate` binary baked at export. Do not\n\
+         replace it with bare `estate`. Do not require `estate` on PATH.\n\
+         \n\
+         ## 3. Call `complete` as {caller}\n\
+         \n\
+         On server `{caller}` (orchestrator), call tool `complete` with:\n\
+         \n\
+             {{ \"prompt\": \"ping\", \"mock\": true }}\n\
+         \n\
+         ## 4. Expected (mock)\n\
+         \n\
+         `isError` false. Text includes a decision receipt:\n\
+         \n\
+             decision receipt: …\n\
+             schema: cell-one.decision-receipt.v0\n\
+             surface: complete\n\
+             pack_id: {pack}\n\
+             handoff_from: {caller}\n\
+         \n\
+         Mock is ok. This is not a live generate.\n\
+         \n\
+         ## 5. Call as {member}\n\
+         \n\
+         On server `{member}`, same payload.\n\
+         \n\
+         Expected: `isError` true and `refuse:pack-orchestrator`.\n\
+         \n\
+         ## 6. READY_FOR_LIVE_TEST: no\n\
+         \n\
+         Mock / human Cursor smoke only. `live_sync: false`. Not live Grok Bot\n\
+         sync. Not a live PASS. No secrets in this file.\n\
+         \n\
+         CLI gate (same checks, no Cursor UI):\n\
+         \n\
+             estate pack plugin-prove --id {pack} --estate <estate.yaml> --out <this-dir>\n\
+         \n",
+        pack = pack.id,
+        orch = orch_name,
+        caller = caller,
+        member = member,
+    );
+    fs::write(out.join("INSTALL.md"), md)?;
     Ok(())
 }
 
@@ -451,6 +561,7 @@ fn write_mapping_sidecar(
     routines: &[&Routine],
     estate_path: &str,
     estate_bin: &str,
+    complete_timeout_secs: u64,
 ) -> Result<()> {
     let orch_val = if orch == "-" {
         Value::Null
@@ -502,7 +613,10 @@ fn write_mapping_sidecar(
             "args": ["pack", "mcp-serve"],
             "tool": "complete",
             "invokes": "estate complete --agent <member> --pack <pack-id>",
+            "complete_timeout_secs": complete_timeout_secs,
+            "complete_timeout_env": "CELL_MCP_COMPLETE_TIMEOUT_SECS",
         },
+        "install": "INSTALL.md",
     });
     write_pretty_json(&out.join("estate-pack.json"), &body)
 }
@@ -649,7 +763,10 @@ mod tests {
         let pkg = sample_pkg();
         let md = skill_markdown(&pack, &pkg, &[]);
         assert_eq!(skill_complete_member(&pack), "horizon");
-        assert!(md.contains("Call the wired pack member MCP tool `complete`"), "{md}");
+        assert!(
+            md.contains("Call the wired pack member MCP tool `complete`"),
+            "{md}"
+        );
         assert!(md.contains("estate pack mcp-serve"), "{md}");
         assert!(
             md.contains(r#"{ "prompt": "ping", "mock": true, "object": "ag_news" }"#),

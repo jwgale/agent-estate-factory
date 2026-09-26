@@ -479,7 +479,7 @@ pub(crate) enum Command {
         #[arg(long)]
         select: Option<String>,
     },
-    /// Estate agent packs: list / show / export-plugin / mcp-serve.
+    /// Estate agent packs: list / show / export-plugin / plugin-prove / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1023,12 +1023,14 @@ pub(crate) enum PackCommand {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
     },
-    /// Export a Cursor/Agent plugin stub from one estate pack.
-    /// Writes plugin.json + mcp.json + skills/ (Agent Plugins floor).
-    /// MCP `command` is the absolute estate binary resolved from
-    /// current_exe at export; args stay `pack mcp-serve` so member
-    /// tools call `estate complete` against the source estate. Refuses
-    /// if the estate path cannot be canonicalized (no relative
+    /// Export a Cursor/Agent Plugin from one estate pack.
+    /// Writes plugin.json + mcp.json + skills/ + INSTALL.md (Agent
+    /// Plugins floor). MCP `command` is the absolute estate binary
+    /// resolved from current_exe at export; args stay `pack mcp-serve`
+    /// so member tools call `estate complete` against the source estate.
+    /// Env writes CELL_MCP_COMPLETE_TIMEOUT_SECS so Cursor-spawned MCP
+    /// inherits the same cap as `estate pack plugin-prove`. Refuses if
+    /// the estate path cannot be canonicalized (no relative
     /// CELL_ESTATE_PATH) or if the estate binary cannot be resolved
     /// (no silent PATH name `estate`). Skill bodies instruct calling
     /// the wired member MCP tool `complete` with the package prompt
@@ -1042,6 +1044,36 @@ pub(crate) enum PackCommand {
         out: PathBuf,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
+        /// Wall-clock timeout written into exported mcp env
+        /// (CELL_MCP_COMPLETE_TIMEOUT_SECS). Default 120.
+        #[arg(long)]
+        complete_timeout_secs: Option<u64>,
+    },
+    /// Human gate before Cursor install: export a fixture pack, assert
+    /// baked absolute estate bin (not bare `estate`), mock-complete as
+    /// orchestrator (receipt) and as a member (refuse:pack-orchestrator).
+    /// Default pack research-crew on the handoff fixture. Prints a
+    /// compact prove report. Exit non-zero on any fail. live_sync stays
+    /// false. READY_FOR_LIVE_TEST: no. Not a live PASS.
+    PluginProve {
+        #[arg(long, default_value = "research-crew")]
+        id: String,
+        /// Export directory. Default: throwaway temp dir (kept so a
+        /// human can point Cursor at it after prove).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = "ping")]
+        prompt: String,
+        /// Same cap written into exported mcp env and used by mcp-serve.
+        /// Default 120. Env: CELL_MCP_COMPLETE_TIMEOUT_SECS.
+        #[arg(long)]
+        complete_timeout_secs: Option<u64>,
+        /// Prove an existing `--out` directory without exporting again.
+        /// Used to re-check a folder (and by tests that mutate mcp.json).
+        #[arg(long, default_value_t = false)]
+        check_only: bool,
     },
     /// Stdio MCP bridge: one pack member per process. Tool `complete`
     /// runs `estate complete --agent <member> --pack <pack-id>` against

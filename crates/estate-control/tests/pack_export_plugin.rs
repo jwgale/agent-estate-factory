@@ -1,10 +1,13 @@
-//! `estate pack export-plugin` — Agent Plugin stub from a pack.
+//! `estate pack export-plugin` — Agent Plugin export from a pack.
 //!
 //! Fixture: examples/fixtures/agent-pack-handoff.yaml.
 //! MCP is wired to `estate pack mcp-serve` → `estate complete`.
 //! `mcp.json` `command` is the absolute estate binary resolved at export.
-//! Skill bodies instruct calling tool `complete` with the package prompt
-//! (not stubs). live_sync stays false. Does not invent a live PASS.
+//! Env writes CELL_MCP_COMPLETE_TIMEOUT_SECS. INSTALL.md is the human
+//! Cursor smoke checklist. Skill bodies instruct calling tool `complete`
+//! with the package prompt (not stubs). When wired, labels say pack
+//! plugin / Agent Plugin export — not "pack plugin stub". live_sync
+//! stays false. Does not invent a live PASS.
 //! Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};
@@ -85,10 +88,9 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         &out_s,
     ]);
     assert!(ok, "stderr={stderr}\nstdout={stdout}");
-    assert!(
-        stdout.contains("pack plugin stub: research-crew"),
-        "{stdout}"
-    );
+    assert!(stdout.contains("pack plugin: research-crew"), "{stdout}");
+    assert!(!stdout.contains("pack plugin stub"), "{stdout}");
+    assert!(!stdout.contains("plugin stub"), "{stdout}");
     assert!(stdout.contains("orchestrator: horizon"), "{stdout}");
     assert!(stdout.contains("members: horizon, research"), "{stdout}");
     assert!(
@@ -98,6 +100,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(stdout.contains("standing-classify @hourly"), "{stdout}");
     assert!(stdout.contains("wired_mcp: yes"), "{stdout}");
     assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(stdout.contains("complete_timeout_secs: 120"), "{stdout}");
+    assert!(stdout.contains("INSTALL.md"), "{stdout}");
     assert!(
         stdout.contains(&format!("estate_bin: {expected_bin}")),
         "{stdout}"
@@ -115,6 +119,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(desc.contains("Orchestrator: horizon"), "{desc}");
     assert!(desc.contains("not live"), "{desc}");
     assert!(desc.contains("complete"), "{desc}");
+    assert!(desc.contains("Agent Plugin"), "{desc}");
+    assert!(!desc.contains("stub"), "{desc}");
 
     let mcp: serde_json::Value = serde_json::from_str(&read(&out.join("mcp.json"))).unwrap();
     let servers = mcp["mcpServers"].as_object().expect("mcpServers");
@@ -142,6 +148,14 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "research-crew"
     );
     assert_eq!(servers["horizon"]["env"]["CELL_ESTATE_MEMBER"], "horizon");
+    assert_eq!(
+        servers["horizon"]["env"]["CELL_MCP_COMPLETE_TIMEOUT_SECS"],
+        "120"
+    );
+    assert_eq!(
+        servers["research"]["env"]["CELL_MCP_COMPLETE_TIMEOUT_SECS"],
+        "120"
+    );
     assert_eq!(servers["research"]["env"]["CELL_ESTATE_ROLE"], "member");
     assert_eq!(servers["research"]["env"]["CELL_ESTATE_MEMBER"], "research");
     let estate_env = servers["horizon"]["env"]["CELL_ESTATE_PATH"]
@@ -219,6 +233,12 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["mcp"]["command"], expected_bin);
     assert_eq!(mapping["estate_bin"], expected_bin);
     assert_eq!(mapping["mcp"]["tool"], "complete");
+    assert_eq!(mapping["mcp"]["complete_timeout_secs"], 120);
+    assert_eq!(
+        mapping["mcp"]["complete_timeout_env"],
+        "CELL_MCP_COMPLETE_TIMEOUT_SECS"
+    );
+    assert_eq!(mapping["install"], "INSTALL.md");
     assert_eq!(mapping["packages"][0]["mcp_tool"], "complete");
     assert_eq!(mapping["packages"][0]["skill_stub"], false);
     assert_eq!(mapping["packages"][1]["mcp_tool"], "complete");
@@ -242,16 +262,27 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["routines"][0]["live_trigger"], false);
 
     let readme = read(&out.join("README.md"));
+    assert!(readme.contains("# research-crew pack plugin"), "{readme}");
+    assert!(!readme.contains("plugin stub"), "{readme}");
     assert!(
         readme.contains("not live Cursor / Grok Bot sync"),
         "{readme}"
     );
     assert!(readme.contains("estate pack mcp-serve"), "{readme}");
-    assert!(readme.contains("wired member MCP tool `complete`"), "{readme}");
+    assert!(
+        readme.contains("wired member MCP tool `complete`"),
+        "{readme}"
+    );
     assert!(readme.contains("They are not stubs."), "{readme}");
     assert!(readme.contains("wired_mcp: true"), "{readme}");
     assert!(readme.contains("live_sync: false"), "{readme}");
     assert!(readme.contains("CELL_ESTATE_PATH"), "{readme}");
+    assert!(
+        readme.contains("CELL_MCP_COMPLETE_TIMEOUT_SECS"),
+        "{readme}"
+    );
+    assert!(readme.contains("INSTALL.md"), "{readme}");
+    assert!(readme.contains("plugin-prove"), "{readme}");
     assert!(readme.contains("absolute estate binary"), "{readme}");
     assert!(readme.contains(&expected_bin), "{readme}");
     assert!(!readme.contains("must be on PATH"), "{readme}");
@@ -260,6 +291,26 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(readme.contains("standing-classify"), "{readme}");
     assert!(readme.contains("0 * * * *"), "{readme}");
     assert!(!readme.contains("live PASS"), "{readme}");
+
+    let install = read(&out.join("INSTALL.md"));
+    assert!(install.contains("# INSTALL"), "{install}");
+    assert!(install.contains("Plugin folder"), "{install}");
+    assert!(install.contains("mcp.json"), "{install}");
+    assert!(install.contains("complete"), "{install}");
+    assert!(install.contains("horizon"), "{install}");
+    assert!(install.contains("decision receipt"), "{install}");
+    assert!(
+        install.contains("cell-one.decision-receipt.v0"),
+        "{install}"
+    );
+    assert!(install.contains("research"), "{install}");
+    assert!(install.contains("refuse:pack-orchestrator"), "{install}");
+    assert!(install.contains("READY_FOR_LIVE_TEST: no"), "{install}");
+    assert!(install.contains("live_sync: false"), "{install}");
+    assert!(!install.contains("live PASS"), "{install}");
+    assert!(!install.contains("plugin stub"), "{install}");
+    assert!(!install.contains("pack plugin stub"), "{install}");
+    assert!(!install.contains("XAI_API_KEY"), "{install}");
 
     assert_locked_cksum();
 }
