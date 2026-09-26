@@ -511,12 +511,21 @@ pub(crate) fn read_message(input: &mut impl BufRead) -> Result<Option<Value>> {
 }
 
 /// Env keys written into exported `mcp.json` (and required by mcp-serve).
-pub(crate) fn export_mcp_env(pack_id: &str, member: &str, role: &str, estate_path: &str) -> Value {
+/// Includes `CELL_MCP_COMPLETE_TIMEOUT_SECS` so Cursor-spawned MCP
+/// inherits the same complete cap as CLI prove.
+pub(crate) fn export_mcp_env(
+    pack_id: &str,
+    member: &str,
+    role: &str,
+    estate_path: &str,
+    complete_timeout_secs: u64,
+) -> Value {
     json!({
         "CELL_ESTATE_PACK": pack_id,
         "CELL_ESTATE_MEMBER": member,
         "CELL_ESTATE_ROLE": role,
         "CELL_ESTATE_PATH": estate_path,
+        "CELL_MCP_COMPLETE_TIMEOUT_SECS": complete_timeout_secs.to_string(),
     })
 }
 
@@ -759,11 +768,21 @@ mod tests {
     }
 
     #[test]
-    fn export_mcp_env_carries_pack_member_role_path() {
-        let env = export_mcp_env("research-crew", "horizon", "orchestrator", "/tmp/e.yaml");
+    fn export_mcp_env_carries_pack_member_role_path_and_timeout() {
+        let env = export_mcp_env(
+            "research-crew",
+            "horizon",
+            "orchestrator",
+            "/tmp/e.yaml",
+            DEFAULT_COMPLETE_TIMEOUT_SECS,
+        );
         assert_eq!(env["CELL_ESTATE_PACK"], "research-crew");
         assert_eq!(env["CELL_ESTATE_MEMBER"], "horizon");
         assert_eq!(env["CELL_ESTATE_ROLE"], "orchestrator");
         assert_eq!(env["CELL_ESTATE_PATH"], "/tmp/e.yaml");
+        assert_eq!(
+            env[COMPLETE_TIMEOUT_ENV],
+            DEFAULT_COMPLETE_TIMEOUT_SECS.to_string()
+        );
     }
 }

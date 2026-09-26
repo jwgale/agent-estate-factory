@@ -265,9 +265,32 @@ pub(crate) fn run() -> Result<()> {
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
             PackCommand::Show { id, estate } => cmd_pack_show(&id, &estate),
-            PackCommand::ExportPlugin { id, out, estate } => {
-                crate::export_plugin::cmd_pack_export_plugin(&id, &out, &estate)
-            }
+            PackCommand::ExportPlugin {
+                id,
+                out,
+                estate,
+                complete_timeout_secs,
+            } => crate::export_plugin::cmd_pack_export_plugin(
+                &id,
+                &out,
+                &estate,
+                complete_timeout_secs,
+            ),
+            PackCommand::PluginProve {
+                id,
+                out,
+                estate,
+                prompt,
+                complete_timeout_secs,
+                check_only,
+            } => crate::plugin_prove::cmd_pack_plugin_prove(
+                &id,
+                out.as_deref(),
+                &estate,
+                &prompt,
+                complete_timeout_secs,
+                check_only,
+            ),
             PackCommand::McpServe {
                 estate,
                 pack,
