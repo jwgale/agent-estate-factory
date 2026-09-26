@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::{
     AuditCommand, ClassifyCommand, Cli, Command, ConveyCommand, DecisionsCommand, EnrichCommand,
-    FeedCommand, PackCommand, PacksCommand, PlanAction, PolicyCommand, SessionsCommand,
+    FeedCommand, PackCommand, PackageCommand, PacksCommand, PlanAction, PolicyCommand,
+    RoutineCommand, SessionsCommand,
 };
 use crate::ops::*;
 use crate::plan_apply::*;
@@ -239,12 +240,15 @@ pub(crate) fn run() -> Result<()> {
             endpoint,
             mock,
             pack,
+            package,
         } => cmd_complete(
             &agent,
             prompt,
             text,
             object.as_deref(),
             pack.as_deref(),
+            package.as_deref(),
+            None,
             &estate,
             &state_dir,
             feed_dir.as_deref(),
@@ -254,6 +258,56 @@ pub(crate) fn run() -> Result<()> {
         Command::Pack { command } => match command {
             PackCommand::List { estate } => cmd_pack_list(&estate),
             PackCommand::Show { id, estate } => cmd_pack_show(&id, &estate),
+        },
+        Command::Package { command } => match command {
+            PackageCommand::List { estate } => cmd_package_list(&estate),
+            PackageCommand::Show { id, estate } => cmd_package_show(&id, &estate),
+            PackageCommand::Run {
+                id,
+                agent,
+                prompt,
+                text,
+                estate,
+                state_dir,
+                feed_dir,
+                endpoint,
+                mock,
+            } => cmd_package_run(
+                &id,
+                agent.as_deref(),
+                prompt,
+                text,
+                &estate,
+                &state_dir,
+                feed_dir.as_deref(),
+                endpoint,
+                mock,
+            ),
+        },
+        Command::Routine { command } => match command {
+            RoutineCommand::List { estate } => cmd_routine_list(&estate),
+            RoutineCommand::Show { id, estate } => cmd_routine_show(&id, &estate),
+            RoutineCommand::Run {
+                id,
+                agent,
+                prompt,
+                text,
+                estate,
+                state_dir,
+                feed_dir,
+                endpoint,
+                mock,
+            } => cmd_routine_run(
+                &id,
+                agent.as_deref(),
+                prompt,
+                text,
+                &estate,
+                &state_dir,
+                feed_dir.as_deref(),
+                endpoint,
+                mock,
+            ),
         },
         Command::Decisions { command } => match command {
             DecisionsCommand::Export { state_dir, out } => {

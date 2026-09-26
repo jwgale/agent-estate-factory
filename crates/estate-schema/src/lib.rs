@@ -50,8 +50,8 @@ pub use types::{
     normalize_host_class, Agent, AgentPack, Effect,
     CallDecl, EnrichPack, EnrichPacks, Estate, Intention, IntentionKind, Lane, McpDecl,
     ModelBinding,
-    ModelClass, ModelUseDecl, MountDecl, ObjectRef, Placement, PlacementKind, SacredExclusion,
-    ToolDecl,
+    ModelClass, ModelUseDecl, MountDecl, ObjectRef, PackPackage, Placement, PlacementKind,
+    Routine, SacredExclusion, ToolDecl,
 };
 pub use validate::{contains_sku, is_slug, validate, ValidateOpts, SKU_NEEDLES};
 

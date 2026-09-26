@@ -212,6 +212,8 @@ fn locked_example_has_no_packs_and_hash_holds() {
     assert_locked_cksum();
     let estate = estate_schema::load_estate(&repo_root().join("examples/estate.yaml")).unwrap();
     assert!(estate.packs.is_empty());
+    assert!(estate.pack_packages.is_empty());
+    assert!(estate.routines.is_empty());
     assert_eq!(
         estate_schema::estate_hash(&estate),
         "sha256:dcd7164f04c83f514185e77d2d4f6c23cae6dbb27a9b5da96a28ba1f3c724930"

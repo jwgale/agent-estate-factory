@@ -96,6 +96,30 @@ estate decisions report --state-dir target/pack-handoff-cell --pack research-cre
 `surface=complete` receipt. `--mock` stays in-process. No live key. No
 group-chat runtime. Free mixed select without `--pack` stays out.
 
+## 3c. Pack packages + standing routines (fixture)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
+[`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml)
+(now also declares `pack_packages` + `routines`). Does not touch locked
+`examples/estate.yaml` (cksum `43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+
+```bash
+estate package list --estate examples/fixtures/agent-pack-handoff.yaml
+estate package show --id classify-ping --estate examples/fixtures/agent-pack-handoff.yaml
+estate package run --id classify-ping --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-packages-cell --mock
+estate routine list --estate examples/fixtures/agent-pack-handoff.yaml
+estate routine run --id standing-classify --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-routines-cell --mock
+estate decisions report --state-dir target/pack-routines-cell
+```
+
+`package run` defaults `--agent` to the pack orchestrator, runs
+`complete --pack`, and journals `package_id` (plus pack handoff fields).
+`routine run` resolves the declared package and also stamps `routine_id`.
+Authorize still uses existing model intentions. No Cursor plugin spin. No
+live Grok Bot routine sync. No multi-step DAG.
+
 ## 4. Enrich prepare (opt-in, not a train)
 
 Not part of `make smoke` or `make gate-90`.

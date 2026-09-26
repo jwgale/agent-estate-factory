@@ -463,12 +463,29 @@ pub(crate) enum Command {
         /// Free mixed select without `--pack` stays out of scope.
         #[arg(long)]
         pack: Option<String>,
+        /// Pack package id (skill). Requires `--pack` matching the package's
+        /// pack. Receipt stamps `package_id`. Prefer `estate package run`.
+        #[arg(long)]
+        package: Option<String>,
     },
     /// Estate agent packs: list / show group membership and orchestrator.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
         command: PackCommand,
+    },
+    /// Pack packages: named skills on a pack (Grok Bot skill analog).
+    /// `run` → `complete --pack` and stamps `package_id` on the receipt.
+    /// Security stays existing intentions. Not a Cursor plugin spin.
+    Package {
+        #[command(subcommand)]
+        command: PackageCommand,
+    },
+    /// Standing routines: declare + run a pack package (automation analog).
+    /// Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
+    Routine {
+        #[command(subcommand)]
+        command: RoutineCommand,
     },
     /// Decision journal written by `estate convey call`, `estate authorize`,
     /// and `estate complete`. `export` writes JSONL replay cases. `report`
@@ -991,6 +1008,84 @@ pub(crate) enum PackCommand {
         id: String,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum PackageCommand {
+    /// List pack packages (id, pack, binding).
+    List {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Show one pack package.
+    Show {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Run a pack package: complete --pack with package_id on the receipt.
+    /// `--agent` defaults to the pack orchestrator when set.
+    /// `--prompt` overrides the package prompt. Security stays intentions.
+    Run {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Alias for `--prompt`.
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum RoutineCommand {
+    /// List standing routines (id, package).
+    List {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Show one standing routine.
+    Show {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Run a standing routine: resolve package → complete --pack.
+    /// Receipt stamps `routine_id` and `package_id`. Minimal bridge only.
+    Run {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
     },
 }
 

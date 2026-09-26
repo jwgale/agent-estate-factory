@@ -338,6 +338,78 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         }
     }
 
+    // Pack packages (skills on a pack). Security stays existing intentions.
+    {
+        let mut seen_pkg_ids: HashSet<String> = HashSet::new();
+        for pkg in &estate.pack_packages {
+            check_slug("pack_packages.id", &pkg.id, &mut errors);
+            reject_sku("pack_packages.id", &pkg.id, &mut errors);
+            let pid = normalize_name(&pkg.id);
+            if !seen_pkg_ids.insert(pid) {
+                errors.push(format!("duplicate pack_packages.id '{}'", pkg.id));
+            }
+            check_slug(&format!("pack_packages '{}'.pack", pkg.id), &pkg.pack, &mut errors);
+            reject_sku(&format!("pack_packages '{}'.pack", pkg.id), &pkg.pack, &mut errors);
+            if estate.pack(&pkg.pack).is_none() {
+                errors.push(format!(
+                    "pack_packages '{}' pack '{}' is not an estate pack",
+                    pkg.id, pkg.pack
+                ));
+            }
+            if let Some(binding) = &pkg.binding {
+                check_slug(
+                    &format!("pack_packages '{}'.binding", pkg.id),
+                    binding,
+                    &mut errors,
+                );
+                reject_sku(
+                    &format!("pack_packages '{}'.binding", pkg.id),
+                    binding,
+                    &mut errors,
+                );
+                if estate
+                    .model_bindings
+                    .iter()
+                    .all(|b| normalize_name(&b.id) != normalize_name(binding))
+                {
+                    errors.push(format!(
+                        "pack_packages '{}' binding '{}' is not a model_binding",
+                        pkg.id, binding
+                    ));
+                }
+            }
+        }
+    }
+
+    // Standing routines (declare + run a pack package). Minimal bridge.
+    {
+        let mut seen_routine_ids: HashSet<String> = HashSet::new();
+        for routine in &estate.routines {
+            check_slug("routines.id", &routine.id, &mut errors);
+            reject_sku("routines.id", &routine.id, &mut errors);
+            let rid = normalize_name(&routine.id);
+            if !seen_routine_ids.insert(rid) {
+                errors.push(format!("duplicate routines.id '{}'", routine.id));
+            }
+            check_slug(
+                &format!("routines '{}'.package", routine.id),
+                &routine.package,
+                &mut errors,
+            );
+            reject_sku(
+                &format!("routines '{}'.package", routine.id),
+                &routine.package,
+                &mut errors,
+            );
+            if estate.pack_package(&routine.package).is_none() {
+                errors.push(format!(
+                    "routines '{}' package '{}' is not a pack_package",
+                    routine.id, routine.package
+                ));
+            }
+        }
+    }
+
     if opts.cell_one {
         if estate.agents.len() < 3 {
             errors.push(format!(
@@ -597,6 +669,55 @@ mod tests {
         );
 
         estate.packs[0].orchestrator = Some("research".into());
+        validate(&estate).unwrap();
+    }
+
+    #[test]
+    fn pack_packages_require_known_pack_and_binding() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate.packs.push(crate::types::AgentPack {
+            id: "research-crew".into(),
+            members: vec!["research".into(), "horizon".into()],
+            orchestrator: Some("horizon".into()),
+        });
+        estate.pack_packages.push(crate::types::PackPackage {
+            id: "classify-ping".into(),
+            pack: "ghost-pack".into(),
+            prompt: Some("ping".into()),
+            binding: None,
+            note: None,
+        });
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("pack") && e.contains("ghost-pack")),
+            "{err:?}"
+        );
+
+        estate.pack_packages[0].pack = "research-crew".into();
+        estate.pack_packages[0].binding = Some("nope-binding".into());
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter()
+                .any(|e| e.contains("binding") && e.contains("nope-binding")),
+            "{err:?}"
+        );
+
+        estate.pack_packages[0].binding = Some("local_slm".into());
+        validate(&estate).unwrap();
+
+        estate.routines.push(crate::types::Routine {
+            id: "standing-classify".into(),
+            package: "missing-pkg".into(),
+            note: None,
+        });
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter()
+                .any(|e| e.contains("package") && e.contains("missing-pkg")),
+            "{err:?}"
+        );
+
+        estate.routines[0].package = "classify-ping".into();
         validate(&estate).unwrap();
     }
 

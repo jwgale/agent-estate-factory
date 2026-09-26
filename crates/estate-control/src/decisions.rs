@@ -57,6 +57,12 @@ pub(crate) struct DecisionReceipt {
     /// Member agent that received the handoff and completed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff_to: Option<String>,
+    /// Pack package id when `estate package run` (or complete --package) stamps a skill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<String>,
+    /// Standing routine id when `estate routine run` stamps an automation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine_id: Option<String>,
     pub stage: String,
     pub candidates: Vec<CandidateSummary>,
     pub result: String,
@@ -333,6 +339,8 @@ pub(crate) struct PackHandoff {
     pub pack_id: String,
     pub handoff_from: String,
     pub handoff_to: String,
+    pub package_id: Option<String>,
+    pub routine_id: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -429,6 +437,14 @@ fn record_receipt(
         material.push_str(&pack.handoff_from);
         material.push('\n');
         material.push_str(&pack.handoff_to);
+        if let Some(pkg) = &pack.package_id {
+            material.push('\n');
+            material.push_str(pkg);
+        }
+        if let Some(rid) = &pack.routine_id {
+            material.push('\n');
+            material.push_str(rid);
+        }
     }
     let receipt = DecisionReceipt {
         schema: RECEIPT_SCHEMA.into(),
@@ -441,6 +457,8 @@ fn record_receipt(
         pack_id: pack.map(|p| p.pack_id.clone()),
         handoff_from: pack.map(|p| p.handoff_from.clone()),
         handoff_to: pack.map(|p| p.handoff_to.clone()),
+        package_id: pack.and_then(|p| p.package_id.clone()),
+        routine_id: pack.and_then(|p| p.routine_id.clone()),
         stage,
         candidates,
         result,
@@ -578,8 +596,16 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
                 (Some(frm), Some(to)) => format!(" handoff={frm}->{to}"),
                 _ => String::new(),
             };
+            let package = match &receipt.package_id {
+                Some(id) => format!(" package={id}"),
+                None => String::new(),
+            };
+            let routine = match &receipt.routine_id {
+                Some(id) => format!(" routine={id}"),
+                None => String::new(),
+            };
             out.push_str(&format!(
-                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff} result={result} outcome={outcome}\n",
+                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff}{package}{routine} result={result} outcome={outcome}\n",
                 id = receipt.id,
                 cap = receipt.capability,
                 result = receipt.result,
@@ -717,7 +743,65 @@ pub(crate) fn resolve_pack_handoff(
         pack_id: pack.id.clone(),
         handoff_from: agent.to_string(),
         handoff_to,
+        package_id: None,
+        routine_id: None,
     })
+}
+
+/// Resolve a pack package (skill) and attach it to a pack handoff.
+/// `--agent` defaults to the pack orchestrator when set; otherwise required.
+/// Prompt comes from the package unless the caller overrides later.
+pub(crate) fn resolve_package_handoff(
+    estate: &Estate,
+    package_id: &str,
+    agent: Option<&str>,
+    hint: Option<&SelectHint>,
+) -> Result<(PackHandoff, String, Option<String>, Option<String>), String> {
+    let pkg = estate.pack_package(package_id).ok_or_else(|| {
+        format!("refuse:unknown-package: package '{package_id}' not on estate")
+    })?;
+    let pack = estate.pack(&pkg.pack).ok_or_else(|| {
+        format!(
+            "refuse:unknown-pack: pack '{}' for package '{}' not on estate",
+            pkg.pack, pkg.id
+        )
+    })?;
+    let agent = match agent {
+        Some(a) => a.to_string(),
+        None => pack
+            .orchestrator
+            .clone()
+            .ok_or_else(|| {
+                format!(
+                    "refuse:package-agent: package '{}' pack '{}' has no orchestrator; set --agent",
+                    pkg.id, pack.id
+                )
+            })?,
+    };
+    let mut handoff = resolve_pack_handoff(estate, &pack.id, &agent, hint)?;
+    handoff.package_id = Some(pkg.id.clone());
+    Ok((
+        handoff,
+        agent,
+        pkg.prompt.clone(),
+        pkg.binding.clone(),
+    ))
+}
+
+/// Resolve a standing routine → pack package handoff.
+pub(crate) fn resolve_routine_handoff(
+    estate: &Estate,
+    routine_id: &str,
+    agent: Option<&str>,
+    hint: Option<&SelectHint>,
+) -> Result<(PackHandoff, String, Option<String>, Option<String>), String> {
+    let routine = estate.routine(routine_id).ok_or_else(|| {
+        format!("refuse:unknown-routine: routine '{routine_id}' not on estate")
+    })?;
+    let (mut handoff, agent, prompt, binding) =
+        resolve_package_handoff(estate, &routine.package, agent, hint)?;
+    handoff.routine_id = Some(routine.id.clone());
+    Ok((handoff, agent, prompt, binding))
 }
 
 

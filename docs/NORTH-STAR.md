@@ -68,19 +68,21 @@ Cell One aims at Grok Bot–class multi-agent utility on the same middle layer: 
 |--------|----------------------------------|----------------------|
 | **Agent groups / segmentation** | Estate `packs:` (id, members, optional orchestrator); `estate pack list` / `estate pack show`; members are agent ids beside purpose seats | Full group-chat runtime like Grok Bot group chats |
 | **Master orchestrator + subagent pack** | `estate complete --pack <id>`: orchestrator hands off to one member under pack policy; receipt fields `pack_id`, `handoff_from`, `handoff_to`; `decisions report --pack` filters | Free mixed select without a pack; multi-seat one-turn select across mixed local+frontier |
-| **Spin off packages + routines** | Enrich packs, classify journeys, purpose seats (`specialist-{slug}-{size}`), least-privilege intentions | Reusable skills/routines as first-class package objects with baked-in security |
+| **Spin off packages + routines** | Estate `pack_packages:` (skill on a pack) + `routines:` (declare + run a package); `estate package list/show/run` and `estate routine list/show/run`; run → `complete --pack` with `package_id` / `routine_id` on the receipt; security stays existing intentions | Cursor plugin spin; live Grok Bot routine sync; multi-step DAGs |
 | **Work with or train SLMs** | Train/enrich/seat path; `--seat-model` aligns enrich tag ↔ live Ollama name; opt-in category `completion_label` for letter-trained seats | Broader purpose codecs, auto seat-select across mixed local+frontier in one agent turn |
 
 Agents share equal-class seats: frontier and one or more purpose-built local SLMs stay the same class. The control plane does not invent completions. Security stays intentions + authorize/complete receipts + fail-closed endpoints.
 
 **Packs ↔ groups / orchestrator / purpose seats.** An estate `packs:` row names a group (`id`, `members`, optional `orchestrator`). That is segmentation, not a chat room. `estate complete --pack` is the orchestrator path: `--agent` must be the pack orchestrator (or a member when no orchestrator is set); the host selects one other member under pack policy, then completes as that member through the usual host → select → receipt loop on their purpose seat. Receipts record `pack_id`, `handoff_from`, and `handoff_to`. Fixture: [`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml). Walk: [`OPERATOR-DAY.md`](OPERATOR-DAY.md) (agent pack handoff). Distinct from enrich packs (`enrich_packs` / `estate packs`).
 
+**Packages ↔ skills / routines ↔ automations.** An estate `pack_packages:` row names a skill on a pack (`id`, `pack`, optional `prompt` / `binding`). `estate package run` hands off via `complete --pack` and stamps `package_id` on the receipt. An estate `routines:` row declares + runs one package (`id`, `package`); `estate routine run` stamps `routine_id` and `package_id`. Security stays existing intentions — packages are not a new grant. Anatomy: pack≈group, package≈skill, routine≈automation, orchestrator handoff≈specialist wake with receipt. Not a Grok Bot runtime clone. Walk: [`OPERATOR-DAY.md`](OPERATOR-DAY.md) (pack packages + standing routines). Out of this tip: Cursor plugin spin, live Grok Bot routine sync, multi-step DAGs.
+
 ### Still not claimed
 
 - A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
 - Keel UI, ACP workspace clone, or a full group-chat runtime
 - Free mixed select without `--pack`; multi-seat one-turn select across mixed seats outside a pack
-- Package spin-off, routine mint, or think-fold labels
+- Cursor plugin spin, live Grok Bot routine sync, multi-step DAGs, or think-fold labels
 - Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
 - A dual rust_idiom launch
 - `estate convey` as more than a lease-bound hop stub
