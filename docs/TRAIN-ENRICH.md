@@ -70,6 +70,8 @@ The built-in fixture is 29 train rows and 7 held-out rows. That is too small for
 
 `estate classify journey --dataset ag_news` imports that set and feeds `classify prepare` with no second split. Changing `--train-size`, `--heldout-size`, or `--seed` redoes prepare, train, and eval. It does not redo fetch-base. The default tag and the default `--out` gain a suffix such as `-agnews-3000`, so 3,000 / 10,000 / 30,000 / all can sit side by side. Eval prints a progress line about every 500 records and writes the report as it goes. The report adds per-class accuracy and a 95% Wilson interval. The comparison adds Wilson intervals for each accuracy and a Newcombe interval for the specialist-minus-base delta. `live_pass_recorded` stays false. This path is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
 
+`make ag-news-journey` is that print by default: `--dataset ag_news`, `--train-size` 3000, `--heldout-size` all, `--seed` 42. `AG_NEWS_RUN=1` passes `--run`. After compare the command prints `estate enrich import-trained` (`trained_shape` gguf, `auto_apply=false`, `binding_id` stays `local_slm`) and Standing next (estate): `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile`. The proposal is one specialty local seat for function `ag_news`. Equal-class frontier and local stays. Frontier bindings stay peers. Other local specialty bindings stay beside it. The command does not execute those entrypoints. It does not promote. It does not apply the estate. It does not invent a live PASS. It is not in `make smoke`, `make gate-90`, or GitHub Actions. `READY_FOR_LIVE_TEST`: no.
+
 Scoring 7,600 records is about 15–20 minutes per model at about 130 ms per record. Train time grows with the train size. A 5090-class host can run the sizes below one after another. `--print` does not download.
 
 Keep the Hub snapshot on the NAS and point import at it. `hf download` writes the snapshot on local disk first. Copy that directory to the NAS. A GNOME gvfs SMB mount (`/run/user/.../gvfs/smb-share:...`) has no flock or fchmod, so `hf download --local-dir` onto it fails with `OSError: [Errno 95] Operation not supported`. A CIFS mount can take the download directly. `--from-local` only reads the snapshot: no lock file, no chmod, no `.cache` write, and no temp file in that directory. The bulk download always uses `.cell/classify-import/<alias>/hf-dataset/`. The native lock is only under `.cell/classify-import/<alias>/native/`. pyarrow reads the parquet. `ESTATE_PYTHON` or `--python` selects the LLaMA-Factory interpreter when `python3` on PATH has no pyarrow. `HF_TOKEN` is optional and is sent only for `--fetch rows-api`.
@@ -85,6 +87,8 @@ estate classify import --dataset ag_news --fetch rows-api --train-size all --hel
 ```
 
 ```bash
+make ag-news-journey
+AG_NEWS_RUN=1 make ag-news-journey
 export LLAMA_CPP_DIR=/path/to/llama.cpp
 estate classify import --dataset ag_news --train-size 3000 --heldout-size all --seed 42
 estate classify journey --dataset ag_news --train-size 3000 --heldout-size all --seed 42 --print --llama-cpp-dir "$LLAMA_CPP_DIR"

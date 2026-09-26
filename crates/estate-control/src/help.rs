@@ -1299,6 +1299,11 @@ estate and does not promote.
 estate classify journey prints that same import-trained line after
 compare when the specialist GGUF is the seated file
 (specialist.<quant>.gguf, or specialist.f16.gguf when --quant is f16).
+The recorded proposal is binding_id local_slm, class local, for that
+function. Equal-class frontier and local stays. Other local specialty
+bindings stay beside it. make ag-news-journey prints this coda for
+--dataset ag_news at train-size 3000. It stays off make smoke, make
+gate-90, and GitHub Actions.
 --print prints the line as a planned step and does not write a proposal.
 --import-trained on --run records trained_shape gguf with auto_apply=false
 when --estate, --prepared, and --enrich-tag are set and that GGUF is a

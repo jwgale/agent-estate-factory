@@ -119,6 +119,28 @@ fn assert_standing_next(stdout: &str) {
     assert!(coda.contains("auto_apply=false"), "{coda}");
     assert!(coda.contains("trained_shape gguf"), "{coda}");
     assert!(coda.contains("No promote. No auto-promote."), "{coda}");
+    assert!(
+        coda.contains("Specialty seat: local_slm, class local, function "),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("binding_id stays local_slm. trained_shape gguf. auto_apply=false."),
+        "{coda}"
+    );
+    assert!(
+        coda.contains(
+            "Equal-class frontier and local. This local seat is a first-class peer of frontier."
+        ),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("Other local specialty bindings stay beside this one."),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("This function is one specialty local seat among those peers."),
+        "{coda}"
+    );
     assert!(coda.contains("READY_FOR_LIVE_TEST: no"), "{coda}");
     assert!(!coda.contains("READY_FOR_LIVE_TEST: yes"), "{coda}");
     assert!(!coda.contains("enforced"), "{coda}");
@@ -2213,12 +2235,98 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
         "{printed_out}"
     );
     assert!(!printed_out.contains("live PASS recorded"), "{printed_out}");
+    assert_standing_next(&printed_out);
+    assert!(
+        printed_out.contains("Specialty seat: local_slm, class local, function ag_news."),
+        "{printed_out}"
+    );
+    let specialist = journey.join("specialist.Q4_K_M.gguf");
+    let handoff = format!(
+        "estate enrich import-trained --estate <estate.yaml> --prepared <prepared> --tag cell-enrich-<pack-id> --adapter {}",
+        specialist.display()
+    );
+    assert!(printed_out.contains(&handoff), "{printed_out}");
+    assert!(
+        printed_out.contains("import-trained handoff (planned):"),
+        "{printed_out}"
+    );
+    assert!(
+        !printed_out.contains("binding-proposal.json"),
+        "{printed_out}"
+    );
     assert!(
         !journey.exists(),
         "print must not write {}",
         journey.display()
     );
+    assert_estate_hash_locked();
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn ag_news_journey_make_target_prints_the_handoff() {
+    let root = repo_root();
+    let makefile = fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(makefile.contains("ag-news-journey:"));
+    assert!(makefile.contains("bash scripts/ag-news-journey.sh"));
+    assert!(makefile.contains("AG_NEWS_RUN=1"));
+    assert!(makefile.contains("train-size 3000"));
+    let smoke = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("smoke:"))
+        .take_while(|line| !line.is_empty() && !line.starts_with("live-specialist:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!smoke.contains("ag-news-journey"), "{smoke}");
+    let gate = makefile
+        .lines()
+        .skip_while(|line| !line.starts_with("gate-90:"))
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!gate.contains("ag-news-journey"), "{gate}");
+    let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
+    assert!(!ci.contains("ag-news-journey"), "{ci}");
+    let script = fs::read_to_string(root.join("scripts/ag-news-journey.sh")).unwrap();
+    assert!(script.contains("--dataset ag_news"));
+    assert!(script.contains("TRAIN_SIZE:-3000"));
+    assert!(script.contains("AG_NEWS_RUN"));
+    assert!(script.contains("SKIP live train (print)"));
+    assert!(script.contains("READY_FOR_LIVE_TEST: no"));
+    assert!(script.contains("43770130") || script.contains("cksum \"$ESTATE\""));
+    let out = scratch("ag-news-make");
+    let printed = Command::new("bash")
+        .arg(root.join("scripts/ag-news-journey.sh"))
+        .env("ESTATE_BIN", env!("CARGO_BIN_EXE_estate"))
+        .env("OUT", out.to_str().unwrap())
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("SKIP live train (print)"), "{stdout}");
+    assert!(
+        stdout.contains("dataset: ag_news train_size: 3000 heldout_size: all seed: 42"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("tev1-specialist-agnews-3000"), "{stdout}");
+    assert_standing_next(&stdout);
+    assert!(
+        stdout.contains("Specialty seat: local_slm, class local, function ag_news."),
+        "{stdout}"
+    );
+    let specialist = out.join("specialist.Q4_K_M.gguf");
+    assert!(
+        stdout.contains(&format!("--adapter {}", specialist.display())),
+        "{stdout}"
+    );
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert!(!out.join("binding-proposal.json").exists());
+    assert!(!specialist.exists());
+    assert_estate_hash_locked();
+    let _ = fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -2958,6 +3066,14 @@ fn print_import_trained_does_not_invent_a_proposal() {
         "{enrich_text}"
     );
     assert!(
+        enrich_text.contains("binding_id local_slm, class local"),
+        "{enrich_text}"
+    );
+    assert!(
+        enrich_text.contains("make ag-news-journey"),
+        "{enrich_text}"
+    );
+    assert!(
         !enrich_text.contains("READY_FOR_LIVE_TEST: yes"),
         "{enrich_text}"
     );
@@ -2971,6 +3087,11 @@ fn print_import_trained_does_not_invent_a_proposal() {
         "{head}"
     );
     assert!(head.contains("`READY_FOR_LIVE_TEST`: no"), "{head}");
+    assert!(head.contains("make ag-news-journey"), "{head}");
+    assert!(
+        head.contains("Other local specialty bindings stay beside it."),
+        "{head}"
+    );
     assert!(!head.contains("READY_FOR_LIVE_TEST: yes"), "{head}");
     let train = fs::read_to_string(repo_root().join("docs/TRAIN-ENRICH.md")).unwrap();
     assert!(train.contains("After compare, the same command prints `estate enrich import-trained`"));

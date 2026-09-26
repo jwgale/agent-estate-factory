@@ -2505,6 +2505,8 @@ struct HandoffDisplay {
     tag: String,
     adapter_path: PathBuf,
     line: String,
+    /// Dataset alias when `--dataset` is set. Otherwise the specialist tag.
+    function: String,
 }
 
 fn import_trained_args_ready(req: &JourneyRequest<'_>) -> bool {
@@ -2563,6 +2565,20 @@ fn display_token(text: &str, placeholder: bool) -> String {
     }
 }
 
+fn specialty_function(req: &JourneyRequest<'_>) -> String {
+    if let Some(name) = req
+        .import_dataset
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        if let Ok(preset) = crate::classify_import::preset_by_name(name) {
+            return preset.alias.to_string();
+        }
+        return name.to_string();
+    }
+    req.tag.to_string()
+}
+
 fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDisplay {
     let adapter_path = paths.seated_gguf("specialist", req.quant);
     let (estate_raw, estate_placeholder) = match req.estate {
@@ -2591,6 +2607,7 @@ fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDis
         tag,
         adapter_path,
         line,
+        function: specialty_function(req),
     }
 }
 
@@ -2606,6 +2623,14 @@ fn print_standing_next(display: &HandoffDisplay) {
     println!(
         "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan."
     );
+    println!(
+        "Specialty seat: local_slm, class local, function {}.",
+        display.function
+    );
+    println!("binding_id stays local_slm. trained_shape gguf. auto_apply=false.");
+    println!("Equal-class frontier and local. This local seat is a first-class peer of frontier.");
+    println!("Other local specialty bindings stay beside this one.");
+    println!("This function is one specialty local seat among those peers.");
     println!("Existing entrypoints (print only; this command does not execute them):");
     println!(
         "estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir .cell",
