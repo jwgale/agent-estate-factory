@@ -456,11 +456,25 @@ pub(crate) enum Command {
         /// In-process MockLocal / MockFrontier. Not a live generate.
         #[arg(long, default_value_t = false)]
         mock: bool,
+        /// Agent pack id. Orchestrator path: `--agent` must be the pack
+        /// orchestrator (or a member when no orchestrator is set). Selects a
+        /// member under pack policy, then completes as that member. Receipt
+        /// records `pack_id`, `handoff_from`, and `handoff_to`. Not enrich packs.
+        /// Free mixed select without `--pack` stays out of scope.
+        #[arg(long)]
+        pack: Option<String>,
+    },
+    /// Estate agent packs: list / show group membership and orchestrator.
+    /// Distinct from enrich/feed packs (`estate packs`).
+    Pack {
+        #[command(subcommand)]
+        command: PackCommand,
     },
     /// Decision journal written by `estate convey call`, `estate authorize`,
     /// and `estate complete`. `export` writes JSONL replay cases. `report`
-    /// counts stage, validation, and fallback. Selectors do not grant
-    /// permission. No promote. No auto-apply.
+    /// counts stage, validation, and fallback. Optional `--pack` filters
+    /// receipts by `pack_id`. Selectors do not grant permission. No promote.
+    /// No auto-apply.
     Decisions {
         #[command(subcommand)]
         command: DecisionsCommand,
@@ -608,9 +622,12 @@ pub(crate) enum DecisionsCommand {
         out: PathBuf,
     },
     /// Print counts by stage, validation, and fallback.
+    /// Optional `--pack` keeps rows whose receipt `pack_id` matches.
     Report {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+        #[arg(long)]
+        pack: Option<String>,
     },
 }
 
@@ -958,6 +975,22 @@ pub(crate) enum SessionsCommand {
         state_dir: PathBuf,
         #[arg(long, default_value_t = 20)]
         n: usize,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum PackCommand {
+    /// List estate agent packs (id, members, orchestrator).
+    List {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+    },
+    /// Show one estate agent pack.
+    Show {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
     },
 }
 

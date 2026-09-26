@@ -751,11 +751,47 @@ pub(crate) fn cmd_authorize(
 /// The selector does not grant. Authorize decides allow or deny. Complete
 /// runs on the data plane for the chosen binding. Missing key or endpoint
 /// fail-closes. No honesty stack. No hop lease.
+pub(crate) fn cmd_pack_list(estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    if estate.packs.is_empty() {
+        println!("no agent packs on {}", estate_path.display());
+        return Ok(());
+    }
+    println!("agent packs ({})", estate.packs.len());
+    for pack in &estate.packs {
+        let orch = pack.orchestrator.as_deref().unwrap_or("-");
+        let members = pack.members.join(",");
+        println!(
+            "  {} members=[{members}] orchestrator={orch}",
+            pack.id
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_pack_show(id: &str, estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let pack = estate.pack(id).ok_or_else(|| {
+        anyhow::anyhow!("refuse:unknown-pack: pack '{id}' not on estate")
+    })?;
+    let orch = pack.orchestrator.as_deref().unwrap_or("-");
+    println!("pack {}", pack.id);
+    println!("  orchestrator: {orch}");
+    println!("  members:");
+    for member in &pack.members {
+        println!("    - {member}");
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_complete(
     agent: &str,
     prompt: Option<String>,
     text: Option<String>,
     object: Option<&str>,
+    pack: Option<&str>,
     estate_path: &Path,
     state_dir: &Path,
     feed_dir: Option<&Path>,
@@ -768,7 +804,44 @@ pub(crate) fn cmd_complete(
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let hint = crate::decisions::load_select_hint(state_dir)?;
-    let selection = crate::decisions::resolve_selection(&estate, Some(agent), hint.as_ref(), false);
+    let pack_handoff = match pack {
+        Some(pack_id) => {
+            Some(crate::decisions::resolve_pack_handoff(
+                &estate,
+                pack_id,
+                agent,
+                hint.as_ref(),
+            ).map_err(|e| anyhow::anyhow!("{e}"))?)
+        }
+        None => None,
+    };
+    let complete_agent = pack_handoff
+        .as_ref()
+        .map(|h| h.handoff_to.as_str())
+        .unwrap_or(agent);
+    // When a pack handoff consumed a member id from the select hint, do not
+    // reuse that member id as a binding select (it would look ineligible).
+    let binding_hint = match (&pack_handoff, &hint, pack) {
+        (Some(_), Some(h), Some(pack_id)) => {
+            let sel = h.select.as_deref().unwrap_or("");
+            let is_member = estate
+                .pack(pack_id)
+                .map(|p| {
+                    p.members.iter().any(|m| {
+                        estate_schema::normalize_name(m) == estate_schema::normalize_name(sel)
+                    })
+                })
+                .unwrap_or(false);
+            if is_member {
+                None
+            } else {
+                hint.as_ref()
+            }
+        }
+        _ => hint.as_ref(),
+    };
+    let selection =
+        crate::decisions::resolve_selection(&estate, Some(complete_agent), binding_hint, false);
     let object = match object {
         Some(id) => id.to_string(),
         None if selection.result != "abstain" && selection.validation == "ok" => {
@@ -785,13 +858,14 @@ pub(crate) fn cmd_complete(
             } else {
                 selection.result.as_str()
             };
-            match crate::decisions::record_complete_receipt(
+            match crate::decisions::record_complete_receipt_pack(
                 &estate,
                 state_dir,
                 capability,
-                agent,
-                hint.as_ref(),
+                complete_agent,
+                binding_hint,
                 &outcome,
+                pack_handoff.as_ref(),
             ) {
                 Ok(_) => {}
                 Err(err) => {
@@ -805,20 +879,21 @@ pub(crate) fn cmd_complete(
     };
     let decision = conveyor_proxy::check(
         &estate,
-        agent,
+        complete_agent,
         IntentionKind::Model,
         &object,
         feed_dir,
     )?;
     if !decision.is_allow() {
         let outcome = format!("refuse:{}", estate_schema::coverage_word(&decision));
-        match crate::decisions::record_complete_receipt(
+        match crate::decisions::record_complete_receipt_pack(
             &estate,
             state_dir,
             &object,
-            agent,
-            hint.as_ref(),
+            complete_agent,
+            binding_hint,
             &outcome,
+            pack_handoff.as_ref(),
         ) {
             Ok(_) => {}
             Err(err) => {
@@ -832,20 +907,21 @@ pub(crate) fn cmd_complete(
     match model_estate::complete_via_binding(
         &estate,
         &object,
-        agent,
+        complete_agent,
         &payload,
         endpoint.as_deref(),
         mock,
     ) {
         Err(err) => {
             let outcome = crate::decisions::complete_driver_outcome(&err);
-            match crate::decisions::record_complete_receipt(
+            match crate::decisions::record_complete_receipt_pack(
                 &estate,
                 state_dir,
                 &object,
-                agent,
-                hint.as_ref(),
+                complete_agent,
+                binding_hint,
                 &outcome,
+                pack_handoff.as_ref(),
             ) {
                 Ok(_) => {}
                 Err(journal_err) => {
@@ -862,13 +938,14 @@ pub(crate) fn cmd_complete(
             } else {
                 "refuse:denied".to_string()
             };
-            match crate::decisions::record_complete_receipt(
+            match crate::decisions::record_complete_receipt_pack(
                 &estate,
                 state_dir,
                 &object,
-                agent,
-                hint.as_ref(),
+                complete_agent,
+                binding_hint,
                 &outcome,
+                pack_handoff.as_ref(),
             ) {
                 Ok(receipt) => {
                     if result.allow {
@@ -887,6 +964,7 @@ pub(crate) fn cmd_complete(
         }
     }
 }
+
 
 /// Structural refuses that already stop the call before a decision.
 /// Placement-actual SKU, mesh parse, and `refuse:agent-unplaced` write no receipt.

@@ -294,6 +294,50 @@ pub fn validate_with(estate: &Estate, opts: ValidateOpts) -> Result<(), Vec<Stri
         reject_sku("enrich_packs.pack.id", &pack.id, &mut errors);
     }
 
+    // Agent packs (group membership). Distinct from enrich_packs.
+    {
+        let mut seen_pack_ids: HashSet<String> = HashSet::new();
+        for pack in &estate.packs {
+            check_slug("packs.id", &pack.id, &mut errors);
+            reject_sku("packs.id", &pack.id, &mut errors);
+            let pid = normalize_name(&pack.id);
+            if !seen_pack_ids.insert(pid) {
+                errors.push(format!("duplicate packs.id '{}'", pack.id));
+            }
+            if pack.members.is_empty() {
+                errors.push(format!("packs '{}' members must not be empty", pack.id));
+            }
+            let mut seen_members: HashSet<String> = HashSet::new();
+            for member in &pack.members {
+                check_slug(&format!("packs '{}'.members", pack.id), member, &mut errors);
+                reject_sku(&format!("packs '{}'.members", pack.id), member, &mut errors);
+                let mid = normalize_name(member);
+                if !seen_members.insert(mid.clone()) {
+                    errors.push(format!(
+                        "packs '{}' has duplicate member '{}'",
+                        pack.id, member
+                    ));
+                }
+                if estate.agent(member).is_none() {
+                    errors.push(format!(
+                        "packs '{}' member '{}' is not an estate agent",
+                        pack.id, member
+                    ));
+                }
+            }
+            if let Some(orch) = &pack.orchestrator {
+                check_slug(&format!("packs '{}'.orchestrator", pack.id), orch, &mut errors);
+                reject_sku(&format!("packs '{}'.orchestrator", pack.id), orch, &mut errors);
+                if estate.agent(orch).is_none() {
+                    errors.push(format!(
+                        "packs '{}' orchestrator '{}' is not an estate agent",
+                        pack.id, orch
+                    ));
+                }
+            }
+        }
+    }
+
     if opts.cell_one {
         if estate.agents.len() < 3 {
             errors.push(format!(
@@ -528,6 +572,32 @@ mod tests {
         estate.enrich_packs.policy = "auto".into();
         let err = validate(&estate).unwrap_err();
         assert!(err.iter().any(|e| e.contains("manual")));
+    }
+
+    #[test]
+    fn agent_packs_require_known_members_and_orchestrator() {
+        let mut estate = load_estate_str(crate::tests::example_yaml()).unwrap();
+        estate.packs.push(crate::types::AgentPack {
+            id: "research-crew".into(),
+            members: vec!["research".into(), "nope".into()],
+            orchestrator: Some("research".into()),
+        });
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("member") && e.contains("nope")),
+            "{err:?}"
+        );
+
+        estate.packs[0].members = vec!["research".into()];
+        estate.packs[0].orchestrator = Some("ghost".into());
+        let err = validate(&estate).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("orchestrator") && e.contains("ghost")),
+            "{err:?}"
+        );
+
+        estate.packs[0].orchestrator = Some("research".into());
+        validate(&estate).unwrap();
     }
 
     #[test]

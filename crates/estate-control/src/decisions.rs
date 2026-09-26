@@ -48,6 +48,15 @@ pub(crate) struct DecisionReceipt {
     /// so convey lines stay the same shape.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub surface: String,
+    /// Agent pack id when `estate complete --pack` journals a handoff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_id: Option<String>,
+    /// Orchestrator (or calling) agent that handed off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff_from: Option<String>,
+    /// Member agent that received the handoff and completed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff_to: Option<String>,
     pub stage: String,
     pub candidates: Vec<CandidateSummary>,
     pub result: String,
@@ -285,7 +294,7 @@ pub(crate) fn record_convey_receipt(
     expired: bool,
 ) -> Result<DecisionReceipt> {
     record_receipt(
-        estate, state_dir, hop_id, capability, agent, hint, outcome, expired, "",
+        estate, state_dir, hop_id, capability, agent, hint, outcome, expired, "", None,
     )
 }
 
@@ -311,6 +320,7 @@ pub(crate) fn record_authorize_receipt(
         outcome,
         false,
         "authorize",
+        None,
     )
 }
 
@@ -318,6 +328,14 @@ pub(crate) fn record_authorize_receipt(
 /// binding that complete targeted. `surface` is `complete`. No hop-lease
 /// clock: `expired` stays false. The same host prepare / select /
 /// revalidate path as authorize. The selector does not grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackHandoff {
+    pub pack_id: String,
+    pub handoff_from: String,
+    pub handoff_to: String,
+}
+
+#[allow(dead_code)]
 pub(crate) fn record_complete_receipt(
     estate: &Estate,
     state_dir: &Path,
@@ -325,6 +343,18 @@ pub(crate) fn record_complete_receipt(
     agent: &str,
     hint: Option<&SelectHint>,
     outcome: &str,
+) -> Result<DecisionReceipt> {
+    record_complete_receipt_pack(estate, state_dir, object, agent, hint, outcome, None)
+}
+
+pub(crate) fn record_complete_receipt_pack(
+    estate: &Estate,
+    state_dir: &Path,
+    object: &str,
+    agent: &str,
+    hint: Option<&SelectHint>,
+    outcome: &str,
+    pack: Option<&PackHandoff>,
 ) -> Result<DecisionReceipt> {
     record_receipt(
         estate,
@@ -336,6 +366,7 @@ pub(crate) fn record_complete_receipt(
         outcome,
         false,
         "complete",
+        pack,
     )
 }
 
@@ -363,6 +394,7 @@ fn record_receipt(
     outcome: &str,
     expired: bool,
     surface: &str,
+    pack: Option<&PackHandoff>,
 ) -> Result<DecisionReceipt> {
     let prepared = prepare_candidates(estate, agent);
     let (result, claimed) = select(&prepared, hint);
@@ -390,6 +422,14 @@ fn record_receipt(
         material.push('\n');
         material.push_str(surface);
     }
+    if let Some(pack) = pack {
+        material.push('\n');
+        material.push_str(&pack.pack_id);
+        material.push('\n');
+        material.push_str(&pack.handoff_from);
+        material.push('\n');
+        material.push_str(&pack.handoff_to);
+    }
     let receipt = DecisionReceipt {
         schema: RECEIPT_SCHEMA.into(),
         id: receipt_id(seq, &material),
@@ -398,6 +438,9 @@ fn record_receipt(
         capability: capability.to_string(),
         agent: agent.map(|s| s.to_string()),
         surface: surface.to_string(),
+        pack_id: pack.map(|p| p.pack_id.clone()),
+        handoff_from: pack.map(|p| p.handoff_from.clone()),
+        handoff_to: pack.map(|p| p.handoff_to.clone()),
         stage,
         candidates,
         result,
@@ -527,8 +570,16 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
             } else {
                 receipt.surface.as_str()
             };
+            let pack = match &receipt.pack_id {
+                Some(id) => format!(" pack={id}"),
+                None => String::new(),
+            };
+            let handoff = match (&receipt.handoff_from, &receipt.handoff_to) {
+                (Some(frm), Some(to)) => format!(" handoff={frm}->{to}"),
+                _ => String::new(),
+            };
             out.push_str(&format!(
-                "  {id} agent={agent} capability={cap} surface={surface} result={result} outcome={outcome}\n",
+                "  {id} agent={agent} capability={cap} surface={surface}{pack}{handoff} result={result} outcome={outcome}\n",
                 id = receipt.id,
                 cap = receipt.capability,
                 result = receipt.result,
@@ -567,11 +618,108 @@ pub(crate) fn cmd_decisions_export(state_dir: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_decisions_report(state_dir: &Path) -> Result<()> {
-    let receipts = load_receipts(state_dir)?;
+pub(crate) fn cmd_decisions_report(state_dir: &Path, pack: Option<&str>) -> Result<()> {
+    let mut receipts = load_receipts(state_dir)?;
+    if let Some(pack_id) = pack {
+        let want = estate_schema::normalize_name(pack_id);
+        receipts.retain(|r| {
+            r.pack_id
+                .as_deref()
+                .map(|id| estate_schema::normalize_name(id) == want)
+                .unwrap_or(false)
+        });
+    }
     print!("{}", render_report(&receipts));
     Ok(())
 }
+
+/// Resolve pack handoff under pack policy.
+/// `--agent` must be the pack orchestrator when set, else a member.
+/// Handoff candidates are members other than the calling agent.
+/// One candidate selects that member. Multiple need a select hint naming
+/// a member id. Zero candidates refuse. Free mixed select without `--pack`
+/// stays out of scope.
+pub(crate) fn resolve_pack_handoff(
+    estate: &Estate,
+    pack_id: &str,
+    agent: &str,
+    hint: Option<&SelectHint>,
+) -> Result<PackHandoff, String> {
+    let pack = estate
+        .pack(pack_id)
+        .ok_or_else(|| format!("refuse:unknown-pack: pack '{pack_id}' not on estate"))?;
+    let agent_n = estate_schema::normalize_name(agent);
+    if let Some(orch) = &pack.orchestrator {
+        if estate_schema::normalize_name(orch) != agent_n {
+            return Err(format!(
+                "refuse:pack-orchestrator: --agent '{agent}' is not orchestrator '{orch}' for pack '{}'",
+                pack.id
+            ));
+        }
+    } else if !pack
+        .members
+        .iter()
+        .any(|m| estate_schema::normalize_name(m) == agent_n)
+    {
+        return Err(format!(
+            "refuse:pack-member: --agent '{agent}' is not a member of pack '{}'",
+            pack.id
+        ));
+    }
+    let candidates: Vec<&str> = pack
+        .members
+        .iter()
+        .map(String::as_str)
+        .filter(|m| estate_schema::normalize_name(m) != agent_n)
+        .collect();
+    let handoff_to = match candidates.as_slice() {
+        [] => {
+            return Err(format!(
+                "refuse:pack-empty-handoff: pack '{}' has no member to hand off to from '{agent}'",
+                pack.id
+            ));
+        }
+        [only] => (*only).to_string(),
+        many => {
+            let claimed = hint.and_then(|h| h.select.as_deref());
+            match claimed {
+                Some(sel)
+                    if many
+                        .iter()
+                        .any(|m| estate_schema::normalize_name(m) == estate_schema::normalize_name(sel)) =>
+                {
+                    // Prefer the estate spelling.
+                    many
+                        .iter()
+                        .find(|m| {
+                            estate_schema::normalize_name(m) == estate_schema::normalize_name(sel)
+                        })
+                        .map(|m| (*m).to_string())
+                        .unwrap()
+                }
+                Some(_) => {
+                    return Err(format!(
+                        "refuse:decision-ineligible: select hint is not a handoff member of pack '{}'",
+                        pack.id
+                    ));
+                }
+                None => {
+                    return Err(format!(
+                        "refuse:decision-abstain: pack '{}' has {} handoff members; set decision-select.json or use a one-member pack",
+                        pack.id,
+                        many.len()
+                    ));
+                }
+            }
+        }
+    };
+    Ok(PackHandoff {
+        pack_id: pack.id.clone(),
+        handoff_from: agent.to_string(),
+        handoff_to,
+    })
+}
+
 
 #[cfg(test)]
 mod tests {

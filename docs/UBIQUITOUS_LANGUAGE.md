@@ -6,7 +6,7 @@ Canonical Cell One words. Locked defaults stay in [`../charter.md`](../charter.m
 
 ### estate
 
-Desired-state file. `kind: agent-estate`. It names lanes, agents, intentions, model bindings, sacred exclusions, enrich packs, and placements. `examples/estate.yaml` is hash-locked. The estate file is the source of truth for desired state. Code source of truth is [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory). Fail-closed check is the Rust validator. JSON Schema files are documentary.
+Desired-state file. `kind: agent-estate`. It names lanes, agents, intentions, model bindings, sacred exclusions, enrich packs, agent packs, and placements. `examples/estate.yaml` is hash-locked. The estate file is the source of truth for desired state. Code source of truth is [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory). Fail-closed check is the Rust validator. JSON Schema files are documentary.
 
 ### lane
 
@@ -27,6 +27,10 @@ Durable grant. Optional TTL. Placement leases: `.cell/placement-actual.json`. Ho
 ### pack
 
 Enrich pack. Curator edit instructions. `policy: manual`. `estate packs propose` writes a proposal and leaves it unapplied. `estate packs accept --curator jason` writes the instruction file. Jason pastes into the estate file. `source_drivers` are `frontier` and/or `local`. Promote stays refused.
+
+### agent pack
+
+Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Free mixed select without `--pack` stays out. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
 
 ### curator
 
