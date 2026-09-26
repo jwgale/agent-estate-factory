@@ -1849,15 +1849,15 @@ mod tests {
     use clap::CommandFactory;
 
     #[test]
-    fn call_help_refuses_capability_mismatch_after_allow() {
+    fn hop_help_refuses_capability_mismatch_after_allow() {
         let cmd = Cli::command();
         let help = cmd
             .find_subcommand("convey")
             .unwrap()
-            .find_subcommand("call")
+            .find_subcommand("hop")
             .unwrap()
             .clone()
-            .render_help()
+            .render_long_help()
             .to_string();
         assert!(
             help.contains("Allow continues to hop coverage, then")
