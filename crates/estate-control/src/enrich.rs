@@ -5,7 +5,8 @@ use anyhow::{bail, Context, Result};
 use estate_schema::load_estate_unvalidated;
 use model_estate::{
     default_enrich_out, default_train_enrich_driver_id, driver_default_job,
-    enrich_host_class_affinity, import_prepared, import_trained, list_prepared, load_enrich_pack,
+    enrich_host_class_affinity, import_prepared, import_trained_for_seat, list_prepared,
+    load_enrich_pack,
     plan_adapter_seat_for, plan_gguf_convert, plan_local_seat_for, plan_merge_adapt,
     prepare_enrich_set, render_prepared_index, render_train_enrich_catalog,
     train_enrich_drivers_for_job, train_enrich_drivers_for_prepare, ImportPreparedRequest,
@@ -249,18 +250,22 @@ pub(crate) fn cmd_enrich_import_trained(
     tag: &str,
     adapter: &Path,
     curator: &str,
+    binding_id: Option<&str>,
 ) -> Result<()> {
     let before = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
     let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
-    let proposal = import_trained(&ImportTrainedRequest {
-        estate: &estate,
-        prepared_dir,
-        tag,
-        adapter,
-        curator,
-    })?;
+    let proposal = import_trained_for_seat(
+        &ImportTrainedRequest {
+            estate: &estate,
+            prepared_dir,
+            tag,
+            adapter,
+            curator,
+        },
+        binding_id,
+    )?;
     let after = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
     if before != after {
@@ -318,7 +323,10 @@ pub(crate) fn cmd_enrich_apply_proposal(
     let estate = load_estate_unvalidated(estate_path)
         .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
     let verify_endpoint = if verify_local_tag {
-        Some(seated_endpoint(&estate)?)
+        Some(seated_endpoint(
+            &estate,
+            proposal_binding_id(prepared_dir).as_deref(),
+        )?)
     } else {
         None
     };
@@ -374,12 +382,36 @@ pub(crate) fn cmd_enrich_apply_proposal(
     Ok(())
 }
 
-fn seated_endpoint(estate: &estate_schema::Estate) -> Result<String> {
-    let seat = estate
+fn proposal_binding_id(prepared_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(prepared_dir.join("binding-proposal.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("binding_id")
+        .and_then(|item| item.as_str())
+        .map(str::to_string)
+}
+
+fn seated_endpoint(estate: &estate_schema::Estate, binding_id: Option<&str>) -> Result<String> {
+    let binding_id = binding_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or("local_slm");
+    let seat = if let Some(binding) = estate
         .model_bindings
         .iter()
-        .find(|binding| binding.id == "local_slm")
-        .ok_or_else(|| anyhow::anyhow!("refuse:binding: estate has no local_slm seat"))?;
+        .find(|binding| binding.id == binding_id)
+    {
+        if binding.class != estate_schema::ModelClass::Local {
+            bail!("refuse:binding: '{binding_id}' is not a local seat");
+        }
+        binding
+    } else {
+        estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .ok_or_else(|| anyhow::anyhow!("refuse:binding: estate has no local_slm seat"))?
+    };
     let env_name = seat
         .params
         .get("endpoint_env")

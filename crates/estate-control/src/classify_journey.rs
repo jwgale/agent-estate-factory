@@ -2193,6 +2193,8 @@ pub struct JourneyRequest<'a> {
     pub enrich_tag: Option<&'a str>,
     /// Record the specialist GGUF after a successful `--run`. The proposal stays `auto_apply=false`.
     pub import_trained: bool,
+    /// Portable local binding id. `None` keeps `local_slm`.
+    pub binding_id: Option<&'a str>,
 }
 
 pub const DEFAULT_JOURNEY_OUT: &str = ".cell/classify-journey";
@@ -2280,6 +2282,7 @@ pub fn cmd_classify_journey(req: &JourneyRequest<'_>) -> Result<()> {
             "refuse:classify-journey: --import-trained needs --estate, --prepared, and --enrich-tag. no proposal written."
         );
     }
+    model_estate::resolve_portable_binding_id(req.binding_id)?;
     let mut paths = JourneyPaths::new(req.out);
     paths.base_cache = req.base_cache.to_path_buf();
     paths.few_shot = req.few_shot;
@@ -2507,6 +2510,7 @@ struct HandoffDisplay {
     line: String,
     /// Dataset alias when `--dataset` is set. Otherwise the specialist tag.
     function: String,
+    binding_id: String,
 }
 
 fn import_trained_args_ready(req: &JourneyRequest<'_>) -> bool {
@@ -2579,7 +2583,11 @@ fn specialty_function(req: &JourneyRequest<'_>) -> String {
     req.tag.to_string()
 }
 
-fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDisplay {
+fn handoff_display(
+    req: &JourneyRequest<'_>,
+    paths: &JourneyPaths,
+    binding_id: &str,
+) -> HandoffDisplay {
     let adapter_path = paths.seated_gguf("specialist", req.quant);
     let (estate_raw, estate_placeholder) = match req.estate {
         Some(path) if !path.as_os_str().is_empty() => (path.display().to_string(), false),
@@ -2598,9 +2606,15 @@ fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDis
     let prepared = display_token(&prepared_raw, prepared_placeholder);
     let tag = display_token(&tag_raw, tag_placeholder);
     let adapter = shell_quote(&adapter_path.display().to_string());
-    let line = format!(
-        "estate enrich import-trained --estate {estate} --prepared {prepared} --tag {tag} --adapter {adapter}"
-    );
+    let line = if binding_id == "local_slm" {
+        format!(
+            "estate enrich import-trained --estate {estate} --prepared {prepared} --tag {tag} --adapter {adapter}"
+        )
+    } else {
+        format!(
+            "estate enrich import-trained --estate {estate} --prepared {prepared} --tag {tag} --adapter {adapter} --binding-id {binding_id}"
+        )
+    };
     HandoffDisplay {
         estate,
         prepared,
@@ -2608,6 +2622,7 @@ fn handoff_display(req: &JourneyRequest<'_>, paths: &JourneyPaths) -> HandoffDis
         adapter_path,
         line,
         function: specialty_function(req),
+        binding_id: binding_id.to_string(),
     }
 }
 
@@ -2623,11 +2638,9 @@ fn print_standing_next(display: &HandoffDisplay) {
     println!(
         "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan."
     );
-    println!(
-        "Specialty seat: local_slm, class local, function {}.",
-        display.function
-    );
-    println!("binding_id stays local_slm. trained_shape gguf. auto_apply=false.");
+    for line in specialty_seat_lines(&display.binding_id, &display.function) {
+        println!("{line}");
+    }
     println!("Equal-class frontier and local. This local seat is a first-class peer of frontier.");
     println!("Other local specialty bindings stay beside this one.");
     println!("This function is one specialty local seat among those peers.");
@@ -2654,8 +2667,25 @@ fn print_standing_next(display: &HandoffDisplay) {
     println!("The factory does not apply the estate.");
 }
 
+fn specialty_seat_lines(binding_id: &str, function: &str) -> [String; 2] {
+    if binding_id == "local_slm" {
+        [
+            format!("Specialty seat: local_slm, class local, function {function}."),
+            "binding_id stays local_slm. trained_shape gguf. auto_apply=false.".to_string(),
+        ]
+    } else {
+        [
+            format!("Specialty seat: {binding_id}, class local, function {function}."),
+            format!(
+                "binding_id {binding_id}. class local. A new id is added beside local_slm. An existing local id is replaced in place. trained_shape gguf. auto_apply=false."
+            ),
+        ]
+    }
+}
+
 fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMode) -> Result<()> {
-    let display = handoff_display(req, paths);
+    let binding_id = model_estate::resolve_portable_binding_id(req.binding_id)?;
+    let display = handoff_display(req, paths, &binding_id);
     match mode {
         HandoffMode::Plan => {
             println!("import-trained handoff (planned):");
@@ -2725,6 +2755,7 @@ fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Resul
             tag,
             &display.adapter_path,
             "jason",
+            Some(display.binding_id.as_str()),
         )?;
     } else {
         println!("This command prints the import-trained line and does not write a proposal.");
@@ -4051,6 +4082,8 @@ pub struct DualJourneyRequest<'a> {
     pub prepared: Option<&'a Path>,
     pub enrich_tag: Option<&'a str>,
     pub import_trained: bool,
+    /// Portable local binding id printed on each student's handoff. `None` keeps `local_slm`.
+    pub binding_id: Option<&'a str>,
 }
 
 /// Scored base-vs-specialist counts for one student. Absent on `--print`.
@@ -4232,6 +4265,7 @@ fn dual_journey_request<'a>(
         prepared: req.prepared,
         enrich_tag: req.enrich_tag,
         import_trained: req.import_trained,
+        binding_id: req.binding_id,
     }
 }
 
@@ -4516,6 +4550,7 @@ fn score_from_out(out: &Path) -> Result<(DualPresetScore, String)> {
 }
 
 pub fn cmd_classify_journey_dual(req: &DualJourneyRequest<'_>) -> Result<()> {
+    model_estate::resolve_portable_binding_id(req.binding_id)?;
     let expand_tag = validate_dual(req)?;
     let size = crate::classify_import::parse_split_size(req.train_size)?;
     let cache = crate::classify_import::expand_cache_dir(
@@ -6431,6 +6466,7 @@ mod tests {
             prepared: None,
             enrich_tag: None,
             import_trained: false,
+            binding_id: None,
         })
         .unwrap_err()
         .to_string();
@@ -6497,6 +6533,7 @@ mod tests {
             prepared: Some(&prepared),
             enrich_tag: Some("cell-enrich-overnight-traces"),
             import_trained: true,
+            binding_id: None,
         };
         let paths = JourneyPaths::new(&out);
         let err = seat_handoff(&req, &paths, HandoffMode::AfterRun)
@@ -6517,6 +6554,162 @@ mod tests {
         seat_handoff(&skip, &paths, HandoffMode::AfterRun).unwrap();
         assert!(!prepared.join("binding-proposal.json").is_file());
         assert!(!out.join("specialist.Q4_K_M.gguf").is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn specialty_binding_id_is_printed_and_recorded() {
+        let kept = specialty_seat_lines("local_slm", "ag_news");
+        assert_eq!(
+            kept[0],
+            "Specialty seat: local_slm, class local, function ag_news."
+        );
+        assert_eq!(
+            kept[1],
+            "binding_id stays local_slm. trained_shape gguf. auto_apply=false."
+        );
+        let specialty = specialty_seat_lines("ag_news", "ag_news");
+        assert_eq!(
+            specialty[0],
+            "Specialty seat: ag_news, class local, function ag_news."
+        );
+        assert!(specialty[1].contains("added beside local_slm"), "{}", specialty[1]);
+        assert!(specialty[1].contains("replaced in place"), "{}", specialty[1]);
+
+        let token = std::process::id()
+            .to_string()
+            .replace("5090", "0000")
+            .replace("4090", "0000")
+            .replace("4080", "0000")
+            .replace("3090", "0000");
+        let root = std::env::temp_dir().join(format!("cell-one-specialty-handoff-{token}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let out = root.join("out");
+        let prepared = root.join("prepared");
+        let state = root.join("state");
+        fs::create_dir_all(&out).unwrap();
+        fs::create_dir_all(&state).unwrap();
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut estate = estate_schema::load_estate(&repo.join("examples/estate.yaml")).unwrap();
+        {
+            let seat = estate
+                .model_bindings
+                .iter_mut()
+                .find(|binding| binding.id == "local_slm")
+                .unwrap();
+            let params = seat.params.as_object_mut().unwrap();
+            params.insert("model".into(), serde_json::json!("llama3"));
+            params.insert(
+                "train_base_model".into(),
+                serde_json::json!("Qwen/Qwen2.5-0.5B-Instruct"),
+            );
+        }
+        let estate_path = root.join("estate.yaml");
+        let rendered = estate_schema::render_estate_yaml(&estate).unwrap();
+        fs::write(&estate_path, &rendered).unwrap();
+        let before = fs::read(&estate_path).unwrap();
+        let pack = model_estate::load_enrich_pack(
+            &repo.join("examples/fixtures/specialist-overnight.pack.json"),
+            &repo.join("packs"),
+        )
+        .unwrap();
+        model_estate::prepare_enrich(&model_estate::PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: model_estate::LLAMAFACTORY_QLORA_ID,
+            job: "train",
+            out_dir: &prepared,
+            max_steps: None,
+            official_scale: false,
+            from_feed: false,
+            state_dir: &state,
+        })
+        .unwrap();
+        let input = root.join("in.jsonl");
+        let base_cache = root.join("cache");
+        let req = JourneyRequest {
+            input: &input,
+            out: &out,
+            base: DEFAULT_BASE,
+            base_tag: None,
+            tag: DEFAULT_TAG,
+            endpoint: "http://127.0.0.1:11434",
+            dataset_name: DEFAULT_DATASET,
+            seed: 1,
+            held_out_ratio: 0.2,
+            max_steps: None,
+            quant: DEFAULT_QUANT,
+            llama_cpp_dir: None,
+            force: false,
+            print: false,
+            run: true,
+            min_delta: None,
+            min_accuracy: None,
+            require_significant_lift: false,
+            timeout_secs: 5,
+            together_poll_secs: DEFAULT_TOGETHER_POLL_SECS,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+            together_base_url: DEFAULT_TOGETHER_API,
+            api_key_env: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: "note",
+            preset: JourneyPreset::Tev1,
+            import_dataset: Some("ag_news"),
+            train_size: "all",
+            heldout_size: "all",
+            from_local: None,
+            import_fetch: crate::classify_import::ImportFetch::Bulk,
+            python: None,
+            base_cache: &base_cache,
+            few_shot: 0,
+            expand_tag: None,
+            estate: Some(&estate_path),
+            prepared: Some(&prepared),
+            enrich_tag: Some("cell-enrich-overnight-traces"),
+            import_trained: true,
+            binding_id: Some("rtx-5090"),
+        };
+        let paths = JourneyPaths::new(&out);
+        let err = seat_handoff(&req, &paths, HandoffMode::Plan)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refuse:sku-banned"), "{err}");
+        assert!(!prepared.join("binding-proposal.json").is_file());
+        let mut req = req;
+        req.binding_id = Some("ag_news");
+        let display = handoff_display(&req, &paths, "ag_news");
+        assert!(
+            display.line.contains("--binding-id ag_news"),
+            "{}",
+            display.line
+        );
+        assert!(
+            !handoff_display(&req, &paths, "local_slm")
+                .line
+                .contains("--binding-id"),
+            "default handoff must keep today's command line"
+        );
+        fs::write(paths.seated_gguf("specialist", DEFAULT_QUANT), "gguf-fixture").unwrap();
+        seat_handoff(&req, &paths, HandoffMode::AfterRun).unwrap();
+        let proposal: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(prepared.join("binding-proposal.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(proposal["binding_id"], "ag_news");
+        assert_eq!(proposal["auto_apply"], false);
+        assert_eq!(proposal["promoted"], false);
+        assert_eq!(proposal["estate_rewritten"], false);
+        assert_eq!(proposal["trained_shape"], "gguf");
+        assert_eq!(proposal["proposed_binding"]["id"], "ag_news");
+        assert_eq!(proposal["proposed_binding"]["class"], "local");
+        let paste = proposal["paste_yaml"].as_str().unwrap();
+        assert!(paste.contains("Add this class:local"), "{paste}");
+        assert!(paste.contains("local_slm stays"), "{paste}");
+        assert_eq!(fs::read(&estate_path).unwrap(), before);
         let _ = fs::remove_dir_all(&root);
     }
 

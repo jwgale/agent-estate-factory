@@ -50,7 +50,8 @@ pub use path::{run_task, TaskAct, TaskRequest, TaskResult};
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
     driver_default_job, enrich_host_class_affinity, enrich_join_facts, enrich_stage_dir,
-    import_prepared, import_trained, list_prepared, llamafactory_template_name, load_enrich_pack,
+    import_prepared, import_trained, import_trained_for_seat, list_prepared,
+    llamafactory_template_name, load_enrich_pack, resolve_portable_binding_id,
     local_enrich_tag,
     local_slm_model_param, parse_enrich_job, prepare_enrich, prepare_enrich_set, read_enrich_stage,
     refuse_staged_apply, render_prepared_index, render_train_enrich_catalog,

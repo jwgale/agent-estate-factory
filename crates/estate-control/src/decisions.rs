@@ -613,4 +613,107 @@ mod tests {
         assert_eq!(fallback.as_deref(), Some("local_slm"));
         assert_eq!(stage_name(&result, &validation), "fallback");
     }
+
+    fn push_local(estate: &mut Estate, id: &str) {
+        let mut seat = estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap()
+            .clone();
+        seat.id = id.into();
+        estate.model_bindings.push(seat);
+    }
+
+    fn allow_model(estate: &mut Estate, agent: &str, object: &str) {
+        estate.intentions.push(Intention {
+            subject_agent: agent.into(),
+            object: object.into(),
+            kind: IntentionKind::Model,
+            effect: Effect::Allow,
+            note: None,
+        });
+    }
+
+    #[test]
+    fn specialty_seat_is_selected_and_equal_class_still_abstains() {
+        let mut scoped = example();
+        push_local(&mut scoped, "ag_news");
+        push_local(&mut scoped, "policy_precheck");
+        estate_schema::validate(&scoped).unwrap();
+        scoped
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .models
+            .push(ModelUseDecl {
+                id: "ag_news".into(),
+                description: None,
+            });
+        allow_model(&mut scoped, "horizon", "ag_news");
+        let prepared = prepare_candidates(&scoped, Some("horizon"));
+        assert_eq!(
+            prepared.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            ["ag_news"]
+        );
+        assert_eq!(select(&prepared, None).0, "ag_news");
+
+        let mut allow_list = example();
+        push_local(&mut allow_list, "ag_news");
+        push_local(&mut allow_list, "policy_precheck");
+        allow_list
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .models = vec![ModelUseDecl {
+            id: "ag_news".into(),
+            description: None,
+        }];
+        allow_local(&mut allow_list, "research");
+        let prepared = prepare_candidates(&allow_list, Some("research"));
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(select(&prepared, None).0, "ag_news");
+
+        let mut peers = example();
+        push_local(&mut peers, "ag_news");
+        peers
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .models
+            .push(ModelUseDecl {
+                id: "ag_news".into(),
+                description: None,
+            });
+        allow_local(&mut peers, "research");
+        let prepared = prepare_candidates(&peers, Some("research"));
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(select(&prepared, None).0, "abstain");
+
+        let mut open = example();
+        push_local(&mut open, "ag_news");
+        open.agents
+            .iter_mut()
+            .find(|agent| agent.id == "horizon")
+            .unwrap()
+            .models
+            .push(ModelUseDecl {
+                id: "ag_news".into(),
+                description: None,
+            });
+        allow_local(&mut open, "horizon");
+        allow_model(&mut open, "horizon", "class:frontier");
+        let prepared = prepare_candidates(&open, Some("horizon"));
+        let ids = prepared
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"xai_grok"), "{ids:?}");
+        assert!(ids.contains(&"local_slm"), "{ids:?}");
+        assert!(ids.contains(&"ag_news"), "{ids:?}");
+        assert_eq!(select(&prepared, None).0, "abstain");
+    }
 }
