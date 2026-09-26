@@ -1167,7 +1167,8 @@ fn authority_status_word(status: &str) -> &str {
 /// Shared text for `estate plan`, `estate drift`, `estate apply` (including
 /// dry-run), `estate doctor` (including `--strict`), `estate status`,
 /// `estate convey authority`, `estate reconcile` (including `--suggest`),
-/// `estate leases`, and the `honesty.md` snapshot from `estate audit export`.
+/// `estate leases`, `estate convey leases`, and the `honesty.md` snapshot
+/// from `estate audit export`.
 /// Summary counts, then one `not-enforced reasons:` line when that count is
 /// non-zero, then the uncertain non-mediation line, then one line per row
 /// (agent, capability, hop, status, reason). Zero reason classes are omitted.

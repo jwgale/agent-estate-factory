@@ -589,7 +589,14 @@ pub(crate) fn cmd_convey_list(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_convey_leases(state_dir: &Path) -> Result<()> {
+pub(crate) fn cmd_convey_leases(estate_path: &Path, state_dir: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the hop lease list. Same stack as
+    // estate leases, status, doctor, reconcile, and audit export. Hop cites
+    // do not change this command's exit code. A placement-actual SKU still
+    // reaches the hop lease reader below, which refuses before the JSON.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     // list_hop_leases refuses a spawned cloud hop before the JSON.
     // An unspawned file still prints. A missing mesh is empty, not spawned.
     let leases = list_hop_leases(state_dir)?;
@@ -892,7 +899,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 
 /// Agents, hop coverage cites, then Authority.
 ///
-/// Shared by `estate leases` (printed before the placement list) and
+/// Shared by `estate leases` (printed before the placement list),
+/// `estate convey leases` (printed before the hop lease list), and
 /// `estate audit export` (`honesty.md`). A present mesh that does not parse,
 /// or a bad `host_class` on that file, refuses before any section. Callers
 /// do not invent cites, Agents, or Authority rows. A missing mesh is the
@@ -905,7 +913,8 @@ const AUDIT_HONESTY_FILE: &str = "honesty.md";
 /// bad `host_class`). That one error continues: this text still includes
 /// Agents and hop cites from `load_mesh` and omits Authority rows.
 /// `estate leases` then still refuses that SKU before the placement JSON.
-/// Every other mesh error, including a population ahead of the floor
+/// `estate convey leases` then still refuses that SKU before the hop lease
+/// JSON. Every other mesh error, including a population ahead of the floor
 /// (`refuse:agent-unplaced`), refuses here before any section. Capability
 /// mismatch is `FAIL`. Deny and deny-default are `note`. A match stays
 /// quiet. Those cites do not fail the caller. Does not rewrite the mesh,

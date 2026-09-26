@@ -1,6 +1,7 @@
 //! `estate convey leases` does not print hop lease JSON when a cloud-mesh
 //! hop lease is spawned. An unspawned file still prints. A missing mesh
-//! still says there are no hop leases.
+//! still says there are no hop leases. The honesty stack may name the
+//! estate's declared cloud placement. That name is not hop lease JSON.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -44,17 +45,26 @@ fn mesh(box_spawned: bool, cloud_spawned: bool) -> String {
 fn convey_leases_does_not_print_a_spawned_cloud_hop() {
     let bin = env!("CARGO_BIN_EXE_estate");
     let state = tmp("estate");
+    let estate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/estate.yaml");
+    let estate_s = estate.display().to_string();
+    let state_s = state.display().to_string();
     let leases = [
         "convey",
         "leases",
+        "--estate",
+        estate_s.as_str(),
         "--state-dir",
-        &state.display().to_string(),
+        state_s.as_str(),
     ];
 
     let (ok, text) = run(bin, &leases);
     assert!(ok, "{text}");
     assert!(text.contains("no hop leases"), "{text}");
-    assert!(!text.contains("cursor-cloud"), "{text}");
+    assert!(
+        !text.contains("\"hop_id\""),
+        "a missing mesh is not hop lease JSON: {text}"
+    );
+    assert!(!state.join("conveyor-mesh.json").exists());
 
     let path = state.join("conveyor-mesh.json");
     let unspawned = mesh(false, false);
@@ -62,7 +72,10 @@ fn convey_leases_does_not_print_a_spawned_cloud_hop() {
     let (ok, text) = run(bin, &leases);
     assert!(ok, "{text}");
     assert!(text.contains("cursor-cloud"), "{text}");
-    assert!(text.contains("\"spawned\": false") || text.contains("\"spawned\":false"), "{text}");
+    assert!(
+        text.contains("\"spawned\": false") || text.contains("\"spawned\":false"),
+        "{text}"
+    );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), unspawned);
 
     let box_up = mesh(true, false);
