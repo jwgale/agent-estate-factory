@@ -44,6 +44,16 @@
       "type": "array",
       "description": "Agent packs: named group membership with optional orchestrator. Distinct from enrich_packs.",
       "items": { "$ref": "#/definitions/agent_pack" }
+    },
+    "pack_packages": {
+      "type": "array",
+      "description": "Pack packages: named skills on a pack (Grok Bot skill analog). Run via estate package run → complete --pack; receipt stamps package_id. Security stays existing intentions.",
+      "items": { "$ref": "#/definitions/pack_package" }
+    },
+    "routines": {
+      "type": "array",
+      "description": "Standing routines: declare + run a pack package (automation analog). Minimal bridge — no cron, no multi-step DAG.",
+      "items": { "$ref": "#/definitions/routine" }
     }
   },
   "definitions": {
@@ -62,6 +72,26 @@
           "items": { "$ref": "#/definitions/slug" }
         },
         "orchestrator": { "$ref": "#/definitions/slug" }
+      }
+    },
+    "pack_package": {
+      "type": "object",
+      "required": ["id", "pack"],
+      "properties": {
+        "id": { "$ref": "#/definitions/slug" },
+        "pack": { "$ref": "#/definitions/slug" },
+        "prompt": { "type": "string" },
+        "binding": { "$ref": "#/definitions/slug" },
+        "note": { "type": "string" }
+      }
+    },
+    "routine": {
+      "type": "object",
+      "required": ["id", "package"],
+      "properties": {
+        "id": { "$ref": "#/definitions/slug" },
+        "package": { "$ref": "#/definitions/slug" },
+        "note": { "type": "string" }
       }
     },
     "agent": {

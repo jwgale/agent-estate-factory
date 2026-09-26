@@ -2,6 +2,12 @@
 
 Local wrap: `make smoke`. Hosted CI is compile-only (`cargo check --workspace --locked` on pull_request). Day 0–90 is on `main`.
 
+## Unreleased
+
+### Added
+
+- Pack packages + standing routines tip: estate `pack_packages:` (skill on a pack) and `routines:` (declare + run a package). `estate package list/show/run` and `estate routine list/show/run`. Run → `complete --pack` with `package_id` / `routine_id` on the decision receipt. Security stays existing intentions. Anatomy: pack≈group, package≈skill, routine≈automation, orchestrator handoff≈specialist wake with receipt. Not a Grok Bot runtime clone. Fixture extends `examples/fixtures/agent-pack-handoff.yaml`. Docs: NORTH-STAR / OPERATOR-DAY / UBIQUITOUS_LANGUAGE. Locked `examples/estate.yaml` untouched (cksum `43770130 3391`). `READY_FOR_LIVE_TEST`: no. Out: Cursor plugin spin, live Grok Bot routine sync, multi-step DAGs.
+
 ## This slice — agent packs + orchestrator handoff
 
 - Estate schema `packs:` (`id`, `members`, optional `orchestrator`). Distinct from `enrich_packs`. Empty stays off the wire so locked `examples/estate.yaml` hash and cksum (`43770130 3391`) hold.

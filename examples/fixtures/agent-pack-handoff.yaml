@@ -1,6 +1,7 @@
-# Agent pack + orchestrator handoff fixture.
+# Agent pack + orchestrator handoff + pack packages + standing routines fixture.
 # Throwaway / test only. Not locked examples/estate.yaml.
 # Pack membership scopes handoff; free mixed select without --pack stays out.
+# Packages ≈ skills; routines ≈ automations. Security stays existing intentions.
 
 apiVersion: cell-one.estate.v0
 version: 0
@@ -96,6 +97,18 @@ packs:
       - horizon
       - research
     orchestrator: horizon
+
+pack_packages:
+  - id: classify-ping
+    pack: research-crew
+    prompt: "ping"
+    binding: ag_news
+    note: Skill analog on the research pack. Run via estate package run.
+
+routines:
+  - id: standing-classify
+    package: classify-ping
+    note: Automation analog. Declare + run the classify-ping package. No DAG.
 
 enrich_packs:
   curator: jason

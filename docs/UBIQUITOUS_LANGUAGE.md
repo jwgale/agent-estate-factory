@@ -6,7 +6,7 @@ Canonical Cell One words. Locked defaults stay in [`../charter.md`](../charter.m
 
 ### estate
 
-Desired-state file. `kind: agent-estate`. It names lanes, agents, intentions, model bindings, sacred exclusions, enrich packs, agent packs, and placements. `examples/estate.yaml` is hash-locked. The estate file is the source of truth for desired state. Code source of truth is [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory). Fail-closed check is the Rust validator. JSON Schema files are documentary.
+Desired-state file. `kind: agent-estate`. It names lanes, agents, intentions, model bindings, sacred exclusions, enrich packs, agent packs, pack packages, standing routines, and placements. `examples/estate.yaml` is hash-locked. The estate file is the source of truth for desired state. Code source of truth is [github.com/jwgale/agent-estate-factory](https://github.com/jwgale/agent-estate-factory). Fail-closed check is the Rust validator. JSON Schema files are documentary.
 
 ### lane
 
@@ -31,6 +31,14 @@ Enrich pack. Curator edit instructions. `policy: manual`. `estate packs propose`
 ### agent pack
 
 Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids), optional `orchestrator`. `estate pack list` / `estate pack show` read them. `estate complete --pack <id>` is the orchestrator handoff path: select a member under pack policy, complete as that member, journal `pack_id` / `handoff_from` / `handoff_to`. Distinct from enrich packs (`enrich_packs` / `estate packs`). Not a group-chat runtime. Free mixed select without `--pack` stays out. Fixture: `examples/fixtures/agent-pack-handoff.yaml`.
+
+### pack package
+
+Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note`. `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. Security stays existing intentions — not a new grant. Grok Bot skill analog. Not a Cursor plugin spin.
+
+### standing routine
+
+Named automation that declares + runs one pack package (`routines:`). Fields: `id`, `package`, optional `note`. `estate routine list` / `show` / `run`. Run stamps `routine_id` and `package_id`. Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
 
 ### curator
 

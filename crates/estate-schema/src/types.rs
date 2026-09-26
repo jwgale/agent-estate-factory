@@ -39,6 +39,16 @@ pub struct Estate {
     /// wire so the locked example hash is unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub packs: Vec<AgentPack>,
+    /// Pack packages: named skills on a pack (Grok Bot skill analog).
+    /// Run via `estate package run` → complete --pack; receipt stamps package_id.
+    /// Security stays existing intentions. Absent/empty stays off the wire.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pack_packages: Vec<PackPackage>,
+    /// Standing routines: declare + run a pack package (automation analog).
+    /// Minimal bridge — no cron, no multi-step DAG, no live Grok Bot sync.
+    /// Absent/empty stays off the wire so the locked example hash is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routines: Vec<Routine>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -217,6 +227,32 @@ pub struct AgentPack {
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orchestrator: Option<String>,
+}
+
+/// Named skill on a pack. Analogous to a Grok Bot skill / package.
+/// `pack` names the agent pack. Optional `prompt` / `binding` seed
+/// `estate package run` → `complete --pack`. Not a grant — intentions still decide.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackPackage {
+    pub id: String,
+    pub pack: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Optional model binding id passed as complete `--object`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Standing automation that declares + runs one pack package.
+/// Analogous to a Grok Bot routine. Minimal bridge only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Routine {
+    pub id: String,
+    pub package: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -398,6 +434,18 @@ impl Estate {
     pub fn pack(&self, id: &str) -> Option<&AgentPack> {
         let n = normalize_name(id);
         self.packs.iter().find(|p| normalize_name(&p.id) == n)
+    }
+
+    pub fn pack_package(&self, id: &str) -> Option<&PackPackage> {
+        let n = normalize_name(id);
+        self.pack_packages
+            .iter()
+            .find(|p| normalize_name(&p.id) == n)
+    }
+
+    pub fn routine(&self, id: &str) -> Option<&Routine> {
+        let n = normalize_name(id);
+        self.routines.iter().find(|r| normalize_name(&r.id) == n)
     }
 
     pub fn lane(&self, id: &str) -> Option<&Lane> {

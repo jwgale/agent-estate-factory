@@ -786,12 +786,153 @@ pub(crate) fn cmd_pack_show(id: &str, estate_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_package_list(estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    if estate.pack_packages.is_empty() {
+        println!("no pack packages on {}", estate_path.display());
+        return Ok(());
+    }
+    println!("pack packages ({})", estate.pack_packages.len());
+    for pkg in &estate.pack_packages {
+        let binding = pkg.binding.as_deref().unwrap_or("-");
+        let prompt = if pkg.prompt.as_deref().unwrap_or("").is_empty() {
+            "-"
+        } else {
+            "set"
+        };
+        println!(
+            "  {} pack={} binding={} prompt={}",
+            pkg.id, pkg.pack, binding, prompt
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_package_show(id: &str, estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let pkg = estate.pack_package(id).ok_or_else(|| {
+        anyhow::anyhow!("refuse:unknown-package: package '{id}' not on estate")
+    })?;
+    println!("package {}", pkg.id);
+    println!("  pack: {}", pkg.pack);
+    println!("  binding: {}", pkg.binding.as_deref().unwrap_or("-"));
+    println!("  prompt: {}", pkg.prompt.as_deref().unwrap_or("-"));
+    if let Some(note) = &pkg.note {
+        println!("  note: {note}");
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_package_run(
+    id: &str,
+    agent: Option<&str>,
+    prompt: Option<String>,
+    text: Option<String>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let (handoff, resolved_agent, pkg_prompt, pkg_binding) =
+        crate::decisions::resolve_package_handoff(&estate, id, agent, hint.as_ref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let payload = prompt.or(text).or(pkg_prompt).ok_or_else(|| {
+        anyhow::anyhow!("set --prompt or --text, or declare prompt on the package")
+    })?;
+    cmd_complete(
+        &resolved_agent,
+        Some(payload),
+        None,
+        pkg_binding.as_deref(),
+        Some(handoff.pack_id.as_str()),
+        handoff.package_id.as_deref(),
+        None,
+        estate_path,
+        state_dir,
+        feed_dir,
+        endpoint,
+        mock,
+    )
+}
+
+pub(crate) fn cmd_routine_list(estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    if estate.routines.is_empty() {
+        println!("no standing routines on {}", estate_path.display());
+        return Ok(());
+    }
+    println!("standing routines ({})", estate.routines.len());
+    for routine in &estate.routines {
+        println!("  {} package={}", routine.id, routine.package);
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_routine_show(id: &str, estate_path: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let routine = estate.routine(id).ok_or_else(|| {
+        anyhow::anyhow!("refuse:unknown-routine: routine '{id}' not on estate")
+    })?;
+    println!("routine {}", routine.id);
+    println!("  package: {}", routine.package);
+    if let Some(note) = &routine.note {
+        println!("  note: {note}");
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_routine_run(
+    id: &str,
+    agent: Option<&str>,
+    prompt: Option<String>,
+    text: Option<String>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let (handoff, resolved_agent, pkg_prompt, pkg_binding) =
+        crate::decisions::resolve_routine_handoff(&estate, id, agent, hint.as_ref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let payload = prompt.or(text).or(pkg_prompt).ok_or_else(|| {
+        anyhow::anyhow!("set --prompt or --text, or declare prompt on the package")
+    })?;
+    cmd_complete(
+        &resolved_agent,
+        Some(payload),
+        None,
+        pkg_binding.as_deref(),
+        Some(handoff.pack_id.as_str()),
+        handoff.package_id.as_deref(),
+        handoff.routine_id.as_deref(),
+        estate_path,
+        state_dir,
+        feed_dir,
+        endpoint,
+        mock,
+    )
+}
+
 pub(crate) fn cmd_complete(
     agent: &str,
     prompt: Option<String>,
     text: Option<String>,
     object: Option<&str>,
     pack: Option<&str>,
+    package: Option<&str>,
+    routine: Option<&str>,
     estate_path: &Path,
     state_dir: &Path,
     feed_dir: Option<&Path>,
@@ -804,14 +945,56 @@ pub(crate) fn cmd_complete(
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let hint = crate::decisions::load_select_hint(state_dir)?;
+    if package.is_some() && pack.is_none() {
+        bail!("refuse:package-requires-pack: --package requires --pack");
+    }
+    if routine.is_some() && package.is_none() {
+        bail!("refuse:routine-requires-package: routine stamp requires package");
+    }
     let pack_handoff = match pack {
         Some(pack_id) => {
-            Some(crate::decisions::resolve_pack_handoff(
+            let mut handoff = crate::decisions::resolve_pack_handoff(
                 &estate,
                 pack_id,
                 agent,
                 hint.as_ref(),
-            ).map_err(|e| anyhow::anyhow!("{e}"))?)
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            if let Some(pkg_id) = package {
+                let pkg = estate.pack_package(pkg_id).ok_or_else(|| {
+                    anyhow::anyhow!("refuse:unknown-package: package '{pkg_id}' not on estate")
+                })?;
+                if estate_schema::normalize_name(&pkg.pack)
+                    != estate_schema::normalize_name(pack_id)
+                {
+                    bail!(
+                        "refuse:package-pack-mismatch: package '{}' belongs to pack '{}', not '{}'",
+                        pkg.id,
+                        pkg.pack,
+                        pack_id
+                    );
+                }
+                handoff.package_id = Some(pkg.id.clone());
+            }
+            if let Some(rid) = routine {
+                let row = estate.routine(rid).ok_or_else(|| {
+                    anyhow::anyhow!("refuse:unknown-routine: routine '{rid}' not on estate")
+                })?;
+                if let Some(pkg_id) = &handoff.package_id {
+                    if estate_schema::normalize_name(&row.package)
+                        != estate_schema::normalize_name(pkg_id)
+                    {
+                        bail!(
+                            "refuse:routine-package-mismatch: routine '{}' package is '{}', not '{}'",
+                            row.id,
+                            row.package,
+                            pkg_id
+                        );
+                    }
+                }
+                handoff.routine_id = Some(row.id.clone());
+            }
+            Some(handoff)
         }
         None => None,
     };
