@@ -11,7 +11,7 @@ cd "$ROOT"
 
 OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-ag-news-journey}"
 BASE="${BASE:-Qwen/Qwen3.5-4B}"
-TAG="${TAG:-tev1-specialist}"
+TAG="${TAG:-classify-specialist}"
 QUANT="${QUANT:-Q4_K_M}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:11434}"
 TRAIN_SIZE="${TRAIN_SIZE:-3000}"

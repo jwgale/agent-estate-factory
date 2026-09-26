@@ -1,4 +1,4 @@
-//! tev1-style classify prepare and eval. No network except an in-process mock server.
+//! one-letter classify prepare and eval. No network except an in-process mock server.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -9,7 +9,7 @@ fn bin() -> Command {
 }
 
 fn fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/tev1-decisions.jsonl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixtures/classify-decisions.jsonl")
 }
 
 #[test]
@@ -74,8 +74,8 @@ fn prepare_is_deterministic_and_llama_factory_shaped() {
     let info: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("dataset_info.json")).unwrap())
             .unwrap();
-    assert_eq!(info["tev1_decisions"]["formatting"], "sharegpt");
-    assert_eq!(info["tev1_decisions"]["file_name"], "dataset.jsonl");
+    assert_eq!(info["classify_decisions"]["formatting"], "sharegpt");
+    assert_eq!(info["classify_decisions"]["file_name"], "dataset.jsonl");
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&dir_b);
 }

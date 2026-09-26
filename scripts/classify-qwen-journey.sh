@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Opt-in tev1 classify journey. Default is print and the local train driver.
-# Set TEV1_RUN=1 to execute train, merge, GGUF, Ollama, and eval.
+# Opt-in qwen classify journey. Default is print and the local train driver.
+# Set CLASSIFY_QWEN_RUN=1 to execute train, merge, GGUF, Ollama, and eval.
 # Set TRAIN_DRIVER=together to select the Together LoRA driver.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
 # Does not invent a live PASS.
@@ -9,10 +9,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-INPUT="${INPUT:-$ROOT/examples/fixtures/tev1-decisions.jsonl}"
-OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-tev1-journey}"
+INPUT="${INPUT:-$ROOT/examples/fixtures/classify-decisions.jsonl}"
+OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-classify-qwen-journey}"
 BASE="${BASE:-Qwen/Qwen3.5-4B}"
-TAG="${TAG:-tev1-specialist}"
+TAG="${TAG:-classify-specialist}"
 QUANT="${QUANT:-Q4_K_M}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:11434}"
 TRAIN_DRIVER="${TRAIN_DRIVER:-local}"
@@ -36,7 +36,7 @@ else
 fi
 
 BEFORE="$(cksum "$ESTATE")"
-echo "== tev1-journey (local output; not a live PASS) =="
+echo "== classify-qwen-journey (local output; not a live PASS) =="
 ARGS=(
   classify journey
   --input "$INPUT"
@@ -63,7 +63,7 @@ fi
 if [[ -n "${TOGETHER_API_KEY_ENV:-}" ]]; then
   ARGS+=(--api-key-env "$TOGETHER_API_KEY_ENV")
 fi
-if [[ "${TEV1_RUN:-}" == "1" ]]; then
+if [[ "${CLASSIFY_QWEN_RUN:-}" == "1" ]]; then
   echo "run requested; this still does not invent a live PASS"
   ARGS+=(--run)
 else

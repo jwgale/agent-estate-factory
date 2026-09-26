@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Opt-in DeepSeek-R1-Distill classify journey. Default is print and local llamafactory-cli train.
 # Set DEEPSEEK_CLASSIFY_RUN=1 to execute train, merge, GGUF, Ollama, and eval.
-# Together stays on the tev1 Qwen path unless TRAIN_DRIVER=together and TOGETHER_MODEL are both set.
+# Together stays on the default Qwen path unless TRAIN_DRIVER=together and TOGETHER_MODEL are both set.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
 # Does not invent a live PASS.
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-INPUT="${INPUT:-$ROOT/examples/fixtures/tev1-decisions.jsonl}"
+INPUT="${INPUT:-$ROOT/examples/fixtures/classify-decisions.jsonl}"
 OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-deepseek-classify-journey}"
 BASE="${BASE:-deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B}"
 TAG="${TAG:-deepseek-r1-distill-specialist}"
@@ -58,7 +58,7 @@ if [[ "$TRAIN_DRIVER" != "local" && "$TRAIN_DRIVER" != "together" ]]; then
   exit 1
 fi
 if [[ "$TRAIN_DRIVER" == "together" && -z "${TOGETHER_MODEL:-}" ]]; then
-  echo "FAIL  DeepSeek-R1-Distill journey uses local llamafactory-cli train. Together stays on the tev1 Qwen path unless TOGETHER_MODEL is set" >&2
+  echo "FAIL  DeepSeek-R1-Distill journey uses local llamafactory-cli train. Together stays on the default Qwen path unless TOGETHER_MODEL is set" >&2
   exit 1
 fi
 ARGS+=(--train-driver "$TRAIN_DRIVER")

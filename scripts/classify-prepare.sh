@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Opt-in tev1-style classify prepare. Offline. Does not train.
+# Opt-in one-letter classify prepare. Offline. Does not train.
 # Local only. Do not add to make smoke, make gate-90, or GitHub Actions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-INPUT="${INPUT:-$ROOT/examples/fixtures/tev1-decisions.jsonl}"
+INPUT="${INPUT:-$ROOT/examples/fixtures/classify-decisions.jsonl}"
 OUT="${OUT:-${TMPDIR:-/tmp}/cell-one-classify}"
 ESTATE="${ESTATE:-$ROOT/examples/estate.yaml}"
 BIN="${ESTATE_BIN:-}"

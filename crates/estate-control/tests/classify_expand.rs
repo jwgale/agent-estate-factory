@@ -146,7 +146,7 @@ fn expand_help_is_next_to_import_and_print_does_not_echo_the_key() {
     assert!(jout.contains("rust_idiom-all-s42-rev1"), "{jout}");
     assert!(jout.contains("no-import"), "{jout}");
     assert!(
-        jout.contains("tev1-specialist-rustidiom-all-rev1"),
+        jout.contains("specialist-rustidiom-all-rev1"),
         "{jout}"
     );
     assert!(jout.contains("READY_FOR_LIVE_TEST: no"), "{jout}");

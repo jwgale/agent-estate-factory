@@ -3,7 +3,7 @@
 //! `--print` writes `expand-plan.json` and does not call the network.
 //! `--run` is the only path that talks to an OpenAI-compatible teacher.
 //! The API key is read from the environment and is never printed.
-//! Output is tev1 JSONL in a tag-suffixed import cache. The held-out file is
+//! Output is qwen JSONL in a tag-suffixed import cache. The held-out file is
 //! copied, not rebuilt. `live_pass_recorded` stays false.
 
 use crate::classify::{post_chat, scrub_snippet, HttpOutcome};
@@ -255,7 +255,7 @@ fn expand_with(req: &ExpandRequest<'_>, teacher: &dyn Teacher) -> Result<()> {
         "ready_for_live_test": READY,
         "license_note": preset.license_note,
         "proof": proof_note(holdout_seed),
-        "note": "classify expand writes a tag-suffixed tev1 cache for local training. It does not train. The held-out file is a copy of the source holdout. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no."
+        "note": "classify expand writes a tag-suffixed qwen cache for local training. It does not train. The held-out file is a copy of the source holdout. This file is not a factory live PASS. READY_FOR_LIVE_TEST stays no."
     });
     write_pretty(&out.join("expand-report.json"), &report)?;
     println!(
@@ -532,12 +532,12 @@ fn accept_pair(value: &Value, holdout: &Holdout, tag: &str, seq: usize) -> Optio
     }
     let base = format!("rust_idiom:expand:{tag}:{seq}");
     Some(vec![
-        tev1_row(&format!("{base}:0"), &pair.needs_fix, "A", "needs_fix"),
-        tev1_row(&format!("{base}:1"), &pair.idiomatic, "B", "idiomatic"),
+        classify_row(&format!("{base}:0"), &pair.needs_fix, "A", "needs_fix"),
+        classify_row(&format!("{base}:1"), &pair.idiomatic, "B", "idiomatic"),
     ])
 }
 
-fn tev1_row(id: &str, state: &str, letter: &str, key: &str) -> Value {
+fn classify_row(id: &str, state: &str, letter: &str, key: &str) -> Value {
     json!({
         "id": id,
         "group_id": id,

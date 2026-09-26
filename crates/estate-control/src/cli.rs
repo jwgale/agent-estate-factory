@@ -468,7 +468,7 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: EnrichCommand,
     },
-    /// tev1-style one-letter classify loop. Prepare does not train. Eval does not record a live PASS.
+    /// one-letter one-letter classify loop. Prepare does not train. Eval does not record a live PASS.
     Classify {
         #[command(subcommand)]
         command: ClassifyCommand,
@@ -1014,7 +1014,7 @@ pub(crate) enum PacksCommand {
 
 #[derive(Subcommand)]
 pub(crate) enum ClassifyCommand {
-    /// Validate tev1-style JSONL, split it, and write a one-letter LLaMA-Factory dataset plus held-out JSONL.
+    /// Validate one-letter JSONL, split it, and write a one-letter LLaMA-Factory dataset plus held-out JSONL.
     /// Offline. Does not train.
     Prepare {
         /// JSONL of `{state, question, options, answer}` records. Option labels are consecutive letters from A.
@@ -1033,7 +1033,7 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, value_enum, default_value_t = crate::classify::DatasetFormat::Sharegpt)]
         format: crate::classify::DatasetFormat,
         /// Key written into `dataset_info.json`.
-        #[arg(long, default_value = "tev1_decisions")]
+        #[arg(long, default_value = "classify_decisions")]
         dataset_name: String,
         /// Fail on any bad row and write nothing. Omit to skip bad rows and print the count plus the first line numbers.
         #[arg(long, default_value_t = false)]
@@ -1042,7 +1042,7 @@ pub(crate) enum ClassifyCommand {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
-    /// Download a public Hugging Face classification set and write tev1 JSONL.
+    /// Download a public Hugging Face classification set and write qwen JSONL.
     /// This slice downloads ag_news, devign (CodeXGLUE defect detection), and rust_idiom (CommitPackFT Rust before/after).
     /// Sampled rows land in `.cell/classify-import/<alias>-<train-size>-s<seed>/`.
     /// ag_news options stay in class-table order (A=World, B=Sports, C=Business, D=Sci/Tech).
@@ -1120,7 +1120,7 @@ pub(crate) enum ClassifyCommand {
         /// Prepend this many labeled train exemplars to each held-out prompt. Omit for zero-shot. `0` is refused.
         #[arg(long)]
         few_shot: Option<u32>,
-        /// Exemplar JSONL for `--few-shot`. tev1 records (`train.jsonl`) or the prepared train file (`dataset.jsonl`, sharegpt or alpaca).
+        /// Exemplar JSONL for `--few-shot`. qwen records (`train.jsonl`) or the prepared train file (`dataset.jsonl`, sharegpt or alpaca).
         #[arg(long)]
         exemplars: Option<PathBuf>,
         /// Seed for the exemplar shuffle. Same seed and file pick the same order. Used only with `--few-shot`.
@@ -1128,19 +1128,19 @@ pub(crate) enum ClassifyCommand {
         seed: u64,
     },
     /// Letter journey: prepare, LoRA YAML, train, merge, GGUF, Ollama seat, base-vs-specialist eval.
-    /// `--preset tev1` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train. `--preset glm4-chat` is GLM-4-9B-Chat with template `glm4` and local `llamafactory-cli` train.
+    /// `--preset qwen` (default) is Qwen/Qwen3.5-4B. `--preset deepseek-r1-distill` is DeepSeek-R1-Distill-Qwen-1.5B with template `deepseekr1` and local `llamafactory-cli` train. `--preset glm4-chat` is GLM-4-9B-Chat with template `glm4` and local `llamafactory-cli` train.
     /// `--print` is the default and does not run tools or call the network. `--train-driver local` (default) uses llamafactory-cli. `--train-driver together` uploads the prepared dataset and launches a LoRA job. On the DeepSeek and GLM-4 Chat presets, Together needs `--together-model`. `--run` with together reads `TOGETHER_API_KEY` or `--api-key-env` and never prints the secret.
     /// `--run` downloads a Hub base once into `--base-cache` (default `.cell/classify-base-cache/<safe-id>/`) with `hf`, falling back to `huggingface-cli` only when `hf` is absent. A later `--out` reuses that snapshot. A local `--base` directory is used as-is. `--run` then refuses when llamafactory-cli, llama.cpp convert, ollama, or a GPU is missing.
     /// The comparison file is local output. It does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     /// After compare, a successful run prints `estate enrich import-trained` for the specialist GGUF (`trained_shape` gguf, `auto_apply=false`), then Standing next (estate): `apply-proposal`, `plan`, `apply --require-plan`, and `reconcile`. It does not execute them. `--print` prints those lines as planned steps and does not write a proposal. `--import-trained` records the proposal only on `--run` when that GGUF is a regular file and `--estate`, `--prepared`, and `--enrich-tag` are set. A missing specialist GGUF refuses or skips the handoff and does not invent a proposal. The factory does not claim it trained.
     /// The proposal is one local specialty seat (`class` local). `--binding-id` names that seat. The default stays `local_slm`. A new id is added beside existing local seats. An existing local id is replaced in place. `--dataset ag_news` names the function `ag_news`. Frontier bindings stay peers. Other local specialty bindings stay beside it. Equal-class frontier and local stays. `make ag-news-journey` prints `--dataset ag_news` at `--train-size` 3000.
-    /// `--dual` plans or runs `--preset tev1` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/tev1` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
+    /// `--dual` plans or runs `--preset qwen` (Qwen/Qwen3.5-4B) and `--preset glm4-chat` (zai-org/glm-4-9b-chat) on one `classify expand` rust_idiom cache (`--dataset rust_idiom --expand-tag`). Both students use that cache's held-out file. Outs are `{out}/qwen` and `{out}/glm4-chat` (the default `--out` gains a `-dual` suffix). The compare file is `dual-compare.json`. `--print` writes both journey plans and a compare stub and does not call the network. `--run` runs each existing journey. DeepSeek is refused. This is not a factory live PASS.
     /// `--modest` is only valid with `--dual`. It replaces the `--train-size all` default with `500` (`parse_split_size` count) and writes LLaMA-Factory `max_steps` 50 on both students when `--max-steps` is omitted. An explicit `--train-size` above 500 is refused. This is not a factory live PASS.
     Journey {
-        /// `tev1` keeps Qwen/Qwen3.5-4B and tag `tev1-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
-        #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Tev1)]
+        /// `qwen` keeps Qwen/Qwen3.5-4B and tag `classify-specialist`. `deepseek-r1-distill` uses DeepSeek-R1-Distill-Qwen-1.5B, template `deepseekr1`, and tag `deepseek-r1-distill-specialist` unless `--base` or `--tag` is set to something else. `glm4-chat` uses `zai-org/glm-4-9b-chat`, template `glm4`, and tag `glm4-chat-specialist` unless `--base` or `--tag` is set to something else.
+        #[arg(long, value_enum, default_value_t = crate::classify_journey::JourneyPreset::Qwen)]
         preset: crate::classify_journey::JourneyPreset,
-        /// tev1-style JSONL. Default: `examples/fixtures/tev1-decisions.jsonl`.
+        /// one-letter JSONL. Default: `examples/fixtures/classify-decisions.jsonl`.
         #[arg(long)]
         input: Option<PathBuf>,
         /// Journey directory. Prepare output, recipe, adapter, export, GGUF, and reports live here.
@@ -1208,7 +1208,7 @@ pub(crate) enum ClassifyCommand {
         /// `--print` never calls the network. `--run` reads the key from `--api-key-env` (default `TOGETHER_API_KEY`) and never prints the value.
         #[arg(long, value_enum, default_value_t = crate::classify_journey::TrainDriver::Local)]
         train_driver: crate::classify_journey::TrainDriver,
-        /// Together base model id. Default `Qwen/Qwen3.5-4B` on `--preset tev1`. The DeepSeek and GLM-4 Chat presets refuse Together unless this is set.
+        /// Together base model id. Default `Qwen/Qwen3.5-4B` on `--preset qwen`. The DeepSeek and GLM-4 Chat presets refuse Together unless this is set.
         #[arg(long)]
         together_model: Option<String>,
         /// Together API root. Used only with `--train-driver together` and `--run`.
@@ -1246,15 +1246,15 @@ pub(crate) enum ClassifyCommand {
         /// The specialist tag and `--out` gain `-<tag>` when they are still the defaults. rust_idiom only. Does not call the teacher.
         #[arg(long)]
         expand_tag: Option<String>,
-        /// Train and evaluate tev1 (Qwen/Qwen3.5-4B) and glm4-chat (zai-org/glm-4-9b-chat) on the same rust_idiom `--expand-tag` cache.
-        /// Requires `--dataset rust_idiom` and `--expand-tag`. Writes `{out}/tev1`, `{out}/glm4-chat`, and `{out}/dual-compare.json`.
+        /// Train and evaluate qwen (Qwen/Qwen3.5-4B) and glm4-chat (zai-org/glm-4-9b-chat) on the same rust_idiom `--expand-tag` cache.
+        /// Requires `--dataset rust_idiom` and `--expand-tag`. Writes `{out}/qwen`, `{out}/glm4-chat`, and `{out}/dual-compare.json`.
         /// `--print` (default) writes both plans and a compare stub and does not use the network. `--run` executes both journeys.
         /// The compare file is local output. It is not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
         #[arg(long, default_value_t = false)]
         dual: bool,
         /// Short dual gauge for one 5090-class proof. Only valid with `--dual`.
         /// Replaces `--train-size all` (the clap default) with `500`. An explicit `--train-size` at or under 500 is kept. A count above 500 is refused.
-        /// Omitting `--max-steps` writes LLaMA-Factory `max_steps` 50 on both tev1 and glm4-chat. An explicit `--max-steps` is kept.
+        /// Omitting `--max-steps` writes LLaMA-Factory `max_steps` 50 on both qwen and glm4-chat. An explicit `--max-steps` is kept.
         /// `dual-compare.json` records `"modest": true` plus `train_size` and `max_steps`. `--print` does not train. Not a factory live PASS. `READY_FOR_LIVE_TEST` stays no.
         #[arg(long, default_value_t = false)]
         modest: bool,
@@ -1289,17 +1289,17 @@ pub(crate) enum ClassifyCommand {
     /// `--print` is the default. It writes `expand-plan.json` and does not call the network.
     /// `--run` reads `TEACHER_API_KEY` or `--api-key-env` (for example `OPENAI_API_KEY`) and never prints the value.
     /// Inputs are an existing rust_idiom train JSONL or import cache, and an optional raw Rust snippet JSONL (`--from-local`).
-    /// Output is tev1 A=NeedsFix, B=Idiomatic JSONL in `.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/`.
+    /// Output is qwen A=NeedsFix, B=Idiomatic JSONL in `.cell/classify-import/rust_idiom-<train-size>-s<seed>-<tag>/`.
     /// Held-out commits stay out of the expanded train. `classify journey --dataset rust_idiom --expand-tag <tag>` trains that cache and does not split again.
     /// Parquet is refused. This command does not train. Does not record a live PASS. `READY_FOR_LIVE_TEST` stays no.
     Expand {
         /// `rust_idiom` or `bigcode/commitpackft`.
         #[arg(long, default_value = "rust_idiom")]
         dataset: String,
-        /// tev1 train JSONL, or an import cache directory that contains `train.jsonl` and `heldout.jsonl`.
+        /// qwen train JSONL, or an import cache directory that contains `train.jsonl` and `heldout.jsonl`.
         #[arg(long)]
         train: Option<PathBuf>,
-        /// Held-out tev1 JSONL. Required when `--train` is a file. A cache directory supplies its own `heldout.jsonl`.
+        /// Held-out qwen JSONL. Required when `--train` is a file. A cache directory supplies its own `heldout.jsonl`.
         #[arg(long)]
         heldout: Option<PathBuf>,
         /// Raw Rust snippet JSONL (`snippet`, `text`, `code`, or `old_contents`). The teacher writes before/after pairs. Not modified. Parquet is refused.

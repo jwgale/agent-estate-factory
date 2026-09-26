@@ -1,4 +1,4 @@
-//! Dual tev1 + glm4-chat journey on one rust_idiom expand cache. No network and no live PASS.
+//! Dual qwen + glm4-chat journey on one rust_idiom expand cache. No network and no live PASS.
 
 use std::fs;
 use std::path::PathBuf;
@@ -77,18 +77,18 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
     assert!(!stdout.contains(secret), "{stdout}");
     assert!(!stderr.contains(secret), "{stderr}");
 
-    let tev1_plan = fs::read_to_string(out.join("tev1/journey-plan.json")).unwrap();
+    let qwen_plan = fs::read_to_string(out.join("qwen/journey-plan.json")).unwrap();
     let glm_plan = fs::read_to_string(out.join("glm4-chat/journey-plan.json")).unwrap();
     let compare = fs::read_to_string(out.join("dual-compare.json")).unwrap();
 
-    assert!(tev1_plan.contains("\"preset\": \"tev1\""), "{tev1_plan}");
+    assert!(qwen_plan.contains("\"preset\": \"qwen\""), "{qwen_plan}");
     assert!(
-        tev1_plan.contains("\"base\": \"Qwen/Qwen3.5-4B\""),
-        "{tev1_plan}"
+        qwen_plan.contains("\"base\": \"Qwen/Qwen3.5-4B\""),
+        "{qwen_plan}"
     );
     assert!(
-        tev1_plan.contains("\"template\": \"qwen3_5\""),
-        "{tev1_plan}"
+        qwen_plan.contains("\"template\": \"qwen3_5\""),
+        "{qwen_plan}"
     );
     assert!(glm_plan.contains("\"preset\": \"glm4-chat\""), "{glm_plan}");
     assert!(
@@ -96,13 +96,13 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
         "{glm_plan}"
     );
     assert!(glm_plan.contains("\"template\": \"glm4\""), "{glm_plan}");
-    assert!(tev1_plan.contains("\"out\":"), "{tev1_plan}");
-    assert!(!tev1_plan.contains("glm4-chat"), "{tev1_plan}");
+    assert!(qwen_plan.contains("\"out\":"), "{qwen_plan}");
+    assert!(!qwen_plan.contains("glm4-chat"), "{qwen_plan}");
     assert!(
         glm_plan.contains("/glm4-chat") || glm_plan.contains("\\glm4-chat"),
         "{glm_plan}"
     );
-    let tev1_sha = tev1_plan
+    let qwen_sha = qwen_plan
         .lines()
         .find(|line| line.contains("heldout_sha256"))
         .unwrap();
@@ -110,8 +110,8 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
         .lines()
         .find(|line| line.contains("heldout_sha256"))
         .unwrap();
-    assert_eq!(tev1_sha.trim(), glm_sha.trim(), "{tev1_sha} vs {glm_sha}");
-    assert!(compare.contains(tev1_sha.trim()), "{compare}");
+    assert_eq!(qwen_sha.trim(), glm_sha.trim(), "{qwen_sha} vs {glm_sha}");
+    assert!(compare.contains(qwen_sha.trim()), "{compare}");
     assert!(compare.contains("\"holdout_shared\": true"), "{compare}");
     assert!(compare.contains("\"mode\": \"print\""), "{compare}");
     assert!(
@@ -132,13 +132,13 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
         "{compare}"
     );
     assert!(compare.contains("not a factory live PASS"), "{compare}");
-    assert!(tev1_plan.contains("\"network\": false"), "{tev1_plan}");
+    assert!(qwen_plan.contains("\"network\": false"), "{qwen_plan}");
     assert!(glm_plan.contains("\"network\": false"), "{glm_plan}");
     assert!(
-        tev1_plan.contains("\"live_pass_recorded\": false"),
-        "{tev1_plan}"
+        qwen_plan.contains("\"live_pass_recorded\": false"),
+        "{qwen_plan}"
     );
-    assert!(!out.join("tev1/comparison.json").exists());
+    assert!(!out.join("qwen/comparison.json").exists());
     assert!(!out.join("glm4-chat/comparison.json").exists());
 
     let foreign = bin()
@@ -230,7 +230,7 @@ fn dual_print_writes_plans_and_a_compare_stub_for_one_holdout() {
         "{}",
         default_parent.display()
     );
-    assert!(default_parent.join("tev1/journey-plan.json").is_file());
+    assert!(default_parent.join("qwen/journey-plan.json").is_file());
     assert!(default_parent.join("glm4-chat/journey-plan.json").is_file());
     let _ = fs::remove_dir_all(&default_parent);
 
@@ -289,7 +289,7 @@ fn dual_run_replaces_a_stale_compare_before_a_student_fails() {
     // An older scored compare is the same hazard as a print stub.
     fs::write(
         &compare_path,
-        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"tev1\": {\"specialist_accuracy\": 0.99}}\n}\n",
+        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"qwen\": {\"specialist_accuracy\": 0.99}}\n}\n",
     )
     .unwrap();
 
@@ -373,10 +373,10 @@ fn dual_print_replaces_a_stale_compare_before_a_student_fails() {
     let compare_path = out.join("dual-compare.json");
     fs::write(
         &compare_path,
-        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"tev1\": {\"specialist_accuracy\": 0.99}}\n}\n",
+        "{\n  \"mode\": \"run\",\n  \"factory_live_pass\": false,\n  \"presets\": {\"qwen\": {\"specialist_accuracy\": 0.99}}\n}\n",
     )
     .unwrap();
-    // Second student cannot be created, so print stops after tev1.
+    // Second student cannot be created, so print stops after qwen.
     fs::write(out.join("glm4-chat"), b"not-a-directory").unwrap();
 
     let printed = bin()
@@ -404,7 +404,7 @@ fn dual_print_replaces_a_stale_compare_before_a_student_fails() {
     assert!(stdout.contains("classify journey dual: print"), "{stdout}");
     assert!(stdout.contains("in-progress"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
-    assert!(out.join("tev1/journey-plan.json").is_file());
+    assert!(out.join("qwen/journey-plan.json").is_file());
     assert!(!out.join("glm4-chat/journey-plan.json").exists());
 
     let compare = fs::read_to_string(&compare_path).unwrap();
@@ -492,10 +492,10 @@ fn dual_modest_print_writes_the_short_gauge_on_both_plans() {
     assert!(!stdout.contains(secret), "{stdout}");
     assert!(!stderr.contains(secret), "{stderr}");
 
-    let tev1_plan = fs::read_to_string(out.join("tev1/journey-plan.json")).unwrap();
+    let qwen_plan = fs::read_to_string(out.join("qwen/journey-plan.json")).unwrap();
     let glm_plan = fs::read_to_string(out.join("glm4-chat/journey-plan.json")).unwrap();
     let compare = fs::read_to_string(out.join("dual-compare.json")).unwrap();
-    for plan in [&tev1_plan, &glm_plan] {
+    for plan in [&qwen_plan, &glm_plan] {
         assert!(plan.contains("\"train_size\": \"500\""), "{plan}");
         assert!(plan.contains("\"max_steps\": 50"), "{plan}");
         assert!(plan.contains("max_steps: 50"), "{plan}");
@@ -601,7 +601,7 @@ fn dual_modest_print_writes_the_short_gauge_on_both_plans() {
     let small_stdout = String::from_utf8_lossy(&small.stdout);
     let small_stderr = String::from_utf8_lossy(&small.stderr);
     assert!(small.status.success(), "{small_stdout}\n{small_stderr}");
-    let small_plan = fs::read_to_string(small_out.join("tev1/journey-plan.json")).unwrap();
+    let small_plan = fs::read_to_string(small_out.join("qwen/journey-plan.json")).unwrap();
     let small_glm = fs::read_to_string(small_out.join("glm4-chat/journey-plan.json")).unwrap();
     let small_compare = fs::read_to_string(small_out.join("dual-compare.json")).unwrap();
     assert!(

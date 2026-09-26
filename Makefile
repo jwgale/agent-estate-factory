@@ -1,4 +1,4 @@
-.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora glm4-chat-journey uniqueness-glm glm4-chat-lora-journey uniqueness-glm-lora classify-prepare classify-eval tev1-journey ag-news-journey deepseek-classify-journey glm4-classify-journey
+.PHONY: validate plan apply apply-gated apply-dry-run drift models catalog catalog-dump supervisor proxy-check gate gate-60 gate-90 day90 day90-mixed pause-stop pause-start pause-status test check task-mock suspend resume status plans feed-pack feed-import feed-list leases audits history probes feed-cursor floor-suspend floor-resume floor-history operator-day convey packs-list packs-index reconcile packs-propose audit-export expire doctor doctor-strict fixtures-check sessions plan-diff smoke backup restore pause-proof policy-check feed-loop live-specialist real-world enrich-prepare enrich-live-prove train-prepare qlora-journey lora-journey seat-journey lf-beachhead-prepare uniqueness-ladder uniqueness-full uniqueness-full-lora uniqueness-prove-checklist train-next train-next-lora seat-journey-lora axolotl-qlora-journey uniqueness-axolotl unsloth-qlora-journey uniqueness-unsloth axolotl-lora-journey uniqueness-axolotl-lora unsloth-lora-journey uniqueness-unsloth-lora mlx-lm-lora-journey uniqueness-mlx purpose-build-checklist purpose-build-pick purpose-build-journey deepseek-r1-distill-journey uniqueness-deepseek deepseek-r1-distill-lora-journey uniqueness-deepseek-lora glm4-chat-journey uniqueness-glm glm4-chat-lora-journey uniqueness-glm-lora classify-prepare classify-eval classify-qwen-journey ag-news-journey deepseek-classify-journey glm4-classify-journey
 
 ESTATE ?= examples/estate.yaml
 STATE ?= .cell
@@ -455,23 +455,23 @@ glm4-chat-lora-journey:
 uniqueness-glm-lora:
 	bash scripts/uniqueness-glm-lora.sh
 
-# Opt-in tev1-style classify prepare. Offline JSONL to a one-letter LLaMA-Factory set.
+# Opt-in one-letter classify prepare. Offline JSONL to a one-letter LLaMA-Factory set.
 # Does not train. Local only. Do not add to smoke, gate-90, or GitHub Actions.
 classify-prepare:
 	bash scripts/classify-prepare.sh
 
-# Opt-in tev1-style classify eval. Mock unless CLASSIFY_ENDPOINT is set.
+# Opt-in one-letter classify eval. Mock unless CLASSIFY_ENDPOINT is set.
 # Does not record a live PASS. Local only. Do not add to smoke, gate-90, or GitHub Actions.
 classify-eval:
 	bash scripts/classify-eval.sh
 
-# Opt-in tev1 reproduce journey. Default is --print and local llamafactory-cli train.
-# TEV1_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
+# Opt-in qwen reproduce journey. Default is --print and local llamafactory-cli train.
+# CLASSIFY_QWEN_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
 # TRAIN_DRIVER=together selects the Together LoRA driver. It is still opt-in.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 # Does not record a live PASS.
-tev1-journey:
-	bash scripts/tev1-journey.sh
+classify-qwen-journey:
+	bash scripts/classify-qwen-journey.sh
 
 # Opt-in ag_news classify journey. Default is --print and train-size 3000.
 # AG_NEWS_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
@@ -482,7 +482,7 @@ ag-news-journey:
 
 # Opt-in DeepSeek-R1-Distill classify journey. Default is --print and local llamafactory-cli train.
 # DEEPSEEK_CLASSIFY_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
-# Together stays on the tev1 path unless TOGETHER_MODEL is set with TRAIN_DRIVER=together.
+# Together stays on the default Qwen path unless TOGETHER_MODEL is set with TRAIN_DRIVER=together.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 # Does not record a live PASS. READY_FOR_LIVE_TEST stays no.
 deepseek-classify-journey:
@@ -490,7 +490,7 @@ deepseek-classify-journey:
 
 # Opt-in GLM-4 Chat classify journey. Default is --print and local llamafactory-cli train.
 # GLM_CLASSIFY_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
-# Together stays on the tev1 path unless TOGETHER_MODEL is set with TRAIN_DRIVER=together.
+# Together stays on the default Qwen path unless TOGETHER_MODEL is set with TRAIN_DRIVER=together.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 # Does not record a live PASS. READY_FOR_LIVE_TEST stays no.
 glm4-classify-journey:
