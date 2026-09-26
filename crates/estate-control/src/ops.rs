@@ -8,6 +8,7 @@ use conveyor_proxy::{
 use estate_schema::{
     convey_hop_declared_capability, convey_intention_coverage, describe_agent_edge_coverage,
     describe_agents_section, describe_declared_coverage, describe_hop_coverage,
+    IntentionKind,
     describe_intention_coverage, describe_model_class_coverage, describe_placements, estate_hash,
     list_plans, load_estate, load_estate_unvalidated, load_policy, policy_allows,
 };
@@ -743,6 +744,148 @@ pub(crate) fn cmd_authorize(
         bail!("authorize denied");
     }
     Ok(())
+}
+
+/// Host → select → authorize → data-plane complete → receipt.
+/// A bad selector hint refuses before authorize and before the receipt.
+/// The selector does not grant. Authorize decides allow or deny. Complete
+/// runs on the data plane for the chosen binding. Missing key or endpoint
+/// fail-closes. No honesty stack. No hop lease.
+pub(crate) fn cmd_complete(
+    agent: &str,
+    prompt: Option<String>,
+    text: Option<String>,
+    object: Option<&str>,
+    estate_path: &Path,
+    state_dir: &Path,
+    feed_dir: Option<&Path>,
+    endpoint: Option<String>,
+    mock: bool,
+) -> Result<()> {
+    let payload = prompt
+        .or(text)
+        .ok_or_else(|| anyhow::anyhow!("set --prompt or --text"))?;
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    let hint = crate::decisions::load_select_hint(state_dir)?;
+    let selection = crate::decisions::resolve_selection(&estate, Some(agent), hint.as_ref(), false);
+    let object = match object {
+        Some(id) => id.to_string(),
+        None if selection.result != "abstain" && selection.validation == "ok" => {
+            selection.result.clone()
+        }
+        None => {
+            let outcome = if selection.validation != "ok" {
+                format!("refuse:decision-{}", selection.validation)
+            } else {
+                "refuse:decision-abstain".to_string()
+            };
+            let capability = if selection.result == "abstain" {
+                "abstain"
+            } else {
+                selection.result.as_str()
+            };
+            match crate::decisions::record_complete_receipt(
+                &estate,
+                state_dir,
+                capability,
+                agent,
+                hint.as_ref(),
+                &outcome,
+            ) {
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!(
+                        "decision receipt: journal write failed after complete commit: {err}"
+                    );
+                }
+            }
+            bail!("{outcome}: selector did not choose one valid seat");
+        }
+    };
+    let decision = conveyor_proxy::check(
+        &estate,
+        agent,
+        IntentionKind::Model,
+        &object,
+        feed_dir,
+    )?;
+    if !decision.is_allow() {
+        let outcome = format!("refuse:{}", estate_schema::coverage_word(&decision));
+        match crate::decisions::record_complete_receipt(
+            &estate,
+            state_dir,
+            &object,
+            agent,
+            hint.as_ref(),
+            &outcome,
+        ) {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!("decision receipt: journal write failed after authorize commit: {err}");
+            }
+        }
+        let resp = conveyor_proxy::response_from(&decision);
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        bail!("authorize denied");
+    }
+    match model_estate::complete_via_binding(
+        &estate,
+        &object,
+        agent,
+        &payload,
+        endpoint.as_deref(),
+        mock,
+    ) {
+        Err(err) => {
+            let outcome = crate::decisions::complete_driver_outcome(&err);
+            match crate::decisions::record_complete_receipt(
+                &estate,
+                state_dir,
+                &object,
+                agent,
+                hint.as_ref(),
+                &outcome,
+            ) {
+                Ok(_) => {}
+                Err(journal_err) => {
+                    eprintln!(
+                        "decision receipt: journal write failed after complete commit: {journal_err}"
+                    );
+                }
+            }
+            Err(err.into())
+        }
+        Ok(result) => {
+            let outcome = if result.allow {
+                "allow".to_string()
+            } else {
+                "refuse:denied".to_string()
+            };
+            match crate::decisions::record_complete_receipt(
+                &estate,
+                state_dir,
+                &object,
+                agent,
+                hint.as_ref(),
+                &outcome,
+            ) {
+                Ok(receipt) => {
+                    if result.allow {
+                        println!("{}", crate::decisions::cite_line(&receipt));
+                    }
+                }
+                Err(err) => {
+                    eprintln!("decision receipt: journal write failed after complete commit: {err}");
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            if !result.allow {
+                bail!("specialist denied");
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Structural refuses that already stop the call before a decision.

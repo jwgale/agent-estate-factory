@@ -45,9 +45,9 @@ On `main` through #281 (`9ff2ed50`), the loop already runs with shipped CLI and 
 
 3. **Select and validate.** A selector chooses one id or abstains. `{state-dir}/decision-select.json` is an optional hint and is not a grant. A bad hint is `refuse:decision-select` before the check and before the receipt. The host re-validates that choice as `ok`, `stale`, `ineligible`, or `expired`. A fallback id may be recorded. The selector does not grant permission. A fallback is not a grant.
 
-4. **Receipt.** `estate authorize` (#281) and `estate convey call` (#279) append one `cell-one.decision-receipt.v0` line at `{state-dir}/decisions/receipts.jsonl`. Authorize sets `surface=authorize`, `hop_id` to the intention kind, and `capability` to the object. Convey-call lines omit `surface` and keep the hop id. `estate convey hop` remains the lease-bound hop stub that names the population. Success prints one `decision receipt:` cite. `estate decisions export` writes JSONL replay cases. `estate decisions report` counts stage, validation, and fallback.
+4. **Receipt.** `estate authorize` (#281), `estate convey call` (#279), and `estate complete` append one `cell-one.decision-receipt.v0` line at `{state-dir}/decisions/receipts.jsonl`. Authorize sets `surface=authorize`, `hop_id` to the intention kind, and `capability` to the object. Complete sets `surface=complete`, `hop_id` `model`, and `capability` to the binding complete targeted. Convey-call lines omit `surface` and keep the hop id. `estate convey hop` remains the lease-bound hop stub that names the population. Success prints one `decision receipt:` cite. `estate decisions export` writes JSONL replay cases. `estate decisions report` counts stage, validation, and fallback.
 
-5. **Bounded execute, or fail closed.** Authorize still decides allow or deny. A convey call still needs a granted hop lease and an allow intention. Coverage deny, intention deny, `model.local.down`, a placement-actual SKU, a mesh that does not parse, and `refuse:agent-unplaced` stop before a grant. A journal write that fails after commit still prints the allow or deny JSON. The hop or authorize exit stands. Authority stays a file check (`would-allow` / `would-deny` / `not-enforced`) and does not claim mediation. Control does not complete. `estate convey` stays a lease-bound hop stub.
+5. **Bounded execute, or fail closed.** Authorize still decides allow or deny. A convey call still needs a granted hop lease and an allow intention. `estate complete` is the thin host → select → receipt operator path that then drives a real complete: it authorizes, delegates to the data-plane driver for the chosen binding (`complete_via_binding`: local Ollama or frontier), and journals `surface=complete`. Control does not invent the text. Omit `--object` when the selector chooses one eligible id. Name `--object` to complete a specific binding; the selector still does not grant. Equal-class abstain without `--object` is `refuse:decision-abstain`. Missing `CELL_LOCAL_ENDPOINT` or `XAI_API_KEY` fail-closes. `estate specialist` stays the unbound delegate and does not journal. Coverage deny, intention deny, `model.local.down`, a placement-actual SKU, a mesh that does not parse, and `refuse:agent-unplaced` stop before a grant. A journal write that fails after commit still prints the allow, deny, or completion JSON. The hop, authorize, or complete exit stands. Authority stays a file check (`would-allow` / `would-deny` / `not-enforced`) and does not claim mediation. Control does not complete. `estate convey` stays a lease-bound hop stub.
 
 ### Honest demo (AG News cohesion)
 
@@ -58,14 +58,13 @@ Receipts in that throwaway journal:
 - `r-1-cb40873d` — `result=ag_news` `validation=ok` `surface=authorize`
 - `r-2-a2f05740` — `result=ag_news` `validation=ok` on `estate convey call` (hop `cohesion-agnews-hop`; convey-call lines omit `surface`)
 
-`estate decisions report` after both: receipts=2, validate=2, validation ok=2, fallback none=2. Convey is lease and select. It is not a live model ping. Report track: `cohesion-agnews-20260926.md`. `READY_FOR_LIVE_TEST` stays no. Not a live PASS.
+`estate decisions report` after both: receipts=2, validate=2, validation ok=2, fallback none=2. Convey is lease and select. It is not a live model ping. `estate complete` is the one operator path that can add a `surface=complete` line after that select. This page does not invent that live generate. Report track: `cohesion-agnews-20260926.md`. `READY_FOR_LIVE_TEST` stays no. Not a live PASS.
 
 ### Still not claimed
 
 - A live generate PASS. This page does not invent a live PASS. `READY_FOR_LIVE_TEST` stays no.
 - Keel UI, or an ACP workspace clone
 - Promote, auto-apply, or a rewrite of locked `examples/estate.yaml`
-- Tip sprawl past `9ff2ed50`
 - A dual rust_idiom launch
 - `estate convey` as more than a lease-bound hop stub
 

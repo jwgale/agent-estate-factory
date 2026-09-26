@@ -402,9 +402,58 @@ pub(crate) enum Command {
         #[arg(long)]
         feed_dir: Option<PathBuf>,
     },
-    /// Decision journal written by `estate convey call` and `estate authorize`.
-    /// `export` writes JSONL replay cases. `report` counts stage, validation,
-    /// and fallback. Selectors do not grant permission. No promote. No auto-apply.
+    /// Host → select → authorize → data-plane complete → receipt.
+    /// After the estate loads, a bad `{state-dir}/decision-select.json` is
+    /// `refuse:decision-select` before the check and before the receipt.
+    /// The host prepares eligible model-binding ids. A selector chooses
+    /// one id or abstains. Zero or two or more eligible ids abstain, so
+    /// frontier and local stay equal class. Omit `--object` when that
+    /// selector chooses one id with validation `ok`. Name `--object` to
+    /// complete a specific binding; the selector still does not grant.
+    /// Authorize still decides allow or deny. On allow, complete runs
+    /// through the selected binding's local or frontier driver
+    /// (`complete_via_binding`). Control does not invent the text.
+    /// Missing `CELL_LOCAL_ENDPOINT` or `XAI_API_KEY` fail-closes.
+    /// A resolved allow, deny, or fail-closed complete appends one
+    /// versioned receipt (`cell-one.decision-receipt.v0`, `surface`
+    /// `complete`) at `{state-dir}/decisions/receipts.jsonl`. `hop_id`
+    /// is `model` and `capability` is the binding complete targeted.
+    /// Success prints one `decision receipt:` cite, then the completion
+    /// JSON. A journal write that fails after complete has committed
+    /// prints `decision receipt: journal write failed after complete
+    /// commit` and still prints the completion. `--mock` uses in-process
+    /// drivers. `{state-dir}/decision-select.json` is an optional hint
+    /// and is not a grant. No honesty stack. No hop lease. No promote.
+    /// No auto-apply. Does not spawn. Does not invent a live PASS.
+    Complete {
+        #[arg(long)]
+        agent: String,
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Alias for `--prompt`.
+        #[arg(long)]
+        text: Option<String>,
+        /// Binding to complete. Omit when the selector chooses one eligible id.
+        #[arg(long)]
+        object: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Optional proxy audit directory. A failed append refuses before the receipt.
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        /// Override. Local: CELL_LOCAL_ENDPOINT. Frontier: CELL_FRONTIER_ENDPOINT.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// In-process MockLocal / MockFrontier. Not a live generate.
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+    },
+    /// Decision journal written by `estate convey call`, `estate authorize`,
+    /// and `estate complete`. `export` writes JSONL replay cases. `report`
+    /// counts stage, validation, and fallback. Selectors do not grant
+    /// permission. No promote. No auto-apply.
     Decisions {
         #[command(subcommand)]
         command: DecisionsCommand,

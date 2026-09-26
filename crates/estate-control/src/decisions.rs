@@ -1,10 +1,13 @@
-//! Keel-style middle layer for `estate convey call` and `estate authorize`.
+//! Keel-style middle layer for `estate convey call`, `estate authorize`,
+//! and `estate complete`.
 //!
 //! The host prepares eligible model-binding candidates, a selector chooses
 //! one opaque id or abstains, and the host re-validates that choice. The
 //! selector does not grant permission. A convey call is still decided by
 //! the hop lease and the estate intention. An authorize check is still
-//! decided by `authorize`. A fallback id is recorded and not applied.
+//! decided by `authorize`. `estate complete` still authorizes, then
+//! delegates complete to the data-plane driver for the chosen binding.
+//! A fallback id is recorded and not applied.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelBinding};
@@ -41,7 +44,8 @@ pub(crate) struct DecisionReceipt {
     #[serde(default)]
     pub agent: Option<String>,
     /// Empty on `estate convey call`. `authorize` on `estate authorize`.
-    /// Omitted from the JSON when empty so convey lines stay the same shape.
+    /// `complete` on `estate complete`. Omitted from the JSON when empty
+    /// so convey lines stay the same shape.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub surface: String,
     pub stage: String,
@@ -176,6 +180,33 @@ fn revalidate(
     (validation.into(), fallback)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Selection {
+    pub result: String,
+    pub validation: String,
+    pub fallback: Option<String>,
+    pub stage: String,
+}
+
+/// Host prepare / select / revalidate without writing a receipt.
+pub(crate) fn resolve_selection(
+    estate: &Estate,
+    agent: Option<&str>,
+    hint: Option<&SelectHint>,
+    expired: bool,
+) -> Selection {
+    let prepared = prepare_candidates(estate, agent);
+    let (result, claimed) = select(&prepared, hint);
+    let (validation, fallback) = revalidate(&prepared, &result, claimed.as_deref(), expired);
+    let stage = stage_name(&result, &validation).to_string();
+    Selection {
+        result,
+        validation,
+        fallback,
+        stage,
+    }
+}
+
 fn stage_name(result: &str, validation: &str) -> &'static str {
     match validation {
         "stale" | "ineligible" => "fallback",
@@ -283,6 +314,45 @@ pub(crate) fn record_authorize_receipt(
     )
 }
 
+/// Estate-bound complete. `hop_id` is `model` and `capability` is the
+/// binding that complete targeted. `surface` is `complete`. No hop-lease
+/// clock: `expired` stays false. The same host prepare / select /
+/// revalidate path as authorize. The selector does not grant.
+pub(crate) fn record_complete_receipt(
+    estate: &Estate,
+    state_dir: &Path,
+    object: &str,
+    agent: &str,
+    hint: Option<&SelectHint>,
+    outcome: &str,
+) -> Result<DecisionReceipt> {
+    record_receipt(
+        estate,
+        state_dir,
+        "model",
+        object,
+        Some(agent),
+        hint,
+        outcome,
+        false,
+        "complete",
+    )
+}
+
+pub(crate) fn complete_driver_outcome(err: &model_estate::ModelError) -> String {
+    match err {
+        model_estate::ModelError::MissingEndpoint(_) => "refuse:missing-endpoint".into(),
+        model_estate::ModelError::MissingCreds(_) | model_estate::ModelError::MissingFrontierKey => {
+            "refuse:missing-creds".into()
+        }
+        model_estate::ModelError::NotWired(_) => "refuse:not-wired".into(),
+        model_estate::ModelError::Unknown(_) => "refuse:unknown-binding".into(),
+        model_estate::ModelError::Denied(_) => "refuse:denied".into(),
+        model_estate::ModelError::Refused(_) => "refuse:refused".into(),
+        other => outcome_stub_from_text(&other.to_string()),
+    }
+}
+
 fn record_receipt(
     estate: &Estate,
     state_dir: &Path,
@@ -347,7 +417,7 @@ fn check_receipt(receipt: &DecisionReceipt) -> Result<()> {
         bail!("refuse:decision-receipt: schema");
     }
     match receipt.surface.as_str() {
-        "" | "authorize" => {}
+        "" | "authorize" | "complete" => {}
         _ => bail!("refuse:decision-receipt: surface"),
     }
     if receipt.id.is_empty() || receipt.seq == 0 {
@@ -528,6 +598,11 @@ mod tests {
         assert_eq!(validation, "ok");
         assert!(fallback.is_none());
         assert_eq!(stage_name(&result, &validation), "validate");
+        let selection = resolve_selection(&estate, Some("research"), None, false);
+        assert_eq!(selection.result, "local_slm");
+        assert_eq!(selection.validation, "ok");
+        assert!(selection.fallback.is_none());
+        assert_eq!(selection.stage, "validate");
     }
 
     #[test]
@@ -816,6 +891,37 @@ mod tests {
         assert!(auth.fallback.is_none());
         let line = serde_json::to_string(&auth).unwrap();
         assert!(line.contains("\"surface\":\"authorize\""), "{line}");
+
+        let complete = record_complete_receipt(
+            &estate,
+            &dir,
+            "local_slm",
+            "research",
+            None,
+            "allow",
+        )
+        .unwrap();
+        assert_eq!(complete.surface, "complete");
+        assert_eq!(complete.hop_id, "model");
+        assert_eq!(complete.capability, "local_slm");
+        assert_eq!(complete.agent.as_deref(), Some("research"));
+        assert_eq!(complete.result, "local_slm");
+        assert_eq!(complete.validation, "ok");
+        assert_eq!(complete.stage, "validate");
+        assert_eq!(complete.seq, 3);
+        assert!(complete.fallback.is_none());
+        let line = serde_json::to_string(&complete).unwrap();
+        assert!(line.contains("\"surface\":\"complete\""), "{line}");
+        assert_eq!(
+            complete_driver_outcome(&model_estate::ModelError::MissingEndpoint(
+                "CELL_LOCAL_ENDPOINT".into()
+            )),
+            "refuse:missing-endpoint"
+        );
+        assert_eq!(
+            complete_driver_outcome(&model_estate::ModelError::MissingFrontierKey),
+            "refuse:missing-creds"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

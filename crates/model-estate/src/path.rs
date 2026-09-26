@@ -1,13 +1,19 @@
 //! Mixed path: authorize (A3–A4) → local specialist (A8) → frontier/tool (A7).
-//! Not a gateway. Control plane does not call this.
+//! Not a gateway. Control plane does not call [`run_task`].
 //!
-//! Estate-bound local work fails closed when local is down: audited deny,
-//! no silent frontier fallback.
+//! [`complete_via_binding`] is the thin estate-bound complete used by
+//! `estate complete` after host prepare / select / authorize. It is not
+//! the mixed path. Estate-bound local work fails closed when local is
+//! down: no silent frontier fallback.
 
+use crate::catalog::parse_runtime;
 use crate::error::ModelError;
-use crate::frontier::FrontierDriver;
-use crate::local::{LocalDriver, SpecialistJob, SpecialistRequest, SpecialistResult};
-use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelClass};
+use crate::frontier::{frontier_from_binding, FrontierDriver, MockFrontier};
+use crate::local::{
+    builtin_specialist, local_from_binding, resolve_specialist_endpoint, run_http_specialist,
+    HttpLocal, LocalDriver, MockLocal, SpecialistJob, SpecialistRequest, SpecialistResult,
+};
+use estate_schema::{authorize, AccessRequest, Estate, IntentionKind, ModelBinding, ModelClass};
 use feed_collector::{append_event, ScrubbedEvent};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -174,6 +180,125 @@ pub fn run_task(
             })
         }
     }
+}
+
+/// Complete through one selected binding's driver. Not [`run_task`].
+/// Control authorizes first. Missing local endpoint or frontier key
+/// fail-closes. No silent class fallback.
+pub fn complete_via_binding(
+    estate: &Estate,
+    binding_id: &str,
+    agent: &str,
+    payload: &str,
+    endpoint: Option<&str>,
+    mock: bool,
+) -> Result<SpecialistResult, ModelError> {
+    let text = payload.trim();
+    if text.is_empty() {
+        return Err(ModelError::Refused("specialist text is empty".into()));
+    }
+    if estate_schema::contains_sku(text) {
+        return Err(ModelError::Refused("prompt encodes a hardware SKU".into()));
+    }
+    let binding = estate
+        .model_bindings
+        .iter()
+        .find(|row| row.id == binding_id)
+        .ok_or_else(|| ModelError::Unknown(binding_id.into()))?;
+    match binding.class {
+        ModelClass::Local => complete_local(binding, agent, text, endpoint, mock),
+        ModelClass::Frontier => complete_frontier(binding, agent, text, endpoint, mock),
+    }
+}
+
+fn complete_local(
+    binding: &ModelBinding,
+    agent: &str,
+    text: &str,
+    endpoint: Option<&str>,
+    mock: bool,
+) -> Result<SpecialistResult, ModelError> {
+    let req = SpecialistRequest {
+        job: SpecialistJob::Complete,
+        agent_id: agent.to_string(),
+        kind: "model".into(),
+        text: text.to_string(),
+    };
+    if mock {
+        return MockLocal {
+            id: binding.id.clone(),
+        }
+        .specialist(&req);
+    }
+    let driver = if let Some(raw) = endpoint {
+        let endpoint = resolve_specialist_endpoint(Some(raw))?;
+        let runtime = parse_runtime(&binding.driver).ok_or_else(|| {
+            ModelError::Other(format!(
+                "unknown local driver '{}'; catalog runtimes: ollama, llama.cpp, mlx, vllm, trt, http-remote",
+                binding.driver
+            ))
+        })?;
+        Box::new(HttpLocal {
+            id: binding.id.clone(),
+            endpoint,
+            runtime,
+        }) as Box<dyn LocalDriver>
+    } else {
+        local_from_binding(binding)?
+    };
+    driver.specialist(&req)
+}
+
+fn complete_frontier(
+    binding: &ModelBinding,
+    agent: &str,
+    text: &str,
+    endpoint: Option<&str>,
+    mock: bool,
+) -> Result<SpecialistResult, ModelError> {
+    let policy = builtin_specialist(&SpecialistRequest {
+        job: SpecialistJob::PolicyPrecheck,
+        agent_id: agent.to_string(),
+        kind: "model".into(),
+        text: text.to_string(),
+    });
+    if !policy.allow {
+        return Ok(SpecialistResult {
+            job: SpecialistJob::Complete.as_str().into(),
+            completion: String::new(),
+            ..policy
+        });
+    }
+    if mock {
+        let frontier = MockFrontier {
+            id: binding.id.clone(),
+            reply: "pong".into(),
+        };
+        return Ok(SpecialistResult {
+            allow: true,
+            redacted_text: policy.redacted_text,
+            reason: "frontier completion".into(),
+            job: SpecialistJob::Complete.as_str().into(),
+            completion: frontier.complete(text)?,
+        });
+    }
+    if endpoint.is_some() {
+        return run_http_specialist(endpoint, "complete", agent, "model", text, "frontier");
+    }
+    let driver = frontier_from_binding(binding)?;
+    let completion = driver.complete(text)?;
+    if estate_schema::contains_sku(&completion) {
+        return Err(ModelError::Refused(
+            "completion encodes a hardware SKU".into(),
+        ));
+    }
+    Ok(SpecialistResult {
+        allow: true,
+        redacted_text: policy.redacted_text,
+        reason: "frontier completion".into(),
+        job: SpecialistJob::Complete.as_str().into(),
+        completion,
+    })
 }
 
 fn fail_closed_local(
