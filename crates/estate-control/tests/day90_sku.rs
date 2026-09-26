@@ -256,7 +256,13 @@ fn readers_refuse_tampered_sku_host_class() {
     );
 
     let leases = estate_bin()
-        .args(["leases", "--state-dir", &state_s])
+        .args([
+            "leases",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state_s,
+        ])
         .output()
         .unwrap();
     let leases_text = text(&leases);

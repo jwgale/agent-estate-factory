@@ -291,7 +291,13 @@ fn catalog_and_leases_are_file_sot() {
     );
     assert!(state.join("catalog.json").is_file());
     let leases = estate_bin()
-        .args(["leases", "--state-dir", &state.display().to_string()])
+        .args([
+            "leases",
+            "--estate",
+            &fixture("examples/estate.yaml"),
+            "--state-dir",
+            &state.display().to_string(),
+        ])
         .output()
         .unwrap();
     assert!(leases.status.success());

@@ -177,7 +177,14 @@ pub(crate) fn cmd_pause_proof(
     Ok(())
 }
 
-pub(crate) fn cmd_leases(state_dir: &Path) -> Result<()> {
+pub(crate) fn cmd_leases(estate_path: &Path, state_dir: &Path) -> Result<()> {
+    let estate =
+        load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
+    // After the estate loads, before the placement list. Same stack as
+    // status, doctor, reconcile, and audit export. Hop cites do not change
+    // this command's exit code. A placement-actual SKU still reaches the
+    // lease reader below, which refuses before the JSON.
+    print!("{}", honesty_stack(&estate, state_dir)?);
     match load_placements(state_dir)? {
         None => {
             println!("no placement-actual.json under {}", state_dir.display());
@@ -760,7 +767,7 @@ pub(crate) fn cmd_audit_export(
     // Refuse paths return here: no reconcile refresh, no out-dir wipe, no
     // honesty file, no tar. Cites inside a successful snapshot do not fail
     // this command.
-    let honesty = audit_export_honesty(&estate, state_dir)?;
+    let honesty = honesty_stack(&estate, state_dir)?;
     let report = reconcile_placements(&estate, state_dir)?;
     write_reconcile(state_dir, &report)?;
     if out.exists() {
@@ -883,28 +890,28 @@ pub(crate) fn cmd_audit_export(
 
 const AUDIT_HONESTY_FILE: &str = "honesty.md";
 
-/// Agents, hop coverage cites, then Authority, for `honesty.md`.
+/// Agents, hop coverage cites, then Authority.
 ///
-/// A present mesh that does not parse, or a bad `host_class` on that file,
-/// refuses before any section. Audit export does not invent cites, Agents,
-/// or Authority rows, and the caller does not wipe or write the out dir.
-/// A missing mesh is the empty mesh from `load_mesh`: the cite list is
-/// empty and Authority stays `not-enforced` (`missing-mesh`). The caller
-/// still writes this file.
+/// Shared by `estate leases` (printed before the placement list) and
+/// `estate audit export` (`honesty.md`). A present mesh that does not parse,
+/// or a bad `host_class` on that file, refuses before any section. Callers
+/// do not invent cites, Agents, or Authority rows. A missing mesh is the
+/// empty mesh from `load_mesh`: the cite list is empty and Authority stays
+/// `not-enforced` (`missing-mesh`).
 ///
 /// `authority_report` also reads placement-actual. Mesh host classes are
 /// already refused above, so the only `MeshError::BadHostClass` that
 /// reaches the match is the placement-actual slim-parse (a SKU or other
-/// bad `host_class`). That one error continues: this snapshot still writes
+/// bad `host_class`). That one error continues: this text still includes
 /// Agents and hop cites from `load_mesh` and omits Authority rows.
-/// Placement-actual and the reconcile files already surface
-/// `refuse:bad-host-class`. Every other mesh error, including a population
-/// ahead of the floor (`refuse:agent-unplaced`), refuses here before any
-/// section. Capability mismatch is `FAIL`. Deny and deny-default are
-/// `note`. A match stays quiet. Those cites do not fail the export. Does
-/// not rewrite the mesh, the leases, the estate, or the apply audit. Does
-/// not spawn. No `enforced` status.
-fn audit_export_honesty(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
+/// `estate leases` then still refuses that SKU before the placement JSON.
+/// Every other mesh error, including a population ahead of the floor
+/// (`refuse:agent-unplaced`), refuses here before any section. Capability
+/// mismatch is `FAIL`. Deny and deny-default are `note`. A match stays
+/// quiet. Those cites do not fail the caller. Does not rewrite the mesh,
+/// the leases, the estate, or the apply audit. Does not spawn. No
+/// `enforced` status.
+fn honesty_stack(estate: &estate_schema::Estate, state_dir: &Path) -> Result<String> {
     let mesh = load_mesh(state_dir)?;
     refuse_mesh_host_classes(&mesh)?;
     let authority = match authority_report(state_dir, estate) {

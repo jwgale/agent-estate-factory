@@ -16,6 +16,10 @@ fn tmp(name: &str) -> PathBuf {
     p
 }
 
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
 fn run(bin: &str, args: &[&str]) -> (bool, String) {
     let out = Command::new(bin)
         .args(args)
@@ -44,7 +48,16 @@ fn placement(box_spawned: bool, cloud_spawned: bool) -> String {
 fn leases_does_not_print_a_spawned_cloud_lease() {
     let bin = env!("CARGO_BIN_EXE_estate");
     let state = tmp("estate");
-    let leases = ["leases", "--state-dir", &state.display().to_string()];
+    let estate = repo_root().join("examples/estate.yaml");
+    let estate_s = estate.display().to_string();
+    let state_s = state.display().to_string();
+    let leases = [
+        "leases",
+        "--estate",
+        estate_s.as_str(),
+        "--state-dir",
+        state_s.as_str(),
+    ];
 
     let (ok, text) = run(bin, &leases);
     assert!(ok, "{text}");

@@ -132,7 +132,7 @@ pub(crate) fn run() -> Result<()> {
             FeedCommand::Cursor { feed_dir } => cmd_feed_cursor(&feed_dir),
         },
         Command::Catalog { out } => cmd_catalog(&out),
-        Command::Leases { state_dir } => cmd_leases(&state_dir),
+        Command::Leases { estate, state_dir } => cmd_leases(&estate, &state_dir),
         Command::Audits { state_dir } => cmd_audits(&state_dir),
         Command::Reconcile {
             estate,

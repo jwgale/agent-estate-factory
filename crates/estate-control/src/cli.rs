@@ -193,7 +193,25 @@ pub(crate) enum Command {
         out: PathBuf,
     },
     /// Print durable placement leases. Cloud-agent must stay unspawned.
+    /// After the estate loads, prints the same Agents section as status,
+    /// doctor, reconcile, and convey authority (`describe_agents_section`),
+    /// then the same hop coverage cites (`hop_coverage_cites`: `FAIL` on
+    /// mismatch, `note` on deny and deny-default), then Authority
+    /// (`describe_authority_section` over `authority_report`), before the
+    /// placement lease list. Those cites do not fail this command. A match
+    /// stays quiet. A missing mesh is an empty cite list and stays
+    /// not-enforced. A present mesh that does not parse, or a bad host_class
+    /// on that file, refuses before those sections and before the lease list.
+    /// A placement-actual SKU host_class still continues: Agents and hop cites
+    /// print and Authority rows are omitted. The lease reader still refuses
+    /// that SKU before the placement JSON. A mesh population ahead of
+    /// placement-actual is `refuse:agent-unplaced` before those sections and
+    /// before the lease list. A spawned cloud-agent lease still refuses
+    /// before the JSON. Does not spawn. Does not write the mesh, the leases,
+    /// the estate, or the apply audit. Does not claim mediation.
     Leases {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
