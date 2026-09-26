@@ -365,7 +365,44 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ConveyCommand,
     },
-    /// Decision journal written by `estate convey call`.
+    /// Intention check. Same `authorize` as `conveyor-proxy check`.
+    /// After the estate loads, a bad `{state-dir}/decision-select.json` is
+    /// `refuse:decision-select` before the check and before the receipt.
+    /// A resolved allow or deny appends one versioned receipt at
+    /// `{state-dir}/decisions/receipts.jsonl` (`cell-one.decision-receipt.v0`,
+    /// `surface` `authorize`) before the allow or deny JSON. `hop_id` on
+    /// that line is the intention kind and `capability` is the object.
+    /// Eligible candidates are opaque model-binding ids. The selector
+    /// chooses one id or abstains. Zero eligible ids and two or more
+    /// eligible ids abstain, so frontier and local stay equal class. The
+    /// host re-validates (`ok`, `stale`, `ineligible`, `expired`) and may
+    /// record a fallback. The selector does not grant permission. Authorize
+    /// still decides allow or deny. A fallback is recorded and is not
+    /// applied. This path has no hop lease, so lease expiry stays on
+    /// `estate convey call`. Success prints one `decision receipt:` cite.
+    /// A journal write that fails after authorize has committed prints
+    /// `decision receipt: journal write failed after authorize commit` and
+    /// still prints the allow or deny JSON. The authorize exit stands.
+    /// `{state-dir}/decision-select.json` is an optional hint and is not a
+    /// grant. No honesty stack. No promote. No auto-apply. Does not spawn.
+    Authorize {
+        #[arg(long)]
+        agent: String,
+        /// tool | mcp | mount | model | memory_read | agent.
+        /// `agent` is who-may-call-whom. Aliases: agent_call, agent-call.
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        object: String,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Optional proxy audit directory. A failed append refuses before the receipt.
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+    },
+    /// Decision journal written by `estate convey call` and `estate authorize`.
     /// `export` writes JSONL replay cases. `report` counts stage, validation,
     /// and fallback. Selectors do not grant permission. No promote. No auto-apply.
     Decisions {

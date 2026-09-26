@@ -213,6 +213,21 @@ pub(crate) fn run() -> Result<()> {
                 forget,
             } => cmd_convey_expire(&estate, &state_dir, forget),
         },
+        Command::Authorize {
+            agent,
+            kind,
+            object,
+            estate,
+            state_dir,
+            feed_dir,
+        } => cmd_authorize(
+            &agent,
+            &kind,
+            &object,
+            &estate,
+            &state_dir,
+            feed_dir.as_deref(),
+        ),
         Command::Decisions { command } => match command {
             DecisionsCommand::Export { state_dir, out } => {
                 crate::decisions::cmd_decisions_export(&state_dir, &out)
