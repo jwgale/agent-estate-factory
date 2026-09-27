@@ -1347,6 +1347,13 @@ control-plane-prove --root . --out <throwaway> stitches that fuel path,
 the host-validate authorize / convey / complete --mock loop, and
 standing-dual under the runner on one lab copy. Report
 cell-one.control-plane-prove.v0. It does not record a live PASS.
+estate pack cohesion-prove --root . --out <throwaway> runs that same
+control-plane prove, then estate pack plugin-install-local for
+research-crew on examples/fixtures/agent-pack-handoff.yaml under a
+throwaway HOME, then CLI smoke: estate complete --mock as horizon
+(decision receipt, outcome allow) and as research
+(refuse:pack-orchestrator). Report cell-one.cohesion-prove.v0.
+A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:

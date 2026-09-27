@@ -524,6 +524,14 @@ non-zero when prove fails, the manifest does not validate, the symlink
 is outside, or a foreign install would be overwritten. Exported
 `INSTALL.md` documents this same loop.
 
+CLI smoke is first-class in that `INSTALL.md` and in the export
+`README.md`. It runs `estate complete --mock` as the orchestrator
+(decision receipt, outcome allow) and as a member
+(`refuse:pack-orchestrator`). A Cursor MCP loader hang is out of scope.
+`estate pack cohesion-prove` runs the install under a throwaway `HOME`
+and then that CLI smoke. `loaded: skipped:loader-unavailable` is not a
+live PASS.
+
 ```bash
 estate pack plugin-install-local --id research-crew \
   --estate examples/fixtures/agent-pack-handoff.yaml \
@@ -627,6 +635,53 @@ The compact report is `cell-one.control-plane-prove.v0`. `ok` is true only when 
 
 ```bash
 estate control-plane-prove --root . --out /tmp/cell-one-control-plane
+```
+
+## 4e. Cohesion prove (one lab, not a train)
+
+`estate pack cohesion-prove` is the feelable fuel → decide → run → pack
+loop on one throwaway directory. It composes `estate control-plane-prove`
+(section 4d) and then pack install plus CLI smoke. It does not rewrite
+`examples/estate.yaml` (cksum `43770130 3391`). It does not rewrite
+`examples/fixtures/agent-pack-handoff.yaml`.
+
+Pack install is `estate pack plugin-install-local` for `research-crew`
+on that fixture. `HOME` for the install is `<out>/home`, so the copy
+lands at `<out>/home/.cursor/plugins/local/research-crew` as a real
+directory. The operator's own home is left alone.
+
+CLI smoke is first-class. The baked estate binary from the install
+marker runs:
+
+```bash
+estate complete --mock --agent horizon --pack research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir <throwaway> --prompt ping
+```
+
+Horizon exits 0. Stdout includes `decision receipt:`. The journal row
+is `outcome` allow, `surface` complete, capability `ag_news`.
+
+```bash
+estate complete --mock --agent research --pack research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir <throwaway> --prompt ping
+```
+
+Research exits non-zero with `refuse:pack-orchestrator` and writes no
+receipt. A Cursor MCP loader hang is out of scope. The report records
+`cursor_loader: out-of-scope` and `loader_is_live_pass: false`.
+
+The compact report is `cell-one.cohesion-prove.v0` (`cohesion-prove.json`).
+`ok` is true only when fuel, decide, run, install, and CLI smoke all
+pass. `ready_for_live_test` and `live_pass_recorded` stay false.
+`live_sync` stays false. The command ends with `cohesion-prove: ok` and
+`READY_FOR_LIVE_TEST: no`. In-process mock. No network. No Ollama. No
+GPU train. This is not a live PASS. `--out` that is `examples/estate.yaml`
+is `refuse:out`.
+
+```bash
+estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
 ```
 
 ## 5. Backup rotate

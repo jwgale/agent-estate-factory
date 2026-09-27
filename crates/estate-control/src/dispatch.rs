@@ -310,6 +310,17 @@ pub(crate) fn run() -> Result<()> {
                 check_only,
                 force,
             ),
+            PackCommand::CohesionProve {
+                root,
+                out,
+                id,
+                estate,
+            } => crate::cohesion_prove::cmd_cohesion_prove(
+                &root,
+                out.as_deref(),
+                &id,
+                &estate,
+            ),
             PackCommand::McpServe {
                 estate,
                 pack,
