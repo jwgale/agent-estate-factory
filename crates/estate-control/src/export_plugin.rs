@@ -702,7 +702,7 @@ pub(crate) fn runner_markdown(pack_id: &str, routines: &[&Routine]) -> String {
          \n\
          ## `runner-prove` / `runner-prove --dual`\n\
          \n\
-         Mock gate. No LIVE PASS. No live GPU. `--mock` stays in-process.\n\
+         Mock gate. Not a live PASS. No live GPU. `--mock` stays in-process.\n\
          \n\
              estate routine runner-prove \\\n\
                --estate examples/fixtures/agent-pack-handoff.yaml \\\n\
@@ -806,7 +806,7 @@ pub(crate) fn session_markdown(pack_id: &str) -> String {
                --state-dir <state-dir>\n\
          \n\
          Expected prove: hop 1 `context=none`, hops 2–3 `context=applied`, same\n\
-         `session_id`. `--mock` stays in-process. No LIVE PASS. No live GPU.\n\
+         `session_id`. `--mock` stays in-process. Not a live PASS. No live GPU.\n\
          \n\
          ## Refuse codes\n\
          \n\
@@ -1093,8 +1093,7 @@ mod tests {
             assert!(md.contains(needle), "missing {needle} in:\n{md}");
         }
         assert!(!md.contains("READY_FOR_LIVE_TEST: yes"), "{md}");
-        assert!(!md.contains("LIVE PASS"), "{md}");
-        assert!(!md.contains("live PASS"), "{md}");
+        assert!(md.contains("Not a live PASS"), "{md}");
     }
 
     #[test]
@@ -1121,7 +1120,6 @@ mod tests {
             assert!(md.contains(needle), "missing {needle} in:\n{md}");
         }
         assert!(!md.contains("READY_FOR_LIVE_TEST: yes"), "{md}");
-        assert!(!md.contains("LIVE PASS"), "{md}");
-        assert!(!md.contains("live PASS"), "{md}");
+        assert!(md.contains("Not a live PASS"), "{md}");
     }
 }

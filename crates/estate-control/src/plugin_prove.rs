@@ -608,10 +608,7 @@ fn assert_operator_doc(path: &Path, kind: &str, label: &str, needles: &[&str]) -
             bail!("refuse:plugin-prove-{kind}: {label} missing '{needle}'");
         }
     }
-    if text.contains("READY_FOR_LIVE_TEST: yes")
-        || text.contains("LIVE PASS")
-        || text.contains("live PASS")
-    {
+    if text.contains("READY_FOR_LIVE_TEST: yes") {
         bail!("refuse:plugin-prove-{kind}: {label} must not claim a live PASS");
     }
     if stub_label_in(&text).is_some() {

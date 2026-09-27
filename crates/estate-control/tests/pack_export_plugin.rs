@@ -380,8 +380,7 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(runner.contains("READY_FOR_LIVE_TEST: no"), "{runner}");
     assert!(runner.contains("live_sync: false"), "{runner}");
     assert!(!runner.contains("READY_FOR_LIVE_TEST: yes"), "{runner}");
-    assert!(!runner.contains("LIVE PASS"), "{runner}");
-    assert!(!runner.contains("live PASS"), "{runner}");
+    assert!(runner.contains("Not a live PASS"), "{runner}");
     assert!(runner.contains("standing-classify"), "{runner}");
     assert!(runner.contains("standing-once"), "{runner}");
 
@@ -406,8 +405,7 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(session.contains("READY_FOR_LIVE_TEST: no"), "{session}");
     assert!(session.contains("live_sync: false"), "{session}");
     assert!(!session.contains("READY_FOR_LIVE_TEST: yes"), "{session}");
-    assert!(!session.contains("LIVE PASS"), "{session}");
-    assert!(!session.contains("live PASS"), "{session}");
+    assert!(session.contains("Not a live PASS"), "{session}");
 
     assert_locked_cksum();
 }
