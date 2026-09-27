@@ -1602,6 +1602,10 @@ pub(crate) enum RoutineCommand {
         #[arg(long, default_value_t = false)]
         chain: bool,
         /// After the tick, print the local digest (ran/skipped + receipt ids).
+        /// When `{state-dir}` has a local `cell-one.improvement-apply.v0`
+        /// receipt, the digest cites the same lock fields as
+        /// `estate decisions report` / `estate pack session show`
+        /// (or `refuse:cite` when those fields are missing / wrong-typed).
         #[arg(long, default_value_t = false)]
         report: bool,
     },
@@ -1644,7 +1648,15 @@ pub(crate) enum RoutineCommand {
     },
     /// Summarize the last local wake: ran/skipped, package/chain ids,
     /// receipt ids, completion_label when present. Reads routine-state
-    /// + receipts only. Not live Grok Bot sync.
+    /// + receipts only. When `{state-dir}` has a local
+    /// `cell-one.improvement-apply.v0` receipt, cites the same lock
+    /// fields as `estate decisions report` / `estate pack session show`
+    /// (schema, path, proposal id/kind/binding, standing/joinable,
+    /// `require_plan`, `refuse_without_plan`, `auto_train`,
+    /// `train_invoked`). Missing or wrong-typed lock fields are
+    /// `refuse:cite`. Discovery is local (`decisions/improvement-apply.json`,
+    /// then `{state-dir}/improvement-apply.json`); a sibling `../apply/`
+    /// is not cited. Not live Grok Bot sync.
     Digest {
         /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all.
         #[arg(long = "id", value_delimiter = ',')]

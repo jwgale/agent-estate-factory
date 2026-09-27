@@ -1378,6 +1378,8 @@ missing; local state-dir only) so the closed loop is one operator
 surface. estate pack session show on the crew state-dir cites
 those same receipt fields after the gated apply (copy beside the
 crew journal; no sibling ../apply/ walk).
+estate routine digest and estate routine tick --report cite those
+same receipt fields when the local copy is on the state-dir.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
@@ -1405,7 +1407,9 @@ specialty-seat, gated apply, Standing next joinable. Report
 cell-one.improvement-apply-prove.v0 cites the applied proposal
 id/kind, joinable, auto_train=false, and train_invoked=false.
 estate decisions report on that lab cites the apply receipt
-(cell-one.improvement-apply.v0). It does not record a live PASS.
+(cell-one.improvement-apply.v0). estate routine digest and
+estate routine tick --report cite the same receipt when it is
+local to the state-dir. It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:
