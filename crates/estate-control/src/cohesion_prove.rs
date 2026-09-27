@@ -1,6 +1,6 @@
 //! `estate pack cohesion-prove` — one throwaway lab for fuel, decide, run,
-//! specialty-real seats, pack install, multi-hop CLI crew session, and
-//! the standing improvement export.
+//! specialty-real seats, pack install, multi-hop CLI crew session, the
+//! standing improvement export, and one gated specialty-seat apply.
 //!
 //! Composes `estate control-plane-prove` (dual import-trained bind,
 //! host-validate authorize / convey / complete --mock, `standing-dual`
@@ -13,9 +13,15 @@
 //! on one `session_id` (hop 2 sees hop 1; research stays
 //! `refuse:pack-orchestrator`). Then the export-package stage of
 //! `estate decisions improvement-export-prove`: standing package from
-//! the lab journal (`auto_train=false`, train not invoked). Sibling
-//! `improvement-export-prove` stays callable alone. A Cursor MCP loader
-//! hang is out of scope. Does not rewrite `examples/estate.yaml`.
+//! the lab journal (`auto_train=false`, train not invoked). Then one
+//! gated specialty-seat apply on `{out}/apply`, reusing that package
+//! (no second host-validate). Apply without `--require-plan` is
+//! `refuse:plan`. `apply-package --require-plan` lands one
+//! `specialty-seat:*` (prefer `ag_news`). Standing next is joinable.
+//! Dataset proposals stay proposal-only. Siblings
+//! `improvement-export-prove`, `improvement-apply-prove`, and
+//! `apply-package` stay callable alone. A Cursor MCP loader hang is
+//! out of scope. Does not rewrite `examples/estate.yaml`.
 //! `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
@@ -26,6 +32,7 @@ use std::process::Command;
 
 use crate::control_plane_prove;
 use crate::crew_session_prove;
+use crate::improvement_apply;
 use crate::improvement_export;
 use crate::specialty_bind;
 
@@ -116,6 +123,19 @@ pub(crate) fn cmd_cohesion_prove(
         bail!("refuse:cohesion: improvement cite invented auto-train");
     }
 
+    println!("cohesion-prove: improvement-apply");
+    let package_file = out.join("improvement").join("improvement-package.json");
+    let package_bytes = fs::read(&package_file)
+        .with_context(|| format!("refuse:package: {}", package_file.display()))?;
+    let apply = improvement_apply::run_apply_stage(&out, &root)?;
+    if fs::read(&package_file)? != package_bytes {
+        bail!("refuse:cohesion: improvement-apply rewrote the exported package");
+    }
+    if fs::read(&locked)? != before {
+        bail!("refuse:estate: improvement-apply rewrote examples/estate.yaml");
+    }
+    require_apply_cite(&apply, &package)?;
+
     let cksum_after = file_cksum(&locked)?;
     if cksum_after != cksum_before {
         bail!("refuse:estate: examples/estate.yaml cksum changed to {cksum_after}");
@@ -139,7 +159,8 @@ pub(crate) fn cmd_cohesion_prove(
         "specialty_real": specialty_real,
         "pack": crew_session_prove::pack_report(pack_id, &fixture, &out, &pack_stage),
         "improvement": improvement,
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Standing package proposes the next enrich (specialty seat / dataset). auto_train=false. Train not invoked. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "apply": apply,
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat (prefer ag_news). Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -414,6 +435,86 @@ fn last_complete_receipt(state: &Path, agent: &str) -> Result<Value> {
     last.ok_or_else(|| {
         anyhow::anyhow!("refuse:specialty-real: no complete receipt for {agent}")
     })
+}
+
+fn require_apply_cite(
+    apply: &Value,
+    package: &improvement_export::ImprovementPackage,
+) -> Result<()> {
+    if apply.get("schema").and_then(Value::as_str) != Some("cell-one.improvement-apply.v0")
+        || apply.get("ok") != Some(&Value::Bool(true))
+        || apply.get("auto_train") != Some(&Value::Bool(false))
+        || apply.get("train_invoked") != Some(&Value::Bool(false))
+        || apply.get("require_plan") != Some(&Value::Bool(true))
+        || apply.get("joinable") != Some(&Value::Bool(true))
+        || apply.get("local_slm") != Some(&Value::Bool(true))
+        || apply.get("dataset_proposals").and_then(Value::as_str) != Some("proposal-only")
+        || apply.get("ready_for_live_test") != Some(&Value::Bool(false))
+        || apply.get("live_pass_recorded") != Some(&Value::Bool(false))
+        || apply.get("live_sync") != Some(&Value::Bool(false))
+        || apply.get("host_validate_rerun") != Some(&Value::Bool(false))
+        || apply.get("reused_existing_package") != Some(&Value::Bool(true))
+        || apply.get("composed_by").and_then(Value::as_str) != Some("cohesion-prove")
+        || apply.get("standing").and_then(Value::as_str) != Some("joinable: yes")
+    {
+        bail!("refuse:cohesion: improvement-apply cite is not a gated joinable apply");
+    }
+    if apply.get("refuse_without_plan").and_then(Value::as_str)
+        != Some(improvement_apply::REFUSE_WITHOUT_PLAN)
+    {
+        bail!("refuse:cohesion: improvement-apply did not cite refuse:plan");
+    }
+    if apply.get("applied_proposal_kind").and_then(Value::as_str) != Some("specialty-seat") {
+        bail!("refuse:cohesion: improvement-apply kind is not specialty-seat");
+    }
+    let binding = apply.get("binding_id").and_then(Value::as_str).unwrap_or("");
+    let proposal_id = apply
+        .get("applied_proposal_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if binding.is_empty() || !proposal_id.contains(binding) {
+        bail!("refuse:cohesion: improvement-apply binding cite is empty");
+    }
+    if package.proposals.iter().any(|row| {
+        row.kind == "specialty-seat" && row.binding_id == "ag_news"
+    }) && binding != "ag_news"
+    {
+        bail!("refuse:cohesion: improvement-apply did not prefer ag_news");
+    }
+    let datasets = apply
+        .get("dataset_proposal_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("refuse:cohesion: dataset proposal ids missing"))?;
+    if datasets.is_empty()
+        || datasets
+            .iter()
+            .any(|id| id.as_str() == Some(proposal_id))
+        || !datasets
+            .iter()
+            .all(|id| id.as_str().unwrap_or("").starts_with("dataset:"))
+    {
+        bail!("refuse:cohesion: dataset proposals are not proposal-only");
+    }
+    let receipt_path = apply
+        .get("apply_receipt")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let receipt = read_json(Path::new(receipt_path))?;
+    if receipt.get("schema").and_then(Value::as_str) != Some("cell-one.improvement-apply.v0")
+        || receipt.get("auto_train") != Some(&Value::Bool(false))
+        || receipt.get("train_invoked") != Some(&Value::Bool(false))
+        || receipt.get("require_plan") != Some(&Value::Bool(true))
+        || receipt.get("joinable") != Some(&Value::Bool(true))
+        || receipt.get("binding_id").and_then(Value::as_str) != Some(binding)
+        || receipt.get("proposal_kind").and_then(Value::as_str) != Some("specialty-seat")
+    {
+        bail!("refuse:cohesion: improvement-apply receipt does not match the cite");
+    }
+    let lab = apply.get("lab_estate").and_then(Value::as_str).unwrap_or("");
+    if !Path::new(lab).is_file() {
+        bail!("refuse:cohesion: improvement-apply lab missing");
+    }
+    Ok(())
 }
 
 fn require_control_plane(cp: &Value) -> Result<()> {

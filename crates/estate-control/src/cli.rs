@@ -1281,7 +1281,8 @@ pub(crate) enum PackCommand {
         force: bool,
     },
     /// One throwaway lab: fuel, decide, run, specialty-real seats,
-    /// pack install, multi-hop CLI crew session, and improvement export.
+    /// pack install, multi-hop CLI crew session, improvement export,
+    /// and one gated specialty-seat apply.
     ///
     /// Runs `estate control-plane-prove` on `--out` (dual import-trained
     /// bind of `ag_news` and `rust_idiom` beside `local_slm`, host-validate
@@ -1300,9 +1301,15 @@ pub(crate) enum PackCommand {
     /// one `session_id`; hop 2 sees hop 1; research stays
     /// `refuse:pack-orchestrator`). Then the export-package stage of
     /// `estate decisions improvement-export-prove`: standing package from
-    /// the lab journal (`auto_train=false`, train not invoked). Sibling
-    /// `improvement-export-prove` stays callable alone. A Cursor MCP
-    /// loader hang is out of scope. Does not rewrite `examples/estate.yaml`.
+    /// the lab journal (`auto_train=false`, train not invoked). Then one
+    /// gated specialty-seat apply on `{out}/apply`, reusing that package
+    /// (does not re-run host-validate). Apply without `--require-plan`
+    /// is `refuse:plan`. `apply-package --require-plan` lands one
+    /// `specialty-seat:*` (prefer `ag_news`). Standing next is joinable.
+    /// `local_slm` stays. Dataset proposals stay proposal-only. Siblings
+    /// `improvement-export-prove`, `improvement-apply-prove`, and
+    /// `apply-package` stay callable alone. A Cursor MCP loader hang is
+    /// out of scope. Does not rewrite `examples/estate.yaml`.
     /// `READY_FOR_LIVE_TEST` stays no.
     CohesionProve {
         /// Repository root that holds `examples/estate.yaml` and the fixture.
