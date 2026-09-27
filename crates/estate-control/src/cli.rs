@@ -530,8 +530,8 @@ pub(crate) enum Command {
     /// counts stage, validation, fallback, and surface (`authorize`,
     /// `convey`, `complete`). Optional `--pack` filters receipts by
     /// `pack_id`. `host-validate-prove` runs that loop on a lab copy with
-    /// two specialty seats. Selectors do not grant permission. No promote.
-    /// No auto-apply.
+    /// two specialty seats, including `estate complete --mock`. Selectors
+    /// do not grant permission. No promote. No auto-apply.
     Decisions {
         #[command(subcommand)]
         command: DecisionsCommand,
@@ -687,12 +687,14 @@ pub(crate) enum DecisionsCommand {
         pack: Option<String>,
     },
     /// Throwaway prove: lab copy seeds `ag_news` and `rust_idiom` beside
-    /// `local_slm`, then host-validate runs on `estate authorize` and a
-    /// granted `estate convey call`. Research selects `ag_news`. Idiom
-    /// selects `rust_idiom`. An allow-list that names both specialty ids
-    /// abstains (`refuse:decision-abstain`). A stale or ineligible hint
-    /// records a fallback and does not grant that seat. Report counts both
-    /// surfaces. Does not train. Does not rewrite `examples/estate.yaml`.
+    /// `local_slm`, then host-validate runs on `estate authorize`, a
+    /// granted `estate convey call`, and `estate complete --mock`.
+    /// Research selects `ag_news`. Idiom selects `rust_idiom`. An
+    /// allow-list that names both specialty ids abstains
+    /// (`refuse:decision-abstain`) and receives no completion text. A
+    /// stale or ineligible hint records a fallback and does not grant
+    /// that seat. Report counts authorize, convey, and complete.
+    /// Does not train. Does not rewrite `examples/estate.yaml`.
     /// `READY_FOR_LIVE_TEST` stays no.
     HostValidateProve {
         /// Repository root that holds `examples/estate.yaml`.
