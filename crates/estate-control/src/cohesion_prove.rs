@@ -22,10 +22,13 @@
 //! Dataset proposals stay proposal-only. `estate decisions report`
 //! and `estate pack session show` on the lab / crew state-dir cite
 //! the apply receipt (`cell-one.improvement-apply.v0`) so the closed
-//! loop is one operator surface. Cohesion-prove asserts those two
-//! cites. `estate status` / digest / `tick --report` / runner status
-//! cite the same receipt on their own operator surfaces and are not
-//! invoked here.
+//! loop is one operator surface. When that apply receipt is local
+//! to a throwaway state-dir (left by gated apply, or reused via
+//! `install_apply_receipt_for_report`), `estate status` on that
+//! state-dir cites the same block. Cohesion-prove asserts those
+//! three cites. Digest / `tick --report` / runner status cite the
+//! same receipt on their own operator surfaces and are not invoked
+//! here.
 //! Siblings `improvement-export-prove`,
 //! `improvement-apply-prove`, and `apply-package` stay callable
 //! alone. A Cursor MCP loader hang is out of scope. Does not rewrite
@@ -155,7 +158,14 @@ pub(crate) fn cmd_cohesion_prove(
     let decisions_cite = crate::decisions::cite_nearby_apply_receipt(&state).ok_or_else(|| {
         anyhow::anyhow!("refuse:cohesion: decisions report missing apply receipt cite")
     })?;
-    require_operator_apply_cite("decisions report", &decisions_cite, &apply, &cited, &receipt)?;
+    require_operator_apply_cite(
+        "decisions report",
+        &decisions_cite,
+        &apply,
+        &cited,
+        &receipt,
+        &state,
+    )?;
 
     println!("cohesion-prove: pack session show");
     let crew_state = out.join("cli-smoke").join("crew");
@@ -168,7 +178,42 @@ pub(crate) fn cmd_cohesion_prove(
     let session_cite = crate::decisions::cite_nearby_apply_receipt(&crew_state).ok_or_else(|| {
         anyhow::anyhow!("refuse:cohesion: pack session show missing apply receipt cite")
     })?;
-    require_operator_apply_cite("pack session show", &session_cite, &apply, &cited, &receipt)?;
+    require_operator_apply_cite(
+        "pack session show",
+        &session_cite,
+        &apply,
+        &cited,
+        &receipt,
+        &crew_state,
+    )?;
+
+    println!("cohesion-prove: status");
+    let apply_estate = PathBuf::from(
+        apply
+            .get("lab_estate")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("refuse:cohesion: apply lab missing"))?,
+    );
+    let apply_state = out.join("apply").join("state");
+    if !apply_estate.is_file() {
+        bail!("refuse:cohesion: apply lab missing");
+    }
+    if !apply_state.is_dir() {
+        bail!("refuse:cohesion: apply state-dir missing");
+    }
+    crate::watch::cmd_status(
+        &apply_estate,
+        &apply_state,
+        &out.join("apply").join("roots"),
+        &out.join("apply").join("plans"),
+        &root.join("packs"),
+        &root.join("policy/cell-one.policy.v0.yaml"),
+        &root,
+    )?;
+    let status_cite = crate::decisions::cite_nearby_apply_receipt(&apply_state).ok_or_else(|| {
+        anyhow::anyhow!("refuse:cohesion: status missing apply receipt cite")
+    })?;
+    require_operator_apply_cite("status", &status_cite, &apply, &cited, &receipt, &apply_state)?;
 
     let cksum_after = file_cksum(&locked)?;
     if cksum_after != cksum_before {
@@ -203,7 +248,8 @@ pub(crate) fn cmd_cohesion_prove(
             &session_cite,
             Some(crew_session_prove::SESSION_ID),
         ),
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat via --proposal specialty-seat:ag_news. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report and estate pack session show on the lab / crew state-dir cite the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Cohesion-prove asserts those two cites; estate status / digest / tick --report / runner status cite the same receipt on their own surfaces and are not invoked here. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "status": apply_cite_report(&apply_state, receipt_path, &cited, &receipt, &status_cite, None),
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat via --proposal specialty-seat:ag_news. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report, estate pack session show, and estate status on the lab / crew / apply state-dir cite the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Cohesion-prove asserts those three cites; digest / tick --report / runner status cite the same receipt on their own surfaces and are not invoked here. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -600,6 +646,7 @@ fn require_operator_apply_cite(
     apply: &Value,
     cited: &crate::decisions::ApplyReceiptCite,
     receipt: &Value,
+    state_dir: &Path,
 ) -> Result<()> {
     if cited.require_plan != true
         || cited.auto_train != false
@@ -653,8 +700,14 @@ fn require_operator_apply_cite(
     let cited_path = cited_path.filter(|path| !path.is_empty()).ok_or_else(|| {
         anyhow::anyhow!("refuse:cohesion: {surface} missing apply receipt path")
     })?;
-    if !Path::new(cited_path).is_file() {
-        bail!("refuse:cohesion: {surface} apply path missing: {cited_path}");
+    let cited_abs = Path::new(cited_path).canonicalize().map_err(|_| {
+        anyhow::anyhow!("refuse:cohesion: {surface} apply path missing: {cited_path}")
+    })?;
+    let state_abs = state_dir.canonicalize().map_err(|_| {
+        anyhow::anyhow!("refuse:cohesion: {surface} state-dir missing")
+    })?;
+    if !cited_abs.starts_with(&state_abs) {
+        bail!("refuse:cohesion: {surface} apply path is not under the state-dir");
     }
     Ok(())
 }
@@ -781,4 +834,93 @@ fn default_out() -> PathBuf {
         token = token.replace(needle, "0000");
     }
     std::env::temp_dir().join(format!("cell-one-cohesion-{token}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decisions::{parse_apply_receipt_cite, render_apply_receipt_cite};
+
+    fn receipt_json() -> Value {
+        json!({
+            "schema": "cell-one.improvement-apply.v0",
+            "proposal_id": "specialty-seat:ag_news",
+            "proposal_kind": "specialty-seat",
+            "binding_id": "ag_news",
+            "joinable": true,
+            "standing": "joinable: yes",
+            "require_plan": true,
+            "refuse_without_plan": crate::improvement_apply::REFUSE_WITHOUT_PLAN,
+            "auto_train": false,
+            "train_invoked": false
+        })
+    }
+
+    fn apply_json(receipt_path: &Path) -> Value {
+        json!({
+            "applied_proposal_id": "specialty-seat:ag_news",
+            "binding_id": "ag_news",
+            "apply_receipt": receipt_path.display().to_string(),
+        })
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("cell-one-cohesion-status-cite-{name}-{nanos}"));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn status_cite_accepts_local_receipt_under_state_dir() {
+        let root = scratch("local");
+        let state = root.join("apply").join("state");
+        let local = state.join("decisions").join("improvement-apply.json");
+        fs::create_dir_all(local.parent().unwrap()).unwrap();
+        let receipt = receipt_json();
+        fs::write(&local, serde_json::to_string_pretty(&receipt).unwrap()).unwrap();
+        let cited = parse_apply_receipt_cite(&receipt).expect("typed locks");
+        let cite = render_apply_receipt_cite(&local, &receipt).expect("green cite");
+        require_operator_apply_cite(
+            "status",
+            &cite,
+            &apply_json(&local),
+            &cited,
+            &receipt,
+            &state,
+        )
+        .expect("local apply-state receipt must pass");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn status_cite_refuses_sibling_apply_path() {
+        let root = scratch("sibling");
+        let state = root.join("apply").join("state");
+        fs::create_dir_all(&state).unwrap();
+        let sibling = root.join("apply").join("improvement-apply.json");
+        let receipt = receipt_json();
+        fs::write(&sibling, serde_json::to_string_pretty(&receipt).unwrap()).unwrap();
+        let cited = parse_apply_receipt_cite(&receipt).expect("typed locks");
+        let cite = render_apply_receipt_cite(&sibling, &receipt).expect("green cite");
+        let err = require_operator_apply_cite(
+            "status",
+            &cite,
+            &apply_json(&sibling),
+            &cited,
+            &receipt,
+            &state,
+        )
+        .expect_err("sibling apply receipt must not count as a status cite");
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("apply path is not under the state-dir"),
+            "{text}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
 }

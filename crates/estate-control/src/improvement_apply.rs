@@ -24,10 +24,11 @@
 //! `estate pack cohesion-prove` composes the same gated apply after
 //! its export stage, reusing `{out}/improvement` without a second
 //! host-validate. `estate decisions report`, `estate pack session
-//! show`, `estate routine digest`, `estate routine tick --report`,
-//! and `estate routine runner status` on a state-dir that holds that
-//! local receipt cite it so the operator sees the closed loop
-//! without digging files.
+//! show`, and `estate status` on a state-dir that holds that local
+//! receipt cite it so the operator sees the closed loop without
+//! digging files. Cohesion-prove asserts those three cites.
+//! Digest / `tick --report` / runner status cite the same receipt
+//! when it is local and are not invoked by cohesion-prove.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -513,7 +514,7 @@ fn apply_stage_cite(
         "composed_by": "cohesion-prove",
         "reused_existing_package": true,
         "host_validate_rerun": false,
-        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report and estate pack session show cite this receipt on the lab / crew state-dir. estate status / digest / tick --report / runner status cite the same receipt when it is local (not invoked by cohesion-prove). Not a live PASS."
+        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report, estate pack session show, and estate status cite this receipt on the lab / crew / apply state-dir. Digest / tick --report / runner status cite the same receipt when it is local (not invoked by cohesion-prove). Not a live PASS."
     })
 }
 

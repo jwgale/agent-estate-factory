@@ -1393,7 +1393,9 @@ missing; local state-dir only) so the closed loop is one operator
 surface. estate pack session show on the crew state-dir cites
 those same receipt fields after the gated apply (copy beside the
 crew journal; no sibling ../apply/ walk).
-Cohesion-prove asserts those two cites. estate status,
+When that apply receipt is local to the apply state-dir, estate
+status cites the same block (schema, path under that state-dir,
+stored lock fields). Cohesion-prove asserts those three cites.
 estate routine digest, estate routine tick --report, and
 estate routine runner status cite the same receipt when it is
 local to the state-dir (not invoked by cohesion-prove).
