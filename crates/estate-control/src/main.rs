@@ -19,6 +19,7 @@ mod export_repair;
 mod heal;
 mod help;
 mod helpers;
+mod improvement_apply;
 mod improvement_export;
 mod ops;
 mod pack_mcp;

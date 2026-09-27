@@ -534,8 +534,10 @@ pub(crate) enum Command {
     /// `host-validate-prove` runs that loop on a lab copy with
     /// two specialty seats, including `estate complete --mock`.
     /// `improvement-export-prove` reuses those receipts and exports the
-    /// package. Selectors do not grant permission. No promote. No
-    /// auto-apply. No auto-train.
+    /// package. `apply-package` applies one specialty-seat proposal
+    /// through plan → apply `--require-plan`. `improvement-apply-prove`
+    /// is the throwaway gated-apply sibling. Selectors do not grant
+    /// permission. No promote. No auto-apply. No auto-train.
     Decisions {
         #[command(subcommand)]
         command: DecisionsCommand,
@@ -760,6 +762,63 @@ pub(crate) enum DecisionsCommand {
     /// `READY_FOR_LIVE_TEST` stays no. Not in make smoke / gate-90 /
     /// GitHub Actions.
     ImprovementExportProve {
+        /// Repository root that holds `examples/estate.yaml`.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        /// Refuses `examples/estate.yaml`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Apply one specialty-seat proposal from a standing improvement
+    /// package through `apply-proposal` → `plan` → `apply --require-plan`.
+    /// `--require-plan` is required (`refuse:plan` without it).
+    /// Dataset proposals stay proposal-only. Does not train. Refuses
+    /// locked `examples/estate.yaml`. `auto_train` stays false.
+    ApplyPackage {
+        /// Path to `improvement-package.json`.
+        #[arg(long)]
+        package: PathBuf,
+        /// Lab estate to apply onto. Refuses `examples/estate.yaml`.
+        #[arg(long)]
+        estate: PathBuf,
+        /// Prepared directory with the binding proposal for that seat.
+        #[arg(long)]
+        prepared: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "plans")]
+        plans_dir: PathBuf,
+        #[arg(long, default_value = ".")]
+        roots_base: PathBuf,
+        /// Required. Apply-package refuses without this flag.
+        #[arg(long, default_value_t = false)]
+        require_plan: bool,
+        /// Proposal id (`specialty-seat:ag_news`). Default: first specialty-seat.
+        #[arg(long)]
+        proposal: Option<String>,
+        /// Enrich tag. Default: `local_tag` on the binding proposal.
+        #[arg(long)]
+        tag: Option<String>,
+        /// Repository root used to refuse the locked example estate.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long, default_value = "policy/cell-one.policy.v0.yaml")]
+        policy: PathBuf,
+        #[arg(long, default_value = "jason")]
+        curator: String,
+        /// Optional receipt JSON path (`cell-one.improvement-apply.v0`).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Throwaway prove: host-validate → export-package → pick one
+    /// specialty-seat proposal → gated apply `--require-plan` on a
+    /// fresh apply lab. Report cites the applied proposal id/kind,
+    /// Standing next joinable, `auto_train=false`, and
+    /// `train_invoked=false`. Refuses locked `examples/estate.yaml`.
+    /// Refuses apply without `--require-plan`. `READY_FOR_LIVE_TEST`
+    /// stays no. Not in make smoke / gate-90 / GitHub Actions.
+    ImprovementApplyProve {
         /// Repository root that holds `examples/estate.yaml`.
         #[arg(long, default_value = ".")]
         root: PathBuf,

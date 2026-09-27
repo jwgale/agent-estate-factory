@@ -265,6 +265,155 @@ pub(crate) struct NamedSeatRequest {
     pub gguf: PathBuf,
 }
 
+/// One specialty seat prepared + import-trained, not yet plan/applied.
+pub(crate) struct StagedSpecialtyLab {
+    pub lab: PathBuf,
+    pub state: PathBuf,
+    pub plans: PathBuf,
+    pub roots: PathBuf,
+    pub prepared: PathBuf,
+    pub binding_id: String,
+    pub tag: String,
+}
+
+/// Prepare + import-trained one specialty seat beside `local_slm`.
+/// Writes a binding proposal (`auto_apply=false`). Does not plan,
+/// apply, or rewrite `examples/estate.yaml`.
+pub(crate) fn stage_one_specialty_for_apply(
+    root: &Path,
+    out: &Path,
+    binding_id: &str,
+) -> Result<StagedSpecialtyLab> {
+    let req = named_seat_request(binding_id, PathBuf::new()).ok_or_else(|| {
+        anyhow::anyhow!("refuse:proposal: unknown specialty-seat binding {binding_id}")
+    })?;
+    std::env::remove_var("CELL_LOCAL_ENDPOINT");
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("refuse:root: {}", root.display()))?;
+    let locked = root.join("examples/estate.yaml");
+    let before = fs::read(&locked).with_context(|| format!("refuse:estate: {}", locked.display()))?;
+    let cksum_before = file_cksum(&locked)?;
+    if !cksum_before.starts_with(LOCKED_CKSUM) {
+        bail!("refuse:estate: examples/estate.yaml cksum is {cksum_before}, want {LOCKED_CKSUM}");
+    }
+    if same_file(out, &locked)? {
+        bail!("refuse:out: improvement-apply does not write examples/estate.yaml");
+    }
+    fs::create_dir_all(out).with_context(|| format!("refuse:out: {}", out.display()))?;
+
+    let lab = out.join("lab-estate.yaml");
+    fs::write(&lab, &before)?;
+    if req.binding_id == BINDING_RUST {
+        seed_idiom_agent(&lab)?;
+    }
+    let local_before = local_slm_params(&lab)?;
+    let state = out.join("state");
+    let plans = out.join("plans");
+    let roots = out.join("roots");
+    fs::create_dir_all(&state)?;
+    fs::create_dir_all(&plans)?;
+    fs::create_dir_all(&roots)?;
+    let journey = out.join("journey").join(req.binding_id);
+    fs::create_dir_all(&journey)?;
+    let gguf = journey.join("specialist.Q4_K_M.gguf");
+    fs::write(&gguf, b"GGUF")?;
+    fs::write(
+        journey.join("comparison.json"),
+        format!(
+            "{{\n  \"dataset\": \"{}\",\n  \"live_pass_recorded\": false,\n  \"note\": \"Improvement-apply lab copy. This file does not record a live PASS. READY_FOR_LIVE_TEST stays no.\"\n}}\n",
+            req.function
+        ),
+    )?;
+    let overnight = root.join("examples/fixtures/specialist-overnight.pack.json");
+    let packs_dir = root.join("packs");
+    let pack = write_lab_pack(out, &overnight, req.pack_id)?;
+    prepare_lora(&lab, &pack, &packs_dir, &state)?;
+    ensure_locked(&locked, &before)?;
+    let prepared = prepared_lora(&state, req.pack_id);
+    let tag = format!("cell-enrich-{}", req.pack_id);
+    crate::enrich::cmd_enrich_import_trained(
+        &lab,
+        &prepared,
+        &tag,
+        &gguf,
+        "jason",
+        Some(req.binding_id),
+        Some(req.seat_model),
+        Some(req.seat_model),
+        Some(req.function),
+    )?;
+    ensure_locked(&locked, &before)?;
+    let proposal: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(prepared.join("binding-proposal.json"))
+            .with_context(|| format!("refuse:proposal: {}", prepared.display()))?,
+    )?;
+    if proposal["trained_shape"] != "gguf"
+        || proposal["auto_apply"] != false
+        || proposal["binding_id"] != req.binding_id
+        || proposal["estate_rewritten"] != false
+    {
+        bail!(
+            "refuse:proposal: {} import did not record gguf auto_apply=false",
+            req.binding_id
+        );
+    }
+    if estate_has_local(&lab, req.binding_id)? {
+        bail!(
+            "refuse:binding: {} landed before gated apply",
+            req.binding_id
+        );
+    }
+    let local_after = local_slm_params(&lab)?;
+    if local_after != local_before {
+        bail!("refuse:binding: local_slm params changed while staging a specialty seat");
+    }
+    if file_cksum(&locked)? != cksum_before {
+        bail!("refuse:estate: examples/estate.yaml cksum changed");
+    }
+    println!(
+        "staged specialty proposal: binding={} tag={} auto_apply=false applied=no",
+        req.binding_id, tag
+    );
+    Ok(StagedSpecialtyLab {
+        lab,
+        state,
+        plans,
+        roots,
+        prepared,
+        binding_id: req.binding_id.to_string(),
+        tag,
+    })
+}
+
+/// Graft one agent models allow-list + Model allow intention onto a lab
+/// or staged estate so Standing next can become joinable after apply.
+pub(crate) fn graft_one_scope(
+    estate_path: &Path,
+    binding_id: &str,
+    agent: &str,
+    function: &str,
+) -> Result<()> {
+    if binding_id == BINDING_RUST && !estate_has_agent(estate_path, "idiom")? {
+        seed_idiom_agent(estate_path)?;
+    }
+    let seat = NamedSeatLand {
+        binding_id: binding_id.to_string(),
+        function: function.to_string(),
+        seat_model: String::new(),
+        agent: agent.to_string(),
+        gguf: PathBuf::new(),
+        prepared: PathBuf::new(),
+    };
+    record_named_scope(estate_path, &[seat])
+}
+
+fn estate_has_agent(lab: &Path, id: &str) -> Result<bool> {
+    let estate = estate_schema::load_estate(lab)
+        .with_context(|| format!("refuse:estate: load {}", lab.display()))?;
+    Ok(estate.agent(id).is_some())
+}
+
 /// Map a portable binding id to the dual-specialty seat card.
 pub(crate) fn named_seat_request(binding_id: &str, gguf: PathBuf) -> Option<NamedSeatRequest> {
     match binding_id {

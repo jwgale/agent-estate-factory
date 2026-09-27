@@ -717,6 +717,7 @@ that is `examples/estate.yaml` is `refuse:out`. Sibling proves:
 ```bash
 estate pack crew-session-prove --root . --out /tmp/cell-one-crew-session
 estate decisions improvement-export-prove --root . --out /tmp/cell-one-improvement-export
+estate decisions improvement-apply-prove --root . --out /tmp/cell-one-improvement-apply
 ```
 
 ```bash
@@ -752,6 +753,43 @@ smoke, make gate-90, or GitHub Actions. This is not a live PASS.
 estate decisions improvement-export-prove --root . --out /tmp/cell-one-improvement-export
 estate decisions export-package --state-dir /tmp/cell-one-improvement-export/state \
   --out /tmp/cell-one-improvement-export/improvement
+```
+
+## 4g. Improvement-apply prove (gated apply, not a train)
+
+`estate decisions improvement-apply-prove` is the human-gated half
+after export-package. It reuses host-validate authorize / convey /
+`complete --mock` receipts, writes the standing package, picks one
+specialty-seat proposal (`specialty-seat:ag_news`), and applies that
+proposal on a fresh throwaway apply lab through the existing
+`apply-proposal` → `plan` → `apply --require-plan` path. Standing
+next is `joinable: yes` after the gated apply. Dataset proposals stay
+proposal-only. Train is not invoked. `auto_train=false`.
+`estate decisions apply-package --package <package.json> --estate
+<lab> --prepared <prepared> --require-plan` is the operator command.
+Without `--require-plan` it is `refuse:plan` and the lab estate stays
+unchanged. `--out` that is `examples/estate.yaml` is `refuse:out`.
+Sibling-first: `estate pack cohesion-prove` can compose this later
+and stays export-only on this tip.
+
+The compact report is `cell-one.improvement-apply-prove.v0`
+(`improvement-apply-prove.json`). It cites the applied proposal
+id/kind, Standing next joinable, `auto_train=false`, and
+`train_invoked=false`. The command ends with
+`improvement-apply-prove: ok` and `READY_FOR_LIVE_TEST: no`. Locked
+`examples/estate.yaml` stays cksum `43770130 3391`. Not in make
+smoke, make gate-90, or GitHub Actions. This is not a live PASS.
+
+```bash
+estate decisions improvement-apply-prove --root . --out /tmp/cell-one-improvement-apply
+estate decisions apply-package \
+  --package /tmp/cell-one-improvement-apply/improvement/improvement-package.json \
+  --estate /tmp/cell-one-improvement-apply/apply/lab-estate.yaml \
+  --prepared /tmp/cell-one-improvement-apply/apply/state/enrich/overnight-traces/llamafactory-lora \
+  --state-dir /tmp/cell-one-improvement-apply/apply/state \
+  --plans-dir /tmp/cell-one-improvement-apply/apply/plans \
+  --roots-base /tmp/cell-one-improvement-apply/apply/roots \
+  --require-plan
 ```
 
 ## 5. Backup rotate
