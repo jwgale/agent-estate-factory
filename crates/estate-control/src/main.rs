@@ -20,6 +20,7 @@ mod pack_mcp;
 mod pack_session;
 mod plan_apply;
 mod plugin_prove;
+mod routine_runner;
 mod routines;
 mod suggest;
 mod watch;

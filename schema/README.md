@@ -52,7 +52,7 @@ Unknown `apiVersion` / `kind` / pack schema fail closed.
 
 Policy files (not schema snapshots): `policy/cell-one.policy.v0.yaml`, `policy/sacred.yaml`.
 
-Documentary ids without a snapshot file: `cell-one.reconcile-suggest.v0` (`reconcile --suggest`), `cell-one.enrich-accept.v0` (`packs accept`), `cell-one.backup-prune.v0` (`backup --prune`). Same freeze rule: additive ok, rename → v1.
+Documentary ids without a snapshot file: `cell-one.reconcile-suggest.v0` (`reconcile --suggest`), `cell-one.enrich-accept.v0` (`packs accept`), `cell-one.backup-prune.v0` (`backup --prune`), `cell-one.routine-state.v0` (`{state-dir}/routine-state.json`), `cell-one.routine-runner.v0` (`{state-dir}/routine-runner/{id}.json`). Same freeze rule: additive ok, rename → v1.
 
 `pack-session.v0.json` is the pack-scoped crew session (`cell-one.pack-session.v0`). Throwaway short transcript under `{state-dir}/pack-sessions/`. Not estate SoT. Additive optional fields stay v0. A rename of `session_id` / `pack_id` / `turns` is a v1.
 

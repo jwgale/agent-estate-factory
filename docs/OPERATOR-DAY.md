@@ -215,6 +215,39 @@ CELL_ROUTINE_WATCH_INTERVAL_SECS=0 estate routine watch \
 is a test hook and requires `--max-cycles`. Standing operators use the
 5m default and Ctrl-C.
 
+## 3e2. Supervised routine runner (fixture)
+
+Same throwaway fixture. `estate routine runner` is the detached host
+supervisor for that same watch loop: start / stop / status / restart.
+The invoking terminal can exit. Pidfile, status, and the digest log
+live under `{state-dir}/routine-runner/` (throwaway-safe, not estate
+SoT). Each cycle appends the existing digest text. Double-start is
+`refuse:runner-already-running`. Stop of a missing runner is
+`refuse:runner-not-running`. Min interval stays 5m. `--mock` stays
+in-process. This is not a cloud cron, not a systemd unit, and does not
+claim Cursor / Grok Bot install or sync. `live_sync` stays false.
+Locked `examples/estate.yaml` untouched. `READY_FOR_LIVE_TEST`: no.
+
+```bash
+# Detach (operator default is 5m; 5090 prove uses the test hook)
+CELL_ROUTINE_WATCH_INTERVAL_SECS=2 estate routine runner start \
+  --id standing-classify \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-runner-cell --mock --max-cycles 30
+
+estate routine runner status --state-dir target/pack-runner-cell
+# expect status: running, then last_digest after the first tick
+
+estate routine runner stop --state-dir target/pack-runner-cell
+estate routine runner status --state-dir target/pack-runner-cell
+# expect status: stopped
+```
+
+A second `start` while running refuses `refuse:runner-already-running`.
+`restart` stops a live child (if any) then starts. Prove notes for the
+5090 parent: `.cell/cohesion-agnews-20260926/routine-runner-prove.md`
+(local throwaway estate; gitignored). Not a live PASS.
+
 ## 3f. Pack export-plugin (fixture)
 
 Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
