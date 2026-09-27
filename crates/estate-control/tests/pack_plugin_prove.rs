@@ -2,9 +2,11 @@
 //!
 //! Fixture: examples/fixtures/agent-pack-handoff.yaml.
 //! Happy path: export + baked absolute estate bin + mock complete as
-//! horizon (receipt) + as research (refuse:pack-orchestrator).
-//! Fail when mcp.json command is bare `estate`. Stub-label absence
-//! when wired. live_sync stays false. Does not invent a live PASS.
+//! horizon (receipt) + as research (refuse:pack-orchestrator) +
+//! non-thin RUNNER.md / SESSION.md (`runner_docs: yes` /
+//! `session_docs: yes`). Fail when mcp.json command is bare `estate`
+//! or runner/session docs are missing/thin. Stub-label absence when
+//! wired. live_sync stays false. Does not invent a live PASS.
 //! Locked examples/estate.yaml stays untouched.
 
 use serde_json::Value;
@@ -109,6 +111,8 @@ fn plugin_prove_happy_path_fixture_research_crew() {
     assert!(stdout.contains("honest_labels: ok"), "{stdout}");
     assert!(stdout.contains("install_md: ok"), "{stdout}");
     assert!(stdout.contains("timeout_env: ok"), "{stdout}");
+    assert!(stdout.contains("runner_docs: yes"), "{stdout}");
+    assert!(stdout.contains("session_docs: yes"), "{stdout}");
     assert!(stdout.contains(&expected_bin), "{stdout}");
     assert!(!stdout.contains("live PASS"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
@@ -121,6 +125,10 @@ fn plugin_prove_happy_path_fixture_research_crew() {
     assert_eq!(report["ready_for_live_test"], false);
     assert_eq!(report["live_sync"], false);
     assert_eq!(report["wired_mcp"], true);
+    assert_eq!(report["runner_docs"], "yes");
+    assert_eq!(report["session_docs"], "yes");
+    assert_eq!(report["checks"]["runner_docs"]["ok"], true);
+    assert_eq!(report["checks"]["session_docs"]["ok"], true);
     assert_eq!(report["estate_bin"], expected_bin);
     assert_eq!(report["checks"]["absolute_estate_bin"]["ok"], true);
     assert_eq!(report["checks"]["horizon_complete"]["ok"], true);
@@ -149,9 +157,15 @@ fn plugin_prove_happy_path_fixture_research_crew() {
         "120"
     );
     assert!(out.join("INSTALL.md").is_file());
+    assert!(out.join("RUNNER.md").is_file());
+    assert!(out.join("SESSION.md").is_file());
     let install = std::fs::read_to_string(out.join("INSTALL.md")).unwrap();
     assert!(install.contains("READY_FOR_LIVE_TEST: no"), "{install}");
     assert!(!install.contains("plugin stub"), "{install}");
+    let runner = std::fs::read_to_string(out.join("RUNNER.md")).unwrap();
+    assert!(runner.contains("refuse:runner-already-running"), "{runner}");
+    let session = std::fs::read_to_string(out.join("SESSION.md")).unwrap();
+    assert!(session.contains("context=applied"), "{session}");
     assert_locked_cksum();
 }
 
@@ -262,5 +276,104 @@ fn plugin_prove_defaults_to_fixture_research_crew() {
     );
     assert!(stdout.contains("ok: yes"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(stdout.contains("runner_docs: yes"), "{stdout}");
+    assert!(stdout.contains("session_docs: yes"), "{stdout}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn plugin_prove_fails_when_runner_docs_missing_or_thin() {
+    assert_locked_cksum();
+    let dir = scratch("thin-runner");
+    let out = dir.join("plugin");
+    let estate = fixture().display().to_string();
+    let out_s = out.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "export-plugin",
+        "--id",
+        "research-crew",
+        "--estate",
+        &estate,
+        "--out",
+        &out_s,
+    ]);
+    assert!(ok, "export failed: {stderr}\n{stdout}");
+
+    std::fs::write(out.join("RUNNER.md"), "# RUNNER\n\nthin\n").unwrap();
+    let (ok, stdout, stderr) = run(&["pack", "plugin-prove", "--check-only", "--out", &out_s]);
+    assert!(!ok, "thin RUNNER.md must fail prove\n{stdout}\n{stderr}");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("runner_docs: no")
+            || combined.contains("runner_docs: FAIL")
+            || combined.contains("refuse:plugin-prove-runner-docs"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("refuse:plugin-prove") || stdout.contains("ok: no"),
+        "{combined}"
+    );
+    assert!(!combined.contains("READY_FOR_LIVE_TEST: yes"), "{combined}");
+
+    std::fs::remove_file(out.join("RUNNER.md")).unwrap();
+    let (ok, stdout, stderr) = run(&["pack", "plugin-prove", "--check-only", "--out", &out_s]);
+    assert!(!ok, "missing RUNNER.md must fail prove\n{stdout}\n{stderr}");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("refuse:plugin-prove-runner-docs")
+            || combined.contains("runner_docs: FAIL")
+            || combined.contains("runner_docs: no"),
+        "{combined}"
+    );
+    assert_locked_cksum();
+}
+
+#[test]
+fn plugin_prove_fails_when_session_docs_missing_or_thin() {
+    assert_locked_cksum();
+    let dir = scratch("thin-session");
+    let out = dir.join("plugin");
+    let estate = fixture().display().to_string();
+    let out_s = out.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "export-plugin",
+        "--id",
+        "research-crew",
+        "--estate",
+        &estate,
+        "--out",
+        &out_s,
+    ]);
+    assert!(ok, "export failed: {stderr}\n{stdout}");
+
+    std::fs::write(out.join("SESSION.md"), "# SESSION\n\nthin\n").unwrap();
+    let (ok, stdout, stderr) = run(&["pack", "plugin-prove", "--check-only", "--out", &out_s]);
+    assert!(!ok, "thin SESSION.md must fail prove\n{stdout}\n{stderr}");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("session_docs: no")
+            || combined.contains("session_docs: FAIL")
+            || combined.contains("refuse:plugin-prove-session-docs"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("refuse:plugin-prove") || stdout.contains("ok: no"),
+        "{combined}"
+    );
+
+    std::fs::remove_file(out.join("SESSION.md")).unwrap();
+    let (ok, stdout, stderr) = run(&["pack", "plugin-prove", "--check-only", "--out", &out_s]);
+    assert!(!ok, "missing SESSION.md must fail prove\n{stdout}\n{stderr}");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("refuse:plugin-prove-session-docs")
+            || combined.contains("session_docs: FAIL")
+            || combined.contains("session_docs: no"),
+        "{combined}"
+    );
     assert_locked_cksum();
 }

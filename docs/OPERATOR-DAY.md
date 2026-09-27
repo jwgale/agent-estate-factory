@@ -355,7 +355,11 @@ Writes an Agent Plugin Cursor can load: `plugin.json` (pack → group),
 `pack mcp-serve` args),
 `skills/<package>/SKILL.md` (package → skill body that calls the wired
 member MCP tool `complete` with the package prompt), `INSTALL.md`
-(literal Cursor smoke steps), and commented cron/trigger notes for
+(literal Cursor smoke steps), `RUNNER.md` (supervised routine runner:
+start / stop / status / restart, pidfile under `{state-dir}/routine-runner/`,
+refuse codes, `runner-prove` / `--dual`), `SESSION.md` (pack session
+create / reuse / end, `context=none` then `context=applied`, dual-specialty
+hop example), and commented cron/trigger notes for
 `standing-classify` and `standing-once` (`@hourly` → `0 * * * *`).
 Each member tool runs `estate complete --agent <member> --pack research-crew`
 against the source estate. Env carries pack / member / role / estate path
@@ -443,14 +447,21 @@ Default `--id research-crew` and the handoff fixture. Omit `--out` for
 a throwaway directory (kept so you can point Cursor at it). The command:
 
 1. Exports the pack plugin (absolute baked `estate` bin, timeout env,
-   `INSTALL.md`).
+   `INSTALL.md`, `RUNNER.md`, `SESSION.md`).
 2. Asserts `mcp.json` `command` is an absolute file — not bare `estate`.
 3. Mock MCP `complete` as horizon → expects a decision receipt.
 4. Mock MCP `complete` as research → expects `refuse:pack-orchestrator`.
-5. Optionally reports a cheap session two-hop (create + two MCP hops).
+5. Asserts `RUNNER.md` + `SESSION.md` are present and non-thin
+   (CLI tokens + refuse codes). Compact report cites `runner_docs: yes`
+   / `session_docs: yes`. Missing or thin docs fail the prove.
+6. Optionally reports a cheap session two-hop (create + two MCP hops).
    That check does not block the prove.
-6. Prints a compact JSON/summary prove report. Exit non-zero on any
+7. Prints a compact JSON/summary prove report. Exit non-zero on any
    required fail.
+
+Operator runner + session loop on the export is those two files (see
+3e2 / 3e3 / 3g). `plugin-prove` does not start a runner and does not
+invent a live Cursor / Grok Bot install.
 
 `--check-only` re-proves an existing `--out` without rewriting it.
 5090 parent live-prove notes: `.cell/cohesion-agnews-20260926/plugin-prove.md`

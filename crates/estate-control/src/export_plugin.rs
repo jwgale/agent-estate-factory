@@ -1,14 +1,17 @@
 //! `estate pack export-plugin` — Agent Plugin export from an estate pack.
 //!
 //! Emits `plugin.json` + `mcp.json` + `skills/*/SKILL.md` + `INSTALL.md`
-//! (Agent Plugins 1.0 floor that Cursor loads). Pack → group metadata,
-//! package → skill body that instructs calling the wired member MCP tool
-//! `complete` with the package prompt (mock/live notes as appropriate),
-//! routine schedule → commented cron/trigger notes. MCP `command` is the
-//! absolute `estate` binary resolved from `current_exe` at export time;
-//! args stay `pack mcp-serve` so member tools call `estate complete`
-//! against the source estate. Env writes `CELL_MCP_COMPLETE_TIMEOUT_SECS`
-//! so Cursor-spawned MCP inherits the same cap as CLI prove. Export
+//! + `RUNNER.md` + `SESSION.md` (Agent Plugins 1.0 floor that Cursor
+//! loads). Pack → group metadata, package → skill body that instructs
+//! calling the wired member MCP tool `complete` with the package prompt
+//! (mock/live notes as appropriate), routine schedule → commented
+//! cron/trigger notes. `RUNNER.md` / `SESSION.md` teach the supervised
+//! routine runner and pack-scoped crew session loop (CLI, refuse
+//! codes, prove outcomes). MCP `command` is the absolute `estate`
+//! binary resolved from `current_exe` at export time; args stay
+//! `pack mcp-serve` so member tools call `estate complete` against the
+//! source estate. Env writes `CELL_MCP_COMPLETE_TIMEOUT_SECS` so
+//! Cursor-spawned MCP inherits the same cap as CLI prove. Export
 //! refuses (`refuse:export-estate-bin`) when that binary cannot be
 //! resolved — no silent PATH name `estate`. live_sync stays false. Not
 //! live Cursor / Grok Bot sync. Not a cron daemon. When MCP is wired
@@ -66,6 +69,8 @@ pub(crate) fn cmd_pack_export_plugin(
         &estate_bin,
     )?;
     write_install_md(out, pack, orch)?;
+    write_runner_md(out, pack, &routines)?;
+    write_session_md(out, pack)?;
     write_mapping_sidecar(
         out,
         pack,
@@ -79,7 +84,9 @@ pub(crate) fn cmd_pack_export_plugin(
 
     println!("pack plugin: {}", pack.id);
     println!("  out: {}", out.display());
-    println!("  format: agent-plugin (plugin.json + mcp.json + skills/ + INSTALL.md)");
+    println!(
+        "  format: agent-plugin (plugin.json + mcp.json + skills/ + INSTALL.md + RUNNER.md + SESSION.md)"
+    );
     println!("  members: {}", pack.members.join(", "));
     println!("  orchestrator: {orch}");
     if packages.is_empty() {
@@ -401,7 +408,8 @@ fn write_readme(
     let mut md = String::new();
     md.push_str(&format!("# {} pack plugin\n\n", pack.id));
     md.push_str("Agent Plugin export from an estate pack. Cursor can load this\n");
-    md.push_str("layout (`plugin.json` + `mcp.json` + `skills/` + `INSTALL.md`).\n\n");
+    md.push_str("layout (`plugin.json` + `mcp.json` + `skills/` + `INSTALL.md` +\n");
+    md.push_str("`RUNNER.md` + `SESSION.md`).\n\n");
     md.push_str("**Bridge, not live Cursor / Grok Bot sync.** MCP servers run\n");
     md.push_str("`estate pack mcp-serve` so member tools call `estate complete`\n");
     md.push_str("against the source estate. Skill bodies instruct calling the\n");
@@ -409,7 +417,9 @@ fn write_readme(
     md.push_str("(mock / live notes as appropriate). They are not stubs.\n");
     md.push_str("Exported `mcp.json` `command` is the absolute estate binary\n");
     md.push_str("resolved at export time — Cursor does not need `estate` on PATH.\n");
-    md.push_str("`live_sync: false`. `wired_mcp: true`. Routines stay comments.\n");
+    md.push_str("`live_sync: false`. `wired_mcp: true`. Routine *triggers* stay\n");
+    md.push_str("comments; operator runner + session docs ship as `RUNNER.md`\n");
+    md.push_str("and `SESSION.md`.\n");
     md.push_str("This directory does not install a Cursor/Grok Bot plugin, does\n");
     md.push_str("not start a cron daemon, and does not rank mixed-select.\n\n");
     md.push_str(&format!("Estate file: `{estate_path}`\n"));
@@ -444,6 +454,8 @@ fn write_readme(
             ));
         }
     }
+    md.push_str("| supervised runner | `RUNNER.md` |\n");
+    md.push_str("| pack session loop | `SESSION.md` |\n");
     md.push_str("\n## MCP (wired to estate complete)\n\n");
     md.push_str("One stdio server per pack member. `command` is the absolute\n");
     md.push_str("estate binary resolved at export (`current_exe` + canonicalize);\n");
@@ -483,8 +495,12 @@ fn write_readme(
     md.push_str("\n`estate routine tick` remains the local wake.\n");
     md.push_str("`estate routine watch` is the local operator loop (tick + digest).\n");
     md.push_str("This file does not install a Cursor or Grok Bot trigger.\n");
-    md.push_str("Human Cursor smoke steps: `INSTALL.md`.\n");
+        md.push_str("Human Cursor smoke steps: `INSTALL.md`.\n");
+    md.push_str("Supervised runner loop: `RUNNER.md`.\n");
+    md.push_str("Pack-scoped crew session: `SESSION.md`.\n");
     md.push_str("CLI gate before install: `estate pack plugin-prove`.\n");
+    md.push_str("`plugin-prove` asserts those runner + session docs are present\n");
+    md.push_str("and non-thin (`runner_docs: yes` / `session_docs: yes`).\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
 }
@@ -508,7 +524,7 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          ## 1. Plugin folder\n\
          \n\
          This directory (the export root). It holds `plugin.json`, `mcp.json`,\n\
-         `skills/`, `INSTALL.md`, and `estate-pack.json`.\n\
+         `skills/`, `INSTALL.md`, `RUNNER.md`, `SESSION.md`, and `estate-pack.json`.\n\
          \n\
          ## 2. Load `mcp.json` in Cursor\n\
          \n\
@@ -548,7 +564,19 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          \n\
          Optional (cheap): pack-scoped session two-hop on `{caller}` with\n\
          `session` / `session_create` — hop 2 should see hop 1 (`context=applied`).\n\
-         Not required to call this export ready for Cursor smoke.\n\
+         Not required to call this export ready for Cursor smoke. Operator\n\
+         session loop: `SESSION.md`.\n\
+         \n\
+         ## 7. Runner + session operator docs\n\
+         \n\
+         `RUNNER.md` is the supervised routine runner (`estate routine runner\n\
+         start|stop|status|restart`, refuse codes, `runner-prove`).\n\
+         `SESSION.md` is pack session create/reuse/end plus the multi-hop\n\
+         `context=none` then `context=applied` contract (including the\n\
+         dual-specialty hop example). `estate pack plugin-prove` asserts both\n\
+         files are present and non-thin (`runner_docs: yes` / `session_docs: yes`).\n\
+         Those docs do not start a runner and do not install a live Cursor /\n\
+         Grok Bot sync.\n\
          \n\
          CLI gate (same checks, no Cursor UI):\n\
          \n\
@@ -561,6 +589,244 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
     );
     fs::write(out.join("INSTALL.md"), md)?;
     Ok(())
+}
+
+fn write_runner_md(out: &Path, pack: &AgentPack, routines: &[&Routine]) -> Result<()> {
+    fs::write(out.join("RUNNER.md"), runner_markdown(&pack.id, routines))?;
+    Ok(())
+}
+
+fn write_session_md(out: &Path, pack: &AgentPack) -> Result<()> {
+    fs::write(out.join("SESSION.md"), session_markdown(&pack.id))?;
+    Ok(())
+}
+
+/// Operator-facing supervised runner loop. Exported as `RUNNER.md`.
+/// plugin-prove asserts the headings, CLI tokens, and refuse codes.
+pub(crate) fn runner_markdown(pack_id: &str, routines: &[&Routine]) -> String {
+    let standing = if routines.is_empty() {
+        "(none on this pack — runner still accepts `--id` on the estate)".into()
+    } else {
+        routines
+            .iter()
+            .map(|r| {
+                format!(
+                    "- `{}` → package `{}` schedule `{}`",
+                    r.id,
+                    r.package,
+                    r.schedule.as_deref().unwrap_or("(no schedule)")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "# RUNNER\n\
+         \n\
+         Supervised routine runner for this Agent Plugin export (pack `{pack_id}`).\n\
+         This is the detached host supervisor for the same idempotent `estate routine\n\
+         watch` / `tick` path. One child / one pidfile. Not a cloud cron. Not systemd.\n\
+         Not live Cursor / Grok Bot sync.\n\
+         \n\
+         `live_sync: false`\n\
+         `READY_FOR_LIVE_TEST: no`\n\
+         \n\
+         ## Commands (`estate routine runner start|stop|status|restart`)\n\
+         \n\
+         Pidfile, status JSON, digest log, and child stdout live under\n\
+         `{{state-dir}}/routine-runner/` (`default.pid`, `default.json`,\n\
+         `default.digest.log`, `default.out.log` for runner id `default`).\n\
+         Throwaway-safe. Not estate SoT.\n\
+         \n\
+             estate routine runner start \\\n\
+               --id standing-classify --id standing-once \\\n\
+               --estate <estate.yaml> --state-dir <state-dir> --mock\n\
+             # same select: --id standing-classify,standing-once\n\
+             # empty --id = all enabled standing routines\n\
+         \n\
+             estate routine runner status --state-dir <state-dir>\n\
+             estate routine runner stop --state-dir <state-dir>\n\
+             estate routine runner restart --state-dir <state-dir> \\\n\
+               --id standing-classify,standing-once \\\n\
+               --estate <estate.yaml> --mock\n\
+         \n\
+         Operator default interval is 5m (schedule minimum). `--interval 1m`\n\
+         refuses (`refuse:watch-interval`). Test / prove hook\n\
+         `CELL_ROUTINE_WATCH_INTERVAL_SECS` + `--max-cycles` skips the 5m wait.\n\
+         `--mock` stays in-process. Restart stops a live child (if any) then starts.\n\
+         \n\
+         Standing routines on this pack:\n\
+         \n\
+         {standing}\n\
+         \n\
+         ## Multi-id select (all-or-nothing)\n\
+         \n\
+         Repeat `--id` or comma-separate (`--id a,b`). Named start is\n\
+         all-or-nothing before spawn — a half-configured runner never writes\n\
+         a pidfile:\n\
+         \n\
+         - missing id → `refuse:runner-routine-unknown`\n\
+         - disabled id → `refuse:runner-routine-disabled`\n\
+         - no schedule / bad schedule → `refuse:runner-routine-invalid`\n\
+         \n\
+         Empty select stays all enabled. One supervise child still.\n\
+         Status lists `selected:` plus per-id `last_outcome` after a tick.\n\
+         \n\
+         ## Double-start / missing stop\n\
+         \n\
+         A second `estate routine runner start` while the pidfile is live is\n\
+         `refuse:runner-already-running`. Stop of a missing runner is\n\
+         `refuse:runner-not-running`.\n\
+         \n\
+         ## Digest fields (ticks, session_id, package, chain)\n\
+         \n\
+         Each cycle appends a digest and bumps `cycles` / `last_tick` on the\n\
+         runner record. `estate routine runner status` prints:\n\
+         \n\
+         - `status: running|stopped`\n\
+         - `selected:` (named ids or `all`)\n\
+         - `last_tick` / `cycles` (tick counters)\n\
+         - `last_digest` (first line of the last cycle)\n\
+         - `last_outcome <id>: ran|skipped`\n\
+         - `live_sync: false`\n\
+         \n\
+         Digest / `estate routine digest` / `tick --report` cite:\n\
+         \n\
+         - `ran=` / `skipped=` for that tick\n\
+         - `package=<id>` per selected routine\n\
+         - `chain=<chain_id>` on multi-hop receipts\n\
+         - `session_id=<id>` and `context=applied|none` when a crew session is bound\n\
+         \n\
+         Files: `{{state-dir}}/routine-state.json` (last_run / next_due / bound\n\
+         `session_id`) and `{{state-dir}}/routine-runner/<id>.digest.log`.\n\
+         \n\
+         ## `runner-prove` / `runner-prove --dual`\n\
+         \n\
+         Mock gate. No LIVE PASS. No live GPU. `--mock` stays in-process.\n\
+         \n\
+             estate routine runner-prove \\\n\
+               --estate examples/fixtures/agent-pack-handoff.yaml \\\n\
+               --state-dir <state-dir>\n\
+         \n\
+         Default select is `standing-classify,standing-once`. Expected:\n\
+         hop 2 on `standing-classify` journals `context=applied`; digest/status\n\
+         cover both ids; session reuse then ended→fresh; a partial named set\n\
+         refuses `refuse:runner-routine-unknown`; a second start refuses\n\
+         `refuse:runner-already-running`; then stop.\n\
+         \n\
+             estate routine runner-prove --dual \\\n\
+               --estate examples/fixtures/agent-pack-handoff.yaml \\\n\
+               --state-dir <state-dir>\n\
+         \n\
+         `--dual` (or `--id standing-dual`) proves fixture `standing-dual` →\n\
+         package `dual-specialty` under the runner. Expected hops:\n\
+         `ag_news` `context=none` → `rust_idiom` `context=applied` →\n\
+         `frontier_http` `context=applied`, one `session_id`. Digest cites\n\
+         `session_id` / `package=dual-specialty` / `chain=chain-dual-specialty-…`.\n\
+         Combine `--dual --id standing-once` for two ids on one child.\n\
+         \n\
+         `estate pack plugin-prove` asserts this file is present and non-thin\n\
+         (`runner_docs: yes`). It does not start a runner.\n\
+         \n\
+         See also: `SESSION.md` (create / reuse / end + hop contract),\n\
+         `INSTALL.md` (Cursor smoke), `estate pack plugin-prove`.\n\
+         \n"
+    )
+}
+
+/// Operator-facing pack session loop. Exported as `SESSION.md`.
+/// plugin-prove asserts the headings, CLI tokens, and hop contract.
+pub(crate) fn session_markdown(pack_id: &str) -> String {
+    format!(
+        "# SESSION\n\
+         \n\
+         Pack-scoped crew session for this Agent Plugin export (pack `{pack_id}`).\n\
+         A short transcript so successive `estate complete --pack` (or pack MCP\n\
+         `complete`) hops share context the way a crew holds a thread. Files live\n\
+         under `{{state-dir}}/pack-sessions/{{pack}}/{{id}}.json`. Not estate SoT.\n\
+         No secrets. Not Grok Bot server sync.\n\
+         \n\
+         `live_sync: false`\n\
+         `READY_FOR_LIVE_TEST: no`\n\
+         \n\
+         ## Create / reuse / end\n\
+         \n\
+             estate pack session create --pack {pack_id} \\\n\
+               --estate <estate.yaml> --state-dir <state-dir> --id sess-crewdemo01\n\
+         \n\
+             estate complete --estate <estate.yaml> --state-dir <state-dir> \\\n\
+               --agent <orchestrator> --pack {pack_id} \\\n\
+               --session sess-crewdemo01 --prompt \"unique-hop-alpha-token\" --mock\n\
+         \n\
+             estate complete --estate <estate.yaml> --state-dir <state-dir> \\\n\
+               --agent <orchestrator> --pack {pack_id} \\\n\
+               --session sess-crewdemo01 --prompt \"follow-up that should see prior turn\" --mock\n\
+         \n\
+             estate pack session show --id sess-crewdemo01 --state-dir <state-dir>\n\
+             estate pack session end --id sess-crewdemo01 --state-dir <state-dir>\n\
+         \n\
+         Omit `--id` on create to mint `sess-<hex>`. `--session` on complete\n\
+         resumes if the file exists and creates if missing. `--session-create`\n\
+         mints a new id (`--session <id> --session-create` creates that exact id\n\
+         and refuses `refuse:session-exists` if it is already there).\n\
+         Env fallback: `CELL_PACK_SESSION`. MCP tool `complete` accepts `session`\n\
+         / `session_id` / `session_create`.\n\
+         \n\
+         ## Multi-hop: `context=none` then `context=applied`\n\
+         \n\
+         Hop 1 journals `session_id`, `turns=1`, `context=none` (no prior turn).\n\
+         Hop 2 prepends hop 1 into the specialist prompt and journals `turns=2`,\n\
+         `context=applied`. A new session id does not leak the prior transcript.\n\
+         \n\
+         The supervised runner tick path auto-creates or reuses a pack-scoped\n\
+         session when the standing package has a multi-hop chain (≥2 hops).\n\
+         That `session_id` is stored on `{{state-dir}}/routine-state.json` and\n\
+         reused until the session is ended, expired, or bound; then a fresh id\n\
+         is minted. Digest and runner status cite `session_id=…` and\n\
+         `context=applied|none`. Single-hop packages stay session-free.\n\
+         \n\
+         ## Dual-specialty hop contract (example)\n\
+         \n\
+         Fixture pack/package `dual-specialty` (not required for `plugin-prove`\n\
+         on `{pack_id}`):\n\
+         \n\
+         1. research → `ag_news` journals `context=none`\n\
+         2. idiom → `rust_idiom` journals `context=applied` (sees hop 1)\n\
+         3. horizon → `frontier_http` journals `context=applied` (same `session_id`)\n\
+         \n\
+         One `session_id` across hops. Digest cites `session_id` / `context=applied`\n\
+         plus `package=dual-specialty` and `chain=chain-dual-specialty-…`.\n\
+         Mock gates:\n\
+         \n\
+             estate package dual-prove \\\n\
+               --estate examples/fixtures/agent-pack-handoff.yaml \\\n\
+               --state-dir <state-dir>\n\
+             estate routine runner-prove --dual \\\n\
+               --estate examples/fixtures/agent-pack-handoff.yaml \\\n\
+               --state-dir <state-dir>\n\
+         \n\
+         Expected prove: hop 1 `context=none`, hops 2–3 `context=applied`, same\n\
+         `session_id`. `--mock` stays in-process. No LIVE PASS. No live GPU.\n\
+         \n\
+         ## Refuse codes\n\
+         \n\
+         - ended resume → `refuse:session-ended`\n\
+         - TTL expiry → `refuse:session-expired` (default 24h;\n\
+           `CELL_PACK_SESSION_TTL_SECS` / `--ttl-secs`; 0 = none)\n\
+         - max turns / bytes → `refuse:session-bound`\n\
+           (`CELL_PACK_SESSION_MAX_TURNS` default 8,\n\
+           `CELL_PACK_SESSION_MAX_BYTES` default 16384)\n\
+         - `--session` without `--pack` → `refuse:session-requires-pack`\n\
+         \n\
+         `estate pack plugin-prove` asserts this file is present and non-thin\n\
+         (`session_docs: yes`). The optional cheap MCP two-hop on that prove\n\
+         is reported and does not block. This file does not invent a live\n\
+         Cursor install.\n\
+         \n\
+         See also: `RUNNER.md` (start / stop / status / digest / runner-prove),\n\
+         `INSTALL.md` (Cursor smoke).\n\
+         \n"
+    )
 }
 
 fn write_mapping_sidecar(
@@ -627,6 +893,8 @@ fn write_mapping_sidecar(
             "complete_timeout_env": "CELL_MCP_COMPLETE_TIMEOUT_SECS",
         },
         "install": "INSTALL.md",
+        "runner_docs": "RUNNER.md",
+        "session_docs": "SESSION.md",
     });
     write_pretty_json(&out.join("estate-pack.json"), &body)
 }
@@ -656,9 +924,10 @@ fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
 mod tests {
     use super::{
         complete_tool_args_line, cron_comment, estate_bin_for_export, estate_path_for_export,
-        resolve_estate_bin_path, skill_complete_member, skill_markdown,
+        resolve_estate_bin_path, runner_markdown, session_markdown, skill_complete_member,
+        skill_markdown,
     };
-    use estate_schema::{AgentPack, PackPackage};
+    use estate_schema::{AgentPack, PackPackage, Routine};
     use std::path::{Path, PathBuf};
 
     fn sample_pack() -> AgentPack {
@@ -784,5 +1053,75 @@ mod tests {
         assert!(!md.contains("stays a stub"), "{md}");
         assert!(!md.contains("body stub"), "{md}");
         assert!(!md.contains("Scaffold only"), "{md}");
+    }
+
+    fn sample_routine() -> Routine {
+        Routine {
+            id: "standing-classify".into(),
+            package: "classify-ping".into(),
+            note: None,
+            schedule: Some("@hourly".into()),
+            enabled: None,
+        }
+    }
+
+    #[test]
+    fn runner_markdown_is_operator_usable() {
+        let routine = sample_routine();
+        let md = runner_markdown("research-crew", &[&routine]);
+        for needle in [
+            "# RUNNER",
+            "estate routine runner start",
+            "estate routine runner stop",
+            "estate routine runner status",
+            "estate routine runner restart",
+            "{state-dir}/routine-runner/",
+            "refuse:runner-already-running",
+            "refuse:runner-routine-unknown",
+            "refuse:runner-routine-disabled",
+            "refuse:runner-routine-invalid",
+            "estate routine runner-prove",
+            "runner-prove --dual",
+            "session_id",
+            "package",
+            "chain",
+            "ticks",
+            "READY_FOR_LIVE_TEST: no",
+            "live_sync: false",
+            "standing-classify",
+        ] {
+            assert!(md.contains(needle), "missing {needle} in:\n{md}");
+        }
+        assert!(!md.contains("READY_FOR_LIVE_TEST: yes"), "{md}");
+        assert!(!md.contains("LIVE PASS"), "{md}");
+        assert!(!md.contains("live PASS"), "{md}");
+    }
+
+    #[test]
+    fn session_markdown_is_operator_usable() {
+        let md = session_markdown("research-crew");
+        for needle in [
+            "# SESSION",
+            "estate pack session create",
+            "estate pack session show",
+            "estate pack session end",
+            "context=none",
+            "context=applied",
+            "session_id",
+            "routine-state.json",
+            "ag_news",
+            "rust_idiom",
+            "frontier_http",
+            "refuse:session-ended",
+            "refuse:session-expired",
+            "refuse:session-bound",
+            "READY_FOR_LIVE_TEST: no",
+            "live_sync: false",
+        ] {
+            assert!(md.contains(needle), "missing {needle} in:\n{md}");
+        }
+        assert!(!md.contains("READY_FOR_LIVE_TEST: yes"), "{md}");
+        assert!(!md.contains("LIVE PASS"), "{md}");
+        assert!(!md.contains("live PASS"), "{md}");
     }
 }
