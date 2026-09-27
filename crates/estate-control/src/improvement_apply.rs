@@ -23,9 +23,9 @@
 //! improvement-export-prove.
 //! `estate pack cohesion-prove` composes the same gated apply after
 //! its export stage, reusing `{out}/improvement` without a second
-//! host-validate. `estate decisions report` on that lab cites the
-//! apply receipt so the operator sees the closed loop without
-//! digging files.
+//! host-validate. `estate decisions report` and `estate pack session
+//! show` on that lab cite the apply receipt so the operator sees the
+//! closed loop without digging files.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -511,7 +511,7 @@ fn apply_stage_cite(
         "composed_by": "cohesion-prove",
         "reused_existing_package": true,
         "host_validate_rerun": false,
-        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites this receipt. Not a live PASS."
+        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report and estate pack session show on the lab state-dir cite this receipt. Not a live PASS."
     })
 }
 
@@ -718,9 +718,10 @@ fn refuses_locked_write(path: &Path, root: &Path) -> Result<bool> {
     control_plane_prove::refuses_locked_target(path, root, &locked)
 }
 
-/// Copy the apply receipt beside a lab journal so `estate decisions report`
-/// cites it without the operator opening `{out}/apply`.
-fn install_apply_receipt_for_report(state_dir: &Path, receipt_path: &Path) -> Result<()> {
+/// Copy the apply receipt beside a lab journal so `estate decisions
+/// report` and `estate pack session show` cite it without the operator
+/// opening `{out}/apply`. Local copy only — not a sibling walk.
+pub(crate) fn install_apply_receipt_for_report(state_dir: &Path, receipt_path: &Path) -> Result<()> {
     if !state_dir.is_dir() {
         return Ok(());
     }

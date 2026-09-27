@@ -1423,6 +1423,13 @@ pub(crate) enum PackSessionCommand {
         ttl_secs: Option<i64>,
     },
     /// Show one session (turns, ended, expired).
+    /// When the lab has a nearby `cell-one.improvement-apply.v0`
+    /// receipt beside this journal, the same page cites applied
+    /// proposal id/kind/binding and the receipt's lock fields
+    /// (`require_plan`, `standing`/`joinable`, `refuse_without_plan`,
+    /// `auto_train`, `train_invoked`). Missing or wrong-typed lock
+    /// fields are `refuse:cite` — they are not invented. Sibling
+    /// `{state-dir}/../apply/` is not searched.
     Show {
         #[arg(long)]
         id: String,

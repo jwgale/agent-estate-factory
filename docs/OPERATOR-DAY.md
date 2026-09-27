@@ -733,7 +733,11 @@ by reading applied proposal id/kind/binding, joinable standing,
 and `train_invoked` from `cell-one.improvement-apply.v0`. Missing
 or wrong-typed lock fields are `refuse:cite` and are not invented.
 Search is local to that state-dir (beside the journal); a sibling
-`../apply/` is not cited. The closed loop is one operator surface
+`../apply/` is not cited. After the gated apply, `estate pack
+session show` on the crew state-dir cites those same receipt
+fields (copy beside the crew journal / state; no sibling walk).
+The composed crew-session prove report records that apply cite.
+The closed loop is one operator surface
 without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
 `ready_for_live_test` and `live_pass_recorded` stay false. `live_sync`
@@ -753,6 +757,8 @@ estate decisions improvement-apply-prove --root . --out /tmp/cell-one-improvemen
 ```bash
 estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
 estate decisions report --state-dir /tmp/cell-one-cohesion/state
+estate pack session show --id sess-cohesion01 \
+  --state-dir /tmp/cell-one-cohesion/cli-smoke/crew
 ```
 
 ## 4f. Improvement-export prove (standing package, not a train)

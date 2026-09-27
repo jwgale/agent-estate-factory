@@ -650,11 +650,17 @@ pub(crate) fn cmd_pack_session_show(
     }
     if session.turns.is_empty() {
         println!("  (no turns)");
-        return Ok(());
+    } else {
+        for turn in &session.turns {
+            println!("  {}. user: {}", turn.seq, turn.prompt);
+            println!("     assistant: {}", turn.result);
+        }
     }
-    for turn in &session.turns {
-        println!("  {}. user: {}", turn.seq, turn.prompt);
-        println!("     assistant: {}", turn.result);
+    // Nearby gated-apply receipt is a cite, not a grant. Reuse the
+    // decisions discovery (local journal / state only). Missing is
+    // silence. Incomplete lock fields are refuse:cite — not invented.
+    if let Some(cite) = crate::decisions::cite_or_refuse_nearby_apply_receipt(state_dir) {
+        print!("{cite}");
     }
     Ok(())
 }

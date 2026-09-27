@@ -151,7 +151,7 @@ pub(crate) fn write_composed_report(
         "estate_cksum": estate_cksum,
         "composed_by": "cohesion-prove",
         "pack": pack_report(pack_id, fixture, out, stage),
-        "note": "Composed by cohesion-prove. Throwaway plugin-install-local then multi-hop CLI crew session on one session_id. Hop 2 sees hop 1. Research stays refuse:pack-orchestrator. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "note": "Composed by cohesion-prove. Throwaway plugin-install-local then multi-hop CLI crew session on one session_id. Hop 2 sees hop 1. Research stays refuse:pack-orchestrator. After gated apply, estate pack session show cites the nearby cell-one.improvement-apply.v0 receipt (local journal / state only). Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     write_report(out, &body)
 }
@@ -159,6 +159,12 @@ pub(crate) fn write_composed_report(
 pub(crate) fn pack_report(pack_id: &str, fixture: &Path, out: &Path, stage: &PackStage) -> Value {
     let home = out.join("home");
     let export_out = out.join("plugin-export");
+    let crew_state = out.join("cli-smoke").join("crew");
+    let mut smoke = stage.smoke.clone();
+    if let Some(cite) = crate::decisions::cite_nearby_apply_receipt(&crew_state) {
+        smoke["session_show"]["cites_apply"] = json!(true);
+        smoke["session_show"]["apply_cite"] = json!(cite);
+    }
     json!({
         "id": pack_id,
         "fixture": fixture.display().to_string(),
@@ -176,8 +182,8 @@ pub(crate) fn pack_report(pack_id: &str, fixture: &Path, out: &Path, stage: &Pac
         "loader_is_live_pass": false,
         "cli_smoke_docs": stage.install.cli_smoke_docs,
         "estate_bin": stage.install.estate_bin,
-        "cli_smoke": stage.smoke,
-        "crew_session": stage.smoke,
+        "cli_smoke": smoke,
+        "crew_session": smoke,
     })
 }
 

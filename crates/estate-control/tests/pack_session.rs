@@ -228,6 +228,10 @@ fn create_two_hops_share_context_and_receipt_surfaces_session() {
     assert!(ok, "{stderr}");
     assert!(shown.contains("turns=2"), "{shown}");
     assert!(shown.contains("unique-hop-alpha-token"), "{shown}");
+    assert!(
+        !shown.contains("apply receipt:"),
+        "no nearby apply receipt: {shown}"
+    );
     no_invented_pass(&shown, &stderr);
     assert_locked_cksum();
     let _ = std::fs::remove_dir_all(&dir);
@@ -385,6 +389,246 @@ fn end_and_expire_refuse_resume() {
         "stderr={stderr}\nstdout={stdout}"
     );
     no_invented_pass(&stdout, &stderr);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn write_apply_receipt(path: &Path, binding: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(
+        path,
+        format!(
+            r#"{{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:{binding}",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "{binding}",
+  "joinable": true,
+  "standing": "joinable: yes",
+  "require_plan": true,
+  "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
+  "auto_train": false,
+  "train_invoked": false
+}}
+"#
+        ),
+    )
+    .unwrap();
+}
+
+fn create_show_session(estate: &str, state: &str, id: &str) {
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "session",
+        "create",
+        "--pack",
+        "research-crew",
+        "--estate",
+        estate,
+        "--state-dir",
+        state,
+        "--id",
+        id,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+}
+
+fn show_session(state: &str, id: &str) -> (bool, String, String) {
+    run(&[
+        "pack",
+        "session",
+        "show",
+        "--id",
+        id,
+        "--state-dir",
+        state,
+    ])
+}
+
+fn assert_green_apply_cite(shown: &str, binding: &str) {
+    assert!(
+        shown.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains(&format!("applied proposal specialty-seat:{binding}")),
+        "{shown}"
+    );
+    assert!(shown.contains("kind=specialty-seat"), "{shown}");
+    assert!(shown.contains(&format!("binding={binding}")), "{shown}");
+    assert!(shown.contains("standing=joinable: yes"), "{shown}");
+    assert!(shown.contains("joinable=true"), "{shown}");
+    assert!(shown.contains("require_plan=true"), "{shown}");
+    assert!(
+        shown.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+        "{shown}"
+    );
+    assert!(shown.contains("auto_train=false"), "{shown}");
+    assert!(shown.contains("train_invoked=false"), "{shown}");
+    assert!(!shown.contains("refuse:cite"), "{shown}");
+}
+
+fn assert_no_green_locked_cite(shown: &str) {
+    assert!(
+        !shown.contains("require_plan=true"),
+        "must not invent require_plan=true: {shown}"
+    );
+    assert!(
+        !shown.contains("auto_train=false"),
+        "must not invent auto_train=false: {shown}"
+    );
+    assert!(
+        !shown.contains("train_invoked=false"),
+        "must not invent train_invoked=false: {shown}"
+    );
+    assert!(
+        !shown.contains("standing=joinable: yes"),
+        "must not invent standing: {shown}"
+    );
+    assert!(
+        !shown.contains("apply receipt: schema=cell-one.improvement-apply.v0 path="),
+        "must not print a green locked cite: {shown}"
+    );
+}
+
+#[test]
+fn session_show_cites_nearby_apply_receipt() {
+    assert_locked_cksum();
+    let dir = scratch("apply-cite");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = fixture().display().to_string();
+    let state_s = state.display().to_string();
+    create_show_session(&estate, &state_s, "sess-applycite01");
+    write_apply_receipt(
+        &state.join("decisions").join("improvement-apply.json"),
+        "ag_news",
+    );
+    let (ok, shown, stderr) = show_session(&state_s, "sess-applycite01");
+    assert!(ok, "{stderr}\n{shown}");
+    assert!(shown.contains("sess-applycite01"), "{shown}");
+    assert_green_apply_cite(&shown, "ag_news");
+    no_invented_pass(&shown, &stderr);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn session_show_prefers_local_receipt_over_sibling_apply() {
+    assert_locked_cksum();
+    let root = scratch("apply-local-wins");
+    let state = root.join("state");
+    std::fs::create_dir_all(state.join("decisions")).unwrap();
+    let estate = fixture().display().to_string();
+    let state_s = state.display().to_string();
+    create_show_session(&estate, &state_s, "sess-applylocal01");
+    write_apply_receipt(
+        &state.join("decisions").join("improvement-apply.json"),
+        "ag_news",
+    );
+    write_apply_receipt(
+        &root.join("apply").join("improvement-apply.json"),
+        "rust_idiom",
+    );
+    let (ok, shown, stderr) = show_session(&state_s, "sess-applylocal01");
+    assert!(ok, "{stderr}\n{shown}");
+    assert_green_apply_cite(&shown, "ag_news");
+    assert!(shown.contains("specialty-seat:ag_news"), "{shown}");
+    assert!(!shown.contains("rust_idiom"), "{shown}");
+    assert!(!shown.contains("/apply/improvement-apply.json"), "{shown}");
+    no_invented_pass(&shown, &stderr);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn session_show_does_not_cite_sibling_apply() {
+    assert_locked_cksum();
+    let root = scratch("apply-no-sibling");
+    let state = root.join("other").join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let estate = fixture().display().to_string();
+    let state_s = state.display().to_string();
+    create_show_session(&estate, &state_s, "sess-applynone001");
+    write_apply_receipt(
+        &root.join("apply").join("improvement-apply.json"),
+        "ag_news",
+    );
+    let (ok, shown, stderr) = show_session(&state_s, "sess-applynone001");
+    assert!(ok, "{stderr}\n{shown}");
+    assert!(shown.contains("sess-applynone001"), "{shown}");
+    assert!(!shown.contains("apply receipt:"), "{shown}");
+    assert!(!shown.contains("refuse:cite"), "{shown}");
+    assert_no_green_locked_cite(&shown);
+    no_invented_pass(&shown, &stderr);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn session_show_refuses_missing_lock_fields() {
+    assert_locked_cksum();
+    let dir = scratch("apply-incomplete");
+    let state = dir.join("state");
+    std::fs::create_dir_all(state.join("decisions")).unwrap();
+    let estate = fixture().display().to_string();
+    let state_s = state.display().to_string();
+    create_show_session(&estate, &state_s, "sess-applymiss001");
+    std::fs::write(
+        state.join("decisions").join("improvement-apply.json"),
+        r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:ag_news",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "ag_news"
+}
+"#,
+    )
+    .unwrap();
+    let (ok, shown, stderr) = show_session(&state_s, "sess-applymiss001");
+    assert!(ok, "{stderr}\n{shown}");
+    assert!(shown.contains("refuse:cite:"), "{shown}");
+    assert_no_green_locked_cite(&shown);
+    no_invented_pass(&shown, &stderr);
+    assert_locked_cksum();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn session_show_refuses_wrong_typed_lock_fields() {
+    assert_locked_cksum();
+    let dir = scratch("apply-wrong-type");
+    let state = dir.join("state");
+    std::fs::create_dir_all(state.join("decisions")).unwrap();
+    let estate = fixture().display().to_string();
+    let state_s = state.display().to_string();
+    create_show_session(&estate, &state_s, "sess-applywrong01");
+    std::fs::write(
+        state.join("decisions").join("improvement-apply.json"),
+        r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:ag_news",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "ag_news",
+  "joinable": true,
+  "standing": "joinable: yes",
+  "require_plan": "true",
+  "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
+  "auto_train": false,
+  "train_invoked": false
+}
+"#,
+    )
+    .unwrap();
+    let (ok, shown, stderr) = show_session(&state_s, "sess-applywrong01");
+    assert!(ok, "{stderr}\n{shown}");
+    assert!(shown.contains("refuse:cite:"), "{shown}");
+    assert!(shown.contains("require_plan"), "{shown}");
+    assert!(!shown.contains("require_plan=true"), "{shown}");
+    assert_no_green_locked_cite(&shown);
+    no_invented_pass(&shown, &stderr);
     assert_locked_cksum();
     let _ = std::fs::remove_dir_all(&dir);
 }
