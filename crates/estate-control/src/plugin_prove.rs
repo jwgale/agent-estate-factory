@@ -3,11 +3,12 @@
 //! Exports a fixture pack (default research-crew), asserts baked
 //! absolute `estate` binary in `mcp.json` (not bare `estate`), runs
 //! mock MCP `complete` as orchestrator → receipt and as a member →
-//! `refuse:pack-orchestrator`, and prints a compact prove report.
-//! Optional cheap session two-hop (create + two complete hops) is
-//! included when an orchestrator server is present. Exit non-zero on
-//! any required fail. live_sync stays false.
-//! READY_FOR_LIVE_TEST: no. Not a live PASS.
+//! `refuse:pack-orchestrator`, asserts exported `RUNNER.md` + `SESSION.md`
+//! are present and non-thin, and prints a compact prove report
+//! (`runner_docs: yes` / `session_docs: yes`). Optional cheap session
+//! two-hop (create + two complete hops) is included when an orchestrator
+//! server is present. Exit non-zero on any required fail. live_sync
+//! stays false. READY_FOR_LIVE_TEST: no. Not a live PASS.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -21,6 +22,50 @@ use crate::pack_mcp::{read_message, write_message, COMPLETE_TIMEOUT_ENV};
 
 pub(crate) const PROVE_SCHEMA: &str = "cell-one.pack-plugin-prove.v0";
 pub(crate) const DEFAULT_PACK_ID: &str = "research-crew";
+pub(crate) const RUNNER_DOC: &str = "RUNNER.md";
+pub(crate) const SESSION_DOC: &str = "SESSION.md";
+
+/// Headings / CLI tokens / refuse codes required in exported RUNNER.md.
+pub(crate) const RUNNER_DOC_NEEDLES: &[&str] = &[
+    "# RUNNER",
+    "estate routine runner start",
+    "estate routine runner stop",
+    "estate routine runner status",
+    "estate routine runner restart",
+    "{state-dir}/routine-runner/",
+    "refuse:runner-already-running",
+    "refuse:runner-routine-unknown",
+    "refuse:runner-routine-disabled",
+    "refuse:runner-routine-invalid",
+    "estate routine runner-prove",
+    "runner-prove --dual",
+    "session_id",
+    "package",
+    "chain",
+    "ticks",
+    "READY_FOR_LIVE_TEST: no",
+    "live_sync: false",
+];
+
+/// Headings / CLI tokens / refuse codes required in exported SESSION.md.
+pub(crate) const SESSION_DOC_NEEDLES: &[&str] = &[
+    "# SESSION",
+    "estate pack session create",
+    "estate pack session show",
+    "estate pack session end",
+    "context=none",
+    "context=applied",
+    "session_id",
+    "routine-state.json",
+    "ag_news",
+    "rust_idiom",
+    "frontier_http",
+    "refuse:session-ended",
+    "refuse:session-expired",
+    "refuse:session-bound",
+    "READY_FOR_LIVE_TEST: no",
+    "live_sync: false",
+];
 #[allow(dead_code)]
 pub(crate) const DEFAULT_PROMPT: &str = "ping";
 #[allow(dead_code)]
@@ -46,6 +91,8 @@ pub(crate) struct ProveReport {
     pub pack_id: String,
     pub out: String,
     pub estate_bin: String,
+    pub runner_docs: bool,
+    pub session_docs: bool,
     pub checks: Vec<ProveCheck>,
 }
 
@@ -70,6 +117,8 @@ impl ProveReport {
             "wired_mcp": true,
             "live_sync": false,
             "ready_for_live_test": false,
+            "runner_docs": if self.runner_docs { "yes" } else { "no" },
+            "session_docs": if self.session_docs { "yes" } else { "no" },
             "checks": Value::Object(checks),
         })
     }
@@ -132,6 +181,14 @@ fn print_report(report: &ProveReport) {
         let mark = if c.ok { "ok" } else { "FAIL" };
         println!("  {}: {mark} ({})", c.name, c.detail);
     }
+    println!(
+        "  runner_docs: {}",
+        if report.runner_docs { "yes" } else { "no" }
+    );
+    println!(
+        "  session_docs: {}",
+        if report.session_docs { "yes" } else { "no" }
+    );
     println!("  live_sync: no");
     println!("  READY_FOR_LIVE_TEST: no");
     println!("{}", report.to_json());
@@ -217,6 +274,36 @@ pub(crate) fn prove_exported_plugin(out: &Path, prompt: &str) -> Result<ProveRep
         Ok(()) => push_ok(&mut checks, "install_md", "INSTALL.md steps present"),
         Err(err) => push_fail(&mut checks, "install_md", err.to_string()),
     }
+
+    let runner_docs = match assert_runner_md(&out.join(RUNNER_DOC)) {
+        Ok(()) => {
+            push_ok(
+                &mut checks,
+                "runner_docs",
+                format!("{RUNNER_DOC} operator loop present"),
+            );
+            true
+        }
+        Err(err) => {
+            push_fail(&mut checks, "runner_docs", err.to_string());
+            false
+        }
+    };
+
+    let session_docs = match assert_session_md(&out.join(SESSION_DOC)) {
+        Ok(()) => {
+            push_ok(
+                &mut checks,
+                "session_docs",
+                format!("{SESSION_DOC} operator loop present"),
+            );
+            true
+        }
+        Err(err) => {
+            push_fail(&mut checks, "session_docs", err.to_string());
+            false
+        }
+    };
 
     let state_dir = out.join("prove-state");
     let _ = std::fs::create_dir_all(&state_dir);
@@ -306,6 +393,8 @@ pub(crate) fn prove_exported_plugin(out: &Path, prompt: &str) -> Result<ProveRep
         pack_id,
         out: out.display().to_string(),
         estate_bin,
+        runner_docs,
+        session_docs,
         checks,
     })
 }
@@ -435,6 +524,8 @@ pub(crate) fn assert_honest_labels(out: &Path) -> Result<()> {
         "plugin.json",
         "README.md",
         "INSTALL.md",
+        "RUNNER.md",
+        "SESSION.md",
         "estate-pack.json",
         "mcp.json",
     ];
@@ -495,6 +586,33 @@ pub(crate) fn assert_install_md(path: &Path) -> Result<()> {
     }
     if stub_label_in(&text).is_some() {
         bail!("refuse:plugin-prove-install: INSTALL.md must not use stub labels");
+    }
+    Ok(())
+}
+
+pub(crate) fn assert_runner_md(path: &Path) -> Result<()> {
+    assert_operator_doc(path, "runner-docs", RUNNER_DOC, RUNNER_DOC_NEEDLES)
+}
+
+pub(crate) fn assert_session_md(path: &Path) -> Result<()> {
+    assert_operator_doc(path, "session-docs", SESSION_DOC, SESSION_DOC_NEEDLES)
+}
+
+fn assert_operator_doc(path: &Path, kind: &str, label: &str, needles: &[&str]) -> Result<()> {
+    if !path.is_file() {
+        bail!("refuse:plugin-prove-{kind}: missing {label}");
+    }
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    for needle in needles {
+        if !text.contains(*needle) {
+            bail!("refuse:plugin-prove-{kind}: {label} missing '{needle}'");
+        }
+    }
+    if text.contains("READY_FOR_LIVE_TEST: yes") {
+        bail!("refuse:plugin-prove-{kind}: {label} must not claim a live PASS");
+    }
+    if stub_label_in(&text).is_some() {
+        bail!("refuse:plugin-prove-{kind}: {label} must not use stub labels");
     }
     Ok(())
 }
@@ -872,6 +990,8 @@ mod tests {
             pack_id: "research-crew".into(),
             out: "/tmp/out".into(),
             estate_bin: "/abs/estate".into(),
+            runner_docs: true,
+            session_docs: true,
             checks: vec![ProveCheck {
                 name: "absolute_estate_bin".into(),
                 ok: true,
@@ -883,5 +1003,54 @@ mod tests {
         assert_eq!(v["ready_for_live_test"], false);
         assert_eq!(v["live_sync"], false);
         assert_eq!(v["ok"], true);
+        assert_eq!(v["runner_docs"], "yes");
+        assert_eq!(v["session_docs"], "yes");
+    }
+
+    #[test]
+    fn assert_runner_md_requires_substance() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-plugin-prove-runner-doc-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(RUNNER_DOC);
+        let err = assert_runner_md(&path).unwrap_err().to_string();
+        assert!(err.contains("refuse:plugin-prove-runner-docs"), "{err}");
+        assert!(err.contains("missing"), "{err}");
+
+        std::fs::write(&path, "# RUNNER\n\nthin\n").unwrap();
+        let err = assert_runner_md(&path).unwrap_err().to_string();
+        assert!(err.contains("refuse:plugin-prove-runner-docs"), "{err}");
+        assert!(err.contains("missing"), "{err}");
+
+        let full = crate::export_plugin::runner_markdown("research-crew", &[]);
+        std::fs::write(&path, &full).unwrap();
+        assert_runner_md(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn assert_session_md_requires_substance() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cell-plugin-prove-session-doc-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SESSION_DOC);
+        let err = assert_session_md(&path).unwrap_err().to_string();
+        assert!(err.contains("refuse:plugin-prove-session-docs"), "{err}");
+
+        std::fs::write(&path, "# SESSION\n\nthin\n").unwrap();
+        let err = assert_session_md(&path).unwrap_err().to_string();
+        assert!(err.contains("refuse:plugin-prove-session-docs"), "{err}");
+        assert!(err.contains("missing"), "{err}");
+
+        let full = crate::export_plugin::session_markdown("research-crew");
+        std::fs::write(&path, &full).unwrap();
+        assert_session_md(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

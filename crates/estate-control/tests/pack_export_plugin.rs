@@ -4,10 +4,11 @@
 //! MCP is wired to `estate pack mcp-serve` → `estate complete`.
 //! `mcp.json` `command` is the absolute estate binary resolved at export.
 //! Env writes CELL_MCP_COMPLETE_TIMEOUT_SECS. INSTALL.md is the human
-//! Cursor smoke checklist. Skill bodies instruct calling tool `complete`
-//! with the package prompt (not stubs). When wired, labels say pack
-//! plugin / Agent Plugin export — not "pack plugin stub". live_sync
-//! stays false. Does not invent a live PASS.
+//! Cursor smoke checklist. RUNNER.md + SESSION.md teach the supervised
+//! runner and pack session loop. Skill bodies instruct calling tool
+//! `complete` with the package prompt (not stubs). When wired, labels
+//! say pack plugin / Agent Plugin export — not "pack plugin stub".
+//! live_sync stays false. Does not invent a live PASS.
 //! Locked examples/estate.yaml stays untouched.
 
 use std::path::{Path, PathBuf};
@@ -103,6 +104,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(stdout.contains("live_sync: no"), "{stdout}");
     assert!(stdout.contains("complete_timeout_secs: 120"), "{stdout}");
     assert!(stdout.contains("INSTALL.md"), "{stdout}");
+    assert!(stdout.contains("RUNNER.md"), "{stdout}");
+    assert!(stdout.contains("SESSION.md"), "{stdout}");
     assert!(
         stdout.contains(&format!("estate_bin: {expected_bin}")),
         "{stdout}"
@@ -242,6 +245,8 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "CELL_MCP_COMPLETE_TIMEOUT_SECS"
     );
     assert_eq!(mapping["install"], "INSTALL.md");
+    assert_eq!(mapping["runner_docs"], "RUNNER.md");
+    assert_eq!(mapping["session_docs"], "SESSION.md");
     assert_eq!(mapping["packages"][0]["mcp_tool"], "complete");
     assert_eq!(mapping["packages"][0]["skill_stub"], false);
     assert_eq!(mapping["packages"][1]["mcp_tool"], "complete");
@@ -288,7 +293,11 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "{readme}"
     );
     assert!(readme.contains("INSTALL.md"), "{readme}");
+    assert!(readme.contains("RUNNER.md"), "{readme}");
+    assert!(readme.contains("SESSION.md"), "{readme}");
     assert!(readme.contains("plugin-prove"), "{readme}");
+    assert!(readme.contains("runner_docs: yes"), "{readme}");
+    assert!(readme.contains("session_docs: yes"), "{readme}");
     assert!(readme.contains("absolute estate binary"), "{readme}");
     assert!(readme.contains(&expected_bin), "{readme}");
     assert!(!readme.contains("must be on PATH"), "{readme}");
@@ -319,6 +328,84 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(!install.contains("plugin stub"), "{install}");
     assert!(!install.contains("pack plugin stub"), "{install}");
     assert!(!install.contains("XAI_API_KEY"), "{install}");
+    assert!(install.contains("RUNNER.md"), "{install}");
+    assert!(install.contains("SESSION.md"), "{install}");
+    assert!(install.contains("runner_docs: yes"), "{install}");
+    assert!(install.contains("session_docs: yes"), "{install}");
+
+    let runner = read(&out.join("RUNNER.md"));
+    assert!(runner.contains("# RUNNER"), "{runner}");
+    assert!(
+        runner.contains("estate routine runner start"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("estate routine runner stop"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("estate routine runner status"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("estate routine runner restart"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("{state-dir}/routine-runner/"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("refuse:runner-already-running"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("refuse:runner-routine-unknown"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("refuse:runner-routine-disabled"),
+        "{runner}"
+    );
+    assert!(
+        runner.contains("refuse:runner-routine-invalid"),
+        "{runner}"
+    );
+    assert!(runner.contains("estate routine runner-prove"), "{runner}");
+    assert!(runner.contains("runner-prove --dual"), "{runner}");
+    assert!(runner.contains("session_id"), "{runner}");
+    assert!(runner.contains("package"), "{runner}");
+    assert!(runner.contains("chain"), "{runner}");
+    assert!(runner.contains("ticks"), "{runner}");
+    assert!(runner.contains("READY_FOR_LIVE_TEST: no"), "{runner}");
+    assert!(runner.contains("live_sync: false"), "{runner}");
+    assert!(!runner.contains("READY_FOR_LIVE_TEST: yes"), "{runner}");
+    assert!(runner.contains("Not a live PASS"), "{runner}");
+    assert!(runner.contains("standing-classify"), "{runner}");
+    assert!(runner.contains("standing-once"), "{runner}");
+
+    let session = read(&out.join("SESSION.md"));
+    assert!(session.contains("# SESSION"), "{session}");
+    assert!(
+        session.contains("estate pack session create"),
+        "{session}"
+    );
+    assert!(session.contains("estate pack session show"), "{session}");
+    assert!(session.contains("estate pack session end"), "{session}");
+    assert!(session.contains("context=none"), "{session}");
+    assert!(session.contains("context=applied"), "{session}");
+    assert!(session.contains("session_id"), "{session}");
+    assert!(session.contains("routine-state.json"), "{session}");
+    assert!(session.contains("ag_news"), "{session}");
+    assert!(session.contains("rust_idiom"), "{session}");
+    assert!(session.contains("frontier_http"), "{session}");
+    assert!(session.contains("refuse:session-ended"), "{session}");
+    assert!(session.contains("refuse:session-expired"), "{session}");
+    assert!(session.contains("refuse:session-bound"), "{session}");
+    assert!(session.contains("READY_FOR_LIVE_TEST: no"), "{session}");
+    assert!(session.contains("live_sync: false"), "{session}");
+    assert!(!session.contains("READY_FOR_LIVE_TEST: yes"), "{session}");
+    assert!(session.contains("Not a live PASS"), "{session}");
 
     assert_locked_cksum();
 }
