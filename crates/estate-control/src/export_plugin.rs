@@ -420,8 +420,13 @@ fn write_readme(
     md.push_str("`live_sync: false`. `wired_mcp: true`. Routine *triggers* stay\n");
     md.push_str("comments; operator runner + session docs ship as `RUNNER.md`\n");
     md.push_str("and `SESSION.md`.\n");
-    md.push_str("This directory does not install a Cursor/Grok Bot plugin, does\n");
-    md.push_str("not start a cron daemon, and does not rank mixed-select.\n\n");
+    md.push_str("This export directory is not the Cursor load path.\n");
+    md.push_str("`estate pack plugin-install-local` copies it into\n");
+    md.push_str("`~/.cursor/plugins/local/<plugin-name>` as a real directory\n");
+    md.push_str("(not a symlink whose target is outside that folder) and writes\n");
+    md.push_str("`.estate-pack-install.json`. That copy does not claim Cursor Customize loaded the plugin\n");
+    md.push_str("and not Grok Bot sync. This file does not start a cron daemon\n");
+    md.push_str("and does not rank mixed-select.\n\n");
     md.push_str(&format!("Estate file: `{estate_path}`\n"));
     md.push_str(&format!("Estate binary: `{estate_bin}`\n\n"));
     md.push_str("## Mapping\n\n");
@@ -495,12 +500,15 @@ fn write_readme(
     md.push_str("\n`estate routine tick` remains the local wake.\n");
     md.push_str("`estate routine watch` is the local operator loop (tick + digest).\n");
     md.push_str("This file does not install a Cursor or Grok Bot trigger.\n");
-        md.push_str("Human Cursor smoke steps: `INSTALL.md`.\n");
+    md.push_str("Human Cursor smoke steps: `INSTALL.md`.\n");
     md.push_str("Supervised runner loop: `RUNNER.md`.\n");
     md.push_str("Pack-scoped crew session: `SESSION.md`.\n");
     md.push_str("CLI gate before install: `estate pack plugin-prove`.\n");
     md.push_str("`plugin-prove` asserts those runner + session docs are present\n");
     md.push_str("and non-thin (`runner_docs: yes` / `session_docs: yes`).\n");
+    md.push_str("Local directory install: `estate pack plugin-install-local`\n");
+    md.push_str("copies the proved export into `~/.cursor/plugins/local/<plugin-name>`\n");
+    md.push_str("and writes `.estate-pack-install.json`. Does not claim Cursor Customize loaded the plugin.\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
 }
@@ -581,6 +589,25 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          CLI gate (same checks, no Cursor UI):\n\
          \n\
              estate pack plugin-prove --id {pack} --estate <estate.yaml> --out <this-dir>\n\
+         \n\
+         ## 8. Local directory install\n\
+         \n\
+         `estate pack plugin-install-local` runs the same asserts as\n\
+         `estate pack plugin-prove`, then copies this folder into a real\n\
+         directory under `~/.cursor/plugins/local/<plugin-name>`.\n\
+         Cursor skips a symlink whose target is outside that folder\n\
+         (`refuse:plugin-install-symlink`). The copy writes\n\
+         `.estate-pack-install.json` (pack id, tip, estate_bin).\n\
+         A foreign directory at that path refuses unless `--force`.\n\
+         The report cites the install path, plugin name, skills, mcp\n\
+         server ids, `runner_docs` / `session_docs`, and\n\
+         `loaded: yes` or `loaded: skipped:loader-unavailable`.\n\
+         `loaded: yes` means `loadUserLocalPlugins` listed this name.\n\
+         That line does not claim Cursor Customize loaded the plugin.\n\
+         `READY_FOR_LIVE_TEST: no`. `live_sync: false`. Not a live PASS.\n\
+         \n\
+             estate pack plugin-install-local --id {pack} \\\n\
+               --estate <estate.yaml> --out <this-dir>\n\
          \n",
         pack = pack.id,
         orch = orch_name,

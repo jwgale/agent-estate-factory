@@ -296,6 +296,9 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(readme.contains("RUNNER.md"), "{readme}");
     assert!(readme.contains("SESSION.md"), "{readme}");
     assert!(readme.contains("plugin-prove"), "{readme}");
+    assert!(readme.contains("plugin-install-local"), "{readme}");
+    assert!(readme.contains(".cursor/plugins/local"), "{readme}");
+    assert!(readme.contains(".estate-pack-install.json"), "{readme}");
     assert!(readme.contains("runner_docs: yes"), "{readme}");
     assert!(readme.contains("session_docs: yes"), "{readme}");
     assert!(readme.contains("absolute estate binary"), "{readme}");
@@ -332,6 +335,18 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(install.contains("SESSION.md"), "{install}");
     assert!(install.contains("runner_docs: yes"), "{install}");
     assert!(install.contains("session_docs: yes"), "{install}");
+    assert!(install.contains("plugin-install-local"), "{install}");
+    assert!(install.contains(".cursor/plugins/local"), "{install}");
+    assert!(install.contains(".estate-pack-install.json"), "{install}");
+    assert!(install.contains("refuse:plugin-install-symlink"), "{install}");
+    assert!(
+        install.contains("loaded: skipped:loader-unavailable"),
+        "{install}"
+    );
+    assert!(
+        install.contains("does not claim Cursor Customize loaded the plugin"),
+        "{install}"
+    );
 
     let runner = read(&out.join("RUNNER.md"));
     assert!(runner.contains("# RUNNER"), "{runner}");

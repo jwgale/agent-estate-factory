@@ -154,7 +154,10 @@ Authorize still uses existing model intentions. Plugin export is
 `estate pack export-plugin` (MCP wired to `estate complete`; skill
 bodies call tool `complete` with the package prompt; `live_sync`
 stays false). Human gate before Cursor install is
-`estate pack plugin-prove`. No live Cursor / Grok Bot routine sync.
+`estate pack plugin-prove`. `estate pack plugin-install-local` copies
+a proved export into `~/.cursor/plugins/local/<name>` (see 3h2). That
+copy does not claim Cursor Customize loaded the plugin. No live Cursor / Grok Bot routine
+sync.
 No multi-step DAG.
 
 ## 3d. Scheduled tick + multi-hop chain (fixture)
@@ -312,9 +315,8 @@ research/`ag_news` journals `context=none`, hop 2 idiom/`rust_idiom`
 journals `context=applied`, hop 3 horizon/`frontier_http` journals
 `context=applied`. One `session_id` across hops. Digest cites
 `session_id` / `context=applied` plus `package=dual-specialty` and
-`chain=chain-dual-specialty-…`. `--mock` stays in-process. Not a live
-PASS. `READY_FOR_LIVE_TEST`: no. Locked `examples/estate.yaml`
-untouched.
+`chain=chain-dual-specialty-…`. `--mock` stays in-process. Not a live PASS.
+`READY_FOR_LIVE_TEST`: no. Locked `examples/estate.yaml` untouched.
 
 ```bash
 # One due tick (same auto-chain + session bind as the runner)
@@ -460,13 +462,77 @@ a throwaway directory (kept so you can point Cursor at it). The command:
    required fail.
 
 Operator runner + session loop on the export is those two files (see
-3e2 / 3e3 / 3g). `plugin-prove` does not start a runner and does not
-invent a live Cursor / Grok Bot install.
+3e2 / 3e3 / 3g). `plugin-prove` does not start a runner. The local
+directory install is `estate pack plugin-install-local` (see 3h2). That
+command does not claim Cursor Customize loaded the plugin.
 
 `--check-only` re-proves an existing `--out` without rewriting it.
 5090 parent live-prove notes: `.cell/cohesion-agnews-20260926/plugin-prove.md`
 (local throwaway estate; gitignored). Not live Grok Bot sync. `live_sync`
 stays false.
+
+## 3h2. Pack plugin-install-local
+
+Same throwaway fixture. This closes the loop `plugin-prove` gates:
+export, prove, copy into Cursor's local plugin folder. Not part of
+`make smoke` or `make gate-90`. Does not touch locked
+`examples/estate.yaml` (cksum `43770130 3391`). `READY_FOR_LIVE_TEST`:
+no. Not a live PASS. `live_sync` stays false.
+
+```bash
+estate pack plugin-install-local --id research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml
+```
+
+Default `--id` is `research-crew` and the default estate is the handoff
+fixture. Omit `--out` and the export stays in a throwaway directory
+(kept). The install path is `$HOME/.cursor/plugins/local/<plugin-name>`
+(the plugin.json `name`, kebab-case for this pack). `--target <dir>`
+overrides that local-plugins root. Tests and operators who must not
+touch a real home set `HOME` (and may set `XDG_CONFIG_HOME` /
+`XDG_DATA_HOME` beside it). The command reads `HOME`, not
+`XDG_CONFIG_HOME`, because Cursor's folder is `~/.cursor/plugins/local`.
+
+The command:
+
+1. Exports the pack plugin (or reuses `--out` with `--check-only`).
+2. Runs the same asserts as `plugin-prove` (absolute estate bin, horizon
+   receipt, research `refuse:pack-orchestrator`, non-thin `RUNNER.md` /
+   `SESSION.md`). A failed prove does not copy.
+3. Validates `plugin.json` against the Agent Plugins 1.0 manifest rules
+   when `$schema` is that schema, and `mcp.json` the same way.
+4. Copies files into a real directory. A symlink at the install path
+   whose target is outside the local-plugins root is
+   `refuse:plugin-install-symlink` (still refused with `--force`).
+   Symlinks inside the export that point outside the export refuse the
+   same way. Prefer the copy.
+5. Refuses a directory that has no `.estate-pack-install.json` estate
+   marker (`refuse:plugin-install-foreign`) unless `--force`. A marker
+   this command wrote reinstalls without `--force`.
+6. Writes `.estate-pack-install.json` (`pack_id`, tip, `estate_bin`,
+   skills, mcp server ids, `live_sync: false`).
+7. If `node` can load `@anysphere/cursor-plugins` `loadUserLocalPlugins`
+   (or `CELL_CURSOR_PLUGINS_MODULE`), records the names it returns.
+   `loaded: yes` means that list includes this plugin name. If the
+   loader is not available, the report says
+   `loaded: skipped:loader-unavailable`. That does not claim Cursor Customize loaded the plugin
+   and not an IDE reload.
+
+The compact report cites `install_path`, `plugin_name`, `skills`,
+`mcp_servers`, `runner_docs`, `session_docs`, and `loaded`. Exit
+non-zero when prove fails, the manifest does not validate, the symlink
+is outside, or a foreign install would be overwritten. Exported
+`INSTALL.md` documents this same loop.
+
+```bash
+estate pack plugin-install-local --id research-crew \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --out target/pack-plugin \
+  --target "$HOME/.cursor/plugins/local"
+```
+
+`--check-only` re-proves an existing `--out` and then copies. Not
+Marketplace publish. Not Grok Bot server sync. Not systemd / cloud cron.
 
 ## 3i. Dual specialty chain (mock prove)
 

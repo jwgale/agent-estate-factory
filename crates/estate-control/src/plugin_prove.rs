@@ -170,7 +170,7 @@ fn throwaway_out(id: &str) -> PathBuf {
     std::env::temp_dir().join(format!("cell-pack-plugin-prove-{id}-{nanos}"))
 }
 
-fn print_report(report: &ProveReport) {
+pub(crate) fn print_report(report: &ProveReport) {
     println!("pack plugin-prove: {}", report.pack_id);
     println!("  ok: {}", if report.ok { "yes" } else { "no" });
     println!("  out: {}", report.out);
@@ -576,6 +576,11 @@ pub(crate) fn assert_install_md(path: &Path) -> Result<()> {
         "research",
         "refuse:pack-orchestrator",
         "READY_FOR_LIVE_TEST: no",
+        "plugin-install-local",
+        ".cursor/plugins/local",
+        ".estate-pack-install.json",
+        "refuse:plugin-install-symlink",
+        "loaded: skipped:loader-unavailable",
     ] {
         if !text.contains(needle) {
             bail!("refuse:plugin-prove-install: INSTALL.md missing '{needle}'");
