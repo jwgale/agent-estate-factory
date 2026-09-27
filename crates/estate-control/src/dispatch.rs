@@ -644,6 +644,42 @@ pub(crate) fn run() -> Result<()> {
                     out.as_deref(),
                 )
             }
+            DecisionsCommand::ApplyPackage {
+                package,
+                estate,
+                prepared,
+                state_dir,
+                plans_dir,
+                roots_base,
+                require_plan,
+                proposal,
+                tag,
+                root,
+                policy,
+                curator,
+                out,
+            } => crate::improvement_apply::cmd_decisions_apply_package(
+                &package,
+                &estate,
+                &prepared,
+                &state_dir,
+                &plans_dir,
+                &roots_base,
+                require_plan,
+                proposal.as_deref(),
+                tag.as_deref(),
+                &root,
+                &policy,
+                &curator,
+                out.as_deref(),
+            )
+            .map(|_| ()),
+            DecisionsCommand::ImprovementApplyProve { root, out } => {
+                crate::improvement_apply::cmd_decisions_improvement_apply_prove(
+                    &root,
+                    out.as_deref(),
+                )
+            }
         },
         Command::Enrich { command } => match command {
             EnrichCommand::Prepare {

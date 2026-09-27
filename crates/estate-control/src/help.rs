@@ -1373,6 +1373,16 @@ standalone sibling: host-validate authorize / convey / complete
 --mock receipts, then export-package. Report
 cell-one.improvement-export-prove.v0 cites the package path,
 proposal count/kind, and auto_train=false.
+estate decisions apply-package --package <package.json>
+--estate <lab-estate.yaml> --prepared <prepared> --require-plan
+applies one specialty-seat proposal through apply-proposal, plan,
+and apply --require-plan. Without --require-plan it is refuse:plan.
+Dataset proposals stay proposal-only. It does not train.
+estate decisions improvement-apply-prove --root . --out <throwaway>
+is the sibling prove: host-validate, export-package, pick one
+specialty-seat, gated apply, Standing next joinable. Report
+cell-one.improvement-apply-prove.v0 cites the applied proposal
+id/kind, joinable, auto_train=false, and train_invoked=false.
 It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.

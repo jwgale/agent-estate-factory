@@ -42,6 +42,8 @@ const SKIP_RESULTS: &[&str] = &["", "abstain", "xai_grok", "frontier_http", "loc
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct EnrichProposal {
+    #[serde(default)]
+    pub id: String,
     pub kind: String,
     pub binding_id: String,
     pub dataset: String,
@@ -320,7 +322,9 @@ fn specialty_id(raw: &str) -> Option<&str> {
 fn proposals_for_seats(seats: &[String]) -> Vec<EnrichProposal> {
     let mut out = Vec::new();
     for seat in seats {
+        let seat_id = format!("{KIND_SEAT}:{seat}");
         out.push(EnrichProposal {
+            id: seat_id,
             kind: KIND_SEAT.into(),
             binding_id: seat.clone(),
             dataset: seat.clone(),
@@ -330,7 +334,9 @@ fn proposals_for_seats(seats: &[String]) -> Vec<EnrichProposal> {
                 "Propose next enrich for specialty seat {seat}. Does not train. auto_train=false."
             ),
         });
+        let dataset_id = format!("{KIND_DATASET}:{seat}");
         out.push(EnrichProposal {
+            id: dataset_id,
             kind: KIND_DATASET.into(),
             binding_id: seat.clone(),
             dataset: seat.clone(),
@@ -342,6 +348,61 @@ fn proposals_for_seats(seats: &[String]) -> Vec<EnrichProposal> {
         });
     }
     out
+}
+
+pub(crate) fn proposal_id(row: &EnrichProposal) -> String {
+    if !row.id.trim().is_empty() {
+        return row.id.trim().to_string();
+    }
+    format!("{}:{}", row.kind, row.binding_id)
+}
+
+pub(crate) fn load_package(path: &Path) -> Result<ImprovementPackage> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("refuse:package: read {}", path.display()))?;
+    let package: ImprovementPackage = serde_json::from_str(&text)
+        .with_context(|| format!("refuse:package: parse {}", path.display()))?;
+    refuse_invented_train(&package)?;
+    Ok(package)
+}
+
+pub(crate) fn pick_specialty_seat<'a>(
+    package: &'a ImprovementPackage,
+    want: Option<&str>,
+) -> Result<&'a EnrichProposal> {
+    if package.auto_train || package.train_invoked {
+        bail!("refuse:improvement: package invented auto-train");
+    }
+    if package.proposals.iter().any(|row| row.auto_train) {
+        bail!("refuse:improvement: a proposal invented auto-train");
+    }
+    let seats: Vec<&EnrichProposal> = package
+        .proposals
+        .iter()
+        .filter(|row| row.kind == KIND_SEAT)
+        .collect();
+    if seats.is_empty() {
+        bail!("refuse:proposal: package has no specialty-seat proposal");
+    }
+    match want.map(str::trim).filter(|id| !id.is_empty()) {
+        None => Ok(seats[0]),
+        Some(id) => {
+            if let Some(row) = package
+                .proposals
+                .iter()
+                .find(|row| proposal_id(row) == id || row.id == id)
+            {
+                if row.kind != KIND_SEAT {
+                    bail!(
+                        "refuse:proposal: apply-package applies one specialty-seat proposal; {id} is {}",
+                        row.kind
+                    );
+                }
+                return Ok(row);
+            }
+            bail!("refuse:proposal: package has no specialty-seat proposal {id}");
+        }
+    }
 }
 
 fn proposal_kinds(proposals: &[EnrichProposal]) -> Vec<String> {
@@ -408,7 +469,7 @@ fn write_prove_report(out: &Path, body: &Value) -> Result<()> {
     Ok(())
 }
 
-fn refuse_report_inventions(pretty: &str, surface: &str) -> Result<()> {
+pub(crate) fn refuse_report_inventions(pretty: &str, surface: &str) -> Result<()> {
     if pretty.split_whitespace().any(|word| word == "enforced") {
         bail!("refuse:{surface}: report invented enforced");
     }
@@ -480,7 +541,8 @@ fn render_package_yaml(package: &ImprovementPackage) -> String {
         out.push_str("  []\n");
     } else {
         for row in &package.proposals {
-            out.push_str(&format!("  - kind: {}\n", yaml_scalar(&row.kind)));
+            out.push_str(&format!("  - id: {}\n", yaml_scalar(&proposal_id(row))));
+            out.push_str(&format!("    kind: {}\n", yaml_scalar(&row.kind)));
             out.push_str(&format!("    binding_id: {}\n", yaml_scalar(&row.binding_id)));
             out.push_str(&format!("    dataset: {}\n", yaml_scalar(&row.dataset)));
             out.push_str(&format!("    action: {}\n", yaml_scalar(&row.action)));
@@ -510,7 +572,7 @@ fn journal_path(state_dir: &Path) -> PathBuf {
     state_dir.join("decisions").join(decisions::JOURNAL_FILE)
 }
 
-fn refuses_examples_write(out: &Path, root: &Path) -> Result<bool> {
+pub(crate) fn refuses_examples_write(out: &Path, root: &Path) -> Result<bool> {
     if looks_like_locked_estate(out) {
         return Ok(true);
     }
@@ -524,7 +586,7 @@ fn refuses_examples_write(out: &Path, root: &Path) -> Result<bool> {
     Ok(false)
 }
 
-fn looks_like_locked_estate(out: &Path) -> bool {
+pub(crate) fn looks_like_locked_estate(out: &Path) -> bool {
     if out.components().any(|part| part.as_os_str() == "examples") {
         return true;
     }
@@ -537,7 +599,7 @@ fn looks_like_locked_estate(out: &Path) -> bool {
         || text.contains("/examples/")
 }
 
-fn file_cksum(path: &Path) -> Result<String> {
+pub(crate) fn file_cksum(path: &Path) -> Result<String> {
     let out = Command::new("cksum")
         .arg(path)
         .output()
@@ -615,14 +677,48 @@ mod tests {
         assert_eq!(proposals.len(), 4);
         assert_eq!(proposals[0].kind, KIND_SEAT);
         assert_eq!(proposals[0].binding_id, "ag_news");
+        assert_eq!(proposals[0].id, "specialty-seat:ag_news");
         assert_eq!(proposals[0].auto_train, false);
         assert_eq!(proposals[1].kind, KIND_DATASET);
         assert_eq!(proposals[1].dataset, "ag_news");
+        assert_eq!(proposals[1].id, "dataset:ag_news");
         assert_eq!(proposals[2].kind, KIND_SEAT);
         assert_eq!(proposals[2].binding_id, "rust_idiom");
         assert_eq!(proposals[3].kind, KIND_DATASET);
         assert!(proposals.iter().all(|row| !row.auto_train));
         assert_eq!(proposal_kinds(&proposals), vec![KIND_DATASET, KIND_SEAT]);
+        let package = ImprovementPackage {
+            schema: PACKAGE_SCHEMA.into(),
+            id: PACKAGE_ID.into(),
+            kind: PACKAGE_KIND.into(),
+            auto_train: false,
+            train_invoked: false,
+            ready_for_live_test: false,
+            live_pass_recorded: false,
+            live_sync: false,
+            journal: JournalCite {
+                path: "journal".into(),
+                receipts: 2,
+                surface_authorize: 1,
+                surface_convey: 1,
+                surface_complete: 1,
+                specialty_seats: seats.clone(),
+            },
+            proposals: proposals.clone(),
+            note: "none".into(),
+        };
+        let picked = pick_specialty_seat(&package, None).unwrap();
+        assert_eq!(proposal_id(picked), "specialty-seat:ag_news");
+        assert_eq!(
+            pick_specialty_seat(&package, Some("specialty-seat:rust_idiom"))
+                .unwrap()
+                .binding_id,
+            "rust_idiom"
+        );
+        assert!(pick_specialty_seat(&package, Some("dataset:ag_news"))
+            .unwrap_err()
+            .to_string()
+            .contains("specialty-seat"));
     }
 
     #[test]
