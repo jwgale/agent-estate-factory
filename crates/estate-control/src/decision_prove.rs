@@ -1,8 +1,10 @@
-//! Throwaway prove: host prepare → select/abstain → revalidate on authorize
-//! and a granted convey call, against two specialty seats beside `local_slm`.
+//! Throwaway prove: host prepare → select/abstain → revalidate → receipt
+//! on authorize, a granted convey call, and `estate complete --mock`,
+//! against two specialty seats beside `local_slm`.
 //!
-//! Lab copy only. Mocked GGUF files. Does not train. Does not rewrite
-//! `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+//! Lab copy only. Mocked GGUF files. Mock complete stays in-process.
+//! Does not train. Does not rewrite `examples/estate.yaml`.
+//! `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
 use estate_schema::{Agent, Effect, Intention, IntentionKind, Lane, ModelUseDecl, ToolDecl};
@@ -18,6 +20,11 @@ const SEAT_AG: &str = "specialist-agnews-3000";
 const SEAT_RUST: &str = "specialist-rustidiom-3000";
 const HOP_ID: &str = "specialty-hop";
 const HOP_CAP: &str = "lane-tool";
+const PROMPT_RESEARCH: &str = "host-validate research ag_news";
+const PROMPT_IDIOM: &str = "host-validate idiom rust_idiom";
+const PROMPT_ABSTAIN: &str = "host-validate sanctum abstain";
+const PROMPT_INELIGIBLE: &str = "host-validate ineligible hint";
+const PROMPT_STALE: &str = "host-validate stale hint";
 
 pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>) -> Result<()> {
     std::env::remove_var("CELL_LOCAL_ENDPOINT");
@@ -26,7 +33,8 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
         .canonicalize()
         .with_context(|| format!("refuse:root: {}", root.display()))?;
     let locked = root.join("examples/estate.yaml");
-    let before = fs::read(&locked).with_context(|| format!("refuse:estate: {}", locked.display()))?;
+    let before =
+        fs::read(&locked).with_context(|| format!("refuse:estate: {}", locked.display()))?;
     let cksum_before = file_cksum(&locked)?;
     if !cksum_before.starts_with(LOCKED_CKSUM) {
         bail!("refuse:estate: examples/estate.yaml cksum is {cksum_before}, want {LOCKED_CKSUM}");
@@ -51,7 +59,10 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
     if same_file(&lab, &locked)? {
         bail!("refuse:out: host-validate-prove does not write examples/estate.yaml");
     }
-    let gguf_ag = out.join("fixtures").join(BINDING_AG).join("specialist.Q4_K_M.gguf");
+    let gguf_ag = out
+        .join("fixtures")
+        .join(BINDING_AG)
+        .join("specialist.Q4_K_M.gguf");
     let gguf_rust = out
         .join("fixtures")
         .join(BINDING_RUST)
@@ -65,14 +76,7 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
     let policy = root.join("policy/cell-one.policy.v0.yaml");
 
     clear_hint(&state)?;
-    let auth_ok = run_authorize(
-        &lab,
-        &state,
-        "research",
-        "model",
-        BINDING_AG,
-        true,
-    )?;
+    let auth_ok = run_authorize(&lab, &state, "research", "model", BINDING_AG, true)?;
     expect_select(&auth_ok, "authorize", "research", BINDING_AG, BINDING_AG)?;
     println!(
         "authorize select: agent=research result={} validation=ok surface=authorize granted=yes",
@@ -178,20 +182,98 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
         "convey fallback: agent=research validation=stale fallback=ag_news outcome=allow hop_granted=yes model_granted=no"
     );
 
+    clear_hint(&state)?;
+    let complete_ag = run_complete(&lab, &state, "research", PROMPT_RESEARCH, true)?;
+    expect_select(&complete_ag, "complete", "research", BINDING_AG, BINDING_AG)?;
+    expect_complete_grant(&complete_ag, "research", BINDING_AG)?;
+    println!(
+        "complete select: agent=research result={} validation=ok surface=complete granted=yes mock=yes",
+        complete_ag.result
+    );
+
+    let complete_rust = run_complete(&lab, &state, "idiom", PROMPT_IDIOM, true)?;
+    expect_select(
+        &complete_rust,
+        "complete",
+        "idiom",
+        BINDING_RUST,
+        BINDING_RUST,
+    )?;
+    expect_complete_grant(&complete_rust, "idiom", BINDING_RUST)?;
+    println!(
+        "complete select: agent=idiom result={} validation=ok surface=complete granted=yes mock=yes",
+        complete_rust.result
+    );
+
+    let complete_abstain = run_complete(&lab, &state, "sanctum", PROMPT_ABSTAIN, false)?;
+    expect_complete_abstain(&complete_abstain)?;
+    println!(
+        "complete abstain: agent=sanctum result=abstain validation=ok surface=complete selector=refuse:decision-abstain completion_granted=no"
+    );
+
+    write_hint(&state, "xai_grok", None)?;
+    let complete_ineligible = run_complete(&lab, &state, "research", PROMPT_INELIGIBLE, false)?;
+    expect_fallback(
+        &complete_ineligible,
+        "complete",
+        "research",
+        "ineligible",
+        "xai_grok",
+        BINDING_AG,
+        "refuse:decision-ineligible",
+    )?;
+    expect_complete_closed(&complete_ineligible, "xai_grok")?;
+    println!(
+        "complete fallback: agent=research validation=ineligible fallback=ag_news outcome=refuse:decision-ineligible granted=no"
+    );
+
+    write_hint(&state, BINDING_AG, Some("0"))?;
+    let complete_stale = run_complete(&lab, &state, "research", PROMPT_STALE, false)?;
+    expect_fallback(
+        &complete_stale,
+        "complete",
+        "research",
+        "stale",
+        BINDING_AG,
+        BINDING_AG,
+        "refuse:decision-stale",
+    )?;
+    expect_complete_closed(&complete_stale, BINDING_AG)?;
+    println!(
+        "complete fallback: agent=research validation=stale fallback=ag_news outcome=refuse:decision-stale granted=no"
+    );
+
     let receipts = crate::decisions::load_receipts(&state)?;
-    if receipts.len() != 8 {
-        bail!("refuse:decision: journal has {} receipts, want 8", receipts.len());
+    if receipts.len() != 13 {
+        bail!(
+            "refuse:decision: journal has {} receipts, want 13",
+            receipts.len()
+        );
+    }
+    let surface_authorize = receipts
+        .iter()
+        .filter(|row| row.surface == "authorize")
+        .count();
+    let surface_convey = receipts.iter().filter(|row| row.surface.is_empty()).count();
+    let surface_complete = receipts
+        .iter()
+        .filter(|row| row.surface == "complete")
+        .count();
+    if surface_authorize != 4 || surface_convey != 4 || surface_complete != 5 {
+        bail!(
+            "refuse:decision: surfaces authorize={surface_authorize} convey={surface_convey} complete={surface_complete}"
+        );
     }
     let report = crate::decisions::render_report(&receipts);
     for needle in [
-        "decision receipts: 8\n",
-        "stage prepare=8 select=2 validate=3 fallback=3\n",
-        "validation ok=5 stale=2 ineligible=1 expired=0\n",
-        "surface authorize=4 convey=4 complete=0\n",
-        "fallback none=5\n",
-        "fallback ag_news=3\n",
-        "surface=authorize",
+        "decision receipts: 13\n",
+        "stage prepare=13 select=3 validate=5 fallback=5\n",
+        "validation ok=8 stale=3 ineligible=2 expired=0\n",
+        "surface authorize=4 convey=4 complete=5\n",
+        "fallback none=8\n",
+        "fallback ag_news=5\n",
         "surface=convey",
+        "surface=complete",
         "result=ag_news",
         "result=rust_idiom",
         "result=abstain",
@@ -310,16 +392,66 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
                 "model_granted": false,
             },
         },
+        "complete": {
+            "select_ok": [
+                {
+                    "agent": "research",
+                    "result": BINDING_AG,
+                    "validation": "ok",
+                    "surface": "complete",
+                    "hop_id": "model",
+                    "granted": true,
+                    "mock": true,
+                    "prompt": PROMPT_RESEARCH,
+                },
+                {
+                    "agent": "idiom",
+                    "result": BINDING_RUST,
+                    "validation": "ok",
+                    "surface": "complete",
+                    "hop_id": "model",
+                    "granted": true,
+                    "mock": true,
+                    "prompt": PROMPT_IDIOM,
+                },
+            ],
+            "abstain": {
+                "agent": "sanctum",
+                "result": "abstain",
+                "validation": "ok",
+                "surface": "complete",
+                "selector": "refuse:decision-abstain",
+                "outcome": "refuse:decision-abstain",
+                "completion_granted": false,
+                "prompt": PROMPT_ABSTAIN,
+            },
+            "ineligible": {
+                "validation": "ineligible",
+                "result": "xai_grok",
+                "fallback": BINDING_AG,
+                "outcome": "refuse:decision-ineligible",
+                "granted": false,
+                "prompt": PROMPT_INELIGIBLE,
+            },
+            "stale": {
+                "validation": "stale",
+                "result": BINDING_AG,
+                "fallback": BINDING_AG,
+                "outcome": "refuse:decision-stale",
+                "granted": false,
+                "prompt": PROMPT_STALE,
+            },
+        },
         "counts": {
-            "receipts": 8,
+            "receipts": 13,
             "surface_authorize": 4,
             "surface_convey": 4,
-            "surface_complete": 0,
-            "validation_ok": 5,
-            "validation_stale": 2,
-            "validation_ineligible": 1,
+            "surface_complete": 5,
+            "validation_ok": 8,
+            "validation_stale": 3,
+            "validation_ineligible": 2,
         },
-        "note": "Fixture prove. Lab copy. Two mocked GGUFs. No GPU train. Not a live PASS."
+        "note": "Fixture prove. Lab copy. Two mocked GGUFs. Mock complete on surface=complete. No GPU train. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     fs::write(out.join("host-validate-prove.json"), format!("{pretty}\n"))?;
@@ -331,7 +463,8 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
 
 fn seed_lab(lab: &Path, locked_bytes: &[u8], gguf_ag: &Path, gguf_rust: &Path) -> Result<()> {
     let mut estate = estate_schema::parse_estate_yaml(
-        std::str::from_utf8(locked_bytes).context("refuse:estate: examples/estate.yaml is not utf-8")?,
+        std::str::from_utf8(locked_bytes)
+            .context("refuse:estate: examples/estate.yaml is not utf-8")?,
     )
     .map_err(|err| anyhow::anyhow!("refuse:estate: {err}"))?;
     let local_before = local_params(&estate)?;
@@ -426,9 +559,8 @@ fn seed_lab(lab: &Path, locked_bytes: &[u8], gguf_ag: &Path, gguf_rust: &Path) -
         });
     }
 
-    estate_schema::validate(&estate).map_err(|errs| {
-        anyhow::anyhow!("refuse:estate: lab copy invalid: {}", errs.join("; "))
-    })?;
+    estate_schema::validate(&estate)
+        .map_err(|errs| anyhow::anyhow!("refuse:estate: lab copy invalid: {}", errs.join("; ")))?;
     if let Some(parent) = lab.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -556,9 +688,7 @@ fn ensure_tool(estate: &mut estate_schema::Estate, agent_id: &str, tool: &str) -
     }
     agent.tools.push(ToolDecl {
         id: tool.to_string(),
-        description: Some(
-            "Lab hop capability. Declaring it is not a model grant.".into(),
-        ),
+        description: Some("Lab hop capability. Declaring it is not a model grant.".into()),
     });
     Ok(())
 }
@@ -632,8 +762,154 @@ fn run_convey(
     take_new(state, before)
 }
 
+fn run_complete(
+    lab: &Path,
+    state: &Path,
+    agent: &str,
+    prompt: &str,
+    expect_ok: bool,
+) -> Result<crate::decisions::DecisionReceipt> {
+    let before = crate::decisions::load_receipts(state)?.len();
+    let result = crate::ops::cmd_complete(
+        agent,
+        Some(prompt.to_string()),
+        None,
+        None,
+        None,
+        None,
+        None,
+        lab,
+        state,
+        None,
+        None,
+        true,
+        None,
+        None,
+        None,
+        false,
+    );
+    match (expect_ok, result) {
+        (true, Ok(())) => {}
+        (true, Err(err)) => {
+            bail!("refuse:decision: complete {agent} did not grant: {err:#}")
+        }
+        (false, Ok(())) => bail!("refuse:decision: complete {agent} granted a completion"),
+        (false, Err(err)) => {
+            let text = format!("{err:#}");
+            if text.contains("live PASS") || text.split_whitespace().any(|word| word == "enforced")
+            {
+                bail!("refuse:decision: complete invented a live claim");
+            }
+            if text.contains("mock:") {
+                bail!("refuse:decision: complete {agent} invented completion text on refuse");
+            }
+            if !text.contains("refuse:decision-") {
+                bail!(
+                    "refuse:decision: complete {agent} failed closed for the wrong reason: {text}"
+                );
+            }
+        }
+    }
+    take_new(state, before)
+}
+
+fn expect_complete_grant(
+    receipt: &crate::decisions::DecisionReceipt,
+    agent: &str,
+    binding: &str,
+) -> Result<()> {
+    if receipt.hop_id != "model" || receipt.capability != binding {
+        bail!(
+            "refuse:decision: complete {agent} hop_id={} capability={}",
+            receipt.hop_id,
+            receipt.capability
+        );
+    }
+    if receipt.completion_label.is_some() {
+        bail!("refuse:decision: complete {agent} invented a completion label");
+    }
+    Ok(())
+}
+
+fn expect_complete_abstain(receipt: &crate::decisions::DecisionReceipt) -> Result<()> {
+    reject_invented(receipt)?;
+    if receipt.surface != "complete" || receipt.agent.as_deref() != Some("sanctum") {
+        bail!(
+            "refuse:decision: complete abstain surface={} agent={:?}",
+            receipt.surface,
+            receipt.agent
+        );
+    }
+    if receipt.hop_id != "model" || receipt.capability != "abstain" {
+        bail!(
+            "refuse:decision: complete abstain hop_id={} capability={}",
+            receipt.hop_id,
+            receipt.capability
+        );
+    }
+    if receipt.result != "abstain"
+        || receipt.validation != "ok"
+        || receipt.stage != "select"
+        || receipt.outcome != "refuse:decision-abstain"
+    {
+        bail!(
+            "refuse:decision: complete abstain result={} validation={} stage={} outcome={}",
+            receipt.result,
+            receipt.validation,
+            receipt.stage,
+            receipt.outcome
+        );
+    }
+    if receipt.fallback.is_some() || receipt.completion_label.is_some() {
+        bail!(
+            "refuse:decision: complete abstain fallback={:?} label={:?}",
+            receipt.fallback,
+            receipt.completion_label
+        );
+    }
+    let ids = candidate_ids(receipt);
+    if ids.len() != 2 || !ids.contains(&BINDING_AG) || !ids.contains(&BINDING_RUST) {
+        bail!("refuse:decision: complete abstain candidates are {ids:?}");
+    }
+    if ids.iter().any(|id| *id == "local_slm" || *id == "xai_grok") {
+        bail!("refuse:decision: complete abstain included a non-specialty seat");
+    }
+    Ok(())
+}
+
+fn expect_complete_closed(receipt: &crate::decisions::DecisionReceipt, hinted: &str) -> Result<()> {
+    if receipt.hop_id != "model" || receipt.capability != hinted {
+        bail!(
+            "refuse:decision: closed complete hop_id={} capability={} want {hinted}",
+            receipt.hop_id,
+            receipt.capability
+        );
+    }
+    if receipt.outcome == "allow" || receipt.validation == "ok" {
+        bail!(
+            "refuse:decision: closed complete granted outcome={} validation={}",
+            receipt.outcome,
+            receipt.validation
+        );
+    }
+    if !receipt.outcome.starts_with("refuse:decision-") {
+        bail!(
+            "refuse:decision: closed complete outcome={}",
+            receipt.outcome
+        );
+    }
+    if receipt.completion_label.is_some() {
+        bail!("refuse:decision: closed complete invented a completion label");
+    }
+    Ok(())
+}
+
 fn declare_hop(lab: &Path, state: &Path) -> Result<()> {
-    let agents = vec!["research".to_string(), "idiom".to_string(), "sanctum".to_string()];
+    let agents = vec![
+        "research".to_string(),
+        "idiom".to_string(),
+        "sanctum".to_string(),
+    ];
     crate::ops::cmd_convey_hop(
         HOP_ID,
         "box",
@@ -678,7 +954,10 @@ fn expect_select(
         );
     }
     if receipt.agent.as_deref() != Some(agent) {
-        bail!("refuse:decision: agent is {:?}, want {agent}", receipt.agent);
+        bail!(
+            "refuse:decision: agent is {:?}, want {agent}",
+            receipt.agent
+        );
     }
     if receipt.result != result || receipt.validation != "ok" || receipt.fallback.is_some() {
         bail!(
@@ -805,7 +1084,11 @@ fn reject_invented(receipt: &crate::decisions::DecisionReceipt) -> Result<()> {
     if receipt.schema != crate::decisions::RECEIPT_SCHEMA {
         bail!("refuse:decision: schema {}", receipt.schema);
     }
-    if receipt.outcome.split_whitespace().any(|word| word == "enforced") {
+    if receipt
+        .outcome
+        .split_whitespace()
+        .any(|word| word == "enforced")
+    {
         bail!("refuse:decision: outcome invented enforced");
     }
     if receipt.outcome.contains("live PASS") {
