@@ -179,3 +179,37 @@ fn crew_session_prove_refuses_the_locked_estate() {
     assert_eq!(fs::read(&locked).unwrap(), bytes);
     assert_eq!(cksum_locked(), before);
 }
+
+#[test]
+fn crew_session_prove_refuses_the_locked_estate_as_estate_flag() {
+    let before = cksum_locked();
+    assert!(before.starts_with("43770130 3391"), "{before}");
+    let locked = repo_root().join("examples/estate.yaml");
+    let bytes = fs::read(&locked).unwrap();
+    let out = scratch("estate-flag");
+    let run = bin()
+        .args([
+            "pack",
+            "crew-session-prove",
+            "--root",
+            repo_root().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--estate",
+            "examples/estate.yaml",
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&run.stderr).to_string();
+    assert!(!run.status.success(), "{stdout}\n{stderr}");
+    assert!(
+        stderr.contains("refuse:estate: crew-session-prove does not use examples/estate.yaml"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("crew-session-prove: ok"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert_eq!(fs::read(&locked).unwrap(), bytes);
+    assert_eq!(cksum_locked(), before);
+    let _ = fs::remove_dir_all(&out);
+}

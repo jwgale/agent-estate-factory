@@ -529,9 +529,13 @@ pub(crate) enum Command {
     /// and `estate complete`. `export` writes JSONL replay cases. `report`
     /// counts stage, validation, fallback, and surface (`authorize`,
     /// `convey`, `complete`). Optional `--pack` filters receipts by
-    /// `pack_id`. `host-validate-prove` runs that loop on a lab copy with
-    /// two specialty seats, including `estate complete --mock`. Selectors
-    /// do not grant permission. No promote. No auto-apply.
+    /// `pack_id`. `export-package` writes a standing improvement package
+    /// (JSON/YAML) that proposes the next enrich without auto-train.
+    /// `host-validate-prove` runs that loop on a lab copy with
+    /// two specialty seats, including `estate complete --mock`.
+    /// `improvement-export-prove` reuses those receipts and exports the
+    /// package. Selectors do not grant permission. No promote. No
+    /// auto-apply. No auto-train.
     Decisions {
         #[command(subcommand)]
         command: DecisionsCommand,
@@ -731,6 +735,36 @@ pub(crate) enum DecisionsCommand {
         #[arg(long, default_value = ".")]
         root: PathBuf,
         /// Throwaway directory. Default is a fresh directory under the temp dir.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Write a standing improvement package (JSON/YAML) from the
+    /// decision journal. Proposes the next enrich candidately
+    /// (specialty seat / dataset). `auto_train` stays false. Does not
+    /// train, apply, promote, or flip READY. Throwaway `--out` only;
+    /// refuses locked `examples/estate.yaml`.
+    ExportPackage {
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        /// Throwaway directory for `improvement-package.json` / `.yaml`.
+        #[arg(long)]
+        out: PathBuf,
+        /// Repository root used to refuse the locked example estate.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
+    /// Throwaway prove: reuse host-validate authorize / convey /
+    /// complete --mock receipts, then `export-package`. Report cites
+    /// the package path, proposal count/kind, and `auto_train=false`
+    /// / no train invoked. Does not rewrite `examples/estate.yaml`.
+    /// `READY_FOR_LIVE_TEST` stays no. Not in make smoke / gate-90 /
+    /// GitHub Actions.
+    ImprovementExportProve {
+        /// Repository root that holds `examples/estate.yaml`.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        /// Refuses `examples/estate.yaml`.
         #[arg(long)]
         out: Option<PathBuf>,
     },

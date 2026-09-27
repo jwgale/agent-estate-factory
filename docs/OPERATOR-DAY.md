@@ -617,7 +617,7 @@ estate enrich bind-prove --dual --root . --out /tmp/cell-one-specialty-bind-dual
 
 ## 4c. Host-validate prove (lab copy, not a train)
 
-`estate decisions host-validate-prove` copies the locked estate into a throwaway directory and seeds `ag_news` and `rust_idiom` beside `local_slm` (mocked GGUF files, fixture bindings). Research may use `ag_news`. Idiom may use `rust_idiom`. Sanctum lists both, so the selector abstains (`refuse:decision-abstain`). The prove then runs `estate authorize`, a granted `estate convey call` on hop `specialty-hop`, and `estate complete --mock` with no `--object`. Research mock-completes `ag_news` (`validation=ok`, `surface=complete`). Idiom mock-completes `rust_idiom` the same way. Sanctum abstains, the receipt is `result=abstain` with `refuse:decision-abstain`, and no completion text is granted. A stale hint and an ineligible hint each record `fallback=ag_news` and do not grant the hinted seat as the complete target. `estate decisions report` counts `surface authorize`, `surface convey`, and `surface complete` (complete is greater than zero). `estate decisions export` replays the journal. The command ends with `decision-host-validate-prove: ok` and `READY_FOR_LIVE_TEST: no`. It does not rewrite `examples/estate.yaml` (cksum `43770130 3391`). It does not start a GPU train. It does not call Ollama.
+`estate decisions host-validate-prove` copies the locked estate into a throwaway directory and seeds `ag_news` and `rust_idiom` beside `local_slm` (mocked GGUF files, fixture bindings). Research may use `ag_news`. Idiom may use `rust_idiom`. Sanctum lists both, so the selector abstains (`refuse:decision-abstain`). The prove then runs `estate authorize`, a granted `estate convey call` on hop `specialty-hop`, and `estate complete --mock` with no `--object`. Research mock-completes `ag_news` (`validation=ok`, `surface=complete`). Idiom mock-completes `rust_idiom` the same way. Sanctum abstains, the receipt is `result=abstain` with `refuse:decision-abstain`, and no completion text is granted. A stale hint and an ineligible hint each record `fallback=ag_news` and do not grant the hinted seat as the complete target. `estate decisions report` counts `surface authorize`, `surface convey`, and `surface complete` (complete is greater than zero). `estate decisions export` replays the journal. `estate decisions export-package` writes a standing improvement package from that journal (see 4f). The command ends with `decision-host-validate-prove: ok` and `READY_FOR_LIVE_TEST: no`. It does not rewrite `examples/estate.yaml` (cksum `43770130 3391`). It does not start a GPU train. It does not call Ollama.
 
 ```bash
 estate decisions host-validate-prove --root . --out /tmp/cell-one-decision-host-validate
@@ -715,6 +715,35 @@ estate pack crew-session-prove --root . --out /tmp/cell-one-crew-session
 
 ```bash
 estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
+```
+
+## 4f. Improvement-export prove (standing package, not a train)
+
+`estate decisions improvement-export-prove` reuses the host-validate
+authorize / convey / `complete --mock` surfaces on a throwaway lab,
+then writes a standing improvement package from that journal.
+`estate decisions export-package --state-dir <dir> --out <throwaway>`
+is the operator command: JSON plus YAML under `--out`
+(`improvement-package.json` / `improvement-package.yaml`, schema
+`cell-one.improvement-package.v0`). The package proposes the next
+enrich candidately — specialty seat and dataset for each validated
+specialty result (`ag_news`, `rust_idiom`). `auto_train=false`.
+Train is not invoked. READY stays no.
+
+The compact report is `cell-one.improvement-export-prove.v0`
+(`improvement-export-prove.json`). It cites the package path,
+proposal count/kind (`specialty-seat`, `dataset`),
+`auto_train=false`, and `train_invoked=false`. Surfaces stay
+authorize / convey / complete from host-validate. The command ends
+with `improvement-export-prove: ok` and `READY_FOR_LIVE_TEST: no`.
+`--out` that is `examples/estate.yaml` is `refuse:out`. Locked
+`examples/estate.yaml` stays cksum `43770130 3391`. Not in make
+smoke, make gate-90, or GitHub Actions. This is not a live PASS.
+
+```bash
+estate decisions improvement-export-prove --root . --out /tmp/cell-one-improvement-export
+estate decisions export-package --state-dir /tmp/cell-one-improvement-export/state \
+  --out /tmp/cell-one-improvement-export/improvement
 ```
 
 ## 5. Backup rotate
