@@ -191,7 +191,16 @@ estate decisions report --state-dir target/pack-chain-cell
 package/chain ids, receipt ids, `completion_label` when a receipt has
 one, and `session_id` / `context=applied|none` when a crew session is
 bound. They read `{state-dir}/routine-state.json` plus the decision journal.
-They do not sync to Grok Bot.
+When that state-dir has a local `cell-one.improvement-apply.v0` receipt
+they cite the same fields `estate decisions report` and
+`estate pack session show` already show — schema, path, proposal
+id/kind/binding, standing/joinable, `require_plan`,
+`refuse_without_plan`, `auto_train`, `train_invoked` — by reading the
+receipt. Missing or wrong-typed lock fields are `refuse:cite` and are
+not invented. Search is local to that state-dir
+(`decisions/improvement-apply.json`, then
+`{state-dir}/improvement-apply.json`); a sibling `../apply/` is not
+cited. They do not sync to Grok Bot.
 
 ## 3e. Standing routine watch (fixture)
 
@@ -737,6 +746,8 @@ Search is local to that state-dir (beside the journal); a sibling
 session show` on the crew state-dir cites those same receipt
 fields (copy beside the crew journal / state; no sibling walk).
 The composed crew-session prove report records that apply cite.
+`estate routine digest` and `estate routine tick --report` on a
+state-dir that holds that local receipt cite the same fields.
 The closed loop is one operator surface
 without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
@@ -825,7 +836,9 @@ The compact report is `cell-one.improvement-apply-prove.v0`
 id/kind, Standing next joinable, `auto_train=false`, and
 `train_invoked=false`. `estate decisions report` on that lab
 state-dir cites the apply receipt (`cell-one.improvement-apply.v0`)
-with the same fields. The command ends with
+with the same fields. `estate routine digest` and
+`estate routine tick --report` cite those same receipt fields
+when the local copy is on the state-dir. The command ends with
 `improvement-apply-prove: ok` and `READY_FOR_LIVE_TEST: no`. Locked
 `examples/estate.yaml` stays cksum `43770130 3391`. Not in make
 smoke, make gate-90, or GitHub Actions. This is not a live PASS.

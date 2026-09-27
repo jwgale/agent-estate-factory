@@ -1065,6 +1065,14 @@ pub(crate) fn cmd_routine_digest(
     state_dir: &Path,
 ) -> Result<()> {
     print!("{}", routine_digest_text(ids, estate_path, state_dir)?);
+    // Nearby gated-apply receipt is a cite, not a grant. Reuse the
+    // decisions discovery (local journal / state only). Missing is
+    // silence. Incomplete lock fields are refuse:cite — not invented.
+    // tick --report prints this same digest, so both operator surfaces
+    // show the same fields already on decisions report / pack session show.
+    if let Some(cite) = crate::decisions::cite_or_refuse_nearby_apply_receipt(state_dir) {
+        print!("{cite}");
+    }
     Ok(())
 }
 

@@ -781,6 +781,11 @@ pub(crate) fn runner_markdown(pack_id: &str, routines: &[&Routine]) -> String {
          - `package=<id>` per selected routine\n\
          - `chain=<chain_id>` on multi-hop receipts\n\
          - `session_id=<id>` and `context=applied|none` when a crew session is bound\n\
+         - nearby `cell-one.improvement-apply.v0` lock fields when that\n\
+           receipt is local to the state-dir (same cite as\n\
+           `estate decisions report` / `estate pack session show`;\n\
+           `refuse:cite` when lock fields are missing / wrong-typed;\n\
+           no sibling `../apply/` walk)\n\
          \n\
          Files: `{{state-dir}}/routine-state.json` (last_run / next_due / bound\n\
          `session_id`) and `{{state-dir}}/routine-runner/<id>.digest.log`.\n\
