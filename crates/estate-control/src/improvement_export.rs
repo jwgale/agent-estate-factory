@@ -525,12 +525,16 @@ fn refuses_examples_write(out: &Path, root: &Path) -> Result<bool> {
 }
 
 fn looks_like_locked_estate(out: &Path) -> bool {
-    let text = out.to_string_lossy().replace('\\', "/");
-    if text.contains("examples/estate.yaml") {
+    if out.components().any(|part| part.as_os_str() == "examples") {
         return true;
     }
-    out.components()
-        .any(|part| part.as_os_str() == "examples")
+    let text = out.to_string_lossy().replace('\\', "/");
+    text == "examples"
+        || text == "examples/estate.yaml"
+        || text.ends_with("/examples")
+        || text.ends_with("/examples/estate.yaml")
+        || text.starts_with("examples/")
+        || text.contains("/examples/")
 }
 
 fn file_cksum(path: &Path) -> Result<String> {
