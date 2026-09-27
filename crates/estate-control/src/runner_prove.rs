@@ -4,8 +4,12 @@
 //! (default `standing-classify` + `standing-once`), waits for one
 //! tick, asserts hop 2 `context=applied` on the multi-hop id, then
 //! checks multi-id digest/status, session reuse, ended→fresh,
-//! partial-start refuse, and double-start refuse. `--mock` stays
-//! in-process. No network. No live PASS. READY_FOR_LIVE_TEST: no.
+//! partial-start refuse, and double-start refuse. `--dual` (or
+//! `--id standing-dual`) proves the three-hop dual-specialty chain
+//! under the runner: hop 1 `ag_news` `context=none`, hop 2
+//! `rust_idiom` `context=applied`, hop 3 `frontier_http`
+//! `context=applied`, same `session_id`. `--mock` stays in-process.
+//! No network. No live PASS. READY_FOR_LIVE_TEST: no.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -19,6 +23,13 @@ use crate::routines::{self, WATCH_INTERVAL_ENV};
 
 pub(crate) const PROVE_SCHEMA: &str = "cell-one.routine-runner-prove.v0";
 const DEFAULT_ROUTINES: &[&str] = &["standing-classify", "standing-once"];
+pub(crate) const DUAL_ROUTINE: &str = "standing-dual";
+const DUAL_PACKAGE: &str = "dual-specialty";
+const DUAL_HOPS: &[(&str, &str, bool)] = &[
+    ("research", "ag_news", false),
+    ("idiom", "rust_idiom", true),
+    ("horizon", "frontier_http", true),
+];
 const LOCKED_ESTATE: &str = "examples/estate.yaml";
 const LOCKED_CKSUM: &str = "43770130 3391";
 const TICK_WAIT: Duration = Duration::from_secs(20);
@@ -71,18 +82,13 @@ impl ProveReport {
 
 pub(crate) fn cmd_routine_runner_prove(
     ids: &[String],
+    dual: bool,
     estate_path: &Path,
     state_dir: Option<&Path>,
 ) -> Result<()> {
-    let ids: Vec<String> = if ids.is_empty() {
-        DEFAULT_ROUTINES.iter().map(|s| (*s).to_string()).collect()
-    } else {
-        ids.to_vec()
-    };
-    let primary = ids
-        .first()
-        .map(String::as_str)
-        .unwrap_or(DEFAULT_ROUTINES[0]);
+    let ids = resolve_ids(ids, dual);
+    let dual = dual || ids.iter().any(|id| id == DUAL_ROUTINE);
+    let primary = stitch_primary(&ids).to_string();
     let state_dir = match state_dir {
         Some(dir) => dir.to_path_buf(),
         None => throwaway_state(&ids.join("-")),
@@ -127,7 +133,7 @@ pub(crate) fn cmd_routine_runner_prove(
         }
     }
 
-    let ticked = wait_for_tick(&state_dir, &ids);
+    let ticked = wait_for_tick(&state_dir, &ids, dual);
     if !ticked {
         restore_interval(prev_interval.as_deref());
         let _ = routine_runner::cmd_runner_stop(&state_dir, Some("default"));
@@ -136,7 +142,7 @@ pub(crate) fn cmd_routine_runner_prove(
     }
     push_ok(&mut checks, "first-tick", "digest appended");
 
-    match inspect_chain_hops(&state_dir, primary) {
+    match inspect_chain_hops(&state_dir, &primary) {
         Ok(hops) => {
             session_id = hops.session_id.clone();
             push_check(
@@ -161,6 +167,13 @@ pub(crate) fn cmd_routine_runner_prove(
         Err(err) => push_fail(&mut checks, "first-tick-hops", err),
     }
 
+    if dual {
+        match inspect_chain_hops(&state_dir, DUAL_ROUTINE) {
+            Ok(hops) => push_dual_hop_checks(&mut checks, &hops),
+            Err(err) => push_fail(&mut checks, "dual-hops", err),
+        }
+    }
+
     let digest = crate::ops::routine_digest_text(&ids, estate_path, &state_dir)
         .unwrap_or_default();
     push_check(
@@ -169,6 +182,20 @@ pub(crate) fn cmd_routine_runner_prove(
         digest.contains("session_id=") && digest.contains("context=applied"),
         digest.lines().next().unwrap_or(&digest).to_string(),
     );
+    if dual {
+        push_check(
+            &mut checks,
+            "digest-cites-dual-package",
+            digest.contains(&format!("package={DUAL_PACKAGE}")),
+            "digest names package=dual-specialty".to_string(),
+        );
+        push_check(
+            &mut checks,
+            "digest-cites-dual-chain",
+            digest.contains(&format!("chain=chain-{DUAL_PACKAGE}-")),
+            "digest names chain=chain-dual-specialty-…".to_string(),
+        );
+    }
     for id in &ids {
         push_check(
             &mut checks,
@@ -275,7 +302,7 @@ pub(crate) fn cmd_routine_runner_prove(
         false,
         false,
     ) {
-        Ok(()) => match inspect_latest_session(&state_dir, primary) {
+        Ok(()) => match inspect_latest_session(&state_dir, &primary) {
             Ok(sid) => {
                 reused_session_id = sid.clone();
                 push_check(
@@ -319,7 +346,7 @@ pub(crate) fn cmd_routine_runner_prove(
         false,
         false,
     ) {
-        Ok(()) => match inspect_latest_session(&state_dir, primary) {
+        Ok(()) => match inspect_latest_session(&state_dir, &primary) {
             Ok(sid) => {
                 fresh_session_id = sid.clone();
                 push_check(
@@ -437,15 +464,48 @@ fn watch_args(
     }
 }
 
-fn wait_for_tick(state_dir: &Path, routine_ids: &[String]) -> bool {
+fn resolve_ids(ids: &[String], dual: bool) -> Vec<String> {
+    let mut out: Vec<String> = if ids.is_empty() {
+        if dual {
+            vec![DUAL_ROUTINE.to_string()]
+        } else {
+            DEFAULT_ROUTINES.iter().map(|s| (*s).to_string()).collect()
+        }
+    } else {
+        ids.to_vec()
+    };
+    if dual && !out.iter().any(|id| id == DUAL_ROUTINE) {
+        out.insert(0, DUAL_ROUTINE.to_string());
+    }
+    out
+}
+
+fn stitch_primary(ids: &[String]) -> &str {
+    ids.iter()
+        .find(|id| id.as_str() == DUAL_ROUTINE)
+        .or_else(|| ids.first())
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_ROUTINES[0])
+}
+
+fn wait_for_tick(state_dir: &Path, routine_ids: &[String], dual: bool) -> bool {
     let digest_log = routine_runner::digest_log_path(state_dir, "default");
     let start = Instant::now();
     while start.elapsed() < TICK_WAIT {
         if let Ok(text) = std::fs::read_to_string(&digest_log) {
             let named = routine_ids.iter().all(|id| text.contains(id));
-            if named && text.contains("session_id=") {
-                return true;
+            if !named || !text.contains("session_id=") {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
             }
+            if dual
+                && !(text.contains(&format!("package={DUAL_PACKAGE}"))
+                    && text.contains("context=applied"))
+            {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            return true;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -474,6 +534,7 @@ struct HopInspect {
     same_session: bool,
     hop1_context: Option<bool>,
     hop2_context: Option<bool>,
+    hops: Vec<DecisionReceipt>,
 }
 
 fn inspect_chain_hops(state_dir: &Path, routine_id: &str) -> Result<HopInspect, String> {
@@ -481,16 +542,82 @@ fn inspect_chain_hops(state_dir: &Path, routine_id: &str) -> Result<HopInspect, 
     if rows.len() < 2 {
         return Err(format!("want ≥2 hop receipts, got {}", rows.len()));
     }
-    let hop1 = &rows[0];
-    let hop2 = &rows[1];
+    let chain = rows[0].chain_id.clone();
+    let hops: Vec<DecisionReceipt> = rows
+        .into_iter()
+        .take_while(|r| r.chain_id == chain)
+        .collect();
+    if hops.len() < 2 {
+        return Err(format!("want ≥2 hop receipts on first chain, got {}", hops.len()));
+    }
+    let hop1 = &hops[0];
+    let hop2 = &hops[1];
     let sid1 = hop1.session_id.clone().unwrap_or_default();
-    let sid2 = hop2.session_id.clone().unwrap_or_default();
+    let same_session = hops.iter().all(|r| r.session_id.as_deref() == Some(sid1.as_str()))
+        && !sid1.is_empty();
     Ok(HopInspect {
-        same_session: !sid1.is_empty() && sid1 == sid2,
+        same_session,
         session_id: sid1,
         hop1_context: hop1.session_context,
         hop2_context: hop2.session_context,
+        hops,
     })
+}
+
+fn push_dual_hop_checks(checks: &mut Vec<ProveCheck>, hops: &HopInspect) {
+    push_check(
+        checks,
+        "dual-hop-count",
+        hops.hops.len() == DUAL_HOPS.len(),
+        format!("hops={} want {}", hops.hops.len(), DUAL_HOPS.len()),
+    );
+    for (i, (agent, binding, want_ctx)) in DUAL_HOPS.iter().enumerate() {
+        let row = hops.hops.get(i);
+        let cap = row.map(|r| r.capability.as_str()).unwrap_or("");
+        let result = row.map(|r| r.result.as_str()).unwrap_or("");
+        let to = row.and_then(|r| r.handoff_to.as_deref()).unwrap_or("");
+        let pkg = row.and_then(|r| r.package_id.as_deref()).unwrap_or("");
+        let ctx = row.and_then(|r| r.session_context);
+        push_check(
+            checks,
+            &format!("hop{}-{binding}", i + 1),
+            cap == *binding && result == *binding && to == *agent,
+            format!("capability={cap} result={result} handoff_to={to}"),
+        );
+        if i == 2 {
+            push_check(
+                checks,
+                "hop3-context-applied",
+                ctx == Some(*want_ctx),
+                format!("context={ctx:?}"),
+            );
+        }
+        if i == 0 {
+            push_check(
+                checks,
+                "dual-package",
+                pkg == DUAL_PACKAGE,
+                format!("package_id={pkg}"),
+            );
+        }
+    }
+    let chain = hops
+        .hops
+        .first()
+        .and_then(|r| r.chain_id.as_deref())
+        .unwrap_or("");
+    push_check(
+        checks,
+        "dual-same-session",
+        hops.same_session && hops.hops.len() >= DUAL_HOPS.len(),
+        hops.session_id.clone(),
+    );
+    push_check(
+        checks,
+        "dual-chain",
+        chain.starts_with(&format!("chain-{DUAL_PACKAGE}-")),
+        chain.to_string(),
+    );
 }
 
 fn inspect_latest_session(state_dir: &Path, routine_id: &str) -> Result<String, String> {

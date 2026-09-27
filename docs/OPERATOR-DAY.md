@@ -304,6 +304,39 @@ An ended session on the next due tick mints a fresh id. Explicit
 `--session` of an ended / expired / bound id still refuses. No secrets
 in the digest log. Locked `examples/estate.yaml` untouched.
 
+## 3e4. Dual-specialty under runner (fixture)
+
+Same throwaway fixture. `standing-dual` (`@hourly`) runs package
+`dual-specialty` under the same runner tick + session stitch: hop 1
+research/`ag_news` journals `context=none`, hop 2 idiom/`rust_idiom`
+journals `context=applied`, hop 3 horizon/`frontier_http` journals
+`context=applied`. One `session_id` across hops. Digest cites
+`session_id` / `context=applied` plus `package=dual-specialty` and
+`chain=chain-dual-specialty-…`. `--mock` stays in-process. Not a live
+PASS. `READY_FOR_LIVE_TEST`: no. Locked `examples/estate.yaml`
+untouched.
+
+```bash
+# One due tick (same auto-chain + session bind as the runner)
+estate routine tick --id standing-dual \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-dual-runner-cell --mock --report
+
+# Mock gate: standing-dual alone
+estate routine runner-prove --dual \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-dual-runner-prove-cell
+
+# Same hops with another standing id on one supervise child
+estate routine runner-prove --dual --id standing-once \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-dual-runner-multi-cell
+```
+
+`--id standing-dual` is the same prove as `--dual`. Default
+`runner-prove` without `--dual` stays `standing-classify,standing-once`.
+No LIVE PASS. No live GPU. No Grok Bot sync.
+
 ## 3f. Pack export-plugin (fixture)
 
 Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
@@ -468,6 +501,11 @@ capabilities, and checks a full session still refuses when bound, expired,
 or ended. Exit non-zero on any fail. The summary ends with JSON
 `cell-one.dual-specialty-prove.v0`. `live_sync: no`.
 `READY_FOR_LIVE_TEST: no`.
+
+Fixture routine `standing-dual` puts that same package under the
+runner. See 3e4. `estate routine runner-prove --dual` is the mock
+runner gate (hop 1 `context=none`, hops 2–3 `context=applied`, same
+`session_id`).
 
 ## 4. Enrich prepare (opt-in, not a train)
 

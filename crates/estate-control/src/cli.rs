@@ -518,7 +518,8 @@ pub(crate) enum Command {
     /// under --state-dir. Watch is the foreground operator loop. Runner
     /// is the detached host supervisor (start / stop / status; repeat
     /// `--id` or `--id a,b`; one child). Multi-hop ticks auto-bind a
-    /// pack-scoped crew session. Not live Grok Bot sync.
+    /// pack-scoped crew session. `runner-prove --dual` covers fixture
+    /// `standing-dual` (package `dual-specialty`). Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1386,16 +1387,26 @@ pub(crate) enum RoutineCommand {
     /// Mock prove that one supervise child can watch several standing
     /// routines (default `standing-classify` + `standing-once`) and
     /// still stitch a pack-scoped crew session on the multi-hop id.
-    /// Starts the runner, waits for one tick, asserts hop 2
-    /// `context=applied`, checks multi-id digest/status, session reuse
-    /// / ended→fresh / partial-start refuse / double-start refuse,
-    /// then stops. `--mock` stays in-process. No network.
+    /// `--dual` (or `--id standing-dual`) proves the three-hop
+    /// dual-specialty chain under the runner: hop 1 `ag_news`
+    /// `context=none`, hop 2 `rust_idiom` `context=applied`, hop 3
+    /// `frontier_http` `context=applied`, same `session_id`. Starts
+    /// the runner, waits for one tick, asserts hop 2 `context=applied`,
+    /// checks multi-id digest/status, session reuse / ended→fresh /
+    /// partial-start refuse / double-start refuse, then stops.
+    /// `--mock` stays in-process. No network.
     /// `READY_FOR_LIVE_TEST`: no. Not a live PASS.
     RunnerProve {
         /// Repeat `--id` or comma-separate (`--id a,b`). Empty defaults
-        /// to `standing-classify,standing-once`.
+        /// to `standing-classify,standing-once` (or `standing-dual`
+        /// when `--dual` is set).
         #[arg(long = "id", value_delimiter = ',')]
         ids: Vec<String>,
+        /// Prove fixture `standing-dual` (package `dual-specialty`)
+        /// under the runner. Alone when `--id` is empty; otherwise
+        /// included with the named ids.
+        #[arg(long, default_value_t = false)]
+        dual: bool,
         #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
         estate: PathBuf,
         /// Journal directory. Default: throwaway temp dir (kept).

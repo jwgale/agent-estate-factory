@@ -4,6 +4,7 @@
 # --select equal-class / agent select: equal-class.
 # Packages ≈ skills; routines ≈ automations. Optional schedule + chain.
 # dual-specialty seats ag_news and rust_idiom beside frontier_http.
+# standing-dual is that package under the runner (@hourly).
 # Each hop allow-list names one binding. Two or more eligible ids abstain.
 # Security stays existing intentions. Not live Grok Bot sync. Mock does not
 # call Ollama. completion_label stays opt-in (CELL_COMPLETE_LABEL / category_codec).
@@ -178,6 +179,10 @@ routines:
     package: classify-once
     schedule: "@hourly"
     note: Single-hop standing routine for multi-id supervise. Not Grok Bot sync.
+  - id: standing-dual
+    package: dual-specialty
+    schedule: "@hourly"
+    note: Dual-specialty chain under the runner. Tick journals three hops + session. Not Grok Bot sync.
 
 enrich_packs:
   curator: jason
