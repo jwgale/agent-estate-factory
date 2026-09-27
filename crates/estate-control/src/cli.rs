@@ -514,9 +514,10 @@ pub(crate) enum Command {
     },
     /// Standing routines: declare + run a pack package (automation analog).
     /// Optional `schedule` + `estate routine tick` / `watch` / `runner` /
-    /// `status` / `digest`. Local last_run / next_due under --state-dir.
-    /// Watch is the foreground operator loop. Runner is the detached host
-    /// supervisor (start / stop / status). Not live Grok Bot sync.
+    /// `status` / `digest` / `runner-prove`. Local last_run / next_due
+    /// under --state-dir. Watch is the foreground operator loop. Runner
+    /// is the detached host supervisor (start / stop / status). Multi-hop
+    /// ticks auto-bind a pack-scoped crew session. Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1289,8 +1290,10 @@ pub(crate) enum RoutineCommand {
         state_dir: PathBuf,
     },
     /// Run due scheduled routines. Idempotent. Writes receipts.
-    /// Unscheduled or disabled routines skip. One-shot. Use `watch` for
-    /// the local operator loop. Not a cloud cron.
+    /// Multi-hop packages auto-run the chain and auto-bind a pack-scoped
+    /// crew session (reuse until ended/expired/bound). Unscheduled or
+    /// disabled routines skip. One-shot. Use `watch` for the local
+    /// operator loop. Not a cloud cron.
     Tick {
         #[arg(long)]
         id: Option<String>,
@@ -1311,6 +1314,8 @@ pub(crate) enum RoutineCommand {
         #[arg(long, default_value_t = false)]
         mock: bool,
         /// Run each due routine's package chain when declared.
+        /// Multi-hop packages auto-chain and auto-bind a crew session
+        /// even without this flag.
         #[arg(long, default_value_t = false)]
         chain: bool,
         /// After the tick, print the local digest (ran/skipped + receipt ids).
@@ -1372,6 +1377,21 @@ pub(crate) enum RoutineCommand {
     Runner {
         #[command(subcommand)]
         command: RoutineRunnerCommand,
+    },
+    /// Mock prove that the supervised runner stitches a pack-scoped
+    /// crew session onto a multi-hop standing routine. Starts the
+    /// runner, waits for one tick, asserts hop 2 `context=applied`,
+    /// checks session reuse / ended→fresh / double-start refuse,
+    /// then stops. `--mock` stays in-process. No network.
+    /// `READY_FOR_LIVE_TEST`: no. Not a live PASS.
+    RunnerProve {
+        #[arg(long, default_value = "standing-classify")]
+        id: String,
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
+        /// Journal directory. Default: throwaway temp dir (kept).
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
     },
 }
 

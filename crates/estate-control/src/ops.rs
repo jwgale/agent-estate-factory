@@ -1049,6 +1049,8 @@ pub(crate) fn routine_digest_text(
             package_id: r.package_id.clone(),
             chain_id: r.chain_id.clone(),
             completion_label: r.completion_label.clone(),
+            session_id: r.session_id.clone(),
+            session_context: r.session_context,
         })
         .collect();
     Ok(crate::routines::render_digest(&estate, &state, &rows, id))
@@ -1107,6 +1109,33 @@ pub(crate) fn cmd_routine_tick(
             );
             continue;
         }
+        let prior_session = row.and_then(|r| r.session_id.clone());
+        let use_chain = chain || crate::routines::package_has_multihop_chain(&estate, &routine.package);
+        let bound_session = if use_chain {
+            match crate::routines::package_pack_id(&estate, &routine.package) {
+                Some(pack_id) => {
+                    let hops = estate
+                        .pack_package(&routine.package)
+                        .and_then(|pkg| estate.pack(&pkg.pack).map(|pack| pkg.resolved_chain(pack).len()))
+                        .unwrap_or(2);
+                    let (sid, created) = crate::pack_session::bind_or_create_session(
+                        state_dir,
+                        &pack_id,
+                        prior_session.as_deref(),
+                        hops,
+                    )?;
+                    if created {
+                        println!(
+                            "pack session: created id={sid} pack={pack_id} turns=0"
+                        );
+                    }
+                    Some(sid)
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
         cmd_routine_run(
             &routine.id,
             agent,
@@ -1117,11 +1146,14 @@ pub(crate) fn cmd_routine_tick(
             feed_dir,
             endpoint.clone(),
             mock,
-            chain,
-            None,
+            use_chain,
+            bound_session.as_deref(),
             false,
         )?;
         crate::routines::mark_ran(&mut state, routine, now).map_err(|e| anyhow::anyhow!("{e}"))?;
+        if bound_session.is_some() {
+            crate::routines::set_session_id(&mut state, routine, bound_session);
+        }
         ran += 1;
         println!(
             "ticked {} last_run={} next_due={}",

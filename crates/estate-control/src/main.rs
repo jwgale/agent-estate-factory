@@ -21,6 +21,7 @@ mod pack_session;
 mod plan_apply;
 mod plugin_prove;
 mod routine_runner;
+mod runner_prove;
 mod routines;
 mod suggest;
 mod watch;

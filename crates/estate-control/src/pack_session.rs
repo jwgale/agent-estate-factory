@@ -472,6 +472,46 @@ impl OpenSession {
     }
 }
 
+/// True when a bound session can still take `hops` more turns.
+/// Ended / expired / missing / bound → false (tick then mints a fresh id).
+/// Explicit `--session` still refuses; this is only the auto-bind probe.
+pub(crate) fn session_is_reusable(
+    state_dir: &Path,
+    pack_id: &str,
+    session_id: &str,
+    hops: usize,
+) -> bool {
+    let Ok((_, session)) = load_for_pack(state_dir, pack_id, session_id) else {
+        return false;
+    };
+    if check_resumable(&session, now_unix()).is_err() {
+        return false;
+    }
+    let Ok(bounds) = load_bounds() else {
+        return false;
+    };
+    let remaining = bounds.max_turns.saturating_sub(session.turns.len() as u64);
+    remaining >= hops.max(1) as u64 && transcript_bytes(&session) < bounds.max_bytes
+}
+
+/// Reuse `bound_id` when still open; otherwise mint a new pack session.
+/// Does not change ended/expired/bound refuse on an explicit `--session`.
+pub(crate) fn bind_or_create_session(
+    state_dir: &Path,
+    pack_id: &str,
+    bound_id: Option<&str>,
+    hops: usize,
+) -> Result<(String, bool)> {
+    if let Some(id) = bound_id {
+        if session_is_reusable(state_dir, pack_id, id, hops) {
+            return Ok((id.to_string(), false));
+        }
+    }
+    let opened = open_for_complete(state_dir, pack_id, &SessionRequest::CreateNew)?
+        .ok_or_else(|| anyhow::anyhow!("refuse:session: could not open pack session"))?;
+    Ok((opened.session.session_id, true))
+}
+
 pub(crate) fn open_for_complete(
     state_dir: &Path,
     pack_id: &str,
@@ -765,5 +805,48 @@ mod tests {
         assert!(check_id("session", "../escape").is_err());
         assert!(check_id("session", "sess/abc").is_err());
         assert!(check_id("session", "sess abc").is_err());
+    }
+
+    #[test]
+    fn bind_reuses_open_session_and_mints_when_ended() {
+        let dir = scratch("bind-reuse");
+        let (first, created) =
+            bind_or_create_session(&dir, "research-crew", None, 2).unwrap();
+        assert!(created);
+        assert!(first.starts_with("sess-"), "{first}");
+        let (again, created) =
+            bind_or_create_session(&dir, "research-crew", Some(&first), 2).unwrap();
+        assert!(!created);
+        assert_eq!(again, first);
+        assert!(session_is_reusable(&dir, "research-crew", &first, 2));
+
+        cmd_pack_session_end(&first, Some("research-crew"), &dir).unwrap();
+        assert!(!session_is_reusable(&dir, "research-crew", &first, 2));
+        let (fresh, created) =
+            bind_or_create_session(&dir, "research-crew", Some(&first), 2).unwrap();
+        assert!(created);
+        assert_ne!(fresh, first);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_mints_when_remaining_turns_cannot_cover_hops() {
+        let dir = scratch("bind-bound");
+        let mut opened = create_open(&dir, "research-crew", "sess-boundturns01", None).unwrap();
+        opened
+            .append_turn("ping", "mock:ping", "research", None)
+            .unwrap();
+        opened
+            .append_turn("pong", "mock:pong", "horizon", None)
+            .unwrap();
+        // Default max turns is 8: two used, two more hops still fit.
+        assert!(session_is_reusable(&dir, "research-crew", "sess-boundturns01", 2));
+        // Asking for more hops than remaining turns treats the session as bound.
+        assert!(!session_is_reusable(&dir, "research-crew", "sess-boundturns01", 8));
+        let (fresh, created) =
+            bind_or_create_session(&dir, "research-crew", Some("sess-boundturns01"), 8).unwrap();
+        assert!(created);
+        assert_ne!(fresh, "sess-boundturns01");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

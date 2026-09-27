@@ -27,6 +27,10 @@ pub(crate) struct RoutineRow {
     pub last_run: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_due: Option<i64>,
+    /// Pack-scoped crew session bound to this standing routine.
+    /// Throwaway-local. Reused on later ticks until ended/expired/bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 pub(crate) fn now_unix() -> i64 {
@@ -108,12 +112,46 @@ pub(crate) fn mark_ran(
     let next = sched
         .next_after(now)
         .ok_or_else(|| format!("refuse:routine-schedule: routine '{}' has no next fire", routine.id))?;
+    let session_id = file
+        .routines
+        .get(&routine.id)
+        .and_then(|r| r.session_id.clone());
     let row = RoutineRow {
         last_run: Some(now),
         next_due: Some(next),
+        session_id,
     };
     file.routines.insert(routine.id.clone(), row.clone());
     Ok(row)
+}
+
+pub(crate) fn set_session_id(file: &mut RoutineStateFile, routine: &Routine, session_id: Option<String>) {
+    let mut row = file.routines.get(&routine.id).cloned().unwrap_or_default();
+    row.session_id = session_id;
+    file.routines.insert(routine.id.clone(), row);
+}
+
+/// True when the package (or its pack) declares a chain of two or more hops.
+pub(crate) fn package_has_multihop_chain(estate: &Estate, package_id: &str) -> bool {
+    let Some(pkg) = estate.pack_package(package_id) else {
+        return false;
+    };
+    let Some(pack) = estate.pack(&pkg.pack) else {
+        return false;
+    };
+    pkg.resolved_chain(pack).len() >= 2
+}
+
+pub(crate) fn package_pack_id(estate: &Estate, package_id: &str) -> Option<String> {
+    estate.pack_package(package_id).map(|p| p.pack.clone())
+}
+
+pub(crate) fn context_word(applied: bool) -> &'static str {
+    if applied {
+        "applied"
+    } else {
+        "none"
+    }
 }
 
 pub(crate) fn format_unix(ts: Option<i64>) -> String {
@@ -139,6 +177,8 @@ pub(crate) struct DigestReceipt {
     pub package_id: Option<String>,
     pub chain_id: Option<String>,
     pub completion_label: Option<String>,
+    pub session_id: Option<String>,
+    pub session_context: Option<bool>,
 }
 
 /// Glance at the last local wake: ran/skipped plus receipt ids.
@@ -156,6 +196,7 @@ pub(crate) fn render_digest(
     let mut ran = 0usize;
     let mut skipped = 0usize;
     let mut body = String::new();
+    let mut header_session: Option<(String, bool)> = None;
     for routine in &rows {
         let row = row_for(file, &routine.id);
         let ran_this = row.and_then(|r| r.last_run).is_some();
@@ -174,12 +215,6 @@ pub(crate) fn render_digest(
             .pack_package(&routine.package)
             .map(|p| p.id.as_str())
             .unwrap_or(routine.package.as_str());
-        body.push_str(&format!(
-            "  {} status={status} package={pkg}{reason} last_run={} next_due={}\n",
-            routine.id,
-            format_unix(row.and_then(|r| r.last_run)),
-            format_unix(row.and_then(|r| r.next_due)),
-        ));
         let matched: Vec<&DigestReceipt> = receipts
             .iter()
             .filter(|r| {
@@ -189,6 +224,22 @@ pub(crate) fn render_digest(
                     .unwrap_or(false)
             })
             .collect();
+        let cite = cite_session(row, &matched);
+        let session_bit = match &cite {
+            Some((sid, applied)) => {
+                format!(" session_id={sid} context={}", context_word(*applied))
+            }
+            None => String::new(),
+        };
+        if header_session.is_none() {
+            header_session = cite;
+        }
+        body.push_str(&format!(
+            "  {} status={status} package={pkg}{session_bit}{reason} last_run={} next_due={}\n",
+            routine.id,
+            format_unix(row.and_then(|r| r.last_run)),
+            format_unix(row.and_then(|r| r.next_due)),
+        ));
         if matched.is_empty() {
             body.push_str("    receipts=0\n");
             continue;
@@ -197,8 +248,15 @@ pub(crate) fn render_digest(
             let chain = rec.chain_id.as_deref().unwrap_or("-");
             let pkg_id = rec.package_id.as_deref().unwrap_or(pkg);
             let label = rec.completion_label.as_deref().unwrap_or("-");
+            let rec_session = match &rec.session_id {
+                Some(sid) => format!(
+                    " session_id={sid} context={}",
+                    context_word(rec.session_context.unwrap_or(false))
+                ),
+                None => String::new(),
+            };
             body.push_str(&format!(
-                "    receipt={} package={pkg_id} chain={chain} completion_label={label}\n",
+                "    receipt={} package={pkg_id} chain={chain} completion_label={label}{rec_session}\n",
                 rec.id
             ));
         }
@@ -206,7 +264,24 @@ pub(crate) fn render_digest(
     if rows.is_empty() {
         return "routine digest ran=0 skipped=0\n  no standing routines\n".into();
     }
-    format!("routine digest ran={ran} skipped={skipped}\n{body}")
+    let header_bit = match header_session {
+        Some((sid, applied)) => {
+            format!(" session_id={sid} context={}", context_word(applied))
+        }
+        None => String::new(),
+    };
+    format!("routine digest ran={ran} skipped={skipped}{header_bit}\n{body}")
+}
+
+fn cite_session(row: Option<&RoutineRow>, receipts: &[&DigestReceipt]) -> Option<(String, bool)> {
+    let applied = receipts
+        .iter()
+        .any(|r| r.session_context.unwrap_or(false));
+    if let Some(sid) = receipts.iter().rev().find_map(|r| r.session_id.clone()) {
+        return Some((sid, applied));
+    }
+    row.and_then(|r| r.session_id.clone())
+        .map(|sid| (sid, applied))
 }
 
 fn skip_reason_text(routine: &Routine, row: Option<&RoutineRow>) -> String {
@@ -413,8 +488,11 @@ pub(crate) fn status_line(estate: &Estate, routine: &Routine, row: Option<&Routi
         .pack_package(&routine.package)
         .map(|p| p.id.as_str())
         .unwrap_or(routine.package.as_str());
+    let session = row
+        .and_then(|r| r.session_id.as_deref())
+        .unwrap_or("-");
     format!(
-        "{} package={pkg} schedule={schedule} enabled={enabled} last_run={last} next_due={next}",
+        "{} package={pkg} schedule={schedule} enabled={enabled} last_run={last} next_due={next} session_id={session}",
         routine.id
     )
 }
@@ -473,6 +551,7 @@ mod tests {
             RoutineRow {
                 last_run: Some(1_700_000_000),
                 next_due: Some(1_700_003_600),
+                session_id: None,
             },
         );
         let text = render_digest(
@@ -484,6 +563,8 @@ mod tests {
                 package_id: Some("classify-ping".into()),
                 chain_id: Some("chain-classify-ping-1".into()),
                 completion_label: Some("Sci/Tech".into()),
+                session_id: None,
+                session_context: None,
             }],
             None,
         );
@@ -493,8 +574,108 @@ mod tests {
             text.contains("receipt=r-1-digest package=classify-ping chain=chain-classify-ping-1 completion_label=Sci/Tech"),
             "{text}"
         );
+        assert!(!text.contains("session_id="), "{text}");
         assert!(!text.contains("Grok Bot sync"), "{text}");
         assert!(!text.contains("live PASS"), "{text}");
+    }
+
+    #[test]
+    fn digest_cites_session_id_and_context_on_header_and_receipt() {
+        let estate = estate_schema::load_estate_unvalidated(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/fixtures/agent-pack-handoff.yaml"),
+        )
+        .unwrap();
+        let mut file = RoutineStateFile {
+            schema: STATE_SCHEMA.into(),
+            routines: BTreeMap::new(),
+        };
+        file.routines.insert(
+            "standing-classify".into(),
+            RoutineRow {
+                last_run: Some(1_700_000_000),
+                next_due: Some(1_700_003_600),
+                session_id: Some("sess-digestcite01".into()),
+            },
+        );
+        let text = render_digest(
+            &estate,
+            &file,
+            &[
+                DigestReceipt {
+                    id: "r-hop1".into(),
+                    routine_id: Some("standing-classify".into()),
+                    package_id: Some("classify-ping".into()),
+                    chain_id: Some("chain-classify-ping-1".into()),
+                    completion_label: None,
+                    session_id: Some("sess-digestcite01".into()),
+                    session_context: Some(false),
+                },
+                DigestReceipt {
+                    id: "r-hop2".into(),
+                    routine_id: Some("standing-classify".into()),
+                    package_id: Some("classify-ping".into()),
+                    chain_id: Some("chain-classify-ping-1".into()),
+                    completion_label: None,
+                    session_id: Some("sess-digestcite01".into()),
+                    session_context: Some(true),
+                },
+            ],
+            None,
+        );
+        assert!(
+            text.starts_with(
+                "routine digest ran=1 skipped=0 session_id=sess-digestcite01 context=applied\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "standing-classify status=ran package=classify-ping session_id=sess-digestcite01 context=applied"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("receipt=r-hop1 package=classify-ping chain=chain-classify-ping-1 completion_label=- session_id=sess-digestcite01 context=none"),
+            "{text}"
+        );
+        assert!(
+            text.contains("receipt=r-hop2 package=classify-ping chain=chain-classify-ping-1 completion_label=- session_id=sess-digestcite01 context=applied"),
+            "{text}"
+        );
+        assert!(!text.contains("live PASS"), "{text}");
+        assert!(!text.contains("XAI_API_KEY"), "{text}");
+    }
+
+    #[test]
+    fn classify_ping_is_multihop_classify_once_is_not() {
+        let estate = estate_schema::load_estate_unvalidated(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/fixtures/agent-pack-handoff.yaml"),
+        )
+        .unwrap();
+        assert!(package_has_multihop_chain(&estate, "classify-ping"));
+        assert!(!package_has_multihop_chain(&estate, "classify-once"));
+        assert_eq!(
+            package_pack_id(&estate, "classify-ping").as_deref(),
+            Some("research-crew")
+        );
+    }
+
+    #[test]
+    fn mark_ran_preserves_bound_session() {
+        let r = routine("standing-classify", Some("@every 15m"), None);
+        let mut file = RoutineStateFile {
+            schema: STATE_SCHEMA.into(),
+            routines: BTreeMap::new(),
+        };
+        set_session_id(&mut file, &r, Some("sess-keepme000001".into()));
+        let row = mark_ran(&mut file, &r, 1_000).unwrap();
+        assert_eq!(row.session_id.as_deref(), Some("sess-keepme000001"));
+        assert_eq!(
+            file.routines.get("standing-classify").and_then(|r| r.session_id.as_deref()),
+            Some("sess-keepme000001")
+        );
     }
 
     #[test]
