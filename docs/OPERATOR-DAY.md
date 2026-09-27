@@ -605,6 +605,14 @@ estate enrich bind-prove --root . --out /tmp/cell-one-specialty-bind
 estate enrich bind-prove --dual --root . --out /tmp/cell-one-specialty-bind-dual
 ```
 
+## 4c. Host-validate prove (lab copy, not a train)
+
+`estate decisions host-validate-prove` copies the locked estate into a throwaway directory and seeds `ag_news` and `rust_idiom` beside `local_slm` (mocked GGUF files, fixture bindings). Research may use `ag_news`. Idiom may use `rust_idiom`. Sanctum lists both, so the selector abstains (`refuse:decision-abstain`). The prove then runs `estate authorize` and a granted `estate convey call` on hop `specialty-hop`. One scoped seat selects with `validation=ok`. A stale or ineligible hint records a fallback and does not grant that seat. `estate decisions report` counts both surfaces. `estate decisions export` replays the journal. The command ends with `decision-host-validate-prove: ok` and `READY_FOR_LIVE_TEST: no`. It does not rewrite `examples/estate.yaml` (cksum `43770130 3391`). It does not start a GPU train.
+
+```bash
+estate decisions host-validate-prove --root . --out /tmp/cell-one-decision-host-validate
+```
+
 ## 5. Backup rotate
 
 Use an isolated cell so the walk does not touch a real `.cell/`.

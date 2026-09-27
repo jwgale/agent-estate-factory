@@ -779,6 +779,9 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
     let mut ineligible = 0usize;
     let mut expired = 0usize;
     let mut none = 0usize;
+    let mut surface_authorize = 0usize;
+    let mut surface_convey = 0usize;
+    let mut surface_complete = 0usize;
     let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
     for receipt in receipts {
         match receipt.stage.as_str() {
@@ -794,6 +797,12 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
             "expired" => expired += 1,
             _ => {}
         }
+        match receipt.surface.as_str() {
+            "authorize" => surface_authorize += 1,
+            "complete" => surface_complete += 1,
+            "" => surface_convey += 1,
+            _ => {}
+        }
         match &receipt.fallback {
             Some(id) => *by_id.entry(id.as_str()).or_default() += 1,
             None => none += 1,
@@ -801,7 +810,7 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
     }
     let n = receipts.len();
     let mut out = format!(
-        "decision receipts: {n}\nstage prepare={n} select={select} validate={validate} fallback={fallback_stage}\nvalidation ok={ok} stale={stale} ineligible={ineligible} expired={expired}\nfallback none={none}\n"
+        "decision receipts: {n}\nstage prepare={n} select={select} validate={validate} fallback={fallback_stage}\nvalidation ok={ok} stale={stale} ineligible={ineligible} expired={expired}\nsurface authorize={surface_authorize} convey={surface_convey} complete={surface_complete}\nfallback none={none}\n"
     );
     for (id, count) in by_id {
         out.push_str(&format!("fallback {id}={count}\n"));
@@ -1552,6 +1561,50 @@ mod tests {
         };
         let with_hint = resolve_selection(&estate, Some("research"), Some(&hint), false);
         assert_eq!(with_hint.result, "ag_news");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn report_counts_authorize_and_convey_surfaces() {
+        let estate = example();
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-surface-counts-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        record_authorize_receipt(
+            &estate,
+            &dir,
+            "model",
+            "local_slm",
+            "research",
+            None,
+            "allow",
+        )
+        .unwrap();
+        record_convey_receipt(
+            &estate,
+            &dir,
+            "ttl-hop",
+            "lane-tool",
+            Some("research"),
+            None,
+            "allow",
+            false,
+        )
+        .unwrap();
+        let text = render_report(&load_receipts(&dir).unwrap());
+        assert!(
+            text.contains("surface authorize=1 convey=1 complete=0\n"),
+            "{text}"
+        );
+        assert!(text.contains("surface=authorize"), "{text}");
+        assert!(text.contains("surface=convey"), "{text}");
+        assert!(
+            !text.split_whitespace().any(|word| word == "enforced"),
+            "{text}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
