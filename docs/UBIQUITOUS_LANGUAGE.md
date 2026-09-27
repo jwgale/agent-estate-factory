@@ -34,7 +34,7 @@ Named agent group on the estate (`packs:`). Fields: `id`, `members` (agent ids),
 
 ### pack package
 
-Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. `estate pack export-plugin` copies each package into `skills/<id>/SKILL.md` that instructs calling the wired member MCP tool `complete` with the package prompt (mock/live notes as appropriate). Security stays existing intentions — not a new grant. Grok Bot skill analog. Not live Cursor plugin install.
+Named skill on a pack (`pack_packages:`). Fields: `id`, `pack`, optional `prompt` / `binding` / `note` / `chain` (`steps` alias). `estate package list` / `show` / `run`. Run → `complete --pack` with `package_id` on the receipt. `--chain` runs ordered agent→binding hops and stamps `chain_id` plus handoffs. `estate package dual-prove` is the mock gate for two purpose seats in one chain: research → `ag_news`, idiom → `rust_idiom`, horizon → `frontier_http` on fixture pack `dual-specialty`. Receipts name the chosen binding (`result` and `capability`). Hop 2 can carry hop 1 context (`context=applied`). Bound, ended, and expired sessions refuse. `estate decisions report --pack` lists both specialty capabilities. `--mock` stays in-process. `completion_label` stays opt-in. Two eligible specialty ids abstain, including under `--select equal-class`. `READY_FOR_LIVE_TEST` stays no. `estate pack export-plugin` copies each package into `skills/<id>/SKILL.md` that instructs calling the wired member MCP tool `complete` with the package prompt (mock/live notes as appropriate). Security stays existing intentions — not a new grant. Grok Bot skill analog. Not live Cursor plugin install.
 
 ### standing routine
 
@@ -54,7 +54,7 @@ Live Ollama (or seated-runtime) name for a purpose-built SLM. Classify and enric
 
 ### equal-class mixed select
 
-Opt-in policy for one `estate complete` turn to consider specialty + frontier candidates together. Set agent `select: equal-class`, pass `--select equal-class`, or write `decision-select.json` `"select":"equal-class"` / `"policy":"equal-class"`. Exactly one specialty local among eligible peers is chosen. The receipt names `result` (chosen binding) and `rejected` (peer candidates). Default disjoint allow-lists still abstain when two or more ids are eligible. Not a Grok Bot chat UI. Not a ranker of frontier over local without the flag.
+Opt-in policy for one `estate complete` turn to consider specialty + frontier candidates together. Set agent `select: equal-class`, pass `--select equal-class`, or write `decision-select.json` `"select":"equal-class"` / `"policy":"equal-class"`. Exactly one specialty local among eligible peers is chosen. Two or more specialty locals still abstain under the flag. The receipt names `result` (chosen binding) and `rejected` (peer candidates). Default disjoint allow-lists still abstain when two or more ids are eligible. The dual-specialty chain (`ag_news` then `rust_idiom` then frontier) keeps one eligible id per hop, so it does not use this flag. Not a Grok Bot chat UI. Not a ranker of frontier over local without the flag.
 
 ### purpose-built SLM
 

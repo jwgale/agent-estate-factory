@@ -3,7 +3,10 @@
 # Pack membership scopes handoff. Opt-in mixed select without --pack is
 # --select equal-class / agent select: equal-class.
 # Packages ≈ skills; routines ≈ automations. Optional schedule + chain.
-# Security stays existing intentions. Not live Grok Bot sync.
+# dual-specialty seats ag_news and rust_idiom beside frontier_http.
+# Each hop allow-list names one binding. Two or more eligible ids abstain.
+# Security stays existing intentions. Not live Grok Bot sync. Mock does not
+# call Ollama. completion_label stays opt-in (CELL_COMPLETE_LABEL / category_codec).
 
 apiVersion: cell-one.estate.v0
 version: 0
@@ -48,6 +51,16 @@ agents:
     mounts: []
     mcp: []
     models: []
+  - id: idiom
+    display_name: Idiom
+    lane: idiom
+    desktop: idiom-desktop
+    tools: []
+    mounts: []
+    mcp: []
+    models:
+      - id: rust_idiom
+        description: Purpose specialty seat for Rust idiom hops
 
 lanes:
   - id: horizon
@@ -59,6 +72,9 @@ lanes:
   - id: sanctum
     root_path: lanes/sanctum
     owner_agent_id: sanctum
+  - id: idiom
+    root_path: lanes/idiom
+    owner_agent_id: idiom
 
 intentions:
   - subject_agent: research
@@ -70,7 +86,12 @@ intentions:
     object: frontier_http
     kind: model
     effect: allow
-    note: Multi-hop chain hop 2 (frontier after specialty)
+    note: Multi-hop chain frontier hop after specialty
+  - subject_agent: idiom
+    object: rust_idiom
+    kind: model
+    effect: allow
+    note: Dual-specialty chain hop on the Rust idiom seat
 
 model_bindings:
   - id: frontier_http
@@ -97,12 +118,27 @@ model_bindings:
       model: specialist-agnews-all
       job: classify
     wired: true
+  - id: rust_idiom
+    class: local
+    driver: ollama
+    params:
+      host_class: any
+      endpoint_env: CELL_LOCAL_ENDPOINT
+      model: specialist-rustidiom-all
+      job: classify
+    wired: true
 
 packs:
   - id: research-crew
     members:
       - horizon
       - research
+    orchestrator: horizon
+  - id: dual-specialty
+    members:
+      - horizon
+      - research
+      - idiom
     orchestrator: horizon
 
 pack_packages:
@@ -121,6 +157,17 @@ pack_packages:
     prompt: "ping"
     binding: ag_news
     note: Single-hop skill. --chain refuses (no chain:/steps:).
+  - id: dual-specialty
+    pack: dual-specialty
+    prompt: "ping"
+    note: Two purpose seats then frontier. Run with --chain. Mock does not call Ollama.
+    chain:
+      - agent: research
+        binding: ag_news
+      - agent: idiom
+        binding: rust_idiom
+      - agent: horizon
+        binding: frontier_http
 
 routines:
   - id: standing-classify
@@ -137,7 +184,7 @@ placements:
   - id: cell-one-box
     kind: box
     host_class: any
-    agents: [horizon, research, sanctum]
+    agents: [horizon, research, sanctum, idiom]
     wired: true
     note: This machine. Isolation driver is profile-dir today; swappable later.
   - id: cursor-cloud
