@@ -161,7 +161,8 @@ No multi-step DAG.
 
 Same throwaway fixture. Optional `schedule` on `standing-classify` (`@hourly`).
 `estate routine tick` runs it when due and writes `{state-dir}/routine-state.json`
-(`last_run` / `next_due`). A second tick in the same hour is a skip (idempotent).
+(`last_run` / `next_due`, plus a bound `session_id` when the package
+chain has two or more hops). A second tick in the same hour is a skip (idempotent).
 `estate package run --chain` wakes specialty then frontier and journals one
 `chain_id` plus ordered `handoffs` (`handoff_from` / `handoff_to` / `binding`).
 That is the Grok Bot shape — a routine waking a group skill — without claiming
@@ -184,8 +185,9 @@ estate decisions report --state-dir target/pack-chain-cell
 ```
 
 `digest` and `tick --report` glance at the last local wake: ran/skipped,
-package/chain ids, receipt ids, and `completion_label` when a receipt has
-one. They read `{state-dir}/routine-state.json` plus the decision journal.
+package/chain ids, receipt ids, `completion_label` when a receipt has
+one, and `session_id` / `context=applied|none` when a crew session is
+bound. They read `{state-dir}/routine-state.json` plus the decision journal.
 They do not sync to Grok Bot.
 
 ## 3e. Standing routine watch (fixture)
@@ -244,9 +246,49 @@ estate routine runner status --state-dir target/pack-runner-cell
 ```
 
 A second `start` while running refuses `refuse:runner-already-running`.
-`restart` stops a live child (if any) then starts. Prove notes for the
-5090 parent: `.cell/cohesion-agnews-20260926/routine-runner-prove.md`
-(local throwaway estate; gitignored). Not a live PASS.
+`restart` stops a live child (if any) then starts. When the standing
+routine's package has a multi-hop chain, the same tick path auto-binds
+a pack-scoped crew session (see 3e3). Prove notes for the 5090 parent:
+`.cell/cohesion-agnews-20260926/routine-runner-prove.md` (local
+throwaway estate; gitignored). Not a live PASS.
+
+## 3e3. Runner + crew session stitch (fixture)
+
+Same throwaway fixture. `standing-classify` runs package `classify-ping`
+(2-hop: research/`ag_news` → horizon/`frontier_http`). The tick path
+used by `watch` and `runner` auto-creates a pack-scoped crew session
+on the first due wake, persists `session_id` on
+`{state-dir}/routine-state.json`, and reuses it on later ticks until
+the session is ended, expired, or bound. Hop 1 journals
+`context=none`; hop 2 journals `context=applied`. Digest and runner
+status cite `session_id=…` and `context=applied|none`. Single-hop
+packages stay unchanged. `--mock` stays in-process. Not a live PASS.
+`READY_FOR_LIVE_TEST`: no.
+
+```bash
+# Detached stitch (test hook; operator default stays 5m)
+CELL_ROUTINE_WATCH_INTERVAL_SECS=2 estate routine runner start \
+  --id standing-classify \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-runner-session-cell --mock --max-cycles 30
+
+estate routine runner status --state-dir target/pack-runner-session-cell
+# expect last_digest … session_id=sess-… context=applied
+
+estate routine digest --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-runner-session-cell
+estate routine runner stop --state-dir target/pack-runner-session-cell
+
+# Mock gate: start → hop2 context=applied → reuse → ended→fresh →
+# refuse:runner-already-running → stop
+estate routine runner-prove \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/pack-runner-prove-cell
+```
+
+An ended session on the next due tick mints a fresh id. Explicit
+`--session` of an ended / expired / bound id still refuses. No secrets
+in the digest log. Locked `examples/estate.yaml` untouched.
 
 ## 3f. Pack export-plugin (fixture)
 

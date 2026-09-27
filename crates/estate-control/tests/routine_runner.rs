@@ -175,6 +175,8 @@ fn runner_start_status_tick_stop() {
     assert!(digest.contains("routine digest ran=1 skipped=0"), "{digest}");
     assert!(digest.contains("standing-classify status=ran"), "{digest}");
     assert!(digest.contains("package=classify-ping"), "{digest}");
+    assert!(digest.contains("session_id="), "{digest}");
+    assert!(digest.contains("context=applied"), "{digest}");
     assert!(!digest.contains("Grok Bot sync"), "{digest}");
     assert!(!digest.contains("live PASS"), "{digest}");
     assert!(!digest.contains("XAI_API_KEY"), "{digest}");
@@ -189,6 +191,8 @@ fn runner_start_status_tick_stop() {
     assert!(ok, "{stderr}");
     assert!(status.contains("status: running"), "{status}");
     assert!(status.contains("last_digest: routine digest ran=1 skipped=0"), "{status}");
+    assert!(status.contains("session_id="), "{status}");
+    assert!(status.contains("context=applied"), "{status}");
     assert!(!status.contains("last_tick: -"), "{status}");
 
     let saved = std::fs::read_to_string(state.join("routine-state.json")).unwrap();
@@ -385,6 +389,30 @@ fn runner_restart_replaces_a_live_child() {
     assert_locked_cksum();
 }
 
+fn journal(state: &std::path::Path) -> PathBuf {
+    state.join("decisions").join("receipts.jsonl")
+}
+
+fn load_receipts(state: &std::path::Path) -> Vec<serde_json::Value> {
+    let path = journal(state);
+    if !path.is_file() {
+        return Vec::new();
+    }
+    let text = std::fs::read_to_string(path).unwrap();
+    text.lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).expect(line))
+        .collect()
+}
+
+fn force_due(state: &std::path::Path, routine_id: &str) {
+    let path = state.join("routine-state.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut saved: serde_json::Value = serde_json::from_str(&text).unwrap();
+    saved["routines"][routine_id]["next_due"] = serde_json::json!(1);
+    std::fs::write(path, serde_json::to_string_pretty(&saved).unwrap()).unwrap();
+}
+
 fn pid_from_status(status: &str) -> Option<u32> {
     status
         .lines()
@@ -409,6 +437,172 @@ fn runner_files_are_throwaway_under_state_dir() {
     ]);
     assert!(ok, "{stderr}");
     // status of a missing runner does not invent a live pidfile
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_tick_stitches_crew_session_on_multihop_chain() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("stitch");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+    let _guard = RunnerGuard {
+        state: state.clone(),
+    };
+
+    let (ok, stdout, stderr) = run_hook(&start_args(&estate_s, &state_s), "2");
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+
+    let digest_log = state.join("routine-runner").join("default.digest.log");
+    let ticked = wait_until(Duration::from_secs(15), || {
+        let text = std::fs::read_to_string(&digest_log).unwrap_or_default();
+        text.contains("context=applied") && text.contains("session_id=")
+    });
+    assert!(ticked, "runner never cited a session digest");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[0]["session_context"], false);
+    assert_eq!(rows[1]["session_context"], true);
+    let sid = rows[0]["session_id"].as_str().expect("session_id");
+    assert!(sid.starts_with("sess-"), "{sid}");
+    assert_eq!(rows[1]["session_id"], sid);
+    assert_eq!(rows[0]["handoff_from"], "horizon");
+    assert_eq!(rows[0]["handoff_to"], "research");
+    assert_eq!(rows[1]["handoff_from"], "research");
+    assert_eq!(rows[1]["handoff_to"], "horizon");
+
+    let digest = std::fs::read_to_string(&digest_log).unwrap();
+    assert!(digest.contains(&format!("session_id={sid}")), "{digest}");
+    assert!(digest.contains("context=applied"), "{digest}");
+    assert!(digest.contains("context=none"), "{digest}");
+
+    let saved = std::fs::read_to_string(state.join("routine-state.json")).unwrap();
+    assert!(saved.contains(sid), "{saved}");
+    assert!(saved.contains("cell-one.routine-state.v0"), "{saved}");
+
+    let (ok, _, stderr) = run(&["routine", "runner", "stop", "--state-dir", &state_s]);
+    assert!(ok, "{stderr}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_reuses_open_session_then_mints_after_end() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("reuse");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+    let _guard = RunnerGuard {
+        state: state.clone(),
+    };
+
+    let (ok, stdout, stderr) = run_hook(&start_args(&estate_s, &state_s), "2");
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    let digest_log = state.join("routine-runner").join("default.digest.log");
+    let ticked = wait_until(Duration::from_secs(15), || {
+        load_receipts(&state).len() >= 2
+    });
+    assert!(ticked, "first tick missing under {}", digest_log.display());
+    let first_sid = load_receipts(&state)[0]["session_id"]
+        .as_str()
+        .expect("session")
+        .to_string();
+
+    let (ok, _, stderr) = run(&["routine", "runner", "stop", "--state-dir", &state_s]);
+    assert!(ok, "{stderr}");
+
+    force_due(&state, "standing-classify");
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "tick",
+        "--id",
+        "standing-classify",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    assert_eq!(rows[2]["session_id"], first_sid);
+    assert_eq!(rows[3]["session_id"], first_sid);
+    assert_eq!(rows[2]["session_context"], true);
+    assert_eq!(rows[3]["session_context"], true);
+
+    let (ok, stdout, stderr) = run(&[
+        "pack",
+        "session",
+        "end",
+        "--id",
+        &first_sid,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+
+    force_due(&state, "standing-classify");
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "tick",
+        "--id",
+        "standing-classify",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 6, "{rows:?}");
+    let fresh = rows[4]["session_id"].as_str().expect("fresh");
+    assert_ne!(fresh, first_sid);
+    assert_eq!(rows[4]["session_context"], false);
+    assert_eq!(rows[5]["session_id"], fresh);
+    assert_eq!(rows[5]["session_context"], true);
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_prove_cli_stitches_and_refuses_double_start() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("prove");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner-prove",
+        "--id",
+        "standing-classify",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("routine runner-prove: standing-classify"), "{stdout}");
+    assert!(stdout.contains("ok: yes"), "{stdout}");
+    assert!(stdout.contains("hop2-context-applied: ok"), "{stdout}");
+    assert!(stdout.contains("session-reuse: ok"), "{stdout}");
+    assert!(stdout.contains("ended-creates-fresh: ok"), "{stdout}");
+    assert!(stdout.contains("double-start-refuse: ok"), "{stdout}");
+    assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!stdout.contains("XAI_API_KEY"), "{stdout}");
     assert!(!state.join("routine-runner").join("default.pid").exists());
     assert_locked_cksum();
 }

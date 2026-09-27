@@ -466,6 +466,15 @@ pub(crate) fn run() -> Result<()> {
                 session.as_deref(),
                 session_create,
             ),
+            RoutineCommand::RunnerProve {
+                id,
+                estate,
+                state_dir,
+            } => crate::runner_prove::cmd_routine_runner_prove(
+                &id,
+                &estate,
+                state_dir.as_deref(),
+            ),
             RoutineCommand::Runner { command } => match command {
                 RoutineRunnerCommand::Start {
                     runner_id,

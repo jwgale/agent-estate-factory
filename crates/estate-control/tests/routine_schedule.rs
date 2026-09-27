@@ -119,14 +119,23 @@ fn routine_status_and_tick_due_then_not_due() {
     assert!(stdout.contains("decision receipt:"), "{stdout}");
 
     let rows = load_receipts(&state);
-    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows.len(), 2, "{rows:?}");
     assert_eq!(rows[0]["routine_id"], "standing-classify");
     assert_eq!(rows[0]["package_id"], "classify-ping");
     assert_eq!(rows[0]["pack_id"], "research-crew");
     assert_eq!(rows[0]["handoff_from"], "horizon");
     assert_eq!(rows[0]["handoff_to"], "research");
-
+    assert_eq!(rows[0]["session_context"], false);
+    assert_eq!(rows[1]["handoff_from"], "research");
+    assert_eq!(rows[1]["handoff_to"], "horizon");
+    assert_eq!(rows[1]["session_context"], true);
+    assert_eq!(rows[0]["session_id"], rows[1]["session_id"]);
+    assert!(rows[0]["session_id"].as_str().unwrap().starts_with("sess-"));
     let saved = load_routine_state(&state);
+    assert_eq!(
+        saved["routines"]["standing-classify"]["session_id"],
+        rows[0]["session_id"]
+    );
     assert_eq!(saved["schema"], "cell-one.routine-state.v0");
     assert!(saved["routines"]["standing-classify"]["last_run"].is_number());
     assert!(saved["routines"]["standing-classify"]["next_due"].is_number());
@@ -146,7 +155,7 @@ fn routine_status_and_tick_due_then_not_due() {
     assert!(stdout.contains("skip standing-classify"), "{stdout}");
     assert!(stdout.contains("ran=0"), "{stdout}");
     assert!(stdout.contains("skipped=1"), "{stdout}");
-    assert_eq!(load_receipts(&state).len(), 1, "second tick must not re-run");
+    assert_eq!(load_receipts(&state).len(), 2, "second tick must not re-run");
 
     // Force due: next_due in the past. Tick must run again (idempotent only when not due).
     let mut forced = saved.clone();
@@ -169,7 +178,7 @@ fn routine_status_and_tick_due_then_not_due() {
     ]);
     assert!(ok, "stderr={stderr}\nstdout={stdout}");
     assert!(stdout.contains("ticked standing-classify"), "{stdout}");
-    assert_eq!(load_receipts(&state).len(), 2);
+    assert_eq!(load_receipts(&state).len(), 4);
 
     let (ok, status, stderr) = run(&[
         "routine",
@@ -235,9 +244,11 @@ fn routine_digest_and_tick_report_shape() {
     assert!(stdout.contains("completion_label=-"), "{stdout}");
 
     let rows = load_receipts(&state);
-    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows.len(), 2, "{rows:?}");
     let receipt_id = rows[0]["id"].as_str().expect("id");
     assert!(stdout.contains(&format!("receipt={receipt_id}")), "{stdout}");
+    assert!(stdout.contains("session_id="), "{stdout}");
+    assert!(stdout.contains("context=applied"), "{stdout}");
 
     // Operator-written label still prints (local journal only).
     let mut labeled = rows[0].clone();
@@ -437,8 +448,9 @@ fn routine_watch_two_cycles_test_hook_no_five_minute_sleep() {
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
 
     let rows = load_receipts(&state);
-    assert_eq!(rows.len(), 1, "second cycle must skip; idempotent tick {rows:?}");
+    assert_eq!(rows.len(), 2, "second cycle must skip; idempotent tick {rows:?}");
     assert_eq!(rows[0]["routine_id"], "standing-classify");
+    assert_eq!(rows[1]["session_context"], true);
     let saved = load_routine_state(&state);
     assert_eq!(saved["schema"], "cell-one.routine-state.v0");
     assert!(saved["routines"]["standing-classify"]["last_run"].is_number());
@@ -511,6 +523,8 @@ fn routine_watch_one_cycle_is_tick_plus_digest() {
         "{stdout}"
     );
     assert!(!stdout.contains("Grok Bot sync"), "{stdout}");
-    assert_eq!(load_receipts(&state).len(), 1);
+    assert_eq!(load_receipts(&state).len(), 2);
+    assert!(stdout.contains("session_id="), "{stdout}");
+    assert!(stdout.contains("context=applied"), "{stdout}");
     assert_locked_cksum();
 }
