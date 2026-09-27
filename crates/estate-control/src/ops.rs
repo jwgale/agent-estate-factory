@@ -999,21 +999,24 @@ pub(crate) fn cmd_routine_run(
 }
 
 pub(crate) fn cmd_routine_status(
-    id: Option<&str>,
+    ids: &[String],
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let state = crate::routines::load_state(state_dir)?;
-    let rows: Vec<&estate_schema::Routine> = match id {
-        Some(want) => {
+    let rows: Vec<&estate_schema::Routine> = if ids.is_empty() {
+        estate.routines.iter().collect()
+    } else {
+        let mut out = Vec::new();
+        for want in ids {
             let routine = estate.routine(want).ok_or_else(|| {
                 anyhow::anyhow!("refuse:unknown-routine: routine '{want}' not on estate")
             })?;
-            vec![routine]
+            out.push(routine);
         }
-        None => estate.routines.iter().collect(),
+        out
     };
     if rows.is_empty() {
         println!("no standing routines on {}", estate_path.display());
@@ -1028,13 +1031,13 @@ pub(crate) fn cmd_routine_status(
 }
 
 pub(crate) fn routine_digest_text(
-    id: Option<&str>,
+    ids: &[String],
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<String> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
-    if let Some(want) = id {
+    for want in ids {
         if estate.routine(want).is_none() {
             anyhow::bail!("refuse:unknown-routine: routine '{want}' not on estate");
         }
@@ -1053,20 +1056,20 @@ pub(crate) fn routine_digest_text(
             session_context: r.session_context,
         })
         .collect();
-    Ok(crate::routines::render_digest(&estate, &state, &rows, id))
+    Ok(crate::routines::render_digest(&estate, &state, &rows, ids))
 }
 
 pub(crate) fn cmd_routine_digest(
-    id: Option<&str>,
+    ids: &[String],
     estate_path: &Path,
     state_dir: &Path,
 ) -> Result<()> {
-    print!("{}", routine_digest_text(id, estate_path, state_dir)?);
+    print!("{}", routine_digest_text(ids, estate_path, state_dir)?);
     Ok(())
 }
 
 pub(crate) fn cmd_routine_tick(
-    id: Option<&str>,
+    ids: &[String],
     agent: Option<&str>,
     prompt: Option<String>,
     text: Option<String>,
@@ -1082,14 +1085,17 @@ pub(crate) fn cmd_routine_tick(
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     let mut state = crate::routines::load_state(state_dir)?;
     let now = crate::routines::now_unix();
-    let targets: Vec<estate_schema::Routine> = match id {
-        Some(want) => {
+    let targets: Vec<estate_schema::Routine> = if ids.is_empty() {
+        estate.routines.clone()
+    } else {
+        let mut out = Vec::new();
+        for want in ids {
             let routine = estate.routine(want).ok_or_else(|| {
                 anyhow::anyhow!("refuse:unknown-routine: routine '{want}' not on estate")
             })?;
-            vec![routine.clone()]
+            out.push(routine.clone());
         }
-        None => estate.routines.clone(),
+        out
     };
     if targets.is_empty() {
         println!("no standing routines on {}", estate_path.display());
@@ -1165,13 +1171,13 @@ pub(crate) fn cmd_routine_tick(
     crate::routines::save_state(state_dir, &state)?;
     println!("routine tick ran={ran} skipped={skipped}");
     if report {
-        cmd_routine_digest(id, estate_path, state_dir)?;
+        cmd_routine_digest(ids, estate_path, state_dir)?;
     }
     Ok(())
 }
 
 pub(crate) fn cmd_routine_watch(
-    id: Option<&str>,
+    ids: &[String],
     agent: Option<&str>,
     prompt: Option<String>,
     text: Option<String>,
@@ -1198,7 +1204,7 @@ pub(crate) fn cmd_routine_watch(
         |cycle| {
             println!("routine watch cycle={cycle}");
             cmd_routine_tick(
-                id,
+                ids,
                 agent,
                 prompt.clone(),
                 text.clone(),

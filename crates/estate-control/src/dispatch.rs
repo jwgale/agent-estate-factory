@@ -378,12 +378,12 @@ pub(crate) fn run() -> Result<()> {
             RoutineCommand::List { estate } => cmd_routine_list(&estate),
             RoutineCommand::Show { id, estate } => cmd_routine_show(&id, &estate),
             RoutineCommand::Status {
-                id,
+                ids,
                 estate,
                 state_dir,
-            } => cmd_routine_status(id.as_deref(), &estate, &state_dir),
+            } => cmd_routine_status(&ids, &estate, &state_dir),
             RoutineCommand::Tick {
-                id,
+                ids,
                 agent,
                 prompt,
                 text,
@@ -395,7 +395,7 @@ pub(crate) fn run() -> Result<()> {
                 chain,
                 report,
             } => cmd_routine_tick(
-                id.as_deref(),
+                &ids,
                 agent.as_deref(),
                 prompt,
                 text,
@@ -408,7 +408,7 @@ pub(crate) fn run() -> Result<()> {
                 report,
             ),
             RoutineCommand::Watch {
-                id,
+                ids,
                 agent,
                 prompt,
                 text,
@@ -421,7 +421,7 @@ pub(crate) fn run() -> Result<()> {
                 interval,
                 max_cycles,
             } => cmd_routine_watch(
-                id.as_deref(),
+                &ids,
                 agent.as_deref(),
                 prompt,
                 text,
@@ -435,10 +435,10 @@ pub(crate) fn run() -> Result<()> {
                 max_cycles,
             ),
             RoutineCommand::Digest {
-                id,
+                ids,
                 estate,
                 state_dir,
-            } => cmd_routine_digest(id.as_deref(), &estate, &state_dir),
+            } => cmd_routine_digest(&ids, &estate, &state_dir),
             RoutineCommand::Run {
                 id,
                 agent,
@@ -467,18 +467,18 @@ pub(crate) fn run() -> Result<()> {
                 session_create,
             ),
             RoutineCommand::RunnerProve {
-                id,
+                ids,
                 estate,
                 state_dir,
             } => crate::runner_prove::cmd_routine_runner_prove(
-                &id,
+                &ids,
                 &estate,
                 state_dir.as_deref(),
             ),
             RoutineCommand::Runner { command } => match command {
                 RoutineRunnerCommand::Start {
                     runner_id,
-                    id,
+                    ids,
                     agent,
                     prompt,
                     text,
@@ -493,7 +493,7 @@ pub(crate) fn run() -> Result<()> {
                 } => crate::routine_runner::cmd_runner_start(
                     crate::routine_runner::RunnerWatchArgs {
                         runner_id,
-                        routine_id: id,
+                        routine_ids: ids,
                         agent,
                         prompt,
                         text,
@@ -517,7 +517,7 @@ pub(crate) fn run() -> Result<()> {
                 } => crate::routine_runner::cmd_runner_status(&state_dir, Some(&runner_id)),
                 RoutineRunnerCommand::Restart {
                     runner_id,
-                    id,
+                    ids,
                     agent,
                     prompt,
                     text,
@@ -532,7 +532,7 @@ pub(crate) fn run() -> Result<()> {
                 } => crate::routine_runner::cmd_runner_restart(
                     crate::routine_runner::RunnerWatchArgs {
                         runner_id,
-                        routine_id: id,
+                        routine_ids: ids,
                         agent,
                         prompt,
                         text,
@@ -548,7 +548,7 @@ pub(crate) fn run() -> Result<()> {
                 ),
                 RoutineRunnerCommand::Supervise {
                     runner_id,
-                    id,
+                    ids,
                     agent,
                     prompt,
                     text,
@@ -563,7 +563,7 @@ pub(crate) fn run() -> Result<()> {
                 } => crate::routine_runner::cmd_runner_supervise(
                     crate::routine_runner::RunnerWatchArgs {
                         runner_id,
-                        routine_id: id,
+                        routine_ids: ids,
                         agent,
                         prompt,
                         text,

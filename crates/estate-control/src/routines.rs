@@ -131,6 +131,66 @@ pub(crate) fn set_session_id(file: &mut RoutineStateFile, routine: &Routine, ses
     file.routines.insert(routine.id.clone(), row);
 }
 
+/// Trim, drop duplicates (first wins). Empty input stays empty (= all).
+/// A present-but-blank token is `refuse:runner-routine-invalid`.
+pub(crate) fn collect_routine_ids(raw: &[String]) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for item in raw {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            return Err("refuse:runner-routine-invalid: empty routine id".into());
+        }
+        let want = estate_schema::normalize_name(trimmed);
+        if out
+            .iter()
+            .any(|have| estate_schema::normalize_name(have.as_str()) == want)
+        {
+            continue;
+        }
+        out.push(trimmed.to_string());
+    }
+    Ok(out)
+}
+
+/// Named start/restart/supervise select. Empty = all enabled (tick default).
+/// Any named miss / disabled / no-schedule / bad schedule refuses the
+/// whole set — no half-configured runner.
+pub(crate) fn resolve_runner_routines(
+    estate: &Estate,
+    named: &[String],
+) -> Result<Vec<String>, String> {
+    let ids = collect_routine_ids(named)?;
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut resolved = Vec::new();
+    for id in ids {
+        let Some(routine) = estate.routine(&id) else {
+            return Err(format!("refuse:runner-routine-unknown: id={id}"));
+        };
+        if !routine.is_enabled() {
+            return Err(format!(
+                "refuse:runner-routine-disabled: id={}",
+                routine.id
+            ));
+        }
+        if routine.schedule.is_none() {
+            return Err(format!(
+                "refuse:runner-routine-invalid: id={} has no schedule",
+                routine.id
+            ));
+        }
+        if let Err(err) = parsed_schedule(routine) {
+            return Err(format!(
+                "refuse:runner-routine-invalid: id={} {err}",
+                routine.id
+            ));
+        }
+        resolved.push(routine.id.clone());
+    }
+    Ok(resolved)
+}
+
 /// True when the package (or its pack) declares a chain of two or more hops.
 pub(crate) fn package_has_multihop_chain(estate: &Estate, package_id: &str) -> bool {
     let Some(pkg) = estate.pack_package(package_id) else {
@@ -187,11 +247,12 @@ pub(crate) fn render_digest(
     estate: &Estate,
     file: &RoutineStateFile,
     receipts: &[DigestReceipt],
-    only: Option<&str>,
+    only: &[String],
 ) -> String {
-    let rows: Vec<&Routine> = match only {
-        Some(want) => estate.routine(want).into_iter().collect(),
-        None => estate.routines.iter().collect(),
+    let rows: Vec<&Routine> = if only.is_empty() {
+        estate.routines.iter().collect()
+    } else {
+        only.iter().filter_map(|want| estate.routine(want)).collect()
     };
     let mut ran = 0usize;
     let mut skipped = 0usize;
@@ -536,6 +597,74 @@ mod tests {
     }
 
     #[test]
+    fn runner_select_all_or_named_and_refuses_partial() {
+        let estate = estate_schema::load_estate_unvalidated(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/fixtures/agent-pack-handoff.yaml"),
+        )
+        .unwrap();
+        assert!(resolve_runner_routines(&estate, &[]).unwrap().is_empty());
+        assert_eq!(
+            resolve_runner_routines(
+                &estate,
+                &["standing-classify".into(), "standing-once".into()]
+            )
+            .unwrap(),
+            vec!["standing-classify", "standing-once"]
+        );
+        let err = resolve_runner_routines(
+            &estate,
+            &["standing-classify".into(), "missing-routine".into()],
+        )
+        .unwrap_err();
+        assert!(err.contains("refuse:runner-routine-unknown"), "{err}");
+        assert!(err.contains("id=missing-routine"), "{err}");
+        let err = collect_routine_ids(&["standing-classify".into(), "  ".into()]).unwrap_err();
+        assert!(err.contains("refuse:runner-routine-invalid"), "{err}");
+    }
+
+    #[test]
+    fn digest_multi_id_covers_each_selected() {
+        let estate = estate_schema::load_estate_unvalidated(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/fixtures/agent-pack-handoff.yaml"),
+        )
+        .unwrap();
+        let mut file = RoutineStateFile {
+            schema: STATE_SCHEMA.into(),
+            routines: BTreeMap::new(),
+        };
+        file.routines.insert(
+            "standing-classify".into(),
+            RoutineRow {
+                last_run: Some(1_700_000_000),
+                next_due: Some(1_700_003_600),
+                session_id: Some("sess-digestcite01".into()),
+            },
+        );
+        let text = render_digest(
+            &estate,
+            &file,
+            &[DigestReceipt {
+                id: "r-1-digest".into(),
+                routine_id: Some("standing-classify".into()),
+                package_id: Some("classify-ping".into()),
+                chain_id: Some("chain-classify-ping-1".into()),
+                completion_label: Some("Sci/Tech".into()),
+                session_id: Some("sess-digestcite01".into()),
+                session_context: Some(true),
+            }],
+            &["standing-classify".into(), "standing-once".into()],
+        );
+        assert!(text.contains("routine digest ran=1 skipped=1"), "{text}");
+        assert!(text.contains("standing-classify status=ran"), "{text}");
+        assert!(text.contains("standing-once status=skipped"), "{text}");
+        assert!(text.contains("session_id=sess-digestcite01"), "{text}");
+        assert!(text.contains("package=classify-once"), "{text}");
+        assert!(!text.contains("Grok Bot sync"), "{text}");
+    }
+
+    #[test]
     fn digest_shape_names_ran_skipped_package_chain_receipt_and_label() {
         let estate = estate_schema::load_estate_unvalidated(
             &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -566,7 +695,7 @@ mod tests {
                 session_id: None,
                 session_context: None,
             }],
-            None,
+            &["standing-classify".into()],
         );
         assert!(text.starts_with("routine digest ran=1 skipped=0\n"), "{text}");
         assert!(text.contains("standing-classify status=ran package=classify-ping"), "{text}");
@@ -621,7 +750,7 @@ mod tests {
                     session_context: Some(true),
                 },
             ],
-            None,
+            &["standing-classify".into()],
         );
         assert!(
             text.starts_with(

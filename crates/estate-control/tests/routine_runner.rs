@@ -159,6 +159,7 @@ fn runner_start_status_tick_stop() {
     assert!(status.contains("status: running"), "{status}");
     assert!(status.contains("pid:"), "{status}");
     assert!(status.contains("uptime:"), "{status}");
+    assert!(status.contains("selected: standing-classify"), "{status}");
     assert!(status.contains("live_sync: false"), "{status}");
 
     let digest_log = state.join("routine-runner").join("default.digest.log");
@@ -598,11 +599,281 @@ fn runner_prove_cli_stitches_and_refuses_double_start() {
     assert!(stdout.contains("hop2-context-applied: ok"), "{stdout}");
     assert!(stdout.contains("session-reuse: ok"), "{stdout}");
     assert!(stdout.contains("ended-creates-fresh: ok"), "{stdout}");
+    assert!(stdout.contains("partial-start-refuse: ok"), "{stdout}");
     assert!(stdout.contains("double-start-refuse: ok"), "{stdout}");
     assert!(stdout.contains("live_sync: no"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
     assert!(!stdout.contains("live PASS"), "{stdout}");
     assert!(!stdout.contains("XAI_API_KEY"), "{stdout}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+    assert_locked_cksum();
+}
+
+fn start_multi_args<'a>(estate: &'a str, state: &'a str) -> [&'a str; 16] {
+    [
+        "routine",
+        "runner",
+        "start",
+        "--id",
+        "standing-classify",
+        "--id",
+        "standing-once",
+        "--estate",
+        estate,
+        "--state-dir",
+        state,
+        "--mock",
+        "--max-cycles",
+        "30",
+        "--interval",
+        "5m",
+    ]
+}
+
+fn write_patched_fixture(dir: &std::path::Path, patch: impl FnOnce(&str) -> String) -> std::path::PathBuf {
+    let src = std::fs::read_to_string(fixture()).unwrap();
+    let path = dir.join("estate.yaml");
+    std::fs::write(&path, patch(&src)).unwrap();
+    path
+}
+
+#[test]
+fn runner_multi_id_select_covers_both_and_one_pidfile() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("multi");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+    let _guard = RunnerGuard {
+        state: state.clone(),
+    };
+
+    let (ok, stdout, stderr) = run_hook(&start_multi_args(&estate_s, &state_s), "2");
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("selected=standing-classify,standing-once"), "{stdout}");
+    assert!(stdout.contains("live_sync=false"), "{stdout}");
+
+    let digest_log = state.join("routine-runner").join("default.digest.log");
+    let ticked = wait_until(Duration::from_secs(15), || {
+        let text = std::fs::read_to_string(&digest_log).unwrap_or_default();
+        text.contains("standing-classify status=ran") && text.contains("standing-once status=ran")
+    });
+    assert!(ticked, "multi-id runner never digested both routines");
+
+    let digest = std::fs::read_to_string(&digest_log).unwrap();
+    assert!(digest.contains("routine digest ran=2 skipped=0"), "{digest}");
+    assert!(digest.contains("standing-classify status=ran package=classify-ping"), "{digest}");
+    assert!(digest.contains("standing-once status=ran package=classify-once"), "{digest}");
+    assert!(digest.contains("session_id="), "{digest}");
+    assert!(digest.contains("context=applied"), "{digest}");
+    assert!(!digest.contains("XAI_API_KEY"), "{digest}");
+    assert!(!digest.contains("live PASS"), "{digest}");
+
+    let runner_dir = state.join("routine-runner");
+    let pidfiles: Vec<_> = std::fs::read_dir(&runner_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("pid"))
+        .collect();
+    assert_eq!(pidfiles.len(), 1, "{pidfiles:?}");
+    assert!(runner_dir.join("default.pid").exists());
+
+    let (ok, status, stderr) = run(&["routine", "runner", "status", "--state-dir", &state_s]);
+    assert!(ok, "{stderr}");
+    assert!(status.contains("selected: standing-classify,standing-once"), "{status}");
+    assert!(status.contains("last_outcome standing-classify: ran"), "{status}");
+    assert!(status.contains("last_outcome standing-once: ran"), "{status}");
+    assert!(status.contains("status: running"), "{status}");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 3, "classify 2 hops + once 1 hop: {rows:?}");
+    assert_eq!(rows.iter().filter(|r| r["routine_id"] == "standing-classify").count(), 2);
+    assert_eq!(rows.iter().filter(|r| r["routine_id"] == "standing-once").count(), 1);
+
+    let (ok, _, stderr) = run(&["routine", "runner", "stop", "--state-dir", &state_s]);
+    assert!(ok, "{stderr}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_multi_id_comma_select_and_default_all() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("comma");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+    let _guard = RunnerGuard {
+        state: state.clone(),
+    };
+
+    let (ok, stdout, stderr) = run_hook(
+        &[
+            "routine",
+            "runner",
+            "start",
+            "--id",
+            "standing-classify,standing-once",
+            "--estate",
+            &estate_s,
+            "--state-dir",
+            &state_s,
+            "--mock",
+            "--max-cycles",
+            "30",
+            "--interval",
+            "5m",
+        ],
+        "2",
+    );
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("selected=standing-classify,standing-once"), "{stdout}");
+
+    let digest_log = state.join("routine-runner").join("default.digest.log");
+    let ticked = wait_until(Duration::from_secs(15), || {
+        let text = std::fs::read_to_string(&digest_log).unwrap_or_default();
+        text.contains("standing-once status=ran")
+    });
+    assert!(ticked, "comma --id never ticked standing-once");
+    let (ok, _, stderr) = run(&["routine", "runner", "stop", "--state-dir", &state_s]);
+    assert!(ok, "{stderr}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_start_refuses_partial_unknown_disabled_invalid() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("partial");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner",
+        "start",
+        "--id",
+        "standing-classify",
+        "--id",
+        "missing-routine",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--max-cycles",
+        "1",
+    ]);
+    assert!(!ok, "stdout={stdout}");
+    assert!(
+        stderr.contains("refuse:runner-routine-unknown"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+    assert!(stderr.contains("id=missing-routine"), "{stderr}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+
+    let disabled_dir = scratch("disabled-estate");
+    let disabled = write_patched_fixture(&disabled_dir, |src| {
+        src.replace(
+            "  - id: standing-once\n    package: classify-once\n    schedule: \"@hourly\"",
+            "  - id: standing-once\n    package: classify-once\n    schedule: \"@hourly\"\n    enabled: false",
+        )
+    });
+    let disabled_s = disabled.display().to_string();
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner",
+        "start",
+        "--id",
+        "standing-classify,standing-once",
+        "--estate",
+        &disabled_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--max-cycles",
+        "1",
+    ]);
+    assert!(!ok, "stdout={stdout}");
+    assert!(
+        stderr.contains("refuse:runner-routine-disabled"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+    assert!(stderr.contains("id=standing-once"), "{stderr}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+
+    let invalid_dir = scratch("invalid-estate");
+    let invalid = write_patched_fixture(&invalid_dir, |src| {
+        src.replace(
+            "  - id: standing-once\n    package: classify-once\n    schedule: \"@hourly\"\n    note: Single-hop standing routine for multi-id supervise. Not Grok Bot sync.",
+            "  - id: standing-once\n    package: classify-once\n    note: Unscheduled; invalid for named runner start.",
+        )
+    });
+    let invalid_s = invalid.display().to_string();
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner",
+        "start",
+        "--id",
+        "standing-classify,standing-once",
+        "--estate",
+        &invalid_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--max-cycles",
+        "1",
+    ]);
+    assert!(!ok, "stdout={stdout}");
+    assert!(
+        stderr.contains("refuse:runner-routine-invalid"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+    assert!(stderr.contains("id=standing-once"), "{stderr}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_prove_cli_multi_id_default_covers_both() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("prove-multi");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner-prove",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(
+        stdout.contains("routine runner-prove: standing-classify,standing-once"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("ok: yes"), "{stdout}");
+    assert!(stdout.contains("digest-covers-standing-classify: ok"), "{stdout}");
+    assert!(stdout.contains("digest-covers-standing-once: ok"), "{stdout}");
+    assert!(stdout.contains("status-selected: ok"), "{stdout}");
+    assert!(stdout.contains("status-outcome-standing-once: ok"), "{stdout}");
+    assert!(stdout.contains("one-pidfile: ok"), "{stdout}");
+    assert!(stdout.contains("partial-start-refuse: ok"), "{stdout}");
+    assert!(stdout.contains("hop2-context-applied: ok"), "{stdout}");
+    assert!(stdout.contains("double-start-refuse: ok"), "{stdout}");
+    assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
     assert!(!state.join("routine-runner").join("default.pid").exists());
     assert_locked_cksum();
 }

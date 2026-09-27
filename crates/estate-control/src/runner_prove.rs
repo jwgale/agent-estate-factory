@@ -1,8 +1,10 @@
 //! `estate routine runner-prove` — mock runner + crew session stitch.
 //!
-//! Starts the supervised runner on a multi-hop standing routine, waits
-//! for one tick, asserts hop 2 `context=applied`, then checks session
-//! reuse, ended→fresh, and double-start refuse. `--mock` stays
+//! Starts one supervise child over one or more standing routines
+//! (default `standing-classify` + `standing-once`), waits for one
+//! tick, asserts hop 2 `context=applied` on the multi-hop id, then
+//! checks multi-id digest/status, session reuse, ended→fresh,
+//! partial-start refuse, and double-start refuse. `--mock` stays
 //! in-process. No network. No live PASS. READY_FOR_LIVE_TEST: no.
 
 use anyhow::{bail, Context, Result};
@@ -16,7 +18,7 @@ use crate::routine_runner::{self, RunnerWatchArgs};
 use crate::routines::{self, WATCH_INTERVAL_ENV};
 
 pub(crate) const PROVE_SCHEMA: &str = "cell-one.routine-runner-prove.v0";
-const DEFAULT_ROUTINE: &str = "standing-classify";
+const DEFAULT_ROUTINES: &[&str] = &["standing-classify", "standing-once"];
 const LOCKED_ESTATE: &str = "examples/estate.yaml";
 const LOCKED_CKSUM: &str = "43770130 3391";
 const TICK_WAIT: Duration = Duration::from_secs(20);
@@ -31,7 +33,7 @@ struct ProveCheck {
 #[derive(Debug, Clone)]
 struct ProveReport {
     ok: bool,
-    routine_id: String,
+    routine_ids: Vec<String>,
     session_id: String,
     reused_session_id: String,
     fresh_session_id: String,
@@ -54,7 +56,8 @@ impl ProveReport {
         json!({
             "schema": PROVE_SCHEMA,
             "ok": self.ok,
-            "routine_id": self.routine_id,
+            "routine_id": self.routine_ids.first().cloned().unwrap_or_default(),
+            "routine_ids": self.routine_ids,
             "session_id": self.session_id,
             "reused_session_id": self.reused_session_id,
             "fresh_session_id": self.fresh_session_id,
@@ -67,13 +70,22 @@ impl ProveReport {
 }
 
 pub(crate) fn cmd_routine_runner_prove(
-    routine_id: &str,
+    ids: &[String],
     estate_path: &Path,
     state_dir: Option<&Path>,
 ) -> Result<()> {
+    let ids: Vec<String> = if ids.is_empty() {
+        DEFAULT_ROUTINES.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        ids.to_vec()
+    };
+    let primary = ids
+        .first()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_ROUTINES[0]);
     let state_dir = match state_dir {
         Some(dir) => dir.to_path_buf(),
-        None => throwaway_state(routine_id),
+        None => throwaway_state(&ids.join("-")),
     };
     std::fs::create_dir_all(&state_dir)
         .with_context(|| format!("create {}", state_dir.display()))?;
@@ -95,32 +107,36 @@ pub(crate) fn cmd_routine_runner_prove(
 
     if let Err(err) = estate_schema::load_estate(estate_path) {
         push_fail(&mut checks, "estate", err.to_string());
-        return finish(routine_id, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
+        return finish(&ids, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
     }
 
     let prev_interval = std::env::var(WATCH_INTERVAL_ENV).ok();
     std::env::set_var(WATCH_INTERVAL_ENV, "2");
 
-    let start = routine_runner::cmd_runner_start(watch_args(routine_id, estate_path, &state_dir, 30));
+    let start = routine_runner::cmd_runner_start(watch_args(&ids, estate_path, &state_dir, 30));
     match start {
-        Ok(()) => push_ok(&mut checks, "runner-start", "started"),
+        Ok(()) => push_ok(
+            &mut checks,
+            "runner-start",
+            format!("started selected={}", ids.join(",")),
+        ),
         Err(err) => {
             restore_interval(prev_interval.as_deref());
             push_fail(&mut checks, "runner-start", err.to_string());
-            return finish(routine_id, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
+            return finish(&ids, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
         }
     }
 
-    let ticked = wait_for_tick(&state_dir, routine_id);
+    let ticked = wait_for_tick(&state_dir, &ids);
     if !ticked {
         restore_interval(prev_interval.as_deref());
         let _ = routine_runner::cmd_runner_stop(&state_dir, Some("default"));
         push_fail(&mut checks, "first-tick", "runner never ticked standing routine");
-        return finish(routine_id, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
+        return finish(&ids, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks);
     }
     push_ok(&mut checks, "first-tick", "digest appended");
 
-    match inspect_chain_hops(&state_dir, routine_id) {
+    match inspect_chain_hops(&state_dir, primary) {
         Ok(hops) => {
             session_id = hops.session_id.clone();
             push_check(
@@ -145,7 +161,7 @@ pub(crate) fn cmd_routine_runner_prove(
         Err(err) => push_fail(&mut checks, "first-tick-hops", err),
     }
 
-    let digest = crate::ops::routine_digest_text(Some(routine_id), estate_path, &state_dir)
+    let digest = crate::ops::routine_digest_text(&ids, estate_path, &state_dir)
         .unwrap_or_default();
     push_check(
         &mut checks,
@@ -153,12 +169,46 @@ pub(crate) fn cmd_routine_runner_prove(
         digest.contains("session_id=") && digest.contains("context=applied"),
         digest.lines().next().unwrap_or(&digest).to_string(),
     );
+    for id in &ids {
+        push_check(
+            &mut checks,
+            &format!("digest-covers-{id}"),
+            digest.contains(id),
+            format!("digest names {id}"),
+        );
+    }
     let status = routine_runner::status_text(&state_dir, "default", routines::now_unix());
     push_check(
         &mut checks,
         "status-cites-session",
         status.contains("session_id=") && status.contains("context=applied"),
         status.lines().find(|l| l.contains("last_digest")).unwrap_or(&status).to_string(),
+    );
+    let selected = ids.join(",");
+    push_check(
+        &mut checks,
+        "status-selected",
+        status.contains(&format!("selected: {selected}")),
+        status
+            .lines()
+            .find(|l| l.contains("selected:"))
+            .unwrap_or(&status)
+            .to_string(),
+    );
+    for id in &ids {
+        push_check(
+            &mut checks,
+            &format!("status-outcome-{id}"),
+            status.contains(&format!("last_outcome {id}:")),
+            format!("status lists last_outcome {id}"),
+        );
+    }
+    let pid_count = count_pidfiles(&state_dir);
+    push_check(
+        &mut checks,
+        "one-pidfile",
+        pid_count <= 1,
+        format!("pidfiles={pid_count}"),
     );
     push_check(
         &mut checks,
@@ -179,11 +229,41 @@ pub(crate) fn cmd_routine_runner_prove(
         push_ok(&mut checks, "runner-stop", "stopped");
     }
 
-    if let Err(err) = force_due(&state_dir, routine_id) {
-        push_fail(&mut checks, "reuse-force-due", err.to_string());
+    let mut bad = ids.clone();
+    bad.push("missing-routine".into());
+    match routine_runner::cmd_runner_start(watch_args(&bad, estate_path, &state_dir, 1)) {
+        Err(err) => {
+            let text = err.to_string();
+            push_check(
+                &mut checks,
+                "partial-start-refuse",
+                text.contains("refuse:runner-routine-unknown") && text.contains("missing-routine"),
+                text,
+            );
+        }
+        Ok(()) => {
+            let _ = routine_runner::cmd_runner_stop(&state_dir, Some("default"));
+            push_fail(
+                &mut checks,
+                "partial-start-refuse",
+                "partial start succeeded",
+            );
+        }
+    }
+    push_check(
+        &mut checks,
+        "partial-start-no-pidfile",
+        !routine_runner::pidfile_path(&state_dir, "default").exists(),
+        "no pidfile after partial-start refuse",
+    );
+
+    for id in &ids {
+        if let Err(err) = force_due(&state_dir, id) {
+            push_fail(&mut checks, "reuse-force-due", err.to_string());
+        }
     }
     match crate::ops::cmd_routine_tick(
-        Some(routine_id),
+        &ids,
         None,
         None,
         None,
@@ -195,7 +275,7 @@ pub(crate) fn cmd_routine_runner_prove(
         false,
         false,
     ) {
-        Ok(()) => match inspect_latest_session(&state_dir, routine_id) {
+        Ok(()) => match inspect_latest_session(&state_dir, primary) {
             Ok(sid) => {
                 reused_session_id = sid.clone();
                 push_check(
@@ -221,11 +301,13 @@ pub(crate) fn cmd_routine_runner_prove(
             push_ok(&mut checks, "session-end", session_id.clone());
         }
     }
-    if let Err(err) = force_due(&state_dir, routine_id) {
-        push_fail(&mut checks, "fresh-force-due", err.to_string());
+    for id in &ids {
+        if let Err(err) = force_due(&state_dir, id) {
+            push_fail(&mut checks, "fresh-force-due", err.to_string());
+        }
     }
     match crate::ops::cmd_routine_tick(
-        Some(routine_id),
+        &ids,
         None,
         None,
         None,
@@ -237,7 +319,7 @@ pub(crate) fn cmd_routine_runner_prove(
         false,
         false,
     ) {
-        Ok(()) => match inspect_latest_session(&state_dir, routine_id) {
+        Ok(()) => match inspect_latest_session(&state_dir, primary) {
             Ok(sid) => {
                 fresh_session_id = sid.clone();
                 push_check(
@@ -252,10 +334,10 @@ pub(crate) fn cmd_routine_runner_prove(
         Err(err) => push_fail(&mut checks, "ended-fresh-tick", err.to_string()),
     }
 
-    match routine_runner::cmd_runner_start(watch_args(routine_id, estate_path, &state_dir, 30)) {
+    match routine_runner::cmd_runner_start(watch_args(&ids, estate_path, &state_dir, 30)) {
         Ok(()) => {
             let second = routine_runner::cmd_runner_start(watch_args(
-                routine_id,
+                &ids,
                 estate_path,
                 &state_dir,
                 30,
@@ -282,11 +364,11 @@ pub(crate) fn cmd_routine_runner_prove(
     }
 
     restore_interval(prev_interval.as_deref());
-    finish(routine_id, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks)
+    finish(&ids, &session_id, &reused_session_id, &fresh_session_id, &state_dir, checks)
 }
 
 fn finish(
-    routine_id: &str,
+    routine_ids: &[String],
     session_id: &str,
     reused_session_id: &str,
     fresh_session_id: &str,
@@ -296,7 +378,7 @@ fn finish(
     let ok = checks.iter().all(|c| c.ok);
     let report = ProveReport {
         ok,
-        routine_id: routine_id.to_string(),
+        routine_ids: routine_ids.to_vec(),
         session_id: session_id.to_string(),
         reused_session_id: reused_session_id.to_string(),
         fresh_session_id: fresh_session_id.to_string(),
@@ -311,7 +393,7 @@ fn finish(
 }
 
 fn print_report(report: &ProveReport) {
-    println!("routine runner-prove: {}", report.routine_id);
+    println!("routine runner-prove: {}", report.routine_ids.join(","));
     println!("  ok: {}", if report.ok { "yes" } else { "no" });
     if !report.session_id.is_empty() {
         println!("  session: {}", report.session_id);
@@ -333,14 +415,14 @@ fn print_report(report: &ProveReport) {
 }
 
 fn watch_args(
-    routine_id: &str,
+    routine_ids: &[String],
     estate: &Path,
     state_dir: &Path,
     max_cycles: u32,
 ) -> RunnerWatchArgs {
     RunnerWatchArgs {
         runner_id: "default".into(),
-        routine_id: Some(routine_id.to_string()),
+        routine_ids: routine_ids.to_vec(),
         agent: None,
         prompt: None,
         text: None,
@@ -355,18 +437,36 @@ fn watch_args(
     }
 }
 
-fn wait_for_tick(state_dir: &Path, routine_id: &str) -> bool {
+fn wait_for_tick(state_dir: &Path, routine_ids: &[String]) -> bool {
     let digest_log = routine_runner::digest_log_path(state_dir, "default");
     let start = Instant::now();
     while start.elapsed() < TICK_WAIT {
         if let Ok(text) = std::fs::read_to_string(&digest_log) {
-            if text.contains(routine_id) && text.contains("session_id=") {
+            let named = routine_ids.iter().all(|id| text.contains(id));
+            if named && text.contains("session_id=") {
                 return true;
             }
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     false
+}
+
+fn count_pidfiles(state_dir: &Path) -> usize {
+    let dir = routine_runner::runner_dir(state_dir);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s == "pid")
+                .unwrap_or(false)
+        })
+        .count()
 }
 
 struct HopInspect {
@@ -495,6 +595,6 @@ impl Drop for RunnerGuard {
 }
 
 #[allow(dead_code)]
-pub(crate) fn default_routine() -> &'static str {
-    DEFAULT_ROUTINE
+pub(crate) fn default_routines() -> &'static [&'static str] {
+    DEFAULT_ROUTINES
 }
