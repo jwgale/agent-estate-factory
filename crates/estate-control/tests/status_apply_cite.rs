@@ -389,8 +389,9 @@ fn help_status_names_the_apply_receipt_cite() {
     assert!(shown.contains("refuse:cite"), "{shown}");
     assert!(shown.contains("decisions/improvement-apply.json"), "{shown}");
     assert!(shown.contains("../apply/"), "{shown}");
+    assert!(shown.contains("Status does not claim the applied"), "{shown}");
     assert!(
-        shown.contains("does not claim the applied seat is joinable"),
+        shown.contains("seat is joinable from the receipt alone."),
         "{shown}"
     );
     assert!(!shown.contains("READY_FOR_LIVE_TEST: yes"), "{shown}");
