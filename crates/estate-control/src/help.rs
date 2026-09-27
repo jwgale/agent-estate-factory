@@ -279,6 +279,21 @@ page and does not invent
 Authority rows. A would-deny row does not fail status. Status does not
 write the mesh, the leases, or the estate.
 
+When that state-dir has a local `cell-one.improvement-apply.v0`
+receipt, status cites the same apply-receipt fields
+`estate decisions report`, `estate pack session show`,
+`estate routine digest`, and `estate routine runner status`
+already show — schema, path, proposal id/kind/binding,
+standing/joinable, `require_plan`, `refuse_without_plan`,
+`auto_train`, `train_invoked` — by reading the receipt
+(`cite_or_refuse_nearby_apply_receipt`). Missing or wrong-typed
+lock fields are `refuse:cite` and are not invented. Search is
+local (`decisions/improvement-apply.json`, then
+`{state-dir}/improvement-apply.json`); a sibling `../apply/` is
+not cited. No cite when no local receipt. Standing/joinable are
+the stored receipt values. Status does not claim the applied
+seat is joinable from the receipt alone.
+
 `estate convey authority` prints that same Agents section
 (`describe_agents_section`), then hop coverage cites from
 `hop_coverage_cites`, the same lines doctor and status print, before
@@ -1378,10 +1393,10 @@ missing; local state-dir only) so the closed loop is one operator
 surface. estate pack session show on the crew state-dir cites
 those same receipt fields after the gated apply (copy beside the
 crew journal; no sibling ../apply/ walk).
-Cohesion-prove asserts those two cites. estate routine digest,
-estate routine tick --report, and estate routine runner status
-cite the same receipt when it is local to the state-dir (not
-invoked by cohesion-prove).
+Cohesion-prove asserts those two cites. estate status,
+estate routine digest, estate routine tick --report, and
+estate routine runner status cite the same receipt when it is
+local to the state-dir (not invoked by cohesion-prove).
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
@@ -1409,10 +1424,10 @@ specialty-seat, gated apply, Standing next joinable. Report
 cell-one.improvement-apply-prove.v0 cites the applied proposal
 id/kind, joinable, auto_train=false, and train_invoked=false.
 estate decisions report on that lab cites the apply receipt
-(cell-one.improvement-apply.v0). estate routine digest,
-estate routine tick --report, and estate routine runner status
-cite the same receipt when it is local to the state-dir. It does
-not record a live PASS.
+(cell-one.improvement-apply.v0). estate status, estate routine
+digest, estate routine tick --report, and estate routine runner
+status cite the same receipt when it is local to the state-dir.
+It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:

@@ -759,10 +759,13 @@ Search is local to that state-dir (beside the journal); a sibling
 session show` on the crew state-dir cites those same receipt
 fields (copy beside the crew journal / state; no sibling walk).
 The composed crew-session prove report records that apply cite.
-Cohesion-prove asserts those two cites. `estate routine digest`,
-`estate routine tick --report`, and `estate routine runner status`
-on a state-dir that holds that local receipt cite the same fields;
-cohesion-prove does not invoke those glances.
+Cohesion-prove asserts those two cites. `estate status`,
+`estate routine digest`, `estate routine tick --report`, and
+`estate routine runner status` on a state-dir that holds that
+local receipt cite the same fields; cohesion-prove does not
+invoke those glances. Standing/joinable on those cites are the
+stored receipt values; the page does not claim the applied seat
+is joinable from the receipt alone.
 The closed loop is one operator surface
 without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
@@ -785,6 +788,9 @@ estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
 estate decisions report --state-dir /tmp/cell-one-cohesion/state
 estate pack session show --id sess-cohesion01 \
   --state-dir /tmp/cell-one-cohesion/cli-smoke/crew
+estate status --estate /tmp/cell-one-cohesion/apply/lab-estate.yaml \
+  --state-dir /tmp/cell-one-cohesion/apply/state
+# plus apply receipt: … when a local cell-one.improvement-apply.v0 is present
 ```
 
 ## 4f. Improvement-export prove (standing package, not a train)
@@ -851,10 +857,11 @@ The compact report is `cell-one.improvement-apply-prove.v0`
 id/kind, Standing next joinable, `auto_train=false`, and
 `train_invoked=false`. `estate decisions report` on that lab
 state-dir cites the apply receipt (`cell-one.improvement-apply.v0`)
-with the same fields. `estate routine digest`,
+with the same fields. `estate status`, `estate routine digest`,
 `estate routine tick --report`, and `estate routine runner status`
 cite those same receipt fields when the local copy is on the
-state-dir. The command ends with
+state-dir. Standing/joinable on those cites are the stored
+receipt values. The command ends with
 `improvement-apply-prove: ok` and `READY_FOR_LIVE_TEST: no`. Locked
 `examples/estate.yaml` stays cksum `43770130 3391`. Not in make
 smoke, make gate-90, or GitHub Actions. This is not a live PASS.

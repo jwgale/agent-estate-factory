@@ -203,7 +203,19 @@ pub(crate) enum Command {
     /// succeed with Authority omitted. That diverges from `estate convey
     /// authority`, from `estate leases` and `estate convey sync`, and from
     /// `estate audits` and `estate history`. Does not write. Does not spawn.
-    /// Examples: `estate help status`
+    /// When `{state-dir}` has a local `cell-one.improvement-apply.v0`
+    /// receipt, the page cites the same lock fields as
+    /// `estate decisions report` / `estate pack session show` /
+    /// `estate routine digest` / `estate routine runner status`
+    /// (schema, path, proposal id/kind/binding, standing/joinable,
+    /// `require_plan`, `refuse_without_plan`, `auto_train`,
+    /// `train_invoked`) by reading the receipt. Missing or wrong-typed
+    /// lock fields are `refuse:cite`. No cite when no local receipt.
+    /// Discovery is local (`decisions/improvement-apply.json`, then
+    /// `{state-dir}/improvement-apply.json`); a sibling `../apply/` is
+    /// not cited. Standing/joinable are the stored receipt values —
+    /// this page does not claim the applied seat is joinable from the
+    /// receipt alone. Examples: `estate help status`
     Status {
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
