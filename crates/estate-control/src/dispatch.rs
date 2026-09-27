@@ -321,6 +321,17 @@ pub(crate) fn run() -> Result<()> {
                 &id,
                 &estate,
             ),
+            PackCommand::CrewSessionProve {
+                root,
+                out,
+                id,
+                estate,
+            } => crate::crew_session_prove::cmd_crew_session_prove(
+                &root,
+                out.as_deref(),
+                &id,
+                &estate,
+            ),
             PackCommand::McpServe {
                 estate,
                 pack,

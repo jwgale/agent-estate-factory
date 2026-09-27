@@ -1353,11 +1353,12 @@ import-trained AG News / rust_idiom GGUF artifacts are present they
 land as named seats (ag_news, rust_idiom) beside local_slm and
 complete --mock names those seats. When absent the stage is
 skipped:gguf-absent and the prove stays ok. Then estate pack
-plugin-install-local for research-crew on
+crew-session-prove: plugin-install-local for research-crew on
 examples/fixtures/agent-pack-handoff.yaml under a throwaway HOME,
-then CLI smoke: estate complete --mock as horizon (decision receipt,
-outcome allow, result names the specialty seat) and as research
-(refuse:pack-orchestrator). Report cell-one.cohesion-prove.v0.
+then multi-hop CLI crew session smoke. Successive estate complete
+--mock hops share one session_id: hop 1 context=none, hop 2
+context=applied and cites hop 1; research stays
+refuse:pack-orchestrator. Report cell-one.cohesion-prove.v0.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.

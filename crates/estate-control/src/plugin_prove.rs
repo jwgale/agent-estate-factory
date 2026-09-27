@@ -586,6 +586,10 @@ pub(crate) fn assert_install_md(path: &Path) -> Result<()> {
         "Cursor MCP loader hang is out of scope",
         "cohesion-prove",
         "outcome: allow",
+        "--session",
+        "context=applied",
+        "unique-hop-alpha-token",
+        "same session_id",
     ] {
         if !text.contains(needle) {
             bail!("refuse:plugin-prove-install: INSTALL.md missing '{needle}'");

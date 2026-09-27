@@ -354,13 +354,22 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "{install}"
     );
     assert!(install.contains("cohesion-prove"), "{install}");
+    assert!(install.contains("crew-session-prove"), "{install}");
     assert!(install.contains("outcome: allow"), "{install}");
+    assert!(install.contains("--session"), "{install}");
+    assert!(install.contains("context=applied"), "{install}");
+    assert!(install.contains("unique-hop-alpha-token"), "{install}");
+    assert!(install.contains("same session_id"), "{install}");
     assert!(readme.contains("CLI smoke (first-class)"), "{readme}");
     assert!(readme.contains("estate complete --mock"), "{readme}");
     assert!(
         readme.contains("Cursor MCP loader hang is out of scope"),
         "{readme}"
     );
+    assert!(readme.contains("--session"), "{readme}");
+    assert!(readme.contains("context=applied"), "{readme}");
+    assert!(readme.contains("unique-hop-alpha-token"), "{readme}");
+    assert!(readme.contains("same session_id"), "{readme}");
 
     let runner = read(&out.join("RUNNER.md"));
     assert!(runner.contains("# RUNNER"), "{runner}");

@@ -497,7 +497,7 @@ pub(crate) enum Command {
         session_create: bool,
     },
     /// Estate agent packs: list / show / export-plugin / plugin-prove /
-    /// plugin-install-local / cohesion-prove / mcp-serve.
+    /// plugin-install-local / crew-session-prove / cohesion-prove / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1202,12 +1202,40 @@ pub(crate) enum PackCommand {
     /// `skipped:gguf-absent` and the prove stays ok. Then `estate pack
     /// plugin-install-local` for `--id` (default `research-crew`) on the
     /// handoff fixture, with `HOME` set to a directory inside `--out`.
-    /// Then CLI smoke of the baked estate binary: `estate complete --mock`
-    /// as the pack orchestrator (decision receipt, outcome allow) and as
-    /// a member (`refuse:pack-orchestrator`). A Cursor MCP loader hang is
+    /// Then `estate pack crew-session-prove`: throwaway `plugin-install-local`
+    /// plus multi-hop CLI crew session smoke (`estate complete --mock` on
+    /// one `session_id`; hop 2 sees hop 1; research stays
+    /// `refuse:pack-orchestrator`). A Cursor MCP loader hang is
     /// out of scope. Does not rewrite `examples/estate.yaml`.
     /// `READY_FOR_LIVE_TEST` stays no.
     CohesionProve {
+        /// Repository root that holds `examples/estate.yaml` and the fixture.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        /// Refuses `examples/estate.yaml`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Pack to install and smoke. Default `research-crew`.
+        #[arg(long, default_value = "research-crew")]
+        id: String,
+        /// Fixture estate for the pack install and CLI smoke.
+        /// Relative paths are joined to `--root`.
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
+    },
+    /// Multi-hop CLI crew session after throwaway plugin-install-local.
+    ///
+    /// Installs `--id` (default `research-crew`) under a HOME inside
+    /// `--out`, then runs successive `estate complete --mock` hops on
+    /// one `session_id`. Hop 1 journals `context=none`. Hop 2 journals
+    /// `context=applied` and the mock completion cites hop 1. Research
+    /// stays `refuse:pack-orchestrator` (no receipt; session turns stay
+    /// 2). A new session id does not leak. A Cursor MCP loader hang is
+    /// out of scope. Does not rewrite `examples/estate.yaml`.
+    /// `READY_FOR_LIVE_TEST` stays no. Not in make smoke / gate-90 /
+    /// GitHub Actions.
+    CrewSessionProve {
         /// Repository root that holds `examples/estate.yaml` and the fixture.
         #[arg(long, default_value = ".")]
         root: PathBuf,

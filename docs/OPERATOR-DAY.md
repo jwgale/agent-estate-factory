@@ -525,12 +525,14 @@ is outside, or a foreign install would be overwritten. Exported
 `INSTALL.md` documents this same loop.
 
 CLI smoke is first-class in that `INSTALL.md` and in the export
-`README.md`. It runs `estate complete --mock` as the orchestrator
-(decision receipt, outcome allow) and as a member
-(`refuse:pack-orchestrator`). A Cursor MCP loader hang is out of scope.
-`estate pack cohesion-prove` runs the install under a throwaway `HOME`
-and then that CLI smoke. `loaded: skipped:loader-unavailable` is not a
-live PASS.
+`README.md`. It runs successive `estate complete --mock` hops on one
+`--session` / same `session_id`: hop 1 as the orchestrator (decision
+receipt, outcome allow, `context=none`), hop 2 cites hop 1
+(`context=applied`), and a member stays `refuse:pack-orchestrator`.
+A Cursor MCP loader hang is out of scope. `estate pack cohesion-prove`
+and `estate pack crew-session-prove` run the install under a throwaway
+`HOME` and then that multi-hop CLI crew session. `loaded:
+skipped:loader-unavailable` is not a live PASS.
 
 ```bash
 estate pack plugin-install-local --id research-crew \
@@ -640,9 +642,10 @@ estate control-plane-prove --root . --out /tmp/cell-one-control-plane
 ## 4e. Cohesion prove (one lab, not a train)
 
 `estate pack cohesion-prove` is the feelable fuel → decide → run →
-specialty-real → pack loop on one throwaway directory. It composes
-`estate control-plane-prove` (section 4d), then an optional specialty-real
-bind, then pack install plus CLI smoke. When import-trained AG News /
+specialty-real → pack install → multi-hop CLI crew session loop on one
+throwaway directory. It composes `estate control-plane-prove` (section
+4d), then an optional specialty-real bind, then
+`estate pack crew-session-prove`. When import-trained AG News /
 rust_idiom GGUF artifacts are present on the machine they bind as named
 specialty seats (`ag_news`, `rust_idiom`) beside `local_slm` and
 `complete --mock` names those seats (not generic `local_slm`). When
@@ -655,37 +658,60 @@ on that fixture. `HOME` for the install is `<out>/home`, so the copy
 lands at `<out>/home/.cursor/plugins/local/research-crew` as a real
 directory. The operator's own home is left alone.
 
-CLI smoke is first-class. The baked estate binary from the install
-marker runs:
+Multi-hop CLI crew session smoke is first-class. The baked estate
+binary from the install marker creates one pack-scoped `session_id`
+and runs successive `estate complete --mock` hops:
 
 ```bash
-estate complete --mock --agent horizon --pack research-crew \
+estate pack session create --pack research-crew \
   --estate examples/fixtures/agent-pack-handoff.yaml \
-  --state-dir <throwaway> --prompt ping
+  --state-dir <throwaway> --id sess-cohesion01
+
+estate complete --mock --agent horizon --pack research-crew \
+  --session sess-cohesion01 \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir <throwaway> --prompt unique-hop-alpha-token
+
+estate complete --mock --agent horizon --pack research-crew \
+  --session sess-cohesion01 \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir <throwaway> --prompt "follow-up that should see prior turn"
 ```
 
-Horizon exits 0. Stdout includes `decision receipt:`. The journal row
-is `outcome` allow, `surface` complete, capability `ag_news`, result
+Hop 1 exits 0. Stdout includes `decision receipt:` and
+`session=sess-cohesion01 turns=1 context=none`. The journal row is
+`outcome` allow, `surface` complete, capability `ag_news`, result
 `ag_news` (the named specialty seat, not generic `local_slm`).
+
+Hop 2 uses the same `session_id`. Stdout includes
+`turns=2 context=applied`. The mock completion cites
+`unique-hop-alpha-token`. `estate pack session show` and
+`estate decisions report --pack` cite that session.
 
 ```bash
 estate complete --mock --agent research --pack research-crew \
+  --session sess-cohesion01 \
   --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir <throwaway> --prompt ping
 ```
 
 Research exits non-zero with `refuse:pack-orchestrator` and writes no
-receipt. A Cursor MCP loader hang is out of scope. The report records
+extra receipt. Session turns stay 2. A fresh session id does not leak
+hop 1. A Cursor MCP loader hang is out of scope. The report records
 `cursor_loader: out-of-scope` and `loader_is_live_pass: false`.
 
 The compact report is `cell-one.cohesion-prove.v0` (`cohesion-prove.json`).
-`ok` is true only when fuel, decide, run, install, and CLI smoke all
-pass. Specialty-real may be `skipped:gguf-absent` and still counts as
-ok. `ready_for_live_test` and `live_pass_recorded` stay false.
-`live_sync` stays false. The command ends with `cohesion-prove: ok` and
-`READY_FOR_LIVE_TEST: no`. In-process mock. No network. No Ollama. No
-GPU train. This is not a live PASS. `--out` that is `examples/estate.yaml`
-is `refuse:out`.
+`ok` is true only when fuel, decide, run, install, and multi-hop CLI
+crew session smoke all pass. Specialty-real may be `skipped:gguf-absent`
+and still counts as ok. `ready_for_live_test` and `live_pass_recorded`
+stay false. `live_sync` stays false. The command ends with
+`cohesion-prove: ok` and `READY_FOR_LIVE_TEST: no`. In-process mock.
+No network. No Ollama. No GPU train. This is not a live PASS. `--out`
+that is `examples/estate.yaml` is `refuse:out`. Sibling prove:
+
+```bash
+estate pack crew-session-prove --root . --out /tmp/cell-one-crew-session
+```
 
 ```bash
 estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion

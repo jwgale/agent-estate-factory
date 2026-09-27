@@ -1,5 +1,5 @@
 //! `estate pack cohesion-prove` — one throwaway lab for fuel, decide, run,
-//! specialty-real seats, and pack CLI smoke.
+//! specialty-real seats, pack install, and multi-hop CLI crew session smoke.
 //!
 //! Composes `estate control-plane-prove` (dual import-trained bind,
 //! host-validate authorize / convey / complete --mock, `standing-dual`
@@ -7,30 +7,25 @@
 //! AG News / rust_idiom GGUF artifacts are present, they land as named
 //! seats (`ag_news`, `rust_idiom`) beside `local_slm` and `complete --mock`
 //! names those seats. When absent, the stage is skipped with a reason and
-//! the prove stays ok. Then `estate pack plugin-install-local` under a
-//! throwaway `HOME`, then CLI smoke of the baked estate binary:
-//! `estate complete --mock` as the pack orchestrator (decision receipt,
-//! outcome allow) and as a member (`refuse:pack-orchestrator`).
-//! A Cursor MCP loader hang is out of scope. Does not rewrite
-//! `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+//! the prove stays ok. Then `estate pack crew-session-prove`: throwaway
+//! `plugin-install-local` plus successive `estate complete --mock` hops
+//! on one `session_id` (hop 2 sees hop 1; research stays
+//! `refuse:pack-orchestrator`). A Cursor MCP loader hang is out of scope.
+//! Does not rewrite `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::process::Command;
 
 use crate::control_plane_prove;
-use crate::pack_mcp;
-use crate::plugin_install::{self, MARKER_FILE};
+use crate::crew_session_prove;
 use crate::specialty_bind;
 
 const LOCKED_CKSUM: &str = "43770130 3391";
 const PROVE_SCHEMA: &str = "cell-one.cohesion-prove.v0";
 const CONTROL_SCHEMA: &str = "cell-one.control-plane-prove.v0";
-const DEFAULT_PACK: &str = "research-crew";
-const SMOKE_LIMIT: Duration = Duration::from_secs(60);
 const SKIP_GGUF_ABSENT: &str = "skipped:gguf-absent";
 const BINDING_AG: &str = "ag_news";
 const BINDING_RUST: &str = "rust_idiom";
@@ -96,25 +91,16 @@ pub(crate) fn cmd_cohesion_prove(
     }
 
     println!("cohesion-prove: pack");
-    let home = out.join("home");
-    fs::create_dir_all(&home).with_context(|| format!("refuse:home: {}", home.display()))?;
-    let export_out = out.join("plugin-export");
-    let install = install_under_home(pack_id, &fixture, &export_out, &home)?;
-    if fs::read(&locked)? != before || fs::read(&fixture)? != fixture_before {
-        bail!("refuse:estate: pack install rewrote a source estate");
-    }
-
     println!("cohesion-prove: cli-smoke");
-    let smoke_dir = out.join("cli-smoke");
-    fs::create_dir_all(&smoke_dir)?;
-    let smoke = cli_smoke(pack_id, &fixture, &install, &smoke_dir, &home)?;
+    let pack_stage = crew_session_prove::run_pack_stage(pack_id, &fixture, &out)?;
     if fs::read(&locked)? != before || fs::read(&fixture)? != fixture_before {
-        bail!("refuse:estate: cli smoke rewrote a source estate");
+        bail!("refuse:estate: pack install or crew session rewrote a source estate");
     }
     let cksum_after = file_cksum(&locked)?;
     if cksum_after != cksum_before {
         bail!("refuse:estate: examples/estate.yaml cksum changed to {cksum_after}");
     }
+    crew_session_prove::write_composed_report(pack_id, &fixture, &out, &pack_stage, &cksum_after)?;
 
     let body = json!({
         "schema": PROVE_SCHEMA,
@@ -129,26 +115,8 @@ pub(crate) fn cmd_cohesion_prove(
         "decide": control["decide"].clone(),
         "run": control["run"].clone(),
         "specialty_real": specialty_real,
-        "pack": {
-            "id": pack_id,
-            "fixture": fixture.display().to_string(),
-            "home": home.display().to_string(),
-            "export_out": export_out.display().to_string(),
-            "install_path": install.install_path.display().to_string(),
-            "plugin_name": install.plugin_name,
-            "install_schema": plugin_install::INSTALL_SCHEMA,
-            "skills": install.skills,
-            "mcp_servers": install.mcp_servers,
-            "runner_docs": install.runner_docs,
-            "session_docs": install.session_docs,
-            "loaded": install.loaded,
-            "cursor_loader": "out-of-scope",
-            "loader_is_live_pass": false,
-            "cli_smoke_docs": install.cli_smoke_docs,
-            "estate_bin": install.estate_bin,
-            "cli_smoke": smoke,
-        },
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, pack plugin-install-local, and CLI smoke. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "pack": crew_session_prove::pack_report(pack_id, &fixture, &out, &pack_stage),
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session). Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -166,308 +134,6 @@ pub(crate) fn cmd_cohesion_prove(
     println!("cohesion-prove: ok");
     println!("READY_FOR_LIVE_TEST: no");
     Ok(())
-}
-
-struct InstallFacts {
-    install_path: PathBuf,
-    plugin_name: String,
-    skills: Value,
-    mcp_servers: Value,
-    runner_docs: String,
-    session_docs: String,
-    loaded: String,
-    estate_bin: String,
-    cli_smoke_docs: bool,
-}
-
-fn install_under_home(pack_id: &str, fixture: &Path, export_out: &Path, home: &Path) -> Result<InstallFacts> {
-    let _home = EnvSwap::set("HOME", home.as_os_str());
-    let _loader = EnvSwap::remove("CELL_CURSOR_PLUGINS_MODULE");
-    plugin_install::cmd_pack_plugin_install_local(
-        pack_id,
-        Some(export_out),
-        None,
-        fixture,
-        "ping",
-        None,
-        false,
-        false,
-    )?;
-    drop(_loader);
-    drop(_home);
-
-    let plugin = read_json(&export_out.join("plugin.json"))?;
-    let plugin_name = plugin
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or(pack_id)
-        .to_string();
-    let dest = home
-        .join(".cursor")
-        .join("plugins")
-        .join("local")
-        .join(&plugin_name);
-    let dest_c = dest
-        .canonicalize()
-        .with_context(|| format!("refuse:plugin-install: {}", dest.display()))?;
-    let home_c = home.canonicalize()?;
-    if !dest_c.starts_with(&home_c) {
-        bail!("refuse:plugin-install: install escaped the throwaway HOME");
-    }
-    if dest.symlink_metadata()?.file_type().is_symlink() {
-        bail!("refuse:plugin-install-symlink: cohesion install must be a real directory");
-    }
-    let marker = read_json(&dest.join(MARKER_FILE))?;
-    if marker.get("schema").and_then(Value::as_str) != Some(plugin_install::INSTALL_SCHEMA) {
-        bail!("refuse:plugin-install: marker schema");
-    }
-    if marker.get("pack_id").and_then(Value::as_str) != Some(pack_id) {
-        bail!("refuse:plugin-install: marker pack_id");
-    }
-    if marker.get("live_sync") != Some(&Value::Bool(false))
-        || marker.get("ready_for_live_test") == Some(&Value::Bool(true))
-    {
-        bail!("refuse:plugin-install: marker invented a live sync or live PASS");
-    }
-    let install_md = fs::read_to_string(dest.join("INSTALL.md"))
-        .with_context(|| format!("refuse:cli-smoke: read {}", dest.join("INSTALL.md").display()))?;
-    let cli_smoke_docs = install_mentions_cli_smoke(&install_md);
-    if !cli_smoke_docs {
-        bail!("refuse:cli-smoke: INSTALL.md does not document CLI smoke as first-class");
-    }
-    let readme = fs::read_to_string(dest.join("README.md")).unwrap_or_default();
-    if !install_mentions_cli_smoke(&readme) {
-        bail!("refuse:cli-smoke: README.md does not document CLI smoke as first-class");
-    }
-    let estate_bin = marker
-        .get("estate_bin")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if !Path::new(&estate_bin).is_absolute() || !Path::new(&estate_bin).is_file() {
-        bail!("refuse:cli-smoke: installed estate_bin is not an absolute file");
-    }
-    println!(
-        "pack install: {} loaded={}",
-        dest.display(),
-        marker.get("loaded").and_then(Value::as_str).unwrap_or("-")
-    );
-    Ok(InstallFacts {
-        install_path: dest,
-        plugin_name,
-        skills: marker.get("skills").cloned().unwrap_or(json!([])),
-        mcp_servers: marker.get("mcp_servers").cloned().unwrap_or(json!([])),
-        runner_docs: marker
-            .get("runner_docs")
-            .and_then(Value::as_str)
-            .unwrap_or("no")
-            .to_string(),
-        session_docs: marker
-            .get("session_docs")
-            .and_then(Value::as_str)
-            .unwrap_or("no")
-            .to_string(),
-        loaded: marker
-            .get("loaded")
-            .and_then(Value::as_str)
-            .unwrap_or("skipped:loader-unavailable")
-            .to_string(),
-        estate_bin,
-        cli_smoke_docs,
-    })
-}
-
-fn install_mentions_cli_smoke(text: &str) -> bool {
-    text.contains("CLI smoke (first-class)")
-        && text.contains("estate complete --mock")
-        && text.contains("Cursor MCP loader hang is out of scope")
-        && text.contains("refuse:pack-orchestrator")
-        && text.contains("READY_FOR_LIVE_TEST: no")
-        && !text.contains("READY_FOR_LIVE_TEST: yes")
-}
-
-fn cli_smoke(
-    pack_id: &str,
-    fixture: &Path,
-    install: &InstallFacts,
-    smoke_dir: &Path,
-    home: &Path,
-) -> Result<Value> {
-    let estate = estate_schema::load_estate(fixture)
-        .with_context(|| format!("refuse:estate: load {}", fixture.display()))?;
-    let pack = estate.pack(pack_id).ok_or_else(|| {
-        anyhow::anyhow!("refuse:unknown-pack: pack '{pack_id}' not on estate")
-    })?;
-    let orchestrator = pack.orchestrator.clone().ok_or_else(|| {
-        anyhow::anyhow!("refuse:cli-smoke: pack '{pack_id}' has no orchestrator")
-    })?;
-    let member = pack
-        .members
-        .iter()
-        .find(|name| {
-            estate_schema::normalize_name(name) != estate_schema::normalize_name(&orchestrator)
-        })
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("refuse:cli-smoke: pack '{pack_id}' has no member"))?;
-    if pack_id == DEFAULT_PACK && (orchestrator != "horizon" || member != "research") {
-        bail!(
-            "refuse:cli-smoke: research-crew agents are {orchestrator} and {member}"
-        );
-    }
-
-    let bin = PathBuf::from(&install.estate_bin);
-    let horizon_state = smoke_dir.join("horizon");
-    fs::create_dir_all(&horizon_state)?;
-    let (ok, stdout, stderr) = run_complete(
-        &bin,
-        &orchestrator,
-        pack_id,
-        fixture,
-        &horizon_state,
-        home,
-    )?;
-    if !ok {
-        bail!(
-            "refuse:cli-smoke: {orchestrator} complete failed\n{stderr}\n{stdout}"
-        );
-    }
-    if !stdout.contains("decision receipt:") {
-        bail!("refuse:cli-smoke: {orchestrator} stdout has no decision receipt\n{stdout}");
-    }
-    let receipt = load_one_receipt(&horizon_state)?;
-    if receipt.get("outcome").and_then(Value::as_str) != Some("allow") {
-        bail!("refuse:cli-smoke: {orchestrator} outcome is not allow");
-    }
-    if receipt.get("surface").and_then(Value::as_str) != Some("complete") {
-        bail!("refuse:cli-smoke: {orchestrator} surface is not complete");
-    }
-    if receipt.get("pack_id").and_then(Value::as_str) != Some(pack_id) {
-        bail!("refuse:cli-smoke: {orchestrator} pack_id");
-    }
-    if receipt.get("handoff_from").and_then(Value::as_str) != Some(orchestrator.as_str()) {
-        bail!("refuse:cli-smoke: {orchestrator} handoff_from");
-    }
-    let capability = receipt
-        .get("capability")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if pack_id == DEFAULT_PACK && capability != "ag_news" {
-        bail!("refuse:cli-smoke: horizon capability is {capability}");
-    }
-    if capability.is_empty() {
-        bail!("refuse:cli-smoke: orchestrator receipt has no capability");
-    }
-    let result_seat = receipt
-        .get("result")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if result_seat.is_empty() {
-        bail!("refuse:cli-smoke: orchestrator receipt has no result seat");
-    }
-    if result_seat == "local_slm" {
-        bail!("refuse:cli-smoke: orchestrator complete named generic local_slm");
-    }
-    if pack_id == DEFAULT_PACK && result_seat != "ag_news" {
-        bail!("refuse:cli-smoke: horizon result is {result_seat}");
-    }
-    println!(
-        "cli-smoke {orchestrator}: decision receipt outcome=allow surface=complete pack={pack_id} capability={capability} result={result_seat}"
-    );
-
-    let member_state = smoke_dir.join("member");
-    fs::create_dir_all(&member_state)?;
-    let (ok, stdout, stderr) =
-        run_complete(&bin, &member, pack_id, fixture, &member_state, home)?;
-    let combined = format!("{stdout}{stderr}");
-    if ok || !combined.contains("refuse:pack-orchestrator") {
-        bail!(
-            "refuse:cli-smoke: {member} did not fail closed with refuse:pack-orchestrator\n{combined}"
-        );
-    }
-    let journal = member_state.join("decisions").join("receipts.jsonl");
-    if journal.is_file() {
-        bail!("refuse:cli-smoke: {member} wrote a receipt on pack-orchestrator refuse");
-    }
-    println!("cli-smoke {member}: refuse:pack-orchestrator");
-
-    Ok(json!({
-        "command": "estate complete --mock",
-        "orchestrator": {
-            "agent": orchestrator,
-            "ok": true,
-            "outcome": "allow",
-            "surface": "complete",
-            "pack_id": pack_id,
-            "capability": capability,
-            "result": receipt.get("result").and_then(Value::as_str).unwrap_or(""),
-            "handoff_from": receipt.get("handoff_from").and_then(Value::as_str).unwrap_or(""),
-            "handoff_to": receipt.get("handoff_to").and_then(Value::as_str).unwrap_or(""),
-            "receipt": true,
-        },
-        "member": {
-            "agent": member,
-            "ok": true,
-            "refuse": "refuse:pack-orchestrator",
-            "receipt_written": false,
-        },
-    }))
-}
-
-fn run_complete(
-    bin: &Path,
-    agent: &str,
-    pack_id: &str,
-    fixture: &Path,
-    state: &Path,
-    home: &Path,
-) -> Result<(bool, String, String)> {
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "complete",
-        "--mock",
-        "--agent",
-        agent,
-        "--pack",
-        pack_id,
-        "--estate",
-        &fixture.display().to_string(),
-        "--state-dir",
-        &state.display().to_string(),
-        "--prompt",
-        "ping",
-    ])
-    .env("HOME", home)
-    .env_remove("XAI_API_KEY")
-    .env_remove("CELL_LOCAL_ENDPOINT")
-    .env_remove("CELL_LOCAL_LIVE")
-    .env_remove("CELL_FRONTIER_ENDPOINT")
-    .env_remove("CELL_FRONTIER_MODEL")
-    .stdin(Stdio::null());
-    match pack_mcp::run_command_with_timeout(&mut cmd, SMOKE_LIMIT) {
-        Ok(cap) if cap.timed_out => {
-            bail!("refuse:cli-smoke: estate complete --mock exceeded 60s")
-        }
-        Ok(cap) => Ok((cap.success, cap.stdout, cap.stderr)),
-        Err(err) => bail!("refuse:cli-smoke: {err}"),
-    }
-}
-
-fn load_one_receipt(state: &Path) -> Result<Value> {
-    let path = state.join("decisions").join("receipts.jsonl");
-    let text = fs::read_to_string(&path)
-        .with_context(|| format!("refuse:cli-smoke: read {}", path.display()))?;
-    let rows: Vec<Value> = text
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(serde_json::from_str)
-        .collect::<std::result::Result<_, _>>()
-        .context("refuse:cli-smoke: parse receipt")?;
-    if rows.len() != 1 {
-        bail!("refuse:cli-smoke: want 1 receipt, got {}", rows.len());
-    }
-    Ok(rows.into_iter().next().unwrap())
 }
 
 fn specialty_real_stage(root: &Path, out: &Path) -> Result<Value> {
@@ -846,32 +512,4 @@ fn default_out() -> PathBuf {
         token = token.replace(needle, "0000");
     }
     std::env::temp_dir().join(format!("cell-one-cohesion-{token}"))
-}
-
-struct EnvSwap {
-    key: &'static str,
-    prev: Option<std::ffi::OsString>,
-}
-
-impl EnvSwap {
-    fn set(key: &'static str, value: &std::ffi::OsStr) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, prev }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::remove_var(key);
-        Self { key, prev }
-    }
-}
-
-impl Drop for EnvSwap {
-    fn drop(&mut self) {
-        match self.prev.take() {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
 }

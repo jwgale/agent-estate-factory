@@ -509,10 +509,14 @@ fn write_readme(
     md.push_str("Local directory install: `estate pack plugin-install-local`\n");
     md.push_str("copies the proved export into `~/.cursor/plugins/local/<plugin-name>`\n");
     md.push_str("and writes `.estate-pack-install.json`. Does not claim Cursor Customize loaded the plugin.\n");
-    md.push_str("CLI smoke (first-class) is `estate complete --mock` as the\n");
-    md.push_str("orchestrator (decision receipt, outcome allow) and as a member\n");
-    md.push_str("(`refuse:pack-orchestrator`). `estate pack cohesion-prove` runs\n");
-    md.push_str("that smoke. A Cursor MCP loader hang is out of scope.\n");
+    md.push_str("CLI smoke (first-class) is successive `estate complete --mock`\n");
+    md.push_str("hops on one `--session` / same session_id: hop 1 decision\n");
+    md.push_str("receipt (`outcome: allow`, `context=none`, prompt\n");
+    md.push_str("`unique-hop-alpha-token`), hop 2 cites hop 1\n");
+    md.push_str("(`context=applied`), member stays `refuse:pack-orchestrator`.\n");
+    md.push_str("`estate pack cohesion-prove` / `estate pack crew-session-prove`\n");
+    md.push_str("run that smoke after throwaway `plugin-install-local`.\n");
+    md.push_str("A Cursor MCP loader hang is out of scope.\n");
     md.push_str("`READY_FOR_LIVE_TEST: no`.\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
@@ -542,31 +546,47 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          \n\
          ## 1b. CLI smoke (first-class)\n\
          \n\
-         This gate runs `estate complete --mock` on the estate binary baked\n\
-         into `mcp.json` (`command`). It does not start Cursor and it does\n\
+         This gate runs successive `estate complete --mock` hops on one\n\
+         `--session` / same session_id. The estate binary is baked into\n\
+         `mcp.json` (`command`). It does not start Cursor and it does\n\
          not call `loadUserLocalPlugins`. A Cursor MCP loader hang is out of scope.\n\
          Do not treat that hang, or `loaded: skipped:loader-unavailable`, as a\n\
          live PASS.\n\
          \n\
-         Orchestrator `{caller}` (decision receipt, outcome allow):\n\
+         Create the crew session, then hop 1 as orchestrator `{caller}`\n\
+         (`context=none`, decision receipt, `outcome: allow`):\n\
          \n\
-             estate complete --mock --agent {caller} --pack {pack} \\\n\
-               --estate <estate.yaml> --state-dir <throwaway> --prompt ping\n\
+             estate pack session create --pack {pack} \\\n\
+               --estate <estate.yaml> --state-dir <throwaway> --id sess-cohesion01\n\
          \n\
-         Expected: exit 0. Stdout includes `decision receipt:`. The journal\n\
-         row is `schema: cell-one.decision-receipt.v0`, `surface: complete`,\n\
+             estate complete --mock --agent {caller} --pack {pack} --session sess-cohesion01 \\\n\
+               --estate <estate.yaml> --state-dir <throwaway> --prompt unique-hop-alpha-token\n\
+         \n\
+         Hop 2 on the same session_id (`context=applied`; mock completion\n\
+         cites `unique-hop-alpha-token`):\n\
+         \n\
+             estate complete --mock --agent {caller} --pack {pack} --session sess-cohesion01 \\\n\
+               --estate <estate.yaml> --state-dir <throwaway> \\\n\
+               --prompt \"follow-up that should see prior turn\"\n\
+         \n\
+         Expected: exit 0. Stdout includes `decision receipt:` and\n\
+         `session=sess-cohesion01`. Hop 1 journals `turns=1 context=none`.\n\
+         Hop 2 journals `turns=2 context=applied`. The journal rows are\n\
+         `schema: cell-one.decision-receipt.v0`, `surface: complete`,\n\
          `pack_id: {pack}`, `outcome: allow`.\n\
          \n\
-         Member `{member}`:\n\
+         Member `{member}` on the same session_id:\n\
          \n\
-             estate complete --mock --agent {member} --pack {pack} \\\n\
+             estate complete --mock --agent {member} --pack {pack} --session sess-cohesion01 \\\n\
                --estate <estate.yaml> --state-dir <throwaway> --prompt ping\n\
          \n\
-         Expected: exit non-zero and `refuse:pack-orchestrator`. No receipt.\n\
+         Expected: exit non-zero and `refuse:pack-orchestrator`. No extra\n\
+         receipt. Session turns stay 2.\n\
          \n\
-         `estate pack cohesion-prove` runs this smoke after\n\
-         `estate pack plugin-install-local` on a throwaway HOME.\n\
-         `READY_FOR_LIVE_TEST: no`. `live_sync: false`. Not a live PASS.\n\
+         `estate pack cohesion-prove` and `estate pack crew-session-prove`\n\
+         run this smoke after `estate pack plugin-install-local` on a\n\
+         throwaway HOME. `READY_FOR_LIVE_TEST: no`. `live_sync: false`.\n\
+         Not a live PASS.\n\
          \n\
          ## 2. Load `mcp.json` in Cursor\n\
          \n\
@@ -604,10 +624,9 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          Mock / human Cursor smoke only. `live_sync: false`. Not live Grok Bot\n\
          sync. Not a live PASS. No secrets in this file.\n\
          \n\
-         Optional (cheap): pack-scoped session two-hop on `{caller}` with\n\
-         `session` / `session_create` — hop 2 should see hop 1 (`context=applied`).\n\
-         Not required to call this export ready for Cursor smoke. Operator\n\
-         session loop: `SESSION.md`.\n\
+         First-class CLI crew session is section 1b (same session_id,\n\
+         hop 2 `context=applied`). Operator session loop: `SESSION.md`.\n\
+         Cursor MCP two-hop stays optional and does not block this export.\n\
          \n\
          ## 7. Runner + session operator docs\n\
          \n\
@@ -639,8 +658,10 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          `loaded: yes` means `loadUserLocalPlugins` listed this name.\n\
          That line does not claim Cursor Customize loaded the plugin.\n\
          A Cursor MCP loader hang is out of scope. The first-class gate is\n\
-         the CLI smoke in section 1b (`estate complete --mock`), which\n\
-         `estate pack cohesion-prove` runs on a throwaway HOME.\n\
+         the multi-hop CLI crew session in section 1b (`estate complete --mock`\n\
+         on one `--session` / same session_id), which\n\
+         `estate pack cohesion-prove` / `estate pack crew-session-prove`\n\
+         run on a throwaway HOME.\n\
          `READY_FOR_LIVE_TEST: no`. `live_sync: false`. Not a live PASS.\n\
          \n\
              estate pack plugin-install-local --id {pack} \\\n\
@@ -883,9 +904,12 @@ pub(crate) fn session_markdown(pack_id: &str) -> String {
          - `--session` without `--pack` → `refuse:session-requires-pack`\n\
          \n\
          `estate pack plugin-prove` asserts this file is present and non-thin\n\
-         (`session_docs: yes`). The optional cheap MCP two-hop on that prove\n\
-         is reported and does not block. This file does not invent a live\n\
-         Cursor install.\n\
+         (`session_docs: yes`). First-class multi-hop CLI crew session is\n\
+         `estate pack crew-session-prove` / `estate pack cohesion-prove`\n\
+         (same session_id, hop 2 `context=applied`, research\n\
+         `refuse:pack-orchestrator`). The optional cheap MCP two-hop on\n\
+         plugin-prove is reported and does not block. This file does not\n\
+         invent a live Cursor install.\n\
          \n\
          See also: `RUNNER.md` (start / stop / status / digest / runner-prove),\n\
          `INSTALL.md` (Cursor smoke).\n\
