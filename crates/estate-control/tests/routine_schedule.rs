@@ -946,7 +946,7 @@ fn routine_tick_report_mirrors_receipt_lock_fields() {
     assert_locked_cksum();
     let dir = scratch("tick-report-mirror");
     let state = dir.join("state");
-    std::fs::create_dir_all(&state).unwrap();
+    std::fs::create_dir_all(state.join("decisions")).unwrap();
     let estate = fixture().display().to_string();
     let state_s = state.display().to_string();
     std::fs::write(
