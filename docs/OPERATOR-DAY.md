@@ -639,11 +639,16 @@ estate control-plane-prove --root . --out /tmp/cell-one-control-plane
 
 ## 4e. Cohesion prove (one lab, not a train)
 
-`estate pack cohesion-prove` is the feelable fuel → decide → run → pack
-loop on one throwaway directory. It composes `estate control-plane-prove`
-(section 4d) and then pack install plus CLI smoke. It does not rewrite
-`examples/estate.yaml` (cksum `43770130 3391`). It does not rewrite
-`examples/fixtures/agent-pack-handoff.yaml`.
+`estate pack cohesion-prove` is the feelable fuel → decide → run →
+specialty-real → pack loop on one throwaway directory. It composes
+`estate control-plane-prove` (section 4d), then an optional specialty-real
+bind, then pack install plus CLI smoke. When import-trained AG News /
+rust_idiom GGUF artifacts are present on the machine they bind as named
+specialty seats (`ag_news`, `rust_idiom`) beside `local_slm` and
+`complete --mock` names those seats (not generic `local_slm`). When
+absent the stage is `skipped:gguf-absent` and the prove stays ok. It
+does not rewrite `examples/estate.yaml` (cksum `43770130 3391`). It does
+not rewrite `examples/fixtures/agent-pack-handoff.yaml`.
 
 Pack install is `estate pack plugin-install-local` for `research-crew`
 on that fixture. `HOME` for the install is `<out>/home`, so the copy
@@ -660,7 +665,8 @@ estate complete --mock --agent horizon --pack research-crew \
 ```
 
 Horizon exits 0. Stdout includes `decision receipt:`. The journal row
-is `outcome` allow, `surface` complete, capability `ag_news`.
+is `outcome` allow, `surface` complete, capability `ag_news`, result
+`ag_news` (the named specialty seat, not generic `local_slm`).
 
 ```bash
 estate complete --mock --agent research --pack research-crew \
@@ -674,7 +680,8 @@ receipt. A Cursor MCP loader hang is out of scope. The report records
 
 The compact report is `cell-one.cohesion-prove.v0` (`cohesion-prove.json`).
 `ok` is true only when fuel, decide, run, install, and CLI smoke all
-pass. `ready_for_live_test` and `live_pass_recorded` stay false.
+pass. Specialty-real may be `skipped:gguf-absent` and still counts as
+ok. `ready_for_live_test` and `live_pass_recorded` stay false.
 `live_sync` stays false. The command ends with `cohesion-prove: ok` and
 `READY_FOR_LIVE_TEST: no`. In-process mock. No network. No Ollama. No
 GPU train. This is not a live PASS. `--out` that is `examples/estate.yaml`

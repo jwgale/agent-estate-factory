@@ -1,10 +1,14 @@
 //! `estate pack cohesion-prove` — one throwaway lab for fuel, decide, run,
-//! and pack CLI smoke.
+//! specialty-real seats, and pack CLI smoke.
 //!
 //! Composes `estate control-plane-prove` (dual import-trained bind,
 //! host-validate authorize / convey / complete --mock, `standing-dual`
-//! runner stitch) with `estate pack plugin-install-local` under a
-//! throwaway `HOME`, then smokes the baked estate binary:
+//! runner stitch) with an optional specialty-real bind: when import-trained
+//! AG News / rust_idiom GGUF artifacts are present, they land as named
+//! seats (`ag_news`, `rust_idiom`) beside `local_slm` and `complete --mock`
+//! names those seats. When absent, the stage is skipped with a reason and
+//! the prove stays ok. Then `estate pack plugin-install-local` under a
+//! throwaway `HOME`, then CLI smoke of the baked estate binary:
 //! `estate complete --mock` as the pack orchestrator (decision receipt,
 //! outcome allow) and as a member (`refuse:pack-orchestrator`).
 //! A Cursor MCP loader hang is out of scope. Does not rewrite
@@ -13,19 +17,26 @@
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::control_plane_prove;
+use crate::pack_mcp;
 use crate::plugin_install::{self, MARKER_FILE};
+use crate::specialty_bind;
 
 const LOCKED_CKSUM: &str = "43770130 3391";
 const PROVE_SCHEMA: &str = "cell-one.cohesion-prove.v0";
 const CONTROL_SCHEMA: &str = "cell-one.control-plane-prove.v0";
 const DEFAULT_PACK: &str = "research-crew";
 const SMOKE_LIMIT: Duration = Duration::from_secs(60);
+const SKIP_GGUF_ABSENT: &str = "skipped:gguf-absent";
+const BINDING_AG: &str = "ag_news";
+const BINDING_RUST: &str = "rust_idiom";
+const ENV_AG_GGUF: &str = "CELL_SPECIALTY_AG_NEWS_GGUF";
+const ENV_RUST_GGUF: &str = "CELL_SPECIALTY_RUST_IDIOM_GGUF";
+const ENV_GGUF_ROOT: &str = "CELL_SPECIALTY_GGUF_ROOT";
 
 pub(crate) fn cmd_cohesion_prove(
     root: &Path,
@@ -78,6 +89,12 @@ pub(crate) fn cmd_cohesion_prove(
     let control: Value = read_json(&out.join("control-plane-prove.json"))?;
     require_control_plane(&control)?;
 
+    println!("cohesion-prove: specialty-real");
+    let specialty_real = specialty_real_stage(&root, &out)?;
+    if fs::read(&locked)? != before {
+        bail!("refuse:estate: specialty-real rewrote examples/estate.yaml");
+    }
+
     println!("cohesion-prove: pack");
     let home = out.join("home");
     fs::create_dir_all(&home).with_context(|| format!("refuse:home: {}", home.display()))?;
@@ -111,6 +128,7 @@ pub(crate) fn cmd_cohesion_prove(
         "fuel": control["fuel"].clone(),
         "decide": control["decide"].clone(),
         "run": control["run"].clone(),
+        "specialty_real": specialty_real,
         "pack": {
             "id": pack_id,
             "fixture": fixture.display().to_string(),
@@ -130,7 +148,7 @@ pub(crate) fn cmd_cohesion_prove(
             "estate_bin": install.estate_bin,
             "cli_smoke": smoke,
         },
-        "note": "Fixture prove. Composes control-plane-prove with pack plugin-install-local and CLI smoke. Mocked GGUFs. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, pack plugin-install-local, and CLI smoke. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -340,8 +358,22 @@ fn cli_smoke(
     if capability.is_empty() {
         bail!("refuse:cli-smoke: orchestrator receipt has no capability");
     }
+    let result_seat = receipt
+        .get("result")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if result_seat.is_empty() {
+        bail!("refuse:cli-smoke: orchestrator receipt has no result seat");
+    }
+    if result_seat == "local_slm" {
+        bail!("refuse:cli-smoke: orchestrator complete named generic local_slm");
+    }
+    if pack_id == DEFAULT_PACK && result_seat != "ag_news" {
+        bail!("refuse:cli-smoke: horizon result is {result_seat}");
+    }
     println!(
-        "cli-smoke {orchestrator}: decision receipt outcome=allow surface=complete pack={pack_id} capability={capability}"
+        "cli-smoke {orchestrator}: decision receipt outcome=allow surface=complete pack={pack_id} capability={capability} result={result_seat}"
     );
 
     let member_state = smoke_dir.join("member");
@@ -369,6 +401,7 @@ fn cli_smoke(
             "surface": "complete",
             "pack_id": pack_id,
             "capability": capability,
+            "result": receipt.get("result").and_then(Value::as_str).unwrap_or(""),
             "handoff_from": receipt.get("handoff_from").and_then(Value::as_str).unwrap_or(""),
             "handoff_to": receipt.get("handoff_to").and_then(Value::as_str).unwrap_or(""),
             "receipt": true,
@@ -411,33 +444,13 @@ fn run_complete(
     .env_remove("CELL_LOCAL_LIVE")
     .env_remove("CELL_FRONTIER_ENDPOINT")
     .env_remove("CELL_FRONTIER_MODEL")
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("refuse:cli-smoke: spawn {}", bin.display()))?;
-    let start = Instant::now();
-    loop {
-        match child.try_wait()? {
-            Some(status) => {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                if let Some(mut out) = child.stdout.take() {
-                    out.read_to_string(&mut stdout)?;
-                }
-                if let Some(mut err) = child.stderr.take() {
-                    err.read_to_string(&mut stderr)?;
-                }
-                return Ok((status.success(), stdout, stderr));
-            }
-            None if start.elapsed() > SMOKE_LIMIT => {
-                let _ = child.kill();
-                let _ = child.wait();
-                bail!("refuse:cli-smoke: estate complete --mock exceeded 60s");
-            }
-            None => std::thread::sleep(Duration::from_millis(20)),
+    .stdin(Stdio::null());
+    match pack_mcp::run_command_with_timeout(&mut cmd, SMOKE_LIMIT) {
+        Ok(cap) if cap.timed_out => {
+            bail!("refuse:cli-smoke: estate complete --mock exceeded 60s")
         }
+        Ok(cap) => Ok((cap.success, cap.stdout, cap.stderr)),
+        Err(err) => bail!("refuse:cli-smoke: {err}"),
     }
 }
 
@@ -455,6 +468,260 @@ fn load_one_receipt(state: &Path) -> Result<Value> {
         bail!("refuse:cli-smoke: want 1 receipt, got {}", rows.len());
     }
     Ok(rows.into_iter().next().unwrap())
+}
+
+fn specialty_real_stage(root: &Path, out: &Path) -> Result<Value> {
+    let found = discover_specialty_ggufs(root)?;
+    let mut seats = serde_json::Map::new();
+    let mut requests = Vec::new();
+    for (binding, path) in [(BINDING_AG, found.ag.as_ref()), (BINDING_RUST, found.rust.as_ref())]
+    {
+        match path {
+            None => {
+                println!("specialty-real {binding}: {SKIP_GGUF_ABSENT}");
+                seats.insert(
+                    binding.to_string(),
+                    json!({
+                        "status": "skipped",
+                        "reason": SKIP_GGUF_ABSENT,
+                        "binding_id": binding,
+                    }),
+                );
+            }
+            Some(gguf) => match specialty_bind::named_seat_request(binding, gguf.clone()) {
+                Some(req) => requests.push(req),
+                None => bail!("refuse:specialty-real: unknown binding {binding}"),
+            },
+        }
+    }
+    if requests.is_empty() {
+        println!("specialty-real: {SKIP_GGUF_ABSENT}");
+        return Ok(json!({
+            "stage": "skipped",
+            "reason": SKIP_GGUF_ABSENT,
+            "ok": true,
+            "ready_for_live_test": false,
+            "live_pass_recorded": false,
+            "seats": seats,
+        }));
+    }
+
+    let lab_out = out.join("specialty-real");
+    let _ = fs::remove_dir_all(&lab_out);
+    fs::create_dir_all(&lab_out)?;
+    let landed = specialty_bind::land_named_specialty_seats(root, &lab_out, &requests)?;
+    for seat in &landed.seats {
+        specialty_bind::mock_complete(
+            &landed.lab,
+            &landed.state,
+            &seat.agent,
+            &format!("ping {} specialty", seat.binding_id),
+        )?;
+        let receipt = last_complete_receipt(&landed.state, &seat.agent)?;
+        let result = receipt
+            .get("result")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let capability = receipt
+            .get("capability")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if result != seat.binding_id || capability != seat.binding_id {
+            bail!(
+                "refuse:specialty-real: {} complete named result={result} capability={capability}",
+                seat.binding_id
+            );
+        }
+        if result == "local_slm" || capability == "local_slm" {
+            bail!("refuse:specialty-real: complete named generic local_slm");
+        }
+        if receipt.get("surface").and_then(Value::as_str) != Some("complete") {
+            bail!("refuse:specialty-real: {} surface is not complete", seat.binding_id);
+        }
+        if receipt.get("outcome").and_then(Value::as_str) != Some("allow") {
+            bail!("refuse:specialty-real: {} outcome is not allow", seat.binding_id);
+        }
+        println!(
+            "specialty-real {}: bound seat={} complete result={} capability={}",
+            seat.binding_id, seat.seat_model, result, capability
+        );
+        seats.insert(
+            seat.binding_id.clone(),
+            json!({
+                "status": "bound",
+                "binding_id": seat.binding_id,
+                "function": seat.function,
+                "seat_model": seat.seat_model,
+                "agent": seat.agent,
+                "gguf": seat.gguf.display().to_string(),
+                "complete": {
+                    "ok": true,
+                    "outcome": "allow",
+                    "surface": "complete",
+                    "result": result,
+                    "capability": capability,
+                },
+            }),
+        );
+    }
+    let bound: Vec<&str> = landed.seats.iter().map(|s| s.binding_id.as_str()).collect();
+    println!("specialty-real: bound {}", bound.join(","));
+    Ok(json!({
+        "stage": "bound",
+        "reason": Value::Null,
+        "ok": true,
+        "ready_for_live_test": false,
+        "live_pass_recorded": false,
+        "lab_estate": landed.lab.display().to_string(),
+        "state_dir": landed.state.display().to_string(),
+        "seats": seats,
+    }))
+}
+
+struct DiscoveredGgufs {
+    ag: Option<PathBuf>,
+    rust: Option<PathBuf>,
+}
+
+fn discover_specialty_ggufs(root: &Path) -> Result<DiscoveredGgufs> {
+    let ag = env_regular_gguf(ENV_AG_GGUF)
+        .or_else(|| scan_binding_gguf(scan_root(root).as_deref(), BINDING_AG));
+    let rust = env_regular_gguf(ENV_RUST_GGUF)
+        .or_else(|| scan_binding_gguf(scan_root(root).as_deref(), BINDING_RUST));
+    Ok(DiscoveredGgufs { ag, rust })
+}
+
+fn scan_root(root: &Path) -> Option<PathBuf> {
+    match std::env::var_os(ENV_GGUF_ROOT) {
+        Some(raw) if !raw.is_empty() => {
+            let path = PathBuf::from(raw);
+            path.is_dir().then_some(path)
+        }
+        _ => {
+            let cell = root.join(".cell");
+            cell.is_dir().then_some(cell)
+        }
+    }
+}
+
+fn env_regular_gguf(key: &str) -> Option<PathBuf> {
+    let raw = std::env::var_os(key)?;
+    if raw.is_empty() {
+        return None;
+    }
+    accept_regular_gguf(&PathBuf::from(raw))
+}
+
+fn scan_binding_gguf(root: Option<&Path>, binding: &str) -> Option<PathBuf> {
+    let root = root?;
+    let mut found = None;
+    let mut stack = vec![(root.to_path_buf(), 0u8)];
+    let mut seen = 0u32;
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 8 || seen > 2000 {
+            break;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(rows) => rows,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > 2000 {
+                break;
+            }
+            let path = entry.path();
+            let meta = match entry.file_type() {
+                Ok(kind) => kind,
+                Err(_) => continue,
+            };
+            if meta.is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if !meta.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if name == "specialty-join.json" {
+                if let Some(gguf) = gguf_from_join(&path, binding) {
+                    found = Some(gguf);
+                }
+                continue;
+            }
+            if name.ends_with(".gguf") && path_mentions_binding(&path, binding) {
+                if let Some(gguf) = accept_regular_gguf(&path) {
+                    found = Some(gguf);
+                }
+            }
+        }
+    }
+    found
+}
+
+fn gguf_from_join(path: &Path, binding: &str) -> Option<PathBuf> {
+    let text = fs::read_to_string(path).ok()?;
+    let row: Value = serde_json::from_str(&text).ok()?;
+    let function = row.get("function").and_then(Value::as_str)?;
+    let binding_id = row.get("binding_id").and_then(Value::as_str).unwrap_or("");
+    if function != binding && binding_id != binding {
+        return None;
+    }
+    let gguf = row.get("gguf").and_then(Value::as_str)?;
+    accept_regular_gguf(Path::new(gguf))
+}
+
+fn path_mentions_binding(path: &Path, binding: &str) -> bool {
+    path.components().any(|part| {
+        part.as_os_str()
+            .to_str()
+            .map(|name| name == binding)
+            .unwrap_or(false)
+    })
+}
+
+fn accept_regular_gguf(path: &Path) -> Option<PathBuf> {
+    let meta = fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return None;
+    }
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !name.ends_with(".gguf") {
+        return None;
+    }
+    path.canonicalize().ok()
+}
+
+fn last_complete_receipt(state: &Path, agent: &str) -> Result<Value> {
+    let path = state.join("decisions").join("receipts.jsonl");
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("refuse:specialty-real: read {}", path.display()))?;
+    let mut last = None;
+    for line in text.lines().filter(|line| !line.is_empty()) {
+        let row: Value = serde_json::from_str(line)
+            .with_context(|| format!("refuse:specialty-real: parse {line}"))?;
+        if row.get("agent").and_then(Value::as_str) == Some(agent)
+            && row.get("surface").and_then(Value::as_str) == Some("complete")
+        {
+            last = Some(row);
+        }
+    }
+    last.ok_or_else(|| {
+        anyhow::anyhow!("refuse:specialty-real: no complete receipt for {agent}")
+    })
 }
 
 fn require_control_plane(cp: &Value) -> Result<()> {

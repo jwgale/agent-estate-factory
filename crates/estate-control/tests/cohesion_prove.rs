@@ -48,6 +48,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     let fixture_cksum = cksum(&fixture);
     let out = scratch("prove");
     let sentinel = scratch("sentinel-home");
+    let no_gguf = scratch("no-gguf");
     let run = bin()
         .args([
             "pack",
@@ -66,6 +67,9 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
         .env_remove("CELL_LOCAL_LIVE")
         .env_remove("XAI_API_KEY")
         .env_remove("CELL_CURSOR_PLUGINS_MODULE")
+        .env_remove("CELL_SPECIALTY_AG_NEWS_GGUF")
+        .env_remove("CELL_SPECIALTY_RUST_IDIOM_GGUF")
+        .env("CELL_SPECIALTY_GGUF_ROOT", no_gguf.to_str().unwrap())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&run.stdout).to_string();
@@ -73,6 +77,8 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     let text = format!("{stdout}{stderr}");
     assert!(run.status.success(), "{text}");
     assert!(stdout.contains("cohesion-prove: control-plane"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: specialty-real"), "{stdout}");
+    assert!(stdout.contains("specialty-real: skipped:gguf-absent"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: pack"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: cli-smoke"), "{stdout}");
     assert!(stdout.contains("joinable: yes"), "{stdout}");
@@ -97,7 +103,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     );
     assert!(stdout.contains("cell-one.control-plane-prove.v0"), "{stdout}");
     assert!(
-        stdout.contains("cli-smoke horizon: decision receipt outcome=allow surface=complete pack=research-crew capability=ag_news"),
+        stdout.contains("cli-smoke horizon: decision receipt outcome=allow surface=complete pack=research-crew capability=ag_news result=ag_news"),
         "{stdout}"
     );
     assert!(
@@ -154,6 +160,24 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert_eq!(
         report["pack"]["cli_smoke"]["orchestrator"]["capability"],
         "ag_news"
+    );
+    assert_eq!(
+        report["pack"]["cli_smoke"]["orchestrator"]["result"],
+        "ag_news"
+    );
+    assert_eq!(report["specialty_real"]["stage"], "skipped");
+    assert_eq!(report["specialty_real"]["reason"], "skipped:gguf-absent");
+    assert_eq!(report["specialty_real"]["ok"], true);
+    assert_eq!(report["specialty_real"]["ready_for_live_test"], false);
+    assert_eq!(report["specialty_real"]["live_pass_recorded"], false);
+    assert_eq!(report["specialty_real"]["seats"]["ag_news"]["status"], "skipped");
+    assert_eq!(
+        report["specialty_real"]["seats"]["ag_news"]["reason"],
+        "skipped:gguf-absent"
+    );
+    assert_eq!(
+        report["specialty_real"]["seats"]["rust_idiom"]["status"],
+        "skipped"
     );
     assert_eq!(
         report["pack"]["cli_smoke"]["orchestrator"]["agent"],
@@ -219,6 +243,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     }
     let _ = fs::remove_dir_all(&out);
     let _ = fs::remove_dir_all(&sentinel);
+    let _ = fs::remove_dir_all(&no_gguf);
 }
 
 #[test]
@@ -282,5 +307,157 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
     assert!(day.contains("## 4e. Cohesion prove"), "{day}");
     assert!(day.contains("refuse:pack-orchestrator"), "{day}");
     assert!(log.contains("cell-one.cohesion-prove.v0"), "{log}");
+    for (name, text) in [
+        ("NORTH-STAR", north.as_str()),
+        ("OPERATOR-DAY", day.as_str()),
+        ("UBIQUITOUS_LANGUAGE", lang.as_str()),
+        ("CHANGELOG", log.as_str()),
+    ] {
+        assert!(
+            text.contains("skipped:gguf-absent"),
+            "{name} missing specialty-real skip"
+        );
+        assert!(
+            text.contains("named specialty") || text.contains("named seats"),
+            "{name} missing named specialty seat cite"
+        );
+    }
+    assert!(log.contains("pack_mcp::run_command_with_timeout"), "{log}");
     assert!(!north.contains("READY_FOR_LIVE_TEST: yes"), "{north}");
+}
+
+#[test]
+fn cohesion_prove_reuses_pack_mcp_timeout_helper() {
+    let src = fs::read_to_string(
+        repo_root().join("crates/estate-control/src/cohesion_prove.rs"),
+    )
+    .unwrap();
+    assert!(
+        src.contains("pack_mcp::run_command_with_timeout"),
+        "run_complete must reuse pack_mcp::run_command_with_timeout"
+    );
+    assert!(
+        !src.contains("child.try_wait"),
+        "run_complete must not use a local try_wait drain loop"
+    );
+    assert!(
+        !src.contains("Stdio::piped"),
+        "run_complete must not open its own piped stdio"
+    );
+}
+
+#[test]
+fn cohesion_prove_binds_planted_specialty_ggufs_as_named_seats() {
+    let before = cksum_locked();
+    assert!(
+        before.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {before}"
+    );
+    let locked_bytes = fs::read(repo_root().join("examples/estate.yaml")).unwrap();
+    let fixture = repo_root().join("examples/fixtures/agent-pack-handoff.yaml");
+    let fixture_bytes = fs::read(&fixture).unwrap();
+    let planted = scratch("planted-gguf");
+    let ag = planted.join("ag_news").join("specialist.Q4_K_M.gguf");
+    let rust = planted.join("rust_idiom").join("specialist.Q4_K_M.gguf");
+    fs::create_dir_all(ag.parent().unwrap()).unwrap();
+    fs::create_dir_all(rust.parent().unwrap()).unwrap();
+    fs::write(&ag, b"GGUF").unwrap();
+    fs::write(&rust, b"GGUF").unwrap();
+    let out = scratch("prove-real");
+    let sentinel = scratch("sentinel-home-real");
+    let run = bin()
+        .args([
+            "pack",
+            "cohesion-prove",
+            "--root",
+            repo_root().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--id",
+            "research-crew",
+            "--estate",
+            "examples/fixtures/agent-pack-handoff.yaml",
+        ])
+        .env("HOME", &sentinel)
+        .env("CELL_SPECIALTY_AG_NEWS_GGUF", &ag)
+        .env("CELL_SPECIALTY_RUST_IDIOM_GGUF", &rust)
+        .env_remove("CELL_SPECIALTY_GGUF_ROOT")
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_LOCAL_LIVE")
+        .env_remove("XAI_API_KEY")
+        .env_remove("CELL_CURSOR_PLUGINS_MODULE")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&run.stderr).to_string();
+    let text = format!("{stdout}{stderr}");
+    assert!(run.status.success(), "{text}");
+    assert!(stdout.contains("cohesion-prove: specialty-real"), "{stdout}");
+    assert!(
+        stdout.contains("specialty-real ag_news: bound seat=specialist-agnews-3000 complete result=ag_news capability=ag_news"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("specialty-real rust_idiom: bound seat=specialist-rustidiom-3000 complete result=rust_idiom capability=rust_idiom"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("specialty-real: bound ag_news,rust_idiom"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    let tail = stdout.trim_end();
+    assert!(
+        tail.ends_with("cohesion-prove: ok\nREADY_FOR_LIVE_TEST: no"),
+        "{stdout}"
+    );
+    let report: Value =
+        serde_json::from_str(&fs::read_to_string(out.join("cohesion-prove.json")).unwrap()).unwrap();
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["ready_for_live_test"], false);
+    assert_eq!(report["live_pass_recorded"], false);
+    assert_eq!(report["live_sync"], false);
+    assert_eq!(report["specialty_real"]["stage"], "bound");
+    assert_eq!(report["specialty_real"]["ok"], true);
+    assert_eq!(report["specialty_real"]["ready_for_live_test"], false);
+    assert_eq!(report["specialty_real"]["seats"]["ag_news"]["status"], "bound");
+    assert_eq!(
+        report["specialty_real"]["seats"]["ag_news"]["seat_model"],
+        "specialist-agnews-3000"
+    );
+    assert_eq!(
+        report["specialty_real"]["seats"]["ag_news"]["complete"]["result"],
+        "ag_news"
+    );
+    assert_eq!(
+        report["specialty_real"]["seats"]["ag_news"]["complete"]["capability"],
+        "ag_news"
+    );
+    assert_eq!(
+        report["specialty_real"]["seats"]["rust_idiom"]["status"],
+        "bound"
+    );
+    assert_eq!(
+        report["specialty_real"]["seats"]["rust_idiom"]["complete"]["result"],
+        "rust_idiom"
+    );
+    assert_eq!(
+        report["pack"]["cli_smoke"]["orchestrator"]["result"],
+        "ag_news"
+    );
+    assert_ne!(
+        report["specialty_real"]["seats"]["ag_news"]["complete"]["result"],
+        "local_slm"
+    );
+    assert_eq!(fs::read(repo_root().join("examples/estate.yaml")).unwrap(), locked_bytes);
+    assert_eq!(fs::read(&fixture).unwrap(), fixture_bytes);
+    assert_eq!(cksum_locked(), before);
+    let art = PathBuf::from("/opt/cursor/artifacts");
+    if fs::create_dir_all(&art).is_ok() {
+        let _ = fs::write(
+            art.join("cohesion-prove-specialty-real.json"),
+            serde_json::to_string_pretty(&report).unwrap() + "\n",
+        );
+        let _ = fs::write(art.join("cohesion-prove-specialty-real.log"), &stdout);
+    }
+    let _ = fs::remove_dir_all(&out);
+    let _ = fs::remove_dir_all(&sentinel);
+    let _ = fs::remove_dir_all(&planted);
 }
