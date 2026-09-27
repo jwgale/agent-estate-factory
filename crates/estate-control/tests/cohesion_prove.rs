@@ -86,6 +86,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(stdout.contains("cohesion-prove: improvement-apply"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: decisions report"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: pack session show"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: status"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: refuse-without-plan"), "{stdout}");
     assert!(
         stdout.contains("refuse:plan: apply-package requires --require-plan"),
@@ -101,10 +102,12 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     let gated_at = stdout.find("cohesion-prove: apply --require-plan").unwrap();
     let decisions_at = stdout.find("cohesion-prove: decisions report").unwrap();
     let session_show_at = stdout.find("cohesion-prove: pack session show").unwrap();
+    let status_at = stdout.find("cohesion-prove: status").unwrap();
     assert!(export_at < wrote_at && wrote_at < apply_at, "{stdout}");
     assert!(apply_at < refuse_at && refuse_at < gated_at, "{stdout}");
     assert!(gated_at < decisions_at, "{stdout}");
     assert!(decisions_at < session_show_at, "{stdout}");
+    assert!(session_show_at < status_at, "{stdout}");
     assert!(
         stdout.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
         "{stdout}"
@@ -321,6 +324,57 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert_eq!(pack_session["applied_proposal_id"], receipt["proposal_id"]);
     assert_eq!(pack_session["applied_proposal_kind"], receipt["proposal_kind"]);
     assert_eq!(pack_session["binding_id"], receipt["binding_id"]);
+    let status = &report["status"];
+    assert_eq!(status["cites_apply"], true);
+    assert_eq!(status["apply_schema"], "cell-one.improvement-apply.v0");
+    assert_eq!(status["applied_proposal_id"], "specialty-seat:ag_news");
+    assert_eq!(status["applied_proposal_kind"], "specialty-seat");
+    assert_eq!(status["binding_id"], "ag_news");
+    assert_eq!(status["joinable"], true);
+    assert_eq!(status["standing"], "joinable: yes");
+    assert_eq!(status["require_plan"], true);
+    assert_eq!(status["auto_train"], false);
+    assert_eq!(status["train_invoked"], false);
+    assert_eq!(
+        status["refuse_without_plan"],
+        "refuse:plan: apply-package requires --require-plan"
+    );
+    assert_eq!(status["apply_receipt"], apply["apply_receipt"]);
+    assert_eq!(status["require_plan"], receipt["require_plan"]);
+    assert_eq!(status["auto_train"], receipt["auto_train"]);
+    assert_eq!(status["train_invoked"], receipt["train_invoked"]);
+    assert_eq!(status["joinable"], receipt["joinable"]);
+    assert_eq!(status["standing"], receipt["standing"]);
+    assert_eq!(status["refuse_without_plan"], receipt["refuse_without_plan"]);
+    assert_eq!(status["applied_proposal_id"], receipt["proposal_id"]);
+    assert_eq!(status["applied_proposal_kind"], receipt["proposal_kind"]);
+    assert_eq!(status["binding_id"], receipt["binding_id"]);
+    let status_cite = status["cite"].as_str().unwrap();
+    assert!(status_cite.contains("schema=cell-one.improvement-apply.v0"), "{status_cite}");
+    assert!(status_cite.contains("applied proposal specialty-seat:ag_news"), "{status_cite}");
+    assert!(status_cite.contains("joinable=true"), "{status_cite}");
+    assert!(status_cite.contains("require_plan=true"), "{status_cite}");
+    assert!(status_cite.contains("auto_train=false"), "{status_cite}");
+    assert!(status_cite.contains("train_invoked=false"), "{status_cite}");
+    assert!(
+        status["state_dir"].as_str().unwrap().ends_with("apply/state"),
+        "{}",
+        status["state_dir"]
+    );
+    let apply_state = out.join("apply").join("state");
+    assert!(apply_state.join("decisions").join("improvement-apply.json").is_file());
+    let status_path = status_cite.lines().find_map(|line| {
+        line.strip_prefix("apply receipt: schema=cell-one.improvement-apply.v0 path=")
+    }).expect(status_cite);
+    assert!(
+        Path::new(status_path).starts_with(&apply_state)
+            || Path::new(status_path)
+                .canonicalize()
+                .ok()
+                .is_some_and(|p| p.starts_with(apply_state.canonicalize().unwrap())),
+        "{status_cite}"
+    );
+    assert!(!status_cite.contains("/apply/improvement-apply.json"), "{status_cite}");
     let session_cite = pack_session["cite"].as_str().unwrap();
     assert!(session_cite.contains("schema=cell-one.improvement-apply.v0"), "{session_cite}");
     assert!(session_cite.contains("applied proposal specialty-seat:ag_news"), "{session_cite}");
@@ -434,6 +488,61 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(!session_out.contains("auto_train=true"), "{session_out}");
     assert!(!session_out.contains("train_invoked=true"), "{session_out}");
     let lab = PathBuf::from(apply["lab_estate"].as_str().unwrap());
+    let status_run = bin()
+        .args([
+            "status",
+            "--estate",
+            lab.to_str().unwrap(),
+            "--state-dir",
+            apply_state.to_str().unwrap(),
+            "--roots-base",
+            out.join("apply/roots").to_str().unwrap(),
+            "--plans-dir",
+            out.join("apply/plans").to_str().unwrap(),
+            "--packs-dir",
+            repo_root().join("packs").to_str().unwrap(),
+            "--policy",
+            repo_root()
+                .join("policy/cell-one.policy.v0.yaml")
+                .to_str()
+                .unwrap(),
+            "--root",
+            repo_root().to_str().unwrap(),
+        ])
+        .current_dir(repo_root())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_LOCAL_LIVE")
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let status_out = String::from_utf8_lossy(&status_run.stdout).to_string();
+    let status_err = String::from_utf8_lossy(&status_run.stderr).to_string();
+    assert!(status_run.status.success(), "{status_out}\n{status_err}");
+    assert!(status_out.starts_with("Cell One status\n"), "{status_out}");
+    assert!(
+        status_out.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
+        "{status_out}"
+    );
+    assert!(
+        status_out.contains("applied proposal specialty-seat:ag_news"),
+        "{status_out}"
+    );
+    assert!(status_out.contains("kind=specialty-seat"), "{status_out}");
+    assert!(status_out.contains("binding=ag_news"), "{status_out}");
+    assert!(status_out.contains("standing=joinable: yes"), "{status_out}");
+    assert!(status_out.contains("joinable=true"), "{status_out}");
+    assert!(status_out.contains("require_plan=true"), "{status_out}");
+    assert!(
+        status_out.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+        "{status_out}"
+    );
+    assert!(status_out.contains("auto_train=false"), "{status_out}");
+    assert!(status_out.contains("train_invoked=false"), "{status_out}");
+    assert!(!status_out.contains("refuse:cite"), "{status_out}");
+    assert!(!status_out.contains("/apply/improvement-apply.json"), "{status_out}");
+    assert!(!status_out.contains("READY_FOR_LIVE_TEST: yes"), "{status_out}");
+    assert!(!status_out.contains("auto_train=true"), "{status_out}");
+    assert!(!status_out.contains("train_invoked=true"), "{status_out}");
     assert!(lab.ends_with("apply/lab-estate.yaml"), "{}", lab.display());
     let estate = estate_schema::load_estate(&lab).unwrap();
     assert!(estate.model_bindings.iter().any(|row| row.id == "ag_news"));
@@ -678,6 +787,9 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
     assert!(day.contains("context=applied"), "{day}");
     assert!(log.contains("cell-one.cohesion-prove.v0"), "{log}");
     assert!(log.contains("cell-one.crew-session-prove.v0"), "{log}");
+    assert!(day.contains("those three cites"), "{day}");
+    assert!(lang.contains("those three cites"), "{lang}");
+    assert!(log.contains("those three cites") || log.contains("status cite"), "{log}");
     assert!(log.contains("unique-hop-alpha-token"), "{log}");
     for (name, text) in [
         ("NORTH-STAR", north.as_str()),
@@ -728,6 +840,10 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
         assert!(
             text.contains("estate pack session show"),
             "{name} missing pack session show apply cite"
+        );
+        assert!(
+            text.contains("estate status"),
+            "{name} missing estate status apply cite"
         );
         assert!(
             !text.contains("can compose this later"),
@@ -785,12 +901,24 @@ fn cohesion_prove_reuses_pack_mcp_timeout_helper() {
         "cohesion-prove must compose estate pack session show after apply"
     );
     assert!(
+        cohesion.contains("cmd_status"),
+        "cohesion-prove must compose estate status after apply"
+    );
+    assert!(
         cohesion.contains("install_apply_receipt_for_report"),
         "cohesion-prove must copy the apply receipt beside the crew journal"
     );
     assert!(
         !cohesion.contains("../apply/"),
         "cohesion pack session cite must not walk a sibling apply dir"
+    );
+    assert!(
+        !cohesion.contains("cmd_routine_digest") && !cohesion.contains("cmd_routine_tick"),
+        "cohesion-prove must not newly invoke digest or tick --report cites"
+    );
+    assert!(
+        !cohesion.contains("cmd_runner_status"),
+        "cohesion-prove must not newly invoke runner-status cites"
     );
     assert!(
         !cohesion.contains("cmd_decisions_improvement_apply_prove"),
@@ -901,10 +1029,21 @@ fn cohesion_prove_binds_planted_specialty_ggufs_as_named_seats() {
     assert_eq!(report["pack_session"]["require_plan"], true);
     assert_eq!(report["pack_session"]["auto_train"], false);
     assert_eq!(report["pack_session"]["train_invoked"], false);
+    assert_eq!(report["status"]["cites_apply"], true);
+    assert_eq!(report["status"]["applied_proposal_id"], "specialty-seat:ag_news");
+    assert_eq!(report["status"]["require_plan"], true);
+    assert_eq!(report["status"]["auto_train"], false);
+    assert_eq!(report["status"]["train_invoked"], false);
+    assert!(
+        report["status"]["state_dir"].as_str().unwrap().ends_with("apply/state"),
+        "{}",
+        report["status"]["state_dir"]
+    );
     assert_eq!(report["pack"]["cli_smoke"]["session_show"]["cites_apply"], true);
     assert!(stdout.contains("cohesion-prove: improvement-apply"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: decisions report"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: pack session show"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: status"), "{stdout}");
     assert!(
         stdout.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
         "{stdout}"

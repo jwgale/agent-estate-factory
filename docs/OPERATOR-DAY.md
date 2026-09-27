@@ -759,13 +759,17 @@ Search is local to that state-dir (beside the journal); a sibling
 session show` on the crew state-dir cites those same receipt
 fields (copy beside the crew journal / state; no sibling walk).
 The composed crew-session prove report records that apply cite.
-Cohesion-prove asserts those two cites. `estate status`,
-`estate routine digest`, `estate routine tick --report`, and
-`estate routine runner status` on a state-dir that holds that
-local receipt cite the same fields; cohesion-prove does not
-invoke those glances. Standing/joinable on those cites are the
-stored receipt values; the page does not claim the applied seat
-is joinable from the receipt alone.
+When that apply receipt is local to the apply state-dir (left by
+gated apply; no sibling `../apply/` walk), `estate status` on
+that state-dir cites the same block — schema, path under the
+state-dir, stored lock fields. Missing or wrong-typed lock
+fields stay `refuse:cite`. No cite when no local receipt.
+Cohesion-prove asserts those three cites. `estate routine digest`,
+`estate routine tick --report`, and `estate routine runner status`
+on a state-dir that holds that local receipt cite the same fields;
+cohesion-prove does not invoke those glances. Standing/joinable
+on those cites are the stored receipt values; the page does not
+claim the applied seat is joinable from the receipt alone.
 The closed loop is one operator surface
 without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
