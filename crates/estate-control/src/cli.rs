@@ -716,6 +716,10 @@ pub(crate) enum DecisionsCommand {
     },
     /// Print counts by stage, validation, fallback, and surface.
     /// Optional `--pack` keeps rows whose receipt `pack_id` matches.
+    /// When the lab has a nearby `cell-one.improvement-apply.v0`
+    /// receipt, the same page cites applied proposal id/kind/binding,
+    /// joinable standing, `require_plan=true`, the refuse-without-plan
+    /// string, `auto_train=false`, and `train_invoked=false`.
     Report {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

@@ -15,14 +15,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
+use serde_json::Value;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(crate) const RECEIPT_SCHEMA: &str = "cell-one.decision-receipt.v0";
 pub(crate) const SELECT_SCHEMA: &str = "cell-one.decision-select.v0";
 pub(crate) const SELECT_FILE: &str = "decision-select.json";
 pub(crate) const JOURNAL_FILE: &str = "receipts.jsonl";
 pub(crate) const EQUAL_CLASS_SELECT: &str = "equal-class";
+pub(crate) const APPLY_RECEIPT_SCHEMA: &str = "cell-one.improvement-apply.v0";
+pub(crate) const APPLY_RECEIPT_FILE: &str = "improvement-apply.json";
+const REFUSE_WITHOUT_PLAN: &str = "refuse:plan: apply-package requires --require-plan";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum MixedSelectPolicy {
@@ -882,6 +886,72 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
     out
 }
 
+/// Nearby gated-apply receipt, if the lab already wrote one.
+///
+/// Looks beside the decision journal (`{state-dir}/decisions/improvement-apply.json`),
+/// then at the throwaway apply lab (`{state-dir}/../apply/improvement-apply.json`
+/// and `{state-dir}/../improvement-apply.json`). Missing or a foreign schema
+/// is silence — this is a cite, not a grant.
+pub(crate) fn discover_apply_receipt(state_dir: &Path) -> Option<PathBuf> {
+    let candidates = [
+        state_dir.join("..").join("apply").join(APPLY_RECEIPT_FILE),
+        state_dir.join("..").join(APPLY_RECEIPT_FILE),
+        state_dir.join("decisions").join(APPLY_RECEIPT_FILE),
+        state_dir.join(APPLY_RECEIPT_FILE),
+    ];
+    for path in candidates {
+        let Ok(canon) = path.canonicalize() else {
+            continue;
+        };
+        if !canon.is_file() {
+            continue;
+        }
+        if load_apply_receipt(&canon).is_some() {
+            return Some(canon);
+        }
+    }
+    None
+}
+
+fn load_apply_receipt(path: &Path) -> Option<Value> {
+    let text = fs::read_to_string(path).ok()?;
+    let receipt: Value = serde_json::from_str(&text).ok()?;
+    (receipt.get("schema").and_then(Value::as_str) == Some(APPLY_RECEIPT_SCHEMA)).then_some(receipt)
+}
+
+fn receipt_str<'a>(receipt: &'a Value, keys: &[&str]) -> &'a str {
+    keys.iter()
+        .find_map(|key| receipt.get(*key).and_then(Value::as_str))
+        .unwrap_or("-")
+}
+
+/// One operator line for a `cell-one.improvement-apply.v0` receipt.
+pub(crate) fn render_apply_receipt_cite(path: &Path, receipt: &Value) -> String {
+    let proposal_id = receipt_str(receipt, &["proposal_id", "applied_proposal_id"]);
+    let kind = receipt_str(receipt, &["proposal_kind", "applied_proposal_kind"]);
+    let binding = receipt_str(receipt, &["binding_id"]);
+    let standing = receipt_str(receipt, &["standing"]);
+    let standing = if standing == "-" {
+        "joinable: yes"
+    } else {
+        standing
+    };
+    let refuse = receipt
+        .get("refuse_without_plan")
+        .and_then(Value::as_str)
+        .unwrap_or(REFUSE_WITHOUT_PLAN);
+    format!(
+        "apply receipt: schema={APPLY_RECEIPT_SCHEMA} path={path}\napplied proposal {proposal_id} kind={kind} binding={binding} standing={standing} require_plan=true refuse_without_plan={refuse} auto_train=false train_invoked=false\n",
+        path = path.display()
+    )
+}
+
+/// Cite a nearby apply receipt when the lab has one. None if absent.
+pub(crate) fn cite_nearby_apply_receipt(state_dir: &Path) -> Option<String> {
+    let path = discover_apply_receipt(state_dir)?;
+    let receipt = load_apply_receipt(&path)?;
+    Some(render_apply_receipt_cite(&path, &receipt))
+}
 
 pub(crate) fn cmd_decisions_export(state_dir: &Path, out: &Path) -> Result<()> {
     let path = journal_path(state_dir);
@@ -922,6 +992,9 @@ pub(crate) fn cmd_decisions_report(state_dir: &Path, pack: Option<&str>) -> Resu
         });
     }
     print!("{}", render_report(&receipts));
+    if let Some(cite) = cite_nearby_apply_receipt(state_dir) {
+        print!("{cite}");
+    }
     Ok(())
 }
 
@@ -1605,6 +1678,104 @@ mod tests {
             !text.split_whitespace().any(|word| word == "enforced"),
             "{text}"
         );
+        assert!(cite_nearby_apply_receipt(&dir).is_none(), "{dir:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn write_apply_receipt(path: &std::path::Path, binding: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(
+            path,
+            format!(
+                r#"{{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:{binding}",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "{binding}",
+  "joinable": true,
+  "standing": "joinable: yes",
+  "require_plan": true,
+  "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
+  "auto_train": false,
+  "train_invoked": false
+}}
+"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn decisions_report_cites_nearby_apply_receipt() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-apply-cite-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("decisions")).unwrap();
+        write_apply_receipt(
+            &dir.join("decisions").join("improvement-apply.json"),
+            "ag_news",
+        );
+        let cite = cite_nearby_apply_receipt(&dir).expect("apply cite");
+        assert!(cite.contains("schema=cell-one.improvement-apply.v0"), "{cite}");
+        assert!(cite.contains("applied proposal specialty-seat:ag_news"), "{cite}");
+        assert!(cite.contains("kind=specialty-seat"), "{cite}");
+        assert!(cite.contains("binding=ag_news"), "{cite}");
+        assert!(cite.contains("standing=joinable: yes"), "{cite}");
+        assert!(cite.contains("require_plan=true"), "{cite}");
+        assert!(
+            cite.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+            "{cite}"
+        );
+        assert!(cite.contains("auto_train=false"), "{cite}");
+        assert!(cite.contains("train_invoked=false"), "{cite}");
+        assert!(cite.contains("path="), "{cite}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn decisions_report_discovers_sibling_apply_lab_receipt() {
+        let root = std::env::temp_dir().join(format!(
+            "cell-decision-apply-sibling-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let state = root.join("state");
+        std::fs::create_dir_all(&state).unwrap();
+        write_apply_receipt(
+            &root.join("apply").join("improvement-apply.json"),
+            "ag_news",
+        );
+        let path = discover_apply_receipt(&state).expect("sibling apply receipt");
+        assert!(
+            path.ends_with("apply/improvement-apply.json"),
+            "{}",
+            path.display()
+        );
+        let cite = cite_nearby_apply_receipt(&state).expect("apply cite");
+        assert!(cite.contains("specialty-seat:ag_news"), "{cite}");
+        assert!(cite.contains("cell-one.improvement-apply.v0"), "{cite}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn decisions_report_ignores_foreign_apply_schema() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-apply-foreign-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("decisions")).unwrap();
+        std::fs::write(
+            dir.join("decisions").join("improvement-apply.json"),
+            r#"{"schema":"not-an-apply-receipt","proposal_id":"specialty-seat:ag_news"}"#,
+        )
+        .unwrap();
+        assert!(discover_apply_receipt(&dir).is_none());
+        assert!(cite_nearby_apply_receipt(&dir).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

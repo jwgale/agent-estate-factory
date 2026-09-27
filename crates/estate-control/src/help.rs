@@ -1370,6 +1370,8 @@ proposal-only. Report cell-one.cohesion-prove.v0 cites the package
 path, proposal count/kind, the apply receipt
 (cell-one.improvement-apply.v0), applied proposal id/kind/binding,
 joinable, require_plan=true, refuse:plan, and auto_train=false.
+estate decisions report on that lab state-dir cites the same apply
+receipt so the closed loop is one operator surface.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
@@ -1393,7 +1395,8 @@ is the sibling prove: host-validate, export-package, pick one
 specialty-seat, gated apply, Standing next joinable. Report
 cell-one.improvement-apply-prove.v0 cites the applied proposal
 id/kind, joinable, auto_train=false, and train_invoked=false.
-It does not record a live PASS.
+estate decisions report on that lab cites the apply receipt
+(cell-one.improvement-apply.v0). It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:

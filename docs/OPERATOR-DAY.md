@@ -724,7 +724,12 @@ path, proposal count/kind (`specialty-seat`, `dataset`),
 the apply receipt path (`cell-one.improvement-apply.v0`), the applied
 proposal id/kind/binding, `joinable: yes`, `require_plan=true`,
 `auto_train=false`, `train_invoked=false`, and
-`refuse:plan: apply-package requires --require-plan`. Specialty-real
+`refuse:plan: apply-package requires --require-plan`. `estate
+decisions report` on that lab state-dir cites the same receipt
+(applied proposal id/kind/binding, joinable standing,
+`require_plan=true`, the refuse-without-plan string,
+`auto_train=false`, `train_invoked=false`, schema path) so the
+closed loop is one operator surface without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
 `ready_for_live_test` and `live_pass_recorded` stay false. `live_sync`
 stays false. The command ends with `cohesion-prove: ok` and
@@ -742,6 +747,7 @@ estate decisions improvement-apply-prove --root . --out /tmp/cell-one-improvemen
 
 ```bash
 estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
+estate decisions report --state-dir /tmp/cell-one-cohesion/state
 ```
 
 ## 4f. Improvement-export prove (standing package, not a train)
@@ -804,7 +810,9 @@ and `apply-package`.
 The compact report is `cell-one.improvement-apply-prove.v0`
 (`improvement-apply-prove.json`). It cites the applied proposal
 id/kind, Standing next joinable, `auto_train=false`, and
-`train_invoked=false`. The command ends with
+`train_invoked=false`. `estate decisions report` on that lab
+state-dir cites the apply receipt (`cell-one.improvement-apply.v0`)
+with the same fields. The command ends with
 `improvement-apply-prove: ok` and `READY_FOR_LIVE_TEST: no`. Locked
 `examples/estate.yaml` stays cksum `43770130 3391`. Not in make
 smoke, make gate-90, or GitHub Actions. This is not a live PASS.

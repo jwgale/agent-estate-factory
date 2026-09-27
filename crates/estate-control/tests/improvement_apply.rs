@@ -82,6 +82,22 @@ fn improvement_apply_prove_gates_one_specialty_seat_without_auto_train() {
     );
     assert!(stdout.contains("improvement-apply-prove: apply --require-plan"), "{stdout}");
     assert!(stdout.contains("improvement-apply-prove: standing-next"), "{stdout}");
+    assert!(stdout.contains("improvement-apply-prove: decisions report"), "{stdout}");
+    assert!(
+        stdout.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("applied proposal specialty-seat:ag_news"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("standing=joinable: yes"), "{stdout}");
+    assert!(stdout.contains("require_plan=true"), "{stdout}");
+    assert!(
+        stdout.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("train_invoked=false"), "{stdout}");
     assert!(stdout.contains("cell-one.improvement-apply-prove.v0"), "{stdout}");
     assert!(stdout.contains("cell-one.improvement-apply.v0"), "{stdout}");
     assert!(stdout.contains("specialty-seat:ag_news"), "{stdout}");
@@ -138,6 +154,44 @@ fn improvement_apply_prove_gates_one_specialty_seat_without_auto_train() {
     assert_eq!(receipt["train_invoked"], false);
     assert_eq!(receipt["joinable"], true);
     assert_eq!(receipt["require_plan"], true);
+    assert_eq!(
+        receipt["refuse_without_plan"],
+        "refuse:plan: apply-package requires --require-plan"
+    );
+    let report_run = bin()
+        .args([
+            "decisions",
+            "report",
+            "--state-dir",
+            out.join("state").to_str().unwrap(),
+        ])
+        .current_dir(repo_root())
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_LOCAL_LIVE")
+        .env_remove("XAI_API_KEY")
+        .output()
+        .unwrap();
+    let report_out = String::from_utf8_lossy(&report_run.stdout).to_string();
+    let report_err = String::from_utf8_lossy(&report_run.stderr).to_string();
+    assert!(report_run.status.success(), "{report_out}\n{report_err}");
+    assert!(
+        report_out.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
+        "{report_out}"
+    );
+    assert!(
+        report_out.contains("applied proposal specialty-seat:ag_news"),
+        "{report_out}"
+    );
+    assert!(report_out.contains("kind=specialty-seat"), "{report_out}");
+    assert!(report_out.contains("binding=ag_news"), "{report_out}");
+    assert!(report_out.contains("standing=joinable: yes"), "{report_out}");
+    assert!(report_out.contains("require_plan=true"), "{report_out}");
+    assert!(
+        report_out.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+        "{report_out}"
+    );
+    assert!(report_out.contains("auto_train=false"), "{report_out}");
+    assert!(report_out.contains("train_invoked=false"), "{report_out}");
 
     let lab = PathBuf::from(report["lab_estate"].as_str().unwrap());
     let estate = estate_schema::load_estate(&lab).unwrap();
