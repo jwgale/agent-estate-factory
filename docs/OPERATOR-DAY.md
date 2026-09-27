@@ -335,6 +335,51 @@ a throwaway directory (kept so you can point Cursor at it). The command:
 (local throwaway estate; gitignored). Not live Grok Bot sync. `live_sync`
 stays false.
 
+## 3i. Dual specialty chain (mock prove)
+
+Opt-in. Not part of `make smoke` or `make gate-90`. Same throwaway
+[`../examples/fixtures/agent-pack-handoff.yaml`](../examples/fixtures/agent-pack-handoff.yaml)
+now also seats `rust_idiom` beside `ag_news`. Does not touch locked
+`examples/estate.yaml` (cksum `43770130 3391`). `READY_FOR_LIVE_TEST`: no.
+Not a live PASS. No network. No Ollama.
+
+Pack `dual-specialty` members: horizon (orchestrator), research, idiom.
+Package `dual-specialty` chain:
+
+1. research → `ag_news` (`params.model` `specialist-agnews-all`)
+2. idiom → `rust_idiom` (`params.model` `specialist-rustidiom-all`)
+3. horizon → `frontier_http`
+
+Each hop allow-list names one binding, so the selector records that seat
+without `--select equal-class`. Two specialty locals still abstain, with
+or without the flag. Sacred exclusions `cyera-ci` and `rust-classroom`
+stay out. `completion_label` stays opt-in.
+
+```bash
+estate package show --id dual-specialty \
+  --estate examples/fixtures/agent-pack-handoff.yaml
+
+estate package run --id dual-specialty --chain \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/dual-specialty-cell --mock --session-create
+
+estate decisions report --state-dir target/dual-specialty-cell \
+  --pack dual-specialty
+
+estate package dual-prove \
+  --estate examples/fixtures/agent-pack-handoff.yaml \
+  --state-dir target/dual-specialty-prove
+```
+
+`dual-prove` is the one-shot gate. It runs the chain under `--mock`,
+checks receipts name `ag_news` then `rust_idiom` then `frontier_http`
+(same `chain_id`, `handoff_from` / `handoff_to`), checks hop 2
+`context=applied`, checks `decisions report --pack` shows both specialty
+capabilities, and checks a full session still refuses when bound, expired,
+or ended. Exit non-zero on any fail. The summary ends with JSON
+`cell-one.dual-specialty-prove.v0`. `live_sync: no`.
+`READY_FOR_LIVE_TEST: no`.
+
 ## 4. Enrich prepare (opt-in, not a train)
 
 Not part of `make smoke` or `make gate-90`.

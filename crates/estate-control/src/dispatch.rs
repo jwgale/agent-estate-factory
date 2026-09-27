@@ -362,6 +362,17 @@ pub(crate) fn run() -> Result<()> {
                 session.as_deref(),
                 session_create,
             ),
+            PackageCommand::DualProve {
+                id,
+                estate,
+                state_dir,
+                prompt,
+            } => crate::dual_prove::cmd_package_dual_prove(
+                &id,
+                &estate,
+                state_dir.as_deref(),
+                &prompt,
+            ),
         },
         Command::Routine { command } => match command {
             RoutineCommand::List { estate } => cmd_routine_list(&estate),

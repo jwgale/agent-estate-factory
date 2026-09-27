@@ -8,6 +8,7 @@ mod cli;
 mod decisions;
 mod dispatch;
 mod doctor_strict;
+mod dual_prove;
 mod enrich;
 mod export_plugin;
 mod export_repair;

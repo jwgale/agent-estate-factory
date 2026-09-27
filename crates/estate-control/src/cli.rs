@@ -505,7 +505,9 @@ pub(crate) enum Command {
     /// Pack packages: named skills on a pack (Grok Bot skill analog).
     /// `run` → `complete --pack` and stamps `package_id` on the receipt.
     /// `--chain` runs ordered hops when the package or pack declares
-    /// `chain:` / `steps:`. Security stays existing intentions.
+    /// `chain:` / `steps:`. `dual-prove` is the mock two-specialty chain
+    /// gate (ag_news, rust_idiom, frontier). Security stays existing
+    /// intentions.
     Package {
         #[command(subcommand)]
         command: PackageCommand,
@@ -1211,6 +1213,23 @@ pub(crate) enum PackageCommand {
         /// Mint a new pack-scoped session, then run.
         #[arg(long, default_value_t = false)]
         session_create: bool,
+    },
+    /// Mock prove for two purpose seats in one pack chain: `ag_news`,
+    /// then `rust_idiom`, then frontier. Runs `package run --chain`
+    /// in-process (`--mock`), checks receipts name each chosen binding,
+    /// checks hop 2 `context=applied`, and checks bound / expired / ended
+    /// still refuse. Prints a compact ok/fail report. No network. No
+    /// Ollama. `READY_FOR_LIVE_TEST`: no. Not a live PASS.
+    DualProve {
+        #[arg(long, default_value = "dual-specialty")]
+        id: String,
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
+        /// Journal directory. Default: throwaway temp dir (kept).
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        #[arg(long, default_value = "dual-specialty-hop-alpha-token")]
+        prompt: String,
     },
 }
 
