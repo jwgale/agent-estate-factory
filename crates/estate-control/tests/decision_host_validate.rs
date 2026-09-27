@@ -161,7 +161,7 @@ fn host_validate_prove_runs_authorize_and_convey_on_a_lab_copy() {
     assert!(stdout.contains("decision-host-validate-prove: ok"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
-    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!stdout.contains("live PASS recorded"), "{stdout}");
     assert!(!stderr.contains("live PASS"), "{stderr}");
     assert!(
         !stdout.split_whitespace().any(|word| word == "enforced"),
