@@ -1348,10 +1348,15 @@ the host-validate authorize / convey / complete --mock loop, and
 standing-dual under the runner on one lab copy. Report
 cell-one.control-plane-prove.v0. It does not record a live PASS.
 estate pack cohesion-prove --root . --out <throwaway> runs that same
-control-plane prove, then estate pack plugin-install-local for
-research-crew on examples/fixtures/agent-pack-handoff.yaml under a
-throwaway HOME, then CLI smoke: estate complete --mock as horizon
-(decision receipt, outcome allow) and as research
+control-plane prove, then an optional specialty-real bind. When
+import-trained AG News / rust_idiom GGUF artifacts are present they
+land as named seats (ag_news, rust_idiom) beside local_slm and
+complete --mock names those seats. When absent the stage is
+skipped:gguf-absent and the prove stays ok. Then estate pack
+plugin-install-local for research-crew on
+examples/fixtures/agent-pack-handoff.yaml under a throwaway HOME,
+then CLI smoke: estate complete --mock as horizon (decision receipt,
+outcome allow, result names the specialty seat) and as research
 (refuse:pack-orchestrator). Report cell-one.cohesion-prove.v0.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 examples/estate.yaml

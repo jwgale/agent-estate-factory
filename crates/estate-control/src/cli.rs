@@ -1187,18 +1187,26 @@ pub(crate) enum PackCommand {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
-    /// One throwaway lab: fuel, decide, run, then pack install and CLI smoke.
+    /// One throwaway lab: fuel, decide, run, specialty-real seats,
+    /// then pack install and CLI smoke.
     ///
     /// Runs `estate control-plane-prove` on `--out` (dual import-trained
     /// bind of `ag_news` and `rust_idiom` beside `local_slm`, host-validate
     /// authorize / convey / complete --mock, then `standing-dual` under the
-    /// runner). Then `estate pack plugin-install-local` for `--id`
-    /// (default `research-crew`) on the handoff fixture, with `HOME` set to
-    /// a directory inside `--out`. Then CLI smoke of the baked estate
-    /// binary: `estate complete --mock` as the pack orchestrator (decision
-    /// receipt, outcome allow) and as a member (`refuse:pack-orchestrator`).
-    /// A Cursor MCP loader hang is out of scope. Does not rewrite
-    /// `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+    /// runner). When real import-trained AG News / rust_idiom GGUF
+    /// artifacts are present (`CELL_SPECIALTY_AG_NEWS_GGUF` /
+    /// `CELL_SPECIALTY_RUST_IDIOM_GGUF`, or a scan of
+    /// `CELL_SPECIALTY_GGUF_ROOT` / `{root}/.cell`), they bind as named
+    /// specialty seats and `complete --mock` names those seats (not
+    /// generic `local_slm`). When absent, the stage is
+    /// `skipped:gguf-absent` and the prove stays ok. Then `estate pack
+    /// plugin-install-local` for `--id` (default `research-crew`) on the
+    /// handoff fixture, with `HOME` set to a directory inside `--out`.
+    /// Then CLI smoke of the baked estate binary: `estate complete --mock`
+    /// as the pack orchestrator (decision receipt, outcome allow) and as
+    /// a member (`refuse:pack-orchestrator`). A Cursor MCP loader hang is
+    /// out of scope. Does not rewrite `examples/estate.yaml`.
+    /// `READY_FOR_LIVE_TEST` stays no.
     CohesionProve {
         /// Repository root that holds `examples/estate.yaml` and the fixture.
         #[arg(long, default_value = ".")]

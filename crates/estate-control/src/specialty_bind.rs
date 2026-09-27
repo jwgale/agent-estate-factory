@@ -240,6 +240,249 @@ pub(crate) struct DualSpecialtyLab {
     pub gguf_rust: PathBuf,
 }
 
+/// One import-trained specialty seat landed beside `local_slm`.
+pub(crate) struct NamedSeatLand {
+    pub binding_id: String,
+    pub function: String,
+    pub seat_model: String,
+    pub agent: String,
+    pub gguf: PathBuf,
+    pub prepared: PathBuf,
+}
+
+pub(crate) struct NamedSpecialtyLab {
+    pub lab: PathBuf,
+    pub state: PathBuf,
+    pub seats: Vec<NamedSeatLand>,
+}
+
+pub(crate) struct NamedSeatRequest {
+    pub binding_id: &'static str,
+    pub function: &'static str,
+    pub seat_model: &'static str,
+    pub agent: &'static str,
+    pub pack_id: &'static str,
+    pub gguf: PathBuf,
+}
+
+/// Map a portable binding id to the dual-specialty seat card.
+pub(crate) fn named_seat_request(binding_id: &str, gguf: PathBuf) -> Option<NamedSeatRequest> {
+    match binding_id {
+        BINDING_AG => Some(NamedSeatRequest {
+            binding_id: BINDING_AG,
+            function: FUNCTION,
+            seat_model: SEAT_MODEL,
+            agent: "research",
+            pack_id: PACK_AG,
+            gguf,
+        }),
+        BINDING_RUST => Some(NamedSeatRequest {
+            binding_id: BINDING_RUST,
+            function: FUNCTION_RUST,
+            seat_model: SEAT_RUST,
+            agent: "idiom",
+            pack_id: PACK_RUST,
+            gguf,
+        }),
+        _ => None,
+    }
+}
+
+/// Land caller-supplied GGUFs as named specialty seats beside `local_slm`.
+/// Does not invent a GGUF. Does not rewrite `examples/estate.yaml`.
+pub(crate) fn land_named_specialty_seats(
+    root: &Path,
+    out: &Path,
+    requests: &[NamedSeatRequest],
+) -> Result<NamedSpecialtyLab> {
+    if requests.is_empty() {
+        bail!("refuse:specialty-real: no seats to land");
+    }
+    std::env::remove_var("CELL_LOCAL_ENDPOINT");
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("refuse:root: {}", root.display()))?;
+    let locked = root.join("examples/estate.yaml");
+    let before = fs::read(&locked).with_context(|| format!("refuse:estate: {}", locked.display()))?;
+    let cksum_before = file_cksum(&locked)?;
+    if !cksum_before.starts_with(LOCKED_CKSUM) {
+        bail!("refuse:estate: examples/estate.yaml cksum is {cksum_before}, want {LOCKED_CKSUM}");
+    }
+    if same_file(out, &locked)? {
+        bail!("refuse:out: specialty-real does not write examples/estate.yaml");
+    }
+    fs::create_dir_all(out).with_context(|| format!("refuse:out: {}", out.display()))?;
+
+    let lab = out.join("lab-estate.yaml");
+    fs::write(&lab, &before)?;
+    if requests.iter().any(|row| row.binding_id == BINDING_RUST) {
+        seed_idiom_agent(&lab)?;
+    }
+    let local_before = local_slm_params(&lab)?;
+    let state = out.join("state");
+    let plans = out.join("plans");
+    let roots = out.join("roots");
+    fs::create_dir_all(&state)?;
+    fs::create_dir_all(&plans)?;
+    fs::create_dir_all(&roots)?;
+    let journey = out.join("journey");
+    let packs_dir = root.join("packs");
+    let policy = root.join("policy/cell-one.policy.v0.yaml");
+    let overnight = root.join("examples/fixtures/specialist-overnight.pack.json");
+
+    let mut seats = Vec::new();
+    for req in requests {
+        let dest_dir = journey.join(req.binding_id);
+        fs::create_dir_all(&dest_dir)?;
+        let name = req
+            .gguf
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("refuse:gguf: {} has no file name", req.gguf.display()))?;
+        let dest = dest_dir.join(name);
+        copy_regular_gguf(&req.gguf, &dest)?;
+        fs::write(
+            dest_dir.join("comparison.json"),
+            format!(
+                "{{\n  \"dataset\": \"{}\",\n  \"live_pass_recorded\": false,\n  \"note\": \"Specialty-real lab copy. This file does not record a live PASS. READY_FOR_LIVE_TEST stays no.\"\n}}\n",
+                req.function
+            ),
+        )?;
+        let pack = write_lab_pack(out, &overnight, req.pack_id)?;
+        prepare_lora(&lab, &pack, &packs_dir, &state)?;
+        ensure_locked(&locked, &before)?;
+        let prepared = prepared_lora(&state, req.pack_id);
+        let tag = format!("cell-enrich-{}", req.pack_id);
+        land_specialty(
+            &lab,
+            &prepared,
+            &dest,
+            &tag,
+            req.binding_id,
+            req.seat_model,
+            req.function,
+            req.agent,
+            &state,
+            &plans,
+            &roots,
+            &packs_dir,
+            &policy,
+            &locked,
+            &before,
+        )?;
+        seats.push(NamedSeatLand {
+            binding_id: req.binding_id.to_string(),
+            function: req.function.to_string(),
+            seat_model: req.seat_model.to_string(),
+            agent: req.agent.to_string(),
+            gguf: dest,
+            prepared,
+        });
+    }
+
+    let local_after = local_slm_params(&lab)?;
+    if local_after != local_before {
+        bail!("refuse:binding: local_slm params changed while specialty seats were added");
+    }
+    if !estate_has_local(&lab, "local_slm")? {
+        bail!("refuse:binding: local_slm missing after specialty-real apply");
+    }
+    println!("local_slm kept");
+    record_named_scope(&lab, &seats)?;
+    for seat in &seats {
+        let join = refresh_join(&lab, &seat.prepared, &seat.function)?;
+        if !join.joinable || join.binding_id != seat.binding_id {
+            bail!(
+                "refuse:specialty-join: {} joinable={} binding={}",
+                seat.binding_id,
+                join.joinable,
+                join.binding_id
+            );
+        }
+        println!("{}", join.status_line());
+        crate::enrich::cmd_enrich_standing_next(&lab, &seat.prepared)?;
+    }
+    ensure_locked(&locked, &before)?;
+    if file_cksum(&locked)? != cksum_before {
+        bail!("refuse:estate: examples/estate.yaml cksum changed");
+    }
+    Ok(NamedSpecialtyLab { lab, state, seats })
+}
+
+fn copy_regular_gguf(src: &Path, dest: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(src)
+        .with_context(|| format!("refuse:gguf: {}", src.display()))?;
+    if meta.file_type().is_symlink() {
+        bail!("refuse:gguf: {} is a symlink", src.display());
+    }
+    if !meta.is_file() {
+        bail!("refuse:gguf: {} is not a regular file", src.display());
+    }
+    let name = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !name.ends_with(".gguf") {
+        bail!("refuse:gguf: {} is not a .gguf file", src.display());
+    }
+    fs::copy(src, dest).with_context(|| {
+        format!(
+            "refuse:gguf: copy {} -> {}",
+            src.display(),
+            dest.display()
+        )
+    })?;
+    let dest_meta = fs::symlink_metadata(dest)
+        .with_context(|| format!("refuse:gguf: {}", dest.display()))?;
+    if dest_meta.file_type().is_symlink() || !dest_meta.is_file() {
+        bail!("refuse:gguf: {} is not a regular file after copy", dest.display());
+    }
+    Ok(())
+}
+
+fn record_named_scope(lab: &Path, seats: &[NamedSeatLand]) -> Result<()> {
+    let mut estate = estate_schema::load_estate(lab)
+        .with_context(|| format!("refuse:estate: load {}", lab.display()))?;
+    if !estate.model_bindings.iter().any(|row| row.id == "local_slm") {
+        bail!("refuse:binding: local_slm missing before allow-lists");
+    }
+    for seat in seats {
+        if !estate
+            .model_bindings
+            .iter()
+            .any(|row| row.id == seat.binding_id)
+        {
+            bail!("refuse:binding: {} missing before allow-lists", seat.binding_id);
+        }
+        let binding = seat.binding_id.as_str();
+        set_models(
+            &mut estate,
+            &seat.agent,
+            &[binding],
+            &format!(
+                "Lab copy. {} completes on the {} specialty seat.",
+                seat.agent, seat.binding_id
+            ),
+        )?;
+        allow_model(
+            &mut estate,
+            &seat.agent,
+            &seat.binding_id,
+            &format!(
+                "Lab copy. {} may complete on {}.",
+                seat.agent, seat.binding_id
+            ),
+        );
+        println!(
+            "lab intention: {} model {} effect=allow",
+            seat.agent, seat.binding_id
+        );
+    }
+    let yaml = estate_schema::render_estate_yaml(&estate)?;
+    fs::write(lab, yaml)?;
+    Ok(())
+}
+
 /// Land `ag_news` and `rust_idiom` beside `local_slm` on a lab copy.
 /// Stops after Standing next. Does not write mock receipts.
 pub(crate) fn land_dual_specialty_lab(root: &Path, out: &Path) -> Result<DualSpecialtyLab> {
@@ -714,7 +957,7 @@ fn refresh_join(
         .map_err(|err| anyhow::anyhow!("{err}"))
 }
 
-fn mock_complete(lab: &Path, state: &Path, agent: &str, prompt: &str) -> Result<()> {
+pub(crate) fn mock_complete(lab: &Path, state: &Path, agent: &str, prompt: &str) -> Result<()> {
     crate::ops::cmd_complete(
         agent,
         Some(prompt.to_string()),
