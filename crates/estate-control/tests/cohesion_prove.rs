@@ -1,6 +1,7 @@
 //! `estate pack cohesion-prove` on one throwaway lab.
-//! Fuel, decide, run, pack install, CLI smoke, and improvement
-//! export. Locked `examples/estate.yaml` stays put.
+//! Fuel, decide, run, pack install, CLI smoke, improvement export,
+//! and one gated specialty-seat apply. Locked `examples/estate.yaml`
+//! stays put.
 
 use serde_json::Value;
 use std::fs;
@@ -82,7 +83,30 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(stdout.contains("cohesion-prove: pack"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: cli-smoke"), "{stdout}");
     assert!(stdout.contains("cohesion-prove: improvement-export"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: improvement-apply"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: refuse-without-plan"), "{stdout}");
+    assert!(
+        stdout.contains("refuse:plan: apply-package requires --require-plan"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("cohesion-prove: apply --require-plan"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: standing-next"), "{stdout}");
     assert!(stdout.contains("wrote improvement package"), "{stdout}");
+    let export_at = stdout.find("cohesion-prove: improvement-export").unwrap();
+    let wrote_at = stdout.find("wrote improvement package").unwrap();
+    let apply_at = stdout.find("cohesion-prove: improvement-apply").unwrap();
+    let refuse_at = stdout.find("cohesion-prove: refuse-without-plan").unwrap();
+    let gated_at = stdout.find("cohesion-prove: apply --require-plan").unwrap();
+    assert!(export_at < wrote_at && wrote_at < apply_at, "{stdout}");
+    assert!(apply_at < refuse_at && refuse_at < gated_at, "{stdout}");
+    assert!(
+        !stdout.contains("improvement-apply-prove: host-validate"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("decision-host-validate-prove: ok"),
+        "{stdout}"
+    );
     assert!(
         stdout.contains("auto_train=false train_invoked=no"),
         "{stdout}"
@@ -177,6 +201,60 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(yaml.contains("auto_train: false"), "{yaml}");
     assert!(yaml.contains("train_invoked: false"), "{yaml}");
     assert!(!yaml.contains("auto_train: true"), "{yaml}");
+    let apply = &report["apply"];
+    assert_eq!(apply["schema"], "cell-one.improvement-apply.v0");
+    assert_eq!(apply["ok"], true);
+    assert_eq!(apply["auto_train"], false);
+    assert_eq!(apply["train_invoked"], false);
+    assert_eq!(apply["require_plan"], true);
+    assert_eq!(apply["joinable"], true);
+    assert_eq!(apply["standing"], "joinable: yes");
+    assert_eq!(apply["local_slm"], true);
+    assert_eq!(apply["dataset_proposals"], "proposal-only");
+    assert_eq!(apply["ready_for_live_test"], false);
+    assert_eq!(apply["live_pass_recorded"], false);
+    assert_eq!(apply["live_sync"], false);
+    assert_eq!(apply["host_validate_rerun"], false);
+    assert_eq!(apply["reused_existing_package"], true);
+    assert_eq!(apply["composed_by"], "cohesion-prove");
+    assert_eq!(
+        apply["refuse_without_plan"],
+        "refuse:plan: apply-package requires --require-plan"
+    );
+    assert_eq!(apply["applied_proposal_id"], "specialty-seat:ag_news");
+    assert_eq!(apply["applied_proposal_kind"], "specialty-seat");
+    assert_eq!(apply["binding_id"], "ag_news");
+    let dataset_ids = apply["dataset_proposal_ids"].as_array().unwrap();
+    assert!(dataset_ids.iter().any(|row| row.as_str() == Some("dataset:ag_news")));
+    assert!(dataset_ids.iter().any(|row| row.as_str() == Some("dataset:rust_idiom")));
+    assert!(dataset_ids
+        .iter()
+        .all(|row| row.as_str().unwrap_or("").starts_with("dataset:")));
+    assert!(!dataset_ids
+        .iter()
+        .any(|row| row == &apply["applied_proposal_id"]));
+    let receipt_path = apply["apply_receipt"].as_str().unwrap();
+    assert!(
+        receipt_path.ends_with("apply/improvement-apply.json"),
+        "{receipt_path}"
+    );
+    assert!(Path::new(receipt_path).is_file(), "{receipt_path}");
+    let receipt: Value =
+        serde_json::from_str(&fs::read_to_string(receipt_path).unwrap()).unwrap();
+    assert_eq!(receipt["schema"], "cell-one.improvement-apply.v0");
+    assert_eq!(receipt["proposal_id"], "specialty-seat:ag_news");
+    assert_eq!(receipt["proposal_kind"], "specialty-seat");
+    assert_eq!(receipt["binding_id"], "ag_news");
+    assert_eq!(receipt["auto_train"], false);
+    assert_eq!(receipt["train_invoked"], false);
+    assert_eq!(receipt["require_plan"], true);
+    assert_eq!(receipt["joinable"], true);
+    let lab = PathBuf::from(apply["lab_estate"].as_str().unwrap());
+    assert!(lab.ends_with("apply/lab-estate.yaml"), "{}", lab.display());
+    let estate = estate_schema::load_estate(&lab).unwrap();
+    assert!(estate.model_bindings.iter().any(|row| row.id == "ag_news"));
+    assert!(estate.model_bindings.iter().any(|row| row.id == "local_slm"));
+    assert!(!estate.model_bindings.iter().any(|row| row.id == "rust_idiom"));
     assert_eq!(report["control_plane_schema"], "cell-one.control-plane-prove.v0");
     assert_eq!(report["fuel"]["trained_shape"], "gguf");
     assert_eq!(report["fuel"]["auto_apply"], false);
@@ -334,6 +412,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
             out.join("improvement/improvement-package.yaml"),
             art.join("cohesion-improvement-package.yaml"),
         );
+        let _ = fs::copy(receipt_path, art.join("cohesion-improvement-apply.json"));
     }
     let _ = fs::remove_dir_all(&out);
     let _ = fs::remove_dir_all(&sentinel);
@@ -436,6 +515,26 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
             text.contains("auto_train"),
             "{name} missing auto_train lock"
         );
+        assert!(
+            text.contains("does not re-run host-validate"),
+            "{name} missing cohesion apply reuse"
+        );
+        assert!(
+            text.contains("cell-one.improvement-apply.v0"),
+            "{name} missing apply receipt schema"
+        );
+        assert!(
+            text.contains("refuse:plan"),
+            "{name} missing refuse:plan"
+        );
+        assert!(
+            !text.contains("can compose this later"),
+            "{name} still says the apply stitch is later"
+        );
+        assert!(
+            !text.contains("stays export-only"),
+            "{name} still says cohesion is export-only"
+        );
     }
     assert!(log.contains("pack_mcp::run_command_with_timeout"), "{log}");
     assert!(!north.contains("READY_FOR_LIVE_TEST: yes"), "{north}");
@@ -470,6 +569,18 @@ fn cohesion_prove_reuses_pack_mcp_timeout_helper() {
     assert!(
         cohesion.contains("improvement_export::run_export_stage"),
         "cohesion-prove must compose improvement-export"
+    );
+    assert!(
+        cohesion.contains("improvement_apply::run_apply_stage"),
+        "cohesion-prove must compose the gated apply stage"
+    );
+    assert!(
+        !cohesion.contains("cmd_decisions_improvement_apply_prove"),
+        "cohesion-prove must not shrink into the standalone apply prove"
+    );
+    assert!(
+        !cohesion.contains("cmd_decisions_host_validate_prove"),
+        "cohesion apply must not re-run host-validate"
     );
 }
 
@@ -548,6 +659,21 @@ fn cohesion_prove_binds_planted_specialty_ggufs_as_named_seats() {
     assert!(
         report["improvement"]["proposal_count"].as_u64().unwrap() >= 4
     );
+    assert_eq!(report["apply"]["applied_proposal_id"], "specialty-seat:ag_news");
+    assert_eq!(report["apply"]["applied_proposal_kind"], "specialty-seat");
+    assert_eq!(report["apply"]["binding_id"], "ag_news");
+    assert_eq!(report["apply"]["joinable"], true);
+    assert_eq!(report["apply"]["require_plan"], true);
+    assert_eq!(report["apply"]["auto_train"], false);
+    assert_eq!(report["apply"]["train_invoked"], false);
+    assert_eq!(report["apply"]["local_slm"], true);
+    assert_eq!(report["apply"]["dataset_proposals"], "proposal-only");
+    assert_eq!(
+        report["apply"]["refuse_without_plan"],
+        "refuse:plan: apply-package requires --require-plan"
+    );
+    assert!(stdout.contains("cohesion-prove: improvement-apply"), "{stdout}");
+    assert!(stdout.contains("cohesion-prove: refuse-without-plan"), "{stdout}");
     assert_eq!(report["specialty_real"]["stage"], "bound");
     assert_eq!(report["specialty_real"]["ok"], true);
     assert_eq!(report["specialty_real"]["ready_for_live_test"], false);

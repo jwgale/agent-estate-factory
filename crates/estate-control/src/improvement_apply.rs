@@ -10,8 +10,10 @@
 //! receipts → export-package, then applies one proposal on a throwaway
 //! apply lab. Standing next is joinable after the gated apply. Locked
 //! `examples/estate.yaml` is refused. Apply without a plan is refused.
-//! `READY_FOR_LIVE_TEST` stays no. Sibling of improvement-export-prove;
-//! cohesion-prove can compose this later.
+//! `READY_FOR_LIVE_TEST` stays no. Sibling of improvement-export-prove.
+//! `estate pack cohesion-prove` composes the same gated apply after
+//! its export stage, reusing `{out}/improvement` without a second
+//! host-validate.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -29,6 +31,8 @@ const LOCKED_CKSUM: &str = "43770130 3391";
 const APPLY_SCHEMA: &str = "cell-one.improvement-apply.v0";
 const PROVE_SCHEMA: &str = "cell-one.improvement-apply-prove.v0";
 const KIND_SEAT: &str = "specialty-seat";
+const KIND_DATASET: &str = "dataset";
+pub(crate) const REFUSE_WITHOUT_PLAN: &str = "refuse:plan: apply-package requires --require-plan";
 
 pub(crate) fn cmd_decisions_apply_package(
     package_path: &Path,
@@ -46,7 +50,7 @@ pub(crate) fn cmd_decisions_apply_package(
     receipt_out: Option<&Path>,
 ) -> Result<Value> {
     if !require_plan {
-        bail!("refuse:plan: apply-package requires --require-plan");
+        bail!(REFUSE_WITHOUT_PLAN);
     }
     let root = root
         .canonicalize()
@@ -150,114 +154,16 @@ pub(crate) fn cmd_decisions_improvement_apply_prove(root: &Path, out: Option<&Pa
     if package.auto_train || package.train_invoked {
         bail!("refuse:improvement: package invented auto-train");
     }
-    let picked = improvement_export::pick_specialty_seat(&package, None)?.clone();
-    refuse_train_on_proposal(&picked)?;
-    println!(
-        "improvement-apply-prove: pick {} kind={} binding={}",
-        proposal_id(&picked),
-        picked.kind,
-        picked.binding_id
-    );
-
-    let apply_out = out.join("apply");
-    let _ = fs::remove_dir_all(&apply_out);
-    fs::create_dir_all(&apply_out)?;
-    println!("improvement-apply-prove: stage");
-    let staged = specialty_bind::stage_one_specialty_for_apply(&root, &apply_out, &picked.binding_id)?;
-    if staged.binding_id != picked.binding_id {
-        bail!(
-            "refuse:proposal: staged {} want {}",
-            staged.binding_id,
-            picked.binding_id
-        );
-    }
-    if estate_has_binding(&staged.lab, &picked.binding_id)? {
-        bail!(
-            "refuse:binding: {} landed before gated apply",
-            picked.binding_id
-        );
-    }
-    if fs::read(&locked)? != before {
-        bail!("refuse:estate: stage rewrote examples/estate.yaml");
-    }
-
     let package_path = package_dir.join("improvement-package.json");
-    let policy = root.join("policy/cell-one.policy.v0.yaml");
-    let lab_before = fs::read(&staged.lab)?;
-
-    println!("improvement-apply-prove: refuse-without-plan");
-    match cmd_decisions_apply_package(
+    let outcome = run_gated_apply(
+        &package,
         &package_path,
-        &staged.lab,
-        &staged.prepared,
-        &staged.state,
-        &staged.plans,
-        &staged.roots,
-        false,
-        Some(&proposal_id(&picked)),
-        Some(&staged.tag),
+        &out.join("apply"),
         &root,
-        &policy,
-        "jason",
-        None,
-    ) {
-        Ok(_) => bail!("refuse:plan: apply-package without --require-plan must refuse"),
-        Err(err) => {
-            let text = format!("{err:#}");
-            if !text.contains("refuse:plan: apply-package requires --require-plan") {
-                bail!("refuse:plan: unexpected refuse without plan: {text}");
-            }
-            println!("refuse:plan: apply-package requires --require-plan");
-        }
-    }
-    if fs::read(&staged.lab)? != lab_before {
-        bail!("refuse:estate: apply without plan rewrote the lab estate");
-    }
-    if estate_has_binding(&staged.lab, &picked.binding_id)? {
-        bail!(
-            "refuse:binding: {} landed without --require-plan",
-            picked.binding_id
-        );
-    }
-
-    println!("improvement-apply-prove: apply --require-plan");
-    let receipt_path = apply_out.join("improvement-apply.json");
-    let applied = cmd_decisions_apply_package(
-        &package_path,
-        &staged.lab,
-        &staged.prepared,
-        &staged.state,
-        &staged.plans,
-        &staged.roots,
-        true,
-        Some(&proposal_id(&picked)),
-        Some(&staged.tag),
-        &root,
-        &policy,
-        "jason",
-        Some(&receipt_path),
+        "improvement-apply-prove",
     )?;
     if fs::read(&locked)? != before {
         bail!("refuse:estate: gated apply rewrote examples/estate.yaml");
-    }
-    if !estate_has_binding(&staged.lab, &picked.binding_id)? {
-        bail!(
-            "refuse:binding: {} missing after gated apply",
-            picked.binding_id
-        );
-    }
-    if !estate_has_binding(&staged.lab, "local_slm")? {
-        bail!("refuse:binding: local_slm missing after gated apply");
-    }
-
-    println!("improvement-apply-prove: standing-next");
-    crate::enrich::cmd_enrich_standing_next(&staged.lab, &staged.prepared)?;
-    let joinable = applied
-        .get("joinable")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if !joinable {
-        bail!("refuse:standing: gated apply is not joinable");
     }
 
     let cksum_after = file_cksum(&locked)?;
@@ -277,28 +183,312 @@ pub(crate) fn cmd_decisions_improvement_apply_prove(root: &Path, out: Option<&Pa
         "estate_cksum": cksum_after,
         "host_validate_report": out.join("host-validate-prove.json").display().to_string(),
         "package_path": package_path.display().to_string(),
-        "applied_proposal_id": proposal_id(&picked),
-        "applied_proposal_kind": picked.kind,
-        "binding_id": picked.binding_id,
+        "applied_proposal_id": outcome.proposal_id,
+        "applied_proposal_kind": outcome.proposal_kind,
+        "binding_id": outcome.binding_id,
         "joinable": true,
         "standing": "joinable: yes",
         "require_plan": true,
-        "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
-        "apply_receipt": receipt_path.display().to_string(),
-        "lab_estate": staged.lab.display().to_string(),
+        "refuse_without_plan": REFUSE_WITHOUT_PLAN,
+        "apply_receipt": outcome.receipt_path.display().to_string(),
+        "lab_estate": outcome.lab.display().to_string(),
         "note": "Fixture prove. Reuses host-validate authorize / convey / complete --mock receipts, export-package, then gated apply of one specialty-seat proposal through apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. Not a live PASS."
     });
     write_prove_report(&out, &body)?;
     println!("{}", serde_json::to_string_pretty(&body)?);
     println!(
         "applied: {} kind={} binding={} joinable=yes auto_train=false train_invoked=no",
-        proposal_id(&picked),
-        picked.kind,
-        picked.binding_id
+        outcome.proposal_id, outcome.proposal_kind, outcome.binding_id
     );
     println!("improvement-apply-prove: ok");
     println!("READY_FOR_LIVE_TEST: no");
     Ok(())
+}
+
+struct GatedApplyOutcome {
+    proposal_id: String,
+    proposal_kind: String,
+    binding_id: String,
+    receipt_path: PathBuf,
+    lab: PathBuf,
+}
+
+/// One gated specialty-seat apply on a throwaway lab.
+///
+/// Reuses `package` already loaded from disk. Does not host-validate
+/// and does not export-package. Prefers `specialty-seat:ag_news` when
+/// that proposal is present. Apply without `--require-plan` is
+/// `refuse:plan` and leaves the lab unchanged.
+fn run_gated_apply(
+    package: &ImprovementPackage,
+    package_path: &Path,
+    apply_out: &Path,
+    root: &Path,
+    log_prefix: &str,
+) -> Result<GatedApplyOutcome> {
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("refuse:root: {}", root.display()))?;
+    let package_before = fs::read(package_path)
+        .with_context(|| format!("refuse:package: read {}", package_path.display()))?;
+    let picked = prefer_specialty_seat(package)?.clone();
+    refuse_train_on_proposal(&picked)?;
+    if picked.kind != KIND_SEAT {
+        bail!(
+            "refuse:proposal: apply-package applies one specialty-seat proposal; got {}",
+            picked.kind
+        );
+    }
+    println!(
+        "{log_prefix}: pick {} kind={} binding={}",
+        proposal_id(&picked),
+        picked.kind,
+        picked.binding_id
+    );
+
+    let locked = root.join("examples/estate.yaml");
+    let locked_before = if locked.is_file() {
+        Some(fs::read(&locked)?)
+    } else {
+        None
+    };
+
+    let _ = fs::remove_dir_all(apply_out);
+    fs::create_dir_all(apply_out)
+        .with_context(|| format!("refuse:out: {}", apply_out.display()))?;
+    println!("{log_prefix}: stage");
+    let staged =
+        specialty_bind::stage_one_specialty_for_apply(&root, apply_out, &picked.binding_id)?;
+    if staged.binding_id != picked.binding_id {
+        bail!(
+            "refuse:proposal: staged {} want {}",
+            staged.binding_id, picked.binding_id
+        );
+    }
+    if estate_has_binding(&staged.lab, &picked.binding_id)? {
+        bail!(
+            "refuse:binding: {} landed before gated apply",
+            picked.binding_id
+        );
+    }
+    if let Some(before) = &locked_before {
+        if fs::read(&locked)? != *before {
+            bail!("refuse:estate: stage rewrote examples/estate.yaml");
+        }
+    }
+
+    let policy = root.join("policy/cell-one.policy.v0.yaml");
+    let lab_before = fs::read(&staged.lab)?;
+    println!("{log_prefix}: refuse-without-plan");
+    match cmd_decisions_apply_package(
+        package_path,
+        &staged.lab,
+        &staged.prepared,
+        &staged.state,
+        &staged.plans,
+        &staged.roots,
+        false,
+        Some(&proposal_id(&picked)),
+        Some(&staged.tag),
+        &root,
+        &policy,
+        "jason",
+        None,
+    ) {
+        Ok(_) => bail!("refuse:plan: apply-package without --require-plan must refuse"),
+        Err(err) => {
+            let text = format!("{err:#}");
+            if !text.contains(REFUSE_WITHOUT_PLAN) {
+                bail!("refuse:plan: unexpected refuse without plan: {text}");
+            }
+            println!("{REFUSE_WITHOUT_PLAN}");
+        }
+    }
+    if fs::read(&staged.lab)? != lab_before {
+        bail!("refuse:estate: apply without plan rewrote the lab estate");
+    }
+    if estate_has_binding(&staged.lab, &picked.binding_id)? {
+        bail!(
+            "refuse:binding: {} landed without --require-plan",
+            picked.binding_id
+        );
+    }
+
+    println!("{log_prefix}: apply --require-plan");
+    let receipt_path = apply_out.join("improvement-apply.json");
+    let applied = cmd_decisions_apply_package(
+        package_path,
+        &staged.lab,
+        &staged.prepared,
+        &staged.state,
+        &staged.plans,
+        &staged.roots,
+        true,
+        Some(&proposal_id(&picked)),
+        Some(&staged.tag),
+        &root,
+        &policy,
+        "jason",
+        Some(&receipt_path),
+    )?;
+    if let Some(before) = &locked_before {
+        if fs::read(&locked)? != *before {
+            bail!("refuse:estate: gated apply rewrote examples/estate.yaml");
+        }
+    }
+    if fs::read(package_path)? != package_before {
+        bail!("refuse:package: gated apply rewrote the improvement package");
+    }
+    if !estate_has_binding(&staged.lab, &picked.binding_id)? {
+        bail!(
+            "refuse:binding: {} missing after gated apply",
+            picked.binding_id
+        );
+    }
+    if !estate_has_binding(&staged.lab, "local_slm")? {
+        bail!("refuse:binding: local_slm missing after gated apply");
+    }
+    for row in package.proposals.iter().filter(|row| row.kind == KIND_SEAT) {
+        if row.binding_id == picked.binding_id {
+            continue;
+        }
+        if estate_has_binding(&staged.lab, &row.binding_id)? {
+            bail!(
+                "refuse:proposal: {} landed but only one specialty-seat is applied",
+                row.binding_id
+            );
+        }
+    }
+    if package
+        .proposals
+        .iter()
+        .any(|row| row.kind == KIND_DATASET && row.auto_train)
+    {
+        bail!("refuse:improvement: a dataset proposal invented auto-train");
+    }
+    if package.proposals.iter().any(|row| {
+        row.kind == KIND_DATASET && proposal_id(row) == proposal_id(&picked)
+    }) {
+        bail!("refuse:proposal: dataset proposal was selected for apply");
+    }
+
+    println!("{log_prefix}: standing-next");
+    crate::enrich::cmd_enrich_standing_next(&staged.lab, &staged.prepared)?;
+    let joinable = applied
+        .get("joinable")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !joinable {
+        bail!("refuse:standing: gated apply is not joinable");
+    }
+    if applied.get("auto_train") != Some(&Value::Bool(false))
+        || applied.get("train_invoked") != Some(&Value::Bool(false))
+        || applied.get("require_plan") != Some(&Value::Bool(true))
+    {
+        bail!("refuse:improvement: apply receipt invented auto-train or dropped require-plan");
+    }
+
+    Ok(GatedApplyOutcome {
+        proposal_id: proposal_id(&picked),
+        proposal_kind: picked.kind,
+        binding_id: picked.binding_id,
+        receipt_path,
+        lab: staged.lab,
+    })
+}
+
+fn prefer_specialty_seat<'a>(package: &'a ImprovementPackage) -> Result<&'a EnrichProposal> {
+    if let Some(row) = package.proposals.iter().find(|row| {
+        row.kind == KIND_SEAT
+            && (row.binding_id == "ag_news" || proposal_id(row) == "specialty-seat:ag_news")
+    }) {
+        return Ok(row);
+    }
+    improvement_export::pick_specialty_seat(package, None)
+}
+
+/// Apply stage for `estate pack cohesion-prove`.
+///
+/// Loads the standing package already written under `{out}/improvement`.
+/// Does not re-run host-validate and does not export-package again.
+pub(crate) fn run_apply_stage(out: &Path, root: &Path) -> Result<Value> {
+    let package_path = out.join("improvement").join("improvement-package.json");
+    if !package_path.is_file() {
+        bail!(
+            "refuse:package: cohesion apply reuses {} and does not re-run host-validate",
+            package_path.display()
+        );
+    }
+    let package = improvement_export::load_package(&package_path)?;
+    let journal = Path::new(&package.journal.path);
+    if !journal.is_file() {
+        bail!(
+            "refuse:package: cohesion apply journal {} is missing; does not re-run host-validate",
+            journal.display()
+        );
+    }
+    if !package.proposals.iter().any(|row| row.kind == KIND_DATASET) {
+        bail!(
+            "refuse:proposal: cohesion apply package has no dataset proposals to leave proposal-only"
+        );
+    }
+    let locked = root.join("examples").join("estate.yaml");
+    let apply_out = out.join("apply");
+    if control_plane_prove::refuses_locked_target(&apply_out, root, &locked)?
+        || looks_like_locked_estate(&apply_out)
+    {
+        bail!("refuse:out: cohesion apply does not write examples/estate.yaml");
+    }
+    let outcome = run_gated_apply(&package, &package_path, &apply_out, root, "cohesion-prove")?;
+    if package.proposals.iter().any(|row| {
+        row.kind == KIND_SEAT && row.binding_id == "ag_news"
+    }) && outcome.binding_id != "ag_news"
+    {
+        bail!("refuse:proposal: cohesion apply did not prefer ag_news");
+    }
+    if outcome.proposal_kind != KIND_SEAT {
+        bail!("refuse:proposal: cohesion apply kind is not specialty-seat");
+    }
+    Ok(apply_stage_cite(&outcome, &package, &package_path))
+}
+
+fn apply_stage_cite(
+    outcome: &GatedApplyOutcome,
+    package: &ImprovementPackage,
+    package_path: &Path,
+) -> Value {
+    let dataset_ids: Vec<String> = package
+        .proposals
+        .iter()
+        .filter(|row| row.kind == KIND_DATASET)
+        .map(proposal_id)
+        .collect();
+    json!({
+        "schema": APPLY_SCHEMA,
+        "ok": true,
+        "ready_for_live_test": false,
+        "live_pass_recorded": false,
+        "live_sync": false,
+        "auto_train": false,
+        "train_invoked": false,
+        "require_plan": true,
+        "refuse_without_plan": REFUSE_WITHOUT_PLAN,
+        "apply_receipt": outcome.receipt_path.display().to_string(),
+        "applied_proposal_id": outcome.proposal_id,
+        "applied_proposal_kind": outcome.proposal_kind,
+        "binding_id": outcome.binding_id,
+        "joinable": true,
+        "standing": "joinable: yes",
+        "local_slm": true,
+        "dataset_proposals": "proposal-only",
+        "dataset_proposal_ids": dataset_ids,
+        "package_path": package_path.display().to_string(),
+        "lab_estate": outcome.lab.display().to_string(),
+        "composed_by": "cohesion-prove",
+        "reused_existing_package": true,
+        "host_validate_rerun": false,
+        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. Not a live PASS."
+    })
 }
 
 fn apply_picked_proposal(
@@ -574,5 +764,50 @@ mod tests {
         let err = improvement_export::pick_specialty_seat(&package, Some("dataset:ag_news"))
             .unwrap_err();
         assert!(format!("{err:#}").contains("specialty-seat"), "{err:#}");
+    }
+
+    #[test]
+    fn prefer_specialty_seat_picks_ag_news_ahead_of_rust() {
+        let package = ImprovementPackage {
+            schema: "cell-one.improvement-package.v0".into(),
+            id: "improvement-from-decisions".into(),
+            kind: "standing-improvement".into(),
+            auto_train: false,
+            train_invoked: false,
+            ready_for_live_test: false,
+            live_pass_recorded: false,
+            live_sync: false,
+            journal: JournalCite {
+                path: "journal".into(),
+                receipts: 1,
+                surface_authorize: 1,
+                surface_convey: 1,
+                surface_complete: 1,
+                specialty_seats: vec!["rust_idiom".into(), "ag_news".into()],
+            },
+            proposals: vec![
+                proposal(KIND_DATASET, "ag_news"),
+                proposal(KIND_SEAT, "rust_idiom"),
+                proposal(KIND_SEAT, "ag_news"),
+            ],
+            note: "none".into(),
+        };
+        let picked = prefer_specialty_seat(&package).unwrap();
+        assert_eq!(proposal_id(picked), "specialty-seat:ag_news");
+        assert_eq!(picked.kind, KIND_SEAT);
+    }
+
+    #[test]
+    fn cohesion_apply_stage_refuses_missing_package_without_host_validate() {
+        let missing = std::env::temp_dir().join(format!(
+            "cell-one-cohesion-apply-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&missing);
+        let err = run_apply_stage(&missing, Path::new(".")).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refuse:package"), "{text}");
+        assert!(text.contains("does not re-run host-validate"), "{text}");
+        assert!(!text.contains("decision-host-validate-prove"), "{text}");
     }
 }

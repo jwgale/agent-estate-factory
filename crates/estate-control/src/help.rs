@@ -1361,8 +1361,15 @@ context=applied and cites hop 1; research stays
 refuse:pack-orchestrator. Then the export-package stage of
 estate decisions improvement-export-prove writes a standing
 improvement package from that lab journal (auto_train=false,
-train not invoked). Report cell-one.cohesion-prove.v0 cites the
-package path, proposal count/kind, and auto_train=false.
+train not invoked). Then one gated specialty-seat apply on
+{out}/apply reuses that package and does not re-run host-validate.
+Apply without --require-plan is refuse:plan. apply-package
+--require-plan lands one specialty-seat (prefer ag_news). Standing
+next is joinable. local_slm stays. Dataset proposals stay
+proposal-only. Report cell-one.cohesion-prove.v0 cites the package
+path, proposal count/kind, the apply receipt
+(cell-one.improvement-apply.v0), applied proposal id/kind/binding,
+joinable, require_plan=true, refuse:plan, and auto_train=false.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision

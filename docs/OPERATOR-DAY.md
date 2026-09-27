@@ -643,11 +643,12 @@ estate control-plane-prove --root . --out /tmp/cell-one-control-plane
 
 `estate pack cohesion-prove` is the feelable fuel → decide → run →
 specialty-real → pack install → multi-hop CLI crew session →
-improvement export loop on one throwaway directory. It composes
-`estate control-plane-prove` (section 4d), then an optional
-specialty-real bind, then `estate pack crew-session-prove`, then the
-export-package stage of `estate decisions improvement-export-prove`
-(section 4f). When import-trained AG News / rust_idiom GGUF artifacts
+improvement export → gated specialty-seat apply loop on one throwaway
+directory. It composes `estate control-plane-prove` (section 4d), then
+an optional specialty-real bind, then `estate pack crew-session-prove`,
+then the export-package stage of `estate decisions improvement-export-prove`
+(section 4f), then one gated apply from section 4g on a throwaway apply
+lab under the same `--out`. When import-trained AG News / rust_idiom GGUF artifacts
 are present on the machine they bind as named specialty seats
 (`ag_news`, `rust_idiom`) beside `local_slm` and `complete --mock`
 names those seats (not generic `local_slm`). When absent the stage is
@@ -702,17 +703,36 @@ extra receipt. Session turns stay 2. A fresh session id does not leak
 hop 1. A Cursor MCP loader hang is out of scope. The report records
 `cursor_loader: out-of-scope` and `loader_is_live_pass: false`.
 
+After export, cohesion stages one specialty seat with
+`specialty_bind::stage_one_specialty_for_apply` under `{out}/apply`
+and reuses the package already written at `{out}/improvement`. It does not re-run host-validate
+for the apply. Apply without `--require-plan`
+prints `refuse:plan: apply-package requires --require-plan` and leaves
+the apply lab unchanged. `apply-package --require-plan` then applies
+one `specialty-seat:*` (prefer `ag_news` when that proposal is present)
+through `apply-proposal` → `plan` → `apply --require-plan`. Standing
+next for that seat is `joinable: yes`. `local_slm` stays on the apply
+lab. Dataset proposals stay proposal-only. `auto_train=false`.
+`train_invoked=false`. Train is not invoked.
+
 The compact report is `cell-one.cohesion-prove.v0` (`cohesion-prove.json`).
 `ok` is true only when fuel, decide, run, install, multi-hop CLI crew
-session smoke, and the standing improvement export all pass. The
-`improvement` cite names the package path, proposal count/kind
-(`specialty-seat`, `dataset`), `auto_train=false`, and
-`train_invoked=false`. Specialty-real may be `skipped:gguf-absent`
-and still counts as ok. `ready_for_live_test` and `live_pass_recorded`
-stay false. `live_sync` stays false. The command ends with
-`cohesion-prove: ok` and `READY_FOR_LIVE_TEST: no`. In-process mock.
-No network. No Ollama. No GPU train. This is not a live PASS. `--out`
-that is `examples/estate.yaml` is `refuse:out`. Sibling proves:
+session smoke, the standing improvement export, and the gated
+specialty-seat apply all pass. The `improvement` cite names the package
+path, proposal count/kind (`specialty-seat`, `dataset`),
+`auto_train=false`, and `train_invoked=false`. The `apply` cite names
+the apply receipt path (`cell-one.improvement-apply.v0`), the applied
+proposal id/kind/binding, `joinable: yes`, `require_plan=true`,
+`auto_train=false`, `train_invoked=false`, and
+`refuse:plan: apply-package requires --require-plan`. Specialty-real
+may be `skipped:gguf-absent` and still counts as ok.
+`ready_for_live_test` and `live_pass_recorded` stay false. `live_sync`
+stays false. The command ends with `cohesion-prove: ok` and
+`READY_FOR_LIVE_TEST: no`. In-process mock. No network. No Ollama. No
+GPU train. This is not a live PASS. `--out` that is
+`examples/estate.yaml` is `refuse:out`. Sibling surfaces stay callable
+alone (`improvement-export-prove`, `improvement-apply-prove`, and
+`apply-package`):
 
 ```bash
 estate pack crew-session-prove --root . --out /tmp/cell-one-crew-session
@@ -769,8 +789,12 @@ proposal-only. Train is not invoked. `auto_train=false`.
 <lab> --prepared <prepared> --require-plan` is the operator command.
 Without `--require-plan` it is `refuse:plan` and the lab estate stays
 unchanged. `--out` that is `examples/estate.yaml` is `refuse:out`.
-Sibling-first: `estate pack cohesion-prove` can compose this later
-and stays export-only on this tip.
+`estate pack cohesion-prove` composes this same gated apply after the
+export stage on one throwaway lab (section 4e). It reuses the package
+already written under `{out}/improvement` and does not re-run host-validate
+for the apply. The apply lab is `{out}/apply`. This
+sibling prove stays callable alone, as do `improvement-export-prove`
+and `apply-package`.
 
 The compact report is `cell-one.improvement-apply-prove.v0`
 (`improvement-apply-prove.json`). It cites the applied proposal
