@@ -2140,8 +2140,11 @@ pub(crate) enum EnrichCommand {
     /// Throwaway prove: mocked classify-journey GGUF → import-trained
     /// (`trained_shape` gguf, `auto_apply=false`) → `local_slm` on a lab
     /// estate → Standing next → mock complete for an agent that allows
-    /// `local_slm`. Does not train. Does not start a GPU job. Does not
-    /// rewrite `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+    /// `local_slm`. `--dual` lands `ag_news` and `rust_idiom` beside
+    /// `local_slm` (allow-lists and Model intentions per seat, then mock
+    /// receipts). Two specialty ids on one allow-list still abstain.
+    /// Does not train. Does not start a GPU job. Does not rewrite
+    /// `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
     BindProve {
         /// Repository root that holds `examples/estate.yaml` and the overnight pack.
         #[arg(long, default_value = ".")]
@@ -2149,6 +2152,9 @@ pub(crate) enum EnrichCommand {
         /// Throwaway directory. Default is a fresh directory under the temp dir.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Land `ag_news` and `rust_idiom` beside `local_slm` on the lab copy.
+        #[arg(long, default_value_t = false)]
+        dual: bool,
     },
     /// Stage a binding proposal for estate plan and estate apply --require-plan.
     /// Does not apply. Does not rewrite the source estate.

@@ -81,3 +81,68 @@ fn bind_prove_lands_gguf_as_joinable_local_slm() {
     assert_eq!(after, before, "examples/estate.yaml cksum changed");
     let _ = fs::remove_dir_all(&out);
 }
+
+#[test]
+fn bind_prove_dual_lands_two_specialties_beside_local_slm() {
+    let before = cksum_locked();
+    assert!(
+        before.starts_with("43770130 3391"),
+        "examples/estate.yaml cksum drifted: {before}"
+    );
+    let out = scratch("dual");
+    let run = bin()
+        .args([
+            "enrich",
+            "bind-prove",
+            "--dual",
+            "--root",
+            repo_root().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .env_remove("CELL_LOCAL_ENDPOINT")
+        .env_remove("CELL_RENTED_ENDPOINT")
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(run.status.success(), "{text}");
+    assert!(text.contains("specialty-join recorded: binding=ag_news"), "{text}");
+    assert!(text.contains("specialty-join recorded: binding=rust_idiom"), "{text}");
+    assert!(
+        text.contains("binding present: ag_news class=local model=specialist-agnews-3000"),
+        "{text}"
+    );
+    assert!(
+        text.contains("binding present: rust_idiom class=local model=specialist-rustidiom-3000"),
+        "{text}"
+    );
+    assert!(text.contains("local_slm kept"), "{text}");
+    assert!(text.contains("lab intention: research model ag_news effect=allow"), "{text}");
+    assert!(text.contains("lab intention: idiom model rust_idiom effect=allow"), "{text}");
+    assert!(text.contains("joinable: yes"), "{text}");
+    assert!(text.contains("binding: ag_news"), "{text}");
+    assert!(text.contains("binding: rust_idiom"), "{text}");
+    assert!(text.contains("The seat is joinable."), "{text}");
+    assert!(text.contains("result=ag_news"), "{text}");
+    assert!(text.contains("result=rust_idiom"), "{text}");
+    assert!(text.contains("capability=ag_news"), "{text}");
+    assert!(text.contains("capability=rust_idiom"), "{text}");
+    assert!(text.contains("result=abstain"), "{text}");
+    assert!(text.contains("candidates=ag_news,rust_idiom") || text.contains("candidates=rust_idiom,ag_news"), "{text}");
+    assert!(text.contains("cell-one.specialty-bind-prove-dual.v0"), "{text}");
+    assert!(text.contains("specialty-bind-prove-dual: ok"), "{text}");
+    assert!(text.contains("\"ready_for_live_test\": false"), "{text}");
+    assert!(text.contains("\"live_pass_recorded\": false"), "{text}");
+    assert!(text.contains("43770130 3391"), "{text}");
+    assert!(text.contains("READY_FOR_LIVE_TEST: no"), "{text}");
+    assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+    assert!(!text.contains("live PASS recorded"), "{text}");
+    assert!(!text.contains("\"ok\": false"), "{text}");
+    let after = cksum_locked();
+    assert_eq!(after, before, "examples/estate.yaml cksum changed");
+    let _ = fs::remove_dir_all(&out);
+}

@@ -2353,6 +2353,9 @@ fn ag_news_journey_make_target_prints_the_handoff() {
         stdout.contains(&format!("--adapter {}", specialist.display())),
         "{stdout}"
     );
+    assert!(stdout.contains("opt-in multi-local"), "{stdout}");
+    assert!(stdout.contains("--binding-id"), "{stdout}");
+    assert!(stdout.contains("bind-prove --dual"), "{stdout}");
     assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
     assert!(!out.join("binding-proposal.json").exists());

@@ -76,7 +76,7 @@ Equal-class model binding. Cell One id `xai_grok`. Driver `frontier-http`. Live 
 
 Equal-class model binding. Cell One id `local_slm`. Class `local`. The binding is the estate contract. The process behind it sits in the local-runtime seat.
 
-A specialty SLM joins that seat when `estate enrich import-trained` records a GGUF (`trained_shape` gguf, `auto_apply=false`) and an agent models allow-list names `local_slm`. `specialty-join.json` (`cell-one.specialty-join.v0`) is that record. `estate enrich standing-next` prints whether the seat is joinable. `estate enrich bind-prove` runs the loop on a lab copy with a mocked GGUF. `make ag-news-journey` prints the same opt-in path. `READY_FOR_LIVE_TEST` stays no.
+A specialty SLM joins that seat when `estate enrich import-trained` records a GGUF (`trained_shape` gguf, `auto_apply=false`) and an agent models allow-list names the binding. Default without `--binding-id` is `local_slm`. `--binding-id ag_news` or `--binding-id rust_idiom` records `specialty-join.json` (`cell-one.specialty-join.v0`) for that portable id and adds the seat beside `local_slm`. `estate enrich standing-next` prints whether that prepared binding is joinable. Joinable needs the GGUF as a regular file and an allow-list that names it. The file alone is not joinable. `estate enrich bind-prove` runs the `local_slm` loop on a lab copy with a mocked GGUF. `estate enrich bind-prove --dual` runs the same loop for `ag_news` and `rust_idiom` beside `local_slm`. `make ag-news-journey` prints the opt-in path, including `--binding-id`. `READY_FOR_LIVE_TEST` stays no.
 
 ### local runtime (driver)
 

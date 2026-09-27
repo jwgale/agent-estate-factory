@@ -597,11 +597,12 @@ make enrich-prepare
 
 ## 4b. Bindable specialty (opt-in, not a train)
 
-`estate enrich import-trained` on a classify-journey GGUF records `trained_shape` gguf and `auto_apply=false`, writes `specialty-join.json`, and leaves the source estate unchanged. `estate enrich standing-next` prints whether that `local_slm` seat is joinable. `estate enrich bind-prove --root . --out <throwaway>` runs the loop on a lab copy with a mocked GGUF: import, `apply --require-plan`, Standing next, and a mock complete as `research`. The lab copy records an allow Model intention for research on `local_slm` so that receipt names the seat. `make ag-news-journey` prints that opt-in path and does not invoke the prove. Neither command starts a GPU train. Locked `examples/estate.yaml` stays deny-default and cksum `43770130 3391`. `READY_FOR_LIVE_TEST`: no.
+`estate enrich import-trained` on a classify-journey GGUF records `trained_shape` gguf and `auto_apply=false`, writes `specialty-join.json` for the prepared binding, and leaves the source estate unchanged. Default without `--binding-id` stays `local_slm`. `--binding-id ag_news` then `--binding-id rust_idiom` records a join for each portable id. `estate enrich standing-next` prints whether that binding is joinable: the GGUF is a regular file and an agent models allow-list names it. The file alone is not joinable. `estate enrich bind-prove --root . --out <throwaway>` runs the `local_slm` loop on a lab copy with a mocked GGUF: import, `apply --require-plan`, Standing next, and a mock complete as `research`. The lab copy records an allow Model intention for research on `local_slm` so that receipt names the seat. `estate enrich bind-prove --dual` lands `ag_news` and `rust_idiom` beside `local_slm` on a lab copy, records scoped allow-lists and Model intentions, prints Standing next `joinable: yes` for each, and leaves mock receipts that name those seats. An allow-list that names both specialty ids still abstains. `make ag-news-journey` prints that opt-in path, including `--binding-id`, and does not invoke the prove. Neither command starts a GPU train. Locked `examples/estate.yaml` stays deny-default and cksum `43770130 3391`. `READY_FOR_LIVE_TEST`: no.
 
 ```bash
 make ag-news-journey
 estate enrich bind-prove --root . --out /tmp/cell-one-specialty-bind
+estate enrich bind-prove --dual --root . --out /tmp/cell-one-specialty-bind-dual
 ```
 
 ## 5. Backup rotate

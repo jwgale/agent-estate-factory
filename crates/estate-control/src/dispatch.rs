@@ -695,8 +695,8 @@ pub(crate) fn run() -> Result<()> {
             EnrichCommand::StandingNext { estate, prepared } => {
                 crate::enrich::cmd_enrich_standing_next(&estate, &prepared)
             }
-            EnrichCommand::BindProve { root, out } => {
-                crate::specialty_bind::cmd_enrich_bind_prove(&root, out.as_deref())
+            EnrichCommand::BindProve { root, out, dual } => {
+                crate::specialty_bind::cmd_enrich_bind_prove(&root, out.as_deref(), dual)
             }
             EnrichCommand::ApplyProposal {
                 estate,
