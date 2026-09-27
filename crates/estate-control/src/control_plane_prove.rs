@@ -685,7 +685,7 @@ impl Drop for RunnerStop {
     }
 }
 
-fn refuses_locked_target(out: &Path, root: &Path, locked: &Path) -> Result<bool> {
+pub(crate) fn refuses_locked_target(out: &Path, root: &Path, locked: &Path) -> Result<bool> {
     let cwd = std::env::current_dir().context("refuse:out: cwd")?;
     let abs = if out.is_absolute() {
         out.to_path_buf()

@@ -581,6 +581,11 @@ pub(crate) fn assert_install_md(path: &Path) -> Result<()> {
         ".estate-pack-install.json",
         "refuse:plugin-install-symlink",
         "loaded: skipped:loader-unavailable",
+        "CLI smoke (first-class)",
+        "estate complete --mock",
+        "Cursor MCP loader hang is out of scope",
+        "cohesion-prove",
+        "outcome: allow",
     ] {
         if !text.contains(needle) {
             bail!("refuse:plugin-prove-install: INSTALL.md missing '{needle}'");

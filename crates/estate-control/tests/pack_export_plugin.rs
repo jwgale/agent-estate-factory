@@ -347,6 +347,20 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         install.contains("does not claim Cursor Customize loaded the plugin"),
         "{install}"
     );
+    assert!(install.contains("CLI smoke (first-class)"), "{install}");
+    assert!(install.contains("estate complete --mock"), "{install}");
+    assert!(
+        install.contains("Cursor MCP loader hang is out of scope"),
+        "{install}"
+    );
+    assert!(install.contains("cohesion-prove"), "{install}");
+    assert!(install.contains("outcome: allow"), "{install}");
+    assert!(readme.contains("CLI smoke (first-class)"), "{readme}");
+    assert!(readme.contains("estate complete --mock"), "{readme}");
+    assert!(
+        readme.contains("Cursor MCP loader hang is out of scope"),
+        "{readme}"
+    );
 
     let runner = read(&out.join("RUNNER.md"));
     assert!(runner.contains("# RUNNER"), "{runner}");

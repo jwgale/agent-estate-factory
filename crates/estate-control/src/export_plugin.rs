@@ -509,6 +509,11 @@ fn write_readme(
     md.push_str("Local directory install: `estate pack plugin-install-local`\n");
     md.push_str("copies the proved export into `~/.cursor/plugins/local/<plugin-name>`\n");
     md.push_str("and writes `.estate-pack-install.json`. Does not claim Cursor Customize loaded the plugin.\n");
+    md.push_str("CLI smoke (first-class) is `estate complete --mock` as the\n");
+    md.push_str("orchestrator (decision receipt, outcome allow) and as a member\n");
+    md.push_str("(`refuse:pack-orchestrator`). `estate pack cohesion-prove` runs\n");
+    md.push_str("that smoke. A Cursor MCP loader hang is out of scope.\n");
+    md.push_str("`READY_FOR_LIVE_TEST: no`.\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
 }
@@ -526,13 +531,42 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
     let md = format!(
         "# INSTALL\n\
          \n\
-         Human Cursor smoke for this Agent Plugin export. Mock only.\n\
+         Human install notes for this Agent Plugin export. Mock only.\n\
          Pack `{pack}`. Orchestrator `{orch}`.\n\
+         CLI smoke is first-class. A Cursor MCP loader hang is out of scope.\n\
          \n\
          ## 1. Plugin folder\n\
          \n\
          This directory (the export root). It holds `plugin.json`, `mcp.json`,\n\
          `skills/`, `INSTALL.md`, `RUNNER.md`, `SESSION.md`, and `estate-pack.json`.\n\
+         \n\
+         ## 1b. CLI smoke (first-class)\n\
+         \n\
+         This gate runs `estate complete --mock` on the estate binary baked\n\
+         into `mcp.json` (`command`). It does not start Cursor and it does\n\
+         not call `loadUserLocalPlugins`. A Cursor MCP loader hang is out of scope.\n\
+         Do not treat that hang, or `loaded: skipped:loader-unavailable`, as a\n\
+         live PASS.\n\
+         \n\
+         Orchestrator `{caller}` (decision receipt, outcome allow):\n\
+         \n\
+             estate complete --mock --agent {caller} --pack {pack} \\\n\
+               --estate <estate.yaml> --state-dir <throwaway> --prompt ping\n\
+         \n\
+         Expected: exit 0. Stdout includes `decision receipt:`. The journal\n\
+         row is `schema: cell-one.decision-receipt.v0`, `surface: complete`,\n\
+         `pack_id: {pack}`, `outcome: allow`.\n\
+         \n\
+         Member `{member}`:\n\
+         \n\
+             estate complete --mock --agent {member} --pack {pack} \\\n\
+               --estate <estate.yaml> --state-dir <throwaway> --prompt ping\n\
+         \n\
+         Expected: exit non-zero and `refuse:pack-orchestrator`. No receipt.\n\
+         \n\
+         `estate pack cohesion-prove` runs this smoke after\n\
+         `estate pack plugin-install-local` on a throwaway HOME.\n\
+         `READY_FOR_LIVE_TEST: no`. `live_sync: false`. Not a live PASS.\n\
          \n\
          ## 2. Load `mcp.json` in Cursor\n\
          \n\
@@ -604,6 +638,9 @@ fn write_install_md(out: &Path, pack: &AgentPack, orch: &str) -> Result<()> {
          `loaded: yes` or `loaded: skipped:loader-unavailable`.\n\
          `loaded: yes` means `loadUserLocalPlugins` listed this name.\n\
          That line does not claim Cursor Customize loaded the plugin.\n\
+         A Cursor MCP loader hang is out of scope. The first-class gate is\n\
+         the CLI smoke in section 1b (`estate complete --mock`), which\n\
+         `estate pack cohesion-prove` runs on a throwaway HOME.\n\
          `READY_FOR_LIVE_TEST: no`. `live_sync: false`. Not a live PASS.\n\
          \n\
              estate pack plugin-install-local --id {pack} \\\n\

@@ -497,7 +497,7 @@ pub(crate) enum Command {
         session_create: bool,
     },
     /// Estate agent packs: list / show / export-plugin / plugin-prove /
-    /// plugin-install-local / mcp-serve.
+    /// plugin-install-local / cohesion-prove / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1186,6 +1186,34 @@ pub(crate) enum PackCommand {
         /// Does not override `refuse:plugin-install-symlink`.
         #[arg(long, default_value_t = false)]
         force: bool,
+    },
+    /// One throwaway lab: fuel, decide, run, then pack install and CLI smoke.
+    ///
+    /// Runs `estate control-plane-prove` on `--out` (dual import-trained
+    /// bind of `ag_news` and `rust_idiom` beside `local_slm`, host-validate
+    /// authorize / convey / complete --mock, then `standing-dual` under the
+    /// runner). Then `estate pack plugin-install-local` for `--id`
+    /// (default `research-crew`) on the handoff fixture, with `HOME` set to
+    /// a directory inside `--out`. Then CLI smoke of the baked estate
+    /// binary: `estate complete --mock` as the pack orchestrator (decision
+    /// receipt, outcome allow) and as a member (`refuse:pack-orchestrator`).
+    /// A Cursor MCP loader hang is out of scope. Does not rewrite
+    /// `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+    CohesionProve {
+        /// Repository root that holds `examples/estate.yaml` and the fixture.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        /// Refuses `examples/estate.yaml`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Pack to install and smoke. Default `research-crew`.
+        #[arg(long, default_value = "research-crew")]
+        id: String,
+        /// Fixture estate for the pack install and CLI smoke.
+        /// Relative paths are joined to `--root`.
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
     },
     /// Stdio MCP bridge: one pack member per process. Tool `complete`
     /// runs `estate complete --agent <member> --pack <pack-id>` against
