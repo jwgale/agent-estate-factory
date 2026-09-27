@@ -76,6 +76,8 @@ Equal-class model binding. Cell One id `xai_grok`. Driver `frontier-http`. Live 
 
 Equal-class model binding. Cell One id `local_slm`. Class `local`. The binding is the estate contract. The process behind it sits in the local-runtime seat.
 
+A specialty SLM joins that seat when `estate enrich import-trained` records a GGUF (`trained_shape` gguf, `auto_apply=false`) and an agent models allow-list names `local_slm`. `specialty-join.json` (`cell-one.specialty-join.v0`) is that record. `estate enrich standing-next` prints whether the seat is joinable. `estate enrich bind-prove` runs the loop on a lab copy with a mocked GGUF. `make ag-news-journey` prints the same opt-in path. `READY_FOR_LIVE_TEST` stays no.
+
 ### local runtime (driver)
 
 A local runtime is an ecosystem seat, held by a driver. Software on a host runs a model. Catalog, route, and bind take any entrant. Endpoint: `CELL_LOCAL_ENDPOINT`.

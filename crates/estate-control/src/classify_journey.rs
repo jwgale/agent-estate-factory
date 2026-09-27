@@ -2660,10 +2660,17 @@ fn handoff_display(
     }
 }
 
-fn print_standing_next(display: &HandoffDisplay) {
+fn print_standing_next(display: &HandoffDisplay, joinable: bool, join_reason: &str) {
     println!(
         "Standing next (estate) — after import-trained (trained_shape gguf, auto_apply=false):"
     );
+    if joinable {
+        println!("joinable: yes");
+        println!("The seat is joinable.");
+    } else {
+        println!("joinable: no");
+        println!("reason: {join_reason}");
+    }
     println!("The proposal stays auto_apply=false.");
     println!(
         "The factory does not apply the estate without an explicit operator --require-plan path."
@@ -2725,27 +2732,33 @@ fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMod
             println!("import-trained handoff (planned):");
             println!("{}", display.line);
             println!("trained_shape gguf. auto_apply=false.");
-            match specialist_gguf_status(&display.adapter_path) {
+            let (joinable, join_reason) = match specialist_gguf_status(&display.adapter_path) {
                 SpecialistGguf::Ready => {
                     println!("This print does not write a proposal.");
+                    (true, "")
                 }
                 SpecialistGguf::Missing => {
                     println!(
                         "specialist GGUF is not on disk. This print does not invent that file and does not write a proposal."
                     );
+                    (false, "specialist GGUF is not on disk.")
                 }
                 SpecialistGguf::Symlink => {
                     println!(
                         "specialist GGUF is a symlink. import-trained does not follow it. This print does not write a proposal."
                     );
+                    (
+                        false,
+                        "specialist GGUF is a symlink. import-trained does not follow it.",
+                    )
                 }
-            }
+            };
             if req.import_trained {
                 println!(
                     "--import-trained records only after --run when the specialist GGUF is a regular file. This print does not write a proposal."
                 );
             }
-            print_standing_next(&display);
+            print_standing_next(&display, joinable, join_reason);
             Ok(())
         }
         HandoffMode::AfterRun => finish_after_run(req, &display),
@@ -2792,11 +2805,12 @@ fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Resul
             Some(display.binding_id.as_str()),
             None,
             Some(req.tag),
+            Some(display.function.as_str()),
         )?;
     } else {
         println!("This command prints the import-trained line and does not write a proposal.");
     }
-    print_standing_next(display);
+    print_standing_next(display, true, "");
     Ok(())
 }
 

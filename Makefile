@@ -475,6 +475,9 @@ classify-qwen-journey:
 
 # Opt-in ag_news classify journey. Default is --print and train-size 3000.
 # AG_NEWS_RUN=1 executes train, merge, GGUF, Ollama, and eval on this host.
+# After the journey print, the script names the import→bind path
+# (trained_shape gguf, auto_apply false, binding local_slm, standing-next,
+# bind-prove). It does not invoke bind-prove and does not start a GPU train.
 # Local only. Do not add to smoke, gate-90, or GitHub Actions.
 # Does not record a live PASS. READY_FOR_LIVE_TEST stays no.
 ag-news-journey:

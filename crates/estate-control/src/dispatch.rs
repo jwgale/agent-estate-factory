@@ -679,6 +679,7 @@ pub(crate) fn run() -> Result<()> {
                 binding_id,
                 seat_model,
                 purpose_seat,
+                function,
                 curator,
             } => crate::enrich::cmd_enrich_import_trained(
                 &estate,
@@ -689,7 +690,14 @@ pub(crate) fn run() -> Result<()> {
                 binding_id.as_deref(),
                 seat_model.as_deref(),
                 purpose_seat.as_deref(),
+                function.as_deref(),
             ),
+            EnrichCommand::StandingNext { estate, prepared } => {
+                crate::enrich::cmd_enrich_standing_next(&estate, &prepared)
+            }
+            EnrichCommand::BindProve { root, out } => {
+                crate::specialty_bind::cmd_enrich_bind_prove(&root, out.as_deref())
+            }
             EnrichCommand::ApplyProposal {
                 estate,
                 prepared,

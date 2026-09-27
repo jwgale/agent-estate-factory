@@ -76,6 +76,17 @@ else
   ARGS+=(--print)
 fi
 "${ESTATE_CMD[@]}" "${ARGS[@]}"
+echo "opt-in import→bind (print; this target does not start a GPU train):"
+echo "  artifact: $OUT/specialist.$QUANT.gguf"
+echo "  function: ag_news"
+echo "  trained_shape: gguf"
+echo "  auto_apply: false"
+echo "  binding: local_slm"
+echo "  purpose_seat: specialist-agnews-${TRAIN_SIZE}"
+echo "  estate enrich import-trained --estate <lab-estate.yaml> --prepared <prepared> --tag cell-enrich-<pack> --adapter $OUT/specialist.$QUANT.gguf --function ag_news --purpose-seat specialist-agnews-${TRAIN_SIZE}"
+echo "  estate enrich standing-next --estate <lab-estate.yaml> --prepared <prepared>"
+echo "  estate enrich bind-prove --root . --out <throwaway>"
+echo "  bind-prove uses a mocked GGUF stub on a lab copy. This target does not invoke it."
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then
   echo "FAIL  examples/estate.yaml cksum changed" >&2

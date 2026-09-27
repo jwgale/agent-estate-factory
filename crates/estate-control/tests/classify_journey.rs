@@ -141,6 +141,10 @@ fn assert_standing_next(stdout: &str) {
         coda.contains("This function is one specialty local seat among those peers."),
         "{coda}"
     );
+    assert!(
+        coda.contains("joinable: yes") || coda.contains("joinable: no"),
+        "{coda}"
+    );
     assert!(coda.contains("READY_FOR_LIVE_TEST: no"), "{coda}");
     assert!(!coda.contains("READY_FOR_LIVE_TEST: yes"), "{coda}");
     assert!(!coda.contains("enforced"), "{coda}");

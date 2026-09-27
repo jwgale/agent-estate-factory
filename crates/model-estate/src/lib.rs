@@ -14,6 +14,7 @@ mod merge_adapt;
 mod mock;
 mod path;
 mod seat_bind;
+mod specialty_join;
 mod train_enrich;
 
 pub use actual::{drift_bindings, record_bindings, ModelActual, ModelDrift};
@@ -57,6 +58,10 @@ pub use seat_bind::{
     canonical_seat_name, discover_purpose_seat_hints, looks_like_purpose_seat,
     resolve_import_seat_model, try_list_live_seats, write_purpose_seat_sidecar, SeatBind,
     REFUSE_SEAT_HINT,
+};
+pub use specialty_join::{
+    assess_specialty_join, remove_specialty_join, specialty_joins_in_enrich, write_specialty_join,
+    SpecialtyJoin, SPECIALTY_JOIN_JSON, SPECIALTY_JOIN_SCHEMA,
 };
 pub use train_enrich::{
     apply_proposal, commit_enrich_stage, default_enrich_out, default_train_enrich_driver_id,
