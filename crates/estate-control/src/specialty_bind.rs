@@ -86,7 +86,7 @@ pub(crate) fn cmd_enrich_bind_prove(root: &Path, out: Option<&Path>) -> Result<(
         &gguf,
         "jason",
         None,
-        None,
+        Some(SEAT_MODEL),
         Some(SEAT_MODEL),
         Some(FUNCTION),
     )?;

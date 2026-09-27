@@ -2,6 +2,7 @@
 //! `--print` is the default. `--run` executes. A comparison file is local output only.
 //! After compare, the command prints the `import-trained` line for the specialist GGUF, then Standing next (estate).
 //! `--import-trained` records that proposal (`auto_apply=false`) only when the GGUF is a regular file.
+//! Standing next prints `joinable: yes` only when that GGUF is a regular file and an agent models allow-list names the binding.
 //!
 //! The base and the specialist share one convert, quant, and Modelfile shape. Only the LoRA differs.
 //! `--base-tag` is an opt-in library tag and skips that base build.
@@ -10,7 +11,7 @@ use crate::classify::{
     cmd_classify_eval, cmd_classify_prepare, cmd_classify_prepare_presplit, newcombe_delta_ci95,
     wilson_ci95, DatasetFormat, EvalApi, EvalGate,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use model_estate::llamafactory_template_name;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -2660,52 +2661,92 @@ fn handoff_display(
     }
 }
 
-fn print_standing_next(display: &HandoffDisplay, joinable: bool, join_reason: &str) {
-    println!(
-        "Standing next (estate) — after import-trained (trained_shape gguf, auto_apply=false):"
+/// File is on disk. Joinable still needs an agent models allow-list.
+const GGUF_READY_NEEDS_ALLOW: &str = "The specialist GGUF is ready. joinable still requires an agent models allow-list that names the binding.";
+
+/// Assess found no GGUF specialty proposal. Do not claim joinable from the file.
+const NO_PROPOSAL_JOIN: &str = "no gguf specialty proposal. joinable still requires an agent models allow-list that names the binding.";
+
+fn named_journey_path(path: Option<&Path>) -> Option<&Path> {
+    path.filter(|path| !path.as_os_str().is_empty())
+}
+
+/// Joinable for a specialist GGUF that is already a regular file.
+///
+/// Re-reads the proposal and the agent allow-list through `assess_specialty_join`.
+/// `None` from assess, or no estate to load, stays `joinable: no`.
+fn standing_join_after_ready_gguf(req: &JourneyRequest<'_>) -> Result<(bool, String)> {
+    let Some(estate_path) = named_journey_path(req.estate) else {
+        return Ok((false, GGUF_READY_NEEDS_ALLOW.to_string()));
+    };
+    let Some(prepared) = named_journey_path(req.prepared) else {
+        return Ok((false, GGUF_READY_NEEDS_ALLOW.to_string()));
+    };
+    let estate = estate_schema::load_estate_unvalidated(estate_path)
+        .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
+    match model_estate::assess_specialty_join(&estate, prepared)
+        .map_err(|err| anyhow::anyhow!("{err}"))?
+    {
+        Some(join) => Ok((join.joinable, join.reason)),
+        None => Ok((false, NO_PROPOSAL_JOIN.to_string())),
+    }
+}
+
+fn standing_next_text(display: &HandoffDisplay, joinable: bool, join_reason: &str) -> String {
+    let mut out = String::new();
+    out.push_str(
+        "Standing next (estate) — after import-trained (trained_shape gguf, auto_apply=false):\n",
     );
     if joinable {
-        println!("joinable: yes");
-        println!("The seat is joinable.");
+        out.push_str("joinable: yes\n");
+        out.push_str("The seat is joinable.\n");
     } else {
-        println!("joinable: no");
-        println!("reason: {join_reason}");
+        out.push_str("joinable: no\n");
+        out.push_str(&format!("reason: {join_reason}\n"));
     }
-    println!("The proposal stays auto_apply=false.");
-    println!(
-        "The factory does not apply the estate without an explicit operator --require-plan path."
+    out.push_str("The proposal stays auto_apply=false.\n");
+    out.push_str(
+        "The factory does not apply the estate without an explicit operator --require-plan path.\n",
     );
-    println!("No promote. No auto-promote.");
-    println!(
-        "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan."
+    out.push_str("No promote. No auto-promote.\n");
+    out.push_str(
+        "examples/estate.yaml stays unchanged unless the operator deliberately applies a plan.\n",
     );
     for line in specialty_seat_lines(&display.binding_id, &display.function) {
-        println!("{line}");
+        out.push_str(&line);
+        out.push('\n');
     }
-    println!("Equal-class frontier and local. This local seat is a first-class peer of frontier.");
-    println!("Other local specialty bindings stay beside this one.");
-    println!("This function is one specialty local seat among those peers.");
-    println!("Existing entrypoints (print only; this command does not execute them):");
-    println!(
-        "estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir .cell",
+    out.push_str(
+        "Equal-class frontier and local. This local seat is a first-class peer of frontier.\n",
+    );
+    out.push_str("Other local specialty bindings stay beside this one.\n");
+    out.push_str("This function is one specialty local seat among those peers.\n");
+    out.push_str("Existing entrypoints (print only; this command does not execute them):\n");
+    out.push_str(&format!(
+        "estate enrich apply-proposal --estate {} --prepared {} --tag {} --state-dir .cell\n",
         display.estate, display.prepared, display.tag
-    );
-    println!(
-        "estate plan --estate {} --plans-dir plans --state-dir .cell",
+    ));
+    out.push_str(&format!(
+        "estate plan --estate {} --plans-dir plans --state-dir .cell\n",
         display.estate
-    );
-    println!(
-        "estate apply --estate {} --state-dir .cell --require-plan --curator jason",
+    ));
+    out.push_str(&format!(
+        "estate apply --estate {} --state-dir .cell --require-plan --curator jason\n",
         display.estate
-    );
-    println!(
-        "estate reconcile --estate {} --state-dir .cell",
+    ));
+    out.push_str(&format!(
+        "estate reconcile --estate {} --state-dir .cell\n",
         display.estate
-    );
-    println!("This command does not execute them.");
-    println!("This print is not a live PASS. READY_FOR_LIVE_TEST: no.");
-    println!("The factory does not claim it trained.");
-    println!("The factory does not apply the estate.");
+    ));
+    out.push_str("This command does not execute them.\n");
+    out.push_str("This print is not a live PASS. READY_FOR_LIVE_TEST: no.\n");
+    out.push_str("The factory does not claim it trained.\n");
+    out.push_str("The factory does not apply the estate.\n");
+    out
+}
+
+fn print_standing_next(display: &HandoffDisplay, joinable: bool, join_reason: &str) {
+    print!("{}", standing_next_text(display, joinable, join_reason));
 }
 
 fn specialty_seat_lines(binding_id: &str, function: &str) -> [String; 2] {
@@ -2735,13 +2776,13 @@ fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMod
             let (joinable, join_reason) = match specialist_gguf_status(&display.adapter_path) {
                 SpecialistGguf::Ready => {
                     println!("This print does not write a proposal.");
-                    (true, "")
+                    standing_join_after_ready_gguf(req)?
                 }
                 SpecialistGguf::Missing => {
                     println!(
                         "specialist GGUF is not on disk. This print does not invent that file and does not write a proposal."
                     );
-                    (false, "specialist GGUF is not on disk.")
+                    (false, "specialist GGUF is not on disk.".to_string())
                 }
                 SpecialistGguf::Symlink => {
                     println!(
@@ -2749,7 +2790,7 @@ fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMod
                     );
                     (
                         false,
-                        "specialist GGUF is a symlink. import-trained does not follow it.",
+                        "specialist GGUF is a symlink. import-trained does not follow it.".to_string(),
                     )
                 }
             };
@@ -2758,7 +2799,7 @@ fn seat_handoff(req: &JourneyRequest<'_>, paths: &JourneyPaths, mode: HandoffMod
                     "--import-trained records only after --run when the specialist GGUF is a regular file. This print does not write a proposal."
                 );
             }
-            print_standing_next(&display, joinable, join_reason);
+            print_standing_next(&display, joinable, &join_reason);
             Ok(())
         }
         HandoffMode::AfterRun => finish_after_run(req, &display),
@@ -2810,7 +2851,8 @@ fn finish_after_run(req: &JourneyRequest<'_>, display: &HandoffDisplay) -> Resul
     } else {
         println!("This command prints the import-trained line and does not write a proposal.");
     }
-    print_standing_next(display, true, "");
+    let (joinable, reason) = standing_join_after_ready_gguf(req)?;
+    print_standing_next(display, joinable, &reason);
     Ok(())
 }
 
@@ -6896,6 +6938,75 @@ mod tests {
         assert!(paste.contains("Add this class:local"), "{paste}");
         assert!(paste.contains("local_slm stays"), "{paste}");
         assert_eq!(fs::read(&estate_path).unwrap(), before);
+        let (joinable, reason) = standing_join_after_ready_gguf(&req).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(
+            reason.contains("no agent models allow-list names ag_news"),
+            "{reason}"
+        );
+        let text = standing_next_text(&display, joinable, &reason);
+        assert!(text.contains("joinable: no"), "{text}");
+        assert!(!text.contains("joinable: yes"), "{text}");
+        assert!(!text.contains("The seat is joinable."), "{text}");
+        seat_handoff(&req, &paths, HandoffMode::Plan).unwrap();
+
+        let local = estate
+            .model_bindings
+            .iter()
+            .find(|binding| binding.id == "local_slm")
+            .unwrap()
+            .clone();
+        let mut ag = local;
+        ag.id = "ag_news".into();
+        estate.model_bindings.push(ag);
+        estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap()
+            .models
+            .push(estate_schema::ModelUseDecl {
+                id: "ag_news".into(),
+                description: None,
+            });
+        fs::write(
+            &estate_path,
+            estate_schema::render_estate_yaml(&estate).unwrap(),
+        )
+        .unwrap();
+        let (joinable, reason) = standing_join_after_ready_gguf(&req).unwrap();
+        assert!(joinable, "{reason}");
+        let text = standing_next_text(&display, joinable, &reason);
+        assert!(text.contains("joinable: yes"), "{text}");
+        assert!(text.contains("The seat is joinable."), "{text}");
+        assert!(!text.contains("joinable: no"), "{text}");
+
+        let empty = root.join("empty-prepared");
+        fs::create_dir_all(&empty).unwrap();
+        let no_proposal = JourneyRequest {
+            prepared: Some(&empty),
+            ..req
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&no_proposal).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(reason.contains("no gguf specialty proposal"), "{reason}");
+        let text = standing_next_text(&display, joinable, &reason);
+        assert!(text.contains("joinable: no"), "{text}");
+        assert!(!text.contains("joinable: yes"), "{text}");
+
+        let bare = JourneyRequest {
+            estate: None,
+            prepared: None,
+            ..no_proposal
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&bare).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(reason.contains("The specialist GGUF is ready."), "{reason}");
+        assert!(reason.contains("allow-list"), "{reason}");
+        let text = standing_next_text(&display, joinable, &reason);
+        assert!(text.contains("joinable: no"), "{text}");
+        assert!(!text.contains("joinable: yes"), "{text}");
+        assert!(!text.contains("The seat is joinable."), "{text}");
         let _ = fs::remove_dir_all(&root);
     }
 
