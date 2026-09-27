@@ -1375,7 +1375,9 @@ joinable, require_plan=true, refuse:plan, and auto_train=false.
 estate decisions report on that lab state-dir cites the same apply
 receipt by reading lock fields from the file (refuse:cite when
 missing; local state-dir only) so the closed loop is one operator
-surface.
+surface. estate pack session show on the crew state-dir cites
+those same receipt fields after the gated apply (copy beside the
+crew journal; no sibling ../apply/ walk).
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
