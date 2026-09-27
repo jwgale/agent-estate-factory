@@ -18,11 +18,13 @@
 //! (no second host-validate). Apply without `--require-plan` is
 //! `refuse:plan`. `apply-package --require-plan` lands one
 //! `specialty-seat:*` (prefer `ag_news`). Standing next is joinable.
-//! Dataset proposals stay proposal-only. Siblings
-//! `improvement-export-prove`, `improvement-apply-prove`, and
-//! `apply-package` stay callable alone. A Cursor MCP loader hang is
-//! out of scope. Does not rewrite `examples/estate.yaml`.
-//! `READY_FOR_LIVE_TEST` stays no.
+//! Dataset proposals stay proposal-only. `estate decisions report`
+//! on the lab state-dir cites the apply receipt
+//! (`cell-one.improvement-apply.v0`) so the closed loop is one
+//! operator surface. Siblings `improvement-export-prove`,
+//! `improvement-apply-prove`, and `apply-package` stay callable
+//! alone. A Cursor MCP loader hang is out of scope. Does not rewrite
+//! `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -136,6 +138,20 @@ pub(crate) fn cmd_cohesion_prove(
     }
     require_apply_cite(&apply, &package)?;
 
+    println!("cohesion-prove: decisions report");
+    crate::decisions::cmd_decisions_report(&state, None)?;
+    let receipt_path = apply
+        .get("apply_receipt")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("refuse:cohesion: apply receipt path missing"))?;
+    let receipt = read_json(Path::new(receipt_path))?;
+    let cited = crate::decisions::parse_apply_receipt_cite(&receipt)
+        .map_err(|err| anyhow::anyhow!("refuse:cohesion: {err}"))?;
+    let decisions_cite = crate::decisions::cite_nearby_apply_receipt(&state).ok_or_else(|| {
+        anyhow::anyhow!("refuse:cohesion: decisions report missing apply receipt cite")
+    })?;
+    require_decisions_apply_cite(&decisions_cite, &apply, &cited, &receipt)?;
+
     let cksum_after = file_cksum(&locked)?;
     if cksum_after != cksum_before {
         bail!("refuse:estate: examples/estate.yaml cksum changed to {cksum_after}");
@@ -160,7 +176,23 @@ pub(crate) fn cmd_cohesion_prove(
         "pack": crew_session_prove::pack_report(pack_id, &fixture, &out, &pack_stage),
         "improvement": improvement,
         "apply": apply,
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat (prefer ag_news). Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "decisions": {
+            "state_dir": state.display().to_string(),
+            "cites_apply": true,
+            "apply_schema": receipt.get("schema").cloned().unwrap_or(Value::Null),
+            "apply_receipt": receipt_path,
+            "applied_proposal_id": cited.proposal_id,
+            "applied_proposal_kind": cited.kind,
+            "binding_id": cited.binding,
+            "joinable": cited.joinable,
+            "standing": cited.standing,
+            "require_plan": cited.require_plan,
+            "refuse_without_plan": cited.refuse_without_plan,
+            "auto_train": cited.auto_train,
+            "train_invoked": cited.train_invoked,
+            "cite": decisions_cite,
+        },
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat (prefer ag_news). Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -442,6 +474,8 @@ fn require_apply_cite(
     package: &improvement_export::ImprovementPackage,
 ) -> Result<()> {
     if apply.get("schema").and_then(Value::as_str) != Some("cell-one.improvement-apply.v0")
+        || apply.get("apply_schema").and_then(Value::as_str)
+            != Some("cell-one.improvement-apply.v0")
         || apply.get("ok") != Some(&Value::Bool(true))
         || apply.get("auto_train") != Some(&Value::Bool(false))
         || apply.get("train_invoked") != Some(&Value::Bool(false))
@@ -507,12 +541,78 @@ fn require_apply_cite(
         || receipt.get("joinable") != Some(&Value::Bool(true))
         || receipt.get("binding_id").and_then(Value::as_str) != Some(binding)
         || receipt.get("proposal_kind").and_then(Value::as_str) != Some("specialty-seat")
+        || receipt.get("refuse_without_plan").and_then(Value::as_str)
+            != Some(improvement_apply::REFUSE_WITHOUT_PLAN)
     {
         bail!("refuse:cohesion: improvement-apply receipt does not match the cite");
     }
     let lab = apply.get("lab_estate").and_then(Value::as_str).unwrap_or("");
     if !Path::new(lab).is_file() {
         bail!("refuse:cohesion: improvement-apply lab missing");
+    }
+    Ok(())
+}
+
+fn require_decisions_apply_cite(
+    cite: &str,
+    apply: &Value,
+    cited: &crate::decisions::ApplyReceiptCite,
+    receipt: &Value,
+) -> Result<()> {
+    if cited.require_plan != true
+        || cited.auto_train != false
+        || cited.train_invoked != false
+        || cited.joinable != true
+        || cited.standing != "joinable: yes"
+        || cited.refuse_without_plan != improvement_apply::REFUSE_WITHOUT_PLAN
+    {
+        bail!("refuse:cohesion: decisions cite did not read gated apply locks from the receipt");
+    }
+    if receipt.get("require_plan") != Some(&Value::Bool(cited.require_plan))
+        || receipt.get("auto_train") != Some(&Value::Bool(cited.auto_train))
+        || receipt.get("train_invoked") != Some(&Value::Bool(cited.train_invoked))
+        || receipt.get("joinable") != Some(&Value::Bool(cited.joinable))
+        || receipt.get("standing").and_then(Value::as_str) != Some(cited.standing.as_str())
+        || receipt.get("refuse_without_plan").and_then(Value::as_str)
+            != Some(cited.refuse_without_plan.as_str())
+    {
+        bail!("refuse:cohesion: decisions cite does not mirror the apply receipt");
+    }
+    let apply_id = apply
+        .get("applied_proposal_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if cited.proposal_id != apply_id || cited.binding != apply.get("binding_id").and_then(Value::as_str).unwrap_or("")
+    {
+        bail!("refuse:cohesion: decisions cite proposal does not match apply");
+    }
+    for needle in [
+        format!("apply receipt: schema={}", crate::decisions::APPLY_RECEIPT_SCHEMA),
+        format!("applied proposal {}", cited.proposal_id),
+        format!("kind={}", cited.kind),
+        format!("binding={}", cited.binding),
+        format!("standing={}", cited.standing),
+        format!("joinable={}", cited.joinable),
+        format!("require_plan={}", cited.require_plan),
+        format!("refuse_without_plan={}", cited.refuse_without_plan),
+        format!("auto_train={}", cited.auto_train),
+        format!("train_invoked={}", cited.train_invoked),
+    ] {
+        if !cite.contains(&needle) {
+            bail!("refuse:cohesion: decisions report missing {needle}");
+        }
+    }
+    let cited_path = cite.lines().find_map(|line| {
+        line.strip_prefix(&format!(
+            "apply receipt: schema={} path=",
+            crate::decisions::APPLY_RECEIPT_SCHEMA
+        ))
+    });
+    let cited_path = cited_path.filter(|path| !path.is_empty()).ok_or_else(|| {
+        anyhow::anyhow!("refuse:cohesion: decisions report missing apply receipt path")
+    })?;
+    if !Path::new(cited_path).is_file() {
+        bail!("refuse:cohesion: decisions report apply path missing: {cited_path}");
     }
     Ok(())
 }

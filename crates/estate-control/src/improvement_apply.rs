@@ -19,7 +19,9 @@
 //! improvement-export-prove.
 //! `estate pack cohesion-prove` composes the same gated apply after
 //! its export stage, reusing `{out}/improvement` without a second
-//! host-validate.
+//! host-validate. `estate decisions report` on that lab cites the
+//! apply receipt so the operator sees the closed loop without
+//! digging files.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -198,9 +200,11 @@ pub(crate) fn cmd_decisions_improvement_apply_prove(root: &Path, out: Option<&Pa
         "refuse_without_plan": REFUSE_WITHOUT_PLAN,
         "apply_receipt": outcome.receipt_path.display().to_string(),
         "lab_estate": outcome.lab.display().to_string(),
-        "note": "Fixture prove. Reuses host-validate authorize / convey / complete --mock receipts, export-package, then gated apply of one specialty-seat proposal through apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. Not a live PASS."
+        "note": "Fixture prove. Reuses host-validate authorize / convey / complete --mock receipts, export-package, then gated apply of one specialty-seat proposal through apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites the apply receipt. Not a live PASS."
     });
     write_prove_report(&out, &body)?;
+    println!("improvement-apply-prove: decisions report");
+    crate::decisions::cmd_decisions_report(&state, None)?;
     println!("{}", serde_json::to_string_pretty(&body)?);
     println!(
         "applied: {} kind={} binding={} joinable=yes auto_train=false train_invoked=no",
@@ -393,6 +397,10 @@ fn run_gated_apply(
     {
         bail!("refuse:improvement: apply receipt invented auto-train or dropped require-plan");
     }
+    install_apply_receipt_for_report(&staged.state, &receipt_path)?;
+    if let Some(parent) = apply_out.parent() {
+        install_apply_receipt_for_report(&parent.join("state"), &receipt_path)?;
+    }
 
     Ok(GatedApplyOutcome {
         proposal_id: proposal_id(&picked),
@@ -471,6 +479,7 @@ fn apply_stage_cite(
         .collect();
     json!({
         "schema": APPLY_SCHEMA,
+        "apply_schema": APPLY_SCHEMA,
         "ok": true,
         "ready_for_live_test": false,
         "live_pass_recorded": false,
@@ -493,7 +502,7 @@ fn apply_stage_cite(
         "composed_by": "cohesion-prove",
         "reused_existing_package": true,
         "host_validate_rerun": false,
-        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. Not a live PASS."
+        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites this receipt. Not a live PASS."
     })
 }
 
@@ -596,6 +605,7 @@ fn apply_picked_proposal(
         "auto_train": false,
         "train_invoked": false,
         "require_plan": true,
+        "refuse_without_plan": REFUSE_WITHOUT_PLAN,
         "proposal_id": proposal_id(picked),
         "proposal_kind": picked.kind,
         "binding_id": picked.binding_id,
@@ -699,6 +709,25 @@ fn refuses_locked_write(path: &Path, root: &Path) -> Result<bool> {
     control_plane_prove::refuses_locked_target(path, root, &locked)
 }
 
+/// Copy the apply receipt beside a lab journal so `estate decisions report`
+/// cites it without the operator opening `{out}/apply`.
+fn install_apply_receipt_for_report(state_dir: &Path, receipt_path: &Path) -> Result<()> {
+    if !state_dir.is_dir() {
+        return Ok(());
+    }
+    let dest = state_dir.join("decisions").join("improvement-apply.json");
+    if dest.canonicalize().ok().as_deref() == receipt_path.canonicalize().ok().as_deref() {
+        return Ok(());
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("refuse:out: {}", parent.display()))?;
+    }
+    fs::copy(receipt_path, &dest)
+        .with_context(|| format!("refuse:out: copy apply receipt to {}", dest.display()))?;
+    Ok(())
+}
+
 fn write_apply_receipt(out: &Path, body: &Value) -> Result<()> {
     if let Some(parent) = out.parent() {
         if !parent.as_os_str().is_empty() {
@@ -721,7 +750,7 @@ fn write_prove_report(out: &Path, body: &Value) -> Result<()> {
 
 fn print_apply_cite(applied: &Value) {
     println!(
-        "applied improvement proposal {} kind={} binding={} joinable=yes auto_train=false train_invoked=no",
+        "applied improvement proposal {} kind={} binding={} standing=joinable: yes require_plan=true refuse_without_plan={} auto_train=false train_invoked=no schema={}",
         applied
             .get("proposal_id")
             .and_then(Value::as_str)
@@ -733,7 +762,9 @@ fn print_apply_cite(applied: &Value) {
         applied
             .get("binding_id")
             .and_then(Value::as_str)
-            .unwrap_or("-")
+            .unwrap_or("-"),
+        REFUSE_WITHOUT_PLAN,
+        APPLY_SCHEMA
     );
 }
 
