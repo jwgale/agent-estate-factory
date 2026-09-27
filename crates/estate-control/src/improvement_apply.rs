@@ -1,9 +1,12 @@
 //! Gated apply of one standing improvement-package proposal.
 //!
-//! `estate decisions apply-package` picks one specialty-seat proposal
-//! from a `cell-one.improvement-package.v0` and drives it through the
-//! existing enrich apply-proposal → plan → apply `--require-plan`
-//! path. `--require-plan` is required. Before any mutation it reads
+//! `estate decisions apply-package` applies one specialty-seat proposal
+//! from a `cell-one.improvement-package.v0` through the existing enrich
+//! apply-proposal → plan → apply `--require-plan` path. `--require-plan`
+//! is required. When the package has more than one specialty-seat,
+//! `--proposal specialty-seat:<id>` is required (`refuse:proposal:ambiguous`
+//! without it) and the lab stays unchanged. A single specialty-seat
+//! still defaults. Before any mutation it reads
 //! `{prepared}/binding-proposal.json` and requires `binding_id` (and
 //! the picked proposal id) to match the picked specialty-seat.
 //! Mismatch is `refuse:proposal:` (or `refuse:prepared:`) and leaves
@@ -11,8 +14,9 @@
 //! false.
 //!
 //! `estate decisions improvement-apply-prove` reuses host-validate
-//! receipts → export-package, then applies one proposal on a throwaway
-//! apply lab. Standing next is joinable after the gated apply. Locked
+//! receipts → export-package, then applies `--proposal specialty-seat:ag_news`
+//! on a throwaway apply lab. Standing next is joinable after the gated
+//! apply. Locked
 //! `examples/estate.yaml` is refused. Apply without a plan is refused.
 //! A prepared `binding_id` that does not match the picked seat is
 //! refused before mutation. `READY_FOR_LIVE_TEST` stays no. Sibling of
@@ -226,9 +230,10 @@ struct GatedApplyOutcome {
 /// One gated specialty-seat apply on a throwaway lab.
 ///
 /// Reuses `package` already loaded from disk. Does not host-validate
-/// and does not export-package. Prefers `specialty-seat:ag_news` when
-/// that proposal is present. Apply without `--require-plan` is
-/// `refuse:plan` and leaves the lab unchanged.
+/// and does not export-package. Passes `--proposal specialty-seat:ag_news`
+/// when that proposal is present so the apply stays deterministic.
+/// Apply without `--require-plan` is `refuse:plan` and leaves the lab
+/// unchanged.
 fn run_gated_apply(
     package: &ImprovementPackage,
     package_path: &Path,
@@ -241,7 +246,8 @@ fn run_gated_apply(
         .with_context(|| format!("refuse:root: {}", root.display()))?;
     let package_before = fs::read(package_path)
         .with_context(|| format!("refuse:package: read {}", package_path.display()))?;
-    let picked = prefer_specialty_seat(package)?.clone();
+    let want = prove_proposal_arg(package);
+    let picked = improvement_export::pick_specialty_seat(package, want)?.clone();
     refuse_train_on_proposal(&picked)?;
     if picked.kind != KIND_SEAT {
         bail!(
@@ -298,7 +304,7 @@ fn run_gated_apply(
         &staged.plans,
         &staged.roots,
         false,
-        Some(&proposal_id(&picked)),
+        want,
         Some(&staged.tag),
         &root,
         &policy,
@@ -334,7 +340,7 @@ fn run_gated_apply(
         &staged.plans,
         &staged.roots,
         true,
-        Some(&proposal_id(&picked)),
+        want,
         Some(&staged.tag),
         &root,
         &policy,
@@ -411,14 +417,17 @@ fn run_gated_apply(
     })
 }
 
-fn prefer_specialty_seat<'a>(package: &'a ImprovementPackage) -> Result<&'a EnrichProposal> {
-    if let Some(row) = package.proposals.iter().find(|row| {
+/// Prove / cohesion pass `--proposal specialty-seat:ag_news` when that
+/// seat is in the package so apply-package does not silently pick.
+fn prove_proposal_arg(package: &ImprovementPackage) -> Option<&'static str> {
+    if package.proposals.iter().any(|row| {
         row.kind == KIND_SEAT
             && (row.binding_id == "ag_news" || proposal_id(row) == "specialty-seat:ag_news")
     }) {
-        return Ok(row);
+        Some("specialty-seat:ag_news")
+    } else {
+        None
     }
-    improvement_export::pick_specialty_seat(package, None)
 }
 
 /// Apply stage for `estate pack cohesion-prove`.
@@ -458,7 +467,7 @@ pub(crate) fn run_apply_stage(out: &Path, root: &Path) -> Result<Value> {
         row.kind == KIND_SEAT && row.binding_id == "ag_news"
     }) && outcome.binding_id != "ag_news"
     {
-        bail!("refuse:proposal: cohesion apply did not prefer ag_news");
+        bail!("refuse:proposal: cohesion apply did not pass --proposal specialty-seat:ag_news");
     }
     if outcome.proposal_kind != KIND_SEAT {
         bail!("refuse:proposal: cohesion apply kind is not specialty-seat");
@@ -779,7 +788,7 @@ fn default_out() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::improvement_export::JournalCite;
+    use crate::improvement_export::{JournalCite, REFUSE_AMBIGUOUS_PROPOSAL};
 
     fn proposal(kind: &str, binding: &str) -> EnrichProposal {
         EnrichProposal {
@@ -851,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn prefer_specialty_seat_picks_ag_news_ahead_of_rust() {
+    fn prove_proposal_arg_is_explicit_ag_news() {
         let package = ImprovementPackage {
             schema: "cell-one.improvement-package.v0".into(),
             id: "improvement-from-decisions".into(),
@@ -876,9 +885,175 @@ mod tests {
             ],
             note: "none".into(),
         };
-        let picked = prefer_specialty_seat(&package).unwrap();
+        assert_eq!(prove_proposal_arg(&package), Some("specialty-seat:ag_news"));
+        let picked =
+            improvement_export::pick_specialty_seat(&package, prove_proposal_arg(&package))
+                .unwrap();
         assert_eq!(proposal_id(picked), "specialty-seat:ag_news");
         assert_eq!(picked.kind, KIND_SEAT);
+        let err = improvement_export::pick_specialty_seat(&package, None).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains(REFUSE_AMBIGUOUS_PROPOSAL), "{text}");
+        assert!(text.contains("specialty-seat:ag_news"), "{text}");
+        assert!(text.contains("specialty-seat:rust_idiom"), "{text}");
+    }
+
+    fn multi_seat_package_json() -> String {
+        r#"{
+  "schema": "cell-one.improvement-package.v0",
+  "id": "improvement-from-decisions",
+  "kind": "standing-improvement",
+  "auto_train": false,
+  "train_invoked": false,
+  "ready_for_live_test": false,
+  "live_pass_recorded": false,
+  "live_sync": false,
+  "journal": {
+    "path": "journal",
+    "receipts": 1,
+    "surface_authorize": 1,
+    "surface_convey": 1,
+    "surface_complete": 1,
+    "specialty_seats": ["ag_news", "rust_idiom"]
+  },
+  "proposals": [
+    {
+      "id": "specialty-seat:ag_news",
+      "kind": "specialty-seat",
+      "binding_id": "ag_news",
+      "dataset": "ag_news",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "dataset:ag_news",
+      "kind": "dataset",
+      "binding_id": "ag_news",
+      "dataset": "ag_news",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "specialty-seat:rust_idiom",
+      "kind": "specialty-seat",
+      "binding_id": "rust_idiom",
+      "dataset": "rust_idiom",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "dataset:rust_idiom",
+      "kind": "dataset",
+      "binding_id": "rust_idiom",
+      "dataset": "rust_idiom",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    }
+  ],
+  "note": "test"
+}
+"#
+        .into()
+    }
+
+    #[test]
+    fn apply_package_refuses_ambiguous_multi_seat_without_rewriting_lab() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let locked = root.join("examples/estate.yaml");
+        let locked_before = fs::read(&locked).unwrap();
+        let cksum_before = file_cksum(&locked).unwrap();
+        assert!(cksum_before.starts_with(LOCKED_CKSUM), "{cksum_before}");
+        let out = std::env::temp_dir().join(format!(
+            "cell-one-apply-ambiguous-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&out);
+        fs::create_dir_all(&out).unwrap();
+        let lab = out.join("lab-estate.yaml");
+        fs::copy(&locked, &lab).unwrap();
+        let lab_before = fs::read(&lab).unwrap();
+        let package_path = out.join("improvement-package.json");
+        fs::write(&package_path, multi_seat_package_json()).unwrap();
+        let prepared = out.join("prepared");
+        write_binding_proposal(&prepared, "ag_news", Some("ag_news"));
+        let err = cmd_decisions_apply_package(
+            &package_path,
+            &lab,
+            &prepared,
+            &out.join("state"),
+            &out.join("plans"),
+            &out.join("roots"),
+            true,
+            None,
+            None,
+            &root,
+            &root.join("policy/cell-one.policy.v0.yaml"),
+            "jason",
+            None,
+        )
+        .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains(REFUSE_AMBIGUOUS_PROPOSAL), "{text}");
+        assert!(text.contains("specialty-seat:ag_news"), "{text}");
+        assert!(text.contains("specialty-seat:rust_idiom"), "{text}");
+        assert_eq!(fs::read(&lab).unwrap(), lab_before);
+        assert!(!estate_has_binding(&lab, "ag_news").unwrap());
+        assert!(!estate_has_binding(&lab, "rust_idiom").unwrap());
+        assert!(!out.join("state/enrich-stage/staged-estate.yaml").is_file());
+        assert_eq!(fs::read(&locked).unwrap(), locked_before);
+        assert_eq!(file_cksum(&locked).unwrap(), cksum_before);
+        let _ = fs::remove_dir_all(&out);
+    }
+
+    #[test]
+    fn apply_package_applies_explicit_proposal_when_multi_seat() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let locked = root.join("examples/estate.yaml");
+        let locked_before = fs::read(&locked).unwrap();
+        let cksum_before = file_cksum(&locked).unwrap();
+        assert!(cksum_before.starts_with(LOCKED_CKSUM), "{cksum_before}");
+        let out = std::env::temp_dir().join(format!(
+            "cell-one-apply-explicit-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&out);
+        let staged =
+            specialty_bind::stage_one_specialty_for_apply(&root, &out, "ag_news").unwrap();
+        let package_path = out.join("improvement-package.json");
+        fs::write(&package_path, multi_seat_package_json()).unwrap();
+        let applied = cmd_decisions_apply_package(
+            &package_path,
+            &staged.lab,
+            &staged.prepared,
+            &staged.state,
+            &staged.plans,
+            &staged.roots,
+            true,
+            Some("specialty-seat:ag_news"),
+            Some(&staged.tag),
+            &root,
+            &root.join("policy/cell-one.policy.v0.yaml"),
+            "jason",
+            None,
+        )
+        .unwrap();
+        assert_eq!(applied["proposal_id"], "specialty-seat:ag_news");
+        assert_eq!(applied["proposal_kind"], "specialty-seat");
+        assert_eq!(applied["binding_id"], "ag_news");
+        assert_eq!(applied["auto_train"], false);
+        assert_eq!(applied["train_invoked"], false);
+        assert_eq!(applied["ready_for_live_test"], false);
+        assert_eq!(applied["require_plan"], true);
+        assert!(estate_has_binding(&staged.lab, "ag_news").unwrap());
+        assert!(estate_has_binding(&staged.lab, "local_slm").unwrap());
+        assert!(!estate_has_binding(&staged.lab, "rust_idiom").unwrap());
+        assert_eq!(fs::read(&locked).unwrap(), locked_before);
+        assert_eq!(file_cksum(&locked).unwrap(), cksum_before);
+        let _ = fs::remove_dir_all(&out);
     }
 
     #[test]

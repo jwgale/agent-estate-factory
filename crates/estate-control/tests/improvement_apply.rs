@@ -218,6 +218,68 @@ fn improvement_apply_prove_gates_one_specialty_seat_without_auto_train() {
     let _ = fs::remove_dir_all(&out);
 }
 
+fn package_json_multi() -> String {
+    r#"{
+  "schema": "cell-one.improvement-package.v0",
+  "id": "improvement-from-decisions",
+  "kind": "standing-improvement",
+  "auto_train": false,
+  "train_invoked": false,
+  "ready_for_live_test": false,
+  "live_pass_recorded": false,
+  "live_sync": false,
+  "journal": {
+    "path": "journal",
+    "receipts": 1,
+    "surface_authorize": 1,
+    "surface_convey": 1,
+    "surface_complete": 1,
+    "specialty_seats": ["ag_news", "rust_idiom"]
+  },
+  "proposals": [
+    {
+      "id": "specialty-seat:ag_news",
+      "kind": "specialty-seat",
+      "binding_id": "ag_news",
+      "dataset": "ag_news",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "dataset:ag_news",
+      "kind": "dataset",
+      "binding_id": "ag_news",
+      "dataset": "ag_news",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "specialty-seat:rust_idiom",
+      "kind": "specialty-seat",
+      "binding_id": "rust_idiom",
+      "dataset": "rust_idiom",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    },
+    {
+      "id": "dataset:rust_idiom",
+      "kind": "dataset",
+      "binding_id": "rust_idiom",
+      "dataset": "rust_idiom",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    }
+  ],
+  "note": "test"
+}
+"#
+    .into()
+}
+
 fn package_json(binding: &str) -> String {
     format!(
         r#"{{
@@ -252,6 +314,141 @@ fn package_json(binding: &str) -> String {
 }}
 "#
     )
+}
+
+#[test]
+fn apply_package_refuses_ambiguous_multi_seat_without_rewriting_lab() {
+    let before = cksum_locked();
+    assert!(before.starts_with("43770130 3391"), "{before}");
+    let locked = repo_root().join("examples/estate.yaml");
+    let bytes = fs::read(&locked).unwrap();
+    let decoy = scratch("ambiguous-proposal");
+    let lab = decoy.join("lab-estate.yaml");
+    fs::copy(&locked, &lab).unwrap();
+    let lab_before = fs::read(&lab).unwrap();
+    fs::write(decoy.join("improvement-package.json"), package_json_multi()).unwrap();
+    let prepared = decoy.join("prepared");
+    fs::create_dir_all(&prepared).unwrap();
+    fs::write(
+        prepared.join("binding-proposal.json"),
+        r#"{
+  "schema": "cell-one.enrich-binding-proposal.v0",
+  "binding_id": "ag_news",
+  "local_tag": "cell-enrich-overnight-traces",
+  "proposed_binding": { "id": "ag_news" },
+  "auto_apply": false,
+  "promoted": false,
+  "estate_rewritten": false
+}
+"#,
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run(&[
+        "decisions",
+        "apply-package",
+        "--package",
+        decoy.join("improvement-package.json").to_str().unwrap(),
+        "--estate",
+        lab.to_str().unwrap(),
+        "--prepared",
+        prepared.to_str().unwrap(),
+        "--state-dir",
+        decoy.join("state").to_str().unwrap(),
+        "--plans-dir",
+        decoy.join("plans").to_str().unwrap(),
+        "--roots-base",
+        decoy.join("roots").to_str().unwrap(),
+        "--require-plan",
+        "--root",
+        repo_root().to_str().unwrap(),
+    ]);
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(
+        stderr.contains("refuse:proposal:ambiguous"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("apply-package requires --proposal specialty-seat:<id>"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("specialty-seat:ag_news"), "{stderr}");
+    assert!(stderr.contains("specialty-seat:rust_idiom"), "{stderr}");
+    assert!(!stdout.contains("applied improvement proposal"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert!(!stdout.contains("\"auto_train\": true"), "{stdout}");
+    assert!(!decoy.join("state/enrich-stage/staged-estate.yaml").is_file());
+    assert_eq!(fs::read(&lab).unwrap(), lab_before);
+    assert_eq!(fs::read(&locked).unwrap(), bytes);
+    assert_eq!(cksum_locked(), before);
+    let _ = fs::remove_dir_all(&decoy);
+}
+
+#[test]
+fn apply_package_multi_seat_with_proposal_still_refuses_mismatched_prepared() {
+    let before = cksum_locked();
+    assert!(before.starts_with("43770130 3391"), "{before}");
+    let locked = repo_root().join("examples/estate.yaml");
+    let bytes = fs::read(&locked).unwrap();
+    let decoy = scratch("multi-proposal-mismatch");
+    let lab = decoy.join("lab-estate.yaml");
+    fs::copy(&locked, &lab).unwrap();
+    let lab_before = fs::read(&lab).unwrap();
+    fs::write(decoy.join("improvement-package.json"), package_json_multi()).unwrap();
+    let prepared = decoy.join("prepared");
+    fs::create_dir_all(&prepared).unwrap();
+    fs::write(
+        prepared.join("binding-proposal.json"),
+        r#"{
+  "schema": "cell-one.enrich-binding-proposal.v0",
+  "binding_id": "rust_idiom",
+  "local_tag": "cell-enrich-idiom-traces",
+  "proposed_binding": { "id": "rust_idiom" },
+  "auto_apply": false,
+  "promoted": false,
+  "estate_rewritten": false
+}
+"#,
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run(&[
+        "decisions",
+        "apply-package",
+        "--package",
+        decoy.join("improvement-package.json").to_str().unwrap(),
+        "--estate",
+        lab.to_str().unwrap(),
+        "--prepared",
+        prepared.to_str().unwrap(),
+        "--state-dir",
+        decoy.join("state").to_str().unwrap(),
+        "--plans-dir",
+        decoy.join("plans").to_str().unwrap(),
+        "--roots-base",
+        decoy.join("roots").to_str().unwrap(),
+        "--require-plan",
+        "--proposal",
+        "specialty-seat:ag_news",
+        "--root",
+        repo_root().to_str().unwrap(),
+    ]);
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(!stderr.contains("refuse:proposal:ambiguous"), "{stderr}");
+    assert!(
+        stderr.contains("refuse:proposal:") || stderr.contains("refuse:prepared:"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("prepared binding_id rust_idiom"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("picked ag_news"), "{stderr}");
+    assert!(!stdout.contains("applied improvement proposal"), "{stdout}");
+    assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
+    assert!(!decoy.join("state/enrich-stage/staged-estate.yaml").is_file());
+    assert_eq!(fs::read(&lab).unwrap(), lab_before);
+    assert_eq!(fs::read(&locked).unwrap(), bytes);
+    assert_eq!(cksum_locked(), before);
+    let _ = fs::remove_dir_all(&decoy);
 }
 
 #[test]
@@ -445,6 +642,8 @@ fn docs_document_improvement_apply_without_auto_train() {
     }
     assert!(day.contains("## 4g. Improvement-apply prove"), "{day}");
     assert!(day.contains("refuse:plan"), "{day}");
+    assert!(day.contains("refuse:proposal:ambiguous"), "{day}");
+    assert!(day.contains("--proposal specialty-seat:"), "{day}");
     assert!(
         day.contains("refuse:proposal:") || day.contains("refuse:prepared:"),
         "{day}"
@@ -453,6 +652,8 @@ fn docs_document_improvement_apply_without_auto_train() {
     assert!(day.contains("auto_train=false"), "{day}");
     assert!(log.contains("cell-one.improvement-apply-prove.v0"), "{log}");
     assert!(log.contains("cell-one.improvement-apply.v0"), "{log}");
+    assert!(log.contains("refuse:proposal:ambiguous"), "{log}");
+    assert!(log.contains("--proposal specialty-seat:"), "{log}");
     assert!(north.contains("apply-package"), "{north}");
     assert!(lang.contains("apply-package"), "{lang}");
 }

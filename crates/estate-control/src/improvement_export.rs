@@ -37,6 +37,8 @@ const PACKAGE_YAML: &str = "improvement-package.yaml";
 const KIND_SEAT: &str = "specialty-seat";
 const KIND_DATASET: &str = "dataset";
 const ACTION_ENRICH: &str = "enrich-prepare";
+pub(crate) const REFUSE_AMBIGUOUS_PROPOSAL: &str =
+    "refuse:proposal:ambiguous: apply-package requires --proposal specialty-seat:<id>";
 
 const SKIP_RESULTS: &[&str] = &["", "abstain", "xai_grok", "frontier_http", "local_slm"];
 
@@ -385,7 +387,16 @@ pub(crate) fn pick_specialty_seat<'a>(
         bail!("refuse:proposal: package has no specialty-seat proposal");
     }
     match want.map(str::trim).filter(|id| !id.is_empty()) {
-        None => Ok(seats[0]),
+        None => {
+            if seats.len() > 1 {
+                let have: Vec<String> = seats.iter().map(|row| proposal_id(row)).collect();
+                bail!(
+                    "{REFUSE_AMBIGUOUS_PROPOSAL} (have {})",
+                    have.join(", ")
+                );
+            }
+            Ok(seats[0])
+        }
         Some(id) => {
             if let Some(row) = package
                 .proposals
@@ -707,8 +718,17 @@ mod tests {
             proposals: proposals.clone(),
             note: "none".into(),
         };
-        let picked = pick_specialty_seat(&package, None).unwrap();
-        assert_eq!(proposal_id(picked), "specialty-seat:ag_news");
+        let err = pick_specialty_seat(&package, None).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains(REFUSE_AMBIGUOUS_PROPOSAL), "{text}");
+        assert!(text.contains("specialty-seat:ag_news"), "{text}");
+        assert!(text.contains("specialty-seat:rust_idiom"), "{text}");
+        assert_eq!(
+            pick_specialty_seat(&package, Some("specialty-seat:ag_news"))
+                .unwrap()
+                .binding_id,
+            "ag_news"
+        );
         assert_eq!(
             pick_specialty_seat(&package, Some("specialty-seat:rust_idiom"))
                 .unwrap()
@@ -719,6 +739,12 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("specialty-seat"));
+        let single = ImprovementPackage {
+            proposals: vec![proposals[0].clone()],
+            ..package.clone()
+        };
+        let picked = pick_specialty_seat(&single, None).unwrap();
+        assert_eq!(proposal_id(picked), "specialty-seat:ag_news");
     }
 
     #[test]
