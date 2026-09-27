@@ -242,12 +242,13 @@ half-configured runner never starts. Status lists `selected:` plus
 per-id `last_outcome` after a tick. Digest each cycle covers every
 selected routine. When that state-dir has a local
 `cell-one.improvement-apply.v0` receipt, `estate routine runner
-status` (and `last_digest` / status output when a digest cite is
-shown) cites the same apply-receipt fields `estate routine digest`
+status` cites the same apply-receipt fields `estate routine digest`
 already shows — schema, path, proposal id/kind/binding,
 standing/joinable, `require_plan`, `refuse_without_plan`,
-`auto_train`, `train_invoked` — by reading the receipt. Missing or
-wrong-typed lock fields are `refuse:cite` and are not invented.
+`auto_train`, `train_invoked` — by reading the receipt.
+`last_digest` stays the first digest line via `digest_cite`; the
+apply-receipt cite is an extra block after the status body.
+Missing or wrong-typed lock fields are `refuse:cite` and are not invented.
 Search is local to that state-dir (`decisions/improvement-apply.json`,
 then `{state-dir}/improvement-apply.json`); a sibling `../apply/` is
 not cited. No cite when no local receipt. Pidfile, status, and the
