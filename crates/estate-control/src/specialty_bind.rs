@@ -284,8 +284,11 @@ fn cmd_enrich_bind_prove_dual(root: &Path, out: Option<&Path>) -> Result<()> {
     let packs_dir = root.join("packs");
     let policy = root.join("policy/cell-one.policy.v0.yaml");
     let overnight = root.join("examples/fixtures/specialist-overnight.pack.json");
+    // Lab packs name a seated model tag so prepare can write a job.
+    // The locked estate's local_slm params stay unchanged.
+    let ag_pack = write_lab_pack(&out, &overnight, PACK_AG)?;
     let rust_pack = write_lab_pack(&out, &overnight, PACK_RUST)?;
-    prepare_lora(&lab, &overnight, &packs_dir, &state)?;
+    prepare_lora(&lab, &ag_pack, &packs_dir, &state)?;
     prepare_lora(&lab, &rust_pack, &packs_dir, &state)?;
     ensure_locked(&locked, &before)?;
 
@@ -752,8 +755,19 @@ fn write_lab_pack(dir: &Path, source: &Path, id: &str) -> Result<PathBuf> {
     if !text.contains(from) {
         bail!("refuse:pack: overnight fixture id moved");
     }
+    let hint = "\"model_hint\": \"local_slm\"";
+    if !text.contains(hint) {
+        bail!("refuse:pack: overnight fixture model_hint moved");
+    }
+    let body = text
+        .replacen(from, &format!("\"id\": \"{id}\""), 1)
+        .replacen(
+            hint,
+            "\"model_hint\": \"llama3\",\n  \"train_base_model\": \"Qwen/Qwen2.5-0.5B-Instruct\"",
+            1,
+        );
     let path = dir.join(format!("{id}.pack.json"));
-    fs::write(&path, text.replacen(from, &format!("\"id\": \"{id}\""), 1))?;
+    fs::write(&path, body)?;
     Ok(path)
 }
 

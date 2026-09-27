@@ -836,6 +836,16 @@ mod tests {
         assert_eq!(joined_rust.agents, vec!["idiom".to_string()]);
         assert_eq!(joined_ag.seat_model, "specialist-agnews-3000");
         assert_eq!(joined_rust.seat_model, "specialist-rustidiom-3000");
+        fs::write(
+            prepared_ag.join("binding-proposal.json"),
+            serde_json::to_string(&ag).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            prepared_rust.join("binding-proposal.json"),
+            serde_json::to_string(&rust).unwrap(),
+        )
+        .unwrap();
         let again = assess_specialty_join(&estate, &prepared_ag).unwrap().unwrap();
         assert_eq!(again.binding_id, "ag_news");
         assert!(again.joinable);
