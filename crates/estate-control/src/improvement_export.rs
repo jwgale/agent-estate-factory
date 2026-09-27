@@ -122,7 +122,8 @@ pub(crate) fn run_export_stage(
     let package_dir = out.join("improvement");
     let package = cmd_decisions_export_package(state_dir, &package_dir, root)?;
     require_host_validate_package(&package)?;
-    Ok((package, export_cite(&package, &package_dir)))
+    let cite = export_cite(&package, &package_dir);
+    Ok((package, cite))
 }
 
 pub(crate) fn export_cite(package: &ImprovementPackage, package_dir: &Path) -> Value {
