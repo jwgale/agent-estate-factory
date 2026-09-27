@@ -19,6 +19,7 @@ mod ops;
 mod pack_mcp;
 mod pack_session;
 mod plan_apply;
+mod plugin_install;
 mod plugin_prove;
 mod routine_runner;
 mod runner_prove;

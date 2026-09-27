@@ -496,7 +496,8 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = false)]
         session_create: bool,
     },
-    /// Estate agent packs: list / show / export-plugin / plugin-prove / mcp-serve.
+    /// Estate agent packs: list / show / export-plugin / plugin-prove /
+    /// plugin-install-local / mcp-serve.
     /// Distinct from enrich/feed packs (`estate packs`).
     Pack {
         #[command(subcommand)]
@@ -1098,6 +1099,43 @@ pub(crate) enum PackCommand {
         /// Used to re-check a folder (and by tests that mutate mcp.json).
         #[arg(long, default_value_t = false)]
         check_only: bool,
+    },
+    /// Prove an export (or export first) and install it as a real directory
+    /// under `~/.cursor/plugins/local/<plugin-name>`. Same asserts as
+    /// plugin-prove: baked absolute estate bin, horizon receipt, research
+    /// `refuse:pack-orchestrator`, non-thin RUNNER.md / SESSION.md.
+    /// Refuses a symlink whose target is outside the local plugins folder
+    /// (`refuse:plugin-install-symlink`) and refuses overwrite of a foreign
+    /// directory unless `--force`. Writes `.estate-pack-install.json`.
+    /// Records `loaded: yes` only when `loadUserLocalPlugins` lists the
+    /// name; otherwise `loaded: skipped:loader-unavailable`. Does not
+    /// claim Cursor Customize loaded the plugin. live_sync stays false.
+    /// READY_FOR_LIVE_TEST: no.
+    PluginInstallLocal {
+        #[arg(long, default_value = "research-crew")]
+        id: String,
+        /// Export directory. Reused as-is with `--check-only`.
+        /// Default: throwaway temp dir (kept).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Cursor local-plugins root. Default: `$HOME/.cursor/plugins/local`.
+        #[arg(long)]
+        target: Option<PathBuf>,
+        #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = "ping")]
+        prompt: String,
+        /// Same cap written into exported mcp env and used by mcp-serve.
+        /// Default 120. Env: CELL_MCP_COMPLETE_TIMEOUT_SECS.
+        #[arg(long)]
+        complete_timeout_secs: Option<u64>,
+        /// Prove an existing `--out` without exporting again, then install.
+        #[arg(long, default_value_t = false)]
+        check_only: bool,
+        /// Overwrite a directory that lacks the estate install marker.
+        /// Does not override `refuse:plugin-install-symlink`.
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
     /// Stdio MCP bridge: one pack member per process. Tool `complete`
     /// runs `estate complete --agent <member> --pack <pack-id>` against
