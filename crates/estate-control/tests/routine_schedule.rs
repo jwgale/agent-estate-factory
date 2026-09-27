@@ -215,9 +215,11 @@ fn routine_digest_and_tick_report_shape() {
         &state_s,
     ]);
     assert!(ok, "stderr={stderr}\nstdout={stdout}");
-    assert!(stdout.contains("routine digest ran=0 skipped=2"), "{stdout}");
+    assert!(stdout.contains("routine digest ran=0 skipped=3"), "{stdout}");
     assert!(stdout.contains("standing-classify status=skipped"), "{stdout}");
     assert!(stdout.contains("standing-once status=skipped"), "{stdout}");
+    assert!(stdout.contains("standing-dual status=skipped"), "{stdout}");
+    assert!(stdout.contains("package=dual-specialty"), "{stdout}");
     assert!(stdout.contains("package=classify-ping"), "{stdout}");
     assert!(stdout.contains("receipts=0"), "{stdout}");
     assert!(!stdout.contains("Grok Bot sync"), "{stdout}");
@@ -527,5 +529,64 @@ fn routine_watch_one_cycle_is_tick_plus_digest() {
     assert_eq!(load_receipts(&state).len(), 2);
     assert!(stdout.contains("session_id="), "{stdout}");
     assert!(stdout.contains("context=applied"), "{stdout}");
+    assert_locked_cksum();
+}
+
+#[test]
+fn routine_tick_standing_dual_three_hop_session() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("dual");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "tick",
+        "--id",
+        "standing-dual",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+        "--mock",
+        "--report",
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("ticked standing-dual"), "{stdout}");
+    assert!(stdout.contains("standing-dual status=ran package=dual-specialty"), "{stdout}");
+    assert!(stdout.contains("session_id="), "{stdout}");
+    assert!(stdout.contains("context=applied"), "{stdout}");
+    assert!(stdout.contains("chain=chain-dual-specialty-"), "{stdout}");
+
+    let rows = load_receipts(&state);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert_eq!(rows[0]["routine_id"], "standing-dual");
+    assert_eq!(rows[0]["package_id"], "dual-specialty");
+    assert_eq!(rows[0]["pack_id"], "dual-specialty");
+    assert_eq!(rows[0]["capability"], "ag_news");
+    assert_eq!(rows[0]["result"], "ag_news");
+    assert_eq!(rows[0]["handoff_to"], "research");
+    assert_eq!(rows[0]["session_context"], false);
+    assert_eq!(rows[1]["capability"], "rust_idiom");
+    assert_eq!(rows[1]["result"], "rust_idiom");
+    assert_eq!(rows[1]["handoff_to"], "idiom");
+    assert_eq!(rows[1]["session_context"], true);
+    assert_eq!(rows[2]["capability"], "frontier_http");
+    assert_eq!(rows[2]["result"], "frontier_http");
+    assert_eq!(rows[2]["handoff_to"], "horizon");
+    assert_eq!(rows[2]["session_context"], true);
+    assert_eq!(rows[0]["session_id"], rows[1]["session_id"]);
+    assert_eq!(rows[1]["session_id"], rows[2]["session_id"]);
+    assert_eq!(rows[0]["chain_id"], rows[1]["chain_id"]);
+    assert_eq!(rows[1]["chain_id"], rows[2]["chain_id"]);
+    let chain = rows[0]["chain_id"].as_str().expect("chain");
+    assert!(chain.starts_with("chain-dual-specialty-"), "{chain}");
+    let sid = rows[0]["session_id"].as_str().expect("session");
+    assert!(sid.starts_with("sess-"), "{sid}");
+    let saved = load_routine_state(&state);
+    assert_eq!(saved["routines"]["standing-dual"]["session_id"], sid);
     assert_locked_cksum();
 }

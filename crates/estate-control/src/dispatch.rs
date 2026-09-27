@@ -468,10 +468,12 @@ pub(crate) fn run() -> Result<()> {
             ),
             RoutineCommand::RunnerProve {
                 ids,
+                dual,
                 estate,
                 state_dir,
             } => crate::runner_prove::cmd_routine_runner_prove(
                 &ids,
+                dual,
                 &estate,
                 state_dir.as_deref(),
             ),

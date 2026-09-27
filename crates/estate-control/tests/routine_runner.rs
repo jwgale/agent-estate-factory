@@ -877,3 +877,93 @@ fn runner_prove_cli_multi_id_default_covers_both() {
     assert!(!state.join("routine-runner").join("default.pid").exists());
     assert_locked_cksum();
 }
+
+#[test]
+fn runner_prove_cli_dual_standing_id() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("prove-dual");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner-prove",
+        "--id",
+        "standing-dual",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(stdout.contains("routine runner-prove: standing-dual"), "{stdout}");
+    assert!(stdout.contains("ok: yes"), "{stdout}");
+    assert!(stdout.contains("hop1-ag_news: ok"), "{stdout}");
+    assert!(stdout.contains("hop2-rust_idiom: ok"), "{stdout}");
+    assert!(stdout.contains("hop3-frontier_http: ok"), "{stdout}");
+    assert!(stdout.contains("hop1-context-none: ok"), "{stdout}");
+    assert!(stdout.contains("hop2-context-applied: ok"), "{stdout}");
+    assert!(stdout.contains("hop3-context-applied: ok"), "{stdout}");
+    assert!(stdout.contains("dual-same-session: ok"), "{stdout}");
+    assert!(stdout.contains("dual-package: ok"), "{stdout}");
+    assert!(stdout.contains("dual-chain: ok"), "{stdout}");
+    assert!(stdout.contains("digest-cites-session: ok"), "{stdout}");
+    assert!(stdout.contains("digest-cites-dual-package: ok"), "{stdout}");
+    assert!(stdout.contains("digest-cites-dual-chain: ok"), "{stdout}");
+    assert!(stdout.contains("session-reuse: ok"), "{stdout}");
+    assert!(stdout.contains("ended-creates-fresh: ok"), "{stdout}");
+    assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!stdout.contains("XAI_API_KEY"), "{stdout}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+    assert_locked_cksum();
+}
+
+#[test]
+fn runner_prove_cli_dual_flag_with_other_standing_id() {
+    assert_locked_cksum();
+    let estate = fixture();
+    let estate_s = estate.display().to_string();
+    let dir = scratch("prove-dual-flag");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let state_s = state.display().to_string();
+
+    let (ok, stdout, stderr) = run(&[
+        "routine",
+        "runner-prove",
+        "--dual",
+        "--id",
+        "standing-once",
+        "--estate",
+        &estate_s,
+        "--state-dir",
+        &state_s,
+    ]);
+    assert!(ok, "stderr={stderr}\nstdout={stdout}");
+    assert!(
+        stdout.contains("routine runner-prove: standing-dual,standing-once"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("ok: yes"), "{stdout}");
+    assert!(stdout.contains("hop3-frontier_http: ok"), "{stdout}");
+    assert!(stdout.contains("hop3-context-applied: ok"), "{stdout}");
+    assert!(stdout.contains("digest-covers-standing-dual: ok"), "{stdout}");
+    assert!(stdout.contains("digest-covers-standing-once: ok"), "{stdout}");
+    assert!(stdout.contains("digest-cites-dual-package: ok"), "{stdout}");
+    assert!(stdout.contains("digest-cites-dual-chain: ok"), "{stdout}");
+    assert!(stdout.contains("status-selected: ok"), "{stdout}");
+    assert!(stdout.contains("status-outcome-standing-once: ok"), "{stdout}");
+    assert!(stdout.contains("one-pidfile: ok"), "{stdout}");
+    assert!(stdout.contains("session-reuse: ok"), "{stdout}");
+    assert!(stdout.contains("double-start-refuse: ok"), "{stdout}");
+    assert!(stdout.contains("live_sync: no"), "{stdout}");
+    assert!(stdout.contains("READY_FOR_LIVE_TEST: no"), "{stdout}");
+    assert!(!stdout.contains("live PASS"), "{stdout}");
+    assert!(!state.join("routine-runner").join("default.pid").exists());
+    assert_locked_cksum();
+}
