@@ -513,7 +513,7 @@ fn write_readme(
     md.push_str("orchestrator (decision receipt, outcome allow) and as a member\n");
     md.push_str("(`refuse:pack-orchestrator`). `estate pack cohesion-prove` runs\n");
     md.push_str("that smoke. A Cursor MCP loader hang is out of scope.\n");
-    md.push_str("`READY_FOR_LIVE_TEST: no`. Not a live PASS.\n");
+    md.push_str("`READY_FOR_LIVE_TEST: no`.\n");
     fs::write(out.join("README.md"), md)?;
     Ok(())
 }
