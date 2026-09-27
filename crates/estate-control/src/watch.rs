@@ -743,6 +743,15 @@ pub(crate) fn cmd_status(
     // cites or Authority rows. Spawned cloud and model-actual already
     // refused above.
     print!("{}", crate::ops::honesty_stack(&estate, state_dir)?);
+    // Nearby gated-apply receipt is a cite, not a grant. Reuse the
+    // decisions discovery (local journal / state only). Missing is
+    // silence. Incomplete lock fields are refuse:cite — not invented.
+    // Standing/joinable come from the receipt fields as stored; this
+    // page does not claim the applied seat is joinable from the file
+    // alone. A sibling `{state-dir}/../apply/` is not cited.
+    if let Some(cite) = crate::decisions::cite_or_refuse_nearby_apply_receipt(state_dir) {
+        print!("{cite}");
+    }
     Ok(())
 }
 
