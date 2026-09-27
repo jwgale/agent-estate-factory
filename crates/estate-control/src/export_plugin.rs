@@ -774,6 +774,11 @@ pub(crate) fn runner_markdown(pack_id: &str, routines: &[&Routine]) -> String {
          - `last_digest` (first line of the last cycle)\n\
          - `last_outcome <id>: ran|skipped`\n\
          - `live_sync: false`\n\
+         - nearby `cell-one.improvement-apply.v0` lock fields when that\n\
+           receipt is local to the state-dir (same cite as digest /\n\
+           `estate decisions report` / `estate pack session show`;\n\
+           `refuse:cite` when lock fields are missing / wrong-typed;\n\
+           no sibling `../apply/` walk; no cite when no local receipt)\n\
          \n\
          Digest / `estate routine digest` / `tick --report` cite:\n\
          \n\
@@ -783,7 +788,8 @@ pub(crate) fn runner_markdown(pack_id: &str, routines: &[&Routine]) -> String {
          - `session_id=<id>` and `context=applied|none` when a crew session is bound\n\
          - nearby `cell-one.improvement-apply.v0` lock fields when that\n\
            receipt is local to the state-dir (same cite as\n\
-           `estate decisions report` / `estate pack session show`;\n\
+           `estate decisions report` / `estate pack session show` /\n\
+           `estate routine runner status`;\n\
            `refuse:cite` when lock fields are missing / wrong-typed;\n\
            no sibling `../apply/` walk)\n\
          \n\
