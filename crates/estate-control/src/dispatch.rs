@@ -1145,6 +1145,9 @@ pub(crate) fn run() -> Result<()> {
                 hop,
             } => cmd_policy_check(&policy, &action, hop.as_deref()),
         },
+        Command::ControlPlaneProve { root, out } => {
+            crate::control_plane_prove::cmd_control_plane_prove(&root, out.as_deref())
+        }
         Command::PauseProof {
             estate,
             state_dir,

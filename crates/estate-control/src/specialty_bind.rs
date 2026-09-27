@@ -231,7 +231,32 @@ const PACK_AG: &str = "overnight-traces";
 const PACK_RUST: &str = "idiom-traces";
 const DRIVER_LORA: &str = "llamafactory-lora";
 
+pub(crate) struct DualSpecialtyLab {
+    pub lab: PathBuf,
+    pub state: PathBuf,
+    pub prepared_ag: PathBuf,
+    pub prepared_rust: PathBuf,
+    pub gguf_ag: PathBuf,
+    pub gguf_rust: PathBuf,
+}
+
+/// Land `ag_news` and `rust_idiom` beside `local_slm` on a lab copy.
+/// Stops after Standing next. Does not write mock receipts.
+pub(crate) fn land_dual_specialty_lab(root: &Path, out: &Path) -> Result<DualSpecialtyLab> {
+    run_dual_specialty_bind(root, Some(out), false)?
+        .ok_or_else(|| anyhow::anyhow!("refuse:specialty-bind: dual land returned no lab"))
+}
+
 fn cmd_enrich_bind_prove_dual(root: &Path, out: Option<&Path>) -> Result<()> {
+    run_dual_specialty_bind(root, out, true)?;
+    Ok(())
+}
+
+fn run_dual_specialty_bind(
+    root: &Path,
+    out: Option<&Path>,
+    prove: bool,
+) -> Result<Option<DualSpecialtyLab>> {
     std::env::remove_var("CELL_LOCAL_ENDPOINT");
     let root = root
         .canonicalize()
@@ -362,6 +387,18 @@ fn cmd_enrich_bind_prove_dual(root: &Path, out: Option<&Path>) -> Result<()> {
     crate::enrich::cmd_enrich_standing_next(&lab, &prepared_ag)?;
     crate::enrich::cmd_enrich_standing_next(&lab, &prepared_rust)?;
 
+    let landed = DualSpecialtyLab {
+        lab: lab.clone(),
+        state: state.clone(),
+        prepared_ag,
+        prepared_rust,
+        gguf_ag,
+        gguf_rust,
+    };
+    if !prove {
+        return Ok(Some(landed));
+    }
+
     mock_complete(&lab, &state, "research", "ping ag_news specialty")?;
     mock_complete(&lab, &state, "idiom", "ping rust idiom specialty")?;
     match mock_complete(&lab, &state, "sanctum", "ping both specialties") {
@@ -421,7 +458,7 @@ fn cmd_enrich_bind_prove_dual(root: &Path, out: Option<&Path>) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&report)?);
     println!("specialty-bind-prove-dual: ok");
     println!("READY_FOR_LIVE_TEST: no");
-    Ok(())
+    Ok(None)
 }
 
 fn prepare_lora(lab: &Path, pack: &Path, packs_dir: &Path, state: &Path) -> Result<()> {

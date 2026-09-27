@@ -657,6 +657,36 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: PolicyCommand,
     },
+    /// One throwaway lab: fuel two specialty seats, host-validate
+    /// decisions, then a walk-away dual-specialty runner tick.
+    ///
+    /// Copies the locked estate into `--out` (default: a fresh temp
+    /// directory). Mock-imports `ag_news` (`specialist-agnews-3000`) and
+    /// `rust_idiom` (`specialist-rustidiom-3000`) beside `local_slm`
+    /// (`trained_shape` gguf, `auto_apply=false`), then apply-proposal,
+    /// plan, and apply --require-plan. Standing next is `joinable: yes`
+    /// for both seats when the GGUF is a regular file and an agent models
+    /// allow-list names the binding. The file alone is not joinable. The
+    /// same lab and state-dir then run authorize, a granted convey call,
+    /// and complete --mock: research selects `ag_news`, idiom selects
+    /// `rust_idiom`, Sanctum abstains (`refuse:decision-abstain`, no
+    /// completion text), and a stale or ineligible hint records
+    /// `fallback=ag_news` and does not grant that seat. The same state-dir
+    /// then starts the supervised runner on `standing-dual`: hop 1
+    /// `ag_news` `context=none`, hop 2 `rust_idiom` `context=applied`, hop
+    /// 3 `frontier_http` `context=applied`, one `session_id`. Digest cites
+    /// session, package, and chain. Double-start is
+    /// `refuse:runner-already-running`. In-process mock. No network. No
+    /// Ollama. Does not rewrite `examples/estate.yaml`.
+    /// `READY_FOR_LIVE_TEST` stays no.
+    ControlPlaneProve {
+        /// Repository root that holds `examples/estate.yaml`.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Apply → suspend → drop sessions → resume. Leases stay on disk.
     PauseProof {
         #[arg(long, default_value = "examples/estate.yaml")]
