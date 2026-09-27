@@ -103,11 +103,19 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     );
     assert!(stdout.contains("cell-one.control-plane-prove.v0"), "{stdout}");
     assert!(
-        stdout.contains("cli-smoke horizon: decision receipt outcome=allow surface=complete pack=research-crew capability=ag_news result=ag_news"),
+        stdout.contains("cli-smoke horizon hop 1: decision receipt outcome=allow surface=complete pack=research-crew capability=ag_news result=ag_news session=sess-cohesion01 turns=1 context=none"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("cli-smoke horizon hop 2: decision receipt outcome=allow surface=complete pack=research-crew capability=ag_news result=ag_news session=sess-cohesion01 turns=2 context=applied saw_prior=yes"),
         "{stdout}"
     );
     assert!(
         stdout.contains("cli-smoke research: refuse:pack-orchestrator"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("cli-smoke horizon isolation: session=sess-cohesioniso turns=1 context=none leaked=no"),
         "{stdout}"
     );
     assert!(stdout.contains("cell-one.cohesion-prove.v0"), "{stdout}");
@@ -189,6 +197,26 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     );
     assert_eq!(report["pack"]["cli_smoke"]["member"]["agent"], "research");
     assert_eq!(report["pack"]["cli_smoke"]["member"]["receipt_written"], false);
+    assert_eq!(report["pack"]["cli_smoke"]["member"]["session_bound"], true);
+    assert_eq!(report["pack"]["cli_smoke"]["session_id"], "sess-cohesion01");
+    assert_eq!(report["pack"]["cli_smoke"]["orchestrator"]["context"], "applied");
+    assert_eq!(report["pack"]["cli_smoke"]["orchestrator"]["saw_prior"], true);
+    assert_eq!(report["pack"]["cli_smoke"]["hops"].as_array().unwrap().len(), 2);
+    assert_eq!(report["pack"]["cli_smoke"]["hops"][0]["context"], "none");
+    assert_eq!(report["pack"]["cli_smoke"]["hops"][1]["context"], "applied");
+    assert_eq!(report["pack"]["cli_smoke"]["hops"][1]["saw_prior"], true);
+    assert_eq!(report["pack"]["cli_smoke"]["isolation"]["leaked"], false);
+    assert_eq!(report["pack"]["cli_smoke"]["session_show"]["cites_hop1"], true);
+    assert_eq!(report["pack"]["crew_session"]["session_id"], "sess-cohesion01");
+    let composed: Value = serde_json::from_str(
+        &fs::read_to_string(out.join("crew-session-prove.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(composed["schema"], "cell-one.crew-session-prove.v0");
+    assert_eq!(composed["ok"], true);
+    assert_eq!(composed["ready_for_live_test"], false);
+    assert_eq!(composed["composed_by"], "cohesion-prove");
+    assert_eq!(composed["pack"]["cli_smoke"]["session_id"], "sess-cohesion01");
     let loaded = report["pack"]["loaded"].as_str().unwrap();
     assert!(
         loaded.starts_with("skipped:") || loaded == "yes",
@@ -214,15 +242,34 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     );
     let readme = fs::read_to_string(install_path.join("README.md")).unwrap();
     assert!(readme.contains("CLI smoke (first-class)"), "{readme}");
-    let horizon = fs::read_to_string(
-        out.join("cli-smoke/horizon/decisions/receipts.jsonl"),
+    let journal = fs::read_to_string(
+        out.join("cli-smoke/crew/decisions/receipts.jsonl"),
     )
     .unwrap();
-    let row: Value = serde_json::from_str(horizon.lines().next().unwrap()).unwrap();
-    assert_eq!(row["outcome"], "allow");
-    assert_eq!(row["surface"], "complete");
-    assert_eq!(row["pack_id"], "research-crew");
-    assert_eq!(row["handoff_from"], "horizon");
+    let rows: Vec<Value> = journal
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 3, "{journal}");
+    assert_eq!(rows[0]["outcome"], "allow");
+    assert_eq!(rows[0]["surface"], "complete");
+    assert_eq!(rows[0]["pack_id"], "research-crew");
+    assert_eq!(rows[0]["handoff_from"], "horizon");
+    assert_eq!(rows[0]["session_id"], "sess-cohesion01");
+    assert_eq!(rows[0]["session_turns"], 1);
+    assert_eq!(rows[0]["session_context"], false);
+    assert_eq!(rows[1]["session_id"], "sess-cohesion01");
+    assert_eq!(rows[1]["session_turns"], 2);
+    assert_eq!(rows[1]["session_context"], true);
+    assert_eq!(rows[2]["session_id"], "sess-cohesioniso");
+    assert_eq!(rows[2]["session_context"], false);
+    let session = fs::read_to_string(
+        out.join("cli-smoke/crew/pack-sessions/research-crew/sess-cohesion01.json"),
+    )
+    .unwrap();
+    assert!(session.contains("unique-hop-alpha-token"), "{session}");
+    assert!(session.contains("\"schema\": \"cell-one.pack-session.v0\""), "{session}");
     assert!(!out.join("cli-smoke/member/decisions/receipts.jsonl").exists());
     let cksum_report = report["estate_cksum"].as_str().unwrap();
     assert!(cksum_report.starts_with("43770130 3391"), "{cksum_report}");
@@ -306,7 +353,12 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
     }
     assert!(day.contains("## 4e. Cohesion prove"), "{day}");
     assert!(day.contains("refuse:pack-orchestrator"), "{day}");
+    assert!(day.contains("crew-session-prove"), "{day}");
+    assert!(day.contains("sess-cohesion01"), "{day}");
+    assert!(day.contains("context=applied"), "{day}");
     assert!(log.contains("cell-one.cohesion-prove.v0"), "{log}");
+    assert!(log.contains("cell-one.crew-session-prove.v0"), "{log}");
+    assert!(log.contains("unique-hop-alpha-token"), "{log}");
     for (name, text) in [
         ("NORTH-STAR", north.as_str()),
         ("OPERATOR-DAY", day.as_str()),
@@ -321,6 +373,14 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
             text.contains("named specialty") || text.contains("named seats"),
             "{name} missing named specialty seat cite"
         );
+        assert!(
+            text.contains("crew-session-prove") || text.contains("same session_id"),
+            "{name} missing crew-session multi-hop cite"
+        );
+        assert!(
+            text.contains("context=applied"),
+            "{name} missing context=applied"
+        );
     }
     assert!(log.contains("pack_mcp::run_command_with_timeout"), "{log}");
     assert!(!north.contains("READY_FOR_LIVE_TEST: yes"), "{north}");
@@ -329,20 +389,28 @@ fn docs_document_cohesion_prove_and_cli_smoke() {
 #[test]
 fn cohesion_prove_reuses_pack_mcp_timeout_helper() {
     let src = fs::read_to_string(
-        repo_root().join("crates/estate-control/src/cohesion_prove.rs"),
+        repo_root().join("crates/estate-control/src/crew_session_prove.rs"),
     )
     .unwrap();
     assert!(
         src.contains("pack_mcp::run_command_with_timeout"),
-        "run_complete must reuse pack_mcp::run_command_with_timeout"
+        "crew-session smoke must reuse pack_mcp::run_command_with_timeout"
     );
     assert!(
         !src.contains("child.try_wait"),
-        "run_complete must not use a local try_wait drain loop"
+        "crew-session smoke must not use a local try_wait drain loop"
     );
     assert!(
         !src.contains("Stdio::piped"),
-        "run_complete must not open its own piped stdio"
+        "crew-session smoke must not open its own piped stdio"
+    );
+    let cohesion = fs::read_to_string(
+        repo_root().join("crates/estate-control/src/cohesion_prove.rs"),
+    )
+    .unwrap();
+    assert!(
+        cohesion.contains("crew_session_prove::run_pack_stage"),
+        "cohesion-prove must compose crew-session-prove"
     );
 }
 

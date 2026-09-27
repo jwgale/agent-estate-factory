@@ -7,6 +7,7 @@ mod classify_journey;
 mod cli;
 mod cohesion_prove;
 mod control_plane_prove;
+mod crew_session_prove;
 mod decision_prove;
 mod decisions;
 mod dispatch;
