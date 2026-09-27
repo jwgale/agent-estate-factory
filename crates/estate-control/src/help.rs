@@ -1383,7 +1383,10 @@ proposal count/kind, and auto_train=false.
 estate decisions apply-package --package <package.json>
 --estate <lab-estate.yaml> --prepared <prepared> --require-plan
 applies one specialty-seat proposal through apply-proposal, plan,
-and apply --require-plan. Without --require-plan it is refuse:plan.
+and apply --require-plan. binding-proposal.json binding_id must
+match the picked specialty-seat before any mutation. Mismatch is
+refuse:proposal (or refuse:prepared) and the lab estate stays
+unchanged. Without --require-plan it is refuse:plan.
 Dataset proposals stay proposal-only. It does not train.
 estate decisions improvement-apply-prove --root . --out <throwaway>
 is the sibling prove: host-validate, export-package, pick one

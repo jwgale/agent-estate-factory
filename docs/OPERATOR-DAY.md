@@ -787,8 +787,13 @@ next is `joinable: yes` after the gated apply. Dataset proposals stay
 proposal-only. Train is not invoked. `auto_train=false`.
 `estate decisions apply-package --package <package.json> --estate
 <lab> --prepared <prepared> --require-plan` is the operator command.
-Without `--require-plan` it is `refuse:plan` and the lab estate stays
-unchanged. `--out` that is `examples/estate.yaml` is `refuse:out`.
+Before apply-proposal / plan / apply it reads
+`{prepared}/binding-proposal.json` and requires `binding_id` (and the
+picked proposal id) to match the picked specialty-seat. A mismatch is
+`refuse:proposal:` (or `refuse:prepared:`) and the lab estate stays
+unchanged. Without `--require-plan` it is `refuse:plan` and the lab
+estate stays unchanged. `--out` that is `examples/estate.yaml` is
+`refuse:out`.
 `estate pack cohesion-prove` composes this same gated apply after the
 export stage on one throwaway lab (section 4e). It reuses the package
 already written under `{out}/improvement` and does not re-run host-validate

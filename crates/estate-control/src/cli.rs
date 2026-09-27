@@ -773,8 +773,11 @@ pub(crate) enum DecisionsCommand {
     /// Apply one specialty-seat proposal from a standing improvement
     /// package through `apply-proposal` → `plan` → `apply --require-plan`.
     /// `--require-plan` is required (`refuse:plan` without it).
-    /// Dataset proposals stay proposal-only. Does not train. Refuses
-    /// locked `examples/estate.yaml`. `auto_train` stays false.
+    /// `{prepared}/binding-proposal.json` `binding_id` must match the
+    /// picked specialty-seat; mismatch is `refuse:proposal:` (or
+    /// `refuse:prepared:`) before any mutation. Dataset proposals stay
+    /// proposal-only. Does not train. Refuses locked
+    /// `examples/estate.yaml`. `auto_train` stays false.
     ApplyPackage {
         /// Path to `improvement-package.json`.
         #[arg(long)]
@@ -782,7 +785,8 @@ pub(crate) enum DecisionsCommand {
         /// Lab estate to apply onto. Refuses `examples/estate.yaml`.
         #[arg(long)]
         estate: PathBuf,
-        /// Prepared directory with the binding proposal for that seat.
+        /// Prepared directory whose binding-proposal.json binding_id
+        /// must match the picked specialty-seat.
         #[arg(long)]
         prepared: PathBuf,
         #[arg(long, default_value = ".cell")]

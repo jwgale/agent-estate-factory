@@ -3,14 +3,20 @@
 //! `estate decisions apply-package` picks one specialty-seat proposal
 //! from a `cell-one.improvement-package.v0` and drives it through the
 //! existing enrich apply-proposal → plan → apply `--require-plan`
-//! path. `--require-plan` is required. Train is not invoked.
-//! `auto_train` stays false.
+//! path. `--require-plan` is required. Before any mutation it reads
+//! `{prepared}/binding-proposal.json` and requires `binding_id` (and
+//! the picked proposal id) to match the picked specialty-seat.
+//! Mismatch is `refuse:proposal:` (or `refuse:prepared:`) and leaves
+//! the lab estate unchanged. Train is not invoked. `auto_train` stays
+//! false.
 //!
 //! `estate decisions improvement-apply-prove` reuses host-validate
 //! receipts → export-package, then applies one proposal on a throwaway
 //! apply lab. Standing next is joinable after the gated apply. Locked
 //! `examples/estate.yaml` is refused. Apply without a plan is refused.
-//! `READY_FOR_LIVE_TEST` stays no. Sibling of improvement-export-prove.
+//! A prepared `binding_id` that does not match the picked seat is
+//! refused before mutation. `READY_FOR_LIVE_TEST` stays no. Sibling of
+//! improvement-export-prove.
 //! `estate pack cohesion-prove` composes the same gated apply after
 //! its export stage, reusing `{out}/improvement` without a second
 //! host-validate.
@@ -513,6 +519,7 @@ fn apply_picked_proposal(
     if picked.auto_train || package.auto_train || package.train_invoked {
         bail!("refuse:improvement: apply-package invented auto-train");
     }
+    require_prepared_matches_picked(prepared, picked)?;
     let tag = resolve_tag(prepared, tag)?;
     let source_before = fs::read(estate)
         .with_context(|| format!("refuse:estate: read {}", estate.display()))?;
@@ -603,6 +610,52 @@ fn apply_picked_proposal(
         "package_id": package.id,
         "note": "Gated apply of one specialty-seat proposal. apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. Not a live PASS."
     }))
+}
+
+/// Refuse before apply-proposal / plan / apply when `--prepared`
+/// names a different specialty seat than the picked proposal.
+fn require_prepared_matches_picked(prepared: &Path, picked: &EnrichProposal) -> Result<()> {
+    let path = prepared.join("binding-proposal.json");
+    let text = fs::read_to_string(&path)
+        .map_err(|err| anyhow::anyhow!("refuse:prepared: {}: {err}", path.display()))?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|err| anyhow::anyhow!("refuse:prepared: parse {}: {err}", path.display()))?;
+    let prepared_binding = value
+        .get("binding_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("refuse:prepared: binding-proposal.json has no binding_id")
+        })?;
+    if prepared_binding != picked.binding_id {
+        bail!(
+            "refuse:proposal: prepared binding_id {prepared_binding} does not match picked {}",
+            picked.binding_id
+        );
+    }
+    if let Some(proposed_id) = value
+        .get("proposed_binding")
+        .and_then(|row| row.get("id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if proposed_id != picked.binding_id {
+            bail!(
+                "refuse:proposal: prepared proposed_binding.id {proposed_id} does not match picked {}",
+                picked.binding_id
+            );
+        }
+    }
+    let picked_id = proposal_id(picked);
+    let prepared_id = format!("{KIND_SEAT}:{prepared_binding}");
+    if picked_id != prepared_id {
+        bail!(
+            "refuse:proposal: prepared proposal {prepared_id} does not match picked {picked_id}"
+        );
+    }
+    Ok(())
 }
 
 fn resolve_tag(prepared: &Path, tag: Option<&str>) -> Result<String> {
@@ -809,5 +862,180 @@ mod tests {
         assert!(text.contains("refuse:package"), "{text}");
         assert!(text.contains("does not re-run host-validate"), "{text}");
         assert!(!text.contains("decision-host-validate-prove"), "{text}");
+    }
+
+    fn write_binding_proposal(dir: &Path, binding_id: &str, proposed_id: Option<&str>) {
+        fs::create_dir_all(dir).unwrap();
+        let proposed = proposed_id
+            .map(|id| format!(r#", "proposed_binding": {{ "id": "{id}" }}"#))
+            .unwrap_or_default();
+        fs::write(
+            dir.join("binding-proposal.json"),
+            format!(
+                r#"{{"schema":"cell-one.enrich-binding-proposal.v0","binding_id":"{binding_id}","local_tag":"cell-enrich-overnight-traces"{proposed}}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn prepared_matches_picked_binding_and_proposal_id() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-prepared-match-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        write_binding_proposal(&dir, "ag_news", Some("ag_news"));
+        require_prepared_matches_picked(&dir, &proposal(KIND_SEAT, "ag_news")).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepared_mismatch_binding_id_refuses() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-prepared-mismatch-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        write_binding_proposal(&dir, "rust_idiom", Some("rust_idiom"));
+        let err = require_prepared_matches_picked(&dir, &proposal(KIND_SEAT, "ag_news")).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refuse:proposal:"), "{text}");
+        assert!(text.contains("prepared binding_id rust_idiom"), "{text}");
+        assert!(text.contains("picked ag_news"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepared_mismatch_proposed_binding_id_refuses() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-prepared-proposed-mismatch-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        write_binding_proposal(&dir, "ag_news", Some("rust_idiom"));
+        let err = require_prepared_matches_picked(&dir, &proposal(KIND_SEAT, "ag_news")).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refuse:proposal:"), "{text}");
+        assert!(text.contains("proposed_binding.id rust_idiom"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepared_mismatch_proposal_id_refuses() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-prepared-id-mismatch-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        write_binding_proposal(&dir, "ag_news", Some("ag_news"));
+        let mut picked = proposal(KIND_SEAT, "ag_news");
+        picked.id = "specialty-seat:rust_idiom".into();
+        let err = require_prepared_matches_picked(&dir, &picked).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refuse:proposal:"), "{text}");
+        assert!(text.contains("prepared proposal specialty-seat:ag_news"), "{text}");
+        assert!(text.contains("picked specialty-seat:rust_idiom"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepared_missing_binding_proposal_refuses() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-one-prepared-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let err = require_prepared_matches_picked(&dir, &proposal(KIND_SEAT, "ag_news")).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refuse:prepared:"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apply_package_refuses_mismatched_prepared_without_rewriting_lab() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let locked = root.join("examples/estate.yaml");
+        let locked_before = fs::read(&locked).unwrap();
+        let cksum_before = file_cksum(&locked).unwrap();
+        assert!(
+            cksum_before.starts_with(LOCKED_CKSUM),
+            "{cksum_before}"
+        );
+        let out = std::env::temp_dir().join(format!(
+            "cell-one-apply-mismatch-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&out);
+        let staged =
+            specialty_bind::stage_one_specialty_for_apply(&root, &out, "rust_idiom").unwrap();
+        let lab_before = fs::read(&staged.lab).unwrap();
+        let package_path = out.join("improvement-package.json");
+        fs::write(
+            &package_path,
+            r#"{
+  "schema": "cell-one.improvement-package.v0",
+  "id": "improvement-from-decisions",
+  "kind": "standing-improvement",
+  "auto_train": false,
+  "train_invoked": false,
+  "ready_for_live_test": false,
+  "live_pass_recorded": false,
+  "live_sync": false,
+  "journal": {
+    "path": "journal",
+    "receipts": 1,
+    "surface_authorize": 1,
+    "surface_convey": 1,
+    "surface_complete": 1,
+    "specialty_seats": ["ag_news"]
+  },
+  "proposals": [
+    {
+      "id": "specialty-seat:ag_news",
+      "kind": "specialty-seat",
+      "binding_id": "ag_news",
+      "dataset": "ag_news",
+      "action": "enrich-prepare",
+      "auto_train": false,
+      "note": "test"
+    }
+  ],
+  "note": "test"
+}
+"#,
+        )
+        .unwrap();
+        let err = cmd_decisions_apply_package(
+            &package_path,
+            &staged.lab,
+            &staged.prepared,
+            &staged.state,
+            &staged.plans,
+            &staged.roots,
+            true,
+            Some("specialty-seat:ag_news"),
+            Some(&staged.tag),
+            &root,
+            &root.join("policy/cell-one.policy.v0.yaml"),
+            "jason",
+            None,
+        )
+        .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("refuse:proposal:") || text.contains("refuse:prepared:"),
+            "{text}"
+        );
+        assert!(text.contains("prepared binding_id rust_idiom"), "{text}");
+        assert!(text.contains("picked ag_news"), "{text}");
+        assert_eq!(fs::read(&staged.lab).unwrap(), lab_before);
+        assert!(!estate_has_binding(&staged.lab, "ag_news").unwrap());
+        assert!(!estate_has_binding(&staged.lab, "rust_idiom").unwrap());
+        assert!(!staged.state.join("enrich-stage/staged-estate.yaml").is_file());
+        assert_eq!(fs::read(&locked).unwrap(), locked_before);
+        assert_eq!(file_cksum(&locked).unwrap(), cksum_before);
+        let _ = fs::remove_dir_all(&out);
     }
 }
