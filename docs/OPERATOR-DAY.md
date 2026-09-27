@@ -642,16 +642,18 @@ estate control-plane-prove --root . --out /tmp/cell-one-control-plane
 ## 4e. Cohesion prove (one lab, not a train)
 
 `estate pack cohesion-prove` is the feelable fuel → decide → run →
-specialty-real → pack install → multi-hop CLI crew session loop on one
-throwaway directory. It composes `estate control-plane-prove` (section
-4d), then an optional specialty-real bind, then
-`estate pack crew-session-prove`. When import-trained AG News /
-rust_idiom GGUF artifacts are present on the machine they bind as named
-specialty seats (`ag_news`, `rust_idiom`) beside `local_slm` and
-`complete --mock` names those seats (not generic `local_slm`). When
-absent the stage is `skipped:gguf-absent` and the prove stays ok. It
-does not rewrite `examples/estate.yaml` (cksum `43770130 3391`). It does
-not rewrite `examples/fixtures/agent-pack-handoff.yaml`.
+specialty-real → pack install → multi-hop CLI crew session →
+improvement export loop on one throwaway directory. It composes
+`estate control-plane-prove` (section 4d), then an optional
+specialty-real bind, then `estate pack crew-session-prove`, then the
+export-package stage of `estate decisions improvement-export-prove`
+(section 4f). When import-trained AG News / rust_idiom GGUF artifacts
+are present on the machine they bind as named specialty seats
+(`ag_news`, `rust_idiom`) beside `local_slm` and `complete --mock`
+names those seats (not generic `local_slm`). When absent the stage is
+`skipped:gguf-absent` and the prove stays ok. It does not rewrite
+`examples/estate.yaml` (cksum `43770130 3391`). It does not rewrite
+`examples/fixtures/agent-pack-handoff.yaml`.
 
 Pack install is `estate pack plugin-install-local` for `research-crew`
 on that fixture. `HOME` for the install is `<out>/home`, so the copy
@@ -701,16 +703,20 @@ hop 1. A Cursor MCP loader hang is out of scope. The report records
 `cursor_loader: out-of-scope` and `loader_is_live_pass: false`.
 
 The compact report is `cell-one.cohesion-prove.v0` (`cohesion-prove.json`).
-`ok` is true only when fuel, decide, run, install, and multi-hop CLI
-crew session smoke all pass. Specialty-real may be `skipped:gguf-absent`
+`ok` is true only when fuel, decide, run, install, multi-hop CLI crew
+session smoke, and the standing improvement export all pass. The
+`improvement` cite names the package path, proposal count/kind
+(`specialty-seat`, `dataset`), `auto_train=false`, and
+`train_invoked=false`. Specialty-real may be `skipped:gguf-absent`
 and still counts as ok. `ready_for_live_test` and `live_pass_recorded`
 stay false. `live_sync` stays false. The command ends with
 `cohesion-prove: ok` and `READY_FOR_LIVE_TEST: no`. In-process mock.
 No network. No Ollama. No GPU train. This is not a live PASS. `--out`
-that is `examples/estate.yaml` is `refuse:out`. Sibling prove:
+that is `examples/estate.yaml` is `refuse:out`. Sibling proves:
 
 ```bash
 estate pack crew-session-prove --root . --out /tmp/cell-one-crew-session
+estate decisions improvement-export-prove --root . --out /tmp/cell-one-improvement-export
 ```
 
 ```bash
@@ -719,9 +725,11 @@ estate pack cohesion-prove --root . --out /tmp/cell-one-cohesion
 
 ## 4f. Improvement-export prove (standing package, not a train)
 
-`estate decisions improvement-export-prove` reuses the host-validate
-authorize / convey / `complete --mock` surfaces on a throwaway lab,
-then writes a standing improvement package from that journal.
+`estate decisions improvement-export-prove` remains callable alone.
+It reuses the host-validate authorize / convey / `complete --mock`
+surfaces on a throwaway lab, then writes a standing improvement
+package from that journal. `estate pack cohesion-prove` composes that
+same export-package stage after crew-session on one lab.
 `estate decisions export-package --state-dir <dir> --out <throwaway>`
 is the operator command: JSON plus YAML under `--out`
 (`improvement-package.json` / `improvement-package.yaml`, schema

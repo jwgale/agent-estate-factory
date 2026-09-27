@@ -1222,7 +1222,7 @@ pub(crate) enum PackCommand {
         force: bool,
     },
     /// One throwaway lab: fuel, decide, run, specialty-real seats,
-    /// then pack install and CLI smoke.
+    /// pack install, multi-hop CLI crew session, and improvement export.
     ///
     /// Runs `estate control-plane-prove` on `--out` (dual import-trained
     /// bind of `ag_news` and `rust_idiom` beside `local_slm`, host-validate
@@ -1239,8 +1239,11 @@ pub(crate) enum PackCommand {
     /// Then `estate pack crew-session-prove`: throwaway `plugin-install-local`
     /// plus multi-hop CLI crew session smoke (`estate complete --mock` on
     /// one `session_id`; hop 2 sees hop 1; research stays
-    /// `refuse:pack-orchestrator`). A Cursor MCP loader hang is
-    /// out of scope. Does not rewrite `examples/estate.yaml`.
+    /// `refuse:pack-orchestrator`). Then the export-package stage of
+    /// `estate decisions improvement-export-prove`: standing package from
+    /// the lab journal (`auto_train=false`, train not invoked). Sibling
+    /// `improvement-export-prove` stays callable alone. A Cursor MCP
+    /// loader hang is out of scope. Does not rewrite `examples/estate.yaml`.
     /// `READY_FOR_LIVE_TEST` stays no.
     CohesionProve {
         /// Repository root that holds `examples/estate.yaml` and the fixture.

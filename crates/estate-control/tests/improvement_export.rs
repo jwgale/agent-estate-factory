@@ -272,6 +272,44 @@ fn improvement_export_prove_refuses_the_locked_estate() {
 }
 
 #[test]
+fn export_package_refuses_examples_tree_when_root_lacks_estate() {
+    let before = cksum_locked();
+    assert!(before.starts_with("43770130 3391"), "{before}");
+    let locked = repo_root().join("examples/estate.yaml");
+    let bytes = fs::read(&locked).unwrap();
+    let decoy = scratch("decoy-root");
+    let planted = scratch("decoy-state");
+    fs::create_dir_all(planted.join("decisions")).unwrap();
+    fs::write(
+        planted.join("decisions/receipts.jsonl"),
+        planted_receipt("r-1", 1, "complete", "ag_news", "ok") + "\n",
+    )
+    .unwrap();
+    let under_examples = repo_root().join("examples").join("improvement-adversarial");
+    let (ok, stdout, stderr) = run(&[
+        "decisions",
+        "export-package",
+        "--root",
+        decoy.to_str().unwrap(),
+        "--state-dir",
+        planted.to_str().unwrap(),
+        "--out",
+        under_examples.to_str().unwrap(),
+    ]);
+    assert!(!ok, "{stdout}\n{stderr}");
+    assert!(
+        stderr.contains("refuse:out: export-package does not write examples/estate.yaml"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("wrote improvement package"), "{stdout}");
+    assert!(!under_examples.exists(), "wrote under examples/: {}", under_examples.display());
+    assert_eq!(fs::read(&locked).unwrap(), bytes);
+    assert_eq!(cksum_locked(), before);
+    let _ = fs::remove_dir_all(&decoy);
+    let _ = fs::remove_dir_all(&planted);
+}
+
+#[test]
 fn export_package_refuses_the_locked_estate() {
     let before = cksum_locked();
     assert!(before.starts_with("43770130 3391"), "{before}");
@@ -328,7 +366,12 @@ fn docs_document_improvement_export_without_auto_train() {
     }
     assert!(day.contains("## 4f. Improvement-export prove"), "{day}");
     assert!(day.contains("auto_train=false"), "{day}");
+    assert!(day.contains("cohesion-prove"), "{day}");
     assert!(log.contains("cell-one.improvement-export-prove.v0"), "{log}");
     assert!(log.contains("cell-one.improvement-package.v0"), "{log}");
     assert!(north.contains("export-package"), "{north}");
+    assert!(
+        north.contains("composes") || day.contains("composes that same export-package"),
+        "docs must say cohesion composes the export-package stage"
+    );
 }

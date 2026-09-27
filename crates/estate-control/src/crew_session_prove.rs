@@ -11,7 +11,8 @@
 //! `READY_FOR_LIVE_TEST` stays no.
 //!
 //! `estate pack cohesion-prove` composes this stage after fuel, decide,
-//! run, and optional specialty-real.
+//! run, and optional specialty-real, then the improvement-export
+//! package stage.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};

@@ -1358,16 +1358,21 @@ examples/fixtures/agent-pack-handoff.yaml under a throwaway HOME,
 then multi-hop CLI crew session smoke. Successive estate complete
 --mock hops share one session_id: hop 1 context=none, hop 2
 context=applied and cites hop 1; research stays
-refuse:pack-orchestrator. Report cell-one.cohesion-prove.v0.
+refuse:pack-orchestrator. Then the export-package stage of
+estate decisions improvement-export-prove writes a standing
+improvement package from that lab journal (auto_train=false,
+train not invoked). Report cell-one.cohesion-prove.v0 cites the
+package path, proposal count/kind, and auto_train=false.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
 journal. The package proposes the next enrich (specialty seat /
 dataset) with auto_train=false. It does not train. estate decisions
-improvement-export-prove --root . --out <throwaway> reuses the
-host-validate authorize / convey / complete --mock receipts, then
-export-package. Report cell-one.improvement-export-prove.v0 cites
-the package path, proposal count/kind, and auto_train=false.
+improvement-export-prove --root . --out <throwaway> remains the
+standalone sibling: host-validate authorize / convey / complete
+--mock receipts, then export-package. Report
+cell-one.improvement-export-prove.v0 cites the package path,
+proposal count/kind, and auto_train=false.
 It does not record a live PASS.
 examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.

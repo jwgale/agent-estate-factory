@@ -1,5 +1,6 @@
 //! `estate pack cohesion-prove` — one throwaway lab for fuel, decide, run,
-//! specialty-real seats, pack install, and multi-hop CLI crew session smoke.
+//! specialty-real seats, pack install, multi-hop CLI crew session, and
+//! the standing improvement export.
 //!
 //! Composes `estate control-plane-prove` (dual import-trained bind,
 //! host-validate authorize / convey / complete --mock, `standing-dual`
@@ -10,8 +11,12 @@
 //! the prove stays ok. Then `estate pack crew-session-prove`: throwaway
 //! `plugin-install-local` plus successive `estate complete --mock` hops
 //! on one `session_id` (hop 2 sees hop 1; research stays
-//! `refuse:pack-orchestrator`). A Cursor MCP loader hang is out of scope.
-//! Does not rewrite `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+//! `refuse:pack-orchestrator`). Then the export-package stage of
+//! `estate decisions improvement-export-prove`: standing package from
+//! the lab journal (`auto_train=false`, train not invoked). Sibling
+//! `improvement-export-prove` stays callable alone. A Cursor MCP loader
+//! hang is out of scope. Does not rewrite `examples/estate.yaml`.
+//! `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -21,6 +26,7 @@ use std::process::Command;
 
 use crate::control_plane_prove;
 use crate::crew_session_prove;
+use crate::improvement_export;
 use crate::specialty_bind;
 
 const LOCKED_CKSUM: &str = "43770130 3391";
@@ -96,6 +102,20 @@ pub(crate) fn cmd_cohesion_prove(
     if fs::read(&locked)? != before || fs::read(&fixture)? != fixture_before {
         bail!("refuse:estate: pack install or crew session rewrote a source estate");
     }
+
+    println!("cohesion-prove: improvement-export");
+    let state = out.join("state");
+    let (package, improvement) = improvement_export::run_export_stage(&state, &out, &root)?;
+    if fs::read(&locked)? != before {
+        bail!("refuse:estate: improvement-export rewrote examples/estate.yaml");
+    }
+    if package.auto_train || package.train_invoked {
+        bail!("refuse:cohesion: improvement-export invented auto-train");
+    }
+    if improvement["auto_train"] != false || improvement["train_invoked"] != false {
+        bail!("refuse:cohesion: improvement cite invented auto-train");
+    }
+
     let cksum_after = file_cksum(&locked)?;
     if cksum_after != cksum_before {
         bail!("refuse:estate: examples/estate.yaml cksum changed to {cksum_after}");
@@ -108,6 +128,8 @@ pub(crate) fn cmd_cohesion_prove(
         "ready_for_live_test": false,
         "live_pass_recorded": false,
         "live_sync": false,
+        "auto_train": false,
+        "train_invoked": false,
         "estate_cksum": cksum_after,
         "control_plane_schema": CONTROL_SCHEMA,
         "control_plane_report": out.join("control-plane-prove.json").display().to_string(),
@@ -116,7 +138,8 @@ pub(crate) fn cmd_cohesion_prove(
         "run": control["run"].clone(),
         "specialty_real": specialty_real,
         "pack": crew_session_prove::pack_report(pack_id, &fixture, &out, &pack_stage),
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session). Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "improvement": improvement,
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Standing package proposes the next enrich (specialty seat / dataset). auto_train=false. Train not invoked. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -127,8 +150,10 @@ pub(crate) fn cmd_cohesion_prove(
         || pretty.contains("\"live_pass_recorded\": true")
         || pretty.contains("\"live_sync\": true")
         || pretty.contains("\"loader_is_live_pass\": true")
+        || pretty.contains("\"auto_train\": true")
+        || pretty.contains("\"train_invoked\": true")
     {
-        bail!("refuse:cohesion: report invented a live-test ready flag");
+        bail!("refuse:cohesion: report invented a live-test, live_sync, or auto-train flag");
     }
     fs::write(out.join("cohesion-prove.json"), format!("{pretty}\n"))?;
     println!("{pretty}");
