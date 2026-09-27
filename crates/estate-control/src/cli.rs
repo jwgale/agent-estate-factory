@@ -527,8 +527,10 @@ pub(crate) enum Command {
     },
     /// Decision journal written by `estate convey call`, `estate authorize`,
     /// and `estate complete`. `export` writes JSONL replay cases. `report`
-    /// counts stage, validation, and fallback. Optional `--pack` filters
-    /// receipts by `pack_id`. Selectors do not grant permission. No promote.
+    /// counts stage, validation, fallback, and surface (`authorize`,
+    /// `convey`, `complete`). Optional `--pack` filters receipts by
+    /// `pack_id`. `host-validate-prove` runs that loop on a lab copy with
+    /// two specialty seats. Selectors do not grant permission. No promote.
     /// No auto-apply.
     Decisions {
         #[command(subcommand)]
@@ -676,13 +678,29 @@ pub(crate) enum DecisionsCommand {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Print counts by stage, validation, and fallback.
+    /// Print counts by stage, validation, fallback, and surface.
     /// Optional `--pack` keeps rows whose receipt `pack_id` matches.
     Report {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
         #[arg(long)]
         pack: Option<String>,
+    },
+    /// Throwaway prove: lab copy seeds `ag_news` and `rust_idiom` beside
+    /// `local_slm`, then host-validate runs on `estate authorize` and a
+    /// granted `estate convey call`. Research selects `ag_news`. Idiom
+    /// selects `rust_idiom`. An allow-list that names both specialty ids
+    /// abstains (`refuse:decision-abstain`). A stale or ineligible hint
+    /// records a fallback and does not grant that seat. Report counts both
+    /// surfaces. Does not train. Does not rewrite `examples/estate.yaml`.
+    /// `READY_FOR_LIVE_TEST` stays no.
+    HostValidateProve {
+        /// Repository root that holds `examples/estate.yaml`.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 

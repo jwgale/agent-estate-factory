@@ -607,6 +607,9 @@ pub(crate) fn run() -> Result<()> {
             DecisionsCommand::Report { state_dir, pack } => {
                 crate::decisions::cmd_decisions_report(&state_dir, pack.as_deref())
             }
+            DecisionsCommand::HostValidateProve { root, out } => {
+                crate::decision_prove::cmd_decisions_host_validate_prove(&root, out.as_deref())
+            }
         },
         Command::Enrich { command } => match command {
             EnrichCommand::Prepare {
