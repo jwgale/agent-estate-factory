@@ -267,6 +267,7 @@ pub(crate) fn cmd_decisions_improvement_apply_prove(root: &Path, out: Option<&Pa
 
     let body = json!({
         "schema": PROVE_SCHEMA,
+        "apply_schema": APPLY_SCHEMA,
         "ok": true,
         "ready_for_live_test": false,
         "live_pass_recorded": false,

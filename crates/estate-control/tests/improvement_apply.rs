@@ -110,6 +110,7 @@ fn improvement_apply_prove_gates_one_specialty_seat_without_auto_train() {
     )
     .unwrap();
     assert_eq!(report["schema"], "cell-one.improvement-apply-prove.v0");
+    assert_eq!(report["apply_schema"], "cell-one.improvement-apply.v0");
     assert_eq!(report["ok"], true);
     assert_eq!(report["ready_for_live_test"], false);
     assert_eq!(report["live_pass_recorded"], false);
