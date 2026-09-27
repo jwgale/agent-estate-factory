@@ -17,7 +17,8 @@
 //! gated specialty-seat apply on `{out}/apply`, reusing that package
 //! (no second host-validate). Apply without `--require-plan` is
 //! `refuse:plan`. `apply-package --require-plan` lands one
-//! `specialty-seat:*` (prefer `ag_news`). Standing next is joinable.
+//! `specialty-seat:*` via `--proposal specialty-seat:ag_news`.
+//! Standing next is joinable.
 //! Dataset proposals stay proposal-only. `estate decisions report`
 //! on the lab state-dir cites the apply receipt
 //! (`cell-one.improvement-apply.v0`) so the closed loop is one
@@ -192,7 +193,7 @@ pub(crate) fn cmd_cohesion_prove(
             "train_invoked": cited.train_invoked,
             "cite": decisions_cite,
         },
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat (prefer ag_news). Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat via --proposal specialty-seat:ag_news. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report on the lab state-dir cites the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {
@@ -513,7 +514,7 @@ fn require_apply_cite(
         row.kind == "specialty-seat" && row.binding_id == "ag_news"
     }) && binding != "ag_news"
     {
-        bail!("refuse:cohesion: improvement-apply did not prefer ag_news");
+        bail!("refuse:cohesion: improvement-apply did not apply --proposal specialty-seat:ag_news");
     }
     let datasets = apply
         .get("dataset_proposal_ids")

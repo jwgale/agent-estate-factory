@@ -535,7 +535,8 @@ pub(crate) enum Command {
     /// two specialty seats, including `estate complete --mock`.
     /// `improvement-export-prove` reuses those receipts and exports the
     /// package. `apply-package` applies one specialty-seat proposal
-    /// through plan → apply `--require-plan`. `improvement-apply-prove`
+    /// through plan → apply `--require-plan` (`--proposal` required
+    /// when more than one specialty-seat). `improvement-apply-prove`
     /// is the throwaway gated-apply sibling. Selectors do not grant
     /// permission. No promote. No auto-apply. No auto-train.
     Decisions {
@@ -780,11 +781,13 @@ pub(crate) enum DecisionsCommand {
     /// Apply one specialty-seat proposal from a standing improvement
     /// package through `apply-proposal` → `plan` → `apply --require-plan`.
     /// `--require-plan` is required (`refuse:plan` without it).
-    /// `{prepared}/binding-proposal.json` `binding_id` must match the
-    /// picked specialty-seat; mismatch is `refuse:proposal:` (or
-    /// `refuse:prepared:`) before any mutation. Dataset proposals stay
-    /// proposal-only. Does not train. Refuses locked
-    /// `examples/estate.yaml`. `auto_train` stays false.
+    /// More than one specialty-seat requires `--proposal specialty-seat:<id>`
+    /// (`refuse:proposal:ambiguous` without it). A single specialty-seat
+    /// still defaults. `{prepared}/binding-proposal.json` `binding_id`
+    /// must match the picked specialty-seat; mismatch is
+    /// `refuse:proposal:` (or `refuse:prepared:`) before any mutation.
+    /// Dataset proposals stay proposal-only. Does not train. Refuses
+    /// locked `examples/estate.yaml`. `auto_train` stays false.
     ApplyPackage {
         /// Path to `improvement-package.json`.
         #[arg(long)]
@@ -805,7 +808,8 @@ pub(crate) enum DecisionsCommand {
         /// Required. Apply-package refuses without this flag.
         #[arg(long, default_value_t = false)]
         require_plan: bool,
-        /// Proposal id (`specialty-seat:ag_news`). Default: first specialty-seat.
+        /// Proposal id (`specialty-seat:ag_news`). Required when the
+        /// package has more than one specialty-seat.
         #[arg(long)]
         proposal: Option<String>,
         /// Enrich tag. Default: `local_tag` on the binding proposal.
@@ -822,9 +826,10 @@ pub(crate) enum DecisionsCommand {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Throwaway prove: host-validate → export-package → pick one
-    /// specialty-seat proposal → gated apply `--require-plan` on a
-    /// fresh apply lab. Report cites the applied proposal id/kind,
+    /// Throwaway prove: host-validate → export-package →
+    /// `--proposal specialty-seat:ag_news` → gated apply
+    /// `--require-plan` on a fresh apply lab. Report cites the applied
+    /// proposal id/kind,
     /// Standing next joinable, `auto_train=false`, and
     /// `train_invoked=false`. Refuses locked `examples/estate.yaml`.
     /// Refuses apply without `--require-plan`. `READY_FOR_LIVE_TEST`
@@ -1316,7 +1321,8 @@ pub(crate) enum PackCommand {
     /// gated specialty-seat apply on `{out}/apply`, reusing that package
     /// (does not re-run host-validate). Apply without `--require-plan`
     /// is `refuse:plan`. `apply-package --require-plan` lands one
-    /// `specialty-seat:*` (prefer `ag_news`). Standing next is joinable.
+    /// `specialty-seat:*` via `--proposal specialty-seat:ag_news`.
+    /// Standing next is joinable.
     /// `local_slm` stays. Dataset proposals stay proposal-only. Siblings
     /// `improvement-export-prove`, `improvement-apply-prove`, and
     /// `apply-package` stay callable alone. A Cursor MCP loader hang is

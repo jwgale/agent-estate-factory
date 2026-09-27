@@ -709,8 +709,10 @@ and reuses the package already written at `{out}/improvement`. It does not re-ru
 for the apply. Apply without `--require-plan`
 prints `refuse:plan: apply-package requires --require-plan` and leaves
 the apply lab unchanged. `apply-package --require-plan` then applies
-one `specialty-seat:*` (prefer `ag_news` when that proposal is present)
-through `apply-proposal` → `plan` → `apply --require-plan`. Standing
+one `specialty-seat:*` via `--proposal specialty-seat:ag_news` (required
+when the package has more than one specialty-seat; omitted `--proposal`
+with more than one is `refuse:proposal:ambiguous` and leaves the lab
+unchanged). A single specialty-seat still defaults. Standing
 next for that seat is `joinable: yes`. `local_slm` stays on the apply
 lab. Dataset proposals stay proposal-only. `auto_train=false`.
 `train_invoked=false`. Train is not invoked.
@@ -788,15 +790,17 @@ estate decisions export-package --state-dir /tmp/cell-one-improvement-export/sta
 
 `estate decisions improvement-apply-prove` is the human-gated half
 after export-package. It reuses host-validate authorize / convey /
-`complete --mock` receipts, writes the standing package, picks one
-specialty-seat proposal (`specialty-seat:ag_news`), and applies that
-proposal on a fresh throwaway apply lab through the existing
-`apply-proposal` → `plan` → `apply --require-plan` path. Standing
-next is `joinable: yes` after the gated apply. Dataset proposals stay
-proposal-only. Train is not invoked. `auto_train=false`.
+`complete --mock` receipts, writes the standing package, and applies
+`--proposal specialty-seat:ag_news` on a fresh throwaway apply lab
+through the existing `apply-proposal` → `plan` → `apply --require-plan`
+path. Standing next is `joinable: yes` after the gated apply. Dataset
+proposals stay proposal-only. Train is not invoked. `auto_train=false`.
 `estate decisions apply-package --package <package.json> --estate
-<lab> --prepared <prepared> --require-plan` is the operator command.
-Before apply-proposal / plan / apply it reads
+<lab> --prepared <prepared> --require-plan --proposal specialty-seat:<id>`
+is the operator command. More than one specialty-seat without
+`--proposal` is `refuse:proposal:ambiguous` and the lab estate stays
+unchanged. A single specialty-seat still defaults. Before
+apply-proposal / plan / apply it reads
 `{prepared}/binding-proposal.json` and requires `binding_id` (and the
 picked proposal id) to match the picked specialty-seat. A mismatch is
 `refuse:proposal:` (or `refuse:prepared:`) and the lab estate stays
@@ -829,7 +833,8 @@ estate decisions apply-package \
   --state-dir /tmp/cell-one-improvement-apply/apply/state \
   --plans-dir /tmp/cell-one-improvement-apply/apply/plans \
   --roots-base /tmp/cell-one-improvement-apply/apply/roots \
-  --require-plan
+  --require-plan \
+  --proposal specialty-seat:ag_news
 ```
 
 ## 5. Backup rotate

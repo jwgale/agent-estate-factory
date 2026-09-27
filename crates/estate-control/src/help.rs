@@ -1364,9 +1364,11 @@ improvement package from that lab journal (auto_train=false,
 train not invoked). Then one gated specialty-seat apply on
 {out}/apply reuses that package and does not re-run host-validate.
 Apply without --require-plan is refuse:plan. apply-package
---require-plan lands one specialty-seat (prefer ag_news). Standing
-next is joinable. local_slm stays. Dataset proposals stay
-proposal-only. Report cell-one.cohesion-prove.v0 cites the package
+--require-plan lands one specialty-seat via --proposal
+specialty-seat:ag_news. More than one specialty-seat without
+--proposal is refuse:proposal:ambiguous and leaves the lab
+unchanged. Standing next is joinable. local_slm stays. Dataset
+proposals stay proposal-only. Report cell-one.cohesion-prove.v0 cites the package
 path, proposal count/kind, the apply receipt
 (cell-one.improvement-apply.v0), applied proposal id/kind/binding,
 joinable, require_plan=true, refuse:plan, and auto_train=false.
@@ -1386,10 +1388,13 @@ cell-one.improvement-export-prove.v0 cites the package path,
 proposal count/kind, and auto_train=false.
 estate decisions apply-package --package <package.json>
 --estate <lab-estate.yaml> --prepared <prepared> --require-plan
-applies one specialty-seat proposal through apply-proposal, plan,
-and apply --require-plan. binding-proposal.json binding_id must
-match the picked specialty-seat before any mutation. Mismatch is
-refuse:proposal (or refuse:prepared) and the lab estate stays
+[--proposal specialty-seat:<id>] applies one specialty-seat
+proposal through apply-proposal, plan, and apply --require-plan.
+More than one specialty-seat requires --proposal specialty-seat:<id>
+(refuse:proposal:ambiguous without it; lab unchanged). A single
+specialty-seat still defaults. binding-proposal.json binding_id
+must match the picked specialty-seat before any mutation. Mismatch
+is refuse:proposal (or refuse:prepared) and the lab estate stays
 unchanged. Without --require-plan it is refuse:plan.
 Dataset proposals stay proposal-only. It does not train.
 estate decisions improvement-apply-prove --root . --out <throwaway>
