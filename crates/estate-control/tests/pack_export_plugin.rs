@@ -98,6 +98,7 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
         "{stdout}"
     );
     assert!(stdout.contains("standing-classify @hourly"), "{stdout}");
+    assert!(stdout.contains("standing-once @hourly"), "{stdout}");
     assert!(stdout.contains("wired_mcp: yes"), "{stdout}");
     assert!(stdout.contains("live_sync: no"), "{stdout}");
     assert!(stdout.contains("complete_timeout_secs: 120"), "{stdout}");
@@ -221,7 +222,9 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(once.contains("estate complete"), "{once}");
     assert!(!once.contains("stays a stub"), "{once}");
     assert!(!once.contains("body stub"), "{once}");
-    assert!(once.contains("no standing routines"), "{once}");
+    assert!(once.contains("standing-once"), "{once}");
+    assert!(once.contains("schedule=@hourly"), "{once}");
+    assert!(!once.contains("no standing routines"), "{once}");
 
     let mapping: serde_json::Value =
         serde_json::from_str(&read(&out.join("estate-pack.json"))).unwrap();
@@ -260,6 +263,9 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert_eq!(mapping["routines"][0]["id"], "standing-classify");
     assert_eq!(mapping["routines"][0]["cron_note"], "0 * * * *");
     assert_eq!(mapping["routines"][0]["live_trigger"], false);
+    assert_eq!(mapping["routines"][1]["id"], "standing-once");
+    assert_eq!(mapping["routines"][1]["cron_note"], "0 * * * *");
+    assert_eq!(mapping["routines"][1]["live_trigger"], false);
 
     let readme = read(&out.join("README.md"));
     assert!(readme.contains("# research-crew pack plugin"), "{readme}");
@@ -289,6 +295,7 @@ fn export_plugin_writes_agent_plugin_stub_from_fixture_pack() {
     assert!(readme.contains("refuse:pack-orchestrator"), "{readme}");
     assert!(!readme.contains("command: true"), "{readme}");
     assert!(readme.contains("standing-classify"), "{readme}");
+    assert!(readme.contains("standing-once"), "{readme}");
     assert!(readme.contains("0 * * * *"), "{readme}");
     assert!(!readme.contains("live PASS"), "{readme}");
 
