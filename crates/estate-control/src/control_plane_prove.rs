@@ -201,7 +201,11 @@ pub(crate) fn cmd_control_plane_prove(root: &Path, out: Option<&Path>) -> Result
     if pretty.split_whitespace().any(|word| word == "enforced") {
         bail!("refuse:control-plane: report invented enforced");
     }
-    if pretty.contains("READY_FOR_LIVE_TEST: yes") || pretty.contains("\"ready_for_live_test\": true") {
+    if pretty.contains("READY_FOR_LIVE_TEST: yes")
+        || pretty.contains("\"ready_for_live_test\": true")
+        || pretty.contains("\"live_pass_recorded\": true")
+        || pretty.contains("\"live_sync\": true")
+    {
         bail!("refuse:control-plane: report invented a live-test ready flag");
     }
     fs::write(out.join("control-plane-prove.json"), format!("{pretty}\n"))?;

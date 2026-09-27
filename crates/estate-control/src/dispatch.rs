@@ -632,6 +632,18 @@ pub(crate) fn run() -> Result<()> {
             DecisionsCommand::HostValidateProve { root, out } => {
                 crate::decision_prove::cmd_decisions_host_validate_prove(&root, out.as_deref())
             }
+            DecisionsCommand::ExportPackage {
+                state_dir,
+                out,
+                root,
+            } => crate::improvement_export::cmd_decisions_export_package(&state_dir, &out, &root)
+                .map(|_| ()),
+            DecisionsCommand::ImprovementExportProve { root, out } => {
+                crate::improvement_export::cmd_decisions_improvement_export_prove(
+                    &root,
+                    out.as_deref(),
+                )
+            }
         },
         Command::Enrich { command } => match command {
             EnrichCommand::Prepare {

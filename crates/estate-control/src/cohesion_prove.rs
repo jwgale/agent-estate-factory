@@ -125,6 +125,7 @@ pub(crate) fn cmd_cohesion_prove(
     if pretty.contains("READY_FOR_LIVE_TEST: yes")
         || pretty.contains("\"ready_for_live_test\": true")
         || pretty.contains("\"live_pass_recorded\": true")
+        || pretty.contains("\"live_sync\": true")
         || pretty.contains("\"loader_is_live_pass\": true")
     {
         bail!("refuse:cohesion: report invented a live-test ready flag");
