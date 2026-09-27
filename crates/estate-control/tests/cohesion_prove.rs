@@ -113,6 +113,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(stdout.contains("kind=specialty-seat"), "{stdout}");
     assert!(stdout.contains("binding=ag_news"), "{stdout}");
     assert!(stdout.contains("standing=joinable: yes"), "{stdout}");
+    assert!(stdout.contains("joinable=true"), "{stdout}");
     assert!(stdout.contains("require_plan=true"), "{stdout}");
     assert!(
         stdout.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
@@ -291,9 +292,19 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
         "refuse:plan: apply-package requires --require-plan"
     );
     assert_eq!(decisions["apply_receipt"], apply["apply_receipt"]);
+    assert_eq!(decisions["require_plan"], receipt["require_plan"]);
+    assert_eq!(decisions["auto_train"], receipt["auto_train"]);
+    assert_eq!(decisions["train_invoked"], receipt["train_invoked"]);
+    assert_eq!(decisions["joinable"], receipt["joinable"]);
+    assert_eq!(decisions["standing"], receipt["standing"]);
+    assert_eq!(decisions["refuse_without_plan"], receipt["refuse_without_plan"]);
+    assert_eq!(decisions["applied_proposal_id"], receipt["proposal_id"]);
+    assert_eq!(decisions["applied_proposal_kind"], receipt["proposal_kind"]);
+    assert_eq!(decisions["binding_id"], receipt["binding_id"]);
     let cite = decisions["cite"].as_str().unwrap();
     assert!(cite.contains("schema=cell-one.improvement-apply.v0"), "{cite}");
     assert!(cite.contains("applied proposal specialty-seat:ag_news"), "{cite}");
+    assert!(cite.contains("joinable=true"), "{cite}");
     assert!(cite.contains("require_plan=true"), "{cite}");
     assert!(cite.contains("auto_train=false"), "{cite}");
     assert!(cite.contains("train_invoked=false"), "{cite}");
@@ -324,6 +335,7 @@ fn cohesion_prove_stitches_fuel_decide_run_and_pack_cli_smoke() {
     assert!(report_out.contains("kind=specialty-seat"), "{report_out}");
     assert!(report_out.contains("binding=ag_news"), "{report_out}");
     assert!(report_out.contains("standing=joinable: yes"), "{report_out}");
+    assert!(report_out.contains("joinable=true"), "{report_out}");
     assert!(report_out.contains("require_plan=true"), "{report_out}");
     assert!(
         report_out.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),

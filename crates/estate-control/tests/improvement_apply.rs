@@ -185,6 +185,7 @@ fn improvement_apply_prove_gates_one_specialty_seat_without_auto_train() {
     assert!(report_out.contains("kind=specialty-seat"), "{report_out}");
     assert!(report_out.contains("binding=ag_news"), "{report_out}");
     assert!(report_out.contains("standing=joinable: yes"), "{report_out}");
+    assert!(report_out.contains("joinable=true"), "{report_out}");
     assert!(report_out.contains("require_plan=true"), "{report_out}");
     assert!(
         report_out.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),

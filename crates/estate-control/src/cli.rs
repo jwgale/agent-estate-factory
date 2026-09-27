@@ -717,9 +717,12 @@ pub(crate) enum DecisionsCommand {
     /// Print counts by stage, validation, fallback, and surface.
     /// Optional `--pack` keeps rows whose receipt `pack_id` matches.
     /// When the lab has a nearby `cell-one.improvement-apply.v0`
-    /// receipt, the same page cites applied proposal id/kind/binding,
-    /// joinable standing, `require_plan=true`, the refuse-without-plan
-    /// string, `auto_train=false`, and `train_invoked=false`.
+    /// receipt beside this journal, the same page cites applied
+    /// proposal id/kind/binding and the receipt's lock fields
+    /// (`require_plan`, `standing`/`joinable`, `refuse_without_plan`,
+    /// `auto_train`, `train_invoked`). Missing or wrong-typed lock
+    /// fields are `refuse:cite` — they are not invented. Sibling
+    /// `{state-dir}/../apply/` is not searched.
     Report {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,

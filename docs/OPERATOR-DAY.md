@@ -726,10 +726,13 @@ proposal id/kind/binding, `joinable: yes`, `require_plan=true`,
 `auto_train=false`, `train_invoked=false`, and
 `refuse:plan: apply-package requires --require-plan`. `estate
 decisions report` on that lab state-dir cites the same receipt
-(applied proposal id/kind/binding, joinable standing,
-`require_plan=true`, the refuse-without-plan string,
-`auto_train=false`, `train_invoked=false`, schema path) so the
-closed loop is one operator surface without digging files. Specialty-real
+by reading applied proposal id/kind/binding, joinable standing,
+`require_plan`, the refuse-without-plan string, `auto_train`,
+and `train_invoked` from `cell-one.improvement-apply.v0`. Missing
+or wrong-typed lock fields are `refuse:cite` and are not invented.
+Search is local to that state-dir (beside the journal); a sibling
+`../apply/` is not cited. The closed loop is one operator surface
+without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
 `ready_for_live_test` and `live_pass_recorded` stay false. `live_sync`
 stays false. The command ends with `cohesion-prove: ok` and

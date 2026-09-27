@@ -26,7 +26,6 @@ pub(crate) const JOURNAL_FILE: &str = "receipts.jsonl";
 pub(crate) const EQUAL_CLASS_SELECT: &str = "equal-class";
 pub(crate) const APPLY_RECEIPT_SCHEMA: &str = "cell-one.improvement-apply.v0";
 pub(crate) const APPLY_RECEIPT_FILE: &str = "improvement-apply.json";
-const REFUSE_WITHOUT_PLAN: &str = "refuse:plan: apply-package requires --require-plan";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum MixedSelectPolicy {
@@ -886,16 +885,17 @@ pub(crate) fn render_report(receipts: &[DecisionReceipt]) -> String {
     out
 }
 
-/// Nearby gated-apply receipt, if the lab already wrote one.
+/// Nearby gated-apply receipt, if this lab already wrote one.
 ///
-/// Looks beside the decision journal (`{state-dir}/decisions/improvement-apply.json`),
-/// then at the throwaway apply lab (`{state-dir}/../apply/improvement-apply.json`
-/// and `{state-dir}/../improvement-apply.json`). Missing or a foreign schema
-/// is silence — this is a cite, not a grant.
+/// Search order is local to `state_dir` only:
+/// 1. `{state-dir}/decisions/improvement-apply.json` (beside `receipts.jsonl`)
+/// 2. `{state-dir}/improvement-apply.json`
+///
+/// Do not walk `{state-dir}/../apply/` or other sibling throwaways. A
+/// shared parent must not leak another lab's receipt onto this journal.
+/// Missing or a foreign schema is silence — this is a cite, not a grant.
 pub(crate) fn discover_apply_receipt(state_dir: &Path) -> Option<PathBuf> {
     let candidates = [
-        state_dir.join("..").join("apply").join(APPLY_RECEIPT_FILE),
-        state_dir.join("..").join(APPLY_RECEIPT_FILE),
         state_dir.join("decisions").join(APPLY_RECEIPT_FILE),
         state_dir.join(APPLY_RECEIPT_FILE),
     ];
@@ -919,38 +919,118 @@ fn load_apply_receipt(path: &Path) -> Option<Value> {
     (receipt.get("schema").and_then(Value::as_str) == Some(APPLY_RECEIPT_SCHEMA)).then_some(receipt)
 }
 
-fn receipt_str<'a>(receipt: &'a Value, keys: &[&str]) -> &'a str {
-    keys.iter()
-        .find_map(|key| receipt.get(*key).and_then(Value::as_str))
-        .unwrap_or("-")
+fn first_nonempty_str(receipt: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        receipt
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+/// Lock fields read from a `cell-one.improvement-apply.v0` receipt.
+/// Missing or wrong-typed fields refuse — no invented defaults.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApplyReceiptCite {
+    pub proposal_id: String,
+    pub kind: String,
+    pub binding: String,
+    pub standing: String,
+    pub joinable: bool,
+    pub require_plan: bool,
+    pub refuse_without_plan: String,
+    pub auto_train: bool,
+    pub train_invoked: bool,
+}
+
+pub(crate) fn parse_apply_receipt_cite(receipt: &Value) -> Result<ApplyReceiptCite, String> {
+    if receipt.get("schema").and_then(Value::as_str) != Some(APPLY_RECEIPT_SCHEMA) {
+        return Err("refuse:cite: apply receipt schema is not cell-one.improvement-apply.v0".into());
+    }
+    let require_bool = |key: &str| {
+        receipt.get(key).and_then(Value::as_bool).ok_or_else(|| {
+            format!("refuse:cite: apply receipt missing bool {key}")
+        })
+    };
+    let require_plan = require_bool("require_plan")?;
+    let auto_train = require_bool("auto_train")?;
+    let train_invoked = require_bool("train_invoked")?;
+    let joinable = require_bool("joinable")?;
+    let refuse_without_plan = receipt
+        .get("refuse_without_plan")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "refuse:cite: apply receipt missing refuse_without_plan".to_string())?
+        .to_string();
+    let standing = receipt
+        .get("standing")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "refuse:cite: apply receipt missing standing".to_string())?
+        .to_string();
+    let proposal_id = first_nonempty_str(receipt, &["proposal_id", "applied_proposal_id"])
+        .ok_or_else(|| "refuse:cite: apply receipt missing proposal id".to_string())?;
+    let kind = first_nonempty_str(receipt, &["proposal_kind", "applied_proposal_kind"])
+        .ok_or_else(|| "refuse:cite: apply receipt missing proposal kind".to_string())?;
+    let binding = first_nonempty_str(receipt, &["binding_id"])
+        .ok_or_else(|| "refuse:cite: apply receipt missing binding_id".to_string())?;
+    Ok(ApplyReceiptCite {
+        proposal_id,
+        kind,
+        binding,
+        standing,
+        joinable,
+        require_plan,
+        refuse_without_plan,
+        auto_train,
+        train_invoked,
+    })
 }
 
 /// One operator line for a `cell-one.improvement-apply.v0` receipt.
-pub(crate) fn render_apply_receipt_cite(path: &Path, receipt: &Value) -> String {
-    let proposal_id = receipt_str(receipt, &["proposal_id", "applied_proposal_id"]);
-    let kind = receipt_str(receipt, &["proposal_kind", "applied_proposal_kind"]);
-    let binding = receipt_str(receipt, &["binding_id"]);
-    let standing = receipt_str(receipt, &["standing"]);
-    let standing = if standing == "-" {
-        "joinable: yes"
-    } else {
-        standing
-    };
-    let refuse = receipt
-        .get("refuse_without_plan")
-        .and_then(Value::as_str)
-        .unwrap_or(REFUSE_WITHOUT_PLAN);
-    format!(
-        "apply receipt: schema={APPLY_RECEIPT_SCHEMA} path={path}\napplied proposal {proposal_id} kind={kind} binding={binding} standing={standing} require_plan=true refuse_without_plan={refuse} auto_train=false train_invoked=false\n",
-        path = path.display()
-    )
+/// Reads lock fields from the receipt. Does not invent them.
+pub(crate) fn render_apply_receipt_cite(path: &Path, receipt: &Value) -> Result<String, String> {
+    let row = parse_apply_receipt_cite(receipt)?;
+    Ok(format!(
+        "apply receipt: schema={APPLY_RECEIPT_SCHEMA} path={path}\napplied proposal {id} kind={kind} binding={binding} standing={standing} joinable={joinable} require_plan={require_plan} refuse_without_plan={refuse} auto_train={auto_train} train_invoked={train_invoked}\n",
+        path = path.display(),
+        id = row.proposal_id,
+        kind = row.kind,
+        binding = row.binding,
+        standing = row.standing,
+        joinable = row.joinable,
+        require_plan = row.require_plan,
+        refuse = row.refuse_without_plan,
+        auto_train = row.auto_train,
+        train_invoked = row.train_invoked,
+    ))
 }
 
-/// Cite a nearby apply receipt when the lab has one. None if absent.
-pub(crate) fn cite_nearby_apply_receipt(state_dir: &Path) -> Option<String> {
+fn nearby_apply_receipt(state_dir: &Path) -> Option<(PathBuf, Value)> {
     let path = discover_apply_receipt(state_dir)?;
     let receipt = load_apply_receipt(&path)?;
-    Some(render_apply_receipt_cite(&path, &receipt))
+    Some((path, receipt))
+}
+
+/// Green cite when a nearby receipt has typed lock fields. None if
+/// absent, foreign, or incomplete — no invented `require_plan=true`.
+pub(crate) fn cite_nearby_apply_receipt(state_dir: &Path) -> Option<String> {
+    let (path, receipt) = nearby_apply_receipt(state_dir)?;
+    render_apply_receipt_cite(&path, &receipt).ok()
+}
+
+/// Green cite, or an honest `refuse:cite` when the file is present
+/// but lock fields are missing or the wrong type.
+pub(crate) fn cite_or_refuse_nearby_apply_receipt(state_dir: &Path) -> Option<String> {
+    let (path, receipt) = nearby_apply_receipt(state_dir)?;
+    Some(match render_apply_receipt_cite(&path, &receipt) {
+        Ok(cite) => cite,
+        Err(err) => format!("apply receipt: {err} path={}\n", path.display()),
+    })
 }
 
 pub(crate) fn cmd_decisions_export(state_dir: &Path, out: &Path) -> Result<()> {
@@ -992,7 +1072,7 @@ pub(crate) fn cmd_decisions_report(state_dir: &Path, pack: Option<&str>) -> Resu
         });
     }
     print!("{}", render_report(&receipts));
-    if let Some(cite) = cite_nearby_apply_receipt(state_dir) {
+    if let Some(cite) = cite_or_refuse_nearby_apply_receipt(state_dir) {
         print!("{cite}");
     }
     Ok(())
@@ -1725,6 +1805,7 @@ mod tests {
         assert!(cite.contains("kind=specialty-seat"), "{cite}");
         assert!(cite.contains("binding=ag_news"), "{cite}");
         assert!(cite.contains("standing=joinable: yes"), "{cite}");
+        assert!(cite.contains("joinable=true"), "{cite}");
         assert!(cite.contains("require_plan=true"), "{cite}");
         assert!(
             cite.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
@@ -1737,28 +1818,187 @@ mod tests {
     }
 
     #[test]
-    fn decisions_report_discovers_sibling_apply_lab_receipt() {
+    fn decisions_report_prefers_local_receipt_over_sibling_apply() {
         let root = std::env::temp_dir().join(format!(
-            "cell-decision-apply-sibling-{}",
+            "cell-decision-apply-local-wins-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&root);
         let state = root.join("state");
+        std::fs::create_dir_all(state.join("decisions")).unwrap();
+        write_apply_receipt(
+            &state.join("decisions").join("improvement-apply.json"),
+            "ag_news",
+        );
+        write_apply_receipt(
+            &root.join("apply").join("improvement-apply.json"),
+            "rust_idiom",
+        );
+        let path = discover_apply_receipt(&state).expect("local apply receipt");
+        assert!(
+            path.ends_with("state/decisions/improvement-apply.json"),
+            "search order is local decisions/ before ../apply/: {}",
+            path.display()
+        );
+        let cite = cite_nearby_apply_receipt(&state).expect("apply cite");
+        assert!(cite.contains("binding=ag_news"), "{cite}");
+        assert!(cite.contains("specialty-seat:ag_news"), "{cite}");
+        assert!(!cite.contains("rust_idiom"), "{cite}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn decisions_report_does_not_cite_sibling_apply_for_unrelated_state() {
+        let root = std::env::temp_dir().join(format!(
+            "cell-decision-apply-no-sibling-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let state = root.join("other").join("state");
         std::fs::create_dir_all(&state).unwrap();
         write_apply_receipt(
             &root.join("apply").join("improvement-apply.json"),
             "ag_news",
         );
-        let path = discover_apply_receipt(&state).expect("sibling apply receipt");
         assert!(
-            path.ends_with("apply/improvement-apply.json"),
-            "{}",
-            path.display()
+            discover_apply_receipt(&state).is_none(),
+            "sibling ../apply must not attach to an unrelated state-dir"
         );
-        let cite = cite_nearby_apply_receipt(&state).expect("apply cite");
-        assert!(cite.contains("specialty-seat:ag_news"), "{cite}");
-        assert!(cite.contains("cell-one.improvement-apply.v0"), "{cite}");
+        assert!(cite_nearby_apply_receipt(&state).is_none());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn decisions_report_skips_schema_match_missing_lock_fields() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-apply-incomplete-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("decisions")).unwrap();
+        let path = dir.join("decisions").join("improvement-apply.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:ag_news",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "ag_news"
+}
+"#,
+        )
+        .unwrap();
+        assert!(discover_apply_receipt(&dir).is_some(), "schema still matches");
+        let receipt = load_apply_receipt(&path).expect("schema");
+        let err = render_apply_receipt_cite(&path, &receipt).expect_err("incomplete");
+        assert!(err.contains("refuse:cite:"), "{err}");
+        assert!(err.contains("require_plan") || err.contains("auto_train"), "{err}");
+        assert!(cite_nearby_apply_receipt(&dir).is_none());
+        let refuse = cite_or_refuse_nearby_apply_receipt(&dir).expect("honest refuse");
+        assert!(refuse.contains("refuse:cite:"), "{refuse}");
+        assert!(
+            !refuse.contains("require_plan=true"),
+            "must not invent require_plan=true: {refuse}"
+        );
+        assert!(
+            !refuse.contains("auto_train=false"),
+            "must not invent auto_train=false: {refuse}"
+        );
+        assert!(
+            !refuse.contains("train_invoked=false"),
+            "must not invent train_invoked=false: {refuse}"
+        );
+        assert!(
+            !refuse.contains("standing=joinable: yes"),
+            "must not invent standing: {refuse}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn decisions_report_cite_mirrors_receipt_lock_fields() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-apply-mirror-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("improvement-apply.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:rust_idiom",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "rust_idiom",
+  "joinable": false,
+  "standing": "joinable: no",
+  "require_plan": false,
+  "refuse_without_plan": "refuse:plan: test-mirror",
+  "auto_train": true,
+  "train_invoked": true
+}
+"#,
+        )
+        .unwrap();
+        let receipt = load_apply_receipt(&path).expect("schema");
+        let parsed = parse_apply_receipt_cite(&receipt).expect("typed fields");
+        assert_eq!(parsed.require_plan, false);
+        assert_eq!(parsed.auto_train, true);
+        assert_eq!(parsed.train_invoked, true);
+        assert_eq!(parsed.joinable, false);
+        assert_eq!(parsed.standing, "joinable: no");
+        assert_eq!(parsed.refuse_without_plan, "refuse:plan: test-mirror");
+        let cite = render_apply_receipt_cite(&path, &receipt).expect("cite");
+        assert!(cite.contains("binding=rust_idiom"), "{cite}");
+        assert!(cite.contains("standing=joinable: no"), "{cite}");
+        assert!(cite.contains("joinable=false"), "{cite}");
+        assert!(cite.contains("require_plan=false"), "{cite}");
+        assert!(cite.contains("refuse_without_plan=refuse:plan: test-mirror"), "{cite}");
+        assert!(cite.contains("auto_train=true"), "{cite}");
+        assert!(cite.contains("train_invoked=true"), "{cite}");
+        assert!(!cite.contains("require_plan=true"), "{cite}");
+        assert!(!cite.contains("auto_train=false"), "{cite}");
+        assert!(!cite.contains("train_invoked=false"), "{cite}");
+        assert!(!cite.contains("standing=joinable: yes"), "{cite}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn decisions_report_refuses_wrong_typed_lock_fields() {
+        let dir = std::env::temp_dir().join(format!(
+            "cell-decision-apply-wrong-type-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("decisions")).unwrap();
+        let path = dir.join("decisions").join("improvement-apply.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:ag_news",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "ag_news",
+  "joinable": true,
+  "standing": "joinable: yes",
+  "require_plan": "true",
+  "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
+  "auto_train": false,
+  "train_invoked": false
+}
+"#,
+        )
+        .unwrap();
+        let receipt = load_apply_receipt(&path).expect("schema");
+        let err = render_apply_receipt_cite(&path, &receipt).expect_err("string require_plan");
+        assert!(err.contains("refuse:cite:"), "{err}");
+        assert!(err.contains("require_plan"), "{err}");
+        assert!(cite_nearby_apply_receipt(&dir).is_none());
+        let refuse = cite_or_refuse_nearby_apply_receipt(&dir).expect("honest refuse");
+        assert!(refuse.contains("refuse:cite:"), "{refuse}");
+        assert!(!refuse.contains("require_plan=true"), "{refuse}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

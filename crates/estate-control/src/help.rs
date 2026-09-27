@@ -1371,7 +1371,9 @@ path, proposal count/kind, the apply receipt
 (cell-one.improvement-apply.v0), applied proposal id/kind/binding,
 joinable, require_plan=true, refuse:plan, and auto_train=false.
 estate decisions report on that lab state-dir cites the same apply
-receipt so the closed loop is one operator surface.
+receipt by reading lock fields from the file (refuse:cite when
+missing; local state-dir only) so the closed loop is one operator
+surface.
 A Cursor MCP loader hang is out of scope. It does not record a live PASS.
 estate decisions export-package --state-dir <dir> --out <throwaway>
 writes a standing improvement package (JSON/YAML) from the decision
