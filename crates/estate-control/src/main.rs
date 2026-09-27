@@ -5,6 +5,7 @@ mod classify_grade;
 mod classify_import;
 mod classify_journey;
 mod cli;
+mod control_plane_prove;
 mod decision_prove;
 mod decisions;
 mod dispatch;

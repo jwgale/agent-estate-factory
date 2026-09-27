@@ -613,6 +613,22 @@ estate enrich bind-prove --dual --root . --out /tmp/cell-one-specialty-bind-dual
 estate decisions host-validate-prove --root . --out /tmp/cell-one-decision-host-validate
 ```
 
+## 4d. Control-plane prove (one lab, not a train)
+
+`estate control-plane-prove` is the feelable fuel → decide → run loop on one throwaway lab. It does not rewrite `examples/estate.yaml` (cksum `43770130 3391`).
+
+Fuel mock-imports two specialty GGUFs (`trained_shape` gguf, `auto_apply=false`) as `ag_news` (`specialist-agnews-3000`) and `rust_idiom` (`specialist-rustidiom-3000`) beside `local_slm`, then runs apply-proposal, plan, and apply `--require-plan` on the lab only. Standing next prints `joinable: yes` for both seats. The GGUF must be a regular file and an agent models allow-list must name the binding. The file alone is not joinable.
+
+Decide runs the host-validate cases on that same estate and state-dir: authorize, a granted convey call, and `complete --mock`. Research selects `ag_news`. Idiom selects `rust_idiom`. Sanctum abstains (`refuse:decision-abstain`) and gets no completion text. A stale hint and an ineligible hint record `fallback=ag_news` and do not grant the hinted seat. `estate decisions report` shows complete greater than zero and both specialty capabilities.
+
+Run starts and stops the supervised runner on `standing-dual` in that same state-dir. One walk-away tick journals hop 1 `ag_news` `context=none`, hop 2 `rust_idiom` `context=applied`, hop 3 `frontier_http` `context=applied`, with one `session_id` on the hops. The digest cites the session, `package=dual-specialty`, and `chain=chain-dual-specialty-…`. A second start is `refuse:runner-already-running`.
+
+The compact report is `cell-one.control-plane-prove.v0`. `ok` is true only when fuel, decide, and run all pass. `ready_for_live_test` and `live_pass_recorded` stay false. The command ends with `control-plane-prove: ok` and `READY_FOR_LIVE_TEST: no`. In-process mock. No network. No Ollama. No GPU train. This is not a live PASS.
+
+```bash
+estate control-plane-prove --root . --out /tmp/cell-one-control-plane
+```
+
 ## 5. Backup rotate
 
 Use an isolated cell so the walk does not touch a real `.cell/`.

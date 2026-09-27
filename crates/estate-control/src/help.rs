@@ -1342,7 +1342,12 @@ specialty-join.json for that portable id. estate enrich bind-prove
 import-trained with trained_shape gguf and auto_apply=false, apply
 --require-plan on a lab copy, Standing next, and a mock complete. It
 does not start a GPU train. estate enrich bind-prove --dual is the
-same loop for two specialty seats beside local_slm. examples/estate.yaml
+same loop for two specialty seats beside local_slm. estate
+control-plane-prove --root . --out <throwaway> stitches that fuel path,
+the host-validate authorize / convey / complete --mock loop, and
+standing-dual under the runner on one lab copy. Report
+cell-one.control-plane-prove.v0. It does not record a live PASS.
+examples/estate.yaml
 stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:
 make qlora-journey. It prints this ladder, checks the prepare

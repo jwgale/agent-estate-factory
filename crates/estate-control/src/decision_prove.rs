@@ -75,225 +75,12 @@ pub(crate) fn cmd_decisions_host_validate_prove(root: &Path, out: Option<&Path>)
     fs::create_dir_all(&state)?;
     let policy = root.join("policy/cell-one.policy.v0.yaml");
 
-    clear_hint(&state)?;
-    let auth_ok = run_authorize(&lab, &state, "research", "model", BINDING_AG, true)?;
-    expect_select(&auth_ok, "authorize", "research", BINDING_AG, BINDING_AG)?;
-    println!(
-        "authorize select: agent=research result={} validation=ok surface=authorize granted=yes",
-        auth_ok.result
-    );
-
-    let auth_abstain = run_authorize(&lab, &state, "sanctum", "model", BINDING_AG, true)?;
-    expect_abstain(&auth_abstain, "authorize", "sanctum")?;
-    println!(
-        "authorize abstain: agent=sanctum result=abstain validation=ok surface=authorize selector=refuse:decision-abstain model_granted=no"
-    );
-
-    write_hint(&state, "xai_grok", None)?;
-    let auth_ineligible = run_authorize(&lab, &state, "research", "tool", "notes-append", false)?;
-    expect_fallback(
-        &auth_ineligible,
-        "authorize",
-        "research",
-        "ineligible",
-        "xai_grok",
-        BINDING_AG,
-        "refuse:deny-default",
+    run_host_validate_cases(
+        &lab,
+        &state,
+        &policy,
+        &out.join("decisions-replay.jsonl"),
     )?;
-    println!(
-        "authorize fallback: agent=research validation=ineligible fallback=ag_news outcome=refuse:deny-default granted=no"
-    );
-
-    write_hint(&state, BINDING_AG, Some("0"))?;
-    let auth_stale = run_authorize(&lab, &state, "research", "tool", "notes-append", false)?;
-    expect_fallback(
-        &auth_stale,
-        "authorize",
-        "research",
-        "stale",
-        BINDING_AG,
-        BINDING_AG,
-        "refuse:deny-default",
-    )?;
-    println!(
-        "authorize fallback: agent=research validation=stale fallback=ag_news outcome=refuse:deny-default granted=no"
-    );
-
-    clear_hint(&state)?;
-    declare_hop(&lab, &state)?;
-    let mesh = conveyor_proxy::load_mesh(&state).map_err(|err| anyhow::anyhow!("{err}"))?;
-    let lease = mesh
-        .leases
-        .iter()
-        .find(|row| row.hop_id == HOP_ID)
-        .ok_or_else(|| anyhow::anyhow!("refuse:hop: {HOP_ID} lease missing"))?;
-    if !lease.granted || lease.capability != HOP_CAP {
-        bail!(
-            "refuse:hop: {HOP_ID} granted={} capability={}",
-            lease.granted,
-            lease.capability
-        );
-    }
-    for agent in ["research", "idiom", "sanctum"] {
-        if !lease.agents.iter().any(|id| id == agent) {
-            bail!("refuse:hop: {HOP_ID} lease missing agent {agent}");
-        }
-    }
-    println!("hop lease: {HOP_ID} granted=yes capability={HOP_CAP}");
-
-    let convey_ag = run_convey(&lab, &state, &policy, "research", true)?;
-    expect_select(&convey_ag, "", "research", BINDING_AG, HOP_CAP)?;
-    if convey_ag.hop_id != HOP_ID {
-        bail!("refuse:decision: convey hop_id is {}", convey_ag.hop_id);
-    }
-    println!(
-        "convey select: agent=research result={} validation=ok surface=convey granted=yes",
-        convey_ag.result
-    );
-
-    let convey_rust = run_convey(&lab, &state, &policy, "idiom", true)?;
-    expect_select(&convey_rust, "", "idiom", BINDING_RUST, HOP_CAP)?;
-    println!(
-        "convey select: agent=idiom result={} validation=ok surface=convey granted=yes",
-        convey_rust.result
-    );
-
-    let convey_abstain = run_convey(&lab, &state, &policy, "sanctum", true)?;
-    expect_abstain(&convey_abstain, "", "sanctum")?;
-    println!(
-        "convey abstain: agent=sanctum result=abstain validation=ok surface=convey selector=refuse:decision-abstain model_granted=no"
-    );
-
-    write_hint(&state, BINDING_AG, Some("0"))?;
-    let convey_stale = run_convey(&lab, &state, &policy, "research", true)?;
-    expect_fallback(
-        &convey_stale,
-        "",
-        "research",
-        "stale",
-        BINDING_AG,
-        BINDING_AG,
-        "allow",
-    )?;
-    if convey_stale.validation == "ok" {
-        bail!("refuse:decision: stale convey hint was granted");
-    }
-    println!(
-        "convey fallback: agent=research validation=stale fallback=ag_news outcome=allow hop_granted=yes model_granted=no"
-    );
-
-    clear_hint(&state)?;
-    let complete_ag = run_complete(&lab, &state, "research", PROMPT_RESEARCH, true)?;
-    expect_select(&complete_ag, "complete", "research", BINDING_AG, BINDING_AG)?;
-    expect_complete_grant(&complete_ag, "research", BINDING_AG)?;
-    println!(
-        "complete select: agent=research result={} validation=ok surface=complete granted=yes mock=yes",
-        complete_ag.result
-    );
-
-    let complete_rust = run_complete(&lab, &state, "idiom", PROMPT_IDIOM, true)?;
-    expect_select(
-        &complete_rust,
-        "complete",
-        "idiom",
-        BINDING_RUST,
-        BINDING_RUST,
-    )?;
-    expect_complete_grant(&complete_rust, "idiom", BINDING_RUST)?;
-    println!(
-        "complete select: agent=idiom result={} validation=ok surface=complete granted=yes mock=yes",
-        complete_rust.result
-    );
-
-    let complete_abstain = run_complete(&lab, &state, "sanctum", PROMPT_ABSTAIN, false)?;
-    expect_complete_abstain(&complete_abstain)?;
-    println!(
-        "complete abstain: agent=sanctum result=abstain validation=ok surface=complete selector=refuse:decision-abstain completion_granted=no"
-    );
-
-    write_hint(&state, "xai_grok", None)?;
-    let complete_ineligible = run_complete(&lab, &state, "research", PROMPT_INELIGIBLE, false)?;
-    expect_fallback(
-        &complete_ineligible,
-        "complete",
-        "research",
-        "ineligible",
-        "xai_grok",
-        BINDING_AG,
-        "refuse:decision-ineligible",
-    )?;
-    expect_complete_closed(&complete_ineligible, "xai_grok")?;
-    println!(
-        "complete fallback: agent=research validation=ineligible fallback=ag_news outcome=refuse:decision-ineligible granted=no"
-    );
-
-    write_hint(&state, BINDING_AG, Some("0"))?;
-    let complete_stale = run_complete(&lab, &state, "research", PROMPT_STALE, false)?;
-    expect_fallback(
-        &complete_stale,
-        "complete",
-        "research",
-        "stale",
-        BINDING_AG,
-        BINDING_AG,
-        "refuse:decision-stale",
-    )?;
-    expect_complete_closed(&complete_stale, BINDING_AG)?;
-    println!(
-        "complete fallback: agent=research validation=stale fallback=ag_news outcome=refuse:decision-stale granted=no"
-    );
-
-    let receipts = crate::decisions::load_receipts(&state)?;
-    if receipts.len() != 13 {
-        bail!(
-            "refuse:decision: journal has {} receipts, want 13",
-            receipts.len()
-        );
-    }
-    let surface_authorize = receipts
-        .iter()
-        .filter(|row| row.surface == "authorize")
-        .count();
-    let surface_convey = receipts.iter().filter(|row| row.surface.is_empty()).count();
-    let surface_complete = receipts
-        .iter()
-        .filter(|row| row.surface == "complete")
-        .count();
-    if surface_authorize != 4 || surface_convey != 4 || surface_complete != 5 {
-        bail!(
-            "refuse:decision: surfaces authorize={surface_authorize} convey={surface_convey} complete={surface_complete}"
-        );
-    }
-    let report = crate::decisions::render_report(&receipts);
-    for needle in [
-        "decision receipts: 13\n",
-        "stage prepare=13 select=3 validate=5 fallback=5\n",
-        "validation ok=8 stale=3 ineligible=2 expired=0\n",
-        "surface authorize=4 convey=4 complete=5\n",
-        "fallback none=8\n",
-        "fallback ag_news=5\n",
-        "surface=convey",
-        "surface=complete",
-        "result=ag_news",
-        "result=rust_idiom",
-        "result=abstain",
-    ] {
-        if !report.contains(needle) {
-            bail!("refuse:decision: report missing {needle}");
-        }
-    }
-    if report.split_whitespace().any(|word| word == "enforced") {
-        bail!("refuse:decision: report invented enforced");
-    }
-    println!("decisions report");
-    print!("{report}");
-
-    let replay = out.join("decisions-replay.jsonl");
-    crate::decisions::cmd_decisions_export(&state, &replay)?;
-    let journal = state.join("decisions").join(crate::decisions::JOURNAL_FILE);
-    if fs::read(&replay)? != fs::read(&journal)? {
-        bail!("refuse:decision: export drifted from the journal");
-    }
 
     ensure_locked(&locked, &before)?;
     let cksum_after = file_cksum(&locked)?;
@@ -1108,6 +895,233 @@ fn write_hint(state: &Path, select: &str, digest: Option<&str>) -> Result<()> {
             r#"{{"schema":"cell-one.decision-select.v0","select":"{select}","digest":{digest}}}"#
         ),
     )?;
+    Ok(())
+}
+
+pub(crate) fn run_host_validate_cases(
+    lab: &Path,
+    state: &Path,
+    policy: &Path,
+    replay: &Path,
+) -> Result<()> {
+    clear_hint(&state)?;
+    let auth_ok = run_authorize(&lab, &state, "research", "model", BINDING_AG, true)?;
+    expect_select(&auth_ok, "authorize", "research", BINDING_AG, BINDING_AG)?;
+    println!(
+        "authorize select: agent=research result={} validation=ok surface=authorize granted=yes",
+        auth_ok.result
+    );
+
+    let auth_abstain = run_authorize(&lab, &state, "sanctum", "model", BINDING_AG, true)?;
+    expect_abstain(&auth_abstain, "authorize", "sanctum")?;
+    println!(
+        "authorize abstain: agent=sanctum result=abstain validation=ok surface=authorize selector=refuse:decision-abstain model_granted=no"
+    );
+
+    write_hint(&state, "xai_grok", None)?;
+    let auth_ineligible = run_authorize(&lab, &state, "research", "tool", "notes-append", false)?;
+    expect_fallback(
+        &auth_ineligible,
+        "authorize",
+        "research",
+        "ineligible",
+        "xai_grok",
+        BINDING_AG,
+        "refuse:deny-default",
+    )?;
+    println!(
+        "authorize fallback: agent=research validation=ineligible fallback=ag_news outcome=refuse:deny-default granted=no"
+    );
+
+    write_hint(&state, BINDING_AG, Some("0"))?;
+    let auth_stale = run_authorize(&lab, &state, "research", "tool", "notes-append", false)?;
+    expect_fallback(
+        &auth_stale,
+        "authorize",
+        "research",
+        "stale",
+        BINDING_AG,
+        BINDING_AG,
+        "refuse:deny-default",
+    )?;
+    println!(
+        "authorize fallback: agent=research validation=stale fallback=ag_news outcome=refuse:deny-default granted=no"
+    );
+
+    clear_hint(&state)?;
+    declare_hop(&lab, &state)?;
+    let mesh = conveyor_proxy::load_mesh(&state).map_err(|err| anyhow::anyhow!("{err}"))?;
+    let lease = mesh
+        .leases
+        .iter()
+        .find(|row| row.hop_id == HOP_ID)
+        .ok_or_else(|| anyhow::anyhow!("refuse:hop: {HOP_ID} lease missing"))?;
+    if !lease.granted || lease.capability != HOP_CAP {
+        bail!(
+            "refuse:hop: {HOP_ID} granted={} capability={}",
+            lease.granted,
+            lease.capability
+        );
+    }
+    for agent in ["research", "idiom", "sanctum"] {
+        if !lease.agents.iter().any(|id| id == agent) {
+            bail!("refuse:hop: {HOP_ID} lease missing agent {agent}");
+        }
+    }
+    println!("hop lease: {HOP_ID} granted=yes capability={HOP_CAP}");
+
+    let convey_ag = run_convey(&lab, &state, &policy, "research", true)?;
+    expect_select(&convey_ag, "", "research", BINDING_AG, HOP_CAP)?;
+    if convey_ag.hop_id != HOP_ID {
+        bail!("refuse:decision: convey hop_id is {}", convey_ag.hop_id);
+    }
+    println!(
+        "convey select: agent=research result={} validation=ok surface=convey granted=yes",
+        convey_ag.result
+    );
+
+    let convey_rust = run_convey(&lab, &state, &policy, "idiom", true)?;
+    expect_select(&convey_rust, "", "idiom", BINDING_RUST, HOP_CAP)?;
+    println!(
+        "convey select: agent=idiom result={} validation=ok surface=convey granted=yes",
+        convey_rust.result
+    );
+
+    let convey_abstain = run_convey(&lab, &state, &policy, "sanctum", true)?;
+    expect_abstain(&convey_abstain, "", "sanctum")?;
+    println!(
+        "convey abstain: agent=sanctum result=abstain validation=ok surface=convey selector=refuse:decision-abstain model_granted=no"
+    );
+
+    write_hint(&state, BINDING_AG, Some("0"))?;
+    let convey_stale = run_convey(&lab, &state, &policy, "research", true)?;
+    expect_fallback(
+        &convey_stale,
+        "",
+        "research",
+        "stale",
+        BINDING_AG,
+        BINDING_AG,
+        "allow",
+    )?;
+    if convey_stale.validation == "ok" {
+        bail!("refuse:decision: stale convey hint was granted");
+    }
+    println!(
+        "convey fallback: agent=research validation=stale fallback=ag_news outcome=allow hop_granted=yes model_granted=no"
+    );
+
+    clear_hint(&state)?;
+    let complete_ag = run_complete(&lab, &state, "research", PROMPT_RESEARCH, true)?;
+    expect_select(&complete_ag, "complete", "research", BINDING_AG, BINDING_AG)?;
+    expect_complete_grant(&complete_ag, "research", BINDING_AG)?;
+    println!(
+        "complete select: agent=research result={} validation=ok surface=complete granted=yes mock=yes",
+        complete_ag.result
+    );
+
+    let complete_rust = run_complete(&lab, &state, "idiom", PROMPT_IDIOM, true)?;
+    expect_select(
+        &complete_rust,
+        "complete",
+        "idiom",
+        BINDING_RUST,
+        BINDING_RUST,
+    )?;
+    expect_complete_grant(&complete_rust, "idiom", BINDING_RUST)?;
+    println!(
+        "complete select: agent=idiom result={} validation=ok surface=complete granted=yes mock=yes",
+        complete_rust.result
+    );
+
+    let complete_abstain = run_complete(&lab, &state, "sanctum", PROMPT_ABSTAIN, false)?;
+    expect_complete_abstain(&complete_abstain)?;
+    println!(
+        "complete abstain: agent=sanctum result=abstain validation=ok surface=complete selector=refuse:decision-abstain completion_granted=no"
+    );
+
+    write_hint(&state, "xai_grok", None)?;
+    let complete_ineligible = run_complete(&lab, &state, "research", PROMPT_INELIGIBLE, false)?;
+    expect_fallback(
+        &complete_ineligible,
+        "complete",
+        "research",
+        "ineligible",
+        "xai_grok",
+        BINDING_AG,
+        "refuse:decision-ineligible",
+    )?;
+    expect_complete_closed(&complete_ineligible, "xai_grok")?;
+    println!(
+        "complete fallback: agent=research validation=ineligible fallback=ag_news outcome=refuse:decision-ineligible granted=no"
+    );
+
+    write_hint(&state, BINDING_AG, Some("0"))?;
+    let complete_stale = run_complete(&lab, &state, "research", PROMPT_STALE, false)?;
+    expect_fallback(
+        &complete_stale,
+        "complete",
+        "research",
+        "stale",
+        BINDING_AG,
+        BINDING_AG,
+        "refuse:decision-stale",
+    )?;
+    expect_complete_closed(&complete_stale, BINDING_AG)?;
+    println!(
+        "complete fallback: agent=research validation=stale fallback=ag_news outcome=refuse:decision-stale granted=no"
+    );
+
+    let receipts = crate::decisions::load_receipts(&state)?;
+    if receipts.len() != 13 {
+        bail!(
+            "refuse:decision: journal has {} receipts, want 13",
+            receipts.len()
+        );
+    }
+    let surface_authorize = receipts
+        .iter()
+        .filter(|row| row.surface == "authorize")
+        .count();
+    let surface_convey = receipts.iter().filter(|row| row.surface.is_empty()).count();
+    let surface_complete = receipts
+        .iter()
+        .filter(|row| row.surface == "complete")
+        .count();
+    if surface_authorize != 4 || surface_convey != 4 || surface_complete != 5 {
+        bail!(
+            "refuse:decision: surfaces authorize={surface_authorize} convey={surface_convey} complete={surface_complete}"
+        );
+    }
+    let report = crate::decisions::render_report(&receipts);
+    for needle in [
+        "decision receipts: 13\n",
+        "stage prepare=13 select=3 validate=5 fallback=5\n",
+        "validation ok=8 stale=3 ineligible=2 expired=0\n",
+        "surface authorize=4 convey=4 complete=5\n",
+        "fallback none=8\n",
+        "fallback ag_news=5\n",
+        "surface=convey",
+        "surface=complete",
+        "result=ag_news",
+        "result=rust_idiom",
+        "result=abstain",
+    ] {
+        if !report.contains(needle) {
+            bail!("refuse:decision: report missing {needle}");
+        }
+    }
+    if report.split_whitespace().any(|word| word == "enforced") {
+        bail!("refuse:decision: report invented enforced");
+    }
+    println!("decisions report");
+    print!("{report}");
+
+    crate::decisions::cmd_decisions_export(&state, &replay)?;
+    let journal = state.join("decisions").join(crate::decisions::JOURNAL_FILE);
+    if fs::read(&replay)? != fs::read(&journal)? {
+        bail!("refuse:decision: export drifted from the journal");
+    }
     Ok(())
 }
 
