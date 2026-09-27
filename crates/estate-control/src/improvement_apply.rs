@@ -24,9 +24,10 @@
 //! `estate pack cohesion-prove` composes the same gated apply after
 //! its export stage, reusing `{out}/improvement` without a second
 //! host-validate. `estate decisions report`, `estate pack session
-//! show`, `estate routine digest`, and `estate routine tick --report`
-//! on that lab cite the apply receipt so the operator sees the
-//! closed loop without digging files.
+//! show`, `estate routine digest`, `estate routine tick --report`,
+//! and `estate routine runner status` on a state-dir that holds that
+//! local receipt cite it so the operator sees the closed loop
+//! without digging files.
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -205,7 +206,7 @@ pub(crate) fn cmd_decisions_improvement_apply_prove(root: &Path, out: Option<&Pa
         "refuse_without_plan": REFUSE_WITHOUT_PLAN,
         "apply_receipt": outcome.receipt_path.display().to_string(),
         "lab_estate": outcome.lab.display().to_string(),
-        "note": "Fixture prove. Reuses host-validate authorize / convey / complete --mock receipts, export-package, then gated apply of one specialty-seat proposal through apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. estate decisions report, estate pack session show, estate routine digest, and estate routine tick --report on the lab state-dir cite the apply receipt. Not a live PASS."
+        "note": "Fixture prove. Reuses host-validate authorize / convey / complete --mock receipts, export-package, then gated apply of one specialty-seat proposal through apply-proposal → plan → apply --require-plan. Standing next is joinable. auto_train=false. Train not invoked. estate decisions report on that lab cites the apply receipt. Digest / tick --report / runner status cite the same receipt when it is local to the state-dir (not invoked here). Not a live PASS."
     });
     write_prove_report(&out, &body)?;
     println!("improvement-apply-prove: decisions report");
@@ -512,7 +513,7 @@ fn apply_stage_cite(
         "composed_by": "cohesion-prove",
         "reused_existing_package": true,
         "host_validate_rerun": false,
-        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report, estate pack session show, estate routine digest, and estate routine tick --report on the lab state-dir cite this receipt. Not a live PASS."
+        "note": "Gated apply of one specialty-seat proposal from the package already written by the cohesion export stage. Does not re-run host-validate. apply-proposal → plan → apply --require-plan. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report and estate pack session show cite this receipt on the lab / crew state-dir. Digest / tick --report / runner status cite the same receipt when it is local (not invoked by cohesion-prove). Not a live PASS."
     })
 }
 
@@ -720,9 +721,10 @@ fn refuses_locked_write(path: &Path, root: &Path) -> Result<bool> {
 }
 
 /// Copy the apply receipt beside a lab journal so `estate decisions
-/// report`, `estate pack session show`, `estate routine digest`, and
-/// `estate routine tick --report` cite it without the operator
-/// opening `{out}/apply`. Local copy only — not a sibling walk.
+/// report`, `estate pack session show`, `estate routine digest`,
+/// `estate routine tick --report`, and `estate routine runner status`
+/// cite it without the operator opening `{out}/apply`. Local copy
+/// only — not a sibling walk.
 pub(crate) fn install_apply_receipt_for_report(state_dir: &Path, receipt_path: &Path) -> Result<()> {
     if !state_dir.is_dir() {
         return Ok(());

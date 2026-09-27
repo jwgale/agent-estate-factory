@@ -19,11 +19,13 @@
 //! `refuse:plan`. `apply-package --require-plan` lands one
 //! `specialty-seat:*` via `--proposal specialty-seat:ag_news`.
 //! Standing next is joinable.
-//! Dataset proposals stay proposal-only. `estate decisions report`,
-//! `estate pack session show`, `estate routine digest`, and
-//! `estate routine tick --report` on the lab state-dir cite the apply
-//! receipt (`cell-one.improvement-apply.v0`) so the closed loop is
-//! one operator surface. Siblings `improvement-export-prove`,
+//! Dataset proposals stay proposal-only. `estate decisions report`
+//! and `estate pack session show` on the lab / crew state-dir cite
+//! the apply receipt (`cell-one.improvement-apply.v0`) so the closed
+//! loop is one operator surface. Cohesion-prove asserts those two
+//! cites. Digest / `tick --report` / runner status cite the same
+//! receipt on their own operator surfaces and are not invoked here.
+//! Siblings `improvement-export-prove`,
 //! `improvement-apply-prove`, and `apply-package` stay callable
 //! alone. A Cursor MCP loader hang is out of scope. Does not rewrite
 //! `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
@@ -200,7 +202,7 @@ pub(crate) fn cmd_cohesion_prove(
             &session_cite,
             Some(crew_session_prove::SESSION_ID),
         ),
-        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat via --proposal specialty-seat:ag_news. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report, estate pack session show, estate routine digest, and estate routine tick --report on the lab state-dir cite the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
+        "note": "Fixture prove. Composes control-plane-prove with optional specialty-real seats, then crew-session-prove (plugin-install-local + multi-hop CLI crew session), then the improvement-export-prove export-package stage, then one gated specialty-seat apply on a throwaway apply lab. The apply reuses the package already written under {out}/improvement and does not re-run host-validate. Apply without --require-plan is refuse:plan. apply-package --require-plan lands one specialty-seat via --proposal specialty-seat:ag_news. Standing next is joinable. local_slm stays. Dataset proposals stay proposal-only. auto_train=false. Train not invoked. estate decisions report and estate pack session show on the lab / crew state-dir cite the apply receipt (cell-one.improvement-apply.v0) so the closed loop is one operator surface. Cohesion-prove asserts those two cites; digest / tick --report / runner status cite the same receipt on their own surfaces and are not invoked here. Hop 2 sees hop 1 on one session_id. Research stays refuse:pack-orchestrator. Real import-trained GGUFs bind as named seats when present; otherwise skipped:gguf-absent. Mock complete. Mock runner. Throwaway HOME. Cursor MCP loader hang is out of scope. Not a live PASS."
     });
     let pretty = serde_json::to_string_pretty(&body)?;
     if pretty.split_whitespace().any(|word| word == "enforced") {

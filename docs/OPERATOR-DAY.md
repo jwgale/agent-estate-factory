@@ -240,7 +240,18 @@ all-or-nothing: missing / disabled / invalid refuses before spawn
 (`refuse:runner-routine-unknown` / `disabled` / `invalid`) so a
 half-configured runner never starts. Status lists `selected:` plus
 per-id `last_outcome` after a tick. Digest each cycle covers every
-selected routine. Pidfile, status, and the digest log live under
+selected routine. When that state-dir has a local
+`cell-one.improvement-apply.v0` receipt, `estate routine runner
+status` (and `last_digest` / status output when a digest cite is
+shown) cites the same apply-receipt fields `estate routine digest`
+already shows — schema, path, proposal id/kind/binding,
+standing/joinable, `require_plan`, `refuse_without_plan`,
+`auto_train`, `train_invoked` — by reading the receipt. Missing or
+wrong-typed lock fields are `refuse:cite` and are not invented.
+Search is local to that state-dir (`decisions/improvement-apply.json`,
+then `{state-dir}/improvement-apply.json`); a sibling `../apply/` is
+not cited. No cite when no local receipt. Pidfile, status, and the
+digest log live under
 `{state-dir}/routine-runner/` (throwaway-safe, not estate SoT).
 Double-start is `refuse:runner-already-running`. Stop of a missing
 runner is `refuse:runner-not-running`. Min interval stays 5m.
@@ -260,6 +271,7 @@ CELL_ROUTINE_WATCH_INTERVAL_SECS=2 estate routine runner start \
 estate routine runner status --state-dir target/pack-runner-cell
 # expect status: running, selected: standing-classify,standing-once,
 # then last_digest + last_outcome per id after the first tick
+# plus apply receipt: … when a local cell-one.improvement-apply.v0 is present
 
 estate routine runner stop --state-dir target/pack-runner-cell
 estate routine runner status --state-dir target/pack-runner-cell
@@ -746,8 +758,10 @@ Search is local to that state-dir (beside the journal); a sibling
 session show` on the crew state-dir cites those same receipt
 fields (copy beside the crew journal / state; no sibling walk).
 The composed crew-session prove report records that apply cite.
-`estate routine digest` and `estate routine tick --report` on a
-state-dir that holds that local receipt cite the same fields.
+Cohesion-prove asserts those two cites. `estate routine digest`,
+`estate routine tick --report`, and `estate routine runner status`
+on a state-dir that holds that local receipt cite the same fields;
+cohesion-prove does not invoke those glances.
 The closed loop is one operator surface
 without digging files. Specialty-real
 may be `skipped:gguf-absent` and still counts as ok.
@@ -836,9 +850,10 @@ The compact report is `cell-one.improvement-apply-prove.v0`
 id/kind, Standing next joinable, `auto_train=false`, and
 `train_invoked=false`. `estate decisions report` on that lab
 state-dir cites the apply receipt (`cell-one.improvement-apply.v0`)
-with the same fields. `estate routine digest` and
-`estate routine tick --report` cite those same receipt fields
-when the local copy is on the state-dir. The command ends with
+with the same fields. `estate routine digest`,
+`estate routine tick --report`, and `estate routine runner status`
+cite those same receipt fields when the local copy is on the
+state-dir. The command ends with
 `improvement-apply-prove: ok` and `READY_FOR_LIVE_TEST: no`. Locked
 `examples/estate.yaml` stays cksum `43770130 3391`. Not in make
 smoke, make gate-90, or GitHub Actions. This is not a live PASS.

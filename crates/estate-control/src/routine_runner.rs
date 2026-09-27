@@ -315,7 +315,7 @@ pub(crate) fn append_digest_log(
 pub(crate) fn status_text(state_dir: &Path, id: &str, now: i64) -> String {
     let live = inspect_liveness(state_dir, id);
     let rec = load_record(state_dir, id);
-    match (live, rec) {
+    let body = match (live, rec) {
         (RunnerLiveness::Running { pid }, Some(rec)) => {
             format!(
                 "routine runner id={id}\n{}",
@@ -349,6 +349,15 @@ pub(crate) fn status_text(state_dir: &Path, id: &str, now: i64) -> String {
                 status_body(None, "stopped", "-", "-")
             )
         }
+    };
+    // Nearby gated-apply receipt is a cite, not a grant. Reuse the
+    // decisions discovery (local journal / state only). Missing is
+    // silence. Incomplete lock fields are refuse:cite — not invented.
+    // last_digest stays the first digest line; the apply cite is the
+    // same extra block digest / tick --report already print.
+    match crate::decisions::cite_or_refuse_nearby_apply_receipt(state_dir) {
+        Some(cite) => format!("{body}{cite}"),
+        None => body,
     }
 }
 
@@ -892,6 +901,134 @@ mod tests {
             crate::routines::format_watch_interval_secs(300),
             "5m (300s)"
         );
+    }
+
+    fn write_apply_receipt(path: &Path, binding: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(
+            path,
+            format!(
+                r#"{{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:{binding}",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "{binding}",
+  "joinable": true,
+  "standing": "joinable: yes",
+  "require_plan": true,
+  "refuse_without_plan": "refuse:plan: apply-package requires --require-plan",
+  "auto_train": false,
+  "train_invoked": false
+}}
+"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn status_cites_local_apply_receipt_and_last_digest() {
+        let dir = scratch("status-apply-cite");
+        let rec = RunnerRecord {
+            schema: RUNNER_SCHEMA.into(),
+            id: "default".into(),
+            status: "stopped".into(),
+            pid: None,
+            started_at: 1_700_000_000,
+            last_tick: Some(1_700_000_010),
+            last_digest: Some(
+                "routine digest ran=1 skipped=0 session_id=sess-cite01 context=applied".into(),
+            ),
+            cycles: 1,
+            interval_secs: 2,
+            interval_label: "2s".into(),
+            estate: None,
+            routine_ids: vec!["standing-classify".into()],
+            routine_id: Some("standing-classify".into()),
+            last_outcomes: BTreeMap::from([("standing-classify".into(), "ran".into())]),
+            live_sync: false,
+            stopped_at: Some(1_700_000_020),
+            stop_reason: Some("max-cycles".into()),
+        };
+        save_record(&dir, &rec).unwrap();
+        write_apply_receipt(
+            &dir.join("decisions").join("improvement-apply.json"),
+            "ag_news",
+        );
+        let text = status_text(&dir, "default", 1_700_000_030);
+        assert!(text.contains("last_digest: routine digest ran=1 skipped=0"), "{text}");
+        assert!(text.contains("session_id=sess-cite01"), "{text}");
+        assert!(text.contains("context=applied"), "{text}");
+        assert!(
+            text.contains("apply receipt: schema=cell-one.improvement-apply.v0"),
+            "{text}"
+        );
+        assert!(text.contains("applied proposal specialty-seat:ag_news"), "{text}");
+        assert!(text.contains("kind=specialty-seat"), "{text}");
+        assert!(text.contains("binding=ag_news"), "{text}");
+        assert!(text.contains("standing=joinable: yes"), "{text}");
+        assert!(text.contains("joinable=true"), "{text}");
+        assert!(text.contains("require_plan=true"), "{text}");
+        assert!(
+            text.contains("refuse_without_plan=refuse:plan: apply-package requires --require-plan"),
+            "{text}"
+        );
+        assert!(text.contains("auto_train=false"), "{text}");
+        assert!(text.contains("train_invoked=false"), "{text}");
+        assert!(!text.contains("refuse:cite"), "{text}");
+        assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+        assert!(!text.contains("live PASS"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn status_refuses_incomplete_apply_receipt() {
+        let dir = scratch("status-apply-refuse");
+        fs::create_dir_all(dir.join("decisions")).unwrap();
+        fs::write(
+            dir.join("decisions").join("improvement-apply.json"),
+            r#"{
+  "schema": "cell-one.improvement-apply.v0",
+  "proposal_id": "specialty-seat:ag_news",
+  "proposal_kind": "specialty-seat",
+  "binding_id": "ag_news"
+}
+"#,
+        )
+        .unwrap();
+        let text = status_text(&dir, "default", 1_700_000_000);
+        assert!(text.contains("refuse:cite:"), "{text}");
+        assert!(!text.contains("require_plan=true"), "{text}");
+        assert!(!text.contains("auto_train=false"), "{text}");
+        assert!(!text.contains("train_invoked=false"), "{text}");
+        assert!(
+            !text.contains("apply receipt: schema=cell-one.improvement-apply.v0 path="),
+            "{text}"
+        );
+        assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn status_silent_without_local_apply_receipt_and_ignores_sibling() {
+        let root = scratch("status-apply-none");
+        let dir = root.join("other").join("state");
+        fs::create_dir_all(&dir).unwrap();
+        write_apply_receipt(
+            &root.join("apply").join("improvement-apply.json"),
+            "ag_news",
+        );
+        let text = status_text(&dir, "default", 1_700_000_000);
+        assert!(text.contains("last_digest: -"), "{text}");
+        assert!(!text.contains("apply receipt:"), "{text}");
+        assert!(!text.contains("refuse:cite"), "{text}");
+        assert!(!text.contains("/apply/improvement-apply.json"), "{text}");
+        assert!(!text.contains("require_plan=true"), "{text}");
+        assert!(!text.contains("auto_train=false"), "{text}");
+        assert!(!text.contains("READY_FOR_LIVE_TEST: yes"), "{text}");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
