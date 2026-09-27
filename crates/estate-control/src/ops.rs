@@ -1027,11 +1027,11 @@ pub(crate) fn cmd_routine_status(
     Ok(())
 }
 
-pub(crate) fn cmd_routine_digest(
+pub(crate) fn routine_digest_text(
     id: Option<&str>,
     estate_path: &Path,
     state_dir: &Path,
-) -> Result<()> {
+) -> Result<String> {
     let estate =
         load_estate(estate_path).with_context(|| format!("load {}", estate_path.display()))?;
     if let Some(want) = id {
@@ -1051,7 +1051,15 @@ pub(crate) fn cmd_routine_digest(
             completion_label: r.completion_label.clone(),
         })
         .collect();
-    print!("{}", crate::routines::render_digest(&estate, &state, &rows, id));
+    Ok(crate::routines::render_digest(&estate, &state, &rows, id))
+}
+
+pub(crate) fn cmd_routine_digest(
+    id: Option<&str>,
+    estate_path: &Path,
+    state_dir: &Path,
+) -> Result<()> {
+    print!("{}", routine_digest_text(id, estate_path, state_dir)?);
     Ok(())
 }
 

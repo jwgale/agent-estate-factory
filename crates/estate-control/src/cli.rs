@@ -513,9 +513,10 @@ pub(crate) enum Command {
         command: PackageCommand,
     },
     /// Standing routines: declare + run a pack package (automation analog).
-    /// Optional `schedule` + `estate routine tick` / `watch` / `status` /
-    /// `digest`. Local last_run / next_due under --state-dir. Watch is the
-    /// local operator loop (tick + digest). Not live Grok Bot sync.
+    /// Optional `schedule` + `estate routine tick` / `watch` / `runner` /
+    /// `status` / `digest`. Local last_run / next_due under --state-dir.
+    /// Watch is the foreground operator loop. Runner is the detached host
+    /// supervisor (start / stop / status). Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1362,6 +1363,124 @@ pub(crate) enum RoutineCommand {
         estate: PathBuf,
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
+    },
+    /// Supervised host runner: start / stop / status / restart.
+    /// Detaches the same idempotent watch loop so the invoking terminal
+    /// can exit. Pidfile + status + digest log under --state-dir
+    /// (`routine-runner/`). Not a cloud cron. Not systemd install.
+    /// Not live Grok Bot sync. `live_sync` stays false.
+    Runner {
+        #[command(subcommand)]
+        command: RoutineRunnerCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum RoutineRunnerCommand {
+    /// Spawn supervised watch in the background for a pack/estate.
+    /// Refuses `refuse:runner-already-running` when the pidfile is live.
+    Start {
+        /// Runner id (pidfile key). Default `default`.
+        #[arg(long, default_value = "default")]
+        runner_id: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        #[arg(long, default_value_t = false)]
+        chain: bool,
+        #[arg(long, default_value = "5m")]
+        interval: String,
+        #[arg(long)]
+        max_cycles: Option<u32>,
+    },
+    /// Stop a runner by pidfile / runner id.
+    /// Missing runner is `refuse:runner-not-running`.
+    Stop {
+        #[arg(long, default_value = "default")]
+        runner_id: String,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// running/stopped, last tick, last digest cite, pid, uptime.
+    Status {
+        #[arg(long, default_value = "default")]
+        runner_id: String,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+    },
+    /// Stop (if running) then start.
+    Restart {
+        #[arg(long, default_value = "default")]
+        runner_id: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        #[arg(long, default_value_t = false)]
+        chain: bool,
+        #[arg(long, default_value = "5m")]
+        interval: String,
+        #[arg(long)]
+        max_cycles: Option<u32>,
+    },
+    /// Detached child. Hidden. Do not invoke from the operator loop.
+    #[command(hide = true)]
+    Supervise {
+        #[arg(long, default_value = "default")]
+        runner_id: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        #[arg(long, default_value = ".cell")]
+        state_dir: PathBuf,
+        #[arg(long)]
+        feed_dir: Option<PathBuf>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock: bool,
+        #[arg(long, default_value_t = false)]
+        chain: bool,
+        #[arg(long, default_value = "5m")]
+        interval: String,
+        #[arg(long)]
+        max_cycles: Option<u32>,
     },
 }
 
