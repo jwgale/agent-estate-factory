@@ -10,6 +10,9 @@
 //! `estate decisions host-validate-prove` on a throwaway lab, then
 //! export-package. The report cites the package path, proposal
 //! count/kind, and `auto_train=false` / no train invoked.
+//! `estate pack cohesion-prove` composes the export-package stage
+//! after fuel, decide, run, specialty-real, pack install, and
+//! crew-session. The sibling prove stays callable alone.
 //! Does not rewrite `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
 
 use anyhow::{bail, Context, Result};
@@ -80,6 +83,12 @@ pub(crate) fn cmd_decisions_export_package(
     let root = root
         .canonicalize()
         .with_context(|| format!("refuse:root: {}", root.display()))?;
+    // Always refuse cwd / root examples trees, even when `--root` has no
+    // `examples/estate.yaml`. A decoy root must not open writes under
+    // the locked examples tree.
+    if refuses_examples_write(out, &root)? {
+        bail!("refuse:out: export-package does not write examples/estate.yaml");
+    }
     let locked = root.join("examples/estate.yaml");
     if locked.is_file() {
         let cksum = file_cksum(&locked)?;
@@ -87,9 +96,6 @@ pub(crate) fn cmd_decisions_export_package(
             bail!("refuse:estate: examples/estate.yaml cksum is {cksum}, want {LOCKED_CKSUM}");
         }
         let before = fs::read(&locked)?;
-        if control_plane_prove::refuses_locked_target(out, &root, &locked)? {
-            bail!("refuse:out: export-package does not write examples/estate.yaml");
-        }
         let package = write_package(state_dir, out)?;
         if fs::read(&locked)? != before {
             bail!("refuse:estate: examples/estate.yaml changed");
@@ -97,12 +103,46 @@ pub(crate) fn cmd_decisions_export_package(
         print_package_cite(&package, out);
         return Ok(package);
     }
-    if looks_like_locked_estate(out) {
-        bail!("refuse:out: export-package does not write examples/estate.yaml");
-    }
     let package = write_package(state_dir, out)?;
     print_package_cite(&package, out);
     Ok(package)
+}
+
+/// Export-package stage for `estate pack cohesion-prove`.
+///
+/// Reads the lab decision journal already written by control-plane
+/// (host-validate + runner) and writes the standing package under
+/// `{out}/improvement`. Does not re-run host-validate-prove.
+/// `improvement-export-prove` stays the standalone sibling.
+pub(crate) fn run_export_stage(
+    state_dir: &Path,
+    out: &Path,
+    root: &Path,
+) -> Result<(ImprovementPackage, Value)> {
+    let package_dir = out.join("improvement");
+    let package = cmd_decisions_export_package(state_dir, &package_dir, root)?;
+    require_host_validate_package(&package)?;
+    Ok((package, export_cite(&package, &package_dir)))
+}
+
+pub(crate) fn export_cite(package: &ImprovementPackage, package_dir: &Path) -> Value {
+    let kinds = proposal_kinds(&package.proposals);
+    json!({
+        "schema": PACKAGE_SCHEMA,
+        "ok": true,
+        "package_path": package_dir.join(PACKAGE_JSON).display().to_string(),
+        "package_yaml": package_dir.join(PACKAGE_YAML).display().to_string(),
+        "proposal_count": package.proposals.len(),
+        "proposal_kinds": kinds,
+        "auto_train": false,
+        "train_invoked": false,
+        "ready_for_live_test": false,
+        "live_pass_recorded": false,
+        "live_sync": false,
+        "specialty_seats": package.journal.specialty_seats,
+        "composed_by": "cohesion-prove",
+        "note": "Standing improvement package from the lab decision journal. Proposes the next enrich (specialty seat / dataset). auto_train=false. Train not invoked. Not a live PASS.",
+    })
 }
 
 pub(crate) fn cmd_decisions_improvement_export_prove(root: &Path, out: Option<&Path>) -> Result<()> {
@@ -469,9 +509,27 @@ fn journal_path(state_dir: &Path) -> PathBuf {
     state_dir.join("decisions").join(decisions::JOURNAL_FILE)
 }
 
+fn refuses_examples_write(out: &Path, root: &Path) -> Result<bool> {
+    if looks_like_locked_estate(out) {
+        return Ok(true);
+    }
+    let cwd = std::env::current_dir().context("refuse:out: cwd")?;
+    for base in [root.to_path_buf(), cwd] {
+        let locked = base.join("examples").join("estate.yaml");
+        if control_plane_prove::refuses_locked_target(out, &base, &locked)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn looks_like_locked_estate(out: &Path) -> bool {
-    let text = out.to_string_lossy();
-    text.ends_with("examples/estate.yaml") || text.ends_with("examples\\estate.yaml")
+    let text = out.to_string_lossy().replace('\\', "/");
+    if text.contains("examples/estate.yaml") {
+        return true;
+    }
+    out.components()
+        .any(|part| part.as_os_str() == "examples")
 }
 
 fn file_cksum(path: &Path) -> Result<String> {
@@ -589,5 +647,41 @@ mod tests {
         assert!(yaml.contains("auto_train: false"), "{yaml}");
         assert!(yaml.contains("train_invoked: false"), "{yaml}");
         assert!(!yaml.contains("auto_train: true"), "{yaml}");
+    }
+
+    #[test]
+    fn looks_like_locked_estate_refuses_examples_trees() {
+        assert!(looks_like_locked_estate(Path::new("examples/estate.yaml")));
+        assert!(looks_like_locked_estate(Path::new("/tmp/repo/examples/estate.yaml")));
+        assert!(looks_like_locked_estate(Path::new("examples")));
+        assert!(looks_like_locked_estate(Path::new("/tmp/repo/examples/improvement")));
+        assert!(looks_like_locked_estate(Path::new("examples\\estate.yaml")));
+        assert!(!looks_like_locked_estate(Path::new("/tmp/cell-one-improvement")));
+        assert!(!looks_like_locked_estate(Path::new("/tmp/not-examples/estate.yaml")));
+    }
+
+    #[test]
+    fn refuses_examples_write_when_root_lacks_estate_yaml() {
+        let decoy = std::env::temp_dir().join(format!(
+            "cell-one-improvement-decoy-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&decoy);
+        fs::create_dir_all(&decoy).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        let under_cwd = cwd.join("examples").join("improvement-adversarial");
+        assert!(
+            refuses_examples_write(&under_cwd, &decoy).unwrap(),
+            "cwd examples tree must refuse even when --root has no estate.yaml"
+        );
+        assert!(
+            refuses_examples_write(Path::new("examples/estate.yaml"), &decoy).unwrap()
+        );
+        let throwaway = decoy.join("improvement");
+        assert!(
+            !refuses_examples_write(&throwaway, &decoy).unwrap(),
+            "throwaway under decoy root must stay writable"
+        );
+        let _ = fs::remove_dir_all(&decoy);
     }
 }
