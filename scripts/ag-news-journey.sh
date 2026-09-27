@@ -87,6 +87,9 @@ echo "  estate enrich import-trained --estate <lab-estate.yaml> --prepared <prep
 echo "  estate enrich standing-next --estate <lab-estate.yaml> --prepared <prepared>"
 echo "  estate enrich bind-prove --root . --out <throwaway>"
 echo "  bind-prove uses a mocked GGUF stub on a lab copy. This target does not invoke it."
+echo "  opt-in multi-local: pass --binding-id <portable> (for example ag_news, then rust_idiom). Default without --binding-id stays local_slm."
+echo "  estate enrich bind-prove --dual --root . --out <throwaway>"
+echo "  bind-prove --dual proves two specialty seats beside local_slm. This target does not invoke it and does not start a GPU train."
 AFTER="$(cksum "$ESTATE")"
 if [[ "$BEFORE" != "$AFTER" ]]; then
   echo "FAIL  examples/estate.yaml cksum changed" >&2

@@ -1332,12 +1332,18 @@ apply-proposal, plan, apply --require-plan, and reconcile. It does not
 execute them. It does not promote. It does not apply the estate. It does
 not claim the factory trained. READY_FOR_LIVE_TEST stays no.
 estate enrich standing-next --estate <estate.yaml> --prepared <prepared>
-re-reads the GGUF specialty join and prints whether that local_slm seat
-is joinable. estate enrich bind-prove --root . --out <throwaway> is the
-fixture loop: a mocked GGUF, import-trained with trained_shape gguf and
-auto_apply=false, apply --require-plan on a lab copy, Standing next, and
-a mock complete. It does not start a GPU train. examples/estate.yaml stays
-cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
+re-reads the GGUF specialty join and prints whether that seat is
+joinable. Joinable follows the prepared proposal binding id: the GGUF
+is a regular file and an agent models allow-list names that binding.
+The file alone is not joinable. Default without --binding-id stays
+local_slm. --binding-id ag_news or --binding-id rust_idiom records
+specialty-join.json for that portable id. estate enrich bind-prove
+--root . --out <throwaway> is the fixture loop: a mocked GGUF,
+import-trained with trained_shape gguf and auto_apply=false, apply
+--require-plan on a lab copy, Standing next, and a mock complete. It
+does not start a GPU train. estate enrich bind-prove --dual is the
+same loop for two specialty seats beside local_slm. examples/estate.yaml
+stays cksum 43770130 3391. READY_FOR_LIVE_TEST stays no.
 Opt-in ladder check:
 make qlora-journey. It prints this ladder, checks the prepare
 artifacts, and prints SKIP live train. It does not run a trainer

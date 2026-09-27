@@ -2687,7 +2687,20 @@ fn standing_join_after_ready_gguf(req: &JourneyRequest<'_>) -> Result<(bool, Str
     match model_estate::assess_specialty_join(&estate, prepared)
         .map_err(|err| anyhow::anyhow!("{err}"))?
     {
-        Some(join) => Ok((join.joinable, join.reason)),
+        Some(join) => {
+            let requested = model_estate::resolve_portable_binding_id(req.binding_id)
+                .map_err(|err| anyhow::anyhow!("{err}"))?;
+            if join.binding_id != requested {
+                return Ok((
+                    false,
+                    format!(
+                        "prepared proposal binding is {}. This journey binding is {requested}. joinable follows the proposal binding when the ids match. A GGUF file alone is not joinable.",
+                        join.binding_id
+                    ),
+                ));
+            }
+            Ok((join.joinable, join.reason))
+        }
         None => Ok((false, NO_PROPOSAL_JOIN.to_string())),
     }
 }
@@ -6937,6 +6950,16 @@ mod tests {
         let paste = proposal["paste_yaml"].as_str().unwrap();
         assert!(paste.contains("Add this class:local"), "{paste}");
         assert!(paste.contains("local_slm stays"), "{paste}");
+        let join_file: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(prepared.join("specialty-join.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(join_file["schema"], "cell-one.specialty-join.v0");
+        assert_eq!(join_file["binding_id"], "ag_news");
+        assert_eq!(join_file["trained_shape"], "gguf");
+        assert_eq!(join_file["auto_apply"], false);
+        assert_eq!(join_file["ready_for_live_test"], false);
+        assert_eq!(join_file["live_pass_recorded"], false);
         assert_eq!(fs::read(&estate_path).unwrap(), before);
         let (joinable, reason) = standing_join_after_ready_gguf(&req).unwrap();
         assert!(!joinable, "{reason}");
@@ -7007,6 +7030,166 @@ mod tests {
         assert!(text.contains("joinable: no"), "{text}");
         assert!(!text.contains("joinable: yes"), "{text}");
         assert!(!text.contains("The seat is joinable."), "{text}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn standing_join_with_binding_id() {
+        let token = std::process::id()
+            .to_string()
+            .replace("5090", "0000")
+            .replace("4090", "0000")
+            .replace("4080", "0000")
+            .replace("3090", "0000");
+        let root = std::env::temp_dir().join(format!("cell-one-standing-bind-{token}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let prepared = root.join("prepared");
+        fs::create_dir_all(&prepared).unwrap();
+        let gguf = root.join("specialist.gguf");
+        fs::write(&gguf, b"GGUF").unwrap();
+        fs::write(
+            root.join("comparison.json"),
+            "{\"dataset\":\"rust_idiom\",\"live_pass_recorded\":false}\n",
+        )
+        .unwrap();
+        let proposal = serde_json::json!({
+            "schema": "cell-one.enrich-binding-proposal.v0",
+            "curator": "jason",
+            "policy": "manual",
+            "auto_apply": false,
+            "promoted": false,
+            "estate_rewritten": false,
+            "estate_name": "cell-one-synthetic",
+            "estate_hash": "abc",
+            "prepared_dir": prepared.display().to_string(),
+            "pack_id": "overnight-traces",
+            "driver": "llamafactory-lora",
+            "job": "train",
+            "local_tag": "cell-enrich-overnight-traces",
+            "local_path": gguf.display().to_string(),
+            "trained_shape": "gguf",
+            "trained_paths": [gguf.display().to_string()],
+            "binding_id": "rust_idiom",
+            "seated_driver": "ollama",
+            "content_scanned": false,
+            "proposed_binding": {
+                "id": "rust_idiom",
+                "class": "local",
+                "params": {"model": "specialist-rustidiom-3000"}
+            },
+            "paste_yaml": "",
+            "note": "fixture proposal. not a live PASS."
+        });
+        fs::write(
+            prepared.join("binding-proposal.json"),
+            serde_json::to_string(&proposal).unwrap(),
+        )
+        .unwrap();
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut text = fs::read_to_string(repo.join("examples/estate.yaml")).unwrap();
+        let needle = "      - id: local_slm\n        description: In-path policy-precheck before notes-append\n";
+        assert!(text.contains(needle), "research allow-list moved");
+        text = text.replacen(
+            needle,
+            "      - id: local_slm\n        description: In-path policy-precheck before notes-append\n      - id: rust_idiom\n        description: names rust_idiom\n",
+            1,
+        );
+        let estate_path = root.join("estate.yaml");
+        fs::write(&estate_path, text).unwrap();
+        let input = root.join("in.jsonl");
+        let out = root.join("out");
+        let base_cache = root.join("cache");
+        let req = JourneyRequest {
+            input: &input,
+            out: &out,
+            base: DEFAULT_BASE,
+            base_tag: None,
+            tag: DEFAULT_TAG,
+            endpoint: "http://127.0.0.1:11434",
+            dataset_name: "rust_idiom",
+            seed: 1,
+            held_out_ratio: 0.2,
+            max_steps: None,
+            quant: DEFAULT_QUANT,
+            llama_cpp_dir: None,
+            force: false,
+            print: true,
+            run: false,
+            min_delta: None,
+            min_accuracy: None,
+            require_significant_lift: false,
+            timeout_secs: 5,
+            together_poll_secs: DEFAULT_TOGETHER_POLL_SECS,
+            train_driver: TrainDriver::Local,
+            together_model: DEFAULT_TOGETHER_MODEL,
+            together_base_url: DEFAULT_TOGETHER_API,
+            api_key_env: None,
+            built_base_tag: DEFAULT_BUILT_BASE_TAG,
+            seat: SeatChat::Qwen35,
+            llama_note: "note",
+            preset: JourneyPreset::Qwen,
+            import_dataset: Some("rust_idiom"),
+            train_size: "all",
+            heldout_size: "all",
+            from_local: None,
+            import_fetch: crate::classify_import::ImportFetch::Bulk,
+            python: None,
+            base_cache: &base_cache,
+            few_shot: 0,
+            expand_tag: None,
+            estate: Some(&estate_path),
+            prepared: Some(&prepared),
+            enrich_tag: Some("cell-enrich-overnight-traces"),
+            import_trained: false,
+            binding_id: Some("rust_idiom"),
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&req).unwrap();
+        assert!(joinable, "{reason}");
+        assert!(reason.contains("rust_idiom"), "{reason}");
+        let display = handoff_display(&req, &JourneyPaths::new(&out), "rust_idiom");
+        assert!(display.line.contains("--binding-id rust_idiom"), "{}", display.line);
+        let text = standing_next_text(&display, joinable, &reason);
+        assert!(text.contains("joinable: yes"), "{text}");
+        assert!(text.contains("Specialty seat: rust_idiom, class local, function rust_idiom."), "{text}");
+        assert!(!text.contains("joinable: no"), "{text}");
+        assert!(text.contains("READY_FOR_LIVE_TEST: no"), "{text}");
+
+        let mismatch = JourneyRequest {
+            binding_id: Some("ag_news"),
+            ..req
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&mismatch).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(reason.contains("prepared proposal binding is rust_idiom"), "{reason}");
+        assert!(reason.contains("ag_news"), "{reason}");
+        let text = standing_next_text(
+            &handoff_display(&mismatch, &JourneyPaths::new(&out), "ag_news"),
+            joinable,
+            &reason,
+        );
+        assert!(text.contains("joinable: no"), "{text}");
+        assert!(!text.contains("joinable: yes"), "{text}");
+        assert!(!text.contains("The seat is joinable."), "{text}");
+
+        let default_seat = JourneyRequest {
+            binding_id: None,
+            ..mismatch
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&default_seat).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(reason.contains("local_slm"), "{reason}");
+
+        let empty = root.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        let bare_file = JourneyRequest {
+            prepared: Some(&empty),
+            binding_id: Some("rust_idiom"),
+            ..default_seat
+        };
+        let (joinable, reason) = standing_join_after_ready_gguf(&bare_file).unwrap();
+        assert!(!joinable, "{reason}");
+        assert!(reason.contains("no gguf specialty proposal"), "{reason}");
         let _ = fs::remove_dir_all(&root);
     }
 

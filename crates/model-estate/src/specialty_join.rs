@@ -766,4 +766,129 @@ mod tests {
         assert!(!report.contains("READY_FOR_LIVE_TEST: yes"), "{report}");
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn specialty_join_records_non_local_slm_binding_id() {
+        let root = scratch("portable");
+        let prepared_ag = root.join("ag");
+        let prepared_rust = root.join("rust");
+        fs::create_dir_all(&prepared_ag).unwrap();
+        fs::create_dir_all(&prepared_rust).unwrap();
+        let gguf_ag = root.join("ag.gguf");
+        let gguf_rust = root.join("rust.gguf");
+        fs::write(&gguf_ag, b"GGUF").unwrap();
+        fs::write(&gguf_rust, b"GGUF").unwrap();
+        let mut estate = estate_schema::load_estate_unvalidated(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/estate.yaml"),
+        )
+        .unwrap();
+        let ag = proposal_for(&prepared_ag, &gguf_ag, "ag_news", "specialist-agnews-3000");
+        let rust = proposal_for(
+            &prepared_rust,
+            &gguf_rust,
+            "rust_idiom",
+            "specialist-rustidiom-3000",
+        );
+        let bare_ag = write_specialty_join(&estate, &prepared_ag, &ag, Some("ag_news")).unwrap();
+        let bare_rust =
+            write_specialty_join(&estate, &prepared_rust, &rust, Some("rust_idiom")).unwrap();
+        assert_eq!(bare_ag.binding_id, "ag_news");
+        assert_eq!(bare_rust.binding_id, "rust_idiom");
+        assert!(!bare_ag.joinable, "{bare_ag:?}");
+        assert!(!bare_rust.joinable, "{bare_rust:?}");
+        assert!(bare_ag.reason.contains("no agent models allow-list names ag_news"));
+        assert!(bare_rust
+            .reason
+            .contains("no agent models allow-list names rust_idiom"));
+        assert_ne!(bare_ag.binding_id, "local_slm");
+        assert_ne!(bare_rust.binding_id, "local_slm");
+
+        let research = estate
+            .agents
+            .iter_mut()
+            .find(|agent| agent.id == "research")
+            .unwrap();
+        research.models = vec![estate_schema::ModelUseDecl {
+            id: "ag_news".into(),
+            description: None,
+        }];
+        estate.agents.push(estate_schema::Agent {
+            id: "idiom".into(),
+            display_name: "Idiom".into(),
+            lane: "idiom".into(),
+            desktop: "idiom-desktop".into(),
+            tools: Vec::new(),
+            mounts: Vec::new(),
+            mcp: Vec::new(),
+            models: vec![estate_schema::ModelUseDecl {
+                id: "rust_idiom".into(),
+                description: None,
+            }],
+            calls: Vec::new(),
+            select: None,
+        });
+        let joined_ag = write_specialty_join(&estate, &prepared_ag, &ag, Some("ag_news")).unwrap();
+        let joined_rust =
+            write_specialty_join(&estate, &prepared_rust, &rust, Some("rust_idiom")).unwrap();
+        assert!(joined_ag.joinable, "{joined_ag:?}");
+        assert!(joined_rust.joinable, "{joined_rust:?}");
+        assert_eq!(joined_ag.agents, vec!["research".to_string()]);
+        assert_eq!(joined_rust.agents, vec!["idiom".to_string()]);
+        assert_eq!(joined_ag.seat_model, "specialist-agnews-3000");
+        assert_eq!(joined_rust.seat_model, "specialist-rustidiom-3000");
+        fs::write(
+            prepared_ag.join("binding-proposal.json"),
+            serde_json::to_string(&ag).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            prepared_rust.join("binding-proposal.json"),
+            serde_json::to_string(&rust).unwrap(),
+        )
+        .unwrap();
+        let again = assess_specialty_join(&estate, &prepared_ag).unwrap().unwrap();
+        assert_eq!(again.binding_id, "ag_news");
+        assert!(again.joinable);
+        let report = again.standing_report(Path::new("lab-estate.yaml"), &prepared_ag);
+        assert!(report.contains("binding: ag_news"), "{report}");
+        assert!(report.contains("joinable: yes"), "{report}");
+        assert!(!report.contains("READY_FOR_LIVE_TEST: yes"), "{report}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn proposal_for(
+        prepared: &Path,
+        gguf: &Path,
+        binding_id: &str,
+        seat_model: &str,
+    ) -> EnrichBindingProposal {
+        EnrichBindingProposal {
+            schema: "cell-one.enrich-binding-proposal.v0".into(),
+            curator: "jason".into(),
+            policy: "manual".into(),
+            auto_apply: false,
+            promoted: false,
+            estate_rewritten: false,
+            estate_name: "cell-one-synthetic".into(),
+            estate_hash: "abc".into(),
+            prepared_dir: prepared.display().to_string(),
+            pack_id: "overnight-traces".into(),
+            driver: "llamafactory-lora".into(),
+            job: "train".into(),
+            local_tag: "cell-enrich-overnight-traces".into(),
+            local_path: gguf.display().to_string(),
+            trained_shape: Some("gguf".into()),
+            trained_paths: Some(vec![gguf.display().to_string()]),
+            binding_id: binding_id.into(),
+            seated_driver: "ollama".into(),
+            content_scanned: false,
+            proposed_binding: serde_json::json!({
+                "id": binding_id,
+                "class": "local",
+                "params": {"model": seat_model}
+            }),
+            paste_yaml: String::new(),
+            note: String::new(),
+        }
+    }
 }

@@ -22706,4 +22706,171 @@ mod tests {
             Some(tag)
         );
     }
+
+    #[test]
+    fn import_trained_add_beside_dual() {
+        let root = tmp("dual-seat");
+        let pack = fixture_pack();
+        let mut estate = with_train_base(seated_estate("llama3"), "Qwen/Qwen2.5-0.5B-Instruct");
+        push_local(&mut estate, "policy_precheck", "policy-precheck");
+        let prepared = root.join("qlora");
+        prepare_enrich(&PrepareEnrichRequest {
+            estate: &estate,
+            pack: &pack,
+            curator: "jason",
+            driver_id: LLAMAFACTORY_QLORA_ID,
+            job: "train",
+            out_dir: &prepared,
+            max_steps: None,
+            official_scale: false,
+            from_feed: false,
+            state_dir: &root.join("cell"),
+        })
+        .unwrap();
+        let gguf = root.join("specialist.gguf");
+        std::fs::write(&gguf, "gguf-fixture").unwrap();
+        let tag = "cell-enrich-overnight-traces";
+        let source = root.join("estate.yaml");
+        std::fs::write(&source, estate_schema::render_estate_yaml(&estate).unwrap()).unwrap();
+        let before_model = local_slm_model_param(&estate);
+
+        let ag = import_trained_for_seat_with(
+            &ImportTrainedRequest {
+                estate: &estate,
+                prepared_dir: &prepared,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("ag_news"),
+            Some("specialist-agnews-3000"),
+            None,
+            None,
+            Some("ag_news"),
+        )
+        .unwrap();
+        assert_eq!(ag.binding_id, "ag_news");
+        assert_eq!(ag.trained_shape.as_deref(), Some("gguf"));
+        assert!(!ag.auto_apply && !ag.estate_rewritten);
+        assert!(ag.note.contains("local_slm is not deleted"), "{}", ag.note);
+        let join_ag: crate::specialty_join::SpecialtyJoin = serde_json::from_str(
+            &std::fs::read_to_string(prepared.join(crate::specialty_join::SPECIALTY_JOIN_JSON))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(join_ag.binding_id, "ag_news");
+        assert_eq!(join_ag.function, "ag_news");
+        assert_ne!(join_ag.binding_id, "local_slm");
+        assert!(!join_ag.auto_apply && !join_ag.ready_for_live_test);
+
+        let state = root.join("state");
+        let stage = match apply_proposal(&ApplyProposalRequest {
+            estate: &estate,
+            estate_path: &source,
+            prepared_dir: &prepared,
+            tag,
+            curator: "jason",
+            state_dir: &state,
+            verify_endpoint: None,
+        })
+        .unwrap()
+        {
+            ApplyProposalOutcome::Staged(stage) => stage,
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        };
+        assert_eq!(stage.binding_id, "ag_news");
+        commit_enrich_stage(
+            &state.join("enrich-stage/staged-estate.yaml"),
+            &state,
+            true,
+            &stage.staged_estate_hash,
+        )
+        .unwrap();
+        let seated =
+            estate_schema::load_estate_str(&std::fs::read_to_string(&source).unwrap()).unwrap();
+        assert_eq!(local_ids(&seated), ["local_slm", "policy_precheck", "ag_news"]);
+        assert_eq!(local_slm_model_param(&seated), before_model);
+
+        let rust_dir = root.join("rust");
+        copy_prepare_tree(&prepared, &rust_dir);
+        let rust = import_trained_for_seat_with(
+            &ImportTrainedRequest {
+                estate: &seated,
+                prepared_dir: &rust_dir,
+                tag,
+                adapter: &gguf,
+                curator: "jason",
+            },
+            Some("rust_idiom"),
+            Some("specialist-rustidiom-3000"),
+            None,
+            None,
+            Some("rust_idiom"),
+        )
+        .unwrap();
+        assert_eq!(rust.binding_id, "rust_idiom");
+        assert_eq!(rust.trained_shape.as_deref(), Some("gguf"));
+        assert!(rust.note.contains("local_slm is not deleted"), "{}", rust.note);
+        let join_rust: crate::specialty_join::SpecialtyJoin = serde_json::from_str(
+            &std::fs::read_to_string(rust_dir.join(crate::specialty_join::SPECIALTY_JOIN_JSON))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(join_rust.binding_id, "rust_idiom");
+        assert_eq!(join_rust.function, "rust_idiom");
+
+        let rust_stage = match apply_proposal(&ApplyProposalRequest {
+            estate: &seated,
+            estate_path: &source,
+            prepared_dir: &rust_dir,
+            tag,
+            curator: "jason",
+            state_dir: &state,
+            verify_endpoint: None,
+        })
+        .unwrap()
+        {
+            ApplyProposalOutcome::Staged(stage) => stage,
+            ApplyProposalOutcome::Noop { reason } => panic!("{reason}"),
+        };
+        assert_eq!(rust_stage.binding_id, "rust_idiom");
+        commit_enrich_stage(
+            &state.join("enrich-stage/staged-estate.yaml"),
+            &state,
+            true,
+            &rust_stage.staged_estate_hash,
+        )
+        .unwrap();
+        let both =
+            estate_schema::load_estate_str(&std::fs::read_to_string(&source).unwrap()).unwrap();
+        assert_eq!(
+            local_ids(&both),
+            ["local_slm", "policy_precheck", "ag_news", "rust_idiom"]
+        );
+        assert_eq!(local_slm_model_param(&both), before_model);
+        assert_eq!(
+            both.model_bindings
+                .iter()
+                .find(|binding| binding.id == "ag_news")
+                .unwrap()
+                .params["model"]
+                .as_str(),
+            Some("specialist-agnews-3000")
+        );
+        assert_eq!(
+            both.model_bindings
+                .iter()
+                .find(|binding| binding.id == "rust_idiom")
+                .unwrap()
+                .params["model"]
+                .as_str(),
+            Some("specialist-rustidiom-3000")
+        );
+        let ag_still: crate::specialty_join::SpecialtyJoin = serde_json::from_str(
+            &std::fs::read_to_string(prepared.join(crate::specialty_join::SPECIALTY_JOIN_JSON))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(ag_still.binding_id, "ag_news");
+    }
 }
