@@ -5886,7 +5886,7 @@ pub fn import_trained_for_seat(
     binding_id: Option<&str>,
     seat_model: Option<&str>,
 ) -> Result<EnrichBindingProposal, ModelError> {
-    import_trained_for_seat_with(req, binding_id, seat_model, None, None)
+    import_trained_for_seat_with(req, binding_id, seat_model, None, None, None)
 }
 
 /// Test/CLI hook: inject `purpose_seat` metadata and a live listing.
@@ -5896,6 +5896,7 @@ pub fn import_trained_for_seat_with(
     seat_model: Option<&str>,
     purpose_seat: Option<&str>,
     live_seats: Option<&[String]>,
+    specialty_function: Option<&str>,
 ) -> Result<EnrichBindingProposal, ModelError> {
     refuse_curator(req.curator, &req.estate.enrich_packs.curator).map_err(map_feed)?;
     refuse_sacred_and_sku("adapter", &req.adapter.display().to_string())?;
@@ -5962,7 +5963,24 @@ pub fn import_trained_for_seat_with(
         paths = artifact.paths.join(", "),
         scanned = proposal.content_scanned,
     );
+    let named_function = specialty_function.map(str::trim).filter(|value| !value.is_empty());
+    if named_function.is_some() && artifact.shape != TRAINED_SHAPE_GGUF {
+        return Err(ModelError::Other(format!(
+            "refuse:function: --function names a GGUF specialty. This artifact is {}.",
+            artifact.shape
+        )));
+    }
     commit_trained_import(req.prepared_dir, &proposal, &artifact)?;
+    if artifact.shape == TRAINED_SHAPE_GGUF {
+        crate::specialty_join::write_specialty_join(
+            req.estate,
+            req.prepared_dir,
+            &proposal,
+            named_function,
+        )?;
+    } else {
+        crate::specialty_join::remove_specialty_join(req.prepared_dir)?;
+    }
     Ok(proposal)
 }
 
@@ -22557,6 +22575,7 @@ mod tests {
                 "llama3".to_string(),
                 "specialist-agnews-all".to_string(),
             ]),
+            None,
         )
         .unwrap();
         assert_eq!(auto_bound.local_tag, tag);
@@ -22584,6 +22603,7 @@ mod tests {
                 "specialist-agnews-all".to_string(),
                 "specialist-agnews-3000".to_string(),
             ]),
+            None,
         )
         .unwrap_err()
         .to_string();

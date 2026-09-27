@@ -581,6 +581,9 @@ pub(crate) fn cmd_status(
     let estate = load_estate(path).with_context(|| format!("load {}", path.display()))?;
     let enrich_facts = model_estate::enrich_join_facts(&state_dir.join("enrich"))
         .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let specialty_joins =
+        model_estate::specialty_joins_in_enrich(&state_dir.join("enrich"), &estate)
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
     let train_prepares = model_estate::train_prepare_facts(state_dir)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
     let train_catalog = model_estate::train_catalog_facts()
@@ -685,7 +688,12 @@ pub(crate) fn cmd_status(
             proposals.join(",")
         }
     );
-    print_status_enrich_join(enrich_facts.as_deref(), enrich_stage.as_ref(), &estate);
+    print_status_enrich_join(
+        enrich_facts.as_deref(),
+        enrich_stage.as_ref(),
+        &estate,
+        specialty_joins.as_deref(),
+    );
     print_status_train_prepare(train_prepares.as_deref());
     print_status_train_catalog(&train_catalog);
     println!(
@@ -899,6 +907,7 @@ fn print_status_enrich_join(
     facts: Option<&[model_estate::EnrichJoinFact]>,
     stage: Option<&model_estate::EnrichBindingStage>,
     estate: &estate_schema::Estate,
+    specialty: Option<&[model_estate::SpecialtyJoin]>,
 ) {
     if let Some(stage) = stage {
         println!(
@@ -926,6 +935,11 @@ fn print_status_enrich_join(
                 "enrich_binding: pending kind={} pack={} driver={} tag={} estate_model={shown}",
                 fact.kind, fact.pack_id, fact.driver, fact.local_tag
             );
+        }
+    }
+    if let Some(specialty) = specialty {
+        for join in specialty {
+            println!("{}", join.status_line());
         }
     }
 }
@@ -1068,6 +1082,30 @@ fn print_doctor_enrich_join(state_dir: &Path, fails: &mut Vec<String>) {
                 "  note  prepare pack={} driver={} tag={} estate local_slm model={shown} (no binding proposal)",
                 fact.pack_id, fact.driver, fact.local_tag
             );
+        }
+    }
+    let snapshot = match floor_supervisor::load_desired_snapshot(state_dir) {
+        Ok(value) => value,
+        Err(err) => {
+            println!("  FAIL  desired-snapshot.yaml: {err}");
+            fails.push(format!("desired-snapshot.yaml: {err}"));
+            return;
+        }
+    };
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+    match model_estate::specialty_joins_in_enrich(&state_dir.join("enrich"), &snapshot) {
+        Ok(Some(rows)) => {
+            for join in rows {
+                let mark = if join.joinable { "ok" } else { "note" };
+                println!("  {mark}  {}", join.status_line());
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            println!("  FAIL  {err}");
+            fails.push(err.to_string());
         }
     }
 }

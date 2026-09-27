@@ -253,6 +253,7 @@ pub(crate) fn cmd_enrich_import_trained(
     binding_id: Option<&str>,
     seat_model: Option<&str>,
     purpose_seat: Option<&str>,
+    specialty_function: Option<&str>,
 ) -> Result<()> {
     let before = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
@@ -273,6 +274,7 @@ pub(crate) fn cmd_enrich_import_trained(
         seat_model,
         purpose_seat,
         None,
+        specialty_function,
     )?;
     let after = std::fs::read_to_string(estate_path)
         .with_context(|| format!("refuse:estate: read {}", estate_path.display()))?;
@@ -321,6 +323,40 @@ pub(crate) fn cmd_enrich_import_trained(
         tag
     );
     println!("import-trained did not apply.");
+    if let Some(join) = model_estate::assess_specialty_join(&estate, prepared_dir)
+        .map_err(|err| anyhow::anyhow!("{err}"))?
+    {
+        println!("{}", join.status_line());
+        if join.joinable {
+            println!("The seat is joinable.");
+        }
+        println!(
+            "next: estate enrich standing-next --estate {} --prepared {}",
+            estate_path.display(),
+            prepared_dir.display()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_enrich_standing_next(estate_path: &Path, prepared_dir: &Path) -> Result<()> {
+    let estate = load_estate_unvalidated(estate_path)
+        .with_context(|| format!("refuse:estate: load {}", estate_path.display()))?;
+    match model_estate::assess_specialty_join(&estate, prepared_dir)
+        .map_err(|err| anyhow::anyhow!("{err}"))?
+    {
+        Some(join) => print!("{}", join.standing_report(estate_path, prepared_dir)),
+        None => {
+            println!("Standing next (estate) — joinable specialty");
+            println!("joinable: no");
+            println!(
+                "reason: no gguf specialty proposal in {}",
+                prepared_dir.display()
+            );
+            println!("This print is not a live PASS. READY_FOR_LIVE_TEST: no.");
+            println!("The factory does not claim it trained.");
+        }
+    }
     Ok(())
 }
 

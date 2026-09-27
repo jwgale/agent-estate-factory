@@ -2119,9 +2119,36 @@ pub(crate) enum EnrichCommand {
         /// emit this file themselves when the live seat name is known.
         #[arg(long)]
         purpose_seat: Option<String>,
+        /// Specialty function recorded on the join (`ag_news`). A GGUF
+        /// classify journey passes the dataset alias. Omit to read
+        /// `comparison.json` `dataset` beside the GGUF.
+        #[arg(long)]
+        function: Option<String>,
         /// Import gate. Must match locked curator `jason`.
         #[arg(long, default_value = "jason")]
         curator: String,
+    },
+    /// Print whether a GGUF specialty proposal is a joinable local seat.
+    /// Does not apply. Does not train. `READY_FOR_LIVE_TEST` stays no.
+    StandingNext {
+        #[arg(long, default_value = "examples/estate.yaml")]
+        estate: PathBuf,
+        /// Directory that holds binding-proposal.json from import-trained.
+        #[arg(long)]
+        prepared: PathBuf,
+    },
+    /// Throwaway prove: mocked classify-journey GGUF → import-trained
+    /// (`trained_shape` gguf, `auto_apply=false`) → `local_slm` on a lab
+    /// estate → Standing next → mock complete for an agent that allows
+    /// `local_slm`. Does not train. Does not start a GPU job. Does not
+    /// rewrite `examples/estate.yaml`. `READY_FOR_LIVE_TEST` stays no.
+    BindProve {
+        /// Repository root that holds `examples/estate.yaml` and the overnight pack.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Throwaway directory. Default is a fresh directory under the temp dir.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Stage a binding proposal for estate plan and estate apply --require-plan.
     /// Does not apply. Does not rewrite the source estate.

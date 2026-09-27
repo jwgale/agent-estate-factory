@@ -89,6 +89,22 @@ fn prepare_lora(dir: &std::path::Path, estate: &std::path::Path) -> PathBuf {
     prepared
 }
 
+fn assert_joinable(stdout: &str, yes: bool) {
+    let standing = stdout
+        .find("Standing next (estate)")
+        .unwrap_or_else(|| panic!("missing Standing next\n{stdout}"));
+    let coda = &stdout[standing..];
+    if yes {
+        assert!(coda.contains("joinable: yes"), "{coda}");
+        assert!(coda.contains("The seat is joinable."), "{coda}");
+        assert!(!coda.contains("joinable: no"), "{coda}");
+    } else {
+        assert!(coda.contains("joinable: no"), "{coda}");
+        assert!(!coda.contains("joinable: yes"), "{coda}");
+        assert!(!coda.contains("The seat is joinable."), "{coda}");
+    }
+}
+
 fn assert_standing_next(stdout: &str) {
     let handoff = stdout
         .find("estate enrich import-trained")
@@ -139,6 +155,10 @@ fn assert_standing_next(stdout: &str) {
     );
     assert!(
         coda.contains("This function is one specialty local seat among those peers."),
+        "{coda}"
+    );
+    assert!(
+        coda.contains("joinable: yes") || coda.contains("joinable: no"),
         "{coda}"
     );
     assert!(coda.contains("READY_FOR_LIVE_TEST: no"), "{coda}");
@@ -387,6 +407,11 @@ fn journey_print_lists_steps_without_tools() {
         "{stdout}"
     );
     assert_standing_next(&stdout);
+    assert_joinable(&stdout, false);
+    assert!(
+        stdout.contains("specialist GGUF is not on disk."),
+        "{stdout}"
+    );
     assert!(!dir.exists(), "print must not write {}", dir.display());
     assert_estate_hash_locked();
     let shot = bin()
@@ -970,6 +995,11 @@ fn journey_run_with_fake_tools_and_mock_endpoint() {
     );
     assert!(stdout.contains("import-trained did not apply"), "{stdout}");
     assert_standing_next(&stdout);
+    assert_joinable(&stdout, true);
+    assert!(
+        stdout.contains("specialty_join: joinable=yes"),
+        "{stdout}"
+    );
     assert!(!stdout.contains("READY_FOR_LIVE_TEST: yes"), "{stdout}");
     let proposal: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(prepared.join("binding-proposal.json")).unwrap())
@@ -2236,6 +2266,7 @@ fn ag_news_import_is_offline_and_journey_print_suffixes_the_tag() {
     );
     assert!(!printed_out.contains("live PASS recorded"), "{printed_out}");
     assert_standing_next(&printed_out);
+    assert_joinable(&printed_out, false);
     assert!(
         printed_out.contains("Specialty seat: local_slm, class local, function ag_news."),
         "{printed_out}"
@@ -2312,6 +2343,7 @@ fn ag_news_journey_make_target_prints_the_handoff() {
     );
     assert!(stdout.contains("specialist-agnews-3000"), "{stdout}");
     assert_standing_next(&stdout);
+    assert_joinable(&stdout, false);
     assert!(
         stdout.contains("Specialty seat: local_slm, class local, function ag_news."),
         "{stdout}"
@@ -2898,6 +2930,50 @@ fn glm4_preset_prints_the_shared_journey_and_runs_local_train_with_fake_tools() 
 }
 
 #[test]
+fn print_ready_gguf_without_estate_does_not_claim_joinable() {
+    assert_estate_hash_locked();
+    let root = scratch("print-ready-gguf");
+    let out = root.join("journey");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join("specialist.Q4_K_M.gguf"), b"GGUF").unwrap();
+    let printed = bin()
+        .args([
+            "classify",
+            "journey",
+            "--input",
+            fixture().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--print",
+        ])
+        .env("PATH", "/nonexistent-journey-path")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&printed.stdout);
+    let stderr = String::from_utf8_lossy(&printed.stderr);
+    assert!(printed.status.success(), "{stdout}\n{stderr}");
+    assert!(
+        stdout.contains("import-trained handoff (planned):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("This print does not write a proposal."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "The specialist GGUF is ready. joinable still requires an agent models allow-list that names the binding."
+        ),
+        "{stdout}"
+    );
+    assert_standing_next(&stdout);
+    assert_joinable(&stdout, false);
+    assert!(!out.join("binding-proposal.json").exists());
+    assert_estate_hash_locked();
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn print_import_trained_does_not_invent_a_proposal() {
     assert_estate_hash_locked();
     let root = scratch("handoff-print");
@@ -2950,6 +3026,7 @@ fn print_import_trained_does_not_invent_a_proposal() {
         "{stdout}"
     );
     assert_standing_next(&stdout);
+    assert_joinable(&stdout, false);
     assert!(!out.exists(), "print must not write {}", out.display());
     assert!(!gguf.exists());
     assert!(!prepared.join("binding-proposal.json").is_file());
