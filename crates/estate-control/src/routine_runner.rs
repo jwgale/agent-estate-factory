@@ -8,6 +8,7 @@
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -34,7 +35,8 @@ static RUNNER_STOP: AtomicBool = AtomicBool::new(false);
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerWatchArgs {
     pub runner_id: String,
-    pub routine_id: Option<String>,
+    /// Empty = all enabled standing routines (same as tick default).
+    pub routine_ids: Vec<String>,
     pub agent: Option<String>,
     pub prompt: Option<String>,
     pub text: Option<String>,
@@ -66,8 +68,14 @@ pub(crate) struct RunnerRecord {
     pub interval_label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estate: Option<String>,
+    /// Empty = all enabled. Named ids are the start select.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routine_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routine_id: Option<String>,
+    /// Per-id last tick outcome (`ran` / `skipped`) from the digest.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub last_outcomes: BTreeMap<String, String>,
     #[serde(default)]
     pub live_sync: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,7 +104,9 @@ impl RunnerRecord {
             interval_secs: plan.interval_secs,
             interval_label: plan.interval_label.clone(),
             estate: Some(args.estate.display().to_string()),
-            routine_id: args.routine_id.clone(),
+            routine_ids: args.routine_ids.clone(),
+            routine_id: args.routine_ids.first().cloned(),
+            last_outcomes: BTreeMap::new(),
             live_sync: false,
             stopped_at: None,
             stop_reason: None,
@@ -307,36 +317,108 @@ pub(crate) fn status_text(state_dir: &Path, id: &str, now: i64) -> String {
     let rec = load_record(state_dir, id);
     match (live, rec) {
         (RunnerLiveness::Running { pid }, Some(rec)) => {
-            let last_tick = format_unix(rec.last_tick);
-            let last_digest = rec.last_digest.as_deref().unwrap_or("-");
-            let uptime = format_uptime(rec.started_at, now);
             format!(
-                "routine runner id={id}\n  status: running\n  pid: {pid}\n  uptime: {uptime}\n  last_tick: {last_tick}\n  last_digest: {last_digest}\n  cycles: {}\n  interval: {}\n  live_sync: false\n",
-                rec.cycles, rec.interval_label
+                "routine runner id={id}\n{}",
+                status_body(
+                    Some(&rec),
+                    "running",
+                    &pid.to_string(),
+                    &format_uptime(rec.started_at, now)
+                )
             )
         }
         (RunnerLiveness::Running { pid }, None) => {
             format!(
-                "routine runner id={id}\n  status: running\n  pid: {pid}\n  uptime: -\n  last_tick: -\n  last_digest: -\n  cycles: 0\n  interval: -\n  live_sync: false\n"
+                "routine runner id={id}\n{}",
+                status_body(None, "running", &pid.to_string(), "-")
             )
         }
         (RunnerLiveness::Stopped, Some(rec)) => {
-            let last_tick = format_unix(rec.last_tick);
-            let last_digest = rec.last_digest.as_deref().unwrap_or("-");
             let pid = rec
                 .pid
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "-".into());
             format!(
-                "routine runner id={id}\n  status: stopped\n  pid: {pid}\n  uptime: -\n  last_tick: {last_tick}\n  last_digest: {last_digest}\n  cycles: {}\n  interval: {}\n  live_sync: false\n",
-                rec.cycles, rec.interval_label
+                "routine runner id={id}\n{}",
+                status_body(Some(&rec), "stopped", &pid, "-")
             )
         }
         (RunnerLiveness::Stopped, None) => {
             format!(
-                "routine runner id={id}\n  status: stopped\n  pid: -\n  uptime: -\n  last_tick: -\n  last_digest: -\n  cycles: 0\n  interval: -\n  live_sync: false\n"
+                "routine runner id={id}\n{}",
+                status_body(None, "stopped", "-", "-")
             )
         }
+    }
+}
+
+fn status_body(rec: Option<&RunnerRecord>, status: &str, pid: &str, uptime: &str) -> String {
+    let last_tick = rec
+        .map(|r| format_unix(r.last_tick))
+        .unwrap_or_else(|| "-".into());
+    let last_digest = rec
+        .and_then(|r| r.last_digest.clone())
+        .unwrap_or_else(|| "-".into());
+    let cycles = rec.map(|r| r.cycles).unwrap_or(0);
+    let interval = rec
+        .map(|r| r.interval_label.clone())
+        .unwrap_or_else(|| "-".into());
+    format!(
+        "  status: {status}\n  pid: {pid}\n  uptime: {uptime}\n{}  last_tick: {last_tick}\n  last_digest: {last_digest}\n  cycles: {cycles}\n  interval: {interval}\n  live_sync: false\n",
+        selected_block(rec)
+    )
+}
+
+fn selected_block(rec: Option<&RunnerRecord>) -> String {
+    let Some(rec) = rec else {
+        return "  selected: -\n".into();
+    };
+    let selected = if rec.routine_ids.is_empty() {
+        "all".to_string()
+    } else {
+        rec.routine_ids.join(",")
+    };
+    let mut out = format!("  selected: {selected}\n");
+    let ids: Vec<String> = if rec.routine_ids.is_empty() {
+        rec.last_outcomes.keys().cloned().collect()
+    } else {
+        rec.routine_ids.clone()
+    };
+    for id in ids {
+        let outcome = rec
+            .last_outcomes
+            .get(&id)
+            .map(|s| s.as_str())
+            .unwrap_or("-");
+        out.push_str(&format!("  last_outcome {id}: {outcome}\n"));
+    }
+    out
+}
+
+pub(crate) fn parse_digest_outcomes(digest: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for line in digest.lines() {
+        let line = line.trim();
+        let mut parts = line.split_whitespace();
+        let Some(id) = parts.next() else {
+            continue;
+        };
+        let Some(status) = parts.next() else {
+            continue;
+        };
+        let Some(outcome) = status.strip_prefix("status=") else {
+            continue;
+        };
+        out.insert(id.to_string(), outcome.to_string());
+    }
+    out
+}
+
+pub(crate) fn selected_label(ids: &[String]) -> String {
+    if ids.is_empty() {
+        "all".into()
+    } else {
+        ids.join(",")
     }
 }
 
@@ -362,8 +444,10 @@ pub(crate) fn cmd_runner_start(args: RunnerWatchArgs) -> Result<()> {
     let mut args = args;
     args.runner_id = id.clone();
     let _plan = plan_from_args(&args)?;
-    estate_schema::load_estate(&args.estate)
+    let estate = estate_schema::load_estate(&args.estate)
         .with_context(|| format!("load {}", args.estate.display()))?;
+    args.routine_ids = crate::routines::resolve_runner_routines(&estate, &args.routine_ids)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     refuse_already_running(&args.state_dir, &id)?;
     fs::create_dir_all(runner_dir(&args.state_dir))?;
     let mut child = spawn_supervise(&args)?;
@@ -391,7 +475,8 @@ pub(crate) fn cmd_runner_start(args: RunnerWatchArgs) -> Result<()> {
                 .map(|r| r.interval_label.clone())
                 .unwrap_or_else(|| args.interval.clone());
             println!(
-                "routine runner started id={id} pid={pid} interval={interval} live_sync=false"
+                "routine runner started id={id} pid={pid} interval={interval} selected={} live_sync=false",
+                selected_label(&args.routine_ids)
             );
             return Ok(());
         }
@@ -402,9 +487,10 @@ pub(crate) fn cmd_runner_start(args: RunnerWatchArgs) -> Result<()> {
         RunnerLiveness::Running { .. }
     ) {
         println!(
-            "routine runner started id={id} pid={} interval={} live_sync=false",
+            "routine runner started id={id} pid={} interval={} selected={} live_sync=false",
             child.id(),
-            args.interval
+            args.interval,
+            selected_label(&args.routine_ids)
         );
         return Ok(());
     }
@@ -478,6 +564,10 @@ pub(crate) fn cmd_runner_supervise(args: RunnerWatchArgs) -> Result<()> {
     let mut args = args;
     args.runner_id = id.clone();
     let plan = plan_from_args(&args)?;
+    let estate = estate_schema::load_estate(&args.estate)
+        .with_context(|| format!("load {}", args.estate.display()))?;
+    args.routine_ids = crate::routines::resolve_runner_routines(&estate, &args.routine_ids)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     detach_session();
     install_runner_signals();
     refuse_already_running(&args.state_dir, &id)?;
@@ -487,14 +577,15 @@ pub(crate) fn cmd_runner_supervise(args: RunnerWatchArgs) -> Result<()> {
     let mut rec = RunnerRecord::new_running(&id, pid, &plan, &args, now);
     save_record(&args.state_dir, &rec)?;
     println!(
-        "routine runner supervise id={id} pid={pid} interval={} live_sync=false",
-        plan.interval_label
+        "routine runner supervise id={id} pid={pid} interval={} selected={} live_sync=false",
+        plan.interval_label,
+        selected_label(&args.routine_ids)
     );
     let outcome = run_watch_loop(
         &plan,
         |cycle| -> Result<()> {
             crate::ops::cmd_routine_tick(
-                args.routine_id.as_deref(),
+                &args.routine_ids,
                 args.agent.as_deref(),
                 args.prompt.clone(),
                 args.text.clone(),
@@ -507,7 +598,7 @@ pub(crate) fn cmd_runner_supervise(args: RunnerWatchArgs) -> Result<()> {
                 false,
             )?;
             let digest = crate::ops::routine_digest_text(
-                args.routine_id.as_deref(),
+                &args.routine_ids,
                 &args.estate,
                 &args.state_dir,
             )?;
@@ -516,6 +607,7 @@ pub(crate) fn cmd_runner_supervise(args: RunnerWatchArgs) -> Result<()> {
             append_digest_log(&args.state_dir, &id, cycle, tick_now, &digest)?;
             rec.last_tick = Some(tick_now);
             rec.last_digest = Some(digest_cite(&digest));
+            rec.last_outcomes = parse_digest_outcomes(&digest);
             rec.cycles = cycle;
             save_record(&args.state_dir, &rec)?;
             Ok(())
@@ -559,7 +651,7 @@ fn spawn_supervise(args: &RunnerWatchArgs) -> Result<std::process::Child> {
         .arg(&args.state_dir)
         .arg("--interval")
         .arg(&args.interval);
-    if let Some(id) = &args.routine_id {
+    for id in &args.routine_ids {
         cmd.arg("--id").arg(id);
     }
     if let Some(agent) = &args.agent {
@@ -728,6 +820,7 @@ mod tests {
         assert_eq!(inspect_liveness(&dir, "default"), RunnerLiveness::Stopped);
         let text = status_text(&dir, "default", 1_700_000_000);
         assert!(text.contains("status: stopped"), "{text}");
+        assert!(text.contains("selected: -"), "{text}");
         assert!(text.contains("last_digest: -"), "{text}");
         assert!(text.contains("live_sync: false"), "{text}");
         assert!(!text.contains("live PASS"), "{text}");
@@ -799,5 +892,46 @@ mod tests {
             crate::routines::format_watch_interval_secs(300),
             "5m (300s)"
         );
+    }
+
+    #[test]
+    fn digest_outcomes_and_status_list_selected_ids() {
+        let digest = "routine digest ran=1 skipped=1\n  standing-classify status=ran package=classify-ping\n  standing-once status=skipped package=classify-once reason=not due\n";
+        let outcomes = parse_digest_outcomes(digest);
+        assert_eq!(outcomes.get("standing-classify").map(String::as_str), Some("ran"));
+        assert_eq!(outcomes.get("standing-once").map(String::as_str), Some("skipped"));
+        assert_eq!(selected_label(&[]), "all");
+        assert_eq!(
+            selected_label(&["standing-classify".into(), "standing-once".into()]),
+            "standing-classify,standing-once"
+        );
+
+        let dir = scratch("status-selected");
+        let rec = RunnerRecord {
+            schema: RUNNER_SCHEMA.into(),
+            id: "default".into(),
+            status: "stopped".into(),
+            pid: Some(9),
+            started_at: 1_700_000_000,
+            last_tick: Some(1_700_000_010),
+            last_digest: Some("routine digest ran=1 skipped=1".into()),
+            cycles: 1,
+            interval_secs: 2,
+            interval_label: "2s".into(),
+            estate: None,
+            routine_ids: vec!["standing-classify".into(), "standing-once".into()],
+            routine_id: Some("standing-classify".into()),
+            last_outcomes: outcomes,
+            live_sync: false,
+            stopped_at: Some(1_700_000_020),
+            stop_reason: Some("max-cycles".into()),
+        };
+        save_record(&dir, &rec).unwrap();
+        let text = status_text(&dir, "default", 1_700_000_030);
+        assert!(text.contains("selected: standing-classify,standing-once"), "{text}");
+        assert!(text.contains("last_outcome standing-classify: ran"), "{text}");
+        assert!(text.contains("last_outcome standing-once: skipped"), "{text}");
+        assert!(text.contains("live_sync: false"), "{text}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

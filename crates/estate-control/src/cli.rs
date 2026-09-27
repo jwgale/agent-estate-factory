@@ -516,8 +516,9 @@ pub(crate) enum Command {
     /// Optional `schedule` + `estate routine tick` / `watch` / `runner` /
     /// `status` / `digest` / `runner-prove`. Local last_run / next_due
     /// under --state-dir. Watch is the foreground operator loop. Runner
-    /// is the detached host supervisor (start / stop / status). Multi-hop
-    /// ticks auto-bind a pack-scoped crew session. Not live Grok Bot sync.
+    /// is the detached host supervisor (start / stop / status; repeat
+    /// `--id` or `--id a,b`; one child). Multi-hop ticks auto-bind a
+    /// pack-scoped crew session. Not live Grok Bot sync.
     Routine {
         #[command(subcommand)]
         command: RoutineCommand,
@@ -1282,8 +1283,9 @@ pub(crate) enum RoutineCommand {
     },
     /// Show schedule, last_run, next_due, enabled from local state-dir.
     Status {
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
         #[arg(long, default_value = ".cell")]
@@ -1295,8 +1297,9 @@ pub(crate) enum RoutineCommand {
     /// disabled routines skip. One-shot. Use `watch` for the local
     /// operator loop. Not a cloud cron.
     Tick {
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all enabled.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]
@@ -1327,8 +1330,9 @@ pub(crate) enum RoutineCommand {
     /// Stop with SIGINT (Ctrl-C) or `--max-cycles`. Not a cloud cron.
     /// Not live Grok Bot sync. `live_sync` stays false.
     Watch {
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all enabled.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]
@@ -1362,8 +1366,9 @@ pub(crate) enum RoutineCommand {
     /// receipt ids, completion_label when present. Reads routine-state
     /// + receipts only. Not live Grok Bot sync.
     Digest {
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long, default_value = "examples/estate.yaml")]
         estate: PathBuf,
         #[arg(long, default_value = ".cell")]
@@ -1378,15 +1383,19 @@ pub(crate) enum RoutineCommand {
         #[command(subcommand)]
         command: RoutineRunnerCommand,
     },
-    /// Mock prove that the supervised runner stitches a pack-scoped
-    /// crew session onto a multi-hop standing routine. Starts the
-    /// runner, waits for one tick, asserts hop 2 `context=applied`,
-    /// checks session reuse / ended→fresh / double-start refuse,
+    /// Mock prove that one supervise child can watch several standing
+    /// routines (default `standing-classify` + `standing-once`) and
+    /// still stitch a pack-scoped crew session on the multi-hop id.
+    /// Starts the runner, waits for one tick, asserts hop 2
+    /// `context=applied`, checks multi-id digest/status, session reuse
+    /// / ended→fresh / partial-start refuse / double-start refuse,
     /// then stops. `--mock` stays in-process. No network.
     /// `READY_FOR_LIVE_TEST`: no. Not a live PASS.
     RunnerProve {
-        #[arg(long, default_value = "standing-classify")]
-        id: String,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty defaults
+        /// to `standing-classify,standing-once`.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long, default_value = "examples/fixtures/agent-pack-handoff.yaml")]
         estate: PathBuf,
         /// Journal directory. Default: throwaway temp dir (kept).
@@ -1403,8 +1412,12 @@ pub(crate) enum RoutineRunnerCommand {
         /// Runner id (pidfile key). Default `default`.
         #[arg(long, default_value = "default")]
         runner_id: String,
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all
+        /// enabled standing routines. Named ids are all-or-nothing:
+        /// missing / disabled / invalid refuses before spawn
+        /// (`refuse:runner-routine-…`). One child / one pidfile.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]
@@ -1436,7 +1449,8 @@ pub(crate) enum RoutineRunnerCommand {
         #[arg(long, default_value = ".cell")]
         state_dir: PathBuf,
     },
-    /// running/stopped, last tick, last digest cite, pid, uptime.
+    /// running/stopped, selected ids, per-id last outcome, last tick,
+    /// last digest cite, pid, uptime.
     Status {
         #[arg(long, default_value = "default")]
         runner_id: String,
@@ -1447,8 +1461,9 @@ pub(crate) enum RoutineRunnerCommand {
     Restart {
         #[arg(long, default_value = "default")]
         runner_id: String,
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all enabled.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]
@@ -1477,8 +1492,9 @@ pub(crate) enum RoutineRunnerCommand {
     Supervise {
         #[arg(long, default_value = "default")]
         runner_id: String,
-        #[arg(long)]
-        id: Option<String>,
+        /// Repeat `--id` or comma-separate (`--id a,b`). Empty = all enabled.
+        #[arg(long = "id", value_delimiter = ',')]
+        ids: Vec<String>,
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]

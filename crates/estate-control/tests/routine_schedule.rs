@@ -215,8 +215,9 @@ fn routine_digest_and_tick_report_shape() {
         &state_s,
     ]);
     assert!(ok, "stderr={stderr}\nstdout={stdout}");
-    assert!(stdout.contains("routine digest ran=0 skipped=1"), "{stdout}");
+    assert!(stdout.contains("routine digest ran=0 skipped=2"), "{stdout}");
     assert!(stdout.contains("standing-classify status=skipped"), "{stdout}");
+    assert!(stdout.contains("standing-once status=skipped"), "{stdout}");
     assert!(stdout.contains("package=classify-ping"), "{stdout}");
     assert!(stdout.contains("receipts=0"), "{stdout}");
     assert!(!stdout.contains("Grok Bot sync"), "{stdout}");

@@ -221,24 +221,33 @@ is a test hook and requires `--max-cycles`. Standing operators use the
 
 Same throwaway fixture. `estate routine runner` is the detached host
 supervisor for that same watch loop: start / stop / status / restart.
-The invoking terminal can exit. Pidfile, status, and the digest log
-live under `{state-dir}/routine-runner/` (throwaway-safe, not estate
-SoT). Each cycle appends the existing digest text. Double-start is
-`refuse:runner-already-running`. Stop of a missing runner is
-`refuse:runner-not-running`. Min interval stays 5m. `--mock` stays
-in-process. This is not a cloud cron, not a systemd unit, and does not
-claim Cursor / Grok Bot install or sync. `live_sync` stays false.
-Locked `examples/estate.yaml` untouched. `READY_FOR_LIVE_TEST`: no.
+The invoking terminal can exit. One child / one pidfile still — not N
+daemons. Repeat `--id` or comma-separate (`--id a,b`) to name the
+standing set; empty select stays all enabled. Named ids are
+all-or-nothing: missing / disabled / invalid refuses before spawn
+(`refuse:runner-routine-unknown` / `disabled` / `invalid`) so a
+half-configured runner never starts. Status lists `selected:` plus
+per-id `last_outcome` after a tick. Digest each cycle covers every
+selected routine. Pidfile, status, and the digest log live under
+`{state-dir}/routine-runner/` (throwaway-safe, not estate SoT).
+Double-start is `refuse:runner-already-running`. Stop of a missing
+runner is `refuse:runner-not-running`. Min interval stays 5m.
+`--mock` stays in-process. This is not a cloud cron, not a systemd
+unit, and does not claim Cursor / Grok Bot install or sync.
+`live_sync` stays false. Locked `examples/estate.yaml` untouched.
+`READY_FOR_LIVE_TEST`: no.
 
 ```bash
 # Detach (operator default is 5m; 5090 prove uses the test hook)
 CELL_ROUTINE_WATCH_INTERVAL_SECS=2 estate routine runner start \
-  --id standing-classify \
+  --id standing-classify --id standing-once \
   --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir target/pack-runner-cell --mock --max-cycles 30
+# same select: --id standing-classify,standing-once
 
 estate routine runner status --state-dir target/pack-runner-cell
-# expect status: running, then last_digest after the first tick
+# expect status: running, selected: standing-classify,standing-once,
+# then last_digest + last_outcome per id after the first tick
 
 estate routine runner stop --state-dir target/pack-runner-cell
 estate routine runner status --state-dir target/pack-runner-cell
@@ -246,9 +255,12 @@ estate routine runner status --state-dir target/pack-runner-cell
 ```
 
 A second `start` while running refuses `refuse:runner-already-running`.
-`restart` stops a live child (if any) then starts. When the standing
+`restart` stops a live child (if any) then starts. A named set that
+includes a missing / disabled / unscheduled id refuses
+`refuse:runner-routine-…` and writes no pidfile. When a selected
 routine's package has a multi-hop chain, the same tick path auto-binds
-a pack-scoped crew session (see 3e3). Prove notes for the 5090 parent:
+a pack-scoped crew session (see 3e3). Fixture `standing-once` is the
+single-hop partner for multi-id prove. Prove notes for the 5090 parent:
 `.cell/cohesion-agnews-20260926/routine-runner-prove.md` (local
 throwaway estate; gitignored). Not a live PASS.
 
@@ -279,7 +291,9 @@ estate routine digest --estate examples/fixtures/agent-pack-handoff.yaml \
   --state-dir target/pack-runner-session-cell
 estate routine runner stop --state-dir target/pack-runner-session-cell
 
-# Mock gate: start → hop2 context=applied → reuse → ended→fresh →
+# Mock gate: start both standing ids → hop2 context=applied on
+# standing-classify → digest/status cover both → reuse →
+# ended→fresh → refuse:runner-routine-unknown on a partial set →
 # refuse:runner-already-running → stop
 estate routine runner-prove \
   --estate examples/fixtures/agent-pack-handoff.yaml \
@@ -309,7 +323,7 @@ Writes an Agent Plugin Cursor can load: `plugin.json` (pack → group),
 `skills/<package>/SKILL.md` (package → skill body that calls the wired
 member MCP tool `complete` with the package prompt), `INSTALL.md`
 (literal Cursor smoke steps), and commented cron/trigger notes for
-`standing-classify` (`@hourly` → `0 * * * *`).
+`standing-classify` and `standing-once` (`@hourly` → `0 * * * *`).
 Each member tool runs `estate complete --agent <member> --pack research-crew`
 against the source estate. Env carries pack / member / role / estate path
 and `CELL_MCP_COMPLETE_TIMEOUT_SECS` so Cursor-spawned MCP inherits the

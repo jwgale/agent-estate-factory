@@ -174,6 +174,10 @@ routines:
     package: classify-ping
     schedule: "@hourly"
     note: Automation analog. Tick when due; local last_run/next_due. Not Grok Bot sync.
+  - id: standing-once
+    package: classify-once
+    schedule: "@hourly"
+    note: Single-hop standing routine for multi-id supervise. Not Grok Bot sync.
 
 enrich_packs:
   curator: jason
