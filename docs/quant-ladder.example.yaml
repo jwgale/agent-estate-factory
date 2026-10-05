@@ -1,0 +1,38 @@
+# Example config for scripts/quant-ladder.sh / grammar-eval.sh / determinism-check.sh (docs/QUANT-LADDER.md).
+schema: cell-one.quant-ladder.v0
+name: example-quant-ladder
+out_dir: .                                  # relative to this file
+model:
+  hf_id: Qwen/Qwen3-4B-Instruct-2507        # must already be in ~/.cache/huggingface/hub (or set hf_path)
+  gguf_basename: Qwen3-4B-Instruct-2507
+toolchain:
+  llama_cpp_dir: ~/llama.cpp
+  convert_python: ~/venvs/llamafactory/bin/python
+  quantize_bin: ~/llama.cpp/build/bin/llama-quantize
+  quantize_threads: 8
+  server_bin: ~/llama.cpp/build-cuda/bin/llama-server
+quants: [f16, Q8_0, Q4_K_M]                 # one float type (f16|bf16) is the convert output
+reference: f16
+# gguf_mirror: /mnt/nas/projects/<project>/models/<run>
+eval:
+  set: inputs/eval.jsonl                    # JSONL with an "id" field plus the fields the templates use
+  sha256: <sha256 of the eval set>
+  tasks:
+    - name: classify
+      format: positional
+      where_field: null                     # optional: only rows where this field is truthy
+      system_file: inputs/system.txt
+      user_template: "{question}"
+      grammar: inputs/answer.gbnf           # or json_schema: inputs/answer.schema.json
+      grammar_sha256: <sha256>
+      n_predict: 32
+decode: {seed: 42, temperature: 0, ctx: 4096, threads: 8, batch: 2048, ubatch: 512, flash_attn: "off", n_gpu_layers: 999, port: 18431}
+repeats: 2
+scorer:
+  python: /usr/bin/python3
+  command: "{python} {config_dir}/scorer/score.py --run-dir {run_dir} --eval {eval} --metrics {metrics}"
+compare:
+  summary_fields: [accuracy_pct, unsafe]
+  flip_fields: [unsafe]                     # per-item booleans, true = bad
+  agree_fields: [label]                     # per-item values compared between quants
+gpu_guard: {max_util_pct: 30, max_minutes: 90}

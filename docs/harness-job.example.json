@@ -1,0 +1,8 @@
+{
+  "id": "job-example",
+  "step": "gap",
+  "config": "/absolute/path/on-the-5090/gap-config.json",
+  "gpu": "forbid",
+  "max_minutes": 0,
+  "nas_out": "/mnt/nas/projects/harness-review/build/runs/job-example"
+}
