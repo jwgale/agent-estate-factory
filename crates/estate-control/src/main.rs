@@ -23,6 +23,7 @@ mod improvement_apply;
 mod improvement_export;
 mod ops;
 mod pack_mcp;
+mod proc_kill;
 mod pack_session;
 mod plan_apply;
 mod plugin_install;

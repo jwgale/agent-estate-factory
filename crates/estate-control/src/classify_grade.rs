@@ -782,13 +782,8 @@ fn run_captured(cmd: &mut Command, timeout: Duration) -> Result<Captured> {
 }
 
 fn kill_group(pid: u32) {
-    #[cfg(unix)]
-    {
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
-            .output();
-    }
-    let _ = pid;
+    // kill(2) on -pgid via the guarded helper; never `kill -KILL -<pid>` (can become kill(-1)).
+    let _ = crate::proc_kill::kill_process_group(pid, crate::proc_kill::SIGKILL);
 }
 
 fn clip(text: &str) -> String {

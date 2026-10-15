@@ -472,6 +472,8 @@ def _gpu_probe(lim: int, samples: int):
 
 
 def _pid_alive(pid: int) -> bool:
+    if pid <= 1:  # os.kill(0|-1, 0) would probe our group / every process, not one job
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -788,7 +790,7 @@ def _update_record(pl: dict, **kv):
 
 def _stop_pid(pid: int, recipe: Path):
     """Stop the job by its own PID only (SIGTERM, then SIGKILL after 30 s). Never pkill, never by name."""
-    if not _pid_is_job(pid, recipe):
+    if not isinstance(pid, int) or pid <= 1 or pid == os.getpid() or not _pid_is_job(pid, recipe):
         return "not-ours"
     os.kill(pid, signal.SIGTERM)
     for _ in range(30):

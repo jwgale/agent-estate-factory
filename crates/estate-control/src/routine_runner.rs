@@ -181,8 +181,7 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
     }
     #[cfg(unix)]
     {
-        let rc = unsafe { unix_kill(pid as i32, 0) };
-        rc == 0
+        crate::proc_kill::pid_alive(pid)
     }
     #[cfg(not(unix))]
     {
@@ -715,17 +714,12 @@ fn mark_stopped(state_dir: &Path, id: &str, pid: u32, reason: &str) -> Result<()
 }
 
 fn send_term(pid: u32) {
-    #[cfg(unix)]
-    unsafe {
-        let _ = unix_kill(pid as i32, 15);
-    }
+    // Guarded: refuses 0/1, values that would wrap to a negative pid (e.g. a pidfile holding 4294967295), and self.
+    let _ = crate::proc_kill::kill_pid(pid, crate::proc_kill::SIGTERM);
 }
 
 fn send_kill(pid: u32) {
-    #[cfg(unix)]
-    unsafe {
-        let _ = unix_kill(pid as i32, 9);
-    }
+    let _ = crate::proc_kill::kill_pid(pid, crate::proc_kill::SIGKILL);
 }
 
 fn wait_dead(pid: u32, iters: u32) -> bool {
@@ -777,8 +771,6 @@ fn sleep_runner_interval(secs: i64) {
 
 #[cfg(unix)]
 extern "C" {
-    #[link_name = "kill"]
-    fn unix_kill(pid: i32, sig: i32) -> i32;
     #[link_name = "setsid"]
     fn unix_setsid() -> i32;
     #[link_name = "signal"]
